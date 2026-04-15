@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS } from "@/lib/extraction/types";
 import type { DocumentType } from "@/lib/extraction/types";
 
@@ -28,34 +28,27 @@ export default function UploadZone({ onFilesQueued, disabled }: UploadZoneProps)
   const [files, setFiles] = useState<QueuedFile[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Sync parent whenever files change — avoids setState-during-render
+  useEffect(() => {
+    onFilesQueued(files);
+  }, [files, onFilesQueued]);
+
   const addFiles = useCallback((fileList: FileList | File[]) => {
     const newFiles: QueuedFile[] = Array.from(fileList).map((file) => ({
       id: crypto.randomUUID(),
       file,
       detectedType: detectTypeFromExtension(file.name),
     }));
-    setFiles((prev) => {
-      const updated = [...prev, ...newFiles];
-      onFilesQueued(updated);
-      return updated;
-    });
-  }, [onFilesQueued]);
+    setFiles((prev) => [...prev, ...newFiles]);
+  }, []);
 
   const removeFile = useCallback((id: string) => {
-    setFiles((prev) => {
-      const updated = prev.filter((f) => f.id !== id);
-      onFilesQueued(updated);
-      return updated;
-    });
-  }, [onFilesQueued]);
+    setFiles((prev) => prev.filter((f) => f.id !== id));
+  }, []);
 
   const updateFileType = useCallback((id: string, type: DocumentType | "auto") => {
-    setFiles((prev) => {
-      const updated = prev.map((f) => (f.id === id ? { ...f, detectedType: type } : f));
-      onFilesQueued(updated);
-      return updated;
-    });
-  }, [onFilesQueued]);
+    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, detectedType: type } : f)));
+  }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
