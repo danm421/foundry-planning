@@ -6,11 +6,14 @@ import {
   CategoryScale,
   LinearScale,
   BarElement,
+  LineElement,
+  PointElement,
   Title,
   Tooltip,
   Legend,
+  Filler,
 } from "chart.js";
-import { Bar } from "react-chartjs-2";
+import { Bar, Line, Chart } from "react-chartjs-2";
 import {
   useReactTable,
   getCoreRowModel,
@@ -22,7 +25,7 @@ import {
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear, AccountLedger } from "@/engine";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -141,6 +144,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const [accountNames, setAccountNames] = useState<Record<string, string>>({});
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [drillPath, setDrillPath] = useState<string[]>([]);
+  const [chartView, setChartView] = useState<"portfolio" | "cashflow">("portfolio");
   const [ledgerModal, setLedgerModal] = useState<LedgerModal | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
@@ -198,20 +202,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   // ── Derived data for chart ─────────────────────────────────────────────────
 
-  const chartData = {
-    labels: years.map((y) => String(y.year)),
-    datasets: [
-      {
-        label: "Net Cash Flow",
-        data: years.map((y) => y.netCashFlow),
-        backgroundColor: years.map((y) =>
-          y.netCashFlow >= 0 ? "#22c55e" : "#ef4444"
-        ),
-      },
-    ],
-  };
+  // ── Chart configurations ────────────────────────────────────────────────────
 
-  const chartOptions = {
+  const chartLabels = years.map((y) => String(y.year));
+
+  const baseChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     onClick: (_event: unknown, elements: Array<{ index: number }>) => {
@@ -222,22 +217,25 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       }
     },
     plugins: {
-      legend: { display: false },
+      legend: { display: true, labels: { color: "#d1d5db", boxWidth: 12, padding: 16 } },
       tooltip: {
         backgroundColor: "#1f2937",
         titleColor: "#f3f4f6",
         bodyColor: "#d1d5db",
         callbacks: {
-          label: (ctx: { raw: unknown }) => fmtNum(Number(ctx.raw)),
+          label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
+            `${ctx.dataset.label}: ${fmtNum(Number(ctx.raw))}`,
         },
       },
     },
     scales: {
       x: {
+        stacked: true,
         ticks: { color: "#9ca3af" },
         grid: { color: "#374151" },
       },
       y: {
+        stacked: true,
         ticks: {
           color: "#9ca3af",
           callback: (value: unknown) => fmtNum(Number(value)),
@@ -245,6 +243,87 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         grid: { color: "#374151" },
       },
     },
+  };
+
+  // Portfolio Assets chart (area/line)
+  const portfolioChartData = {
+    labels: chartLabels,
+    datasets: [
+      {
+        label: "Total Portfolio Assets",
+        data: years.map((y) => y.portfolioAssets.total),
+        borderColor: "#3b82f6",
+        backgroundColor: "rgba(59, 130, 246, 0.15)",
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      },
+    ],
+  };
+
+  const portfolioChartOptions = {
+    ...baseChartOptions,
+    scales: {
+      x: { ...baseChartOptions.scales.x, stacked: false },
+      y: { ...baseChartOptions.scales.y, stacked: false },
+    },
+  };
+
+  // Cash Flow chart (stacked bars for income/withdrawals/shortfall + expense line)
+  const cashflowChartData = {
+    labels: chartLabels,
+    datasets: [
+      {
+        type: "bar" as const,
+        label: "Income",
+        data: years.map((y) => y.income.total),
+        backgroundColor: "#22c55e",
+        stack: "inflows",
+      },
+      {
+        type: "bar" as const,
+        label: "Withdrawals",
+        data: years.map((y) => y.withdrawals.total),
+        backgroundColor: "#f59e0b",
+        stack: "inflows",
+      },
+      {
+        type: "bar" as const,
+        label: "Shortfall",
+        data: years.map((y) => {
+          const gap = y.totalExpenses - y.totalIncome;
+          return gap > 0 ? gap : 0;
+        }),
+        backgroundColor: "#ef4444",
+        stack: "inflows",
+      },
+      {
+        type: "line" as const,
+        label: "Total Expenses",
+        data: years.map((y) => y.expenses.total),
+        borderColor: "#f87171",
+        backgroundColor: "transparent",
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.3,
+        fill: false,
+      },
+      {
+        type: "line" as const,
+        label: "Total Income",
+        data: years.map((y) => y.income.total),
+        borderColor: "#4ade80",
+        backgroundColor: "transparent",
+        borderWidth: 2,
+        borderDash: [5, 3],
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0.3,
+        fill: false,
+      },
+    ],
   };
 
   // ── Derived account ID lists ───────────────────────────────────────────────
@@ -589,13 +668,42 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         <span className="text-xs text-gray-500">(Multi-scenario support coming soon)</span>
       </div>
 
-      {/* Bar chart */}
+      {/* Chart selector + chart */}
       <div className="mb-6 rounded-lg border border-gray-700 bg-gray-900 p-4">
-        <h2 className="mb-3 text-sm font-semibold text-gray-300">
-          Annual Net Cash Flow — click a bar to jump to that year
-        </h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-300">
+            {chartView === "portfolio" ? "Total Portfolio Assets" : "Cash Flow Analysis"}
+            <span className="ml-2 text-xs font-normal text-gray-500">— click a point to jump to that year</span>
+          </h2>
+          <div className="flex rounded-md border border-gray-600 bg-gray-800 text-xs">
+            <button
+              onClick={() => setChartView("portfolio")}
+              className={`px-3 py-1.5 rounded-l-md ${
+                chartView === "portfolio"
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-400 hover:text-gray-200"
+              }`}
+            >
+              Portfolio
+            </button>
+            <button
+              onClick={() => setChartView("cashflow")}
+              className={`px-3 py-1.5 rounded-r-md ${
+                chartView === "cashflow"
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-400 hover:text-gray-200"
+              }`}
+            >
+              Cash Flow
+            </button>
+          </div>
+        </div>
         <div style={{ height: 300 }}>
-          <Bar data={chartData} options={chartOptions} />
+          {chartView === "portfolio" ? (
+            <Line data={portfolioChartData} options={portfolioChartOptions} />
+          ) : (
+            <Chart type="bar" data={cashflowChartData} options={baseChartOptions} />
+          )}
         </div>
       </div>
 
