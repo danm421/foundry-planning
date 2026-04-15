@@ -331,7 +331,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         type: "line" as const,
         label: "Total Expenses",
         data: years.map((y) => y.expenses.total),
-        borderColor: "#dc2626",
+        borderColor: "#ffffff",
         backgroundColor: "transparent",
         borderWidth: 2,
         pointRadius: 0,
