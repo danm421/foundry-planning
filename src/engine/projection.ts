@@ -13,7 +13,7 @@ import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
 import { computeLiabilities } from "./liabilities";
 import { calculateTaxes } from "./tax";
-import { applySavingsRules } from "./savings";
+import { applySavingsRules, computeEmployerMatch } from "./savings";
 import { executeWithdrawals } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 
@@ -365,19 +365,21 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     if (savings.employerTotal > 0) {
       for (const rule of data.savingsRules) {
         if (year < rule.startYear || year > rule.endYear) continue;
-        if (rule.employerMatchPct != null && rule.employerMatchCap != null) {
-          const match = income.salaries * rule.employerMatchCap * rule.employerMatchPct;
-          if (match === 0) continue;
-          accountBalances[rule.accountId] = (accountBalances[rule.accountId] ?? 0) + match;
-          if (accountLedgers[rule.accountId]) {
-            accountLedgers[rule.accountId].contributions += match;
-            accountLedgers[rule.accountId].endingValue += match;
-            accountLedgers[rule.accountId].entries.push({
-              category: "employer_match",
-              label: `Employer match (${(rule.employerMatchPct * 100).toFixed(0)}% on ${(rule.employerMatchCap * 100).toFixed(1)}% of salary)`,
-              amount: match,
-            });
-          }
+        const match = computeEmployerMatch(rule, income.salaries);
+        if (match === 0) continue;
+        accountBalances[rule.accountId] = (accountBalances[rule.accountId] ?? 0) + match;
+        if (accountLedgers[rule.accountId]) {
+          accountLedgers[rule.accountId].contributions += match;
+          accountLedgers[rule.accountId].endingValue += match;
+          const label =
+            rule.employerMatchCap != null
+              ? `Employer match (${(rule.employerMatchPct! * 100).toFixed(0)}% on ${(rule.employerMatchCap * 100).toFixed(1)}% of salary)`
+              : `Employer match (${(rule.employerMatchPct! * 100).toFixed(2)}% of salary)`;
+          accountLedgers[rule.accountId].entries.push({
+            category: "employer_match",
+            label,
+            amount: match,
+          });
         }
       }
     }

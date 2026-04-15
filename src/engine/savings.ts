@@ -6,6 +6,20 @@ interface SavingsResult {
   employerTotal: number;
 }
 
+/**
+ * Annual employer match for a rule against a given year's salary.
+ * - Both pct + cap set → pct × cap × salary (e.g. "50% match up to 6% of salary").
+ * - Only pct set       → pct × salary        (e.g. "3% of salary, flat").
+ * - Neither set        → 0.
+ */
+export function computeEmployerMatch(rule: SavingsRule, totalSalaryIncome: number): number {
+  if (rule.employerMatchPct == null) return 0;
+  if (rule.employerMatchCap != null) {
+    return totalSalaryIncome * rule.employerMatchCap * rule.employerMatchPct;
+  }
+  return totalSalaryIncome * rule.employerMatchPct;
+}
+
 // Apply savings rules at their full annual amount (respecting the optional annualLimit).
 // The projection engine funds these contributions from the household checking account,
 // which may require pulling from the withdrawal strategy if the balance would go negative.
@@ -37,11 +51,7 @@ export function applySavingsRules(
 
     // Employer match is not funded from household cash — it's a gift from the employer
     // deposited directly into the account.
-    if (rule.employerMatchPct != null && rule.employerMatchCap != null) {
-      const matchableAmount = totalSalaryIncome * rule.employerMatchCap;
-      const employerMatch = matchableAmount * rule.employerMatchPct;
-      employerTotal += employerMatch;
-    }
+    employerTotal += computeEmployerMatch(rule, totalSalaryIncome);
   }
 
   return { byAccount, total, employerTotal };
