@@ -55,11 +55,22 @@ function AssumptionsIcon() {
   );
 }
 
+function ImportIcon() {
+  return (
+    <svg className={ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  );
+}
+
 const TABS: SidebarTab[] = [
   { label: "Family", href: "family", icon: <FamilyIcon /> },
   { label: "Balance Sheet", href: "balance-sheet", icon: <BalanceSheetIcon /> },
   { label: "Income, Expenses & Savings", href: "income-expenses", icon: <CashflowIcon /> },
   { label: "Assumptions", href: "assumptions", icon: <AssumptionsIcon /> },
+  { label: "Import", href: "import", icon: <ImportIcon /> },
 ];
 
 export default function ClientDataSidebar({ clientId }: ClientDataSidebarProps) {
