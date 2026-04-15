@@ -24,6 +24,9 @@ export const accountCategoryEnum = pgEnum("account_category", [
   "taxable",
   "cash",
   "retirement",
+  "real_estate",
+  "business",
+  "life_insurance",
 ]);
 
 export const accountSubTypeEnum = pgEnum("account_sub_type", [
@@ -37,6 +40,21 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
   "529",
   "trust",
   "other",
+  // real_estate sub types
+  "primary_residence",
+  "rental_property",
+  "commercial_property",
+  // business sub types
+  "sole_proprietorship",
+  "partnership",
+  "s_corp",
+  "c_corp",
+  "llc",
+  // life_insurance sub types
+  "term",
+  "whole_life",
+  "universal_life",
+  "variable_life",
 ]);
 
 export const ownerEnum = pgEnum("owner", ["client", "spouse", "joint"]);
@@ -65,7 +83,8 @@ export const clients = pgTable("clients", {
   id: uuid("id").defaultRandom().primaryKey(),
   firmId: text("firm_id").notNull(),
   advisorId: text("advisor_id").notNull(),
-  name: text("name").notNull(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
   dateOfBirth: date("date_of_birth").notNull(),
   retirementAge: integer("retirement_age").notNull(),
   planEndAge: integer("plan_end_age").notNull(),
@@ -204,6 +223,9 @@ export const liabilities = pgTable("liabilities", {
     .default("0"),
   startYear: integer("start_year").notNull(),
   endYear: integer("end_year").notNull(),
+  linkedPropertyId: uuid("linked_property_id").references(() => accounts.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -323,6 +345,10 @@ export const liabilitiesRelations = relations(liabilities, ({ one }) => ({
   scenario: one(scenarios, {
     fields: [liabilities.scenarioId],
     references: [scenarios.id],
+  }),
+  linkedProperty: one(accounts, {
+    fields: [liabilities.linkedPropertyId],
+    references: [accounts.id],
   }),
 }));
 

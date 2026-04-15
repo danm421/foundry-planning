@@ -11,6 +11,7 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSpouse, setShowSpouse] = useState(false);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -21,20 +22,23 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
     const data = new FormData(form);
 
     const body: Record<string, string | number | undefined> = {
-      name: data.get("name") as string,
+      firstName: data.get("firstName") as string,
+      lastName: data.get("lastName") as string,
       dateOfBirth: data.get("dateOfBirth") as string,
       retirementAge: Number(data.get("retirementAge")),
       planEndAge: Number(data.get("planEndAge")),
       filingStatus: data.get("filingStatus") as string,
     };
 
-    const spouseName = data.get("spouseName") as string;
-    const spouseDob = data.get("spouseDob") as string;
-    const spouseRetirementAge = data.get("spouseRetirementAge") as string;
+    if (showSpouse) {
+      const spouseName = data.get("spouseName") as string;
+      const spouseDob = data.get("spouseDob") as string;
+      const spouseRetirementAge = data.get("spouseRetirementAge") as string;
 
-    if (spouseName) body.spouseName = spouseName;
-    if (spouseDob) body.spouseDob = spouseDob;
-    if (spouseRetirementAge) body.spouseRetirementAge = Number(spouseRetirementAge);
+      if (spouseName) body.spouseName = spouseName;
+      if (spouseDob) body.spouseDob = spouseDob;
+      if (spouseRetirementAge) body.spouseRetirementAge = Number(spouseRetirementAge);
+    }
 
     try {
       const res = await fetch("/api/clients", {
@@ -64,13 +68,26 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
       )}
 
       <div className="grid grid-cols-2 gap-4">
-        <div className="col-span-2">
-          <label className="block text-sm font-medium text-gray-700" htmlFor="name">
-            Full Name <span className="text-red-500">*</span>
+        <div>
+          <label className="block text-sm font-medium text-gray-700" htmlFor="firstName">
+            First Name <span className="text-red-500">*</span>
           </label>
           <input
-            id="name"
-            name="name"
+            id="firstName"
+            name="firstName"
+            type="text"
+            required
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700" htmlFor="lastName">
+            Last Name <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="lastName"
+            name="lastName"
             type="text"
             required
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -141,46 +158,57 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
       </div>
 
       <div className="border-t border-gray-200 pt-4">
-        <p className="mb-3 text-sm font-medium text-gray-500">Spouse (optional)</p>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700" htmlFor="spouseName">
-              Spouse Name
-            </label>
-            <input
-              id="spouseName"
-              name="spouseName"
-              type="text"
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showSpouse}
+            onChange={(e) => setShowSpouse(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <span className="text-sm font-medium text-gray-700">Add Spouse</span>
+        </label>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700" htmlFor="spouseDob">
-              Spouse Date of Birth
-            </label>
-            <input
-              id="spouseDob"
-              name="spouseDob"
-              type="date"
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
+        {showSpouse && (
+          <div className="mt-3 grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700" htmlFor="spouseName">
+                Spouse Name
+              </label>
+              <input
+                id="spouseName"
+                name="spouseName"
+                type="text"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700" htmlFor="spouseRetirementAge">
-              Spouse Retirement Age
-            </label>
-            <input
-              id="spouseRetirementAge"
-              name="spouseRetirementAge"
-              type="number"
-              min={50}
-              max={85}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700" htmlFor="spouseDob">
+                Spouse Date of Birth
+              </label>
+              <input
+                id="spouseDob"
+                name="spouseDob"
+                type="date"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700" htmlFor="spouseRetirementAge">
+                Spouse Retirement Age
+              </label>
+              <input
+                id="spouseRetirementAge"
+                name="spouseRetirementAge"
+                type="number"
+                min={50}
+                max={85}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="flex justify-end pt-2">

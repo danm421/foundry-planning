@@ -12,7 +12,8 @@ export interface ClientData {
 }
 
 export interface ClientInfo {
-  name: string;
+  firstName: string;
+  lastName: string;
   dateOfBirth: string;
   retirementAge: number;
   planEndAge: number;
@@ -25,7 +26,7 @@ export interface ClientInfo {
 export interface Account {
   id: string;
   name: string;
-  category: "taxable" | "cash" | "retirement";
+  category: "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
   subType: string;
   owner: "client" | "spouse" | "joint";
   value: number;
@@ -64,6 +65,7 @@ export interface Liability {
   monthlyPayment: number;
   startYear: number;
   endYear: number;
+  linkedPropertyId?: string;
 }
 
 export interface SavingsRule {
@@ -137,9 +139,15 @@ export interface ProjectionYear {
     taxable: Record<string, number>;
     cash: Record<string, number>;
     retirement: Record<string, number>;
+    realEstate: Record<string, number>;
+    business: Record<string, number>;
+    lifeInsurance: Record<string, number>;
     taxableTotal: number;
     cashTotal: number;
     retirementTotal: number;
+    realEstateTotal: number;
+    businessTotal: number;
+    lifeInsuranceTotal: number;
     total: number;
   };
 

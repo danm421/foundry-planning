@@ -14,7 +14,7 @@ export async function GET() {
       .select()
       .from(clients)
       .where(eq(clients.firmId, firmId))
-      .orderBy(asc(clients.name));
+      .orderBy(asc(clients.lastName), asc(clients.firstName));
 
     return NextResponse.json(rows);
   } catch (err) {
@@ -37,7 +37,8 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
-      name,
+      firstName,
+      lastName,
       dateOfBirth,
       retirementAge,
       planEndAge,
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
       spouseRetirementAge,
     } = body;
 
-    if (!name || !dateOfBirth || !retirementAge || !planEndAge || !filingStatus) {
+    if (!firstName || !lastName || !dateOfBirth || !retirementAge || !planEndAge || !filingStatus) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
@@ -59,7 +60,8 @@ export async function POST(request: NextRequest) {
       .values({
         firmId,
         advisorId: userId,
-        name,
+        firstName,
+        lastName,
         dateOfBirth,
         retirementAge: Number(retirementAge),
         planEndAge: Number(planEndAge),

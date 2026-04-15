@@ -143,23 +143,41 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       taxable: {} as Record<string, number>,
       cash: {} as Record<string, number>,
       retirement: {} as Record<string, number>,
+      realEstate: {} as Record<string, number>,
+      business: {} as Record<string, number>,
+      lifeInsurance: {} as Record<string, number>,
       taxableTotal: 0,
       cashTotal: 0,
       retirementTotal: 0,
+      realEstateTotal: 0,
+      businessTotal: 0,
+      lifeInsuranceTotal: 0,
       total: 0,
+    };
+
+    const categoryToKey: Record<string, "taxable" | "cash" | "retirement" | "realEstate" | "business" | "lifeInsurance"> = {
+      taxable: "taxable",
+      cash: "cash",
+      retirement: "retirement",
+      real_estate: "realEstate",
+      business: "business",
+      life_insurance: "lifeInsurance",
     };
 
     for (const acct of data.accounts) {
       const val = accountBalances[acct.id] ?? 0;
-      portfolioAssets[acct.category][acct.id] = val;
-      if (acct.category === "taxable") portfolioAssets.taxableTotal += val;
-      else if (acct.category === "cash") portfolioAssets.cashTotal += val;
-      else if (acct.category === "retirement") portfolioAssets.retirementTotal += val;
+      const key = categoryToKey[acct.category] ?? "taxable";
+      portfolioAssets[key][acct.id] = val;
+      const totalKey = `${key}Total` as keyof typeof portfolioAssets;
+      (portfolioAssets[totalKey] as number) += val;
     }
     portfolioAssets.total =
       portfolioAssets.taxableTotal +
       portfolioAssets.cashTotal +
-      portfolioAssets.retirementTotal;
+      portfolioAssets.retirementTotal +
+      portfolioAssets.realEstateTotal +
+      portfolioAssets.businessTotal +
+      portfolioAssets.lifeInsuranceTotal;
 
     // 9. Assemble the year
     const expenses = {

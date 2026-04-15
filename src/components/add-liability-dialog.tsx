@@ -5,9 +5,10 @@ import AddLiabilityForm from "./forms/add-liability-form";
 
 interface AddLiabilityDialogProps {
   clientId: string;
+  realEstateAccounts?: { id: string; name: string }[];
 }
 
-export default function AddLiabilityDialog({ clientId }: AddLiabilityDialogProps) {
+export default function AddLiabilityDialog({ clientId, realEstateAccounts }: AddLiabilityDialogProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -39,7 +40,7 @@ export default function AddLiabilityDialog({ clientId }: AddLiabilityDialogProps
                 </svg>
               </button>
             </div>
-            <AddLiabilityForm clientId={clientId} onSuccess={() => setOpen(false)} />
+            <AddLiabilityForm clientId={clientId} realEstateAccounts={realEstateAccounts} onSuccess={() => setOpen(false)} />
           </div>
         </div>
       )}

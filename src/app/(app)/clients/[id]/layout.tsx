@@ -14,7 +14,7 @@ interface ClientLayoutProps {
 const tabs = [
   { label: "Balance Sheet", href: "balance-sheet" },
   { label: "Income & Expenses", href: "income-expenses" },
-  { label: "Cash Flow", href: "cash-flow" },
+  { label: "Cash Flow", href: "cashflow" },
   { label: "Settings", href: "settings" },
 ];
 
@@ -40,9 +40,9 @@ export default async function ClientLayout({ children, params }: ClientLayoutPro
             Clients
           </Link>
           <span className="mx-2">/</span>
-          <span className="text-gray-900">{client.name}</span>
+          <span className="text-gray-900">{client.firstName} {client.lastName}</span>
         </nav>
-        <h1 className="text-2xl font-bold text-gray-900">{client.name}</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{client.firstName} {client.lastName}</h1>
       </div>
 
       {/* Tab navigation */}

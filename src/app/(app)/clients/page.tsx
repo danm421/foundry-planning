@@ -12,7 +12,7 @@ export default async function ClientsPage() {
     .select()
     .from(clients)
     .where(eq(clients.firmId, firmId))
-    .orderBy(asc(clients.name));
+    .orderBy(asc(clients.lastName), asc(clients.firstName));
 
   const filingStatusLabels: Record<string, string> = {
     single: "Single",
@@ -56,7 +56,7 @@ export default async function ClientsPage() {
                       href={`/clients/${client.id}/balance-sheet`}
                       className="font-medium text-blue-600 hover:text-blue-800"
                     >
-                      {client.name}
+                      {client.firstName} {client.lastName}
                     </Link>
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">

@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 
 interface AddLiabilityFormProps {
   clientId: string;
+  realEstateAccounts?: { id: string; name: string }[];
   onSuccess?: () => void;
 }
 
-export default function AddLiabilityForm({ clientId, onSuccess }: AddLiabilityFormProps) {
+export default function AddLiabilityForm({ clientId, realEstateAccounts, onSuccess }: AddLiabilityFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +24,8 @@ export default function AddLiabilityForm({ clientId, onSuccess }: AddLiabilityFo
     const form = e.currentTarget;
     const data = new FormData(form);
 
+    const linkedPropertyId = data.get("linkedPropertyId") as string;
+
     const body = {
       name: data.get("name") as string,
       balance: data.get("balance") as string,
@@ -30,6 +33,7 @@ export default function AddLiabilityForm({ clientId, onSuccess }: AddLiabilityFo
       monthlyPayment: data.get("monthlyPayment") as string,
       startYear: Number(data.get("startYear")),
       endYear: Number(data.get("endYear")),
+      linkedPropertyId: linkedPropertyId || null,
     };
 
     try {
@@ -120,9 +124,23 @@ export default function AddLiabilityForm({ clientId, onSuccess }: AddLiabilityFo
           />
         </div>
 
-        <div>
-          {/* spacer */}
-        </div>
+        {realEstateAccounts && realEstateAccounts.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700" htmlFor="linkedPropertyId">
+              Linked Property
+            </label>
+            <select
+              id="linkedPropertyId"
+              name="linkedPropertyId"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">None</option>
+              {realEstateAccounts.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700" htmlFor="startYear">

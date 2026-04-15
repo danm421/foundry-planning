@@ -3,9 +3,11 @@
 import { useState } from "react";
 import AddAccountForm from "./forms/add-account-form";
 
+type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
+
 interface AddAccountDialogProps {
   clientId: string;
-  category: "taxable" | "cash" | "retirement";
+  category: AccountCategory;
   label: string;
 }
 

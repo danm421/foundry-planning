@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { db } from "@/db";
-import { clients, scenarios, accounts, incomes, expenses, savingsRules, withdrawalStrategies } from "@/db/schema";
+import { clients, scenarios, accounts, incomes, expenses, savingsRules, withdrawalStrategies, planSettings } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import IncomeExpensesView from "@/components/income-expenses-view";
@@ -38,13 +38,31 @@ export default async function IncomeExpensesPage({ params }: IncomeExpensesPageP
   }
 
   // Fetch all data in parallel
-  const [incomeRows, expenseRows, savingsRuleRows, withdrawalRows, accountRows] = await Promise.all([
+  const [incomeRows, expenseRows, savingsRuleRows, withdrawalRows, accountRows, planSettingsRows] = await Promise.all([
     db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
     db.select().from(expenses).where(and(eq(expenses.clientId, id), eq(expenses.scenarioId, scenario.id))),
     db.select().from(savingsRules).where(and(eq(savingsRules.clientId, id), eq(savingsRules.scenarioId, scenario.id))),
     db.select().from(withdrawalStrategies).where(and(eq(withdrawalStrategies.clientId, id), eq(withdrawalStrategies.scenarioId, scenario.id))),
     db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
+    db.select().from(planSettings).where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
   ]);
+
+  const settings = planSettingsRows[0];
+
+  // Compute key years from client data
+  const clientBirthYear = new Date(client.dateOfBirth).getFullYear();
+  const clientRetirementYear = clientBirthYear + client.retirementAge;
+  const clientEndYear = clientBirthYear + client.planEndAge;
+
+  let spouseRetirementYear: number | undefined;
+  let spouseEndYear: number | undefined;
+  if (client.spouseDob) {
+    const spouseBirthYear = new Date(client.spouseDob).getFullYear();
+    if (client.spouseRetirementAge) {
+      spouseRetirementYear = spouseBirthYear + client.spouseRetirementAge;
+    }
+    spouseEndYear = spouseBirthYear + client.planEndAge;
+  }
 
   return (
     <IncomeExpensesView
@@ -54,6 +72,14 @@ export default async function IncomeExpensesPage({ params }: IncomeExpensesPageP
       initialSavingsRules={savingsRuleRows}
       initialWithdrawalStrategies={withdrawalRows}
       accounts={accountRows}
+      clientInfo={{
+        clientRetirementYear,
+        clientEndYear,
+        spouseRetirementYear,
+        spouseEndYear,
+        planStartYear: settings?.planStartYear ?? new Date().getFullYear(),
+        planEndYear: settings?.planEndYear ?? new Date().getFullYear() + 30,
+      }}
     />
   );
 }

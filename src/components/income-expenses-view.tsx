@@ -57,6 +57,15 @@ interface Account {
   subType: string;
 }
 
+interface ClientInfo {
+  clientRetirementYear: number;
+  clientEndYear: number;
+  spouseRetirementYear?: number;
+  spouseEndYear?: number;
+  planStartYear: number;
+  planEndYear: number;
+}
+
 interface IncomeExpensesViewProps {
   clientId: string;
   initialIncomes: Income[];
@@ -64,6 +73,7 @@ interface IncomeExpensesViewProps {
   initialSavingsRules: SavingsRule[];
   initialWithdrawalStrategies: WithdrawalStrategy[];
   accounts: Account[];
+  clientInfo?: ClientInfo;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -105,21 +115,75 @@ const OWNER_LABELS: Record<Owner, string> = {
   joint: "Joint",
 };
 
+// ── Year Quick-Fill Button ──────────────────────────────────────────────────
+
+interface YearQuickFillProps {
+  inputId: string;
+  clientInfo?: ClientInfo;
+  owner?: Owner;
+}
+
+function YearQuickFill({ inputId, clientInfo, owner }: YearQuickFillProps) {
+  if (!clientInfo) return null;
+
+  function setYear(year: number) {
+    const el = document.getElementById(inputId) as HTMLInputElement | null;
+    if (el) {
+      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      nativeSetter?.call(el, String(year));
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  }
+
+  const retYear = owner === "spouse" && clientInfo.spouseRetirementYear
+    ? clientInfo.spouseRetirementYear
+    : clientInfo.clientRetirementYear;
+
+  const endYear = owner === "spouse" && clientInfo.spouseEndYear
+    ? clientInfo.spouseEndYear
+    : clientInfo.clientEndYear;
+
+  return (
+    <div className="mt-1 flex gap-1">
+      <button
+        type="button"
+        onClick={() => setYear(retYear)}
+        className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 hover:bg-blue-100 hover:text-blue-700"
+        title={`Retirement: ${retYear}`}
+      >
+        Ret
+      </button>
+      <button
+        type="button"
+        onClick={() => setYear(endYear)}
+        className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 hover:bg-blue-100 hover:text-blue-700"
+        title={`Life Expectancy: ${endYear}`}
+      >
+        End
+      </button>
+    </div>
+  );
+}
+
 // ── Add Income Dialog ─────────────────────────────────────────────────────────
 
 interface AddIncomeDialogProps {
   clientId: string;
   defaultType: IncomeType;
   accounts: Account[];
+  clientInfo?: ClientInfo;
   onAdd: (income: Income) => void;
 }
 
-function AddIncomeDialog({ clientId, defaultType, accounts, onAdd }: AddIncomeDialogProps) {
+function AddIncomeDialog({ clientId, defaultType, accounts, clientInfo, onAdd }: AddIncomeDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [type, setType] = useState<IncomeType>(defaultType);
+  const [owner, setOwner] = useState<Owner>("client");
   const currentYear = new Date().getFullYear();
+
+  const isSocialSecurity = type === "social_security";
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -127,15 +191,30 @@ function AddIncomeDialog({ clientId, defaultType, accounts, onAdd }: AddIncomeDi
     setError(null);
 
     const data = new FormData(e.currentTarget);
+
+    let startYear: string;
+    let endYear: string;
+    let claimingAge: string | null = null;
+
+    if (isSocialSecurity) {
+      claimingAge = data.get("claimingAge") as string;
+      startYear = String(clientInfo?.planStartYear ?? currentYear);
+      endYear = String(clientInfo?.planEndYear ?? currentYear + 30);
+    } else {
+      startYear = data.get("startYear") as string;
+      endYear = data.get("endYear") as string;
+      claimingAge = data.get("claimingAge") ? data.get("claimingAge") as string : null;
+    }
+
     const body = {
       type: data.get("type") as string,
       name: data.get("name") as string,
       annualAmount: data.get("annualAmount") as string,
-      startYear: data.get("startYear") as string,
-      endYear: data.get("endYear") as string,
+      startYear,
+      endYear,
       growthRate: String(Number(data.get("growthRate") as string) / 100),
       owner: data.get("owner") as string,
-      claimingAge: data.get("claimingAge") ? data.get("claimingAge") as string : null,
+      claimingAge,
       linkedEntityId: data.get("linkedEntityId") || null,
     };
 
@@ -162,7 +241,6 @@ function AddIncomeDialog({ clientId, defaultType, accounts, onAdd }: AddIncomeDi
   }
 
   const needsLinkedEntity = type === "business" || type === "trust";
-  const needsClaimingAge = type === "social_security";
 
   return (
     <>
@@ -216,6 +294,8 @@ function AddIncomeDialog({ clientId, defaultType, accounts, onAdd }: AddIncomeDi
                   <select
                     id="inc-owner"
                     name="owner"
+                    value={owner}
+                    onChange={(e) => setOwner(e.target.value as Owner)}
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   >
                     <option value="client">Client</option>
@@ -261,50 +341,59 @@ function AddIncomeDialog({ clientId, defaultType, accounts, onAdd }: AddIncomeDi
                     step="0.1"
                     min={0}
                     max={30}
-                    defaultValue={3}
+                    defaultValue={isSocialSecurity ? 2 : 3}
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="inc-start">Start Year <span className="text-red-500">*</span></label>
-                  <input
-                    id="inc-start"
-                    name="startYear"
-                    type="number"
-                    required
-                    defaultValue={currentYear}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
+                {isSocialSecurity ? (
+                  <>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700" htmlFor="inc-claiming">Claiming Age</label>
+                      <input
+                        id="inc-claiming"
+                        name="claimingAge"
+                        type="number"
+                        min={62}
+                        max={70}
+                        defaultValue={67}
+                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                      <p className="mt-1 text-xs text-gray-400">
+                        Start/end years are auto-set to plan range. Benefits begin at claiming age.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700" htmlFor="inc-start">Start Year <span className="text-red-500">*</span></label>
+                      <input
+                        id="inc-start"
+                        name="startYear"
+                        type="number"
+                        required
+                        defaultValue={currentYear}
+                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                      <YearQuickFill inputId="inc-start" clientInfo={clientInfo} owner={owner} />
+                    </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="inc-end">End Year <span className="text-red-500">*</span></label>
-                  <input
-                    id="inc-end"
-                    name="endYear"
-                    type="number"
-                    required
-                    defaultValue={currentYear + 20}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700" htmlFor="inc-end">End Year <span className="text-red-500">*</span></label>
+                      <input
+                        id="inc-end"
+                        name="endYear"
+                        type="number"
+                        required
+                        defaultValue={currentYear + 20}
+                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                      <YearQuickFill inputId="inc-end" clientInfo={clientInfo} owner={owner} />
+                    </div>
+                  </>
+                )}
               </div>
-
-              {needsClaimingAge && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="inc-claiming">Claiming Age</label>
-                  <input
-                    id="inc-claiming"
-                    name="claimingAge"
-                    type="number"
-                    min={62}
-                    max={70}
-                    defaultValue={67}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-              )}
 
               {needsLinkedEntity && accounts.length > 0 && (
                 <div>
@@ -344,10 +433,11 @@ function AddIncomeDialog({ clientId, defaultType, accounts, onAdd }: AddIncomeDi
 interface AddExpenseDialogProps {
   clientId: string;
   defaultType: ExpenseType;
+  clientInfo?: ClientInfo;
   onAdd: (expense: Expense) => void;
 }
 
-function AddExpenseDialog({ clientId, defaultType, onAdd }: AddExpenseDialogProps) {
+function AddExpenseDialog({ clientId, defaultType, clientInfo, onAdd }: AddExpenseDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -486,6 +576,7 @@ function AddExpenseDialog({ clientId, defaultType, onAdd }: AddExpenseDialogProp
                     defaultValue={currentYear}
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
+                  <YearQuickFill inputId="exp-start" clientInfo={clientInfo} />
                 </div>
 
                 <div>
@@ -498,6 +589,7 @@ function AddExpenseDialog({ clientId, defaultType, onAdd }: AddExpenseDialogProp
                     defaultValue={currentYear + 20}
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
+                  <YearQuickFill inputId="exp-end" clientInfo={clientInfo} />
                 </div>
               </div>
 
@@ -920,6 +1012,7 @@ export default function IncomeExpensesView({
   initialSavingsRules,
   initialWithdrawalStrategies,
   accounts,
+  clientInfo,
 }: IncomeExpensesViewProps) {
   const [incomeList, setIncomeList] = useState<Income[]>(initialIncomes);
   const [expenseList, setExpenseList] = useState<Expense[]>(initialExpenses);
@@ -1005,6 +1098,7 @@ export default function IncomeExpensesView({
                     clientId={clientId}
                     defaultType={group.types[0]}
                     accounts={accounts}
+                    clientInfo={clientInfo}
                     onAdd={(income) => setIncomeList((prev) => [...prev, income])}
                   />
                 </div>
@@ -1062,6 +1156,7 @@ export default function IncomeExpensesView({
                   <AddExpenseDialog
                     clientId={clientId}
                     defaultType={group.types[0]}
+                    clientInfo={clientInfo}
                     onAdd={(expense) => setExpenseList((prev) => [...prev, expense])}
                   />
                 </div>

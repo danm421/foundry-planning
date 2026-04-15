@@ -71,7 +71,8 @@ export async function GET(
     // Convert Drizzle decimal strings to numbers for the engine
     return NextResponse.json({
       client: {
-        name: client.name,
+        firstName: client.firstName,
+        lastName: client.lastName,
         dateOfBirth: client.dateOfBirth,
         retirementAge: client.retirementAge,
         planEndAge: client.planEndAge,
@@ -119,6 +120,7 @@ export async function GET(
         monthlyPayment: parseFloat(l.monthlyPayment),
         startYear: l.startYear,
         endYear: l.endYear,
+        linkedPropertyId: l.linkedPropertyId ?? undefined,
       })),
       savingsRules: savingsRuleRows.map((s) => ({
         id: s.id,

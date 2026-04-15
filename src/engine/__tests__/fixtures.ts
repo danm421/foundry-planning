@@ -11,7 +11,8 @@ import type {
 } from "../types";
 
 export const baseClient: ClientInfo = {
-  name: "John Smith",
+  firstName: "John",
+  lastName: "Smith",
   dateOfBirth: "1970-01-01",
   retirementAge: 65,
   planEndAge: 90,
