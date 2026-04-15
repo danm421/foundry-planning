@@ -18,14 +18,14 @@ describe("parseAIResponse", () => {
       "Let me analyze this document carefully.\n\nThe statement shows several accounts.\n\n" +
       '```json\n{"accounts": [{"name": "401k", "value": 50000}]}\n```';
     const result = parseAIResponse(input);
-    expect(result.accounts[0].name).toBe("401k");
+    expect((result.accounts as Array<{name: string}>)[0].name).toBe("401k");
   });
 
   it("finds JSON via balanced brace matching from end", () => {
     const input =
       'Some text with {braces} in it, then the real JSON: {"accounts": [{"name": "Roth"}]}';
     const result = parseAIResponse(input);
-    expect(result.accounts[0].name).toBe("Roth");
+    expect((result.accounts as Array<{name: string}>)[0].name).toBe("Roth");
   });
 
   it("falls back to first/last brace extraction", () => {
