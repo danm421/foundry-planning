@@ -1,5 +1,4 @@
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { join } from "path";
 
 /**
  * Extract text from a PDF buffer using pdfjs-dist directly.
@@ -12,8 +11,13 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
     const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
     // Point worker to the actual file in node_modules
-    const pdfPath = fileURLToPath(import.meta.resolve("pdfjs-dist/legacy/build/pdf.mjs"));
-    pdfjsLib.GlobalWorkerOptions.workerSrc = join(dirname(pdfPath), "pdf.worker.mjs");
+    // Use require.resolve which works in both Node.js and Turbopack
+    const workerPath = join(
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require.resolve("pdfjs-dist/package.json").replace("package.json", ""),
+      "legacy/build/pdf.worker.mjs"
+    );
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
 
     const doc = await pdfjsLib.getDocument({
       data: new Uint8Array(buffer),
