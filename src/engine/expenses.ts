@@ -6,6 +6,7 @@ interface ExpenseBreakdown {
   other: number;
   insurance: number;
   total: number;
+  bySource: Record<string, number>;
 }
 
 export function computeExpenses(
@@ -18,6 +19,7 @@ export function computeExpenses(
     other: 0,
     insurance: 0,
     total: 0,
+    bySource: {},
   };
 
   for (const exp of expenses) {
@@ -26,6 +28,7 @@ export function computeExpenses(
     const yearsElapsed = year - exp.startYear;
     const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, yearsElapsed);
     result[exp.type] += amount;
+    result.bySource[exp.id] = amount;
   }
 
   result.total = result.living + result.other + result.insurance;

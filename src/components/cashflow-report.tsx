@@ -79,6 +79,53 @@ const DRILL_LABELS: Record<string, string> = {
   savings: "Savings",
   withdrawals: "Withdrawals",
   portfolio: "Portfolio Assets",
+  // Income sub-types
+  salaries: "Salaries",
+  socialSecurity: "Social Security",
+  business_income: "Business",
+  trust_income: "Trust",
+  deferred: "Deferred",
+  capitalGains: "Capital Gains",
+  other_income: "Other",
+  // Expense sub-types
+  living: "Living Expenses",
+  other_expense: "Other Expenses",
+  insurance: "Insurance",
+  // Portfolio sub-types
+  taxable: "Taxable",
+  cash: "Cash",
+  retirement: "Retirement",
+  realEstate: "Real Estate",
+  business_assets: "Business",
+  lifeInsurance: "Life Insurance",
+};
+
+// Map from income drill segment → income type value in ClientData
+const INCOME_SEGMENT_TO_TYPE: Record<string, string> = {
+  salaries: "salary",
+  socialSecurity: "social_security",
+  business_income: "business",
+  trust_income: "trust",
+  deferred: "deferred",
+  capitalGains: "capital_gains",
+  other_income: "other",
+};
+
+// Map from expense drill segment → expense type value in ClientData
+const EXPENSE_SEGMENT_TO_TYPE: Record<string, string> = {
+  living: "living",
+  other_expense: "other",
+  insurance: "insurance",
+};
+
+// Map from portfolio drill segment → account category value in ClientData
+const PORTFOLIO_SEGMENT_TO_CATEGORY: Record<string, string> = {
+  taxable: "taxable",
+  cash: "cash",
+  retirement: "retirement",
+  realEstate: "real_estate",
+  business_assets: "business",
+  lifeInsurance: "life_insurance",
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -92,6 +139,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const [error, setError] = useState<string | null>(null);
   const [years, setYears] = useState<ProjectionYear[]>([]);
   const [accountNames, setAccountNames] = useState<Record<string, string>>({});
+  const [clientData, setClientData] = useState<ClientData | null>(null);
   const [drillPath, setDrillPath] = useState<string[]>([]);
   const [ledgerModal, setLedgerModal] = useState<LedgerModal | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
@@ -115,6 +163,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           names[acc.id] = acc.name;
         }
         setAccountNames(names);
+        setClientData(data);
 
         // Run projection client-side
         const projection = runProjection(data);
@@ -207,6 +256,55 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     new Set(years.flatMap((y) => Object.keys(y.withdrawals.byAccount)))
   );
 
+  // ── Derived income/expense source maps from clientData ────────────────────
+
+  // incomesByType: segment key → array of income IDs with that type
+  const incomesByType: Record<string, string[]> = {};
+  const incomeNames: Record<string, string> = {};
+  if (clientData) {
+    for (const inc of clientData.incomes) {
+      incomeNames[inc.id] = inc.name;
+      // Find the segment key for this income type
+      const segmentKey = Object.entries(INCOME_SEGMENT_TO_TYPE).find(
+        ([, t]) => t === inc.type
+      )?.[0];
+      if (segmentKey) {
+        if (!incomesByType[segmentKey]) incomesByType[segmentKey] = [];
+        incomesByType[segmentKey].push(inc.id);
+      }
+    }
+  }
+
+  // expensesByType: segment key → array of expense IDs with that type
+  const expensesByType: Record<string, string[]> = {};
+  const expenseNames: Record<string, string> = {};
+  if (clientData) {
+    for (const exp of clientData.expenses) {
+      expenseNames[exp.id] = exp.name;
+      const segmentKey = Object.entries(EXPENSE_SEGMENT_TO_TYPE).find(
+        ([, t]) => t === exp.type
+      )?.[0];
+      if (segmentKey) {
+        if (!expensesByType[segmentKey]) expensesByType[segmentKey] = [];
+        expensesByType[segmentKey].push(exp.id);
+      }
+    }
+  }
+
+  // accountsByCategory: segment key → array of account IDs with that category
+  const accountsByCategory: Record<string, string[]> = {};
+  if (clientData) {
+    for (const acc of clientData.accounts) {
+      const segmentKey = Object.entries(PORTFOLIO_SEGMENT_TO_CATEGORY).find(
+        ([, c]) => c === acc.category
+      )?.[0];
+      if (segmentKey) {
+        if (!accountsByCategory[segmentKey]) accountsByCategory[segmentKey] = [];
+        accountsByCategory[segmentKey].push(acc.id);
+      }
+    }
+  }
+
   // ── Drillable header button ────────────────────────────────────────────────
 
   function DrillBtn({ segment, label }: { segment: string; label: string }) {
@@ -226,6 +324,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   function buildColumns(): ColumnDef<ProjectionYear>[] {
     const level = drillPath[0];
+    const subLevel = drillPath[1];
 
     // Always-present base columns
     const baseColumns: ColumnDef<ProjectionYear>[] = [
@@ -258,35 +357,82 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       ];
     }
 
-    // Drill-down: Income
+    // ── Income drill-down ──────────────────────────────────────────────────
+
     if (level === "income") {
+      // Level 2: individual sources for a specific income type
+      if (subLevel && INCOME_SEGMENT_TO_TYPE[subLevel] != null) {
+        const sourceIds = incomesByType[subLevel] ?? [];
+        return [
+          ...baseColumns,
+          ...sourceIds.map((id) =>
+            numCol(
+              `income_src_${id}`,
+              incomeNames[id] ?? id,
+              (r) => r.income.bySource[id] ?? 0
+            )
+          ),
+          numCol(
+            "income_subtype_total",
+            `${DRILL_LABELS[subLevel] ?? subLevel} Total`,
+            (r) => sourceIds.reduce((sum, id) => sum + (r.income.bySource[id] ?? 0), 0),
+            true
+          ),
+        ];
+      }
+
+      // Level 1: income categories with drill buttons
       return [
         ...baseColumns,
-        numCol("income_salaries", "Salaries", (r) => r.income.salaries),
-        numCol("income_ss", "Social Security", (r) => r.income.socialSecurity),
-        numCol("income_business", "Business", (r) => r.income.business),
-        numCol("income_trust", "Trust", (r) => r.income.trust),
-        numCol("income_deferred", "Deferred", (r) => r.income.deferred),
-        numCol("income_capgains", "Capital Gains", (r) => r.income.capitalGains),
-        numCol("income_other", "Other", (r) => r.income.other),
+        numCol("income_salaries", () => <DrillBtn segment="salaries" label="Salaries" />, (r) => r.income.salaries),
+        numCol("income_ss", () => <DrillBtn segment="socialSecurity" label="Social Security" />, (r) => r.income.socialSecurity),
+        numCol("income_business", () => <DrillBtn segment="business_income" label="Business" />, (r) => r.income.business),
+        numCol("income_trust", () => <DrillBtn segment="trust_income" label="Trust" />, (r) => r.income.trust),
+        numCol("income_deferred", () => <DrillBtn segment="deferred" label="Deferred" />, (r) => r.income.deferred),
+        numCol("income_capgains", () => <DrillBtn segment="capitalGains" label="Capital Gains" />, (r) => r.income.capitalGains),
+        numCol("income_other", () => <DrillBtn segment="other_income" label="Other" />, (r) => r.income.other),
         numCol("income_total", "Total", (r) => r.income.total, true),
       ];
     }
 
-    // Drill-down: Expenses
+    // ── Expenses drill-down ────────────────────────────────────────────────
+
     if (level === "expenses") {
+      // Level 2: individual sources for a specific expense type
+      if (subLevel && EXPENSE_SEGMENT_TO_TYPE[subLevel] != null) {
+        const sourceIds = expensesByType[subLevel] ?? [];
+        return [
+          ...baseColumns,
+          ...sourceIds.map((id) =>
+            numCol(
+              `exp_src_${id}`,
+              expenseNames[id] ?? id,
+              (r) => r.expenses.bySource[id] ?? 0
+            )
+          ),
+          numCol(
+            "exp_subtype_total",
+            `${DRILL_LABELS[subLevel] ?? subLevel} Total`,
+            (r) => sourceIds.reduce((sum, id) => sum + (r.expenses.bySource[id] ?? 0), 0),
+            true
+          ),
+        ];
+      }
+
+      // Level 1: expense categories with drill buttons
       return [
         ...baseColumns,
-        numCol("expenses_living", "Living", (r) => r.expenses.living),
+        numCol("expenses_living", () => <DrillBtn segment="living" label="Living" />, (r) => r.expenses.living),
         numCol("expenses_liabilities", "Liabilities", (r) => r.expenses.liabilities),
-        numCol("expenses_other", "Other", (r) => r.expenses.other),
-        numCol("expenses_insurance", "Insurance", (r) => r.expenses.insurance),
+        numCol("expenses_other", () => <DrillBtn segment="other_expense" label="Other" />, (r) => r.expenses.other),
+        numCol("expenses_insurance", () => <DrillBtn segment="insurance" label="Insurance" />, (r) => r.expenses.insurance),
         numCol("expenses_taxes", "Taxes", (r) => r.expenses.taxes),
         numCol("expenses_total", "Total", (r) => r.expenses.total, true),
       ];
     }
 
-    // Drill-down: Savings
+    // ── Savings drill-down ─────────────────────────────────────────────────
+
     if (level === "savings") {
       return [
         ...baseColumns,
@@ -302,7 +448,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       ];
     }
 
-    // Drill-down: Withdrawals
+    // ── Withdrawals drill-down ─────────────────────────────────────────────
+
     if (level === "withdrawals") {
       return [
         ...baseColumns,
@@ -317,16 +464,71 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       ];
     }
 
-    // Drill-down: Portfolio Assets
+    // ── Portfolio drill-down ───────────────────────────────────────────────
+
     if (level === "portfolio") {
+      // Level 2: individual accounts for a specific portfolio category
+      if (subLevel && PORTFOLIO_SEGMENT_TO_CATEGORY[subLevel] != null) {
+        const acctIds = accountsByCategory[subLevel] ?? [];
+        return [
+          ...baseColumns,
+          ...acctIds.map((id) =>
+            col(
+              `portfolio_src_${id}`,
+              accountNames[id] ?? id,
+              (r) => {
+                const categoryKey = subLevel as keyof ProjectionYear["portfolioAssets"];
+                const byAcct = r.portfolioAssets[categoryKey] as Record<string, number> | undefined;
+                return byAcct?.[id] ?? 0;
+              },
+              (info) => {
+                const v = info.getValue() as number;
+                const row = info.row.original;
+                return (
+                  <button
+                    onClick={() => {
+                      const ledger = row.accountLedgers[id];
+                      if (ledger) {
+                        setLedgerModal({
+                          accountId: id,
+                          accountName: accountNames[id] ?? id,
+                          year: row.year,
+                          ledger,
+                        });
+                      }
+                    }}
+                    className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                    title="View account ledger"
+                  >
+                    {fmtNum(v)}
+                  </button>
+                );
+              }
+            )
+          ),
+          numCol(
+            "portfolio_subtype_total",
+            `${DRILL_LABELS[subLevel] ?? subLevel} Total`,
+            (r) => {
+              const categoryKey = subLevel as keyof ProjectionYear["portfolioAssets"];
+              const byAcct = r.portfolioAssets[categoryKey] as Record<string, number> | undefined;
+              if (!byAcct) return 0;
+              return Object.values(byAcct).reduce((s, v) => s + v, 0);
+            },
+            true
+          ),
+        ];
+      }
+
+      // Level 1: portfolio categories with drill buttons
       return [
         ...baseColumns,
-        numCol("portfolio_taxable_total", "Taxable", (r) => r.portfolioAssets.taxableTotal),
-        numCol("portfolio_cash_total", "Cash", (r) => r.portfolioAssets.cashTotal),
-        numCol("portfolio_retirement_total", "Retirement", (r) => r.portfolioAssets.retirementTotal),
-        numCol("portfolio_real_estate_total", "Real Estate", (r) => r.portfolioAssets.realEstateTotal),
-        numCol("portfolio_business_total", "Business", (r) => r.portfolioAssets.businessTotal),
-        numCol("portfolio_life_insurance_total", "Life Insurance", (r) => r.portfolioAssets.lifeInsuranceTotal),
+        numCol("portfolio_taxable_total", () => <DrillBtn segment="taxable" label="Taxable" />, (r) => r.portfolioAssets.taxableTotal),
+        numCol("portfolio_cash_total", () => <DrillBtn segment="cash" label="Cash" />, (r) => r.portfolioAssets.cashTotal),
+        numCol("portfolio_retirement_total", () => <DrillBtn segment="retirement" label="Retirement" />, (r) => r.portfolioAssets.retirementTotal),
+        numCol("portfolio_real_estate_total", () => <DrillBtn segment="realEstate" label="Real Estate" />, (r) => r.portfolioAssets.realEstateTotal),
+        numCol("portfolio_business_total", () => <DrillBtn segment="business_assets" label="Business" />, (r) => r.portfolioAssets.businessTotal),
+        numCol("portfolio_life_insurance_total", () => <DrillBtn segment="lifeInsurance" label="Life Insurance" />, (r) => r.portfolioAssets.lifeInsuranceTotal),
         numCol("portfolio_total", "Total", (r) => r.portfolioAssets.total, true),
       ];
     }

@@ -9,9 +9,10 @@ interface IncomeBreakdown {
   capitalGains: number;
   other: number;
   total: number;
+  bySource: Record<string, number>;
 }
 
-const incomeTypeToKey: Record<Income["type"], keyof Omit<IncomeBreakdown, "total">> = {
+const incomeTypeToKey: Record<Income["type"], keyof Omit<IncomeBreakdown, "total" | "bySource">> = {
   salary: "salaries",
   social_security: "socialSecurity",
   business: "business",
@@ -35,6 +36,7 @@ export function computeIncome(
     capitalGains: 0,
     other: 0,
     total: 0,
+    bySource: {},
   };
 
   for (const inc of incomes) {
@@ -53,6 +55,7 @@ export function computeIncome(
     const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, yearsElapsed);
     const key = incomeTypeToKey[inc.type];
     result[key] += amount;
+    result.bySource[inc.id] = amount;
   }
 
   result.total =

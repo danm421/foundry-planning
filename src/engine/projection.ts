@@ -218,6 +218,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       insurance: expenseBreakdown.insurance,
       taxes,
       total: totalExpensesBeforeSavings,
+      bySource: expenseBreakdown.bySource,
     };
 
     const totalIncome = income.total + withdrawals.total + totalRmdIncome;

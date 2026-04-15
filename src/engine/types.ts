@@ -110,6 +110,7 @@ export interface ProjectionYear {
     capitalGains: number;
     other: number;
     total: number;
+    bySource: Record<string, number>;
   };
 
   withdrawals: {
@@ -124,6 +125,7 @@ export interface ProjectionYear {
     insurance: number;
     taxes: number;
     total: number;
+    bySource: Record<string, number>;
   };
 
   savings: {
