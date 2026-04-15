@@ -105,6 +105,7 @@ export async function GET(
           growthRate: parseFloat(effectiveGrowth),
           rmdEnabled: a.rmdEnabled,
           ownerEntityId: a.ownerEntityId ?? undefined,
+          isDefaultChecking: a.isDefaultChecking,
         };
       }),
       incomes: incomeRows.map((i) => ({

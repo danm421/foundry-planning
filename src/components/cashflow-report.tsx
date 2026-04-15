@@ -51,7 +51,7 @@ function fmtNum(v: number) {
 function col(
   id: string,
   header: ColumnDef<ProjectionYear>["header"],
-  accessorFn: (row: ProjectionYear) => unknown,
+  accessorFn: (row: ProjectionYear, idx: number) => unknown,
   cellFn?: (info: CellContext<ProjectionYear, unknown>) => React.ReactNode
 ): ColumnDef<ProjectionYear> {
   return {
@@ -65,7 +65,7 @@ function col(
 function numCol(
   id: string,
   header: ColumnDef<ProjectionYear>["header"],
-  accessorFn: (row: ProjectionYear) => number,
+  accessorFn: (row: ProjectionYear, idx: number) => number,
   bold = false
 ): ColumnDef<ProjectionYear> {
   return col(id, header, accessorFn, (info) => {
@@ -80,7 +80,8 @@ const DRILL_LABELS: Record<string, string> = {
   income: "Income",
   expenses: "Expenses",
   savings: "Savings",
-  withdrawals: "Withdrawals",
+  cashflow: "Net Cash Flow",
+  rmds: "RMDs",
   portfolio: "Portfolio Assets",
   // Income sub-types
   salaries: "Salaries",
@@ -331,9 +332,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const savingsAccountIds = Array.from(
     new Set(years.flatMap((y) => Object.keys(y.savings.byAccount)))
   );
-  const withdrawalAccountIds = Array.from(
-    new Set(years.flatMap((y) => Object.keys(y.withdrawals.byAccount)))
-  );
 
   // ── Derived income/expense source maps from clientData ────────────────────
 
@@ -372,8 +370,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   // accountsByCategory: segment key → array of account IDs with that category
   const accountsByCategory: Record<string, string[]> = {};
+  // accountCategoryById: account id → raw account category (used for net-cash-flow drill)
+  const accountCategoryById: Record<string, string> = {};
   if (clientData) {
     for (const acc of clientData.accounts) {
+      accountCategoryById[acc.id] = acc.category;
       const segmentKey = Object.entries(PORTFOLIO_SEGMENT_TO_CATEGORY).find(
         ([, c]) => c === acc.category
       )?.[0];
@@ -382,6 +383,40 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         accountsByCategory[segmentKey].push(acc.id);
       }
     }
+  }
+
+  // ── Net cash flow drill helpers ───────────────────────────────────────────
+
+  const NET_CASH_FLOW_CATEGORIES: { key: string; label: string }[] = [
+    { key: "cash", label: "Cash Assets" },
+    { key: "taxable", label: "Taxable Assets" },
+    { key: "retirement", label: "Retirement" },
+    { key: "real_estate", label: "Real Estate" },
+    { key: "business", label: "Business" },
+    { key: "life_insurance", label: "Life Insurance" },
+  ];
+
+  // Which asset categories had any supplemental withdrawal across the projection — used
+  // to avoid rendering empty columns in the Net Cash Flow drill-down.
+  const withdrawalCategoriesUsed = new Set<string>();
+  for (const y of years) {
+    for (const accId of Object.keys(y.withdrawals.byAccount)) {
+      const cat = accountCategoryById[accId];
+      if (cat) withdrawalCategoriesUsed.add(cat);
+    }
+  }
+
+  function withdrawalByCategory(r: ProjectionYear, category: string): number {
+    let sum = 0;
+    for (const [accId, amount] of Object.entries(r.withdrawals.byAccount)) {
+      if (accountCategoryById[accId] === category) sum += amount;
+    }
+    return sum;
+  }
+
+  function portfolioBoy(r: ProjectionYear, idx: number): number {
+    if (idx > 0) return years[idx - 1].portfolioAssets.total;
+    return Object.values(r.accountLedgers).reduce((s, l) => s + l.beginningValue, 0);
   }
 
   // ── Drillable header button ────────────────────────────────────────────────
@@ -419,19 +454,28 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       return [
         ...baseColumns,
         numCol("income_total", () => <DrillBtn segment="income" label="Income" />, (r) => r.income.total),
-        numCol("withdrawals_total", () => <DrillBtn segment="withdrawals" label="Withdrawals" />, (r) => r.withdrawals.total),
+        numCol(
+          "rmds_total",
+          "RMDs",
+          (r) => Object.values(r.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0)
+        ),
         numCol("totalIncome", "Total Income", (r) => r.totalIncome, true),
         numCol("expenses_total", () => <DrillBtn segment="expenses" label="Expenses" />, (r) => r.expenses.total),
         numCol("savings_total", () => <DrillBtn segment="savings" label="Savings" />, (r) => r.savings.total),
         numCol("totalExpenses", "Total Expenses", (r) => r.totalExpenses, true),
-        col("netCashFlow", "Net Cash Flow", (r) => r.netCashFlow, (info) => {
-          const v = info.getValue() as number;
-          return (
-            <span className={v < 0 ? "text-red-400 font-semibold" : "text-green-400 font-semibold"}>
-              {fmtNum(v)}
-            </span>
-          );
-        }),
+        col(
+          "netCashFlow",
+          () => <DrillBtn segment="cashflow" label="Net Cash Flow" />,
+          (r) => r.netCashFlow,
+          (info) => {
+            const v = info.getValue() as number;
+            return (
+              <span className={v < 0 ? "text-red-400 font-semibold" : "text-green-400 font-semibold"}>
+                {fmtNum(v)}
+              </span>
+            );
+          }
+        ),
         numCol("portfolio_total", () => <DrillBtn segment="portfolio" label="Portfolio Assets" />, (r) => r.portfolioAssets.total),
       ];
     }
@@ -527,19 +571,36 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       ];
     }
 
-    // ── Withdrawals drill-down ─────────────────────────────────────────────
+    // ── Net Cash Flow drill-down ───────────────────────────────────────────
+    // When household income can't cover expenses + savings + taxes, the engine
+    // pulls from the withdrawal strategy to top up checking. This drill shows
+    // where those supplemental withdrawals came from, grouped by asset category,
+    // plus the beginning-of-year portfolio and the withdrawal rate.
 
-    if (level === "withdrawals") {
+    if (level === "cashflow") {
+      const categoryCols = NET_CASH_FLOW_CATEGORIES.filter((c) =>
+        withdrawalCategoriesUsed.has(c.key)
+      ).map((c) =>
+        numCol(`wd_${c.key}`, c.label, (r) => withdrawalByCategory(r, c.key))
+      );
+
       return [
         ...baseColumns,
-        ...withdrawalAccountIds.map((accId) =>
-          numCol(
-            `withdrawal_${accId}`,
-            accountNames[accId] ?? accId,
-            (r) => r.withdrawals.byAccount[accId] ?? 0
-          )
+        ...categoryCols,
+        numCol("wd_total", "Total Withdrawals", (r) => r.withdrawals.total, true),
+        numCol("portfolio_boy", "Portfolio (BoY)", (r, idx) => portfolioBoy(r, idx)),
+        col(
+          "wd_pct",
+          "Withdrawal %",
+          (r, idx) => {
+            const boy = portfolioBoy(r, idx);
+            return boy > 0 ? r.withdrawals.total / boy : 0;
+          },
+          (info) => {
+            const v = info.getValue() as number;
+            return `${(v * 100).toFixed(2)}%`;
+          }
         ),
-        numCol("withdrawals_total", "Total", (r) => r.withdrawals.total, true),
       ];
     }
 
