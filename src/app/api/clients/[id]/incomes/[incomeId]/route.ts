@@ -39,6 +39,7 @@ export async function PUT(
       linkedEntityId,
       ownerEntityId,
       cashAccountId,
+      inflationStartYear,
     } = body;
 
     const [updated] = await db
@@ -55,6 +56,9 @@ export async function PUT(
         ...(linkedEntityId !== undefined && { linkedEntityId: linkedEntityId ?? null }),
         ...(ownerEntityId !== undefined && { ownerEntityId: ownerEntityId ?? null }),
         ...(cashAccountId !== undefined && { cashAccountId: cashAccountId ?? null }),
+        ...(inflationStartYear !== undefined && {
+          inflationStartYear: inflationStartYear == null ? null : Number(inflationStartYear),
+        }),
         updatedAt: new Date(),
       })
       .where(and(eq(incomes.id, incomeId), eq(incomes.clientId, id)))

@@ -53,7 +53,10 @@ export function computeIncome(
       if (year < claimingYear) continue;
     }
 
-    const yearsElapsed = year - inc.startYear;
+    // Inflation compounds from `inflationStartYear` when set (today's-dollars
+    // semantics), otherwise from the entry's own start year.
+    const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+    const yearsElapsed = year - inflateFrom;
     const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, yearsElapsed);
     const key = incomeTypeToKey[inc.type];
     result[key] += amount;

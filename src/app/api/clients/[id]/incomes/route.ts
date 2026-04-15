@@ -76,6 +76,7 @@ export async function POST(
       linkedEntityId,
       ownerEntityId,
       cashAccountId,
+      inflationStartYear,
     } = body;
 
     if (!type || !name || !startYear || !endYear) {
@@ -98,6 +99,7 @@ export async function POST(
         linkedEntityId: linkedEntityId ?? null,
         ownerEntityId: ownerEntityId ?? null,
         cashAccountId: cashAccountId ?? null,
+        inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,
       })
       .returning();
 

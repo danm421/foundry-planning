@@ -23,6 +23,7 @@ interface Income {
   growthRate: string;
   ownerEntityId?: string | null;
   cashAccountId?: string | null;
+  inflationStartYear?: number | null;
 }
 
 interface Expense {
@@ -35,6 +36,7 @@ interface Expense {
   growthRate: string;
   ownerEntityId?: string | null;
   cashAccountId?: string | null;
+  inflationStartYear?: number | null;
 }
 
 interface SavingsRule {
@@ -365,6 +367,10 @@ function IncomeDialog({
   const [owner, setOwner] = useState<Owner>(editing?.owner ?? "client");
   const [ownerEntityId, setOwnerEntityId] = useState<string>(editing?.ownerEntityId ?? "");
   const [cashAccountId, setCashAccountId] = useState<string>(editing?.cashAccountId ?? "");
+  const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
+  const [todaysDollars, setTodaysDollars] = useState<boolean>(
+    editing?.inflationStartYear != null && editing.inflationStartYear < editing.startYear
+  );
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
   const isSocialSecurity = type === "social_security";
@@ -404,6 +410,10 @@ function IncomeDialog({
       linkedEntityId: data.get("linkedEntityId") || null,
       ownerEntityId: ownerEntityId || null,
       cashAccountId: cashAccountId || null,
+      // "Today's dollars" mode inflates the amount from plan start through the
+      // entry's startYear so retirement-era amounts can be entered in current
+      // purchasing power. Null means inflate only from startYear onward.
+      inflationStartYear: todaysDollars ? planStartYear : null,
     };
 
     try {
@@ -528,6 +538,15 @@ function IncomeDialog({
                 defaultValue={pctFromDecimal(editing?.growthRate, isSocialSecurity ? 2 : 3)}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
+              <label className="mt-1 flex items-center gap-1.5 text-[11px] text-gray-400">
+                <input
+                  type="checkbox"
+                  checked={todaysDollars}
+                  onChange={(e) => setTodaysDollars(e.target.checked)}
+                  className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+                />
+                Amount in today&apos;s dollars (inflate from {planStartYear})
+              </label>
             </div>
 
             {isSocialSecurity ? (
@@ -688,6 +707,10 @@ function ExpenseDialog({
   const [error, setError] = useState<string | null>(null);
   const [ownerEntityId, setOwnerEntityId] = useState<string>(editing?.ownerEntityId ?? "");
   const [cashAccountId, setCashAccountId] = useState<string>(editing?.cashAccountId ?? "");
+  const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
+  const [todaysDollars, setTodaysDollars] = useState<boolean>(
+    editing?.inflationStartYear != null && editing.inflationStartYear < editing.startYear
+  );
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
 
@@ -708,6 +731,7 @@ function ExpenseDialog({
       growthRate: String(Number(data.get("growthRate") as string) / 100),
       ownerEntityId: ownerEntityId || null,
       cashAccountId: cashAccountId || null,
+      inflationStartYear: todaysDollars ? planStartYear : null,
     };
 
     try {
@@ -810,6 +834,15 @@ function ExpenseDialog({
                 defaultValue={pctFromDecimal(editing?.growthRate, 3)}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
+              <label className="mt-1 flex items-center gap-1.5 text-[11px] text-gray-400">
+                <input
+                  type="checkbox"
+                  checked={todaysDollars}
+                  onChange={(e) => setTodaysDollars(e.target.checked)}
+                  className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+                />
+                Amount in today&apos;s dollars (inflate from {planStartYear})
+              </label>
             </div>
 
             <div>

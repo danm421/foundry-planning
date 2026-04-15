@@ -56,6 +56,12 @@ export interface Income {
   startYear: number;
   endYear: number;
   growthRate: number;
+  /**
+   * Year from which inflation compounds. When set and earlier than startYear,
+   * annualAmount is treated as a today's-dollars amount and the engine grows it
+   * through the gap. Null → compound only from startYear (current-dollar amount).
+   */
+  inflationStartYear?: number;
   owner: "client" | "spouse" | "joint";
   claimingAge?: number;
   linkedEntityId?: string;
@@ -73,6 +79,8 @@ export interface Expense {
   startYear: number;
   endYear: number;
   growthRate: number;
+  /** See Income.inflationStartYear. */
+  inflationStartYear?: number;
   ownerEntityId?: string;
   // Cash account this expense is paid from.
   cashAccountId?: string;

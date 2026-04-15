@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { clients, scenarios, planSettings, accounts } from "@/db/schema";
+import { clients, scenarios, planSettings, accounts, expenses, incomes } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
@@ -109,6 +109,63 @@ export async function POST(request: NextRequest) {
       rmdEnabled: false,
       isDefaultChecking: true,
     });
+
+    // Seed two living-expense rows at $0 so the advisor has an obvious prompt to
+    // fill in pre- and post-retirement spending. The retirement row is entered in
+    // today's dollars so inflation compounds from plan start through retirement.
+    const clientBirthYear = new Date(dateOfBirth).getFullYear();
+    const retirementStartYear = clientBirthYear + Number(retirementAge);
+    const planEndYearValue = clientBirthYear + Number(planEndAge);
+    const expenseSeeds = [
+      {
+        name: "Current Living Expenses",
+        startYear: currentYear,
+        endYear: Math.max(currentYear, retirementStartYear - 1),
+        inflationStartYear: null as number | null,
+      },
+      {
+        name: "Retirement Living Expenses",
+        startYear: retirementStartYear,
+        endYear: planEndYearValue,
+        inflationStartYear: currentYear,
+      },
+    ];
+    await db.insert(expenses).values(
+      expenseSeeds.map((seed) => ({
+        clientId: client.id,
+        scenarioId: scenario.id,
+        type: "living" as const,
+        name: seed.name,
+        annualAmount: "0",
+        startYear: seed.startYear,
+        endYear: seed.endYear,
+        growthRate: "0.03",
+        inflationStartYear: seed.inflationStartYear,
+      }))
+    );
+
+    // Seed Social Security income entries at $0 — one per person on the household —
+    // so the advisor is prompted to enter benefit amounts and claiming ages.
+    const ssSeeds: { name: string; owner: "client" | "spouse" }[] = [
+      { name: `Social Security — ${firstName}`, owner: "client" },
+    ];
+    if (spouseName) {
+      ssSeeds.push({ name: `Social Security — ${spouseName}`, owner: "spouse" });
+    }
+    await db.insert(incomes).values(
+      ssSeeds.map((seed) => ({
+        clientId: client.id,
+        scenarioId: scenario.id,
+        type: "social_security" as const,
+        name: seed.name,
+        annualAmount: "0",
+        startYear: currentYear,
+        endYear: planEndYearValue,
+        growthRate: "0.02",
+        owner: seed.owner,
+        claimingAge: 67,
+      }))
+    );
 
     return NextResponse.json(client, { status: 201 });
   } catch (err) {

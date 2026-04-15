@@ -280,8 +280,8 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         const birthYear = parseInt(ownerDob.slice(0, 4), 10);
         if (year < birthYear + inc.claimingAge) continue;
       }
-      const yearsElapsed = year - inc.startYear;
-      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, yearsElapsed);
+      const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
       creditCash(resolveCashAccount(inc.ownerEntityId, inc.cashAccountId), amount, {
         category: "income",
         label: `Income: ${inc.name}`,
@@ -292,8 +292,8 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     // 7. Route each expense as an outflow from its cash account.
     for (const exp of data.expenses) {
       if (year < exp.startYear || year > exp.endYear) continue;
-      const yearsElapsed = year - exp.startYear;
-      const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, yearsElapsed);
+      const inflateFrom = exp.inflationStartYear ?? exp.startYear;
+      const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, year - inflateFrom);
       creditCash(resolveCashAccount(exp.ownerEntityId, exp.cashAccountId), -amount, {
         category: "expense",
         label: `Expense: ${exp.name}`,
@@ -373,7 +373,8 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       if (inc.type !== "salary") continue;
       if (inc.ownerEntityId != null) continue;
       if (year < inc.startYear || year > inc.endYear) continue;
-      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inc.startYear);
+      const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
       salaryByOwner[inc.owner] += amount;
     }
 

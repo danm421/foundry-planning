@@ -64,7 +64,17 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { type, name, annualAmount, startYear, endYear, growthRate, ownerEntityId, cashAccountId } = body;
+    const {
+      type,
+      name,
+      annualAmount,
+      startYear,
+      endYear,
+      growthRate,
+      ownerEntityId,
+      cashAccountId,
+      inflationStartYear,
+    } = body;
 
     if (!type || !name || !startYear || !endYear) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -83,6 +93,7 @@ export async function POST(
         growthRate: growthRate ?? "0.03",
         ownerEntityId: ownerEntityId ?? null,
         cashAccountId: cashAccountId ?? null,
+        inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,
       })
       .returning();
 

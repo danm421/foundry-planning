@@ -247,6 +247,9 @@ export const incomes = pgTable("incomes", {
   growthRate: decimal("growth_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.03"),
+  // When set, inflation compounds from this year instead of from start_year.
+  // Null = inflate from entry start (current-dollar amount).
+  inflationStartYear: integer("inflation_start_year"),
   owner: ownerEnum("owner").notNull().default("client"),
   claimingAge: integer("claiming_age"),
   linkedEntityId: uuid("linked_entity_id").references(() => accounts.id, {
@@ -283,6 +286,9 @@ export const expenses = pgTable("expenses", {
   growthRate: decimal("growth_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.03"),
+  // When set, inflation compounds from this year instead of from start_year.
+  // Null = inflate from entry start (current-dollar amount).
+  inflationStartYear: integer("inflation_start_year"),
   ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
     onDelete: "set null",
   }),
