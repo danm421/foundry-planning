@@ -119,6 +119,7 @@ export async function GET(
         claimingAge: i.claimingAge ?? undefined,
         linkedEntityId: i.linkedEntityId ?? undefined,
         ownerEntityId: i.ownerEntityId ?? undefined,
+        cashAccountId: i.cashAccountId ?? undefined,
       })),
       expenses: expenseRows.map((e) => ({
         id: e.id,
@@ -129,6 +130,7 @@ export async function GET(
         endYear: e.endYear,
         growthRate: parseFloat(e.growthRate),
         ownerEntityId: e.ownerEntityId ?? undefined,
+        cashAccountId: e.cashAccountId ?? undefined,
       })),
       liabilities: liabilityRows.map((l) => ({
         id: l.id,

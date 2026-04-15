@@ -10,6 +10,7 @@ interface AmortizationResult {
 interface LiabilitiesResult {
   totalPayment: number;
   updatedLiabilities: Liability[];
+  byLiability: Record<string, number>;
 }
 
 export function amortizeLiability(
@@ -39,15 +40,17 @@ export function computeLiabilities(
 ): LiabilitiesResult {
   let totalPayment = 0;
   const updatedLiabilities: Liability[] = [];
+  const byLiability: Record<string, number> = {};
 
   for (const liab of liabilities) {
     const result = amortizeLiability(liab, year);
     // Preserve the balance roll-forward even when the liability is filtered out
     // (e.g. entity-owned) so the stored state stays consistent across years.
     updatedLiabilities.push({ ...liab, balance: result.endingBalance });
+    byLiability[liab.id] = result.annualPayment;
     if (filter && !filter(liab)) continue;
     totalPayment += result.annualPayment;
   }
 
-  return { totalPayment, updatedLiabilities };
+  return { totalPayment, updatedLiabilities, byLiability };
 }

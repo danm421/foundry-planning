@@ -64,6 +64,18 @@ export async function DELETE(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
+    // Protect the default household cash account — it's required by the projection engine.
+    const [target] = await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
+    if (target?.isDefaultChecking) {
+      return NextResponse.json(
+        { error: "The default household cash account cannot be deleted." },
+        { status: 400 }
+      );
+    }
+
     await db
       .delete(accounts)
       .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));

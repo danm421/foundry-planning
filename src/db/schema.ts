@@ -214,6 +214,10 @@ export const accounts = pgTable("accounts", {
   // Null means: inherit the default for this category from plan_settings.
   growthRate: decimal("growth_rate", { precision: 5, scale: 4 }),
   rmdEnabled: boolean("rmd_enabled").notNull().default(false),
+  // Exactly one account per (client, scenario) has this flag set. Household income is
+  // paid into this account and expenses, taxes, and savings are drawn from it; when it
+  // goes negative the engine pulls from the withdrawal strategy to top it up.
+  isDefaultChecking: boolean("is_default_checking").notNull().default(false),
   // When set, the account is considered owned by a non-individual entity (trust, LLC, etc.)
   // and is treated as "out of estate" relative to client/spouse/joint ownership.
   ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
@@ -250,6 +254,11 @@ export const incomes = pgTable("incomes", {
   ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
     onDelete: "set null",
   }),
+  // Cash account this income deposits into. Null falls back to the appropriate default
+  // checking account (household, or entity checking if ownerEntityId is set).
+  cashAccountId: uuid("cash_account_id").references(() => accounts.id, {
+    onDelete: "set null",
+  }),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -274,6 +283,10 @@ export const expenses = pgTable("expenses", {
     .notNull()
     .default("0.03"),
   ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
+    onDelete: "set null",
+  }),
+  // Cash account this expense is paid from.
+  cashAccountId: uuid("cash_account_id").references(() => accounts.id, {
     onDelete: "set null",
   }),
   source: sourceEnum("source").notNull().default("manual"),

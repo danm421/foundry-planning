@@ -21,6 +21,7 @@ interface Income {
   linkedEntityId: string | null;
   growthRate: string;
   ownerEntityId?: string | null;
+  cashAccountId?: string | null;
 }
 
 interface Expense {
@@ -32,6 +33,7 @@ interface Expense {
   endYear: number;
   growthRate: string;
   ownerEntityId?: string | null;
+  cashAccountId?: string | null;
 }
 
 interface SavingsRule {
@@ -58,6 +60,8 @@ interface Account {
   name: string;
   category: string;
   subType: string;
+  isDefaultChecking?: boolean | null;
+  ownerEntityId?: string | null;
 }
 
 interface Entity {
@@ -258,6 +262,85 @@ function AddGroupButton({ onClick, label = "Add" }: { onClick: () => void; label
   );
 }
 
+// ── Cash Account Picker ───────────────────────────────────────────────────────
+
+interface CashAccountPickerProps {
+  id: string;
+  label: string;
+  accounts: Account[];
+  ownerEntityId?: string | null;
+  value: string;
+  onChange: (v: string) => void;
+}
+
+/**
+ * Pick the cash account an income deposits into or an expense is paid from.
+ * Shows every cash-category account; entity-owned accounts are grouped under the
+ * entity so advisors can pick a trust's cash without hunting for it. The empty
+ * value means "use the default checking for this owner".
+ */
+function CashAccountPicker({
+  id,
+  label,
+  accounts,
+  ownerEntityId,
+  value,
+  onChange,
+}: CashAccountPickerProps) {
+  const cashAccounts = accounts.filter((a) => a.category === "cash");
+  if (cashAccounts.length === 0) return null;
+
+  const household = cashAccounts.filter((a) => !a.ownerEntityId);
+  const entityBuckets = new Map<string, Account[]>();
+  for (const a of cashAccounts) {
+    if (!a.ownerEntityId) continue;
+    const arr = entityBuckets.get(a.ownerEntityId) ?? [];
+    arr.push(a);
+    entityBuckets.set(a.ownerEntityId, arr);
+  }
+
+  const defaultAcct = ownerEntityId
+    ? cashAccounts.find((a) => a.ownerEntityId === ownerEntityId && a.isDefaultChecking)
+    : cashAccounts.find((a) => !a.ownerEntityId && a.isDefaultChecking);
+  const defaultLabel = defaultAcct ? defaultAcct.name : "Household Cash";
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-300" htmlFor={id}>
+        {label}
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+      >
+        <option value="">Default ({defaultLabel})</option>
+        {household.length > 0 && (
+          <optgroup label="Household">
+            {household.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+                {a.isDefaultChecking ? " · default" : ""}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {[...entityBuckets.entries()].map(([entId, bucket]) => (
+          <optgroup key={entId} label="Entity">
+            {bucket.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+                {a.isDefaultChecking ? " · default" : ""}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 // ── Income Dialog ─────────────────────────────────────────────────────────────
 
 interface IncomeDialogProps {
@@ -290,6 +373,7 @@ function IncomeDialog({
   const [type, setType] = useState<IncomeType>(editing?.type ?? defaultType);
   const [owner, setOwner] = useState<Owner>(editing?.owner ?? "client");
   const [ownerEntityId, setOwnerEntityId] = useState<string>(editing?.ownerEntityId ?? "");
+  const [cashAccountId, setCashAccountId] = useState<string>(editing?.cashAccountId ?? "");
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
   const isSocialSecurity = type === "social_security";
@@ -328,6 +412,7 @@ function IncomeDialog({
       claimingAge,
       linkedEntityId: data.get("linkedEntityId") || null,
       ownerEntityId: ownerEntityId || null,
+      cashAccountId: cashAccountId || null,
     };
 
     try {
@@ -544,6 +629,15 @@ function IncomeDialog({
             </div>
           )}
 
+          <CashAccountPicker
+            id="inc-cash"
+            label="Deposits to"
+            accounts={accounts}
+            ownerEntityId={ownerEntityId || null}
+            value={cashAccountId}
+            onChange={setCashAccountId}
+          />
+
           <div className="flex items-center justify-between pt-2">
             {isEdit && onRequestDelete ? (
               <button
@@ -575,6 +669,7 @@ function IncomeDialog({
 interface ExpenseDialogProps {
   clientId: string;
   defaultType?: ExpenseType;
+  accounts: Account[];
   entities?: Entity[];
   clientInfo?: ClientInfo;
   open: boolean;
@@ -587,6 +682,7 @@ interface ExpenseDialogProps {
 function ExpenseDialog({
   clientId,
   defaultType = "living",
+  accounts,
   entities,
   clientInfo,
   open,
@@ -598,6 +694,7 @@ function ExpenseDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ownerEntityId, setOwnerEntityId] = useState<string>(editing?.ownerEntityId ?? "");
+  const [cashAccountId, setCashAccountId] = useState<string>(editing?.cashAccountId ?? "");
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
 
@@ -617,6 +714,7 @@ function ExpenseDialog({
       endYear: data.get("endYear") as string,
       growthRate: String(Number(data.get("growthRate") as string) / 100),
       ownerEntityId: ownerEntityId || null,
+      cashAccountId: cashAccountId || null,
     };
 
     try {
@@ -773,6 +871,15 @@ function ExpenseDialog({
               )}
             </div>
           )}
+
+          <CashAccountPicker
+            id="exp-cash"
+            label="Paid from"
+            accounts={accounts}
+            ownerEntityId={ownerEntityId || null}
+            value={cashAccountId}
+            onChange={setCashAccountId}
+          />
 
           <div className="flex items-center justify-between pt-2">
             {isEdit && onRequestDelete ? (
@@ -1545,6 +1652,7 @@ export default function IncomeExpensesView({
 
       <ExpenseDialog
         clientId={clientId}
+        accounts={accounts}
         entities={entities}
         clientInfo={clientInfo}
         open={expenseDialog.open}

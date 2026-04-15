@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { clients, scenarios, planSettings } from "@/db/schema";
+import { clients, scenarios, planSettings, accounts } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
@@ -88,6 +88,24 @@ export async function POST(request: NextRequest) {
       scenarioId: scenario.id,
       planStartYear: currentYear,
       planEndYear: currentYear + (Number(planEndAge) - new Date(dateOfBirth).getFullYear() - currentYear + new Date().getFullYear()),
+    });
+
+    // Insert default household cash account. Household income lands here and expenses
+    // are drawn from it; the projection engine pulls from the withdrawal strategy when
+    // this balance would go negative.
+    await db.insert(accounts).values({
+      clientId: client.id,
+      scenarioId: scenario.id,
+      name: "Household Cash",
+      category: "cash",
+      subType: "checking",
+      owner: "joint",
+      value: "0",
+      basis: "0",
+      // null -> inherit the cash category default from plan_settings
+      growthRate: null,
+      rmdEnabled: false,
+      isDefaultChecking: true,
     });
 
     return NextResponse.json(client, { status: 201 });

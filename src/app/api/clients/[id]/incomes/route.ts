@@ -75,6 +75,7 @@ export async function POST(
       claimingAge,
       linkedEntityId,
       ownerEntityId,
+      cashAccountId,
     } = body;
 
     if (!type || !name || !startYear || !endYear) {
@@ -96,6 +97,7 @@ export async function POST(
         claimingAge: claimingAge ? Number(claimingAge) : null,
         linkedEntityId: linkedEntityId ?? null,
         ownerEntityId: ownerEntityId ?? null,
+        cashAccountId: cashAccountId ?? null,
       })
       .returning();
 

@@ -45,6 +45,7 @@ export interface Account {
   growthRate: number;
   rmdEnabled: boolean;
   ownerEntityId?: string;
+  isDefaultChecking?: boolean;
 }
 
 export interface Income {
@@ -59,6 +60,9 @@ export interface Income {
   claimingAge?: number;
   linkedEntityId?: string;
   ownerEntityId?: string;
+  // Cash account this income deposits into. When unset, the engine falls back to the
+  // household default checking (or the entity's default checking if ownerEntityId is set).
+  cashAccountId?: string;
 }
 
 export interface Expense {
@@ -70,6 +74,8 @@ export interface Expense {
   endYear: number;
   growthRate: number;
   ownerEntityId?: string;
+  // Cash account this expense is paid from.
+  cashAccountId?: string;
 }
 
 export interface Liability {

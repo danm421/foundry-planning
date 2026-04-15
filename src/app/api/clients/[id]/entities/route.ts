@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, entities } from "@/db/schema";
+import { clients, entities, scenarios, accounts } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
@@ -65,6 +65,33 @@ export async function POST(
         isGrantor: isGrantor ?? false,
       })
       .returning();
+
+    // Create a default checking account for this entity in every one of the client's
+    // scenarios so the projection engine can route the entity's incomes/expenses/RMDs
+    // through a dedicated cash bucket.
+    const scenarioRows = await db
+      .select({ id: scenarios.id })
+      .from(scenarios)
+      .where(eq(scenarios.clientId, id));
+
+    if (scenarioRows.length > 0) {
+      await db.insert(accounts).values(
+        scenarioRows.map((s) => ({
+          clientId: id,
+          scenarioId: s.id,
+          name: `${entity.name} — Cash`,
+          category: "cash" as const,
+          subType: "checking" as const,
+          owner: "joint" as const,
+          value: "0",
+          basis: "0",
+          growthRate: null,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          ownerEntityId: entity.id,
+        }))
+      );
+    }
 
     return NextResponse.json(entity, { status: 201 });
   } catch (err) {

@@ -27,7 +27,7 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { type, name, annualAmount, startYear, endYear, growthRate, ownerEntityId } = body;
+    const { type, name, annualAmount, startYear, endYear, growthRate, ownerEntityId, cashAccountId } = body;
 
     const [updated] = await db
       .update(expenses)
@@ -39,6 +39,7 @@ export async function PUT(
         ...(endYear !== undefined && { endYear: Number(endYear) }),
         ...(growthRate !== undefined && { growthRate }),
         ...(ownerEntityId !== undefined && { ownerEntityId: ownerEntityId ?? null }),
+        ...(cashAccountId !== undefined && { cashAccountId: cashAccountId ?? null }),
         updatedAt: new Date(),
       })
       .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, id)))
