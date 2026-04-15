@@ -534,25 +534,32 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       portfolioAssets.businessTotal +
       portfolioAssets.lifeInsuranceTotal;
 
-    // 14. Assemble the year. Tax line includes the additional withdrawal gross-up tax
-    // so the cash-flow view reflects the full tax burden.
-    const totalTaxes = taxes + withdrawalTax;
+    // 14. Assemble the year. P&L-style totals:
+    //   Total Income   = earned income + household RMDs  (no withdrawals)
+    //   Total Expenses = base expenses + income tax + savings  (no withdrawal tax)
+    //   Net Cash Flow  = Total Income - Total Expenses  (can be negative)
+    // Supplemental withdrawals are a balancing mechanism *below* the P&L: when net
+    // cash flow is negative, the engine withdraws from the strategy (grossed up by
+    // the marginal rate so the implicit tax is covered) to keep household cash from
+    // going too deep. The gross withdrawal shows in `withdrawals.total`, viewed via
+    // the Net Cash Flow drill-down; the tax portion of that gross-up is recorded on
+    // the household-cash ledger ("Tax on withdrawal"), not in `expenses.taxes`.
     const expenses = {
       living: expenseBreakdown.living,
       liabilities: liabResult.totalPayment,
       other: expenseBreakdown.other,
       insurance: expenseBreakdown.insurance,
-      taxes: totalTaxes,
+      taxes,
       total:
         expenseBreakdown.living +
         expenseBreakdown.other +
         expenseBreakdown.insurance +
         liabResult.totalPayment +
-        totalTaxes,
+        taxes,
       bySource: expenseBreakdown.bySource,
     };
 
-    const totalIncome = income.total + withdrawals.total + householdRmdIncome;
+    const totalIncome = income.total + householdRmdIncome;
     const totalExpenses = expenses.total + savings.total;
     const netCashFlow = totalIncome - totalExpenses;
 
