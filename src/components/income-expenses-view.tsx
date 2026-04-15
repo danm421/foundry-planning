@@ -47,14 +47,6 @@ interface SavingsRule {
   annualLimit: string | null;
 }
 
-interface WithdrawalStrategy {
-  id: string;
-  accountId: string;
-  priorityOrder: number;
-  startYear: number;
-  endYear: number;
-}
-
 interface Account {
   id: string;
   name: string;
@@ -83,7 +75,6 @@ interface IncomeExpensesViewProps {
   initialIncomes: Income[];
   initialExpenses: Expense[];
   initialSavingsRules: SavingsRule[];
-  initialWithdrawalStrategies: WithdrawalStrategy[];
   accounts: Account[];
   entities?: Entity[];
   clientInfo?: ClientInfo;
@@ -1123,175 +1114,6 @@ function SavingsRuleDialog({
   );
 }
 
-// ── Withdrawal Strategy Dialog ────────────────────────────────────────────────
-
-interface WithdrawalDialogProps {
-  clientId: string;
-  accounts: Account[];
-  nextPriority: number;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  editing?: WithdrawalStrategy;
-  onSaved: (strategy: WithdrawalStrategy, mode: "create" | "edit") => void;
-  onRequestDelete?: () => void;
-}
-
-function WithdrawalDialog({
-  clientId,
-  accounts,
-  nextPriority,
-  open,
-  onOpenChange,
-  editing,
-  onSaved,
-  onRequestDelete,
-}: WithdrawalDialogProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const currentYear = new Date().getFullYear();
-  const isEdit = Boolean(editing);
-
-  if (!open) return null;
-
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    const data = new FormData(e.currentTarget);
-    const body = {
-      accountId: data.get("accountId") as string,
-      priorityOrder: Number(data.get("priorityOrder") as string),
-      startYear: data.get("startYear") as string,
-      endYear: data.get("endYear") as string,
-    };
-
-    try {
-      const url = isEdit
-        ? `/api/clients/${clientId}/withdrawal-strategy/${editing!.id}`
-        : `/api/clients/${clientId}/withdrawal-strategy`;
-      const res = await fetch(url, {
-        method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const json = await res.json();
-        throw new Error(json.error ?? "Failed to save withdrawal entry");
-      }
-
-      const saved = (await res.json()) as WithdrawalStrategy;
-      onSaved(saved, isEdit ? "edit" : "create");
-      onOpenChange(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 w-full max-w-lg rounded-lg border border-gray-700 bg-gray-900 p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-100">{isEdit ? "Edit Withdrawal Entry" : "Add Withdrawal Entry"}</h2>
-          <button onClick={() => onOpenChange(false)} className="text-gray-400 hover:text-gray-200">
-            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="ws-account">
-                Account <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="ws-account"
-                name="accountId"
-                required
-                defaultValue={editing?.accountId ?? (accounts[0]?.id ?? "")}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="ws-priority">Priority Order</label>
-              <input
-                id="ws-priority"
-                name="priorityOrder"
-                type="number"
-                min={1}
-                required
-                defaultValue={editing?.priorityOrder ?? nextPriority}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="ws-start">
-                Start Year <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="ws-start"
-                name="startYear"
-                type="number"
-                required
-                defaultValue={editing?.startYear ?? currentYear}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="ws-end">
-                End Year <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="ws-end"
-                name="endYear"
-                type="number"
-                required
-                defaultValue={editing?.endYear ?? currentYear + 30}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-2">
-            {isEdit && onRequestDelete ? (
-              <button
-                type="button"
-                onClick={onRequestDelete}
-                className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/60"
-              >
-                Delete…
-              </button>
-            ) : (
-              <span />
-            )}
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Entry"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 // ── Main View ─────────────────────────────────────────────────────────────────
 
 export default function IncomeExpensesView({
@@ -1299,7 +1121,6 @@ export default function IncomeExpensesView({
   initialIncomes,
   initialExpenses,
   initialSavingsRules,
-  initialWithdrawalStrategies,
   accounts,
   entities,
   clientInfo,
@@ -1307,13 +1128,11 @@ export default function IncomeExpensesView({
   const [incomeList, setIncomeList] = useState<Income[]>(initialIncomes);
   const [expenseList, setExpenseList] = useState<Expense[]>(initialExpenses);
   const [savingsRuleList, setSavingsRuleList] = useState<SavingsRule[]>(initialSavingsRules);
-  const [withdrawalList, setWithdrawalList] = useState<WithdrawalStrategy[]>(initialWithdrawalStrategies);
 
   // Edit mode per section
   const [incomeEdit, setIncomeEdit] = useState(false);
   const [expenseEdit, setExpenseEdit] = useState(false);
   const [savingsEdit, setSavingsEdit] = useState(false);
-  const [withdrawalEdit, setWithdrawalEdit] = useState(false);
 
   // Dialog state — a single dialog per entity type, controlled by (open, editing, defaultType)
   const [incomeDialog, setIncomeDialog] = useState<{
@@ -1327,15 +1146,11 @@ export default function IncomeExpensesView({
     defaultType?: ExpenseType;
   }>({ open: false });
   const [savingsDialog, setSavingsDialog] = useState<{ open: boolean; editing?: SavingsRule }>({ open: false });
-  const [withdrawalDialog, setWithdrawalDialog] = useState<{ open: boolean; editing?: WithdrawalStrategy }>({
-    open: false,
-  });
 
   // Delete confirms
   const [deletingIncome, setDeletingIncome] = useState<Income | null>(null);
   const [deletingExpense, setDeletingExpense] = useState<Expense | null>(null);
   const [deletingSavings, setDeletingSavings] = useState<SavingsRule | null>(null);
-  const [deletingWithdrawal, setDeletingWithdrawal] = useState<WithdrawalStrategy | null>(null);
 
   const accountMap = Object.fromEntries(accounts.map((a) => [a.id, a]));
   const entityMap = Object.fromEntries((entities ?? []).map((e) => [e.id, e]));
@@ -1360,9 +1175,6 @@ export default function IncomeExpensesView({
     }
     return true;
   }
-
-  const sortedWithdrawals = [...withdrawalList].sort((a, b) => a.priorityOrder - b.priorityOrder);
-  const nextPriority = withdrawalList.length > 0 ? Math.max(...withdrawalList.map((w) => w.priorityOrder)) + 1 : 1;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1571,66 +1383,6 @@ export default function IncomeExpensesView({
         )}
       </Panel>
 
-      {/* Withdrawal Strategy */}
-      <Panel>
-        <SectionHeader
-          title="Withdrawal Strategy"
-          subtitle={`${withdrawalList.length} accounts in priority order`}
-          actions={
-            <>
-              {withdrawalList.length > 0 && (
-                <EditToggle on={withdrawalEdit} onToggle={() => setWithdrawalEdit((v) => !v)} />
-              )}
-              <button
-                onClick={() => setWithdrawalDialog({ open: true })}
-                disabled={accounts.length === 0}
-                className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:opacity-40"
-              >
-                + Add
-              </button>
-            </>
-          }
-        />
-
-        {sortedWithdrawals.length === 0 ? (
-          <EmptyRow message="No withdrawal order set." />
-        ) : (
-          <div className="divide-y divide-gray-800">
-            {sortedWithdrawals.map((ws) => (
-              <div
-                key={ws.id}
-                onClick={() => !withdrawalEdit && setWithdrawalDialog({ open: true, editing: ws })}
-                className="flex cursor-pointer items-center gap-3 px-4 py-2 hover:bg-gray-800/60"
-              >
-                <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-gray-800 text-[11px] font-bold text-gray-200">
-                  {ws.priorityOrder}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-gray-100">
-                    {accountMap[ws.accountId]?.name ?? ws.accountId}
-                  </div>
-                  <div className="truncate text-xs text-gray-500">
-                    {yearsDescriptor(ws.startYear, ws.endYear, planStart, planEnd)}
-                  </div>
-                </div>
-                {withdrawalEdit && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeletingWithdrawal(ws);
-                    }}
-                    className="text-gray-500 hover:text-red-400"
-                    aria-label="Delete"
-                  >
-                    <TrashIcon />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </Panel>
-
       {/* Dialogs */}
       <IncomeDialog
         clientId={clientId}
@@ -1680,22 +1432,6 @@ export default function IncomeExpensesView({
         }}
         onRequestDelete={() => {
           if (savingsDialog.editing) setDeletingSavings(savingsDialog.editing);
-        }}
-      />
-
-      <WithdrawalDialog
-        clientId={clientId}
-        accounts={accounts}
-        nextPriority={nextPriority}
-        open={withdrawalDialog.open}
-        onOpenChange={(o) => setWithdrawalDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
-        editing={withdrawalDialog.editing}
-        onSaved={(strategy, mode) => {
-          if (mode === "create") setWithdrawalList((prev) => [...prev, strategy]);
-          else setWithdrawalList((prev) => prev.map((w) => (w.id === strategy.id ? strategy : w)));
-        }}
-        onRequestDelete={() => {
-          if (withdrawalDialog.editing) setDeletingWithdrawal(withdrawalDialog.editing);
         }}
       />
 
@@ -1752,27 +1488,6 @@ export default function IncomeExpensesView({
         }}
       />
 
-      <ConfirmDeleteDialog
-        open={!!deletingWithdrawal}
-        title="Delete Withdrawal Entry"
-        message={
-          deletingWithdrawal
-            ? `Remove "${accountMap[deletingWithdrawal.accountId]?.name ?? "account"}" from the withdrawal order?`
-            : ""
-        }
-        onCancel={() => setDeletingWithdrawal(null)}
-        onConfirm={async () => {
-          if (!deletingWithdrawal) return;
-          const ok = await performDelete(
-            `/api/clients/${clientId}/withdrawal-strategy/${deletingWithdrawal.id}`
-          );
-          if (ok) {
-            setWithdrawalList((prev) => prev.filter((w) => w.id !== deletingWithdrawal.id));
-            setWithdrawalDialog({ open: false });
-            setDeletingWithdrawal(null);
-          }
-        }}
-      />
     </div>
   );
 }

@@ -7,7 +7,6 @@ import {
   incomes,
   expenses,
   savingsRules,
-  withdrawalStrategies,
   planSettings,
   entities,
 } from "@/db/schema";
@@ -43,14 +42,10 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
     );
   }
 
-  const [incomeRows, expenseRows, savingsRuleRows, withdrawalRows, accountRows, planSettingsRows, entityRows] = await Promise.all([
+  const [incomeRows, expenseRows, savingsRuleRows, accountRows, planSettingsRows, entityRows] = await Promise.all([
     db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
     db.select().from(expenses).where(and(eq(expenses.clientId, id), eq(expenses.scenarioId, scenario.id))),
     db.select().from(savingsRules).where(and(eq(savingsRules.clientId, id), eq(savingsRules.scenarioId, scenario.id))),
-    db
-      .select()
-      .from(withdrawalStrategies)
-      .where(and(eq(withdrawalStrategies.clientId, id), eq(withdrawalStrategies.scenarioId, scenario.id))),
     db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
     db.select().from(planSettings).where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
     db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
@@ -76,7 +71,6 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
       initialIncomes={incomeRows}
       initialExpenses={expenseRows}
       initialSavingsRules={savingsRuleRows}
-      initialWithdrawalStrategies={withdrawalRows}
       accounts={accountRows}
       entities={entityRows.map((e) => ({ id: e.id, name: e.name }))}
       clientInfo={{

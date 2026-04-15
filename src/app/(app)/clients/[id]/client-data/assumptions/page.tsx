@@ -1,9 +1,16 @@
 import { notFound } from "next/navigation";
 import { db } from "@/db";
-import { clients, scenarios, planSettings } from "@/db/schema";
+import {
+  clients,
+  scenarios,
+  planSettings,
+  accounts,
+  withdrawalStrategies,
+} from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import AssumptionsForm, { AssumptionsInitial } from "@/components/forms/assumptions-form";
+import WithdrawalStrategySection from "@/components/withdrawal-strategy-section";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -33,11 +40,27 @@ export default async function AssumptionsPage({ params }: PageProps) {
     );
   }
 
-  const [settings] = await db
-    .select()
-    .from(planSettings)
-    .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id)));
+  const [settingsRows, accountRows, withdrawalRows] = await Promise.all([
+    db
+      .select()
+      .from(planSettings)
+      .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
+    db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
+    db
+      .select()
+      .from(withdrawalStrategies)
+      .where(
+        and(
+          eq(withdrawalStrategies.clientId, id),
+          eq(withdrawalStrategies.scenarioId, scenario.id)
+        )
+      ),
+  ]);
 
+  const settings = settingsRows[0];
   if (!settings) {
     return (
       <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
@@ -60,16 +83,35 @@ export default async function AssumptionsPage({ params }: PageProps) {
     defaultGrowthLifeInsurance: String(settings.defaultGrowthLifeInsurance),
   };
 
+  const accountOpts = accountRows.map((a) => ({
+    id: a.id,
+    name: a.name,
+    category: a.category,
+    subType: a.subType,
+    isDefaultChecking: a.isDefaultChecking,
+    ownerEntityId: a.ownerEntityId,
+  }));
+
   return (
-    <div className="max-w-3xl">
-      <div className="mb-6">
+    <div className="max-w-3xl space-y-8">
+      <div>
         <h2 className="text-xl font-bold text-gray-100">Assumptions</h2>
         <p className="mt-1 text-sm text-gray-400">
-          Tax rates, inflation, plan horizon, and default growth rates applied across this client&apos;s plan.
+          Tax rates, inflation, plan horizon, default growth rates, and withdrawal order
+          applied across this client&apos;s plan.
         </p>
       </div>
+
       <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-6">
         <AssumptionsForm clientId={id} initial={initial} />
+      </div>
+
+      <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-6">
+        <WithdrawalStrategySection
+          clientId={id}
+          accounts={accountOpts}
+          initialStrategies={withdrawalRows}
+        />
       </div>
     </div>
   );

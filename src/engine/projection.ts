@@ -5,6 +5,9 @@ import type {
   AccountLedgerEntry,
   Liability,
   EntitySummary,
+  Account,
+  WithdrawalPriority,
+  PlanSettings,
 } from "./types";
 import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
@@ -13,6 +16,49 @@ import { calculateTaxes } from "./tax";
 import { applySavingsRules } from "./savings";
 import { executeWithdrawals } from "./withdrawal";
 import { calculateRMD } from "./rmd";
+
+// Tax-efficiency ranking applied when the user hasn't configured a withdrawal strategy.
+// Lower number = tapped first. Household checking is excluded because it's the target
+// account, not a source. Real estate / business / life-insurance accounts are skipped
+// (they can't be liquidated cleanly).
+function defaultWithdrawalPriorityFor(acct: Account): number | null {
+  if (acct.ownerEntityId != null) return null;
+  if (acct.isDefaultChecking) return null;
+  if (acct.category === "cash") return 1;
+  if (acct.category === "taxable") return 2;
+  if (acct.category === "retirement") {
+    if (acct.subType === "roth_ira" || acct.subType === "roth_401k") return 4;
+    // traditional_ira, 401k, 529, deferred, other → tax-deferred bucket
+    return 3;
+  }
+  return null;
+}
+
+function buildDefaultWithdrawalStrategy(
+  accounts: Account[],
+  planSettings: PlanSettings
+): WithdrawalPriority[] {
+  const strategy: WithdrawalPriority[] = [];
+  for (const acct of accounts) {
+    const priority = defaultWithdrawalPriorityFor(acct);
+    if (priority == null) continue;
+    strategy.push({
+      accountId: acct.id,
+      priorityOrder: priority,
+      startYear: planSettings.planStartYear,
+      endYear: planSettings.planEndYear,
+    });
+  }
+  // Within a priority bucket, draw from the largest balance first so we don't empty a
+  // small account on year one and then have to re-sort order to reach the next tier.
+  strategy.sort((a, b) => {
+    if (a.priorityOrder !== b.priorityOrder) return a.priorityOrder - b.priorityOrder;
+    const va = accounts.find((x) => x.id === a.accountId)?.value ?? 0;
+    const vb = accounts.find((x) => x.id === b.accountId)?.value ?? 0;
+    return vb - va;
+  });
+  return strategy;
+}
 
 export function runProjection(data: ClientData): ProjectionYear[] {
   const { client, planSettings } = data;
@@ -24,6 +70,15 @@ export function runProjection(data: ClientData): ProjectionYear[] {
 
   const isGrantorEntity = (entityId: string | undefined): boolean =>
     entityId != null && entityMap[entityId]?.isGrantor === true;
+
+  // Effective withdrawal strategy. If the user hasn't configured anything, fall back
+  // to a tax-efficient default: Cash → Taxable → Tax-Deferred → Roth. Illiquid
+  // categories (real estate, business, life insurance) and default-checking accounts
+  // are skipped. The household checking is always the target, never a source.
+  const effectiveWithdrawalStrategy =
+    data.withdrawalStrategy.length > 0
+      ? data.withdrawalStrategy
+      : buildDefaultWithdrawalStrategy(data.accounts, planSettings);
 
   // Default checking accounts — household and one per entity. When present, all
   // household cash flows through the household checking; entity cash through the
@@ -365,7 +420,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         const grossNeeded = shortfall / (1 - marginalRate);
         withdrawals = executeWithdrawals(
           grossNeeded,
-          data.withdrawalStrategy,
+          effectiveWithdrawalStrategy,
           householdWithdrawBalances,
           year
         );
@@ -416,7 +471,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       if (legacyNetFlow < 0) {
         withdrawals = executeWithdrawals(
           -legacyNetFlow,
-          data.withdrawalStrategy,
+          effectiveWithdrawalStrategy,
           householdWithdrawBalances,
           year
         );
