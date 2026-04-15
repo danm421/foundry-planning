@@ -82,6 +82,7 @@ const DRILL_LABELS: Record<string, string> = {
   savings: "Savings",
   cashflow: "Net Cash Flow",
   rmds: "RMDs",
+  growth: "Portfolio Growth",
   portfolio: "Portfolio Assets",
   // Income sub-types
   salaries: "Salaries",
@@ -419,6 +420,44 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     return Object.values(r.accountLedgers).reduce((s, l) => s + l.beginningValue, 0);
   }
 
+  // ── Portfolio growth helpers ──────────────────────────────────────────────
+
+  // Which account IDs appear in the portfolio snapshot for a given year. This is
+  // how we stay in sync with the engine's portfolio-inclusion rules (entity-owned
+  // accounts only if the entity is flagged includeInPortfolio).
+  function portfolioAccountIds(r: ProjectionYear): Set<string> {
+    const ids = new Set<string>();
+    const buckets: (keyof ProjectionYear["portfolioAssets"])[] = [
+      "taxable",
+      "cash",
+      "retirement",
+      "realEstate",
+      "business",
+      "lifeInsurance",
+    ];
+    for (const bucket of buckets) {
+      const byAcct = r.portfolioAssets[bucket] as Record<string, number> | undefined;
+      if (!byAcct) continue;
+      for (const id of Object.keys(byAcct)) ids.add(id);
+    }
+    return ids;
+  }
+
+  function portfolioGrowthTotal(r: ProjectionYear): number {
+    let sum = 0;
+    for (const id of portfolioAccountIds(r)) sum += r.accountLedgers[id]?.growth ?? 0;
+    return sum;
+  }
+
+  function growthByCategorySegment(r: ProjectionYear, segment: string): number {
+    const categoryKey = segment as keyof ProjectionYear["portfolioAssets"];
+    const byAcct = r.portfolioAssets[categoryKey] as Record<string, number> | undefined;
+    if (!byAcct) return 0;
+    let sum = 0;
+    for (const id of Object.keys(byAcct)) sum += r.accountLedgers[id]?.growth ?? 0;
+    return sum;
+  }
+
   // ── Drillable header button ────────────────────────────────────────────────
 
   function DrillBtn({ segment, label }: { segment: string; label: string }) {
@@ -475,6 +514,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               </span>
             );
           }
+        ),
+        numCol(
+          "portfolio_growth",
+          () => <DrillBtn segment="growth" label="Portfolio Growth" />,
+          (r) => portfolioGrowthTotal(r)
         ),
         numCol("portfolio_total", () => <DrillBtn segment="portfolio" label="Portfolio Assets" />, (r) => r.portfolioAssets.total),
       ];
@@ -601,6 +645,67 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             return `${(v * 100).toFixed(2)}%`;
           }
         ),
+      ];
+    }
+
+    // ── Portfolio Growth drill-down ────────────────────────────────────────
+    // Level 1: growth by asset category. Level 2: growth per account, with the
+    // same ledger modal the Portfolio drill uses.
+
+    if (level === "growth") {
+      if (subLevel && PORTFOLIO_SEGMENT_TO_CATEGORY[subLevel] != null) {
+        const acctIds = accountsByCategory[subLevel] ?? [];
+        return [
+          ...baseColumns,
+          ...acctIds.map((id) =>
+            col(
+              `growth_src_${id}`,
+              accountNames[id] ?? id,
+              (r) => r.accountLedgers[id]?.growth ?? 0,
+              (info) => {
+                const v = info.getValue() as number;
+                const row = info.row.original;
+                return (
+                  <button
+                    onClick={() => {
+                      const ledger = row.accountLedgers[id];
+                      if (ledger) {
+                        setLedgerModal({
+                          accountId: id,
+                          accountName: accountNames[id] ?? id,
+                          year: row.year,
+                          ledger,
+                        });
+                      }
+                    }}
+                    className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                    title="View account ledger"
+                  >
+                    {fmtNum(v)}
+                  </button>
+                );
+              }
+            )
+          ),
+          numCol(
+            "growth_subtype_total",
+            `${DRILL_LABELS[subLevel] ?? subLevel} Total`,
+            (r) => growthByCategorySegment(r, subLevel),
+            true
+          ),
+        ];
+      }
+
+      // Level 1: category totals with drill buttons
+      return [
+        ...baseColumns,
+        numCol("growth_taxable", () => <DrillBtn segment="taxable" label="Taxable" />, (r) => growthByCategorySegment(r, "taxable")),
+        numCol("growth_cash", () => <DrillBtn segment="cash" label="Cash" />, (r) => growthByCategorySegment(r, "cash")),
+        numCol("growth_retirement", () => <DrillBtn segment="retirement" label="Retirement" />, (r) => growthByCategorySegment(r, "retirement")),
+        numCol("growth_real_estate", () => <DrillBtn segment="realEstate" label="Real Estate" />, (r) => growthByCategorySegment(r, "realEstate")),
+        numCol("growth_business", () => <DrillBtn segment="business_assets" label="Business" />, (r) => growthByCategorySegment(r, "business")),
+        numCol("growth_life_insurance", () => <DrillBtn segment="lifeInsurance" label="Life Insurance" />, (r) => growthByCategorySegment(r, "lifeInsurance")),
+        numCol("growth_total", "Total", (r) => portfolioGrowthTotal(r), true),
       ];
     }
 
