@@ -110,6 +110,10 @@ export default async function BalanceSheetPage({ params }: PageProps) {
       liabilities={liabilityProps}
       entities={entityOptions}
       categoryDefaults={categoryDefaults}
+      ownerNames={{
+        clientName: `${client.firstName} ${client.lastName}`,
+        spouseName: client.spouseName ?? null,
+      }}
     />
   );
 }

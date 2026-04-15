@@ -27,7 +27,16 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { accountId, annualAmount, startYear, endYear, employerMatchPct, employerMatchCap, annualLimit } = body;
+    const {
+      accountId,
+      annualAmount,
+      startYear,
+      endYear,
+      employerMatchPct,
+      employerMatchCap,
+      employerMatchAmount,
+      annualLimit,
+    } = body;
 
     const [updated] = await db
       .update(savingsRules)
@@ -38,6 +47,9 @@ export async function PUT(
         ...(endYear !== undefined && { endYear: Number(endYear) }),
         ...(employerMatchPct !== undefined && { employerMatchPct: employerMatchPct ?? null }),
         ...(employerMatchCap !== undefined && { employerMatchCap: employerMatchCap ?? null }),
+        ...(employerMatchAmount !== undefined && {
+          employerMatchAmount: employerMatchAmount ?? null,
+        }),
         ...(annualLimit !== undefined && { annualLimit: annualLimit ?? null }),
         updatedAt: new Date(),
       })

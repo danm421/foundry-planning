@@ -152,6 +152,8 @@ export async function GET(
         endYear: s.endYear,
         employerMatchPct: s.employerMatchPct != null ? parseFloat(s.employerMatchPct) : undefined,
         employerMatchCap: s.employerMatchCap != null ? parseFloat(s.employerMatchCap) : undefined,
+        employerMatchAmount:
+          s.employerMatchAmount != null ? parseFloat(s.employerMatchAmount) : undefined,
         annualLimit: s.annualLimit != null ? parseFloat(s.annualLimit) : undefined,
       })),
       withdrawalStrategy: withdrawalRows.map((w) => ({

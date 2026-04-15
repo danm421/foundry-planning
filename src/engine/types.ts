@@ -98,6 +98,8 @@ export interface SavingsRule {
   endYear: number;
   employerMatchPct?: number;
   employerMatchCap?: number;
+  /** Flat annual dollar amount. When set, overrides the percentage/cap style. */
+  employerMatchAmount?: number;
   annualLimit?: number;
 }
 

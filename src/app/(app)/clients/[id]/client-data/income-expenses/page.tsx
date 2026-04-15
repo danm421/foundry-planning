@@ -73,6 +73,10 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
       initialSavingsRules={savingsRuleRows}
       accounts={accountRows}
       entities={entityRows.map((e) => ({ id: e.id, name: e.name }))}
+      ownerNames={{
+        clientName: `${client.firstName} ${client.lastName}`,
+        spouseName: client.spouseName ?? null,
+      }}
       clientInfo={{
         clientRetirementYear,
         clientEndYear,

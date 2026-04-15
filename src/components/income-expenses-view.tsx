@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
+import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ interface SavingsRule {
   endYear: number;
   employerMatchPct: string | null;
   employerMatchCap: string | null;
+  employerMatchAmount: string | null;
   annualLimit: string | null;
 }
 
@@ -78,6 +80,7 @@ interface IncomeExpensesViewProps {
   accounts: Account[];
   entities?: Entity[];
   clientInfo?: ClientInfo;
+  ownerNames: OwnerNames;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -118,11 +121,6 @@ const INCOME_TYPE_LABELS: Record<IncomeType, string> = {
   other: "Other",
 };
 
-const OWNER_LABELS: Record<Owner, string> = {
-  client: "Client",
-  spouse: "Spouse",
-  joint: "Joint",
-};
 
 function yearsDescriptor(start: number, end: number, planStart?: number, planEnd?: number): string {
   if (planStart !== undefined && planEnd !== undefined && start <= planStart && end >= planEnd) {
@@ -340,6 +338,7 @@ interface IncomeDialogProps {
   accounts: Account[];
   entities?: Entity[];
   clientInfo?: ClientInfo;
+  ownerNames: OwnerNames;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editing?: Income;
@@ -353,6 +352,7 @@ function IncomeDialog({
   accounts,
   entities,
   clientInfo,
+  ownerNames,
   open,
   onOpenChange,
   editing,
@@ -475,8 +475,10 @@ function IncomeDialog({
                 onChange={(e) => setOwner(e.target.value as Owner)}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="client">Client</option>
-                <option value="spouse">Spouse</option>
+                <option value="client">{ownerNames.clientName}</option>
+                <option value="spouse" disabled={!ownerNames.spouseName}>
+                  {ownerNames.spouseName ?? "Spouse (none on file)"}
+                </option>
                 <option value="joint">Joint</option>
               </select>
             </div>
@@ -924,6 +926,16 @@ function SavingsRuleDialog({
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
 
+  // Match mode: "none" | "percent" | "flat". Inferred from what's populated on the
+  // rule being edited; defaults to "none" for new rules.
+  type MatchMode = "none" | "percent" | "flat";
+  const initialMatchMode: MatchMode = editing?.employerMatchAmount
+    ? "flat"
+    : editing?.employerMatchPct
+    ? "percent"
+    : "none";
+  const [matchMode, setMatchMode] = useState<MatchMode>(initialMatchMode);
+
   if (!open) return null;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -933,6 +945,7 @@ function SavingsRuleDialog({
     const data = new FormData(e.currentTarget);
     const matchPct = data.get("employerMatchPct") as string;
     const matchCap = data.get("employerMatchCap") as string;
+    const matchAmount = data.get("employerMatchAmount") as string;
     const limit = data.get("annualLimit") as string;
 
     const body = {
@@ -940,8 +953,11 @@ function SavingsRuleDialog({
       annualAmount: data.get("annualAmount") as string,
       startYear: data.get("startYear") as string,
       endYear: data.get("endYear") as string,
-      employerMatchPct: matchPct ? String(Number(matchPct) / 100) : null,
-      employerMatchCap: matchCap ? String(Number(matchCap) / 100) : null,
+      employerMatchPct:
+        matchMode === "percent" && matchPct ? String(Number(matchPct) / 100) : null,
+      employerMatchCap:
+        matchMode === "percent" && matchCap ? String(Number(matchCap) / 100) : null,
+      employerMatchAmount: matchMode === "flat" && matchAmount ? matchAmount : null,
       annualLimit: limit || null,
     };
 
@@ -1032,33 +1048,94 @@ function SavingsRuleDialog({
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="sr-match-pct">Employer Match (%)</label>
-              <input
-                id="sr-match-pct"
-                name="employerMatchPct"
-                type="number"
-                step="1"
-                min={0}
-                max={100}
-                placeholder="Optional"
-                defaultValue={editing?.employerMatchPct ? pctFromDecimal(editing.employerMatchPct, 0) : ""}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="sr-match-cap">Match Cap (%)</label>
-              <input
-                id="sr-match-cap"
-                name="employerMatchCap"
-                type="number"
-                step="0.1"
-                min={0}
-                max={100}
-                placeholder="Optional"
-                defaultValue={editing?.employerMatchCap ? pctFromDecimal(editing.employerMatchCap, 0) : ""}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
+            <div className="col-span-2 rounded-md border border-gray-800 bg-gray-900/60 p-3">
+              <div className="mb-2 flex items-center gap-4">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                  Employer Match
+                </span>
+                <div className="flex gap-1 text-xs">
+                  {(["none", "percent", "flat"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMatchMode(m)}
+                      className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${
+                        matchMode === m
+                          ? "border-blue-600 bg-blue-900/40 text-blue-300"
+                          : "border-gray-700 bg-gray-900 text-gray-400 hover:bg-gray-800"
+                      }`}
+                    >
+                      {m === "none" ? "None" : m === "percent" ? "% of salary" : "Flat $"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {matchMode === "percent" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400" htmlFor="sr-match-pct">
+                      Match rate (%)
+                    </label>
+                    <input
+                      id="sr-match-pct"
+                      name="employerMatchPct"
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      max={100}
+                      placeholder="e.g., 50 or 3"
+                      defaultValue={
+                        editing?.employerMatchPct ? pctFromDecimal(editing.employerMatchPct, 0) : ""
+                      }
+                      className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400" htmlFor="sr-match-cap">
+                      Cap (% of salary) — optional
+                    </label>
+                    <input
+                      id="sr-match-cap"
+                      name="employerMatchCap"
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      max={100}
+                      placeholder="e.g., 6"
+                      defaultValue={
+                        editing?.employerMatchCap ? pctFromDecimal(editing.employerMatchCap, 0) : ""
+                      }
+                      className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <p className="col-span-2 text-[11px] text-gray-500">
+                    No cap → <code>rate × account-owner salary</code>. With cap →{" "}
+                    <code>rate × cap × salary</code> (e.g. 50% match up to 6% of salary).
+                  </p>
+                </div>
+              )}
+
+              {matchMode === "flat" && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-400" htmlFor="sr-match-amt">
+                    Flat annual amount ($)
+                  </label>
+                  <input
+                    id="sr-match-amt"
+                    name="employerMatchAmount"
+                    type="number"
+                    step="1"
+                    min={0}
+                    placeholder="e.g., 5000"
+                    defaultValue={editing?.employerMatchAmount ?? ""}
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <p className="mt-1 text-[11px] text-gray-500">
+                    The employer deposits this flat amount each year, regardless of salary.
+                  </p>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-300" htmlFor="sr-start">
@@ -1124,6 +1201,7 @@ export default function IncomeExpensesView({
   accounts,
   entities,
   clientInfo,
+  ownerNames,
 }: IncomeExpensesViewProps) {
   const [incomeList, setIncomeList] = useState<Income[]>(initialIncomes);
   const [expenseList, setExpenseList] = useState<Expense[]>(initialExpenses);
@@ -1245,7 +1323,7 @@ export default function IncomeExpensesView({
                         onDelete={() => setDeletingIncome(income)}
                         label={income.name}
                         meta={[
-                          entityName ?? OWNER_LABELS[income.owner],
+                          entityName ?? individualOwnerLabel(income.owner, ownerNames),
                           income.claimingAge ? `Claim @ ${income.claimingAge}` : null,
                           income.linkedEntityId && accountMap[income.linkedEntityId]
                             ? accountMap[income.linkedEntityId].name
@@ -1363,7 +1441,9 @@ export default function IncomeExpensesView({
                           editMode={savingsEdit}
                           onDelete={() => setDeletingSavings(rule)}
                           label={
-                            rule.employerMatchPct
+                            rule.employerMatchAmount
+                              ? `Contribution + ${fmt(rule.employerMatchAmount)} match/yr`
+                              : rule.employerMatchPct
                               ? `Contribution + ${(Number(rule.employerMatchPct) * 100).toFixed(0)}% match`
                               : "Contribution"
                           }
@@ -1389,6 +1469,7 @@ export default function IncomeExpensesView({
         accounts={accounts}
         entities={entities}
         clientInfo={clientInfo}
+        ownerNames={ownerNames}
         open={incomeDialog.open}
         onOpenChange={(o) => setIncomeDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
         defaultType={incomeDialog.defaultType}

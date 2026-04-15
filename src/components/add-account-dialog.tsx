@@ -16,6 +16,7 @@ interface AddAccountDialogProps {
   onRequestDelete?: () => void;
   entities?: EntityOption[];
   categoryDefaults?: CategoryDefaults;
+  ownerNames?: { clientName: string; spouseName: string | null };
 }
 
 export default function AddAccountDialog({
@@ -28,6 +29,7 @@ export default function AddAccountDialog({
   onRequestDelete,
   entities,
   categoryDefaults,
+  ownerNames,
 }: AddAccountDialogProps) {
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
@@ -75,6 +77,7 @@ export default function AddAccountDialog({
               initial={editing}
               entities={entities}
               categoryDefaults={categoryDefaults}
+              ownerNames={ownerNames}
               onSuccess={close}
               onDelete={onRequestDelete}
             />

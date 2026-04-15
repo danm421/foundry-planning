@@ -342,6 +342,9 @@ export const savingsRules = pgTable("savings_rules", {
   endYear: integer("end_year").notNull(),
   employerMatchPct: decimal("employer_match_pct", { precision: 5, scale: 4 }),
   employerMatchCap: decimal("employer_match_cap", { precision: 5, scale: 4 }),
+  // Flat annual dollar amount alternative to the pct/cap style. When set, the
+  // engine uses this and ignores employerMatchPct/Cap.
+  employerMatchAmount: decimal("employer_match_amount", { precision: 15, scale: 2 }),
   annualLimit: decimal("annual_limit", { precision: 15, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

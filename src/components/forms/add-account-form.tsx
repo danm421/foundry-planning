@@ -40,6 +40,8 @@ interface AddAccountFormProps {
   initial?: AccountFormInitial;
   entities?: EntityOption[];
   categoryDefaults?: CategoryDefaults;
+  /** Real names used in the owner dropdown. Falls back to "Client"/"Spouse" if absent. */
+  ownerNames?: { clientName: string; spouseName: string | null };
   onSuccess?: () => void;
   onDelete?: () => void;
 }
@@ -97,9 +99,12 @@ export default function AddAccountForm({
   initial,
   entities,
   categoryDefaults,
+  ownerNames,
   onSuccess,
   onDelete,
 }: AddAccountFormProps) {
+  const clientLabel = ownerNames?.clientName ?? "Client";
+  const spouseLabel = ownerNames?.spouseName ?? null;
   const router = useRouter();
   const isEdit = mode === "edit" && !!initial;
 
@@ -350,8 +355,10 @@ export default function AddAccountForm({
                 }}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="ind:client">Client</option>
-                <option value="ind:spouse">Spouse</option>
+                <option value="ind:client">{clientLabel}</option>
+                <option value="ind:spouse" disabled={!spouseLabel}>
+                  {spouseLabel ?? "Spouse (none on file)"}
+                </option>
                 <option value="ind:joint">Joint</option>
                 {entities && entities.length > 0 && (
                   <optgroup label="Entities (out of estate)">

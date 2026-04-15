@@ -7,6 +7,7 @@ import AddLiabilityDialog from "./add-liability-dialog";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import { AccountFormInitial, EntityOption, CategoryDefaults } from "./forms/add-account-form";
 import { LiabilityFormInitial } from "./forms/add-liability-form";
+import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -41,6 +42,7 @@ interface BalanceSheetViewProps {
   liabilities: LiabilityRow[];
   entities: EntityOption[];
   categoryDefaults: CategoryDefaults;
+  ownerNames: OwnerNames;
 }
 
 const CATEGORY_LABELS: Record<AccountCategory, string> = {
@@ -60,12 +62,6 @@ const CATEGORY_ORDER: AccountCategory[] = [
   "business",
   "life_insurance",
 ];
-
-const OWNER_LABELS: Record<string, string> = {
-  client: "Client",
-  spouse: "Spouse",
-  joint: "Joint",
-};
 
 const fmt = (value: string | number) =>
   new Intl.NumberFormat("en-US", {
@@ -174,6 +170,7 @@ export default function BalanceSheetView({
   liabilities,
   entities,
   categoryDefaults,
+  ownerNames,
 }: BalanceSheetViewProps) {
   const router = useRouter();
 
@@ -246,7 +243,7 @@ export default function BalanceSheetView({
 
   function ownerDisplay(a: AccountRow) {
     if (a.ownerEntityId && entityMap[a.ownerEntityId]) return entityMap[a.ownerEntityId].name;
-    return OWNER_LABELS[a.owner] ?? a.owner;
+    return individualOwnerLabel(a.owner as "client" | "spouse" | "joint", ownerNames);
   }
 
   function growthDisplay(a: AccountRow) {
@@ -400,6 +397,7 @@ export default function BalanceSheetView({
         label={addCategory ? CATEGORY_LABELS[addCategory] : undefined}
         entities={entities}
         categoryDefaults={categoryDefaults}
+        ownerNames={ownerNames}
         open={addCategory !== null}
         onOpenChange={(o) => !o && setAddCategory(null)}
       />
@@ -409,6 +407,7 @@ export default function BalanceSheetView({
         clientId={clientId}
         entities={entities}
         categoryDefaults={categoryDefaults}
+        ownerNames={ownerNames}
         open={!!editingAccount}
         onOpenChange={(o) => !o && setEditingAccount(null)}
         editing={editingAccount ? accountToInitial(editingAccount) : undefined}

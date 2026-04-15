@@ -361,26 +361,48 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     });
 
     // Employer match — direct credit to the destination account, free cash from the
-    // employer. Does not touch household checking.
-    if (savings.employerTotal > 0) {
-      for (const rule of data.savingsRules) {
-        if (year < rule.startYear || year > rule.endYear) continue;
-        const match = computeEmployerMatch(rule, income.salaries);
-        if (match === 0) continue;
-        accountBalances[rule.accountId] = (accountBalances[rule.accountId] ?? 0) + match;
-        if (accountLedgers[rule.accountId]) {
-          accountLedgers[rule.accountId].contributions += match;
-          accountLedgers[rule.accountId].endingValue += match;
-          const label =
-            rule.employerMatchCap != null
-              ? `Employer match (${(rule.employerMatchPct! * 100).toFixed(0)}% on ${(rule.employerMatchCap * 100).toFixed(1)}% of salary)`
-              : `Employer match (${(rule.employerMatchPct! * 100).toFixed(2)}% of salary)`;
-          accountLedgers[rule.accountId].entries.push({
-            category: "employer_match",
-            label,
-            amount: match,
-          });
+    // employer. Does not touch household checking. For percentage-based matches the
+    // base salary is the salary belonging to the account's owner, not total household
+    // salary. For joint-owned accounts and flat-$ matches, total salary is used.
+    const salaryByOwner: Record<"client" | "spouse" | "joint", number> = {
+      client: 0,
+      spouse: 0,
+      joint: 0,
+    };
+    for (const inc of data.incomes) {
+      if (inc.type !== "salary") continue;
+      if (inc.ownerEntityId != null) continue;
+      if (year < inc.startYear || year > inc.endYear) continue;
+      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inc.startYear);
+      salaryByOwner[inc.owner] += amount;
+    }
+
+    for (const rule of data.savingsRules) {
+      if (year < rule.startYear || year > rule.endYear) continue;
+      const acct = data.accounts.find((a) => a.id === rule.accountId);
+      const ownerSalary =
+        acct && (acct.owner === "client" || acct.owner === "spouse")
+          ? salaryByOwner[acct.owner]
+          : income.salaries;
+      const match = computeEmployerMatch(rule, ownerSalary);
+      if (match === 0) continue;
+      accountBalances[rule.accountId] = (accountBalances[rule.accountId] ?? 0) + match;
+      if (accountLedgers[rule.accountId]) {
+        accountLedgers[rule.accountId].contributions += match;
+        accountLedgers[rule.accountId].endingValue += match;
+        let label: string;
+        if (rule.employerMatchAmount != null && rule.employerMatchAmount > 0) {
+          label = "Employer match (flat annual)";
+        } else if (rule.employerMatchCap != null) {
+          label = `Employer match (${(rule.employerMatchPct! * 100).toFixed(0)}% on ${(rule.employerMatchCap * 100).toFixed(1)}% of salary)`;
+        } else {
+          label = `Employer match (${(rule.employerMatchPct! * 100).toFixed(2)}% of salary)`;
         }
+        accountLedgers[rule.accountId].entries.push({
+          category: "employer_match",
+          label,
+          amount: match,
+        });
       }
     }
 

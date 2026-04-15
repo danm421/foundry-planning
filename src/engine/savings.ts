@@ -7,17 +7,24 @@ interface SavingsResult {
 }
 
 /**
- * Annual employer match for a rule against a given year's salary.
- * - Both pct + cap set → pct × cap × salary (e.g. "50% match up to 6% of salary").
- * - Only pct set       → pct × salary        (e.g. "3% of salary, flat").
- * - Neither set        → 0.
+ * Annual employer match for a rule, given the salary the match is based on.
+ * Priority order:
+ *   1. Flat dollar amount (employerMatchAmount) — absolute $, wins if set.
+ *   2. Pct + cap style   (pct × cap × salary) — "50% match up to 6% of salary".
+ *   3. Pct only          (pct × salary)        — "3% of salary, flat".
+ *   4. Nothing           → 0.
+ * The caller decides which salary stream is the base (typically the salary
+ * owned by whoever owns the retirement account the rule targets).
  */
-export function computeEmployerMatch(rule: SavingsRule, totalSalaryIncome: number): number {
+export function computeEmployerMatch(rule: SavingsRule, salaryBase: number): number {
+  if (rule.employerMatchAmount != null && rule.employerMatchAmount > 0) {
+    return rule.employerMatchAmount;
+  }
   if (rule.employerMatchPct == null) return 0;
   if (rule.employerMatchCap != null) {
-    return totalSalaryIncome * rule.employerMatchCap * rule.employerMatchPct;
+    return salaryBase * rule.employerMatchCap * rule.employerMatchPct;
   }
-  return totalSalaryIncome * rule.employerMatchPct;
+  return salaryBase * rule.employerMatchPct;
 }
 
 // Apply savings rules at their full annual amount (respecting the optional annualLimit).
@@ -50,7 +57,9 @@ export function applySavingsRules(
     if (legacyCap != null) remaining -= contribution;
 
     // Employer match is not funded from household cash — it's a gift from the employer
-    // deposited directly into the account.
+    // deposited directly into the account. For the running total here we use the full
+    // salary base; the projection engine recomputes per-rule matches using the
+    // account-owner's salary slice for accurate deposits.
     employerTotal += computeEmployerMatch(rule, totalSalaryIncome);
   }
 

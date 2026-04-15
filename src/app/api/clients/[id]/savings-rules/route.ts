@@ -64,7 +64,16 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { accountId, annualAmount, startYear, endYear, employerMatchPct, employerMatchCap, annualLimit } = body;
+    const {
+      accountId,
+      annualAmount,
+      startYear,
+      endYear,
+      employerMatchPct,
+      employerMatchCap,
+      employerMatchAmount,
+      annualLimit,
+    } = body;
 
     if (!accountId || !startYear || !endYear) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -81,6 +90,7 @@ export async function POST(
         endYear: Number(endYear),
         employerMatchPct: employerMatchPct ?? null,
         employerMatchCap: employerMatchCap ?? null,
+        employerMatchAmount: employerMatchAmount ?? null,
         annualLimit: annualLimit ?? null,
       })
       .returning();
