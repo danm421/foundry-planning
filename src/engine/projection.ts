@@ -535,27 +535,28 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       portfolioAssets.lifeInsuranceTotal;
 
     // 14. Assemble the year. P&L-style totals:
-    //   Total Income   = earned income + household RMDs  (no withdrawals)
-    //   Total Expenses = base expenses + income tax + savings  (no withdrawal tax)
-    //   Net Cash Flow  = Total Income - Total Expenses  (can be negative)
-    // Supplemental withdrawals are a balancing mechanism *below* the P&L: when net
-    // cash flow is negative, the engine withdraws from the strategy (grossed up by
-    // the marginal rate so the implicit tax is covered) to keep household cash from
-    // going too deep. The gross withdrawal shows in `withdrawals.total`, viewed via
-    // the Net Cash Flow drill-down; the tax portion of that gross-up is recorded on
-    // the household-cash ledger ("Tax on withdrawal"), not in `expenses.taxes`.
+    //   Total Income   = earned income + household RMDs  (no withdrawals — those are
+    //                    a balancing mechanism below the P&L)
+    //   Total Expenses = base expenses + savings + taxes  (taxes includes both the
+    //                    income/RMD tax and the gross-up tax on any supplemental
+    //                    withdrawal the engine made to refill household cash)
+    //   Net Cash Flow  = Total Income - Total Expenses   (can be negative)
+    // When Net Cash Flow is negative, |Net Cash Flow| equals the gross withdrawal the
+    // engine actually pulled from the strategy, so the two reconcile — household cash
+    // drops by |Net Cash Flow| and the withdrawal refills it by the same amount.
+    const totalTaxes = taxes + withdrawalTax;
     const expenses = {
       living: expenseBreakdown.living,
       liabilities: liabResult.totalPayment,
       other: expenseBreakdown.other,
       insurance: expenseBreakdown.insurance,
-      taxes,
+      taxes: totalTaxes,
       total:
         expenseBreakdown.living +
         expenseBreakdown.other +
         expenseBreakdown.insurance +
         liabResult.totalPayment +
-        taxes,
+        totalTaxes,
       bySource: expenseBreakdown.bySource,
     };
 
