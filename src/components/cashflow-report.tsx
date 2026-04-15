@@ -296,14 +296,14 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         type: "bar" as const,
         label: "Social Security",
         data: years.map((y) => y.income.socialSecurity),
-        backgroundColor: "#1e3a8a",
+        backgroundColor: "#2563eb",
         stack: "inflows",
       },
       {
         type: "bar" as const,
         label: "Salaries",
         data: years.map((y) => y.income.salaries),
-        backgroundColor: "#2563eb",
+        backgroundColor: "#16a34a",
         stack: "inflows",
       },
       {

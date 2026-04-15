@@ -406,6 +406,13 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       }
     }
 
+    // Snapshot the checking balance *before* this year's inflows/outflows are applied
+    // so we can attribute any drawdown of prior-year cash surplus as a "withdrawal
+    // from cash" in the withdrawals drill-down.
+    const checkingBalanceBeforeDeltas = hasChecking
+      ? accountBalances[defaultChecking!.id] ?? 0
+      : 0;
+
     // 11. Apply the accumulated cash deltas to balances and ledgers. Itemized entries
     // collected during creditCash are flushed onto the ledger in the order they were
     // recorded so the modal can show a per-year transaction list.
@@ -434,23 +441,43 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     for (const acct of data.accounts) {
       if (acct.ownerEntityId != null) continue;
       if (acct.isDefaultChecking) continue;
-      householdWithdrawBalances[acct.id] = accountBalances[acct.id] ?? 0;
+      householdWithdrawBalances[acct.id] = acct.id in accountBalances ? accountBalances[acct.id] : 0;
     }
 
     if (hasChecking) {
       const checkingId = defaultChecking!.id;
+
+      // Cash drawdown: when this year's outflows ate into a prior-year surplus sitting
+      // in household checking, attribute the consumed portion as a withdrawal from
+      // cash. Reporting-only — the balance movement was already captured by the
+      // individual expense/tax entries.
+      const endingAfterDeltas = accountBalances[checkingId] ?? 0;
+      const consumed = checkingBalanceBeforeDeltas - endingAfterDeltas;
+      const cashDrawdown = Math.max(
+        0,
+        Math.min(Math.max(0, checkingBalanceBeforeDeltas), consumed)
+      );
+      if (cashDrawdown > 0) {
+        withdrawals.byAccount[checkingId] = cashDrawdown;
+        withdrawals.total += cashDrawdown;
+      }
+
+      // If checking is still negative after drawing down the surplus, fall through
+      // to the supplemental withdrawal strategy to close the remaining gap.
       if (accountBalances[checkingId] < 0) {
         const shortfall = -accountBalances[checkingId];
         const grossNeeded = shortfall / (1 - marginalRate);
-        withdrawals = executeWithdrawals(
+        const supplemental = executeWithdrawals(
           grossNeeded,
           effectiveWithdrawalStrategy,
           householdWithdrawBalances,
           year
         );
 
-        for (const [acctId, amount] of Object.entries(withdrawals.byAccount)) {
+        for (const [acctId, amount] of Object.entries(supplemental.byAccount)) {
           accountBalances[acctId] -= amount;
+          withdrawals.byAccount[acctId] = (withdrawals.byAccount[acctId] ?? 0) + amount;
+          withdrawals.total += amount;
           if (accountLedgers[acctId]) {
             accountLedgers[acctId].distributions += amount;
             accountLedgers[acctId].endingValue -= amount;
@@ -462,21 +489,21 @@ export function runProjection(data: ClientData): ProjectionYear[] {
           }
         }
 
-        // Gross withdrawal lands in checking.
-        accountBalances[checkingId] += withdrawals.total;
+        // Gross supplemental withdrawal lands in checking.
+        accountBalances[checkingId] += supplemental.total;
         if (accountLedgers[checkingId]) {
-          accountLedgers[checkingId].contributions += withdrawals.total;
-          accountLedgers[checkingId].endingValue += withdrawals.total;
+          accountLedgers[checkingId].contributions += supplemental.total;
+          accountLedgers[checkingId].endingValue += supplemental.total;
           accountLedgers[checkingId].entries.push({
             category: "withdrawal",
             label: "Withdrawal to cover shortfall",
-            amount: withdrawals.total,
+            amount: supplemental.total,
           });
         }
 
-        // Marginal tax on the gross withdrawal comes back out of checking and is
-        // reported as additional taxes for the year.
-        withdrawalTax = withdrawals.total * marginalRate;
+        // Marginal tax on the gross supplemental withdrawal comes back out of
+        // checking and is reported as additional taxes for the year.
+        withdrawalTax = supplemental.total * marginalRate;
         accountBalances[checkingId] -= withdrawalTax;
         if (accountLedgers[checkingId]) {
           accountLedgers[checkingId].distributions += withdrawalTax;
