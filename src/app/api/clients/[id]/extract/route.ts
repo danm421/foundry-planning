@@ -7,6 +7,9 @@ import { extractDocument } from "@/lib/extraction/extract";
 import { DOCUMENT_TYPES } from "@/lib/extraction/types";
 import type { DocumentType } from "@/lib/extraction/types";
 
+// Next.js App Router: increase body size limit for file uploads (default is 1MB)
+export const maxDuration = 60;
+
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
 export async function POST(
