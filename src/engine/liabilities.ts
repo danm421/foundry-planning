@@ -34,15 +34,19 @@ export function amortizeLiability(
 
 export function computeLiabilities(
   liabilities: Liability[],
-  year: number
+  year: number,
+  filter?: (liab: Liability) => boolean
 ): LiabilitiesResult {
   let totalPayment = 0;
   const updatedLiabilities: Liability[] = [];
 
   for (const liab of liabilities) {
     const result = amortizeLiability(liab, year);
-    totalPayment += result.annualPayment;
+    // Preserve the balance roll-forward even when the liability is filtered out
+    // (e.g. entity-owned) so the stored state stays consistent across years.
     updatedLiabilities.push({ ...liab, balance: result.endingBalance });
+    if (filter && !filter(liab)) continue;
+    totalPayment += result.annualPayment;
   }
 
   return { totalPayment, updatedLiabilities };

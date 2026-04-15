@@ -1,0 +1,115 @@
+import { notFound } from "next/navigation";
+import { db } from "@/db";
+import {
+  clients,
+  scenarios,
+  accounts,
+  liabilities,
+  entities,
+  planSettings,
+} from "@/db/schema";
+import { eq, and, asc } from "drizzle-orm";
+import { getOrgId } from "@/lib/db-helpers";
+import BalanceSheetView, { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
+
+interface PageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default async function BalanceSheetPage({ params }: PageProps) {
+  const firmId = await getOrgId();
+  const { id } = await params;
+
+  const [client] = await db
+    .select()
+    .from(clients)
+    .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
+
+  if (!client) notFound();
+
+  const [scenario] = await db
+    .select()
+    .from(scenarios)
+    .where(and(eq(scenarios.clientId, id), eq(scenarios.isBaseCase, true)));
+
+  if (!scenario) {
+    return (
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
+        No base case scenario found.
+      </div>
+    );
+  }
+
+  const [accountRows, liabilityRows, entityRows, settingsRows] = await Promise.all([
+    db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
+    db
+      .select()
+      .from(liabilities)
+      .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id))),
+    db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
+    db
+      .select()
+      .from(planSettings)
+      .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
+  ]);
+
+  const settings = settingsRows[0];
+
+  const accountProps: AccountRow[] = accountRows.map((a) => ({
+    id: a.id,
+    name: a.name,
+    category: a.category as AccountRow["category"],
+    subType: a.subType,
+    owner: a.owner,
+    value: String(a.value),
+    basis: String(a.basis),
+    growthRate: a.growthRate == null ? null : String(a.growthRate),
+    rmdEnabled: a.rmdEnabled ?? null,
+    ownerEntityId: a.ownerEntityId ?? null,
+  }));
+
+  const liabilityProps: LiabilityRow[] = liabilityRows.map((l) => ({
+    id: l.id,
+    name: l.name,
+    balance: String(l.balance),
+    interestRate: String(l.interestRate),
+    monthlyPayment: String(l.monthlyPayment),
+    startYear: l.startYear,
+    endYear: l.endYear,
+    linkedPropertyId: l.linkedPropertyId ?? null,
+    ownerEntityId: l.ownerEntityId ?? null,
+  }));
+
+  const entityOptions = entityRows.map((e) => ({ id: e.id, name: e.name }));
+
+  const categoryDefaults = settings
+    ? {
+        taxable: String(settings.defaultGrowthTaxable),
+        cash: String(settings.defaultGrowthCash),
+        retirement: String(settings.defaultGrowthRetirement),
+        real_estate: String(settings.defaultGrowthRealEstate),
+        business: String(settings.defaultGrowthBusiness),
+        life_insurance: String(settings.defaultGrowthLifeInsurance),
+      }
+    : {
+        taxable: "0.07",
+        cash: "0.02",
+        retirement: "0.07",
+        real_estate: "0.04",
+        business: "0.05",
+        life_insurance: "0.03",
+      };
+
+  return (
+    <BalanceSheetView
+      clientId={id}
+      accounts={accountProps}
+      liabilities={liabilityProps}
+      entities={entityOptions}
+      categoryDefaults={categoryDefaults}
+    />
+  );
+}

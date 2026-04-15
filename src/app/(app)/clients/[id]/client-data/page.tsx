@@ -4,7 +4,7 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-export default async function LegacyBalanceSheetRedirect({ params }: PageProps) {
+export default async function ClientDataIndex({ params }: PageProps) {
   const { id } = await params;
-  redirect(`/clients/${id}/client-data/balance-sheet`);
+  redirect(`/clients/${id}/client-data/family`);
 }

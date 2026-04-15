@@ -5,10 +5,43 @@ import { useRouter } from "next/navigation";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
+export interface AccountFormInitial {
+  id: string;
+  name: string;
+  category: AccountCategory;
+  subType: string;
+  owner: string;
+  value: string;
+  basis: string;
+  // null means "use the default for this category" from plan_settings
+  growthRate: string | null;
+  rmdEnabled?: boolean | null;
+  ownerEntityId?: string | null;
+}
+
+export interface EntityOption {
+  id: string;
+  name: string;
+}
+
+export interface CategoryDefaults {
+  taxable: string;
+  cash: string;
+  retirement: string;
+  real_estate: string;
+  business: string;
+  life_insurance: string;
+}
+
 interface AddAccountFormProps {
   clientId: string;
   category?: AccountCategory;
+  mode?: "create" | "edit";
+  initial?: AccountFormInitial;
+  entities?: EntityOption[];
+  categoryDefaults?: CategoryDefaults;
   onSuccess?: () => void;
+  onDelete?: () => void;
 }
 
 const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
@@ -57,19 +90,64 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
 const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "roth_401k", "529"]);
 const RMD_ELIGIBLE_SUB_TYPES = new Set(["traditional_ira", "401k"]);
 
-export default function AddAccountForm({ clientId, category: defaultCategory, onSuccess }: AddAccountFormProps) {
+export default function AddAccountForm({
+  clientId,
+  category: defaultCategory,
+  mode = "create",
+  initial,
+  entities,
+  categoryDefaults,
+  onSuccess,
+  onDelete,
+}: AddAccountFormProps) {
   const router = useRouter();
+  const isEdit = mode === "edit" && !!initial;
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [category, setCategory] = useState<AccountCategory>(defaultCategory ?? "taxable");
+  const [category, setCategory] = useState<AccountCategory>(
+    initial?.category ?? defaultCategory ?? "taxable"
+  );
   const [activeTab, setActiveTab] = useState<"details" | "savings">("details");
-  const [subType, setSubType] = useState(SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]);
-  const [rmdEnabled, setRmdEnabled] = useState(RMD_ELIGIBLE_SUB_TYPES.has(SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]));
+  const [subType, setSubType] = useState(
+    initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
+  );
+  const [rmdEnabled, setRmdEnabled] = useState<boolean>(
+    initial?.rmdEnabled ?? RMD_ELIGIBLE_SUB_TYPES.has(
+      initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
+    )
+  );
+
+  // Owner selection: either an "individual" owner (client/spouse/joint) or an entity id.
+  type OwnerChoice = { kind: "individual"; value: string } | { kind: "entity"; value: string };
+  const initialOwnerChoice: OwnerChoice = initial?.ownerEntityId
+    ? { kind: "entity", value: initial.ownerEntityId }
+    : { kind: "individual", value: initial?.owner ?? "client" };
+  const [ownerChoice, setOwnerChoice] = useState<OwnerChoice>(initialOwnerChoice);
+
+  // Growth rate: "use default" (null) vs explicit override
+  const hasExplicitGrowth = initial?.growthRate != null && initial.growthRate !== "";
+  const [useDefaultGrowth, setUseDefaultGrowth] = useState<boolean>(!hasExplicitGrowth && isEdit ? true : !isEdit);
+  const defaultPctForCategory = categoryDefaults
+    ? Math.round(Number(categoryDefaults[category]) * 10000) / 100
+    : null;
 
   const currentYear = new Date().getFullYear();
   const subTypes = SUB_TYPE_BY_CATEGORY[category];
   const isRetirementAccount = category === "retirement" && RETIREMENT_SUB_TYPES.has(subType);
-  const showRmdCheckbox = category === "retirement" && (subType === "traditional_ira" || subType === "401k" || subType === "roth_ira" || subType === "roth_401k" || subType === "529");
+  const showRmdCheckbox =
+    category === "retirement" &&
+    (subType === "traditional_ira" ||
+      subType === "401k" ||
+      subType === "roth_ira" ||
+      subType === "roth_401k" ||
+      subType === "529");
+
+  // Growth rate as percent for the input (stored as decimal fraction).
+  // If no explicit value, fall back to the category default for display.
+  const initialGrowthPct = hasExplicitGrowth
+    ? Math.round(Number(initial!.growthRate) * 10000) / 100
+    : defaultPctForCategory ?? 7;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -79,60 +157,73 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
     const form = e.currentTarget;
     const data = new FormData(form);
 
+    const individualOwner = ownerChoice.kind === "individual" ? ownerChoice.value : "client";
+    const ownerEntityId = ownerChoice.kind === "entity" ? ownerChoice.value : null;
+
+    const growthRate = useDefaultGrowth
+      ? null
+      : String(Number(data.get("growthRate")) / 100);
+
     const accountBody = {
       name: data.get("name") as string,
       category: data.get("category") as string,
       subType: data.get("subType") as string,
-      owner: data.get("owner") as string,
+      owner: individualOwner,
       value: data.get("value") as string,
       basis: data.get("basis") as string,
-      growthRate: String(Number(data.get("growthRate")) / 100),
+      growthRate,
       rmdEnabled,
+      ownerEntityId,
     };
 
-    // Savings tab data
-    const savingsAmount = data.get("savingsAmount") as string;
-    const hasSavings = savingsAmount && Number(savingsAmount) > 0;
-
     try {
-      const res = await fetch(`/api/clients/${clientId}/accounts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(accountBody),
-      });
-
-      if (!res.ok) {
-        const json = await res.json();
-        throw new Error(json.error ?? "Failed to create account");
-      }
-
-      const account = await res.json();
-
-      // Create savings rule if savings tab was filled
-      if (hasSavings) {
-        const matchPct = data.get("employerMatchPct") as string;
-        const matchCap = data.get("employerMatchCap") as string;
-        const limit = data.get("annualLimit") as string;
-
-        const savingsBody = {
-          accountId: account.id,
-          annualAmount: savingsAmount,
-          startYear: data.get("savingsStartYear") as string,
-          endYear: data.get("savingsEndYear") as string,
-          employerMatchPct: matchPct ? String(Number(matchPct) / 100) : null,
-          employerMatchCap: matchCap ? String(Number(matchCap) / 100) : null,
-          annualLimit: limit || null,
-        };
-
-        const savingsRes = await fetch(`/api/clients/${clientId}/savings-rules`, {
+      if (isEdit) {
+        const res = await fetch(`/api/clients/${clientId}/accounts/${initial!.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(accountBody),
+        });
+        if (!res.ok) {
+          const json = await res.json();
+          throw new Error(json.error ?? "Failed to update account");
+        }
+      } else {
+        const res = await fetch(`/api/clients/${clientId}/accounts`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(savingsBody),
+          body: JSON.stringify(accountBody),
         });
+        if (!res.ok) {
+          const json = await res.json();
+          throw new Error(json.error ?? "Failed to create account");
+        }
+        const account = await res.json();
 
-        if (!savingsRes.ok) {
-          // Account was created but savings rule failed — still refresh
-          console.error("Failed to create savings rule");
+        // Create savings rule if savings tab filled (create-only)
+        const savingsAmount = data.get("savingsAmount") as string;
+        if (savingsAmount && Number(savingsAmount) > 0) {
+          const matchPct = data.get("employerMatchPct") as string;
+          const matchCap = data.get("employerMatchCap") as string;
+          const limit = data.get("annualLimit") as string;
+
+          const savingsBody = {
+            accountId: account.id,
+            annualAmount: savingsAmount,
+            startYear: data.get("savingsStartYear") as string,
+            endYear: data.get("savingsEndYear") as string,
+            employerMatchPct: matchPct ? String(Number(matchPct) / 100) : null,
+            employerMatchCap: matchCap ? String(Number(matchCap) / 100) : null,
+            annualLimit: limit || null,
+          };
+
+          const savingsRes = await fetch(`/api/clients/${clientId}/savings-rules`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(savingsBody),
+          });
+          if (!savingsRes.ok) {
+            console.error("Failed to create savings rule");
+          }
         }
       }
 
@@ -151,34 +242,36 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
         <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
       )}
 
-      {/* Tab bar */}
-      <div className="flex border-b border-gray-700">
-        <button
-          type="button"
-          onClick={() => setActiveTab("details")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-            activeTab === "details"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-gray-400 hover:text-gray-200"
-          }`}
-        >
-          Account Details
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("savings")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-            activeTab === "savings"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-gray-400 hover:text-gray-200"
-          }`}
-        >
-          Savings
-        </button>
-      </div>
+      {/* Tab bar — savings tab only shown on create */}
+      {!isEdit && (
+        <div className="flex border-b border-gray-700">
+          <button
+            type="button"
+            onClick={() => setActiveTab("details")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+              activeTab === "details"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Account Details
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("savings")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+              activeTab === "savings"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Savings
+          </button>
+        </div>
+      )}
 
-      {/* Account Details tab */}
-      <div className={activeTab === "details" ? "" : "hidden"}>
+      {/* Account Details */}
+      <div className={!isEdit && activeTab !== "details" ? "hidden" : ""}>
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-300" htmlFor="name">
@@ -189,6 +282,7 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
               name="name"
               type="text"
               required
+              defaultValue={initial?.name ?? ""}
               placeholder="e.g., Fidelity Brokerage"
               className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
@@ -248,29 +342,56 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
               </label>
               <select
                 id="owner"
-                name="owner"
+                value={ownerChoice.kind === "individual" ? `ind:${ownerChoice.value}` : `ent:${ownerChoice.value}`}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v.startsWith("ind:")) setOwnerChoice({ kind: "individual", value: v.slice(4) });
+                  else if (v.startsWith("ent:")) setOwnerChoice({ kind: "entity", value: v.slice(4) });
+                }}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="client">Client</option>
-                <option value="spouse">Spouse</option>
-                <option value="joint">Joint</option>
+                <option value="ind:client">Client</option>
+                <option value="ind:spouse">Spouse</option>
+                <option value="ind:joint">Joint</option>
+                {entities && entities.length > 0 && (
+                  <optgroup label="Entities (out of estate)">
+                    {entities.map((ent) => (
+                      <option key={ent.id} value={`ent:${ent.id}`}>{ent.name}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
+              {ownerChoice.kind === "entity" && (
+                <p className="mt-1 text-xs text-amber-400">Counted as out of estate.</p>
+              )}
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-300" htmlFor="growthRate">
                 Growth Rate (%)
               </label>
-              <input
-                id="growthRate"
-                name="growthRate"
-                type="number"
-                step="0.01"
-                min={0}
-                max={30}
-                defaultValue={7}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  id="growthRate"
+                  name="growthRate"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  max={30}
+                  defaultValue={initialGrowthPct}
+                  disabled={useDefaultGrowth}
+                  className="block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                />
+              </div>
+              <label className="mt-1 flex items-center gap-1.5 text-xs text-gray-400">
+                <input
+                  type="checkbox"
+                  checked={useDefaultGrowth}
+                  onChange={(e) => setUseDefaultGrowth(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+                />
+                Use category default{defaultPctForCategory !== null ? ` (${defaultPctForCategory}%)` : ""}
+              </label>
             </div>
 
             <div>
@@ -283,7 +404,7 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
                 type="number"
                 step="0.01"
                 min={0}
-                defaultValue={0}
+                defaultValue={initial?.value ?? 0}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -298,7 +419,7 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
                 type="number"
                 step="0.01"
                 min={0}
-                defaultValue={0}
+                defaultValue={initial?.basis ?? 0}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -323,113 +444,126 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
         </div>
       </div>
 
-      {/* Savings tab */}
-      <div className={activeTab === "savings" ? "" : "hidden"}>
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="savingsAmount">
-                Annual Contribution ($)
-              </label>
-              <input
-                id="savingsAmount"
-                name="savingsAmount"
-                type="number"
-                step="1"
-                min={0}
-                defaultValue={0}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="annualLimit">
-                Annual Limit ($)
-              </label>
-              <input
-                id="annualLimit"
-                name="annualLimit"
-                type="number"
-                step="1"
-                min={0}
-                placeholder="Optional"
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="savingsStartYear">
-                Start Year
-              </label>
-              <input
-                id="savingsStartYear"
-                name="savingsStartYear"
-                type="number"
-                defaultValue={currentYear}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="savingsEndYear">
-                End Year
-              </label>
-              <input
-                id="savingsEndYear"
-                name="savingsEndYear"
-                type="number"
-                defaultValue={currentYear + 20}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
-          {isRetirementAccount && (
-            <div className="grid grid-cols-2 gap-4 border-t border-gray-700 pt-4">
-              <p className="col-span-2 text-xs font-medium uppercase tracking-wider text-gray-400">Employer Match</p>
+      {/* Savings tab — create only */}
+      {!isEdit && (
+        <div className={activeTab === "savings" ? "" : "hidden"}>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="employerMatchPct">
-                  Match Rate (%)
+                <label className="block text-sm font-medium text-gray-300" htmlFor="savingsAmount">
+                  Annual Contribution ($)
                 </label>
                 <input
-                  id="employerMatchPct"
-                  name="employerMatchPct"
+                  id="savingsAmount"
+                  name="savingsAmount"
                   type="number"
                   step="1"
                   min={0}
-                  max={100}
-                  placeholder="e.g., 50"
+                  defaultValue={0}
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="employerMatchCap">
-                  Match Cap (% of salary)
+                <label className="block text-sm font-medium text-gray-300" htmlFor="annualLimit">
+                  Annual Limit ($)
                 </label>
                 <input
-                  id="employerMatchCap"
-                  name="employerMatchCap"
+                  id="annualLimit"
+                  name="annualLimit"
                   type="number"
-                  step="0.1"
+                  step="1"
                   min={0}
-                  max={100}
-                  placeholder="e.g., 6"
+                  placeholder="Optional"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="savingsStartYear">
+                  Start Year
+                </label>
+                <input
+                  id="savingsStartYear"
+                  name="savingsStartYear"
+                  type="number"
+                  defaultValue={currentYear}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="savingsEndYear">
+                  End Year
+                </label>
+                <input
+                  id="savingsEndYear"
+                  name="savingsEndYear"
+                  type="number"
+                  defaultValue={currentYear + 20}
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
             </div>
-          )}
-        </div>
-      </div>
 
-      <div className="flex justify-end pt-2">
+            {isRetirementAccount && (
+              <div className="grid grid-cols-2 gap-4 border-t border-gray-700 pt-4">
+                <p className="col-span-2 text-xs font-medium uppercase tracking-wider text-gray-400">Employer Match</p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="employerMatchPct">
+                    Match Rate (%)
+                  </label>
+                  <input
+                    id="employerMatchPct"
+                    name="employerMatchPct"
+                    type="number"
+                    step="1"
+                    min={0}
+                    max={100}
+                    placeholder="e.g., 50"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="employerMatchCap">
+                    Match Cap (% of salary)
+                  </label>
+                  <input
+                    id="employerMatchCap"
+                    name="employerMatchCap"
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    max={100}
+                    placeholder="e.g., 6"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between pt-2">
+        {isEdit && onDelete ? (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/60"
+          >
+            Delete…
+          </button>
+        ) : (
+          <span />
+        )}
         <button
           type="submit"
           disabled={loading}
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
         >
-          {loading ? "Adding..." : "Add Account"}
+          {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Account"}
         </button>
       </div>
     </form>

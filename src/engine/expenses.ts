@@ -11,7 +11,8 @@ interface ExpenseBreakdown {
 
 export function computeExpenses(
   expenses: Expense[],
-  year: number
+  year: number,
+  filter?: (exp: Expense) => boolean
 ): ExpenseBreakdown {
   const result: ExpenseBreakdown = {
     living: 0,
@@ -24,6 +25,7 @@ export function computeExpenses(
 
   for (const exp of expenses) {
     if (year < exp.startYear || year > exp.endYear) continue;
+    if (filter && !filter(exp)) continue;
 
     const yearsElapsed = year - exp.startYear;
     const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, yearsElapsed);

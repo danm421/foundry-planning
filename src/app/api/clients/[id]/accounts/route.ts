@@ -64,7 +64,17 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { name, category, subType, owner, value, basis, growthRate, rmdEnabled } = body;
+    const {
+      name,
+      category,
+      subType,
+      owner,
+      value,
+      basis,
+      growthRate,
+      rmdEnabled,
+      ownerEntityId,
+    } = body;
 
     if (!name || !category) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -81,8 +91,10 @@ export async function POST(
         owner: owner ?? "client",
         value: value ?? "0",
         basis: basis ?? "0",
-        growthRate: growthRate ?? "0.07",
+        // null = inherit the default growth rate for this category from plan_settings
+        growthRate: growthRate ?? null,
         rmdEnabled: rmdEnabled ?? false,
+        ownerEntityId: ownerEntityId ?? null,
       })
       .returning();
 

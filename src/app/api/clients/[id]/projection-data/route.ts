@@ -10,6 +10,7 @@ import {
   savingsRules,
   withdrawalStrategies,
   planSettings,
+  entities,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -52,6 +53,7 @@ export async function GET(
       savingsRuleRows,
       withdrawalRows,
       planSettingsRows,
+      entityRows,
     ] = await Promise.all([
       db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
       db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
@@ -60,6 +62,7 @@ export async function GET(
       db.select().from(savingsRules).where(and(eq(savingsRules.clientId, id), eq(savingsRules.scenarioId, scenario.id))),
       db.select().from(withdrawalStrategies).where(and(eq(withdrawalStrategies.clientId, id), eq(withdrawalStrategies.scenarioId, scenario.id))),
       db.select().from(planSettings).where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
+      db.select().from(entities).where(eq(entities.clientId, id)),
     ]);
 
     const [settings] = planSettingsRows;
@@ -81,17 +84,29 @@ export async function GET(
         spouseRetirementAge: client.spouseRetirementAge ?? undefined,
         filingStatus: client.filingStatus,
       },
-      accounts: accountRows.map((a) => ({
-        id: a.id,
-        name: a.name,
-        category: a.category,
-        subType: a.subType,
-        owner: a.owner,
-        value: parseFloat(a.value),
-        basis: parseFloat(a.basis),
-        growthRate: parseFloat(a.growthRate),
-        rmdEnabled: a.rmdEnabled,
-      })),
+      accounts: accountRows.map((a) => {
+        const defaultByCategory: Record<string, string> = {
+          taxable: String(settings.defaultGrowthTaxable),
+          cash: String(settings.defaultGrowthCash),
+          retirement: String(settings.defaultGrowthRetirement),
+          real_estate: String(settings.defaultGrowthRealEstate),
+          business: String(settings.defaultGrowthBusiness),
+          life_insurance: String(settings.defaultGrowthLifeInsurance),
+        };
+        const effectiveGrowth = a.growthRate ?? defaultByCategory[a.category] ?? "0.07";
+        return {
+          id: a.id,
+          name: a.name,
+          category: a.category,
+          subType: a.subType,
+          owner: a.owner,
+          value: parseFloat(a.value),
+          basis: parseFloat(a.basis),
+          growthRate: parseFloat(effectiveGrowth),
+          rmdEnabled: a.rmdEnabled,
+          ownerEntityId: a.ownerEntityId ?? undefined,
+        };
+      }),
       incomes: incomeRows.map((i) => ({
         id: i.id,
         type: i.type,
@@ -103,6 +118,7 @@ export async function GET(
         owner: i.owner,
         claimingAge: i.claimingAge ?? undefined,
         linkedEntityId: i.linkedEntityId ?? undefined,
+        ownerEntityId: i.ownerEntityId ?? undefined,
       })),
       expenses: expenseRows.map((e) => ({
         id: e.id,
@@ -112,6 +128,7 @@ export async function GET(
         startYear: e.startYear,
         endYear: e.endYear,
         growthRate: parseFloat(e.growthRate),
+        ownerEntityId: e.ownerEntityId ?? undefined,
       })),
       liabilities: liabilityRows.map((l) => ({
         id: l.id,
@@ -122,6 +139,7 @@ export async function GET(
         startYear: l.startYear,
         endYear: l.endYear,
         linkedPropertyId: l.linkedPropertyId ?? undefined,
+        ownerEntityId: l.ownerEntityId ?? undefined,
       })),
       savingsRules: savingsRuleRows.map((s) => ({
         id: s.id,
@@ -146,6 +164,11 @@ export async function GET(
         planStartYear: settings.planStartYear,
         planEndYear: settings.planEndYear,
       },
+      entities: entityRows.map((e) => ({
+        id: e.id,
+        includeInPortfolio: e.includeInPortfolio,
+        isGrantor: e.isGrantor,
+      })),
     });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {

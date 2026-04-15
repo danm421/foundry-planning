@@ -3,6 +3,7 @@ import type {
   ProjectionYear,
   AccountLedger,
   Liability,
+  EntitySummary,
 } from "./types";
 import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
@@ -15,6 +16,13 @@ import { calculateRMD } from "./rmd";
 export function runProjection(data: ClientData): ProjectionYear[] {
   const { client, planSettings } = data;
   const years: ProjectionYear[] = [];
+
+  // Entity lookup for out-of-estate treatment rules.
+  const entityMap: Record<string, EntitySummary> = {};
+  for (const e of data.entities ?? []) entityMap[e.id] = e;
+
+  const isGrantorEntity = (entityId: string | undefined): boolean =>
+    entityId != null && entityMap[entityId]?.isGrantor === true;
 
   // Mutable state that carries across years
   const accountBalances: Record<string, number> = {};
@@ -39,17 +47,39 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       spouse: spouseBirthYear != null ? year - spouseBirthYear : undefined,
     };
 
-    // 1. Compute income
-    const income = computeIncome(data.incomes, year, client);
+    // 1. Household income (excludes entity-owned income entirely — the entity keeps it).
+    const income = computeIncome(
+      data.incomes,
+      year,
+      client,
+      (inc) => inc.ownerEntityId == null
+    );
 
-    // 2. Compute expenses (excluding liabilities and taxes)
-    const expenseBreakdown = computeExpenses(data.expenses, year);
+    // 1b. Grantor-trust income: not household income, but taxable at household rates.
+    const grantorIncome = computeIncome(
+      data.incomes,
+      year,
+      client,
+      (inc) => inc.ownerEntityId != null && isGrantorEntity(inc.ownerEntityId)
+    );
 
-    // 3. Compute liability payments and update balances
-    const liabResult = computeLiabilities(currentLiabilities, year);
+    // 2. Household expenses — entity-paid expenses don't hit household cash flow.
+    const expenseBreakdown = computeExpenses(
+      data.expenses,
+      year,
+      (exp) => exp.ownerEntityId == null
+    );
+
+    // 3. Liability payments for household-owed debts only.
+    const liabResult = computeLiabilities(
+      currentLiabilities,
+      year,
+      (liab) => liab.ownerEntityId == null
+    );
     currentLiabilities = liabResult.updatedLiabilities;
 
-    // 4. Grow accounts (beginning-of-year growth)
+    // 4. Grow every account's balance (we track all of them so grantor-trust RMDs can be
+    // computed correctly and the portfolio snapshot can optionally roll them in).
     const accountLedgers: Record<string, AccountLedger> = {};
     for (const acct of data.accounts) {
       const beginningValue = accountBalances[acct.id] ?? 0;
@@ -66,12 +96,17 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       accountBalances[acct.id] = beginningValue + growth;
     }
 
-    // 4b. Calculate and apply RMDs for eligible accounts
-    let totalRmdIncome = 0;
+    // 4b. RMDs — accounted for household accounts and grantor-trust accounts.
+    // For household accounts the RMD is both income and taxable; for grantor accounts
+    // it's taxable only (the entity keeps the cash). Non-grantor entity accounts are
+    // skipped entirely from the household projection.
+    let householdRmdIncome = 0;
+    let grantorRmdTaxable = 0;
     for (const acct of data.accounts) {
       if (!acct.rmdEnabled) continue;
+      const entityOwned = acct.ownerEntityId != null;
+      if (entityOwned && !isGrantorEntity(acct.ownerEntityId)) continue;
 
-      // Determine owner's birth year and age
       let ownerBirthYear: number;
       if (acct.owner === "spouse" && spouseBirthYear != null) {
         ownerBirthYear = spouseBirthYear;
@@ -82,29 +117,39 @@ export function runProjection(data: ClientData): ProjectionYear[] {
 
       const balance = accountBalances[acct.id] ?? 0;
       const rmd = calculateRMD(balance, ownerAge, ownerBirthYear);
+      if (rmd <= 0) continue;
 
-      if (rmd > 0) {
-        accountBalances[acct.id] = (accountBalances[acct.id] ?? 0) - rmd;
-        if (accountLedgers[acct.id]) {
-          accountLedgers[acct.id].rmdAmount = rmd;
-          accountLedgers[acct.id].distributions += rmd;
-          accountLedgers[acct.id].endingValue -= rmd;
-        }
-        totalRmdIncome += rmd;
+      accountBalances[acct.id] = balance - rmd;
+      if (accountLedgers[acct.id]) {
+        accountLedgers[acct.id].rmdAmount = rmd;
+        accountLedgers[acct.id].distributions += rmd;
+        accountLedgers[acct.id].endingValue -= rmd;
+      }
+      if (entityOwned) {
+        grantorRmdTaxable += rmd;
+      } else {
+        householdRmdIncome += rmd;
       }
     }
 
-    // 5. Calculate taxes
+    // 5. Taxes. Household income + household RMDs are taxed as before; grantor-trust
+    // income and grantor RMDs are added on top since the household pays those too.
     const taxableIncome =
       income.salaries +
       income.business +
       income.deferred +
       income.capitalGains +
       income.trust +
-      totalRmdIncome;
+      householdRmdIncome +
+      grantorIncome.salaries +
+      grantorIncome.business +
+      grantorIncome.deferred +
+      grantorIncome.capitalGains +
+      grantorIncome.trust +
+      grantorRmdTaxable;
     const taxes = calculateTaxes(taxableIncome, planSettings);
 
-    // 6. Determine net need
+    // 6. Household net need (entity income is ignored here).
     const totalExpensesBeforeSavings =
       expenseBreakdown.living +
       expenseBreakdown.other +
@@ -112,14 +157,13 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       liabResult.totalPayment +
       taxes;
 
-    const netNeed = income.total + totalRmdIncome - totalExpensesBeforeSavings;
+    const netNeed = income.total + householdRmdIncome - totalExpensesBeforeSavings;
 
-    // 7. Apply savings or withdrawals
+    // 7. Apply savings or withdrawals — household accounts only.
     let savings = { byAccount: {} as Record<string, number>, total: 0, employerTotal: 0 };
     let withdrawals = { byAccount: {} as Record<string, number>, total: 0 };
 
     if (netNeed > 0) {
-      // Surplus — save
       savings = applySavingsRules(
         data.savingsRules,
         year,
@@ -127,7 +171,6 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         income.salaries
       );
 
-      // Apply contributions to account balances and ledgers
       for (const [acctId, amount] of Object.entries(savings.byAccount)) {
         accountBalances[acctId] = (accountBalances[acctId] ?? 0) + amount;
         if (accountLedgers[acctId]) {
@@ -136,7 +179,6 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         }
       }
 
-      // Apply employer match contributions
       if (savings.employerTotal > 0) {
         for (const rule of data.savingsRules) {
           if (year < rule.startYear || year > rule.endYear) continue;
@@ -151,15 +193,20 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         }
       }
     } else if (netNeed < 0) {
-      // Deficit — withdraw
+      // Withdrawals only draw from household-available accounts. Grantor-trust accounts
+      // stay in the portfolio view but the trust controls distributions itself.
+      const householdOnlyBalances: Record<string, number> = {};
+      for (const acct of data.accounts) {
+        if (acct.ownerEntityId != null) continue;
+        householdOnlyBalances[acct.id] = accountBalances[acct.id] ?? 0;
+      }
       withdrawals = executeWithdrawals(
         Math.abs(netNeed),
         data.withdrawalStrategy,
-        accountBalances,
+        householdOnlyBalances,
         year
       );
 
-      // Apply withdrawals to account balances and ledgers
       for (const [acctId, amount] of Object.entries(withdrawals.byAccount)) {
         accountBalances[acctId] = (accountBalances[acctId] ?? 0) - amount;
         if (accountLedgers[acctId]) {
@@ -169,7 +216,8 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       }
     }
 
-    // 8. Build portfolio assets snapshot
+    // 8. Portfolio assets snapshot. An account is included if it has no entity owner
+    // or if its entity is flagged to roll into portfolio assets.
     const portfolioAssets = {
       taxable: {} as Record<string, number>,
       cash: {} as Record<string, number>,
@@ -196,6 +244,10 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     };
 
     for (const acct of data.accounts) {
+      if (acct.ownerEntityId != null) {
+        const entity = entityMap[acct.ownerEntityId];
+        if (!entity?.includeInPortfolio) continue;
+      }
       const val = accountBalances[acct.id] ?? 0;
       const key = categoryToKey[acct.category] ?? "taxable";
       portfolioAssets[key][acct.id] = val;
@@ -221,7 +273,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       bySource: expenseBreakdown.bySource,
     };
 
-    const totalIncome = income.total + withdrawals.total + totalRmdIncome;
+    const totalIncome = income.total + withdrawals.total + householdRmdIncome;
     const totalExpenses = expenses.total + savings.total;
     const netCashFlow = totalIncome - totalExpenses;
 

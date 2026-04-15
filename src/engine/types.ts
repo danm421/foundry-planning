@@ -9,6 +9,17 @@ export interface ClientData {
   savingsRules: SavingsRule[];
   withdrawalStrategy: WithdrawalPriority[];
   planSettings: PlanSettings;
+  entities?: EntitySummary[];
+}
+
+// Minimal entity view used by the engine to decide cash-flow treatment of entity-owned
+// accounts, incomes, expenses, and liabilities.
+export interface EntitySummary {
+  id: string;
+  // When true, the entity's accounts are rolled into the household's portfolio assets view.
+  includeInPortfolio: boolean;
+  // When true, taxes on the entity's income and RMDs are paid at the household rate.
+  isGrantor: boolean;
 }
 
 export interface ClientInfo {
@@ -33,6 +44,7 @@ export interface Account {
   basis: number;
   growthRate: number;
   rmdEnabled: boolean;
+  ownerEntityId?: string;
 }
 
 export interface Income {
@@ -46,6 +58,7 @@ export interface Income {
   owner: "client" | "spouse" | "joint";
   claimingAge?: number;
   linkedEntityId?: string;
+  ownerEntityId?: string;
 }
 
 export interface Expense {
@@ -56,6 +69,7 @@ export interface Expense {
   startYear: number;
   endYear: number;
   growthRate: number;
+  ownerEntityId?: string;
 }
 
 export interface Liability {
@@ -67,6 +81,7 @@ export interface Liability {
   startYear: number;
   endYear: number;
   linkedPropertyId?: string;
+  ownerEntityId?: string;
 }
 
 export interface SavingsRule {

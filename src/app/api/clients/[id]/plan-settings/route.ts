@@ -68,7 +68,19 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { flatFederalRate, flatStateRate, inflationRate, planStartYear, planEndYear } = body;
+    const {
+      flatFederalRate,
+      flatStateRate,
+      inflationRate,
+      planStartYear,
+      planEndYear,
+      defaultGrowthTaxable,
+      defaultGrowthCash,
+      defaultGrowthRetirement,
+      defaultGrowthRealEstate,
+      defaultGrowthBusiness,
+      defaultGrowthLifeInsurance,
+    } = body;
 
     const [updated] = await db
       .update(planSettings)
@@ -78,6 +90,12 @@ export async function PUT(
         inflationRate: inflationRate != null ? String(inflationRate) : undefined,
         planStartYear: planStartYear != null ? Number(planStartYear) : undefined,
         planEndYear: planEndYear != null ? Number(planEndYear) : undefined,
+        defaultGrowthTaxable: defaultGrowthTaxable != null ? String(defaultGrowthTaxable) : undefined,
+        defaultGrowthCash: defaultGrowthCash != null ? String(defaultGrowthCash) : undefined,
+        defaultGrowthRetirement: defaultGrowthRetirement != null ? String(defaultGrowthRetirement) : undefined,
+        defaultGrowthRealEstate: defaultGrowthRealEstate != null ? String(defaultGrowthRealEstate) : undefined,
+        defaultGrowthBusiness: defaultGrowthBusiness != null ? String(defaultGrowthBusiness) : undefined,
+        defaultGrowthLifeInsurance: defaultGrowthLifeInsurance != null ? String(defaultGrowthLifeInsurance) : undefined,
         updatedAt: new Date(),
       })
       .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenarioId)))

@@ -22,6 +22,27 @@
       "when": 1776390000000,
       "tag": "0002_add_rmd_enabled",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776476400000,
+      "tag": "0003_client_data_rework",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776562800000,
+      "tag": "0004_entity_ownership_everywhere",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776649200000,
+      "tag": "0005_entity_trust_flags",
+      "breakpoints": true
     }
   ]
 }

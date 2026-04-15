@@ -64,7 +64,16 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { name, balance, interestRate, monthlyPayment, startYear, endYear, linkedPropertyId } = body;
+    const {
+      name,
+      balance,
+      interestRate,
+      monthlyPayment,
+      startYear,
+      endYear,
+      linkedPropertyId,
+      ownerEntityId,
+    } = body;
 
     if (!name || startYear == null || endYear == null) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -82,6 +91,7 @@ export async function POST(
         startYear: Number(startYear),
         endYear: Number(endYear),
         linkedPropertyId: linkedPropertyId ?? null,
+        ownerEntityId: ownerEntityId ?? null,
       })
       .returning();
 

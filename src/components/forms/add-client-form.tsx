@@ -3,15 +3,39 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-interface AddClientFormProps {
-  onSuccess?: () => void;
+export interface ClientFormInitial {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  retirementAge: number;
+  planEndAge: number;
+  filingStatus: string;
+  spouseName?: string | null;
+  spouseDob?: string | null;
+  spouseRetirementAge?: number | null;
 }
 
-export default function AddClientForm({ onSuccess }: AddClientFormProps) {
+interface AddClientFormProps {
+  mode?: "create" | "edit";
+  initial?: ClientFormInitial;
+  onSuccess?: () => void;
+  onDelete?: () => void;
+}
+
+function toDateInput(v: string | null | undefined): string {
+  if (!v) return "";
+  // Accept "YYYY-MM-DD" or ISO — keep first 10 chars
+  return String(v).slice(0, 10);
+}
+
+export default function AddClientForm({ mode = "create", initial, onSuccess, onDelete }: AddClientFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showSpouse, setShowSpouse] = useState(false);
+  const [showSpouse, setShowSpouse] = useState(Boolean(initial?.spouseName || initial?.spouseDob));
+
+  const isEdit = mode === "edit" && initial;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -21,7 +45,7 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
     const form = e.currentTarget;
     const data = new FormData(form);
 
-    const body: Record<string, string | number | undefined> = {
+    const body: Record<string, string | number | null | undefined> = {
       firstName: data.get("firstName") as string,
       lastName: data.get("lastName") as string,
       dateOfBirth: data.get("dateOfBirth") as string,
@@ -35,21 +59,27 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
       const spouseDob = data.get("spouseDob") as string;
       const spouseRetirementAge = data.get("spouseRetirementAge") as string;
 
-      if (spouseName) body.spouseName = spouseName;
-      if (spouseDob) body.spouseDob = spouseDob;
-      if (spouseRetirementAge) body.spouseRetirementAge = Number(spouseRetirementAge);
+      body.spouseName = spouseName || null;
+      body.spouseDob = spouseDob || null;
+      body.spouseRetirementAge = spouseRetirementAge ? Number(spouseRetirementAge) : null;
+    } else if (isEdit) {
+      body.spouseName = null;
+      body.spouseDob = null;
+      body.spouseRetirementAge = null;
     }
 
     try {
-      const res = await fetch("/api/clients", {
-        method: "POST",
+      const url = isEdit ? `/api/clients/${initial!.id}` : "/api/clients";
+      const method = isEdit ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
       if (!res.ok) {
         const json = await res.json();
-        throw new Error(json.error ?? "Failed to create client");
+        throw new Error(json.error ?? "Failed to save client");
       }
 
       router.refresh();
@@ -77,6 +107,7 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
             name="firstName"
             type="text"
             required
+            defaultValue={initial?.firstName ?? ""}
             className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
@@ -90,6 +121,7 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
             name="lastName"
             type="text"
             required
+            defaultValue={initial?.lastName ?? ""}
             className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
@@ -103,6 +135,7 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
             name="dateOfBirth"
             type="date"
             required
+            defaultValue={toDateInput(initial?.dateOfBirth)}
             className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
@@ -115,6 +148,7 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
             id="filingStatus"
             name="filingStatus"
             required
+            defaultValue={initial?.filingStatus ?? "single"}
             className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
             <option value="single">Single</option>
@@ -134,7 +168,7 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
             type="number"
             min={50}
             max={85}
-            defaultValue={65}
+            defaultValue={initial?.retirementAge ?? 65}
             required
             className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
@@ -150,7 +184,7 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
             type="number"
             min={70}
             max={120}
-            defaultValue={90}
+            defaultValue={initial?.planEndAge ?? 90}
             required
             className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
@@ -178,6 +212,7 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
                 id="spouseName"
                 name="spouseName"
                 type="text"
+                defaultValue={initial?.spouseName ?? ""}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -190,6 +225,7 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
                 id="spouseDob"
                 name="spouseDob"
                 type="date"
+                defaultValue={toDateInput(initial?.spouseDob)}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -204,6 +240,7 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
                 type="number"
                 min={50}
                 max={85}
+                defaultValue={initial?.spouseRetirementAge ?? ""}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -211,13 +248,24 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
         )}
       </div>
 
-      <div className="flex justify-end pt-2">
+      <div className="flex items-center justify-between pt-2">
+        {isEdit && onDelete ? (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/60"
+          >
+            Delete Client…
+          </button>
+        ) : (
+          <span />
+        )}
         <button
           type="submit"
           disabled={loading}
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
         >
-          {loading ? "Creating..." : "Create Client"}
+          {loading ? "Saving…" : isEdit ? "Save Changes" : "Create Client"}
         </button>
       </div>
     </form>

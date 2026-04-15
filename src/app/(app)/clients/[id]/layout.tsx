@@ -12,10 +12,8 @@ interface ClientLayoutProps {
 }
 
 const tabs = [
-  { label: "Balance Sheet", href: "balance-sheet" },
-  { label: "Income & Expenses", href: "income-expenses" },
+  { label: "Client Data", href: "client-data" },
   { label: "Cash Flow", href: "cashflow" },
-  { label: "Settings", href: "settings" },
 ];
 
 export default async function ClientLayout({ children, params }: ClientLayoutProps) {
@@ -33,7 +31,6 @@ export default async function ClientLayout({ children, params }: ClientLayoutPro
 
   return (
     <div>
-      {/* Client header */}
       <div className="mb-6">
         <nav className="mb-1 text-sm text-gray-400">
           <Link href="/clients" className="hover:text-gray-200">
@@ -45,7 +42,6 @@ export default async function ClientLayout({ children, params }: ClientLayoutPro
         <h1 className="text-2xl font-bold text-gray-100">{client.firstName} {client.lastName}</h1>
       </div>
 
-      {/* Tab navigation */}
       <div className="mb-6 border-b border-gray-700">
         <nav className="-mb-px flex space-x-8">
           {tabs.map((tab) => (

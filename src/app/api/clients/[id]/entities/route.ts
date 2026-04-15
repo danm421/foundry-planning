@@ -1,26 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, scenarios, expenses } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { clients, entities } from "@/db/schema";
+import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
-async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
+async function verifyClient(clientId: string, firmId: string) {
   const [client] = await db
     .select()
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
-
-  if (!client) return null;
-
-  const [scenario] = await db
-    .select()
-    .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
-
-  return scenario?.id ?? null;
+  return !!client;
 }
 
-// GET /api/clients/[id]/expenses — list expenses for base case scenario
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -28,28 +19,24 @@ export async function GET(
   try {
     const firmId = await getOrgId();
     const { id } = await params;
-
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
-    if (!scenarioId) {
+    if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
-
     const rows = await db
       .select()
-      .from(expenses)
-      .where(and(eq(expenses.clientId, id), eq(expenses.scenarioId, scenarioId)));
-
+      .from(entities)
+      .where(eq(entities.clientId, id))
+      .orderBy(asc(entities.name));
     return NextResponse.json(rows);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.error("GET /api/clients/[id]/expenses error:", err);
+    console.error("GET /api/clients/[id]/entities error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
-// POST /api/clients/[id]/expenses — create expense for base case scenario
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -57,40 +44,34 @@ export async function POST(
   try {
     const firmId = await getOrgId();
     const { id } = await params;
-
-    const scenarioId = await getBaseCaseScenarioId(id, firmId);
-    if (!scenarioId) {
+    if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
     const body = await request.json();
-    const { type, name, annualAmount, startYear, endYear, growthRate, ownerEntityId } = body;
-
-    if (!type || !name || !startYear || !endYear) {
+    const { name, entityType, notes, includeInPortfolio, isGrantor } = body;
+    if (!name) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const [expense] = await db
-      .insert(expenses)
+    const [entity] = await db
+      .insert(entities)
       .values({
         clientId: id,
-        scenarioId,
-        type,
         name,
-        annualAmount: annualAmount ?? "0",
-        startYear: Number(startYear),
-        endYear: Number(endYear),
-        growthRate: growthRate ?? "0.03",
-        ownerEntityId: ownerEntityId ?? null,
+        entityType: entityType ?? "trust",
+        notes: notes ?? null,
+        includeInPortfolio: includeInPortfolio ?? false,
+        isGrantor: isGrantor ?? false,
       })
       .returning();
 
-    return NextResponse.json(expense, { status: 201 });
+    return NextResponse.json(entity, { status: 201 });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.error("POST /api/clients/[id]/expenses error:", err);
+    console.error("POST /api/clients/[id]/entities error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

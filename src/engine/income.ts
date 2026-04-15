@@ -25,7 +25,8 @@ const incomeTypeToKey: Record<Income["type"], keyof Omit<IncomeBreakdown, "total
 export function computeIncome(
   incomes: Income[],
   year: number,
-  client: ClientInfo
+  client: ClientInfo,
+  filter?: (inc: Income) => boolean
 ): IncomeBreakdown {
   const result: IncomeBreakdown = {
     salaries: 0,
@@ -41,6 +42,7 @@ export function computeIncome(
 
   for (const inc of incomes) {
     if (year < inc.startYear || year > inc.endYear) continue;
+    if (filter && !filter(inc)) continue;
 
     // Social Security: delay until claiming age
     if (inc.type === "social_security" && inc.claimingAge != null) {

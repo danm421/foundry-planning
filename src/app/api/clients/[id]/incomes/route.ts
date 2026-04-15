@@ -64,7 +64,18 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { type, name, annualAmount, startYear, endYear, growthRate, owner, claimingAge, linkedEntityId } = body;
+    const {
+      type,
+      name,
+      annualAmount,
+      startYear,
+      endYear,
+      growthRate,
+      owner,
+      claimingAge,
+      linkedEntityId,
+      ownerEntityId,
+    } = body;
 
     if (!type || !name || !startYear || !endYear) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -84,6 +95,7 @@ export async function POST(
         owner: owner ?? "client",
         claimingAge: claimingAge ? Number(claimingAge) : null,
         linkedEntityId: linkedEntityId ?? null,
+        ownerEntityId: ownerEntityId ?? null,
       })
       .returning();
 

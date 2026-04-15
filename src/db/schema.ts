@@ -77,6 +77,24 @@ export const expenseTypeEnum = pgEnum("expense_type", [
 
 export const sourceEnum = pgEnum("source", ["manual", "extracted"]);
 
+export const entityTypeEnum = pgEnum("entity_type", [
+  "trust",
+  "llc",
+  "s_corp",
+  "c_corp",
+  "partnership",
+  "foundation",
+  "other",
+]);
+
+export const familyRelationshipEnum = pgEnum("family_relationship", [
+  "child",
+  "grandchild",
+  "parent",
+  "sibling",
+  "other",
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
@@ -126,6 +144,55 @@ export const planSettings = pgTable("plan_settings", {
     .default("0.03"),
   planStartYear: integer("plan_start_year").notNull(),
   planEndYear: integer("plan_end_year").notNull(),
+  // Default growth rates per account category (used when an account's growth_rate is null)
+  defaultGrowthTaxable: decimal("default_growth_taxable", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0.07"),
+  defaultGrowthCash: decimal("default_growth_cash", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0.02"),
+  defaultGrowthRetirement: decimal("default_growth_retirement", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0.07"),
+  defaultGrowthRealEstate: decimal("default_growth_real_estate", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0.04"),
+  defaultGrowthBusiness: decimal("default_growth_business", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0.05"),
+  defaultGrowthLifeInsurance: decimal("default_growth_life_insurance", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0.03"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const entities = pgTable("entities", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  entityType: entityTypeEnum("entity_type").notNull().default("trust"),
+  // When true, the entity's accounts roll into the household portfolio-assets view.
+  includeInPortfolio: boolean("include_in_portfolio").notNull().default(false),
+  // When true, taxes on the entity's income / RMDs are paid at the household (grantor trust).
+  isGrantor: boolean("is_grantor").notNull().default(false),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const familyMembers = pgTable("family_members", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name"),
+  relationship: familyRelationshipEnum("relationship").notNull().default("child"),
+  dateOfBirth: date("date_of_birth"),
+  notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -144,10 +211,14 @@ export const accounts = pgTable("accounts", {
   owner: ownerEnum("owner").notNull().default("client"),
   value: decimal("value", { precision: 15, scale: 2 }).notNull().default("0"),
   basis: decimal("basis", { precision: 15, scale: 2 }).notNull().default("0"),
-  growthRate: decimal("growth_rate", { precision: 5, scale: 4 })
-    .notNull()
-    .default("0.07"),
+  // Null means: inherit the default for this category from plan_settings.
+  growthRate: decimal("growth_rate", { precision: 5, scale: 4 }),
   rmdEnabled: boolean("rmd_enabled").notNull().default(false),
+  // When set, the account is considered owned by a non-individual entity (trust, LLC, etc.)
+  // and is treated as "out of estate" relative to client/spouse/joint ownership.
+  ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
+    onDelete: "set null",
+  }),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -176,6 +247,9 @@ export const incomes = pgTable("incomes", {
   linkedEntityId: uuid("linked_entity_id").references(() => accounts.id, {
     onDelete: "set null",
   }),
+  ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
+    onDelete: "set null",
+  }),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -199,6 +273,9 @@ export const expenses = pgTable("expenses", {
   growthRate: decimal("growth_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.03"),
+  ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
+    onDelete: "set null",
+  }),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -225,6 +302,9 @@ export const liabilities = pgTable("liabilities", {
   startYear: integer("start_year").notNull(),
   endYear: integer("end_year").notNull(),
   linkedPropertyId: uuid("linked_property_id").references(() => accounts.id, {
+    onDelete: "set null",
+  }),
+  ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
     onDelete: "set null",
   }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -283,6 +363,23 @@ export const clientsRelations = relations(clients, ({ many }) => ({
   savingsRules: many(savingsRules),
   withdrawalStrategies: many(withdrawalStrategies),
   planSettings: many(planSettings),
+  entities: many(entities),
+  familyMembers: many(familyMembers),
+}));
+
+export const entitiesRelations = relations(entities, ({ one, many }) => ({
+  client: one(clients, {
+    fields: [entities.clientId],
+    references: [clients.id],
+  }),
+  accounts: many(accounts),
+}));
+
+export const familyMembersRelations = relations(familyMembers, ({ one }) => ({
+  client: one(clients, {
+    fields: [familyMembers.clientId],
+    references: [clients.id],
+  }),
 }));
 
 export const scenariosRelations = relations(scenarios, ({ one, many }) => ({
