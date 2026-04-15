@@ -186,4 +186,26 @@ export interface AccountLedger {
   rmdAmount: number;
   fees: number;
   endingValue: number;
+  /**
+   * Itemized entries for everything that happened in this account this year,
+   * in the order it was applied. Amounts are signed: positive = inflow, negative = outflow.
+   */
+  entries: AccountLedgerEntry[];
+}
+
+export interface AccountLedgerEntry {
+  category:
+    | "growth"
+    | "income"
+    | "rmd"
+    | "expense"
+    | "liability"
+    | "tax"
+    | "savings_contribution"
+    | "employer_match"
+    | "withdrawal"
+    | "withdrawal_tax";
+  label: string;
+  amount: number;
+  sourceId?: string;
 }

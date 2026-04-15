@@ -2,6 +2,7 @@ import type {
   ClientData,
   ProjectionYear,
   AccountLedger,
+  AccountLedgerEntry,
   Liability,
   EntitySummary,
 } from "./types";
@@ -112,6 +113,14 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     for (const acct of data.accounts) {
       const beginningValue = accountBalances[acct.id] ?? 0;
       const growth = beginningValue * acct.growthRate;
+      const entries: AccountLedgerEntry[] = [];
+      if (growth !== 0) {
+        entries.push({
+          category: "growth",
+          label: `Growth (${(acct.growthRate * 100).toFixed(2)}%)`,
+          amount: growth,
+        });
+      }
       accountLedgers[acct.id] = {
         beginningValue,
         growth,
@@ -120,15 +129,26 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         rmdAmount: 0,
         fees: 0,
         endingValue: beginningValue + growth,
+        entries,
       };
       accountBalances[acct.id] = beginningValue + growth;
     }
 
-    // Per-account cash deltas for the year. Positive = deposit, negative = withdrawal.
+    // Per-account cash deltas plus per-account entry lists for this year. A "credit"
+    // with a positive amount is an inflow; negative is an outflow. The entries list
+    // gives the ledger modal something to show beyond the summed totals.
     const cashDelta: Record<string, number> = {};
-    const creditCash = (acctId: string | undefined, amount: number) => {
+    const pendingEntries: Record<string, AccountLedgerEntry[]> = {};
+    const creditCash = (
+      acctId: string | undefined,
+      amount: number,
+      entry?: Omit<AccountLedgerEntry, "amount">
+    ) => {
       if (!acctId || amount === 0) return;
       cashDelta[acctId] = (cashDelta[acctId] ?? 0) + amount;
+      if (entry) {
+        (pendingEntries[acctId] ??= []).push({ ...entry, amount });
+      }
     };
 
     // 4b. RMDs. Source account balance is decremented; the cash lands in the
@@ -155,13 +175,23 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         accountLedgers[acct.id].rmdAmount = rmd;
         accountLedgers[acct.id].distributions += rmd;
         accountLedgers[acct.id].endingValue -= rmd;
+        accountLedgers[acct.id].entries.push({
+          category: "rmd",
+          label: `RMD distribution (age ${ownerAge})`,
+          amount: -rmd,
+        });
       }
 
+      const rmdLabel = `RMD from ${acct.name}`;
       if (acct.ownerEntityId == null) {
         householdRmdIncome += rmd;
-        creditCash(defaultChecking?.id, rmd);
+        creditCash(defaultChecking?.id, rmd, { category: "rmd", label: rmdLabel, sourceId: acct.id });
       } else {
-        creditCash(entityCheckingByEntityId[acct.ownerEntityId], rmd);
+        creditCash(entityCheckingByEntityId[acct.ownerEntityId], rmd, {
+          category: "rmd",
+          label: rmdLabel,
+          sourceId: acct.id,
+        });
         if (isGrantorEntity(acct.ownerEntityId)) grantorRmdTaxable += rmd;
       }
     }
@@ -197,7 +227,11 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       }
       const yearsElapsed = year - inc.startYear;
       const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, yearsElapsed);
-      creditCash(resolveCashAccount(inc.ownerEntityId, inc.cashAccountId), amount);
+      creditCash(resolveCashAccount(inc.ownerEntityId, inc.cashAccountId), amount, {
+        category: "income",
+        label: `Income: ${inc.name}`,
+        sourceId: inc.id,
+      });
     }
 
     // 7. Route each expense as an outflow from its cash account.
@@ -205,18 +239,29 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       if (year < exp.startYear || year > exp.endYear) continue;
       const yearsElapsed = year - exp.startYear;
       const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, yearsElapsed);
-      creditCash(resolveCashAccount(exp.ownerEntityId, exp.cashAccountId), -amount);
+      creditCash(resolveCashAccount(exp.ownerEntityId, exp.cashAccountId), -amount, {
+        category: "expense",
+        label: `Expense: ${exp.name}`,
+        sourceId: exp.id,
+      });
     }
 
     // 8. Liability payments settle against the owning party's cash account.
     for (const liab of data.liabilities) {
       const payment = liabResult.byLiability[liab.id] ?? 0;
       if (payment === 0) continue;
-      creditCash(resolveCashAccount(liab.ownerEntityId), -payment);
+      creditCash(resolveCashAccount(liab.ownerEntityId), -payment, {
+        category: "liability",
+        label: `Liability: ${liab.name}`,
+        sourceId: liab.id,
+      });
     }
 
     // 9. Taxes are paid from household checking.
-    creditCash(defaultChecking?.id, -taxes);
+    creditCash(defaultChecking?.id, -taxes, {
+      category: "tax",
+      label: "Federal + state taxes",
+    });
 
     // 10. Savings contributions — with a default checking account, savings apply at the
     // full rule amount (cash leaves checking). Without one, fall back to the legacy
@@ -246,9 +291,19 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       if (accountLedgers[acctId]) {
         accountLedgers[acctId].contributions += amount;
         accountLedgers[acctId].endingValue += amount;
+        const destName = data.accounts.find((a) => a.id === acctId)?.name ?? "account";
+        accountLedgers[acctId].entries.push({
+          category: "savings_contribution",
+          label: `Contribution to ${destName}`,
+          amount,
+          sourceId: acctId,
+        });
       }
     }
-    creditCash(defaultChecking?.id, -savings.total);
+    creditCash(defaultChecking?.id, -savings.total, {
+      category: "savings_contribution",
+      label: "Savings contributions",
+    });
 
     // Employer match — direct credit to the destination account, free cash from the
     // employer. Does not touch household checking.
@@ -257,18 +312,25 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         if (year < rule.startYear || year > rule.endYear) continue;
         if (rule.employerMatchPct != null && rule.employerMatchCap != null) {
           const match = income.salaries * rule.employerMatchCap * rule.employerMatchPct;
+          if (match === 0) continue;
           accountBalances[rule.accountId] = (accountBalances[rule.accountId] ?? 0) + match;
           if (accountLedgers[rule.accountId]) {
             accountLedgers[rule.accountId].contributions += match;
             accountLedgers[rule.accountId].endingValue += match;
+            accountLedgers[rule.accountId].entries.push({
+              category: "employer_match",
+              label: `Employer match (${(rule.employerMatchPct * 100).toFixed(0)}% on ${(rule.employerMatchCap * 100).toFixed(1)}% of salary)`,
+              amount: match,
+            });
           }
         }
       }
     }
 
-    // 11. Apply the accumulated cash deltas to balances and ledgers.
+    // 11. Apply the accumulated cash deltas to balances and ledgers. Itemized entries
+    // collected during creditCash are flushed onto the ledger in the order they were
+    // recorded so the modal can show a per-year transaction list.
     for (const [acctId, delta] of Object.entries(cashDelta)) {
-      if (delta === 0) continue;
       accountBalances[acctId] = (accountBalances[acctId] ?? 0) + delta;
       if (accountLedgers[acctId]) {
         if (delta >= 0) {
@@ -278,6 +340,8 @@ export function runProjection(data: ClientData): ProjectionYear[] {
           accountLedgers[acctId].distributions += -delta;
           accountLedgers[acctId].endingValue += delta;
         }
+        const entries = pendingEntries[acctId];
+        if (entries) accountLedgers[acctId].entries.push(...entries);
       }
     }
 
@@ -311,6 +375,11 @@ export function runProjection(data: ClientData): ProjectionYear[] {
           if (accountLedgers[acctId]) {
             accountLedgers[acctId].distributions += amount;
             accountLedgers[acctId].endingValue -= amount;
+            accountLedgers[acctId].entries.push({
+              category: "withdrawal",
+              label: "Withdrawal to cover household shortfall",
+              amount: -amount,
+            });
           }
         }
 
@@ -319,6 +388,11 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         if (accountLedgers[checkingId]) {
           accountLedgers[checkingId].contributions += withdrawals.total;
           accountLedgers[checkingId].endingValue += withdrawals.total;
+          accountLedgers[checkingId].entries.push({
+            category: "withdrawal",
+            label: "Withdrawal to cover shortfall",
+            amount: withdrawals.total,
+          });
         }
 
         // Marginal tax on the gross withdrawal comes back out of checking and is
@@ -328,6 +402,11 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         if (accountLedgers[checkingId]) {
           accountLedgers[checkingId].distributions += withdrawalTax;
           accountLedgers[checkingId].endingValue -= withdrawalTax;
+          accountLedgers[checkingId].entries.push({
+            category: "withdrawal_tax",
+            label: `Tax on withdrawal (${(marginalRate * 100).toFixed(1)}%)`,
+            amount: -withdrawalTax,
+          });
         }
       }
     } else {
@@ -346,6 +425,11 @@ export function runProjection(data: ClientData): ProjectionYear[] {
           if (accountLedgers[acctId]) {
             accountLedgers[acctId].distributions += amount;
             accountLedgers[acctId].endingValue -= amount;
+            accountLedgers[acctId].entries.push({
+              category: "withdrawal",
+              label: "Withdrawal to cover shortfall",
+              amount: -amount,
+            });
           }
         }
       }

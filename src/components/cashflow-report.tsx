@@ -791,10 +791,10 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           onClick={() => setLedgerModal(null)}
         >
           <div
-            className="w-full max-w-md rounded-xl bg-gray-900 border border-gray-700 p-6 shadow-xl"
+            className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-gray-700 bg-gray-900 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-4 flex items-start justify-between">
+            <div className="flex items-start justify-between border-b border-gray-800 p-6 pb-4">
               <div>
                 <h3 className="text-base font-semibold text-gray-100">
                   {ledgerModal.accountName}
@@ -810,33 +810,73 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               </button>
             </div>
 
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-gray-800">
-                {(
-                  [
-                    ["Beginning Value", ledgerModal.ledger.beginningValue],
-                    ["Growth", ledgerModal.ledger.growth],
-                    ["Contributions", ledgerModal.ledger.contributions],
-                    ["Distributions", ledgerModal.ledger.distributions],
-                    ["Fees", ledgerModal.ledger.fees],
-                    ["Ending Value", ledgerModal.ledger.endingValue],
-                  ] as [string, number][]
-                ).map(([label, value]) => (
-                  <tr key={label}>
-                    <td className="py-2 text-gray-400">{label}</td>
-                    <td
-                      className={`py-2 text-right tabular-nums font-medium ${
-                        label === "Ending Value" ? "text-gray-100" : "text-gray-300"
-                      }`}
-                    >
-                      {fmtNum(value)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+              <div className="flex items-center justify-between rounded-md bg-gray-800/60 px-4 py-3">
+                <div>
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Beginning</p>
+                  <p className="text-sm font-semibold tabular-nums text-gray-200">
+                    {fmtNum(ledgerModal.ledger.beginningValue)}
+                  </p>
+                </div>
+                <div className="text-gray-600">→</div>
+                <div className="text-right">
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Ending</p>
+                  <p className="text-sm font-semibold tabular-nums text-gray-100">
+                    {fmtNum(ledgerModal.ledger.endingValue)}
+                  </p>
+                </div>
+              </div>
 
-            <div className="mt-4 flex justify-end">
+              <div>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                  Activity
+                </p>
+                {ledgerModal.ledger.entries.length === 0 ? (
+                  <p className="px-1 py-2 text-sm text-gray-500 italic">
+                    No activity this year.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-gray-800 rounded-md border border-gray-800">
+                    {ledgerModal.ledger.entries.map((entry, i) => {
+                      const positive = entry.amount >= 0;
+                      return (
+                        <li key={i} className="flex items-start justify-between gap-4 px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm text-gray-200">{entry.label}</p>
+                            <p className="text-[11px] uppercase tracking-wider text-gray-500">
+                              {entry.category.replace(/_/g, " ")}
+                            </p>
+                          </div>
+                          <span
+                            className={`flex-shrink-0 tabular-nums text-sm font-medium ${
+                              positive ? "text-green-400" : "text-red-400"
+                            }`}
+                          >
+                            {positive ? "+" : ""}
+                            {fmtNum(entry.amount)}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+
+              <div className="flex justify-between border-t border-gray-800 pt-3 text-sm">
+                <span className="text-gray-400">Net change</span>
+                <span
+                  className={`tabular-nums font-semibold ${
+                    ledgerModal.ledger.endingValue - ledgerModal.ledger.beginningValue >= 0
+                      ? "text-green-400"
+                      : "text-red-400"
+                  }`}
+                >
+                  {fmtNum(ledgerModal.ledger.endingValue - ledgerModal.ledger.beginningValue)}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-gray-800 p-4">
               <button
                 onClick={() => setLedgerModal(null)}
                 className="rounded-md bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 focus:outline-none"
