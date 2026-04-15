@@ -90,6 +90,7 @@ export async function GET(
         value: parseFloat(a.value),
         basis: parseFloat(a.basis),
         growthRate: parseFloat(a.growthRate),
+        rmdEnabled: a.rmdEnabled,
       })),
       incomes: incomeRows.map((i) => ({
         id: i.id,

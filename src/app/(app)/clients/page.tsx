@@ -24,45 +24,45 @@ export default async function ClientsPage() {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
+        <h1 className="text-2xl font-bold text-gray-100">Clients</h1>
         <AddClientDialog />
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="mt-6 overflow-hidden rounded-lg border border-gray-700 bg-gray-900 shadow-sm">
         {rows.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <p className="text-gray-500">No clients yet. Click &quot;Add Client&quot; to get started.</p>
+            <p className="text-gray-400">No clients yet. Click &quot;Add Client&quot; to get started.</p>
           </div>
         ) : (
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full divide-y divide-gray-700">
+            <thead className="bg-gray-800">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
                   Name
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
                   Filing Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
                   Date Added
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 bg-white">
+            <tbody className="divide-y divide-gray-700 bg-gray-900">
               {rows.map((client) => (
-                <tr key={client.id} className="hover:bg-gray-50">
+                <tr key={client.id} className="hover:bg-gray-800">
                   <td className="whitespace-nowrap px-6 py-4">
                     <Link
                       href={`/clients/${client.id}/balance-sheet`}
-                      className="font-medium text-blue-600 hover:text-blue-800"
+                      className="font-medium text-blue-500 hover:text-blue-400"
                     >
                       {client.firstName} {client.lastName}
                     </Link>
                   </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">
+                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-400">
                     {filingStatusLabels[client.filingStatus] ?? client.filingStatus}
                   </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">
+                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-400">
                     {new Date(client.createdAt).toLocaleDateString("en-US", {
                       year: "numeric",
                       month: "short",

@@ -147,6 +147,7 @@ export const accounts = pgTable("accounts", {
   growthRate: decimal("growth_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.07"),
+  rmdEnabled: boolean("rmd_enabled").notNull().default(false),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

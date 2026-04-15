@@ -60,15 +60,15 @@ export default function PlanSettingsForm({ clientId, initialSettings }: PlanSett
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+        <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
       )}
       {success && (
-        <p className="rounded bg-green-50 px-3 py-2 text-sm text-green-600">Settings saved successfully.</p>
+        <p className="rounded bg-green-900/50 px-3 py-2 text-sm text-green-400">Settings saved successfully.</p>
       )}
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="flatFederalRate">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="flatFederalRate">
             Flat Federal Tax Rate (%)
           </label>
           <input
@@ -79,12 +79,12 @@ export default function PlanSettingsForm({ clientId, initialSettings }: PlanSett
             min={0}
             max={50}
             defaultValue={(Number(initialSettings.flatFederalRate) * 100).toFixed(2)}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="flatStateRate">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="flatStateRate">
             Flat State Tax Rate (%)
           </label>
           <input
@@ -95,12 +95,12 @@ export default function PlanSettingsForm({ clientId, initialSettings }: PlanSett
             min={0}
             max={20}
             defaultValue={(Number(initialSettings.flatStateRate) * 100).toFixed(2)}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="inflationRate">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="inflationRate">
             Inflation Rate (%)
           </label>
           <input
@@ -111,14 +111,14 @@ export default function PlanSettingsForm({ clientId, initialSettings }: PlanSett
             min={0}
             max={20}
             defaultValue={(Number(initialSettings.inflationRate) * 100).toFixed(2)}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>{/* spacer */}</div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="planStartYear">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="planStartYear">
             Plan Start Year
           </label>
           <input
@@ -128,12 +128,12 @@ export default function PlanSettingsForm({ clientId, initialSettings }: PlanSett
             min={2000}
             max={2100}
             defaultValue={initialSettings.planStartYear}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="planEndYear">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="planEndYear">
             Plan End Year
           </label>
           <input
@@ -143,7 +143,7 @@ export default function PlanSettingsForm({ clientId, initialSettings }: PlanSett
             min={2000}
             max={2100}
             defaultValue={initialSettings.planEndYear}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
       </div>

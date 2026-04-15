@@ -10,6 +10,7 @@ import { computeLiabilities } from "./liabilities";
 import { calculateTaxes } from "./tax";
 import { applySavingsRules } from "./savings";
 import { executeWithdrawals } from "./withdrawal";
+import { calculateRMD } from "./rmd";
 
 export function runProjection(data: ClientData): ProjectionYear[] {
   const { client, planSettings } = data;
@@ -58,10 +59,39 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         growth,
         contributions: 0,
         distributions: 0,
+        rmdAmount: 0,
         fees: 0,
         endingValue: beginningValue + growth,
       };
       accountBalances[acct.id] = beginningValue + growth;
+    }
+
+    // 4b. Calculate and apply RMDs for eligible accounts
+    let totalRmdIncome = 0;
+    for (const acct of data.accounts) {
+      if (!acct.rmdEnabled) continue;
+
+      // Determine owner's birth year and age
+      let ownerBirthYear: number;
+      if (acct.owner === "spouse" && spouseBirthYear != null) {
+        ownerBirthYear = spouseBirthYear;
+      } else {
+        ownerBirthYear = clientBirthYear;
+      }
+      const ownerAge = year - ownerBirthYear;
+
+      const balance = accountBalances[acct.id] ?? 0;
+      const rmd = calculateRMD(balance, ownerAge, ownerBirthYear);
+
+      if (rmd > 0) {
+        accountBalances[acct.id] = (accountBalances[acct.id] ?? 0) - rmd;
+        if (accountLedgers[acct.id]) {
+          accountLedgers[acct.id].rmdAmount = rmd;
+          accountLedgers[acct.id].distributions += rmd;
+          accountLedgers[acct.id].endingValue -= rmd;
+        }
+        totalRmdIncome += rmd;
+      }
     }
 
     // 5. Calculate taxes
@@ -70,7 +100,8 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       income.business +
       income.deferred +
       income.capitalGains +
-      income.trust;
+      income.trust +
+      totalRmdIncome;
     const taxes = calculateTaxes(taxableIncome, planSettings);
 
     // 6. Determine net need
@@ -81,7 +112,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       liabResult.totalPayment +
       taxes;
 
-    const netNeed = income.total - totalExpensesBeforeSavings;
+    const netNeed = income.total + totalRmdIncome - totalExpensesBeforeSavings;
 
     // 7. Apply savings or withdrawals
     let savings = { byAccount: {} as Record<string, number>, total: 0, employerTotal: 0 };
@@ -189,7 +220,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       total: totalExpensesBeforeSavings,
     };
 
-    const totalIncome = income.total + withdrawals.total;
+    const totalIncome = income.total + withdrawals.total + totalRmdIncome;
     const totalExpenses = expenses.total + savings.total;
     const netCashFlow = totalIncome - totalExpenses;
 

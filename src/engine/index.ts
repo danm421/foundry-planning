@@ -5,6 +5,7 @@ export { computeExpenses } from "./expenses";
 export { computeLiabilities, amortizeLiability } from "./liabilities";
 export { applySavingsRules } from "./savings";
 export { executeWithdrawals } from "./withdrawal";
+export { calculateRMD, getRmdStartAge, isRmdEligibleSubType } from "./rmd";
 export type {
   ClientData,
   ClientInfo,

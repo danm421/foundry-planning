@@ -29,7 +29,7 @@ export default function AddLiabilityForm({ clientId, realEstateAccounts, onSucce
     const body = {
       name: data.get("name") as string,
       balance: data.get("balance") as string,
-      interestRate: data.get("interestRate") as string,
+      interestRate: String(Number(data.get("interestRate")) / 100),
       monthlyPayment: data.get("monthlyPayment") as string,
       startYear: Number(data.get("startYear")),
       endYear: Number(data.get("endYear")),
@@ -60,11 +60,11 @@ export default function AddLiabilityForm({ clientId, realEstateAccounts, onSucce
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+        <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
       )}
 
       <div>
-        <label className="block text-sm font-medium text-gray-700" htmlFor="name">
+        <label className="block text-sm font-medium text-gray-300" htmlFor="name">
           Liability Name <span className="text-red-500">*</span>
         </label>
         <input
@@ -73,13 +73,13 @@ export default function AddLiabilityForm({ clientId, realEstateAccounts, onSucce
           type="text"
           required
           placeholder="e.g., Primary Mortgage"
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="balance">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="balance">
             Outstanding Balance ($)
           </label>
           <input
@@ -89,12 +89,12 @@ export default function AddLiabilityForm({ clientId, realEstateAccounts, onSucce
             step="0.01"
             min={0}
             defaultValue={0}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="interestRate">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="interestRate">
             Interest Rate (%)
           </label>
           <input
@@ -105,12 +105,12 @@ export default function AddLiabilityForm({ clientId, realEstateAccounts, onSucce
             min={0}
             max={50}
             defaultValue={0}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="monthlyPayment">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="monthlyPayment">
             Monthly Payment ($)
           </label>
           <input
@@ -120,19 +120,19 @@ export default function AddLiabilityForm({ clientId, realEstateAccounts, onSucce
             step="0.01"
             min={0}
             defaultValue={0}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         {realEstateAccounts && realEstateAccounts.length > 0 && (
           <div>
-            <label className="block text-sm font-medium text-gray-700" htmlFor="linkedPropertyId">
+            <label className="block text-sm font-medium text-gray-300" htmlFor="linkedPropertyId">
               Linked Property
             </label>
             <select
               id="linkedPropertyId"
               name="linkedPropertyId"
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               <option value="">None</option>
               {realEstateAccounts.map((a) => (
@@ -143,7 +143,7 @@ export default function AddLiabilityForm({ clientId, realEstateAccounts, onSucce
         )}
 
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="startYear">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="startYear">
             Start Year <span className="text-red-500">*</span>
           </label>
           <input
@@ -152,12 +152,12 @@ export default function AddLiabilityForm({ clientId, realEstateAccounts, onSucce
             type="number"
             required
             defaultValue={currentYear}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="endYear">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="endYear">
             End Year <span className="text-red-500">*</span>
           </label>
           <input
@@ -166,7 +166,7 @@ export default function AddLiabilityForm({ clientId, realEstateAccounts, onSucce
             type="number"
             required
             defaultValue={currentYear + 30}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
       </div>

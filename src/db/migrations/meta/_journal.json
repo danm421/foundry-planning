@@ -15,6 +15,13 @@
       "when": 1776303600000,
       "tag": "0001_add_categories_names_properties",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776390000000,
+      "tag": "0002_add_rmd_enabled",
+      "breakpoints": true
     }
   ]
 }

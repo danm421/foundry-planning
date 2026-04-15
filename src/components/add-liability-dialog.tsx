@@ -15,7 +15,7 @@ export default function AddLiabilityDialog({ clientId, realEstateAccounts }: Add
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-blue-100 hover:text-blue-600"
+        className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:bg-blue-900 hover:text-blue-400"
         aria-label="Add liability"
         title="Add liability"
       >
@@ -27,12 +27,12 @@ export default function AddLiabilityDialog({ clientId, realEstateAccounts }: Add
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <div className="relative z-10 w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+          <div className="relative z-10 w-full max-w-lg rounded-lg bg-gray-900 border border-gray-700 p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Add Liability</h2>
+              <h2 className="text-lg font-semibold text-gray-100">Add Liability</h2>
               <button
                 onClick={() => setOpen(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-200"
                 aria-label="Close"
               >
                 <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">

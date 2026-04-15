@@ -148,7 +148,7 @@ function YearQuickFill({ inputId, clientInfo, owner }: YearQuickFillProps) {
       <button
         type="button"
         onClick={() => setYear(retYear)}
-        className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 hover:bg-blue-100 hover:text-blue-700"
+        className="rounded bg-gray-800 px-2 py-0.5 text-xs text-gray-400 hover:bg-blue-900 hover:text-blue-400"
         title={`Retirement: ${retYear}`}
       >
         Ret
@@ -156,7 +156,7 @@ function YearQuickFill({ inputId, clientInfo, owner }: YearQuickFillProps) {
       <button
         type="button"
         onClick={() => setYear(endYear)}
-        className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 hover:bg-blue-100 hover:text-blue-700"
+        className="rounded bg-gray-800 px-2 py-0.5 text-xs text-gray-400 hover:bg-blue-900 hover:text-blue-400"
         title={`Life Expectancy: ${endYear}`}
       >
         End
@@ -246,7 +246,7 @@ function AddIncomeDialog({ clientId, defaultType, accounts, clientInfo, onAdd }:
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-blue-100 hover:text-blue-600"
+        className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:bg-blue-900 hover:text-blue-400"
         title="Add income"
       >
         <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -257,10 +257,10 @@ function AddIncomeDialog({ clientId, defaultType, accounts, clientInfo, onAdd }:
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <div className="relative z-10 w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+          <div className="relative z-10 w-full max-w-lg rounded-lg bg-gray-900 border border-gray-700 p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Add Income</h2>
-              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <h2 className="text-lg font-semibold text-gray-100">Add Income</h2>
+              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-200">
                 <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                 </svg>
@@ -269,19 +269,19 @@ function AddIncomeDialog({ clientId, defaultType, accounts, clientInfo, onAdd }:
 
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+                <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
               )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="inc-type">Type</label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="inc-type">Type</label>
                   <select
                     id="inc-type"
                     name="type"
                     required
                     value={type}
                     onChange={(e) => setType(e.target.value as IncomeType)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   >
                     {Object.entries(INCOME_TYPE_LABELS).map(([v, l]) => (
                       <option key={v} value={v}>{l}</option>
@@ -290,13 +290,13 @@ function AddIncomeDialog({ clientId, defaultType, accounts, clientInfo, onAdd }:
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="inc-owner">Owner</label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="inc-owner">Owner</label>
                   <select
                     id="inc-owner"
                     name="owner"
                     value={owner}
                     onChange={(e) => setOwner(e.target.value as Owner)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   >
                     <option value="client">Client</option>
                     <option value="spouse">Spouse</option>
@@ -306,20 +306,20 @@ function AddIncomeDialog({ clientId, defaultType, accounts, clientInfo, onAdd }:
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700" htmlFor="inc-name">Name <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="inc-name">Name <span className="text-red-500">*</span></label>
                 <input
                   id="inc-name"
                   name="name"
                   type="text"
                   required
                   placeholder="e.g., Base Salary"
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="inc-amount">Annual Amount ($) <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="inc-amount">Annual Amount ($) <span className="text-red-500">*</span></label>
                   <input
                     id="inc-amount"
                     name="annualAmount"
@@ -328,12 +328,12 @@ function AddIncomeDialog({ clientId, defaultType, accounts, clientInfo, onAdd }:
                     min={0}
                     required
                     defaultValue={0}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="inc-growth">Growth Rate (%)</label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="inc-growth">Growth Rate (%)</label>
                   <input
                     id="inc-growth"
                     name="growthRate"
@@ -342,14 +342,14 @@ function AddIncomeDialog({ clientId, defaultType, accounts, clientInfo, onAdd }:
                     min={0}
                     max={30}
                     defaultValue={isSocialSecurity ? 2 : 3}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
 
                 {isSocialSecurity ? (
                   <>
                     <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700" htmlFor="inc-claiming">Claiming Age</label>
+                      <label className="block text-sm font-medium text-gray-300" htmlFor="inc-claiming">Claiming Age</label>
                       <input
                         id="inc-claiming"
                         name="claimingAge"
@@ -357,7 +357,7 @@ function AddIncomeDialog({ clientId, defaultType, accounts, clientInfo, onAdd }:
                         min={62}
                         max={70}
                         defaultValue={67}
-                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                       <p className="mt-1 text-xs text-gray-400">
                         Start/end years are auto-set to plan range. Benefits begin at claiming age.
@@ -367,27 +367,27 @@ function AddIncomeDialog({ clientId, defaultType, accounts, clientInfo, onAdd }:
                 ) : (
                   <>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700" htmlFor="inc-start">Start Year <span className="text-red-500">*</span></label>
+                      <label className="block text-sm font-medium text-gray-300" htmlFor="inc-start">Start Year <span className="text-red-500">*</span></label>
                       <input
                         id="inc-start"
                         name="startYear"
                         type="number"
                         required
                         defaultValue={currentYear}
-                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                       <YearQuickFill inputId="inc-start" clientInfo={clientInfo} owner={owner} />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700" htmlFor="inc-end">End Year <span className="text-red-500">*</span></label>
+                      <label className="block text-sm font-medium text-gray-300" htmlFor="inc-end">End Year <span className="text-red-500">*</span></label>
                       <input
                         id="inc-end"
                         name="endYear"
                         type="number"
                         required
                         defaultValue={currentYear + 20}
-                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                       <YearQuickFill inputId="inc-end" clientInfo={clientInfo} owner={owner} />
                     </div>
@@ -397,11 +397,11 @@ function AddIncomeDialog({ clientId, defaultType, accounts, clientInfo, onAdd }:
 
               {needsLinkedEntity && accounts.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="inc-linked">Linked Account (optional)</label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="inc-linked">Linked Account (optional)</label>
                   <select
                     id="inc-linked"
                     name="linkedEntityId"
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   >
                     <option value="">None</option>
                     {accounts.map((a) => (
@@ -484,7 +484,7 @@ function AddExpenseDialog({ clientId, defaultType, clientInfo, onAdd }: AddExpen
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-blue-100 hover:text-blue-600"
+        className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:bg-blue-900 hover:text-blue-400"
         title="Add expense"
       >
         <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -495,10 +495,10 @@ function AddExpenseDialog({ clientId, defaultType, clientInfo, onAdd }: AddExpen
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <div className="relative z-10 w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+          <div className="relative z-10 w-full max-w-lg rounded-lg bg-gray-900 border border-gray-700 p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Add Expense</h2>
-              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <h2 className="text-lg font-semibold text-gray-100">Add Expense</h2>
+              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-200">
                 <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                 </svg>
@@ -507,17 +507,17 @@ function AddExpenseDialog({ clientId, defaultType, clientInfo, onAdd }: AddExpen
 
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+                <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700" htmlFor="exp-type">Type</label>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="exp-type">Type</label>
                 <select
                   id="exp-type"
                   name="type"
                   required
                   defaultValue={defaultType}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   <option value="living">Living Expense</option>
                   <option value="insurance">Insurance</option>
@@ -526,20 +526,20 @@ function AddExpenseDialog({ clientId, defaultType, clientInfo, onAdd }: AddExpen
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700" htmlFor="exp-name">Name <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="exp-name">Name <span className="text-red-500">*</span></label>
                 <input
                   id="exp-name"
                   name="name"
                   type="text"
                   required
                   placeholder="e.g., Housing"
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="exp-amount">Annual Amount ($) <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="exp-amount">Annual Amount ($) <span className="text-red-500">*</span></label>
                   <input
                     id="exp-amount"
                     name="annualAmount"
@@ -548,12 +548,12 @@ function AddExpenseDialog({ clientId, defaultType, clientInfo, onAdd }: AddExpen
                     min={0}
                     required
                     defaultValue={0}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="exp-growth">Growth Rate (%)</label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="exp-growth">Growth Rate (%)</label>
                   <input
                     id="exp-growth"
                     name="growthRate"
@@ -562,32 +562,32 @@ function AddExpenseDialog({ clientId, defaultType, clientInfo, onAdd }: AddExpen
                     min={0}
                     max={30}
                     defaultValue={3}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="exp-start">Start Year <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="exp-start">Start Year <span className="text-red-500">*</span></label>
                   <input
                     id="exp-start"
                     name="startYear"
                     type="number"
                     required
                     defaultValue={currentYear}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                   <YearQuickFill inputId="exp-start" clientInfo={clientInfo} />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="exp-end">End Year <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="exp-end">End Year <span className="text-red-500">*</span></label>
                   <input
                     id="exp-end"
                     name="endYear"
                     type="number"
                     required
                     defaultValue={currentYear + 20}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                   <YearQuickFill inputId="exp-end" clientInfo={clientInfo} />
                 </div>
@@ -668,7 +668,7 @@ function AddSavingsRuleDialog({ clientId, accounts, onAdd }: AddSavingsRuleDialo
 
   if (accounts.length === 0) {
     return (
-      <span className="text-xs text-gray-400 italic">Add accounts first</span>
+      <span className="text-xs text-gray-500 italic">Add accounts first</span>
     );
   }
 
@@ -676,7 +676,7 @@ function AddSavingsRuleDialog({ clientId, accounts, onAdd }: AddSavingsRuleDialo
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-blue-100 hover:text-blue-600"
+        className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:bg-blue-900 hover:text-blue-400"
         title="Add savings rule"
       >
         <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -687,10 +687,10 @@ function AddSavingsRuleDialog({ clientId, accounts, onAdd }: AddSavingsRuleDialo
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <div className="relative z-10 w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+          <div className="relative z-10 w-full max-w-lg rounded-lg bg-gray-900 border border-gray-700 p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Add Savings Rule</h2>
-              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <h2 className="text-lg font-semibold text-gray-100">Add Savings Rule</h2>
+              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-200">
                 <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                 </svg>
@@ -699,16 +699,16 @@ function AddSavingsRuleDialog({ clientId, accounts, onAdd }: AddSavingsRuleDialo
 
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+                <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700" htmlFor="sr-account">Account <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="sr-account">Account <span className="text-red-500">*</span></label>
                 <select
                   id="sr-account"
                   name="accountId"
                   required
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>{a.name}</option>
@@ -718,7 +718,7 @@ function AddSavingsRuleDialog({ clientId, accounts, onAdd }: AddSavingsRuleDialo
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="sr-amount">Annual Amount ($) <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="sr-amount">Annual Amount ($) <span className="text-red-500">*</span></label>
                   <input
                     id="sr-amount"
                     name="annualAmount"
@@ -727,12 +727,12 @@ function AddSavingsRuleDialog({ clientId, accounts, onAdd }: AddSavingsRuleDialo
                     min={0}
                     required
                     defaultValue={0}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="sr-limit">Annual Limit ($)</label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="sr-limit">Annual Limit ($)</label>
                   <input
                     id="sr-limit"
                     name="annualLimit"
@@ -740,12 +740,12 @@ function AddSavingsRuleDialog({ clientId, accounts, onAdd }: AddSavingsRuleDialo
                     step="1"
                     min={0}
                     placeholder="Optional"
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="sr-match-pct">Employer Match (%)</label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="sr-match-pct">Employer Match (%)</label>
                   <input
                     id="sr-match-pct"
                     name="employerMatchPct"
@@ -754,12 +754,12 @@ function AddSavingsRuleDialog({ clientId, accounts, onAdd }: AddSavingsRuleDialo
                     min={0}
                     max={100}
                     placeholder="Optional"
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="sr-match-cap">Match Cap (% of salary)</label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="sr-match-cap">Match Cap (% of salary)</label>
                   <input
                     id="sr-match-cap"
                     name="employerMatchCap"
@@ -768,31 +768,31 @@ function AddSavingsRuleDialog({ clientId, accounts, onAdd }: AddSavingsRuleDialo
                     min={0}
                     max={100}
                     placeholder="Optional"
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="sr-start">Start Year <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="sr-start">Start Year <span className="text-red-500">*</span></label>
                   <input
                     id="sr-start"
                     name="startYear"
                     type="number"
                     required
                     defaultValue={currentYear}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="sr-end">End Year <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="sr-end">End Year <span className="text-red-500">*</span></label>
                   <input
                     id="sr-end"
                     name="endYear"
                     type="number"
                     required
                     defaultValue={currentYear + 20}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -866,7 +866,7 @@ function AddWithdrawalDialog({ clientId, accounts, nextPriority, onAdd }: AddWit
 
   if (accounts.length === 0) {
     return (
-      <span className="text-xs text-gray-400 italic">Add accounts first</span>
+      <span className="text-xs text-gray-500 italic">Add accounts first</span>
     );
   }
 
@@ -874,7 +874,7 @@ function AddWithdrawalDialog({ clientId, accounts, nextPriority, onAdd }: AddWit
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-blue-100 hover:text-blue-600"
+        className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:bg-blue-900 hover:text-blue-400"
         title="Add withdrawal strategy"
       >
         <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -885,10 +885,10 @@ function AddWithdrawalDialog({ clientId, accounts, nextPriority, onAdd }: AddWit
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <div className="relative z-10 w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+          <div className="relative z-10 w-full max-w-lg rounded-lg bg-gray-900 border border-gray-700 p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Add Withdrawal Account</h2>
-              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <h2 className="text-lg font-semibold text-gray-100">Add Withdrawal Account</h2>
+              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-200">
                 <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                 </svg>
@@ -897,17 +897,17 @@ function AddWithdrawalDialog({ clientId, accounts, nextPriority, onAdd }: AddWit
 
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+                <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
               )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="ws-account">Account <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="ws-account">Account <span className="text-red-500">*</span></label>
                   <select
                     id="ws-account"
                     name="accountId"
                     required
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   >
                     {accounts.map((a) => (
                       <option key={a.id} value={a.id}>{a.name}</option>
@@ -916,7 +916,7 @@ function AddWithdrawalDialog({ clientId, accounts, nextPriority, onAdd }: AddWit
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="ws-priority">Priority Order</label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="ws-priority">Priority Order</label>
                   <input
                     id="ws-priority"
                     name="priorityOrder"
@@ -924,31 +924,31 @@ function AddWithdrawalDialog({ clientId, accounts, nextPriority, onAdd }: AddWit
                     min={1}
                     required
                     defaultValue={nextPriority}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="ws-start">Start Year <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="ws-start">Start Year <span className="text-red-500">*</span></label>
                   <input
                     id="ws-start"
                     name="startYear"
                     type="number"
                     required
                     defaultValue={currentYear}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700" htmlFor="ws-end">End Year <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="ws-end">End Year <span className="text-red-500">*</span></label>
                   <input
                     id="ws-end"
                     name="endYear"
                     type="number"
                     required
                     defaultValue={currentYear + 30}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -993,7 +993,7 @@ function DeleteButton({ onDelete }: DeleteButtonProps) {
     <button
       onClick={handleClick}
       disabled={loading}
-      className="ml-2 text-gray-300 hover:text-red-500 disabled:opacity-50"
+      className="ml-2 text-gray-600 hover:text-red-400 disabled:opacity-50"
       title="Delete"
     >
       <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -1056,18 +1056,18 @@ export default function IncomeExpensesView({
   return (
     <div className="space-y-6">
       {/* Live Delta Bar */}
-      <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-6 py-4 shadow-sm">
+      <div className="flex items-center justify-between rounded-lg border border-gray-700 bg-gray-900 px-6 py-4 shadow-sm">
         <div className="flex items-center gap-8">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Total Income</p>
-            <p className="text-lg font-bold text-gray-900">{fmt(totalIncome)}</p>
+            <p className="text-lg font-bold text-gray-100">{fmt(totalIncome)}</p>
           </div>
-          <div className="h-8 w-px bg-gray-200" />
+          <div className="h-8 w-px bg-gray-700" />
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Total Expenses</p>
-            <p className="text-lg font-bold text-gray-900">{fmt(totalExpenses)}</p>
+            <p className="text-lg font-bold text-gray-100">{fmt(totalExpenses)}</p>
           </div>
-          <div className="h-8 w-px bg-gray-200" />
+          <div className="h-8 w-px bg-gray-700" />
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Net Cash Flow</p>
             <p className={`text-lg font-bold ${netCashFlow >= 0 ? "text-green-600" : "text-red-600"}`}>
@@ -1080,17 +1080,17 @@ export default function IncomeExpensesView({
       {/* Two-column: Income + Expenses */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Income column */}
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-          <div className="border-b border-gray-200 bg-gray-50 px-6 py-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Income</h2>
+        <div className="overflow-hidden rounded-lg border border-gray-700 bg-gray-900 shadow-sm">
+          <div className="border-b border-gray-700 bg-gray-800 px-6 py-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Income</h2>
           </div>
 
           {INCOME_GROUPS.map((group) => {
             const items = incomeList.filter((i) => group.types.includes(i.type));
             return (
-              <div key={group.label} className="border-b border-gray-100 last:border-0">
+              <div key={group.label} className="border-b border-gray-800 last:border-0">
                 {/* Group header */}
-                <div className="flex items-center justify-between px-6 py-2 bg-gray-50/50">
+                <div className="flex items-center justify-between px-6 py-2 bg-gray-800/50">
                   <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                     {group.label}
                   </span>
@@ -1108,10 +1108,10 @@ export default function IncomeExpensesView({
                   <div className="px-6 py-3 text-sm text-gray-400 italic">None</div>
                 ) : (
                   <table className="min-w-full">
-                    <tbody className="divide-y divide-gray-50">
+                    <tbody className="divide-y divide-gray-800">
                       {items.map((income) => (
-                        <tr key={income.id} className="group hover:bg-gray-50">
-                          <td className="px-6 py-2 text-sm font-medium text-gray-900">
+                        <tr key={income.id} className="group hover:bg-gray-800">
+                          <td className="px-6 py-2 text-sm font-medium text-gray-100">
                             <div>{income.name}</div>
                             <div className="text-xs text-gray-400">
                               {OWNER_LABELS[income.owner]}
@@ -1124,7 +1124,7 @@ export default function IncomeExpensesView({
                           <td className="px-2 py-2 text-xs text-gray-400 whitespace-nowrap">
                             {income.startYear}–{income.endYear}
                           </td>
-                          <td className="px-6 py-2 text-right text-sm font-medium text-gray-900 whitespace-nowrap">
+                          <td className="px-6 py-2 text-right text-sm font-medium text-gray-100 whitespace-nowrap">
                             {fmt(income.annualAmount)}/yr
                             <DeleteButton onDelete={() => deleteIncome(income.id)} />
                           </td>
@@ -1139,17 +1139,17 @@ export default function IncomeExpensesView({
         </div>
 
         {/* Expense column */}
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-          <div className="border-b border-gray-200 bg-gray-50 px-6 py-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Expenses</h2>
+        <div className="overflow-hidden rounded-lg border border-gray-700 bg-gray-900 shadow-sm">
+          <div className="border-b border-gray-700 bg-gray-800 px-6 py-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Expenses</h2>
           </div>
 
           {EXPENSE_GROUPS.map((group) => {
             const items = expenseList.filter((e) => group.types.includes(e.type));
             return (
-              <div key={group.label} className="border-b border-gray-100 last:border-0">
+              <div key={group.label} className="border-b border-gray-800 last:border-0">
                 {/* Group header */}
-                <div className="flex items-center justify-between px-6 py-2 bg-gray-50/50">
+                <div className="flex items-center justify-between px-6 py-2 bg-gray-800/50">
                   <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                     {group.label}
                   </span>
@@ -1166,16 +1166,16 @@ export default function IncomeExpensesView({
                   <div className="px-6 py-3 text-sm text-gray-400 italic">None</div>
                 ) : (
                   <table className="min-w-full">
-                    <tbody className="divide-y divide-gray-50">
+                    <tbody className="divide-y divide-gray-800">
                       {items.map((expense) => (
-                        <tr key={expense.id} className="group hover:bg-gray-50">
-                          <td className="px-6 py-2 text-sm font-medium text-gray-900">
+                        <tr key={expense.id} className="group hover:bg-gray-800">
+                          <td className="px-6 py-2 text-sm font-medium text-gray-100">
                             {expense.name}
                           </td>
                           <td className="px-2 py-2 text-xs text-gray-400 whitespace-nowrap">
                             {expense.startYear}–{expense.endYear}
                           </td>
-                          <td className="px-6 py-2 text-right text-sm font-medium text-gray-900 whitespace-nowrap">
+                          <td className="px-6 py-2 text-right text-sm font-medium text-gray-100 whitespace-nowrap">
                             {fmt(expense.annualAmount)}/yr
                             <DeleteButton onDelete={() => deleteExpense(expense.id)} />
                           </td>
@@ -1191,9 +1191,9 @@ export default function IncomeExpensesView({
       </div>
 
       {/* Savings Rules */}
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-6 py-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Savings Rules</h2>
+      <div className="overflow-hidden rounded-lg border border-gray-700 bg-gray-900 shadow-sm">
+        <div className="flex items-center justify-between border-b border-gray-700 bg-gray-800 px-6 py-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Savings Rules</h2>
           <AddSavingsRuleDialog
             clientId={clientId}
             accounts={accounts}
@@ -1213,16 +1213,16 @@ export default function IncomeExpensesView({
                 <th className="px-6 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-400">Annual Amount</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-gray-800">
               {savingsRuleList.map((rule) => (
-                <tr key={rule.id} className="group hover:bg-gray-50">
-                  <td className="px-6 py-3 text-sm font-medium text-gray-900">
+                <tr key={rule.id} className="group hover:bg-gray-800">
+                  <td className="px-6 py-3 text-sm font-medium text-gray-100">
                     {accountMap[rule.accountId]?.name ?? rule.accountId}
                   </td>
-                  <td className="px-6 py-3 text-sm text-gray-500">
+                  <td className="px-6 py-3 text-sm text-gray-400">
                     {rule.startYear}–{rule.endYear}
                   </td>
-                  <td className="px-6 py-3 text-sm text-gray-500">
+                  <td className="px-6 py-3 text-sm text-gray-400">
                     {rule.employerMatchPct
                       ? `${(Number(rule.employerMatchPct) * 100).toFixed(0)}% match`
                       : "—"}
@@ -1230,7 +1230,7 @@ export default function IncomeExpensesView({
                       ? ` (cap ${(Number(rule.employerMatchCap) * 100).toFixed(1)}%)`
                       : ""}
                   </td>
-                  <td className="px-6 py-3 text-right text-sm font-medium text-gray-900 whitespace-nowrap">
+                  <td className="px-6 py-3 text-right text-sm font-medium text-gray-100 whitespace-nowrap">
                     {fmt(rule.annualAmount)}/yr
                     <DeleteButton onDelete={() => deleteSavingsRule(rule.id)} />
                   </td>
@@ -1242,9 +1242,9 @@ export default function IncomeExpensesView({
       </div>
 
       {/* Withdrawal Strategy */}
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-6 py-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Withdrawal Strategy</h2>
+      <div className="overflow-hidden rounded-lg border border-gray-700 bg-gray-900 shadow-sm">
+        <div className="flex items-center justify-between border-b border-gray-700 bg-gray-800 px-6 py-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Withdrawal Strategy</h2>
           <AddWithdrawalDialog
             clientId={clientId}
             accounts={accounts}
@@ -1265,18 +1265,18 @@ export default function IncomeExpensesView({
                 <th className="px-6 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-400"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-gray-800">
               {sortedWithdrawals.map((ws) => (
-                <tr key={ws.id} className="group hover:bg-gray-50">
+                <tr key={ws.id} className="group hover:bg-gray-800">
                   <td className="px-6 py-3">
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-xs font-bold text-gray-600">
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-800 text-xs font-bold text-gray-300">
                       {ws.priorityOrder}
                     </span>
                   </td>
-                  <td className="px-6 py-3 text-sm font-medium text-gray-900">
+                  <td className="px-6 py-3 text-sm font-medium text-gray-100">
                     {accountMap[ws.accountId]?.name ?? ws.accountId}
                   </td>
-                  <td className="px-6 py-3 text-sm text-gray-500">
+                  <td className="px-6 py-3 text-sm text-gray-400">
                     {ws.startYear}–{ws.endYear}
                   </td>
                   <td className="px-6 py-3 text-right">

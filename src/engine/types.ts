@@ -32,6 +32,7 @@ export interface Account {
   value: number;
   basis: number;
   growthRate: number;
+  rmdEnabled: boolean;
 }
 
 export interface Income {
@@ -159,6 +160,7 @@ export interface AccountLedger {
   growth: number;
   contributions: number;
   distributions: number;
+  rmdAmount: number;
   fees: number;
   endingValue: number;
 }

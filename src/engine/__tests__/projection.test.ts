@@ -97,4 +97,103 @@ describe("runProjection", () => {
       expect(result[0].withdrawals.total).toBeGreaterThan(0);
     }
   });
+
+  it("applies RMDs to eligible accounts when owner reaches RMD age", () => {
+    // John born 1970, RMD starts at 75 (year 2045)
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-trad-ira",
+          name: "Traditional IRA",
+          category: "retirement",
+          subType: "traditional_ira",
+          owner: "client",
+          value: 1000000,
+          basis: 1000000,
+          growthRate: 0.07,
+          rmdEnabled: true,
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2044, planEndYear: 2047 },
+    });
+    const result = runProjection(data);
+
+    // Year 2044: age 74, no RMD yet
+    const yr2044 = result[0];
+    expect(yr2044.ages.client).toBe(74);
+    expect(yr2044.accountLedgers["acct-trad-ira"].rmdAmount).toBe(0);
+
+    // Year 2045: age 75, RMD kicks in
+    const yr2045 = result[1];
+    expect(yr2045.ages.client).toBe(75);
+    expect(yr2045.accountLedgers["acct-trad-ira"].rmdAmount).toBeGreaterThan(0);
+    // RMD should be balance / 24.6 (divisor for age 75)
+    expect(yr2045.accountLedgers["acct-trad-ira"].rmdAmount).toBeGreaterThan(30000);
+  });
+
+  it("does not apply RMDs to Roth accounts", () => {
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-roth",
+          name: "Roth IRA",
+          category: "retirement",
+          subType: "roth_ira",
+          owner: "client",
+          value: 1000000,
+          basis: 500000,
+          growthRate: 0.07,
+          rmdEnabled: false,
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2045, planEndYear: 2047 },
+    });
+    const result = runProjection(data);
+
+    // Age 75, but Roth is not RMD-eligible
+    for (const yr of result) {
+      expect(yr.accountLedgers["acct-roth"].rmdAmount).toBe(0);
+    }
+  });
+
+  it("RMD distributions reduce account balance", () => {
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-401k-rmd",
+          name: "401k RMD Test",
+          category: "retirement",
+          subType: "401k",
+          owner: "client",
+          value: 500000,
+          basis: 500000,
+          growthRate: 0.0, // No growth to simplify
+          rmdEnabled: true,
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2045, planEndYear: 2046 },
+    });
+    const result = runProjection(data);
+
+    // Year 2045: age 75, 0% growth, RMD = 500000 / 24.6
+    const yr = result[0];
+    const expectedRmd = 500000 / 24.6;
+    expect(yr.accountLedgers["acct-401k-rmd"].rmdAmount).toBeCloseTo(expectedRmd, 0);
+    expect(yr.accountLedgers["acct-401k-rmd"].endingValue).toBeCloseTo(500000 - expectedRmd, 0);
+  });
 });

@@ -64,7 +64,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { name, category, subType, owner, value, basis, growthRate } = body;
+    const { name, category, subType, owner, value, basis, growthRate, rmdEnabled } = body;
 
     if (!name || !category) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -82,6 +82,7 @@ export async function POST(
         value: value ?? "0",
         basis: basis ?? "0",
         growthRate: growthRate ?? "0.07",
+        rmdEnabled: rmdEnabled ?? false,
       })
       .returning();
 

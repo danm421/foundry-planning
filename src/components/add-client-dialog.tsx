@@ -24,12 +24,12 @@ export default function AddClientDialog() {
           />
 
           {/* Dialog */}
-          <div className="relative z-10 w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
+          <div className="relative z-10 w-full max-w-lg rounded-lg bg-gray-900 border border-gray-700 p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Add New Client</h2>
+              <h2 className="text-lg font-semibold text-gray-100">Add New Client</h2>
               <button
                 onClick={() => setOpen(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-200"
                 aria-label="Close"
               >
                 <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">

@@ -55,6 +55,7 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
 };
 
 const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "roth_401k", "529"]);
+const RMD_ELIGIBLE_SUB_TYPES = new Set(["traditional_ira", "401k"]);
 
 export default function AddAccountForm({ clientId, category: defaultCategory, onSuccess }: AddAccountFormProps) {
   const router = useRouter();
@@ -63,10 +64,12 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
   const [category, setCategory] = useState<AccountCategory>(defaultCategory ?? "taxable");
   const [activeTab, setActiveTab] = useState<"details" | "savings">("details");
   const [subType, setSubType] = useState(SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]);
+  const [rmdEnabled, setRmdEnabled] = useState(RMD_ELIGIBLE_SUB_TYPES.has(SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]));
 
   const currentYear = new Date().getFullYear();
   const subTypes = SUB_TYPE_BY_CATEGORY[category];
   const isRetirementAccount = category === "retirement" && RETIREMENT_SUB_TYPES.has(subType);
+  const showRmdCheckbox = category === "retirement" && (subType === "traditional_ira" || subType === "401k" || subType === "roth_ira" || subType === "roth_401k" || subType === "529");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -83,7 +86,8 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
       owner: data.get("owner") as string,
       value: data.get("value") as string,
       basis: data.get("basis") as string,
-      growthRate: data.get("growthRate") as string,
+      growthRate: String(Number(data.get("growthRate")) / 100),
+      rmdEnabled,
     };
 
     // Savings tab data
@@ -144,18 +148,18 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+        <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
       )}
 
       {/* Tab bar */}
-      <div className="flex border-b border-gray-200">
+      <div className="flex border-b border-gray-700">
         <button
           type="button"
           onClick={() => setActiveTab("details")}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
             activeTab === "details"
               ? "border-blue-600 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
+              : "border-transparent text-gray-400 hover:text-gray-200"
           }`}
         >
           Account Details
@@ -166,7 +170,7 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
             activeTab === "savings"
               ? "border-blue-600 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
+              : "border-transparent text-gray-400 hover:text-gray-200"
           }`}
         >
           Savings
@@ -177,7 +181,7 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
       <div className={activeTab === "details" ? "" : "hidden"}>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700" htmlFor="name">
+            <label className="block text-sm font-medium text-gray-300" htmlFor="name">
               Account Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -186,13 +190,13 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
               type="text"
               required
               placeholder="e.g., Fidelity Brokerage"
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700" htmlFor="category">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="category">
                 Category <span className="text-red-500">*</span>
               </label>
               <select
@@ -203,9 +207,11 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
                 onChange={(e) => {
                   const newCat = e.target.value as AccountCategory;
                   setCategory(newCat);
-                  setSubType(SUB_TYPE_BY_CATEGORY[newCat][0]);
+                  const firstSub = SUB_TYPE_BY_CATEGORY[newCat][0];
+                  setSubType(firstSub);
+                  setRmdEnabled(RMD_ELIGIBLE_SUB_TYPES.has(firstSub));
                 }}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
                 {(Object.keys(CATEGORY_LABELS) as AccountCategory[]).map((cat) => (
                   <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>
@@ -214,15 +220,19 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700" htmlFor="subType">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="subType">
                 Account Type
               </label>
               <select
                 id="subType"
                 name="subType"
                 value={subType}
-                onChange={(e) => setSubType(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                onChange={(e) => {
+                  const newSub = e.target.value;
+                  setSubType(newSub);
+                  setRmdEnabled(RMD_ELIGIBLE_SUB_TYPES.has(newSub));
+                }}
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
                 {subTypes.map((t) => (
                   <option key={t} value={t}>
@@ -233,13 +243,13 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700" htmlFor="owner">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="owner">
                 Owner
               </label>
               <select
                 id="owner"
                 name="owner"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
                 <option value="client">Client</option>
                 <option value="spouse">Spouse</option>
@@ -248,7 +258,7 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700" htmlFor="growthRate">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="growthRate">
                 Growth Rate (%)
               </label>
               <input
@@ -259,12 +269,12 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
                 min={0}
                 max={30}
                 defaultValue={7}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700" htmlFor="value">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="value">
                 Current Value ($)
               </label>
               <input
@@ -274,12 +284,12 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
                 step="0.01"
                 min={0}
                 defaultValue={0}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700" htmlFor="basis">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="basis">
                 Cost Basis ($)
               </label>
               <input
@@ -289,10 +299,27 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
                 step="0.01"
                 min={0}
                 defaultValue={0}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
           </div>
+
+          {showRmdCheckbox && (
+            <div className="mt-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rmdEnabled}
+                  onChange={(e) => setRmdEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium text-gray-300">Subject to RMDs</span>
+              </label>
+              <p className="mt-1 ml-6 text-xs text-gray-500">
+                Required Minimum Distributions apply to pre-tax retirement accounts starting at age 73 or 75.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -301,7 +328,7 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700" htmlFor="savingsAmount">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="savingsAmount">
                 Annual Contribution ($)
               </label>
               <input
@@ -311,12 +338,12 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
                 step="1"
                 min={0}
                 defaultValue={0}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700" htmlFor="annualLimit">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="annualLimit">
                 Annual Limit ($)
               </label>
               <input
@@ -326,12 +353,12 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
                 step="1"
                 min={0}
                 placeholder="Optional"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700" htmlFor="savingsStartYear">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="savingsStartYear">
                 Start Year
               </label>
               <input
@@ -339,12 +366,12 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
                 name="savingsStartYear"
                 type="number"
                 defaultValue={currentYear}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700" htmlFor="savingsEndYear">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="savingsEndYear">
                 End Year
               </label>
               <input
@@ -352,16 +379,16 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
                 name="savingsEndYear"
                 type="number"
                 defaultValue={currentYear + 20}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
           </div>
 
           {isRetirementAccount && (
-            <div className="grid grid-cols-2 gap-4 border-t border-gray-200 pt-4">
+            <div className="grid grid-cols-2 gap-4 border-t border-gray-700 pt-4">
               <p className="col-span-2 text-xs font-medium uppercase tracking-wider text-gray-400">Employer Match</p>
               <div>
-                <label className="block text-sm font-medium text-gray-700" htmlFor="employerMatchPct">
+                <label className="block text-sm font-medium text-gray-300" htmlFor="employerMatchPct">
                   Match Rate (%)
                 </label>
                 <input
@@ -372,12 +399,12 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
                   min={0}
                   max={100}
                   placeholder="e.g., 50"
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700" htmlFor="employerMatchCap">
+                <label className="block text-sm font-medium text-gray-300" htmlFor="employerMatchCap">
                   Match Cap (% of salary)
                 </label>
                 <input
@@ -388,7 +415,7 @@ export default function AddAccountForm({ clientId, category: defaultCategory, on
                   min={0}
                   max={100}
                   placeholder="e.g., 6"
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
             </div>

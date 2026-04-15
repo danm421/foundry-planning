@@ -64,12 +64,12 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+        <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
       )}
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="firstName">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="firstName">
             First Name <span className="text-red-500">*</span>
           </label>
           <input
@@ -77,12 +77,12 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
             name="firstName"
             type="text"
             required
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="lastName">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="lastName">
             Last Name <span className="text-red-500">*</span>
           </label>
           <input
@@ -90,12 +90,12 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
             name="lastName"
             type="text"
             required
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="dateOfBirth">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="dateOfBirth">
             Date of Birth <span className="text-red-500">*</span>
           </label>
           <input
@@ -103,19 +103,19 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
             name="dateOfBirth"
             type="date"
             required
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="filingStatus">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="filingStatus">
             Filing Status <span className="text-red-500">*</span>
           </label>
           <select
             id="filingStatus"
             name="filingStatus"
             required
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
             <option value="single">Single</option>
             <option value="married_joint">Married Filing Jointly</option>
@@ -125,7 +125,7 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="retirementAge">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="retirementAge">
             Retirement Age <span className="text-red-500">*</span>
           </label>
           <input
@@ -136,12 +136,12 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
             max={85}
             defaultValue={65}
             required
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700" htmlFor="planEndAge">
+          <label className="block text-sm font-medium text-gray-300" htmlFor="planEndAge">
             Plan End Age <span className="text-red-500">*</span>
           </label>
           <input
@@ -152,50 +152,50 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
             max={120}
             defaultValue={90}
             required
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
       </div>
 
-      <div className="border-t border-gray-200 pt-4">
+      <div className="border-t border-gray-700 pt-4">
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
             checked={showSpouse}
             onChange={(e) => setShowSpouse(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
           />
-          <span className="text-sm font-medium text-gray-700">Add Spouse</span>
+          <span className="text-sm font-medium text-gray-300">Add Spouse</span>
         </label>
 
         {showSpouse && (
           <div className="mt-3 grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700" htmlFor="spouseName">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="spouseName">
                 Spouse Name
               </label>
               <input
                 id="spouseName"
                 name="spouseName"
                 type="text"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700" htmlFor="spouseDob">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="spouseDob">
                 Spouse Date of Birth
               </label>
               <input
                 id="spouseDob"
                 name="spouseDob"
                 type="date"
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700" htmlFor="spouseRetirementAge">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="spouseRetirementAge">
                 Spouse Retirement Age
               </label>
               <input
@@ -204,7 +204,7 @@ export default function AddClientForm({ onSuccess }: AddClientFormProps) {
                 type="number"
                 min={50}
                 max={85}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
           </div>

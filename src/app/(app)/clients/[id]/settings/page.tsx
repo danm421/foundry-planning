@@ -29,7 +29,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
 
   if (!scenario) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-6 text-center text-gray-500">
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
         No base case scenario found.
       </div>
     );
@@ -42,7 +42,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
 
   if (!settings) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-6 text-center text-gray-500">
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
         No plan settings found.
       </div>
     );
@@ -50,9 +50,9 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
 
   return (
     <div className="max-w-2xl">
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 bg-gray-50 px-6 py-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Plan Settings</h2>
+      <div className="overflow-hidden rounded-lg border border-gray-700 bg-gray-900 shadow-sm">
+        <div className="border-b border-gray-700 bg-gray-800 px-6 py-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Plan Settings</h2>
         </div>
         <div className="p-6">
           <PlanSettingsForm

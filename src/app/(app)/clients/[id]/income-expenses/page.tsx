@@ -31,7 +31,7 @@ export default async function IncomeExpensesPage({ params }: IncomeExpensesPageP
 
   if (!scenario) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-6 text-center text-gray-500">
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
         No base case scenario found.
       </div>
     );

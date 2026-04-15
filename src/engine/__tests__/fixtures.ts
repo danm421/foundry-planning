@@ -40,6 +40,7 @@ export const sampleAccounts: Account[] = [
     value: 500000,
     basis: 500000,
     growthRate: 0.07,
+    rmdEnabled: true,
   },
   {
     id: "acct-roth",
@@ -50,6 +51,7 @@ export const sampleAccounts: Account[] = [
     value: 200000,
     basis: 150000,
     growthRate: 0.07,
+    rmdEnabled: false,
   },
   {
     id: "acct-brokerage",
@@ -60,6 +62,7 @@ export const sampleAccounts: Account[] = [
     value: 300000,
     basis: 200000,
     growthRate: 0.06,
+    rmdEnabled: false,
   },
   {
     id: "acct-savings",
@@ -70,6 +73,7 @@ export const sampleAccounts: Account[] = [
     value: 50000,
     basis: 50000,
     growthRate: 0.04,
+    rmdEnabled: false,
   },
 ];
 
