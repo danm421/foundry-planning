@@ -275,15 +275,57 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     },
   };
 
-  // Cash Flow chart (stacked bars for income/withdrawals/shortfall + expense line)
+  // Cash Flow chart — stacked bars (bottom → top: Salaries, SS, Other Income,
+  // RMDs, Withdrawals, Shortfall) with Total Expenses overlaid as a line so the
+  // advisor can see year-over-year where inflows are coming from and whether
+  // they cover the expense line.
+  const otherIncomeForYear = (y: ProjectionYear) =>
+    y.income.business +
+    y.income.deferred +
+    y.income.capitalGains +
+    y.income.trust +
+    y.income.other;
+
+  const rmdForYear = (y: ProjectionYear) =>
+    Object.values(y.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0);
+
+  // Shortfall = the gap that couldn't be covered by income + RMDs + withdrawals.
+  // In most years the withdrawal strategy closes the gap entirely, so shortfall is 0.
+  const shortfallForYear = (y: ProjectionYear) => {
+    const covered = y.income.total + rmdForYear(y) + y.withdrawals.total;
+    const gap = y.expenses.total - covered;
+    return gap > 0 ? gap : 0;
+  };
+
   const cashflowChartData = {
     labels: chartLabels,
     datasets: [
       {
         type: "bar" as const,
-        label: "Income",
-        data: years.map((y) => y.income.total),
+        label: "Salaries",
+        data: years.map((y) => y.income.salaries),
+        backgroundColor: "#16a34a",
+        stack: "inflows",
+      },
+      {
+        type: "bar" as const,
+        label: "Social Security",
+        data: years.map((y) => y.income.socialSecurity),
         backgroundColor: "#22c55e",
+        stack: "inflows",
+      },
+      {
+        type: "bar" as const,
+        label: "Other Income",
+        data: years.map(otherIncomeForYear),
+        backgroundColor: "#84cc16",
+        stack: "inflows",
+      },
+      {
+        type: "bar" as const,
+        label: "RMDs",
+        data: years.map(rmdForYear),
+        backgroundColor: "#eab308",
         stack: "inflows",
       },
       {
@@ -296,10 +338,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       {
         type: "bar" as const,
         label: "Shortfall",
-        data: years.map((y) => {
-          const gap = y.totalExpenses - y.totalIncome;
-          return gap > 0 ? gap : 0;
-        }),
+        data: years.map(shortfallForYear),
         backgroundColor: "#ef4444",
         stack: "inflows",
       },
@@ -310,19 +349,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         borderColor: "#f87171",
         backgroundColor: "transparent",
         borderWidth: 2,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        tension: 0.3,
-        fill: false,
-      },
-      {
-        type: "line" as const,
-        label: "Total Income",
-        data: years.map((y) => y.income.total),
-        borderColor: "#4ade80",
-        backgroundColor: "transparent",
-        borderWidth: 2,
-        borderDash: [5, 3],
         pointRadius: 0,
         pointHoverRadius: 4,
         tension: 0.3,
