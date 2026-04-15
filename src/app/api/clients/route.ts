@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
       planEndAge,
       filingStatus,
       spouseName,
+      spouseLastName,
       spouseDob,
       spouseRetirementAge,
     } = body;
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
         planEndAge: Number(planEndAge),
         filingStatus,
         spouseName: spouseName ?? null,
+        spouseLastName: spouseLastName ?? null,
         spouseDob: spouseDob ?? null,
         spouseRetirementAge: spouseRetirementAge ? Number(spouseRetirementAge) : null,
       })

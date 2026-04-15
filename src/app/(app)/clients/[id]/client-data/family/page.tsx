@@ -53,7 +53,9 @@ export default async function FamilyPage({ params }: PageProps) {
     dateOfBirth: client.dateOfBirth,
     retirementAge: client.retirementAge,
     planEndAge: client.planEndAge,
+    filingStatus: client.filingStatus,
     spouseName: client.spouseName ?? null,
+    spouseLastName: client.spouseLastName ?? null,
     spouseDob: client.spouseDob ?? null,
     spouseRetirementAge: client.spouseRetirementAge ?? null,
   };

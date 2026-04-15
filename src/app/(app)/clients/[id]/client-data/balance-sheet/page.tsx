@@ -112,7 +112,9 @@ export default async function BalanceSheetPage({ params }: PageProps) {
       categoryDefaults={categoryDefaults}
       ownerNames={{
         clientName: `${client.firstName} ${client.lastName}`,
-        spouseName: client.spouseName ?? null,
+        spouseName: client.spouseName
+          ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
+          : null,
       }}
     />
   );

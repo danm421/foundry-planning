@@ -29,6 +29,16 @@ export default async function ClientLayout({ children, params }: ClientLayoutPro
     notFound();
   }
 
+  const primaryFullName = `${client.firstName} ${client.lastName}`;
+  const spouseFirst = client.spouseName ?? null;
+  const spouseLast = client.spouseLastName ?? (spouseFirst ? client.lastName : null);
+  const spouseFullName = spouseFirst ? `${spouseFirst} ${spouseLast ?? ""}`.trim() : null;
+  const householdTitle = spouseFullName
+    ? client.lastName && spouseLast === client.lastName
+      ? `${client.firstName} & ${spouseFirst} ${client.lastName}`
+      : `${primaryFullName} & ${spouseFullName}`
+    : primaryFullName;
+
   return (
     <div>
       <div className="mb-6">
@@ -37,9 +47,14 @@ export default async function ClientLayout({ children, params }: ClientLayoutPro
             Clients
           </Link>
           <span className="mx-2">/</span>
-          <span className="text-gray-100">{client.firstName} {client.lastName}</span>
+          <span className="text-gray-100">{householdTitle}</span>
         </nav>
-        <h1 className="text-2xl font-bold text-gray-100">{client.firstName} {client.lastName}</h1>
+        <h1 className="text-2xl font-bold text-gray-100">{householdTitle}</h1>
+        {spouseFullName && (
+          <p className="mt-1 text-xs text-gray-500">
+            {primaryFullName} · {spouseFullName}
+          </p>
+        )}
       </div>
 
       <div className="mb-6 border-b border-gray-700">

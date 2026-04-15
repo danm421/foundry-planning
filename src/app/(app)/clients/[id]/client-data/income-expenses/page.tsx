@@ -75,7 +75,9 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
       entities={entityRows.map((e) => ({ id: e.id, name: e.name }))}
       ownerNames={{
         clientName: `${client.firstName} ${client.lastName}`,
-        spouseName: client.spouseName ?? null,
+        spouseName: client.spouseName
+          ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
+          : null,
       }}
       clientInfo={{
         clientRetirementYear,

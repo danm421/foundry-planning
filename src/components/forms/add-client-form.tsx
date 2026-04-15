@@ -11,7 +11,9 @@ export interface ClientFormInitial {
   retirementAge: number;
   planEndAge: number;
   filingStatus: string;
+  /** Spouse first name. Stored in the legacy `spouseName` DB column. */
   spouseName?: string | null;
+  spouseLastName?: string | null;
   spouseDob?: string | null;
   spouseRetirementAge?: number | null;
 }
@@ -56,14 +58,17 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
 
     if (showSpouse) {
       const spouseName = data.get("spouseName") as string;
+      const spouseLastName = data.get("spouseLastName") as string;
       const spouseDob = data.get("spouseDob") as string;
       const spouseRetirementAge = data.get("spouseRetirementAge") as string;
 
       body.spouseName = spouseName || null;
+      body.spouseLastName = spouseLastName || null;
       body.spouseDob = spouseDob || null;
       body.spouseRetirementAge = spouseRetirementAge ? Number(spouseRetirementAge) : null;
     } else if (isEdit) {
       body.spouseName = null;
+      body.spouseLastName = null;
       body.spouseDob = null;
       body.spouseRetirementAge = null;
     }
@@ -204,15 +209,29 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
 
         {showSpouse && (
           <div className="mt-3 grid grid-cols-2 gap-4">
-            <div className="col-span-2">
+            <div>
               <label className="block text-sm font-medium text-gray-300" htmlFor="spouseName">
-                Spouse Name
+                Spouse First Name
               </label>
               <input
                 id="spouseName"
                 name="spouseName"
                 type="text"
                 defaultValue={initial?.spouseName ?? ""}
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300" htmlFor="spouseLastName">
+                Spouse Last Name
+              </label>
+              <input
+                id="spouseLastName"
+                name="spouseLastName"
+                type="text"
+                placeholder="Leave blank to inherit client's"
+                defaultValue={initial?.spouseLastName ?? ""}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>

@@ -107,6 +107,7 @@ export const clients = pgTable("clients", {
   retirementAge: integer("retirement_age").notNull(),
   planEndAge: integer("plan_end_age").notNull(),
   spouseName: text("spouse_name"),
+  spouseLastName: text("spouse_last_name"),
   spouseDob: date("spouse_dob"),
   spouseRetirementAge: integer("spouse_retirement_age"),
   filingStatus: filingStatusEnum("filing_status").notNull().default("single"),

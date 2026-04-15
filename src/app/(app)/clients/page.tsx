@@ -23,6 +23,7 @@ export default async function ClientsPage() {
     planEndAge: c.planEndAge,
     filingStatus: c.filingStatus,
     spouseName: c.spouseName ?? null,
+    spouseLastName: c.spouseLastName ?? null,
     spouseDob: c.spouseDob ?? null,
     spouseRetirementAge: c.spouseRetirementAge ?? null,
     createdAt:

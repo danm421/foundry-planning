@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
+import AddClientDialog from "./add-client-dialog";
+import type { ClientFormInitial } from "./forms/add-client-form";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -33,7 +34,9 @@ export interface PrimaryInfo {
   dateOfBirth: string;
   retirementAge: number;
   planEndAge: number;
+  filingStatus: string;
   spouseName: string | null;
+  spouseLastName: string | null;
   spouseDob: string | null;
   spouseRetirementAge: number | null;
 }
@@ -427,7 +430,6 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
 // ── Main Family View ──────────────────────────────────────────────────────────
 
 export default function FamilyView({ clientId, primary, initialMembers, initialEntities }: FamilyViewProps) {
-  const router = useRouter();
   const [members, setMembers] = useState<FamilyMember[]>(initialMembers);
   const [entities, setEntities] = useState<Entity[]>(initialEntities);
 
@@ -444,9 +446,21 @@ export default function FamilyView({ clientId, primary, initialMembers, initialE
   const primaryAge = computeAge(primary.dateOfBirth);
   const spouseAge = primary.spouseDob ? computeAge(primary.spouseDob) : null;
 
-  function openEditClient() {
-    router.push(`/clients`);
-  }
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+
+  const profileInitial: ClientFormInitial = {
+    id: clientId,
+    firstName: primary.firstName,
+    lastName: primary.lastName,
+    dateOfBirth: primary.dateOfBirth,
+    retirementAge: primary.retirementAge,
+    planEndAge: primary.planEndAge,
+    filingStatus: primary.filingStatus,
+    spouseName: primary.spouseName,
+    spouseLastName: primary.spouseLastName,
+    spouseDob: primary.spouseDob,
+    spouseRetirementAge: primary.spouseRetirementAge,
+  };
 
   // Group members by relationship
   const byRel: Record<Relationship, FamilyMember[]> = {
@@ -468,10 +482,10 @@ export default function FamilyView({ clientId, primary, initialMembers, initialE
             <p className="text-xs text-gray-500">Client and spouse. Edit from the Clients list.</p>
           </div>
           <button
-            onClick={openEditClient}
+            onClick={() => setEditProfileOpen(true)}
             className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-700"
           >
-            Edit client details →
+            Edit profile
           </button>
         </header>
 
@@ -487,7 +501,7 @@ export default function FamilyView({ clientId, primary, initialMembers, initialE
           />
           {primary.spouseName ? (
             <PersonCard
-              name={primary.spouseName}
+              name={`${primary.spouseName} ${primary.spouseLastName ?? primary.lastName}`.trim()}
               badge="Spouse"
               fields={[
                 ["Date of Birth", primary.spouseDob ? `${new Date(primary.spouseDob).toLocaleDateString()} (age ${spouseAge})` : "—"],
@@ -502,6 +516,12 @@ export default function FamilyView({ clientId, primary, initialMembers, initialE
           )}
         </div>
       </section>
+
+      <AddClientDialog
+        open={editProfileOpen}
+        onOpenChange={setEditProfileOpen}
+        editing={profileInitial}
+      />
 
       {/* Family members */}
       <section>

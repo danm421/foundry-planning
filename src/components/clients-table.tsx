@@ -16,6 +16,7 @@ interface ClientRow {
   planEndAge: number;
   filingStatus: string;
   spouseName?: string | null;
+  spouseLastName?: string | null;
   spouseDob?: string | null;
   spouseRetirementAge?: number | null;
   createdAt: string | Date;
@@ -42,6 +43,7 @@ function toInitial(c: ClientRow): ClientFormInitial {
     planEndAge: c.planEndAge,
     filingStatus: c.filingStatus,
     spouseName: c.spouseName ?? null,
+    spouseLastName: c.spouseLastName ?? null,
     spouseDob: c.spouseDob ? (typeof c.spouseDob === "string" ? c.spouseDob : new Date(c.spouseDob).toISOString()) : null,
     spouseRetirementAge: c.spouseRetirementAge ?? null,
   };

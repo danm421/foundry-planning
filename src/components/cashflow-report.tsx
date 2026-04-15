@@ -27,6 +27,52 @@ import type { ClientData, ProjectionYear, AccountLedger } from "@/engine";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
 
+// Draws vertical dashed markers at specific data indices with a short label and a
+// colored cap at the top. Used to show retirement and life-expectancy events for
+// each client on the cash-flow and portfolio charts. Enable via:
+//   options.plugins.timelineMarkers = { markers: [{ yearIndex, label, color }] }
+interface TimelineMarker {
+  yearIndex: number;
+  label: string;
+  color: string;
+}
+const timelineMarkersPlugin = {
+  id: "timelineMarkers",
+  afterDatasetsDraw(chart: {
+    ctx: CanvasRenderingContext2D;
+    chartArea: { top: number; bottom: number; left: number; right: number };
+    scales: { x: { getPixelForValue(v: number): number } };
+  }, _args: unknown, options: { markers?: TimelineMarker[] }) {
+    const { ctx, chartArea, scales } = chart;
+    const markers = options?.markers ?? [];
+    if (markers.length === 0) return;
+    ctx.save();
+    for (const m of markers) {
+      const x = scales.x.getPixelForValue(m.yearIndex);
+      if (x < chartArea.left - 1 || x > chartArea.right + 1) continue;
+      ctx.strokeStyle = m.color;
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x, chartArea.top + 8);
+      ctx.lineTo(x, chartArea.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Cap + label at the top
+      ctx.fillStyle = m.color;
+      ctx.beginPath();
+      ctx.arc(x, chartArea.top + 6, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = "10px ui-sans-serif, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillText(m.label, x, chartArea.top - 2);
+    }
+    ctx.restore();
+  },
+};
+ChartJS.register(timelineMarkersPlugin);
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface LedgerModal {
@@ -211,6 +257,45 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   const chartLabels = years.map((y) => String(y.year));
 
+  // Life events — retirement and life-expectancy end — for each client, mapped
+  // onto the chart's year axis. Also used to badge the table rows so advisors can
+  // jump to an event year quickly.
+  const firstYear = years[0]?.year ?? 0;
+  const yearIndex = (year: number) => year - firstYear;
+  const inRange = (year: number) =>
+    years.length > 0 && year >= firstYear && year <= years[years.length - 1].year;
+
+  const timelineMarkers: TimelineMarker[] = [];
+  const eventsByYear: Record<number, { label: string; color: string }[]> = {};
+  const pushEvent = (year: number, label: string, color: string) => {
+    if (!inRange(year)) return;
+    timelineMarkers.push({ yearIndex: yearIndex(year), label, color });
+    (eventsByYear[year] ??= []).push({ label, color });
+  };
+
+  if (clientData) {
+    const c = clientData.client;
+    const clientFirst = c.firstName;
+    const clientBirthYear = parseInt(c.dateOfBirth.slice(0, 4), 10);
+    const clientColor = "#60a5fa";
+    pushEvent(clientBirthYear + c.retirementAge, `${clientFirst} retires`, clientColor);
+    pushEvent(clientBirthYear + c.planEndAge, `${clientFirst} end`, clientColor);
+
+    if (c.spouseDob) {
+      const spouseFirst = c.spouseName ?? "Spouse";
+      const spouseBirthYear = parseInt(c.spouseDob.slice(0, 4), 10);
+      const spouseColor = "#f472b6";
+      if (c.spouseRetirementAge != null) {
+        pushEvent(
+          spouseBirthYear + c.spouseRetirementAge,
+          `${spouseFirst} retires`,
+          spouseColor
+        );
+      }
+      pushEvent(spouseBirthYear + c.planEndAge, `${spouseFirst} end`, spouseColor);
+    }
+  }
+
   const baseChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
@@ -221,6 +306,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         if (year != null) scrollToYear(year);
       }
     },
+    layout: { padding: { top: 20 } },
     plugins: {
       legend: { display: true, labels: { color: "#d1d5db", boxWidth: 12, padding: 16 } },
       tooltip: {
@@ -267,8 +353,16 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     ],
   };
 
-  const portfolioChartOptions = {
+  const chartOptionsWithMarkers = {
     ...baseChartOptions,
+    plugins: {
+      ...baseChartOptions.plugins,
+      timelineMarkers: { markers: timelineMarkers },
+    },
+  };
+
+  const portfolioChartOptions = {
+    ...chartOptionsWithMarkers,
     scales: {
       x: { ...baseChartOptions.scales.x, stacked: false },
       y: { ...baseChartOptions.scales.y, stacked: false },
@@ -530,7 +624,25 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
     // Always-present base columns
     const baseColumns: ColumnDef<ProjectionYear>[] = [
-      col("year", "Year", (r) => r.year, (info) => String(info.getValue())),
+      col("year", "Year", (r) => r.year, (info) => {
+        const y = info.getValue() as number;
+        const events = eventsByYear[y];
+        if (!events || events.length === 0) return String(y);
+        return (
+          <span className="inline-flex items-center gap-1.5">
+            <span>{y}</span>
+            {events.map((ev, i) => (
+              <span
+                key={i}
+                title={ev.label}
+                aria-label={ev.label}
+                style={{ backgroundColor: ev.color }}
+                className="inline-block h-1.5 w-1.5 rounded-full"
+              />
+            ))}
+          </span>
+        );
+      }),
       col("ages", "Age(s)", (r) => r.ages, (info) => {
         const ages = info.getValue() as ProjectionYear["ages"];
         return ages.spouse != null ? `${ages.client} / ${ages.spouse}` : String(ages.client);
@@ -1004,7 +1116,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           {chartView === "portfolio" ? (
             <Line data={portfolioChartData} options={portfolioChartOptions} />
           ) : (
-            <Chart type="bar" data={cashflowChartData} options={baseChartOptions} />
+            <Chart type="bar" data={cashflowChartData} options={chartOptionsWithMarkers} />
           )}
         </div>
       </div>
