@@ -9,8 +9,7 @@ import {
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
-import AssumptionsForm, { AssumptionsInitial } from "@/components/forms/assumptions-form";
-import WithdrawalStrategySection from "@/components/withdrawal-strategy-section";
+import AssumptionsClient from "./assumptions-client";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -69,50 +68,40 @@ export default async function AssumptionsPage({ params }: PageProps) {
     );
   }
 
-  const initial: AssumptionsInitial = {
-    flatFederalRate: String(settings.flatFederalRate),
-    flatStateRate: String(settings.flatStateRate),
-    inflationRate: String(settings.inflationRate),
-    planStartYear: settings.planStartYear,
-    planEndYear: settings.planEndYear,
-    defaultGrowthTaxable: String(settings.defaultGrowthTaxable),
-    defaultGrowthCash: String(settings.defaultGrowthCash),
-    defaultGrowthRetirement: String(settings.defaultGrowthRetirement),
-    defaultGrowthRealEstate: String(settings.defaultGrowthRealEstate),
-    defaultGrowthBusiness: String(settings.defaultGrowthBusiness),
-    defaultGrowthLifeInsurance: String(settings.defaultGrowthLifeInsurance),
-  };
-
-  const accountOpts = accountRows.map((a) => ({
-    id: a.id,
-    name: a.name,
-    category: a.category,
-    subType: a.subType,
-    isDefaultChecking: a.isDefaultChecking,
-    ownerEntityId: a.ownerEntityId,
-  }));
-
   return (
-    <div className="max-w-3xl space-y-8">
+    <div className="max-w-3xl space-y-6">
       <div>
         <h2 className="text-xl font-bold text-gray-100">Assumptions</h2>
         <p className="mt-1 text-sm text-gray-400">
-          Tax rates, inflation, plan horizon, default growth rates, and withdrawal order
-          applied across this client&apos;s plan.
+          Plan horizon, tax rates, growth assumptions, and withdrawal order.
         </p>
       </div>
 
-      <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-6">
-        <AssumptionsForm clientId={id} initial={initial} />
-      </div>
-
-      <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-6">
-        <WithdrawalStrategySection
-          clientId={id}
-          accounts={accountOpts}
-          initialStrategies={withdrawalRows}
-        />
-      </div>
+      <AssumptionsClient
+        clientId={id}
+        settings={{
+          flatFederalRate: String(settings.flatFederalRate),
+          flatStateRate: String(settings.flatStateRate),
+          inflationRate: String(settings.inflationRate),
+          planStartYear: settings.planStartYear,
+          planEndYear: settings.planEndYear,
+          defaultGrowthTaxable: String(settings.defaultGrowthTaxable),
+          defaultGrowthCash: String(settings.defaultGrowthCash),
+          defaultGrowthRetirement: String(settings.defaultGrowthRetirement),
+          defaultGrowthRealEstate: String(settings.defaultGrowthRealEstate),
+          defaultGrowthBusiness: String(settings.defaultGrowthBusiness),
+          defaultGrowthLifeInsurance: String(settings.defaultGrowthLifeInsurance),
+        }}
+        accounts={accountRows.map((a) => ({
+          id: a.id,
+          name: a.name,
+          category: a.category,
+          subType: a.subType,
+          isDefaultChecking: a.isDefaultChecking,
+          ownerEntityId: a.ownerEntityId,
+        }))}
+        withdrawalStrategies={withdrawalRows}
+      />
     </div>
   );
 }
