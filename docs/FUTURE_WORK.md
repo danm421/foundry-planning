@@ -162,6 +162,13 @@ Dependency notes that override raw score:
   plan-vs-actual tracking. _Why deferred: highest-ROI integration but no
   advisor is blocked on it yet._
 
+- **Cloud storage linking for imported documents** _(P3 E5 L3)_ — connect
+  advisor's cloud storage (Google Drive, Dropbox, OneDrive) to persist uploaded
+  source documents alongside extracted data. Enables audit trail, re-extraction
+  with improved prompts, and advisor document management. _Why deferred:
+  extraction works fine with in-memory processing; storage adds auth complexity
+  (OAuth per provider) and infrastructure cost._
+
 - **Plaid account linking** _(P3 E3 L5)_ — live balance + transaction feed
   for linked client accounts. Operationally heavy (token storage, webhooks,
   reauth, dedup, per-item cost). _Why deferred: AI statement import gives
