@@ -83,6 +83,9 @@ const DRILL_LABELS: Record<string, string> = {
   cashflow: "Net Cash Flow",
   rmds: "RMDs",
   growth: "Portfolio Growth",
+  activity: "Portfolio Activity",
+  additions: "Additions",
+  distributions: "Distributions",
   portfolio: "Portfolio Assets",
   // Income sub-types
   salaries: "Salaries",
@@ -458,6 +461,41 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     return sum;
   }
 
+  // ── Portfolio activity helpers ─────────────────────────────────────────────
+
+  function additionsTotal(r: ProjectionYear): number {
+    let sum = 0;
+    for (const id of portfolioAccountIds(r)) sum += r.accountLedgers[id]?.contributions ?? 0;
+    return sum;
+  }
+
+  function distributionsTotal(r: ProjectionYear): number {
+    let sum = 0;
+    for (const id of portfolioAccountIds(r)) sum += r.accountLedgers[id]?.distributions ?? 0;
+    return sum;
+  }
+
+  // Account IDs that had any addition/distribution over the whole projection, so
+  // empty columns don't clutter the drill-down for accounts that never moved.
+  const additionAccountIds = Array.from(
+    new Set(
+      years.flatMap((y) =>
+        [...portfolioAccountIds(y)].filter(
+          (id) => (y.accountLedgers[id]?.contributions ?? 0) > 0
+        )
+      )
+    )
+  );
+  const distributionAccountIds = Array.from(
+    new Set(
+      years.flatMap((y) =>
+        [...portfolioAccountIds(y)].filter(
+          (id) => (y.accountLedgers[id]?.distributions ?? 0) > 0
+        )
+      )
+    )
+  );
+
   // ── Drillable header button ────────────────────────────────────────────────
 
   function DrillBtn({ segment, label }: { segment: string; label: string }) {
@@ -519,6 +557,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           "portfolio_growth",
           () => <DrillBtn segment="growth" label="Portfolio Growth" />,
           (r) => portfolioGrowthTotal(r)
+        ),
+        numCol(
+          "portfolio_activity",
+          () => <DrillBtn segment="activity" label="Portfolio Activity" />,
+          (r) => additionsTotal(r) - distributionsTotal(r)
         ),
         numCol("portfolio_total", () => <DrillBtn segment="portfolio" label="Portfolio Assets" />, (r) => r.portfolioAssets.total),
       ];
@@ -706,6 +749,88 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol("growth_business", () => <DrillBtn segment="business_assets" label="Business" />, (r) => growthByCategorySegment(r, "business")),
         numCol("growth_life_insurance", () => <DrillBtn segment="lifeInsurance" label="Life Insurance" />, (r) => growthByCategorySegment(r, "lifeInsurance")),
         numCol("growth_total", "Total", (r) => portfolioGrowthTotal(r), true),
+      ];
+    }
+
+    // ── Portfolio Activity drill-down ──────────────────────────────────────
+    // Level 1: Additions + Distributions totals. Level 2: per-account under each.
+    // Summed across portfolio-eligible accounts; ledger modal on cell click shows
+    // the itemized per-account activity for the year.
+
+    const accountLedgerCell = (id: string, accessor: (r: ProjectionYear) => number) =>
+      col(
+        `activity_${id}`,
+        accountNames[id] ?? id,
+        accessor,
+        (info) => {
+          const v = info.getValue() as number;
+          const row = info.row.original;
+          return (
+            <button
+              onClick={() => {
+                const ledger = row.accountLedgers[id];
+                if (ledger) {
+                  setLedgerModal({
+                    accountId: id,
+                    accountName: accountNames[id] ?? id,
+                    year: row.year,
+                    ledger,
+                  });
+                }
+              }}
+              className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+              title="View account ledger"
+            >
+              {fmtNum(v)}
+            </button>
+          );
+        }
+      );
+
+    if (level === "activity") {
+      if (subLevel === "additions") {
+        return [
+          ...baseColumns,
+          ...additionAccountIds.map((id) =>
+            accountLedgerCell(id, (r) => r.accountLedgers[id]?.contributions ?? 0)
+          ),
+          numCol("additions_total", "Total Additions", (r) => additionsTotal(r), true),
+        ];
+      }
+      if (subLevel === "distributions") {
+        return [
+          ...baseColumns,
+          ...distributionAccountIds.map((id) =>
+            accountLedgerCell(id, (r) => r.accountLedgers[id]?.distributions ?? 0)
+          ),
+          numCol("distributions_total", "Total Distributions", (r) => distributionsTotal(r), true),
+        ];
+      }
+
+      // Level 1: Additions + Distributions + Net
+      return [
+        ...baseColumns,
+        numCol(
+          "activity_additions",
+          () => <DrillBtn segment="additions" label="Additions" />,
+          (r) => additionsTotal(r)
+        ),
+        numCol(
+          "activity_distributions",
+          () => <DrillBtn segment="distributions" label="Distributions" />,
+          (r) => distributionsTotal(r)
+        ),
+        col(
+          "activity_net",
+          "Net",
+          (r) => additionsTotal(r) - distributionsTotal(r),
+          (info) => {
+            const v = info.getValue() as number;
+            return (
+              <strong className={v < 0 ? "text-red-400" : "text-green-400"}>{fmtNum(v)}</strong>
+            );
+          }
+        ),
       ];
     }
 
