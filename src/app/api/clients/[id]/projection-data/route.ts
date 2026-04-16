@@ -14,9 +14,11 @@ import {
   modelPortfolios,
   modelPortfolioAllocations,
   assetClasses,
+  taxYearParameters,
 } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 
 // GET /api/clients/[id]/projection-data — fetch all data needed for the projection engine
 export async function GET(
@@ -79,6 +81,13 @@ export async function GET(
     if (!settings) {
       return NextResponse.json({ error: "No plan settings found" }, { status: 404 });
     }
+
+    // Load tax year parameters for the projection engine
+    const taxYearRows = await db
+      .select()
+      .from(taxYearParameters)
+      .orderBy(asc(taxYearParameters.year));
+    const parsedTaxRows = taxYearRows.map(dbRowToTaxYearParameters);
 
     // ── CMA resolution helpers ──────────────────────────────────────────────
 
@@ -292,6 +301,7 @@ export async function GET(
         includeInPortfolio: e.includeInPortfolio,
         isGrantor: e.isGrantor,
       })),
+      taxYearRows: parsedTaxRows,
     });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
