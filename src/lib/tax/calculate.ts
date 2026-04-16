@@ -88,11 +88,13 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   const amtAdditional = calcAmtAdditional(tentativeAmt, regularTaxCalc + capitalGainsTax);
 
   // 11. NIIT
-  // Investment income for NIIT: qualified dividends + long-term cap gains.
+  // Investment income for NIIT: qualified dividends + long-term cap gains +
+  // short-term cap gains. Per IRC §1411(c)(1)(A)(iii), net gains from
+  // dispositions of property (including STCG) belong in net investment income.
   // input.ordinaryIncome (IRA distributions, RMDs, etc.) is excluded —
   // only the pure investment streams are subject to NIIT in v1.
   const niitInvestmentClean =
-    input.qualifiedDividends + input.longTermCapitalGains;
+    input.qualifiedDividends + input.longTermCapitalGains + input.shortTermCapitalGains;
   const niitThreshold = fs === "married_joint" ? p.niitThreshold.mfj
                        : fs === "married_separate" ? p.niitThreshold.mfs
                        : p.niitThreshold.single;

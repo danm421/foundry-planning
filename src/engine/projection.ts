@@ -82,6 +82,12 @@ export function runProjection(data: ClientData): ProjectionYear[] {
   const years: ProjectionYear[] = [];
 
   const taxYearRows: TaxYearParameters[] = data.taxYearRows ?? [];
+  if (planSettings.taxEngineMode === "bracket" && taxYearRows.length === 0) {
+    console.warn(
+      "[tax engine] Bracket mode selected but no tax_year_parameters rows available. " +
+      "Falling back to flat mode. Run `npm run seed:tax-data` to populate."
+    );
+  }
   const taxResolver = taxYearRows.length > 0
     ? createTaxResolver(taxYearRows, {
         taxInflationRate: planSettings.taxInflationRate != null
@@ -389,11 +395,6 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     if (grantorRmdTaxable > 0) {
       taxDetail.ordinaryIncome += grantorRmdTaxable;
     }
-    const marginalRate = Math.min(
-      0.99,
-      planSettings.flatFederalRate + planSettings.flatStateRate
-    );
-
     // 5. Taxes on household + grantor-trust income/RMDs. Routes to bracket or flat
     // engine depending on planSettings.taxEngineMode and whether tax year data is loaded.
     const resolved = taxResolver ? taxResolver.getYear(year) : null;
@@ -426,6 +427,17 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         });
 
     const taxes = taxResult.flow.totalTax;
+
+    // Marginal rate for withdrawal gross-up. In bracket mode, use the true marginal
+    // federal rate from the tax result so high-income clients aren't systematically
+    // under-grossed. Fall back to the flat rate when bracket engine is not active.
+    const marginalFedRate = useBracket
+      ? taxResult.diag.marginalFederalRate
+      : planSettings.flatFederalRate;
+    const marginalRate = Math.min(
+      0.99,
+      marginalFedRate + planSettings.flatStateRate
+    );
 
     // 6. Route each income to its cash account (override or default for owner).
     for (const inc of data.incomes) {

@@ -230,3 +230,29 @@ describe("calculateTaxYear — Scenario 5: MFJ small business with QBI", () => {
     expect(result.flow.taxableIncome).toBeCloseTo(207800, 0);
   });
 });
+
+describe("calculateTaxYear — Scenario 6: MFJ day trader with STCG (NIIT regression)", () => {
+  // $100k earned + $200k STCG, no state tax
+  // Verifies IRC §1411(c)(1)(A)(iii): STCG counts as net investment income for NIIT
+  const result = calculateTaxYear(makeInput({
+    earnedIncome: 100000,
+    shortTermCapitalGains: 200000,
+    flatStateRate: 0,
+  }));
+
+  it("includes STCG in NIIT investment income per IRC §1411", () => {
+    // MAGI = 100000 + 200000 = 300000, threshold MFJ = 250000, excess = 50000
+    // Investment income = 200000 (STCG), cap at min(200000, 50000) = 50000
+    // NIIT = 50000 × 3.8% = 1900
+    expect(result.flow.niit).toBeCloseTo(1900, 0);
+  });
+
+  it("taxes STCG at ordinary rates in the federal bracket calc", () => {
+    // AGI = 300000, std MFJ = 32200, taxable = 267800
+    // No LTCG or qual div → full 267800 taxed at ordinary brackets
+    // MFJ brackets: 24800×0.10 + (100800-24800)×0.12 + (211950-100800)×0.22
+    //             + (267800-211950)×0.24
+    // = 2480 + 9120 + 24453 + 13404 = 49457
+    expect(Math.round(result.flow.regularTaxCalc)).toBe(49457);
+  });
+});
