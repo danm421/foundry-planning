@@ -12,7 +12,9 @@ import type {
 import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
 import { computeLiabilities } from "./liabilities";
-import { calculateTaxes } from "./tax";
+import { calculateTaxYearBracket, calculateTaxYearFlat, makeEmptyTaxParams } from "./tax";
+import { createTaxResolver } from "../lib/tax/resolver";
+import type { TaxYearParameters, FilingStatus } from "../lib/tax/types";
 import { applySavingsRules, computeEmployerMatch } from "./savings";
 import { executeWithdrawals } from "./withdrawal";
 import { calculateRMD } from "./rmd";
@@ -78,6 +80,18 @@ function buildDefaultWithdrawalStrategy(
 export function runProjection(data: ClientData): ProjectionYear[] {
   const { client, planSettings } = data;
   const years: ProjectionYear[] = [];
+
+  const taxYearRows: TaxYearParameters[] = data.taxYearRows ?? [];
+  const taxResolver = taxYearRows.length > 0
+    ? createTaxResolver(taxYearRows, {
+        taxInflationRate: planSettings.taxInflationRate != null
+          ? planSettings.taxInflationRate
+          : planSettings.inflationRate,
+        ssWageGrowthRate: planSettings.ssWageGrowthRate != null
+          ? planSettings.ssWageGrowthRate
+          : planSettings.inflationRate + 0.005,
+      })
+    : null;
 
   // Entity lookup for out-of-estate treatment rules.
   const entityMap: Record<string, EntitySummary> = {};
@@ -315,7 +329,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       }
     }
 
-    // 5. Taxes on household + grantor-trust income/RMDs.
+    // 5. Compute taxable income total and per-category tax detail.
     const taxableIncome =
       income.salaries +
       income.business +
@@ -332,8 +346,6 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       realizationOI +
       realizationQDiv +
       realizationSTCG;
-    const taxes = calculateTaxes(taxableIncome, planSettings);
-
     // Build per-year tax detail breakdown. Income items use their taxType when
     // set, otherwise fall back to the legacy type-based mapping.
     const taxDetail: ProjectionYear["taxDetail"] = {
@@ -381,6 +393,39 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       0.99,
       planSettings.flatFederalRate + planSettings.flatStateRate
     );
+
+    // 5. Taxes on household + grantor-trust income/RMDs. Routes to bracket or flat
+    // engine depending on planSettings.taxEngineMode and whether tax year data is loaded.
+    const resolved = taxResolver ? taxResolver.getYear(year) : null;
+    const filingStatus = (client.filingStatus ?? "single") as FilingStatus;
+    const useBracket = planSettings.taxEngineMode === "bracket" && resolved != null;
+
+    const taxResult = useBracket
+      ? calculateTaxYearBracket({
+          year,
+          filingStatus,
+          earnedIncome: taxDetail.earnedIncome,
+          ordinaryIncome: taxDetail.ordinaryIncome,
+          qualifiedDividends: taxDetail.dividends,
+          longTermCapitalGains: taxDetail.capitalGains,
+          shortTermCapitalGains: taxDetail.stCapitalGains,
+          qbiIncome: taxDetail.qbi,
+          taxExemptIncome: taxDetail.taxExempt,
+          socialSecurityGross: income.socialSecurity,
+          aboveLineDeductions: 0,
+          itemizedDeductions: 0,
+          flatStateRate: planSettings.flatStateRate,
+          taxParams: resolved!.params,
+          inflationFactor: resolved!.inflationFactor,
+        })
+      : calculateTaxYearFlat({
+          taxableIncome,
+          flatFederalRate: planSettings.flatFederalRate,
+          flatStateRate: planSettings.flatStateRate,
+          taxParams: resolved?.params ?? makeEmptyTaxParams(year),
+        });
+
+    const taxes = taxResult.flow.totalTax;
 
     // 6. Route each income to its cash account (override or default for owner).
     for (const inc of data.incomes) {
@@ -732,6 +777,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       ages,
       income,
       taxDetail,
+      taxResult,
       withdrawals,
       expenses,
       savings,

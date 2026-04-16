@@ -1,4 +1,4 @@
-import type { TaxResult } from "../lib/tax/types";
+import type { TaxResult, TaxYearParameters } from "../lib/tax/types";
 
 // ── Input Types ──────────────────────────────────────────────────────────────
 
@@ -12,6 +12,8 @@ export interface ClientData {
   withdrawalStrategy: WithdrawalPriority[];
   planSettings: PlanSettings;
   entities?: EntitySummary[];
+  /** IRS-published tax year parameters seeded from the DB. Empty = flat-mode fallback. */
+  taxYearRows?: TaxYearParameters[];
 }
 
 // Minimal entity view used by the engine to decide cash-flow treatment of entity-owned
@@ -135,6 +137,12 @@ export interface PlanSettings {
   inflationRate: number;
   planStartYear: number;
   planEndYear: number;
+  /** "flat" (default) uses flatFederalRate; "bracket" routes through the bracket engine. */
+  taxEngineMode?: "flat" | "bracket";
+  /** Annual rate for inflating tax brackets/thresholds beyond the last seeded year. */
+  taxInflationRate?: number;
+  /** Annual rate for inflating the SS wage base (default: inflationRate + 0.005). */
+  ssWageGrowthRate?: number;
 }
 
 // ── Output Types ─────────────────────────────────────────────────────────────
