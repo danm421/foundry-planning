@@ -295,6 +295,9 @@ export async function GET(
         inflationRate: parseFloat(settings.inflationRate),
         planStartYear: settings.planStartYear,
         planEndYear: settings.planEndYear,
+        taxEngineMode: settings.taxEngineMode,
+        taxInflationRate: settings.taxInflationRate != null ? parseFloat(settings.taxInflationRate) : null,
+        ssWageGrowthRate: settings.ssWageGrowthRate != null ? parseFloat(settings.ssWageGrowthRate) : null,
       },
       entities: entityRows.map((e) => ({
         id: e.id,
