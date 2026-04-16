@@ -196,4 +196,152 @@ describe("runProjection", () => {
     expect(yr.accountLedgers["acct-401k-rmd"].rmdAmount).toBeCloseTo(expectedRmd, 0);
     expect(yr.accountLedgers["acct-401k-rmd"].endingValue).toBeCloseTo(500000 - expectedRmd, 0);
   });
+
+  it("splits growth by realization model when account has realization data", () => {
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-brokerage",
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          owner: "client",
+          value: 100000,
+          basis: 80000,
+          growthRate: 0.10,
+          rmdEnabled: false,
+          realization: {
+            pctOrdinaryIncome: 0.10,
+            pctLtCapitalGains: 0.70,
+            pctQualifiedDividends: 0.15,
+            pctTaxExempt: 0.05,
+            turnoverPct: 0.10,
+          },
+        },
+        {
+          id: "acct-checking",
+          name: "Checking",
+          category: "cash",
+          subType: "checking",
+          owner: "client",
+          value: 50000,
+          basis: 50000,
+          growthRate: 0.02,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const result = runProjection(data);
+    const ledger = result[0].accountLedgers["acct-brokerage"];
+    expect(ledger.growth).toBeCloseTo(10000, 0);
+    expect(ledger.growthDetail).toBeDefined();
+    // OI: 10000 * 0.10 = 1000
+    expect(ledger.growthDetail!.ordinaryIncome).toBeCloseTo(1000, 0);
+    // QDiv: 10000 * 0.15 = 1500
+    expect(ledger.growthDetail!.qualifiedDividends).toBeCloseTo(1500, 0);
+    // LTCG before turnover: 10000 * 0.70 = 7000
+    // STCG: 7000 * 0.10 = 700
+    expect(ledger.growthDetail!.stCapitalGains).toBeCloseTo(700, 0);
+    // LTCG after turnover: 7000 * 0.90 = 6300
+    expect(ledger.growthDetail!.ltCapitalGains).toBeCloseTo(6300, 0);
+    // TaxExempt: 10000 * 0.05 = 500
+    expect(ledger.growthDetail!.taxExempt).toBeCloseTo(500, 0);
+    // Basis increase: OI + QDiv + STCG + TaxExempt = 1000 + 1500 + 700 + 500 = 3700
+    expect(ledger.growthDetail!.basisIncrease).toBeCloseTo(3700, 0);
+  });
+
+  it("does not add realization detail for accounts without realization data", () => {
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-house",
+          name: "Primary Home",
+          category: "real_estate",
+          subType: "primary_residence",
+          owner: "joint",
+          value: 500000,
+          basis: 400000,
+          growthRate: 0.04,
+          rmdEnabled: false,
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const result = runProjection(data);
+    const ledger = result[0].accountLedgers["acct-house"];
+    expect(ledger.growthDetail).toBeUndefined();
+  });
+
+  it("includes realization income in taxDetail breakdown", () => {
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-brokerage",
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          owner: "client",
+          value: 100000,
+          basis: 80000,
+          growthRate: 0.10,
+          rmdEnabled: false,
+          realization: {
+            pctOrdinaryIncome: 0.10,
+            pctLtCapitalGains: 0.70,
+            pctQualifiedDividends: 0.15,
+            pctTaxExempt: 0.05,
+            turnoverPct: 0.10,
+          },
+        },
+        {
+          id: "acct-checking",
+          name: "Checking",
+          category: "cash",
+          subType: "checking",
+          owner: "client",
+          value: 50000,
+          basis: 50000,
+          growthRate: 0.02,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+        },
+      ],
+      incomes: [
+        {
+          id: "inc-salary",
+          type: "salary",
+          name: "Salary",
+          annualAmount: 100000,
+          startYear: 2026,
+          endYear: 2026,
+          growthRate: 0,
+          owner: "client",
+          taxType: "earned_income" as const,
+        },
+      ],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const result = runProjection(data);
+    expect(result[0].taxDetail).toBeDefined();
+    expect(result[0].taxDetail!.earnedIncome).toBe(100000);
+    expect(result[0].taxDetail!.ordinaryIncome).toBeCloseTo(1000, 0);
+    expect(result[0].taxDetail!.dividends).toBeCloseTo(1500, 0);
+    expect(result[0].taxDetail!.stCapitalGains).toBeCloseTo(700, 0);
+  });
 });

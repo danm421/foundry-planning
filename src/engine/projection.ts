@@ -17,6 +17,21 @@ import { applySavingsRules, computeEmployerMatch } from "./savings";
 import { executeWithdrawals } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 
+// Map legacy income type to the new tax type categories.
+function legacyTaxType(
+  incomeType: string
+): "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg" {
+  switch (incomeType) {
+    case "salary": return "earned_income";
+    case "social_security": return "ordinary_income";
+    case "business": return "ordinary_income";
+    case "deferred": return "ordinary_income";
+    case "capital_gains": return "capital_gains";
+    case "trust": return "ordinary_income";
+    default: return "ordinary_income";
+  }
+}
+
 // Tax-efficiency ranking applied when the user hasn't configured a withdrawal strategy.
 // Lower number = tapped first. Household checking is excluded because it's the target
 // account, not a source. Real estate / business / life-insurance accounts are skipped
@@ -163,19 +178,62 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     );
     currentLiabilities = liabResult.updatedLiabilities;
 
-    // 4. Grow every account.
+    // 4. Grow every account. When the account has a realization model, split
+    // growth into tax buckets: OI, QDiv, STCG, LTCG, Tax-Exempt. Turnover %
+    // determines the ST/LT CG split. Taxable amounts are added to the year's
+    // tax detail; basis is increased for everything except LTCG.
     const accountLedgers: Record<string, AccountLedger> = {};
+    // Accumulate realization-sourced taxable income across all accounts.
+    let realizationOI = 0;
+    let realizationQDiv = 0;
+    let realizationSTCG = 0;
+    const realizationBySource: Record<string, { type: string; amount: number }> = {};
+
     for (const acct of data.accounts) {
       const beginningValue = accountBalances[acct.id] ?? 0;
       const growth = beginningValue * acct.growthRate;
       const entries: AccountLedgerEntry[] = [];
-      if (growth !== 0) {
+
+      let growthDetail: AccountLedger["growthDetail"];
+
+      if (growth !== 0 && acct.realization) {
+        const r = acct.realization;
+        const oi = growth * r.pctOrdinaryIncome;
+        const qdiv = growth * r.pctQualifiedDividends;
+        const rawLtcg = growth * r.pctLtCapitalGains;
+        const stcg = rawLtcg * r.turnoverPct;
+        const ltcg = rawLtcg - stcg;
+        const taxExempt = growth * r.pctTaxExempt;
+        // Basis increases for everything EXCEPT LTCG (unrealized appreciation)
+        const basisIncrease = oi + qdiv + stcg + taxExempt;
+
+        growthDetail = { ordinaryIncome: oi, qualifiedDividends: qdiv, stCapitalGains: stcg, ltCapitalGains: ltcg, taxExempt, basisIncrease };
+
+        entries.push({
+          category: "growth",
+          label: `Growth (${(acct.growthRate * 100).toFixed(2)}%)`,
+          amount: growth,
+        });
+
+        // Only taxable accounts generate current-year tax from realization.
+        // Retirement accounts defer all tax until withdrawal; cash accounts
+        // are always 100% OI but that's baked into the realization model.
+        if (acct.category === "taxable" || acct.category === "cash") {
+          realizationOI += oi;
+          realizationQDiv += qdiv;
+          realizationSTCG += stcg;
+          if (oi > 0) realizationBySource[`${acct.id}:oi`] = { type: "ordinary_income", amount: oi };
+          if (qdiv > 0) realizationBySource[`${acct.id}:qdiv`] = { type: "dividends", amount: qdiv };
+          if (stcg > 0) realizationBySource[`${acct.id}:stcg`] = { type: "stcg", amount: stcg };
+        }
+      } else if (growth !== 0) {
         entries.push({
           category: "growth",
           label: `Growth (${(acct.growthRate * 100).toFixed(2)}%)`,
           amount: growth,
         });
       }
+
       accountLedgers[acct.id] = {
         beginningValue,
         growth,
@@ -185,6 +243,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         fees: 0,
         endingValue: beginningValue + growth,
         entries,
+        growthDetail,
       };
       accountBalances[acct.id] = beginningValue + growth;
     }
@@ -264,8 +323,55 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       grantorIncome.deferred +
       grantorIncome.capitalGains +
       grantorIncome.trust +
-      grantorRmdTaxable;
+      grantorRmdTaxable +
+      realizationOI +
+      realizationQDiv +
+      realizationSTCG;
     const taxes = calculateTaxes(taxableIncome, planSettings);
+
+    // Build per-year tax detail breakdown. Income items use their taxType when
+    // set, otherwise fall back to the legacy type-based mapping.
+    const taxDetail: ProjectionYear["taxDetail"] = {
+      earnedIncome: 0,
+      ordinaryIncome: realizationOI,
+      dividends: realizationQDiv,
+      capitalGains: 0,
+      stCapitalGains: realizationSTCG,
+      qbi: 0,
+      taxExempt: 0,
+      bySource: { ...realizationBySource },
+    };
+    // Map income entries to tax categories
+    for (const inc of data.incomes) {
+      if (year < inc.startYear || year > inc.endYear) continue;
+      if (inc.ownerEntityId != null && !isGrantorEntity(inc.ownerEntityId)) continue;
+      if (inc.type === "social_security" && inc.claimingAge != null) {
+        const ownerDob = inc.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
+        if (!ownerDob) continue;
+        const birthYear = parseInt(ownerDob.slice(0, 4), 10);
+        if (year < birthYear + inc.claimingAge) continue;
+      }
+      const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
+      const tt = inc.taxType ?? legacyTaxType(inc.type);
+      switch (tt) {
+        case "earned_income": taxDetail.earnedIncome += amount; break;
+        case "ordinary_income": taxDetail.ordinaryIncome += amount; break;
+        case "dividends": taxDetail.dividends += amount; break;
+        case "capital_gains": taxDetail.capitalGains += amount; break;
+        case "stcg": taxDetail.stCapitalGains += amount; break;
+        case "qbi": taxDetail.qbi += amount; break;
+        case "tax_exempt": taxDetail.taxExempt += amount; break;
+      }
+      taxDetail.bySource[inc.id] = { type: tt, amount };
+    }
+    // Add RMDs to ordinary income
+    if (householdRmdIncome > 0) {
+      taxDetail.ordinaryIncome += householdRmdIncome;
+    }
+    if (grantorRmdTaxable > 0) {
+      taxDetail.ordinaryIncome += grantorRmdTaxable;
+    }
     const marginalRate = Math.min(
       0.99,
       planSettings.flatFederalRate + planSettings.flatStateRate
@@ -620,6 +726,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       year,
       ages,
       income,
+      taxDetail,
       withdrawals,
       expenses,
       savings,
