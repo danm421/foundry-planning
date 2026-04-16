@@ -11,6 +11,9 @@ import {
   withdrawalStrategies,
   planSettings,
   entities,
+  modelPortfolios,
+  modelPortfolioAllocations,
+  assetClasses,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -44,7 +47,7 @@ export async function GET(
       return NextResponse.json({ error: "No base case scenario found" }, { status: 404 });
     }
 
-    // Fetch all projection data in parallel
+    // Fetch all projection data in parallel (including CMA data)
     const [
       accountRows,
       incomeRows,
@@ -54,6 +57,9 @@ export async function GET(
       withdrawalRows,
       planSettingsRows,
       entityRows,
+      portfolioRows,
+      allocationRows,
+      assetClassRows,
     ] = await Promise.all([
       db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
       db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
@@ -63,6 +69,9 @@ export async function GET(
       db.select().from(withdrawalStrategies).where(and(eq(withdrawalStrategies.clientId, id), eq(withdrawalStrategies.scenarioId, scenario.id))),
       db.select().from(planSettings).where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
       db.select().from(entities).where(eq(entities.clientId, id)),
+      db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
+      db.select().from(modelPortfolioAllocations),
+      db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
     ]);
 
     const [settings] = planSettingsRows;
@@ -70,6 +79,66 @@ export async function GET(
     if (!settings) {
       return NextResponse.json({ error: "No plan settings found" }, { status: 404 });
     }
+
+    // ── CMA resolution helpers ──────────────────────────────────────────────
+
+    const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
+    const allocsByPortfolio = new Map<string, typeof allocationRows>();
+    for (const alloc of allocationRows) {
+      const list = allocsByPortfolio.get(alloc.modelPortfolioId) ?? [];
+      list.push(alloc);
+      allocsByPortfolio.set(alloc.modelPortfolioId, list);
+    }
+
+    function resolvePortfolio(portfolioId: string) {
+      const allocs = allocsByPortfolio.get(portfolioId) ?? [];
+      let geoReturn = 0;
+      let pctOi = 0, pctLtcg = 0, pctQdiv = 0, pctTaxEx = 0;
+      for (const alloc of allocs) {
+        const ac = acMap.get(alloc.assetClassId);
+        if (!ac) continue;
+        const w = parseFloat(alloc.weight);
+        geoReturn += w * parseFloat(ac.geometricReturn);
+        pctOi += w * parseFloat(ac.pctOrdinaryIncome);
+        pctLtcg += w * parseFloat(ac.pctLtCapitalGains);
+        pctQdiv += w * parseFloat(ac.pctQualifiedDividends);
+        pctTaxEx += w * parseFloat(ac.pctTaxExempt);
+      }
+      return { geoReturn, pctOi, pctLtcg, pctQdiv, pctTaxEx };
+    }
+
+    // Resolve category default growth source from plan_settings
+    function resolveCategoryDefault(category: string): {
+      rate: number;
+      realization?: { pctOrdinaryIncome: number; pctLtCapitalGains: number; pctQualifiedDividends: number; pctTaxExempt: number; turnoverPct: number };
+    } {
+      const sourceLookup: Record<string, { source: string; portfolioId: string | null; customRate: string }> = {
+        taxable: { source: settings.growthSourceTaxable, portfolioId: settings.modelPortfolioIdTaxable, customRate: String(settings.defaultGrowthTaxable) },
+        cash: { source: settings.growthSourceCash, portfolioId: settings.modelPortfolioIdCash, customRate: String(settings.defaultGrowthCash) },
+        retirement: { source: settings.growthSourceRetirement, portfolioId: settings.modelPortfolioIdRetirement, customRate: String(settings.defaultGrowthRetirement) },
+      };
+      const entry = sourceLookup[category];
+      if (!entry) {
+        // Non-investable categories: use flat defaults
+        const flatDefaults: Record<string, string> = {
+          real_estate: String(settings.defaultGrowthRealEstate),
+          business: String(settings.defaultGrowthBusiness),
+          life_insurance: String(settings.defaultGrowthLifeInsurance),
+        };
+        return { rate: parseFloat(flatDefaults[category] ?? "0.05") };
+      }
+
+      if (entry.source === "model_portfolio" && entry.portfolioId) {
+        const p = resolvePortfolio(entry.portfolioId);
+        return {
+          rate: p.geoReturn,
+          realization: { pctOrdinaryIncome: p.pctOi, pctLtCapitalGains: p.pctLtcg, pctQualifiedDividends: p.pctQdiv, pctTaxExempt: p.pctTaxEx, turnoverPct: 0 },
+        };
+      }
+      return { rate: parseFloat(entry.customRate) };
+    }
+
+    // ── Build response ──────────────────────────────────────────────────────
 
     // Convert Drizzle decimal strings to numbers for the engine
     return NextResponse.json({
@@ -85,15 +154,46 @@ export async function GET(
         filingStatus: client.filingStatus,
       },
       accounts: accountRows.map((a) => {
-        const defaultByCategory: Record<string, string> = {
-          taxable: String(settings.defaultGrowthTaxable),
-          cash: String(settings.defaultGrowthCash),
-          retirement: String(settings.defaultGrowthRetirement),
-          real_estate: String(settings.defaultGrowthRealEstate),
-          business: String(settings.defaultGrowthBusiness),
-          life_insurance: String(settings.defaultGrowthLifeInsurance),
-        };
-        const effectiveGrowth = a.growthRate ?? defaultByCategory[a.category] ?? "0.07";
+        let growthRate: number;
+        let realization: { pctOrdinaryIncome: number; pctLtCapitalGains: number; pctQualifiedDividends: number; pctTaxExempt: number; turnoverPct: number } | undefined;
+
+        const gs = a.growthSource ?? "default";
+
+        if (gs === "model_portfolio" && a.modelPortfolioId) {
+          const p = resolvePortfolio(a.modelPortfolioId);
+          growthRate = p.geoReturn;
+          realization = {
+            pctOrdinaryIncome: a.overridePctOi != null ? parseFloat(a.overridePctOi) : p.pctOi,
+            pctLtCapitalGains: a.overridePctLtCg != null ? parseFloat(a.overridePctLtCg) : p.pctLtcg,
+            pctQualifiedDividends: a.overridePctQdiv != null ? parseFloat(a.overridePctQdiv) : p.pctQdiv,
+            pctTaxExempt: a.overridePctTaxExempt != null ? parseFloat(a.overridePctTaxExempt) : p.pctTaxEx,
+            turnoverPct: parseFloat(a.turnoverPct ?? "0"),
+          };
+        } else if (gs === "custom" && a.growthRate != null) {
+          growthRate = parseFloat(a.growthRate);
+        } else {
+          // "default" — resolve from category default in plan_settings
+          const catDefault = resolveCategoryDefault(a.category);
+          growthRate = catDefault.rate;
+          realization = catDefault.realization;
+        }
+
+        // Cash accounts: always 100% OI regardless of portfolio
+        if (a.category === "cash") {
+          realization = { pctOrdinaryIncome: 1, pctLtCapitalGains: 0, pctQualifiedDividends: 0, pctTaxExempt: 0, turnoverPct: 0 };
+        }
+
+        // Non-investable categories: no realization, use flat defaults
+        if (["real_estate", "business", "life_insurance"].includes(a.category)) {
+          const flatDefaults: Record<string, string> = {
+            real_estate: String(settings.defaultGrowthRealEstate),
+            business: String(settings.defaultGrowthBusiness),
+            life_insurance: String(settings.defaultGrowthLifeInsurance),
+          };
+          growthRate = a.growthRate != null ? parseFloat(a.growthRate) : parseFloat(flatDefaults[a.category] ?? "0.04");
+          realization = undefined;
+        }
+
         return {
           id: a.id,
           name: a.name,
@@ -102,10 +202,11 @@ export async function GET(
           owner: a.owner,
           value: parseFloat(a.value),
           basis: parseFloat(a.basis),
-          growthRate: parseFloat(effectiveGrowth),
+          growthRate,
           rmdEnabled: a.rmdEnabled,
           ownerEntityId: a.ownerEntityId ?? undefined,
           isDefaultChecking: a.isDefaultChecking,
+          realization,
         };
       }),
       incomes: incomeRows.map((i) => ({
@@ -122,6 +223,7 @@ export async function GET(
         ownerEntityId: i.ownerEntityId ?? undefined,
         cashAccountId: i.cashAccountId ?? undefined,
         inflationStartYear: i.inflationStartYear ?? undefined,
+        taxType: i.taxType ?? undefined,
       })),
       expenses: expenseRows.map((e) => ({
         id: e.id,
