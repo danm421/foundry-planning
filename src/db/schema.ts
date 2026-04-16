@@ -95,6 +95,21 @@ export const familyRelationshipEnum = pgEnum("family_relationship", [
   "other",
 ]);
 
+export const yearRefEnum = pgEnum("year_ref", [
+  "plan_start",
+  "plan_end",
+  "client_retirement",
+  "spouse_retirement",
+  "client_end",
+  "spouse_end",
+  "client_ss_62",
+  "client_ss_fra",
+  "client_ss_70",
+  "spouse_ss_62",
+  "spouse_ss_fra",
+  "spouse_ss_70",
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
@@ -244,6 +259,8 @@ export const incomes = pgTable("incomes", {
     .default("0"),
   startYear: integer("start_year").notNull(),
   endYear: integer("end_year").notNull(),
+  startYearRef: yearRefEnum("start_year_ref"),
+  endYearRef: yearRefEnum("end_year_ref"),
   growthRate: decimal("growth_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.03"),
@@ -283,6 +300,8 @@ export const expenses = pgTable("expenses", {
     .default("0"),
   startYear: integer("start_year").notNull(),
   endYear: integer("end_year").notNull(),
+  startYearRef: yearRefEnum("start_year_ref"),
+  endYearRef: yearRefEnum("end_year_ref"),
   growthRate: decimal("growth_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.03"),
@@ -321,6 +340,8 @@ export const liabilities = pgTable("liabilities", {
     .default("0"),
   startYear: integer("start_year").notNull(),
   endYear: integer("end_year").notNull(),
+  startYearRef: yearRefEnum("start_year_ref"),
+  endYearRef: yearRefEnum("end_year_ref"),
   linkedPropertyId: uuid("linked_property_id").references(() => accounts.id, {
     onDelete: "set null",
   }),
@@ -347,6 +368,8 @@ export const savingsRules = pgTable("savings_rules", {
     .default("0"),
   startYear: integer("start_year").notNull(),
   endYear: integer("end_year").notNull(),
+  startYearRef: yearRefEnum("start_year_ref"),
+  endYearRef: yearRefEnum("end_year_ref"),
   employerMatchPct: decimal("employer_match_pct", { precision: 5, scale: 4 }),
   employerMatchCap: decimal("employer_match_cap", { precision: 5, scale: 4 }),
   // Flat annual dollar amount alternative to the pct/cap style. When set, the
@@ -371,6 +394,8 @@ export const withdrawalStrategies = pgTable("withdrawal_strategies", {
   priorityOrder: integer("priority_order").notNull(),
   startYear: integer("start_year").notNull(),
   endYear: integer("end_year").notNull(),
+  startYearRef: yearRefEnum("start_year_ref"),
+  endYearRef: yearRefEnum("end_year_ref"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
