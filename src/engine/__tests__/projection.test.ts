@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import { buildClientData, basePlanSettings, baseClient } from "./fixtures";
+import type { TaxYearParameters } from "../../lib/tax/types";
 
 describe("runProjection", () => {
   it("returns one ProjectionYear per year in the plan range", () => {
@@ -343,5 +344,84 @@ describe("runProjection", () => {
     expect(result[0].taxDetail!.ordinaryIncome).toBeCloseTo(1000, 0);
     expect(result[0].taxDetail!.dividends).toBeCloseTo(1500, 0);
     expect(result[0].taxDetail!.stCapitalGains).toBeCloseTo(700, 0);
+  });
+});
+
+// ============================================================================
+// Tax engine routing integration tests (Task 28)
+// ============================================================================
+
+const FIXTURE_TAX_PARAMS: TaxYearParameters[] = [{
+  year: 2026,
+  incomeBrackets: {
+    married_joint: [
+      { from: 0, to: 24800, rate: 0.10 },
+      { from: 24800, to: 100800, rate: 0.12 },
+      { from: 100800, to: null, rate: 0.22 },
+    ],
+    single: [{ from: 0, to: null, rate: 0.10 }],
+    head_of_household: [{ from: 0, to: null, rate: 0.10 }],
+    married_separate: [{ from: 0, to: null, rate: 0.10 }],
+  },
+  capGainsBrackets: {
+    married_joint: { zeroPctTop: 94050, fifteenPctTop: 583750 },
+    single: { zeroPctTop: 47025, fifteenPctTop: 518900 },
+    head_of_household: { zeroPctTop: 63000, fifteenPctTop: 551350 },
+    married_separate: { zeroPctTop: 47025, fifteenPctTop: 291850 },
+  },
+  stdDeduction: { married_joint: 30000, single: 15000, head_of_household: 21900, married_separate: 15000 },
+  amtExemption: { mfj: 137000, singleHoh: 88100, mfs: 68500 },
+  amtBreakpoint2628: { mfjShoh: 239100, mfs: 119550 },
+  amtPhaseoutStart: { mfj: 1237450, singleHoh: 618700, mfs: 618725 },
+  ssTaxRate: 0.062,
+  ssWageBase: 176100,
+  medicareTaxRate: 0.0145,
+  addlMedicareRate: 0.009,
+  addlMedicareThreshold: { mfj: 250000, single: 200000, mfs: 125000 },
+  niitRate: 0.038,
+  niitThreshold: { mfj: 250000, single: 200000, mfs: 125000 },
+  qbi: {
+    thresholdMfj: 383900,
+    thresholdSingleHohMfs: 191950,
+    phaseInRangeMfj: 100000,
+    phaseInRangeOther: 50000,
+  },
+  contribLimits: {
+    ira401kElective: 23500,
+    ira401kCatchup50: 7500,
+    ira401kCatchup6063: 11250,
+    iraTradLimit: 7000,
+    iraCatchup50: 1000,
+    simpleLimitRegular: 17000,
+    simpleCatchup50: 4000,
+    hsaLimitSelf: 4400,
+    hsaLimitFamily: 8750,
+    hsaCatchup55: 1000,
+  },
+}];
+
+describe("projection — bracket/flat tax routing", () => {
+  it("populates taxResult on every projection year when mode=bracket", () => {
+    const fixture = buildClientData({
+      planSettings: { ...basePlanSettings, taxEngineMode: "bracket", planStartYear: 2026, planEndYear: 2028 },
+    });
+    const years = runProjection({ ...fixture, taxYearRows: FIXTURE_TAX_PARAMS });
+    for (const y of years) {
+      expect(y.taxResult).toBeDefined();
+      expect(y.taxResult!.flow.totalTax).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("flat mode taxes equal taxableIncome × (federal+state) — formula regression", () => {
+    const fixture = buildClientData({
+      planSettings: { ...basePlanSettings, taxEngineMode: "flat", planStartYear: 2026, planEndYear: 2028 },
+    });
+    const fedRate = fixture.planSettings.flatFederalRate;
+    const stateRate = fixture.planSettings.flatStateRate;
+    const years = runProjection({ ...fixture, taxYearRows: FIXTURE_TAX_PARAMS });
+    for (const y of years) {
+      const expected = Math.max(0, y.taxResult!.flow.taxableIncome) * (fedRate + stateRate);
+      expect(y.expenses.taxes).toBeCloseTo(expected, 2);
+    }
   });
 });
