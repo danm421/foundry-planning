@@ -10,6 +10,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import AssumptionsClient from "./assumptions-client";
+import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -68,6 +69,26 @@ export default async function AssumptionsPage({ params }: PageProps) {
     );
   }
 
+  const milestones = buildClientMilestones(client, settings.planStartYear, settings.planEndYear);
+
+  // Resolution-on-read: re-resolve milestone refs and update stale years
+  for (const row of withdrawalRows) {
+    if (row.startYearRef) {
+      const resolved = resolveMilestone(row.startYearRef as YearRef, milestones);
+      if (resolved != null && resolved !== row.startYear) {
+        row.startYear = resolved;
+        db.update(withdrawalStrategies).set({ startYear: resolved }).where(eq(withdrawalStrategies.id, row.id));
+      }
+    }
+    if (row.endYearRef) {
+      const resolved = resolveMilestone(row.endYearRef as YearRef, milestones);
+      if (resolved != null && resolved !== row.endYear) {
+        row.endYear = resolved;
+        db.update(withdrawalStrategies).set({ endYear: resolved }).where(eq(withdrawalStrategies.id, row.id));
+      }
+    }
+  }
+
   return (
     <div className="max-w-3xl space-y-6">
       <div>
@@ -101,6 +122,7 @@ export default async function AssumptionsPage({ params }: PageProps) {
           ownerEntityId: a.ownerEntityId,
         }))}
         withdrawalStrategies={withdrawalRows}
+        milestones={milestones}
       />
     </div>
   );

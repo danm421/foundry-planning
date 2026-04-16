@@ -7,6 +7,7 @@ import TaxRatesForm from "@/components/forms/tax-rates-form";
 import GrowthInflationForm from "@/components/forms/growth-inflation-form";
 import WithdrawalStrategySection from "@/components/withdrawal-strategy-section";
 import type { WithdrawalAccount, WithdrawalStrategy } from "@/components/withdrawal-strategy-section";
+import type { ClientMilestones } from "@/lib/milestones";
 
 export interface AssumptionsSettings {
   flatFederalRate: string;
@@ -27,6 +28,7 @@ interface AssumptionsClientProps {
   settings: AssumptionsSettings;
   accounts: WithdrawalAccount[];
   withdrawalStrategies: WithdrawalStrategy[];
+  milestones?: ClientMilestones;
 }
 
 const TABS = [
@@ -41,6 +43,7 @@ export default function AssumptionsClient({
   settings,
   accounts,
   withdrawalStrategies,
+  milestones,
 }: AssumptionsClientProps) {
   const [activeTab, setActiveTab] = useState("plan-horizon");
 
@@ -80,6 +83,7 @@ export default function AssumptionsClient({
             clientId={clientId}
             accounts={accounts}
             initialStrategies={withdrawalStrategies}
+            milestones={milestones}
           />
         )}
       </div>

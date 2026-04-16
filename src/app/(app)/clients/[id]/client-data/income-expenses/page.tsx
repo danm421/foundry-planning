@@ -13,6 +13,7 @@ import {
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import IncomeExpensesView from "@/components/income-expenses-view";
+import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -65,6 +66,60 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
     spouseEndYear = spouseBirthYear + client.planEndAge;
   }
 
+  const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
+  const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
+  const milestones = buildClientMilestones(client, planStartYear, planEndYear);
+
+  // Resolution-on-read: re-resolve milestone refs and update stale years
+  for (const row of incomeRows) {
+    if (row.startYearRef) {
+      const resolved = resolveMilestone(row.startYearRef as YearRef, milestones);
+      if (resolved != null && resolved !== row.startYear) {
+        row.startYear = resolved;
+        db.update(incomes).set({ startYear: resolved }).where(eq(incomes.id, row.id));
+      }
+    }
+    if (row.endYearRef) {
+      const resolved = resolveMilestone(row.endYearRef as YearRef, milestones);
+      if (resolved != null && resolved !== row.endYear) {
+        row.endYear = resolved;
+        db.update(incomes).set({ endYear: resolved }).where(eq(incomes.id, row.id));
+      }
+    }
+  }
+  for (const row of expenseRows) {
+    if (row.startYearRef) {
+      const resolved = resolveMilestone(row.startYearRef as YearRef, milestones);
+      if (resolved != null && resolved !== row.startYear) {
+        row.startYear = resolved;
+        db.update(expenses).set({ startYear: resolved }).where(eq(expenses.id, row.id));
+      }
+    }
+    if (row.endYearRef) {
+      const resolved = resolveMilestone(row.endYearRef as YearRef, milestones);
+      if (resolved != null && resolved !== row.endYear) {
+        row.endYear = resolved;
+        db.update(expenses).set({ endYear: resolved }).where(eq(expenses.id, row.id));
+      }
+    }
+  }
+  for (const row of savingsRuleRows) {
+    if (row.startYearRef) {
+      const resolved = resolveMilestone(row.startYearRef as YearRef, milestones);
+      if (resolved != null && resolved !== row.startYear) {
+        row.startYear = resolved;
+        db.update(savingsRules).set({ startYear: resolved }).where(eq(savingsRules.id, row.id));
+      }
+    }
+    if (row.endYearRef) {
+      const resolved = resolveMilestone(row.endYearRef as YearRef, milestones);
+      if (resolved != null && resolved !== row.endYear) {
+        row.endYear = resolved;
+        db.update(savingsRules).set({ endYear: resolved }).where(eq(savingsRules.id, row.id));
+      }
+    }
+  }
+
   return (
     <IncomeExpensesView
       clientId={id}
@@ -84,8 +139,9 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
         clientEndYear,
         spouseRetirementYear,
         spouseEndYear,
-        planStartYear: settings?.planStartYear ?? new Date().getFullYear(),
-        planEndYear: settings?.planEndYear ?? new Date().getFullYear() + 30,
+        planStartYear,
+        planEndYear,
+        milestones,
       }}
     />
   );
