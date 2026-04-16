@@ -8,6 +8,7 @@ import {
   boolean,
   timestamp,
   pgEnum,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -250,7 +251,7 @@ export const assetClasses = pgTable("asset_classes", {
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [unique("asset_classes_firm_id_name_unique").on(t.firmId, t.name)]);
 
 export const modelPortfolios = pgTable("model_portfolios", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -259,7 +260,7 @@ export const modelPortfolios = pgTable("model_portfolios", {
   description: text("description"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [unique("model_portfolios_firm_id_name_unique").on(t.firmId, t.name)]);
 
 export const modelPortfolioAllocations = pgTable("model_portfolio_allocations", {
   id: uuid("id").defaultRandom().primaryKey(),

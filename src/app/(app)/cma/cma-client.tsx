@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 interface AssetClass {
   id: string;
@@ -41,8 +41,12 @@ export default function CmaClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Guard against React strict-mode double-mount re-firing the seed request.
+  const fetchInFlight = useRef(false);
 
   const fetchData = useCallback(async () => {
+    if (fetchInFlight.current) return;
+    fetchInFlight.current = true;
     setLoading(true);
     try {
       // Seed if needed
@@ -57,6 +61,7 @@ export default function CmaClient() {
       setError("Failed to load CMA data");
     } finally {
       setLoading(false);
+      fetchInFlight.current = false;
     }
   }, []);
 
