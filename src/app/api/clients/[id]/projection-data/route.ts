@@ -15,6 +15,7 @@ import {
   modelPortfolioAllocations,
   assetClasses,
   taxYearParameters,
+  clientDeductions,
 } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -88,6 +89,20 @@ export async function GET(
       .from(taxYearParameters)
       .orderBy(asc(taxYearParameters.year));
     const parsedTaxRows = taxYearRows.map(dbRowToTaxYearParameters);
+
+    // Load deductions for the base case scenario
+    const deductionRows = await db
+      .select()
+      .from(clientDeductions)
+      .where(and(eq(clientDeductions.clientId, id), eq(clientDeductions.scenarioId, scenario.id)));
+
+    const parsedDeductions = deductionRows.map((d) => ({
+      type: d.type,
+      annualAmount: parseFloat(d.annualAmount),
+      growthRate: parseFloat(d.growthRate),
+      startYear: d.startYear,
+      endYear: d.endYear,
+    }));
 
     // ── CMA resolution helpers ──────────────────────────────────────────────
 
@@ -305,6 +320,7 @@ export async function GET(
         isGrantor: e.isGrantor,
       })),
       taxYearRows: parsedTaxRows,
+      deductions: parsedDeductions,
     });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
