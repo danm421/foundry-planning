@@ -25,7 +25,6 @@ enablers and should ship folded into their parent feature.
 | 5 | Monte Carlo / probability of success | 8 | 4 | 3 | 15 |
 | 6 | Plan PDF export | 5 | 6 | 4 | 15 |
 | 7 | CSV export for reports (cross-cutting) | 5 | 7 | 3 | 15 |
-| 8 | Year-range slider on plan pages | 6 | 6 | 2 | 14 |
 | 9 | Per-year ledger drill-in for tax tables | 6 | 5 | 3 | 14 |
 | 10 | SS claiming optimizer | 5 | 6 | 2 | 13 |
 | 11 | Client-facing read-only view | 4 | 6 | 3 | 13 |
@@ -43,8 +42,6 @@ Dependency notes that override raw score:
 - Ship **family members as owners before estate report** (enabler, P3/L6).
 - Start the **scenario switcher design doc** in parallel with other work — it's
   the biggest lift and benefits from early design pressure.
-- **Year-range slider** is a prerequisite for making multi-year tables
-  (cashflow, tax detail, account ledgers) scale to 30+ year projections.
 - **Trust/estate brackets** are a tiny add since the data is already in the
   seed workbook; they unlock the **trust taxes for non-grantor** work.
 
@@ -59,11 +56,14 @@ Dependency notes that override raw score:
   (scenario forks at creation). Leaning overlay with a "detach" action. _Why
   deferred: large effort; base case first._
 
-- **Year-range slider on plan pages** _(P6 E6 L2)_ — a slider at the top of the
-  cashflow page (and other multi-year views) that constrains charts and tables
-  to a selected year window (e.g., "show only 2026–2040"). Makes 30-year
-  projections scannable. _Why deferred: base full-range view works; scoping
-  and design to be decided with other multi-year UI improvements._
+- ~~**Year-range slider on plan pages**~~ — **SHIPPED.** Cashflow page has
+  a dual-handle Radix slider with Full / Working Years / Retirement Years
+  preset buttons. Filters the chart, the cashflow table (and all drill-downs),
+  and the multi-year Tax Detail modal. Slider also mounted inside the modal
+  with shared state. Session-only (resets on navigation). Followups: persist
+  range across navigation (URL/localStorage/DB), apply to balance sheet and
+  income/expenses pages once they render multi-year data, marker overlays for
+  retirement/AMT/etc. on the slider track.
 
 - **Per-year ledger drill-in for tax-detail tables** _(P6 E5 L3)_ — clicking a
   cell in the multi-year Tax Detail modal (e.g., "Below Line Deduct" for 2028)
