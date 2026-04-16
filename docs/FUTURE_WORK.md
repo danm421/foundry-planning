@@ -21,19 +21,22 @@ enablers and should ship folded into their parent feature.
 | 1 | Scenario switcher + side panel | 9 | 2 | 8 | 19 |
 | 2 | Roth conversion optimizer (now unblocked) | 7 | 5 | 5 | 17 |
 | 3 | Deduction types (IRA/401k/charitable/SALT) | 7 | 4 | 5 | 16 |
-| 4 | Assumption library | 4 | 6 | 6 | 16 |
-| 5 | Monte Carlo / probability of success | 8 | 4 | 3 | 15 |
-| 6 | Plan PDF export | 5 | 6 | 4 | 15 |
-| 7 | CSV export for reports (cross-cutting) | 5 | 7 | 3 | 15 |
-| 9 | Per-year ledger drill-in for tax tables | 6 | 5 | 3 | 14 |
-| 10 | SS claiming optimizer | 5 | 6 | 2 | 13 |
-| 11 | Client-facing read-only view | 4 | 6 | 3 | 13 |
-| 12 | Trust taxes for non-grantor entities | 5 | 4 | 3 | 12 |
-| 13 | IRMAA tiers in tax engine | 5 | 4 | 3 | 12 |
-| 14 | Estate planning report | 7 | 2 | 3 | 12 |
-| 15 | Plan vs actual tracking | 4 | 4 | 3 | 11 |
-| 16 | State-level bracket tax | 5 | 2 | 4 | 11 |
-| 17 | Trust/estate brackets (data ready) | 4 | 7 | 2 | 13 |
+| 4 | Year-by-year schedule for incomes & expenses | 7 | 5 | 4 | 16 |
+| 5 | UI/UX refresh for Income/Expenses/Savings tabs | 6 | 5 | 4 | 15 |
+| 6 | Assumption library | 4 | 6 | 6 | 16 |
+| 7 | Monte Carlo / probability of success | 8 | 4 | 3 | 15 |
+| 8 | Plan PDF export | 5 | 6 | 4 | 15 |
+| 9 | CSV export for reports (cross-cutting) | 5 | 7 | 3 | 15 |
+| 10 | Liability extra payment + year-by-year schedule | 6 | 6 | 3 | 15 |
+| 11 | Per-year ledger drill-in for tax tables | 6 | 5 | 3 | 14 |
+| 12 | SS claiming optimizer | 5 | 6 | 2 | 13 |
+| 13 | Client-facing read-only view | 4 | 6 | 3 | 13 |
+| 14 | Trust taxes for non-grantor entities | 5 | 4 | 3 | 12 |
+| 15 | IRMAA tiers in tax engine | 5 | 4 | 3 | 12 |
+| 16 | Estate planning report | 7 | 2 | 3 | 12 |
+| 17 | Plan vs actual tracking | 4 | 4 | 3 | 11 |
+| 18 | State-level bracket tax | 5 | 2 | 4 | 11 |
+| 19 | Trust/estate brackets (data ready) | 4 | 7 | 2 | 13 |
 
 Dependency notes that override raw score:
 
@@ -44,6 +47,40 @@ Dependency notes that override raw score:
   the biggest lift and benefits from early design pressure.
 - **Trust/estate brackets** are a tiny add since the data is already in the
   seed workbook; they unlock the **trust taxes for non-grantor** work.
+- **Year-by-year schedules + Liability extra payment + UI refresh** all
+  touch the Income/Expenses/Savings/Liabilities forms — ship as one
+  coherent Client Data refresh once we're ready to revisit those tabs.
+
+## Client Data
+
+- **Year-by-year schedule for variable incomes & expenses** _(P7 E5 L4)_ —
+  today income and expense rows have a flat `annualAmount` plus a growth rate.
+  Real plans have items that vary year-to-year (college tuition 2030-2034,
+  mortgage payoff cliff, project-based consulting income, etc.). Add a
+  per-row "Custom schedule" mode that opens a year-by-year override grid,
+  filling in any year not overridden with the calculated growth-rate value.
+  Schema: new `income_schedule_overrides` and `expense_schedule_overrides`
+  tables (or one polymorphic table) keyed by `(row_id, year)`. Engine reads
+  override first, falls back to growth-rate calc. _Why deferred: not yet
+  asked, but blocks accurate planning for clients with bursty/lumpy
+  cashflows (most HNW clients)._
+
+- **Extra payment field for liabilities + year-by-year schedule** _(P6 E6 L3)_
+  — liabilities currently model a monthly payment that pays interest +
+  scheduled principal. Add an "extra principal payment" field for clients
+  who pay down debt aggressively, plus a per-year schedule so advisors can
+  model "extra $20k toward mortgage in 2027 from a bonus." Pairs with the
+  variable-schedule item above — same UX pattern. _Why deferred: small but
+  not yet requested; pair with the variable-schedule work for shared UX._
+
+- **UI/UX refresh for Income, Expenses, and Savings tabs** _(P6 E5 L4)_ —
+  the current forms are functional but feel like a stack of plain inputs.
+  Goals: better grouping (active vs. retired income, fixed vs. variable
+  expenses), inline summary totals, less visual noise per row, friendlier
+  add/remove flow. Pairs naturally with the year-by-year schedule work
+  since both are touching these subtabs. _Why deferred: works as-is, but
+  spending more time in those tabs (with deduction types and variable
+  schedules landing) makes the UX gap more apparent._
 
 ## UI
 
