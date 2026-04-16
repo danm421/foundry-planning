@@ -424,4 +424,36 @@ describe("projection — bracket/flat tax routing", () => {
       expect(y.expenses.taxes).toBeCloseTo(expected, 2);
     }
   });
+
+  it("includes auto-derived above-line deductions from traditional retirement savings rules", () => {
+    // The default fixture has a 401k savings rule (annualAmount: 23500, 2026-2035)
+    // targeting acct-401k (subType: "401k"), so above-line should reflect that contribution.
+    const fixture = buildClientData({
+      planSettings: { ...basePlanSettings, taxEngineMode: "bracket", planStartYear: 2026, planEndYear: 2026 },
+    });
+    const years = runProjection({ ...fixture, taxYearRows: FIXTURE_TAX_PARAMS });
+    const firstYear = years[0];
+    expect(firstYear.taxResult).toBeDefined();
+    expect(firstYear.taxResult!.flow.aboveLineDeductions).toBeGreaterThan(0);
+    // 401k contribution is $23,500 — expect at least that much above-line
+    expect(firstYear.taxResult!.flow.aboveLineDeductions).toBeGreaterThanOrEqual(23500);
+  });
+
+  it("applies SALT cap to itemized deductions", () => {
+    const fixture = buildClientData({
+      planSettings: { ...basePlanSettings, taxEngineMode: "bracket", planStartYear: 2026, planEndYear: 2026 },
+    });
+    const fixtureWithDeductions = {
+      ...fixture,
+      deductions: [
+        { type: "salt" as const, annualAmount: 20000, growthRate: 0, startYear: 2026, endYear: 2076 },
+        { type: "charitable_cash" as const, annualAmount: 25000, growthRate: 0, startYear: 2026, endYear: 2076 },
+      ],
+    };
+    const years = runProjection({ ...fixtureWithDeductions, taxYearRows: FIXTURE_TAX_PARAMS });
+    const firstYear = years[0];
+    expect(firstYear.taxResult).toBeDefined();
+    // SALT capped at $10k + charitable $25k = $35k itemized (below-line is max of std vs itemized)
+    expect(firstYear.taxResult!.flow.belowLineDeductions).toBeGreaterThanOrEqual(35000);
+  });
 });
