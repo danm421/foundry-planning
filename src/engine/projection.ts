@@ -15,6 +15,10 @@ import { computeLiabilities } from "./liabilities";
 import { calculateTaxYearBracket, calculateTaxYearFlat, makeEmptyTaxParams } from "./tax";
 import { createTaxResolver } from "../lib/tax/resolver";
 import type { TaxYearParameters, FilingStatus } from "../lib/tax/types";
+import {
+  deriveAboveLineFromSavings,
+  sumItemizedFromEntries,
+} from "../lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch } from "./savings";
 import { executeWithdrawals } from "./withdrawal";
 import { calculateRMD } from "./rmd";
@@ -401,6 +405,28 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     const filingStatus = (client.filingStatus ?? "single") as FilingStatus;
     const useBracket = planSettings.taxEngineMode === "bracket" && resolved != null;
 
+    const aboveLineDeductions = useBracket
+      ? deriveAboveLineFromSavings(
+          year,
+          data.savingsRules.map((r) => ({
+            accountId: r.accountId,
+            annualAmount: r.annualAmount,
+            startYear: r.startYear,
+            endYear: r.endYear,
+          })),
+          data.accounts.map((a) => ({
+            id: a.id,
+            subType: a.subType ?? "",
+            ownerEntityId: a.ownerEntityId,
+          })),
+          isGrantorEntity
+        )
+      : 0;
+
+    const itemizedDeductions = useBracket
+      ? sumItemizedFromEntries(year, data.deductions ?? [])
+      : 0;
+
     const taxResult = useBracket
       ? calculateTaxYearBracket({
           year,
@@ -413,8 +439,8 @@ export function runProjection(data: ClientData): ProjectionYear[] {
           qbiIncome: taxDetail.qbi,
           taxExemptIncome: taxDetail.taxExempt,
           socialSecurityGross: income.socialSecurity,
-          aboveLineDeductions: 0,
-          itemizedDeductions: 0,
+          aboveLineDeductions,
+          itemizedDeductions,
           flatStateRate: planSettings.flatStateRate,
           taxParams: resolved!.params,
           inflationFactor: resolved!.inflationFactor,

@@ -1,4 +1,5 @@
 import type { TaxResult, TaxYearParameters } from "../lib/tax/types";
+import type { ClientDeductionRow } from "../lib/tax/derive-deductions";
 
 // ── Input Types ──────────────────────────────────────────────────────────────
 
@@ -14,6 +15,8 @@ export interface ClientData {
   entities?: EntitySummary[];
   /** IRS-published tax year parameters seeded from the DB. Empty = flat-mode fallback. */
   taxYearRows?: TaxYearParameters[];
+  /** Itemized deduction line items (charitable, SALT, mortgage interest, etc.). */
+  deductions?: ClientDeductionRow[];
 }
 
 // Minimal entity view used by the engine to decide cash-flow treatment of entity-owned
