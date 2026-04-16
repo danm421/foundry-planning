@@ -24,6 +24,7 @@ import {
 } from "@tanstack/react-table";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear, AccountLedger } from "@/engine";
+import { TaxDetailModal } from "@/components/cashflow/tax-detail-modal";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
 
@@ -204,6 +205,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const [chartView, setChartView] = useState<"portfolio" | "cashflow">("portfolio");
   const [ledgerModal, setLedgerModal] = useState<LedgerModal | null>(null);
   const [taxDrillModal, setTaxDrillModal] = useState<TaxDrillModal | null>(null);
+  const [showTaxDetailModal, setShowTaxDetailModal] = useState(false);
   const [taxDrillExpanded, setTaxDrillExpanded] = useState<Set<string>>(new Set());
   const tableRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
@@ -767,7 +769,19 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol("expenses_liabilities", "Liabilities", (r) => r.expenses.liabilities),
         numCol("expenses_other", () => <DrillBtn segment="other_expense" label="Other" />, (r) => r.expenses.other),
         numCol("expenses_insurance", () => <DrillBtn segment="insurance" label="Insurance" />, (r) => r.expenses.insurance),
-        col("expenses_taxes", "Taxes", (r) => r.expenses.taxes, (info) => {
+        col("expenses_taxes", () => (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowTaxDetailModal(true);
+            }}
+            className="hover:text-blue-400 hover:underline"
+            title="View multi-year tax detail"
+          >
+            Taxes
+          </button>
+        ), (r) => r.expenses.taxes, (info) => {
           const row = info.row.original;
           const v = fmtNum(info.getValue() as number);
           return row.taxDetail ? (
@@ -1344,6 +1358,22 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {showTaxDetailModal && (
+        <TaxDetailModal
+          years={years}
+          onClose={() => setShowTaxDetailModal(false)}
+          onYearClick={(y) => {
+            if (y.taxDetail) {
+              setTaxDrillModal({
+                year: y.year,
+                detail: y.taxDetail,
+                totalTaxes: y.expenses.taxes,
+              });
+            }
+          }}
+        />
       )}
 
       {taxDrillModal && (
