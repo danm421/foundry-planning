@@ -108,8 +108,12 @@ export async function PUT(
         flatStateRate: flatStateRate != null ? String(flatStateRate) : undefined,
         inflationRate: inflationRate != null ? String(inflationRate) : undefined,
         taxEngineMode: taxEngineMode != null ? taxEngineMode : undefined,
-        taxInflationRate: taxInflationRate != null ? String(taxInflationRate) : undefined,
-        ssWageGrowthRate: ssWageGrowthRate != null ? String(ssWageGrowthRate) : undefined,
+        taxInflationRate: "taxInflationRate" in body
+          ? (taxInflationRate === null ? null : String(taxInflationRate))
+          : undefined,
+        ssWageGrowthRate: "ssWageGrowthRate" in body
+          ? (ssWageGrowthRate === null ? null : String(ssWageGrowthRate))
+          : undefined,
         planStartYear: planStartYear != null ? Number(planStartYear) : undefined,
         planEndYear: planEndYear != null ? Number(planEndYear) : undefined,
         defaultGrowthTaxable: defaultGrowthTaxable != null ? String(defaultGrowthTaxable) : undefined,
