@@ -27,6 +27,9 @@ export interface AssumptionsSettings {
   modelPortfolioIdTaxable?: string | null;
   modelPortfolioIdCash?: string | null;
   modelPortfolioIdRetirement?: string | null;
+  taxEngineMode: "flat" | "bracket";
+  taxInflationRate: string;
+  ssWageGrowthRate: string;
 }
 
 interface ModelPortfolioOption {

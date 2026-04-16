@@ -136,6 +136,9 @@ export default async function AssumptionsPage({ params }: PageProps) {
           modelPortfolioIdTaxable: settings.modelPortfolioIdTaxable,
           modelPortfolioIdCash: settings.modelPortfolioIdCash,
           modelPortfolioIdRetirement: settings.modelPortfolioIdRetirement,
+          taxEngineMode: settings.taxEngineMode,
+          taxInflationRate: settings.taxInflationRate != null ? String(settings.taxInflationRate) : "",
+          ssWageGrowthRate: settings.ssWageGrowthRate != null ? String(settings.ssWageGrowthRate) : "",
         }}
         modelPortfolios={modelPortfolioOptions}
         accounts={accountRows.map((a) => ({
