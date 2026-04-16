@@ -18,18 +18,17 @@ enablers and should ship folded into their parent feature.
 
 | # | Item | P | E | L | Total |
 |---|------|---|---|---|-------|
-| 1 | AI statement import | 9 | 6 | 7 | 22 |
-| 2 | CMAs + model portfolios | 7 | 5 | 9 | 21 |
-| 3 | Robust tax engine (Excel-driven) | 8 | 3 | 9 | 20 |
-| 4 | Scenario switcher + side panel | 9 | 2 | 8 | 19 |
-| 5 | Assumption library | 4 | 6 | 6 | 16 |
-| 6 | Monte Carlo / probability of success | 8 | 4 | 3 | 15 |
-| 7 | Plan PDF export | 5 | 6 | 4 | 15 |
-| 8 | SS claiming optimizer | 5 | 6 | 2 | 13 |
-| 9 | Client-facing read-only view | 4 | 6 | 3 | 13 |
-| 10 | Estate planning report | 7 | 2 | 3 | 12 |
-| 11 | Plan vs actual tracking | 4 | 4 | 3 | 11 |
-| 12 | Roth conversion optimizer | 5 | 3 | 3 | 11 |
+| 1 | CMAs + model portfolios | 7 | 5 | 9 | 21 |
+| 2 | Robust tax engine (Excel-driven) | 8 | 3 | 9 | 20 |
+| 3 | Scenario switcher + side panel | 9 | 2 | 8 | 19 |
+| 4 | Assumption library | 4 | 6 | 6 | 16 |
+| 5 | Monte Carlo / probability of success | 8 | 4 | 3 | 15 |
+| 6 | Plan PDF export | 5 | 6 | 4 | 15 |
+| 7 | SS claiming optimizer | 5 | 6 | 2 | 13 |
+| 8 | Client-facing read-only view | 4 | 6 | 3 | 13 |
+| 9 | Estate planning report | 7 | 2 | 3 | 12 |
+| 10 | Plan vs actual tracking | 4 | 4 | 3 | 11 |
+| 11 | Roth conversion optimizer | 5 | 3 | 3 | 11 |
 
 Dependency notes that override raw score:
 
@@ -37,7 +36,7 @@ Dependency notes that override raw score:
 - Ship **per-entity tax fields with the tax engine** (enabler, P3/L6).
 - Ship **family members as owners before estate report** (enabler, P3/L6).
 - **Roth optimizer** is cheap only after the tax engine lands.
-- **Plan vs actual** is cheap only after AI statement import ships.
+- **Plan vs actual** is cheap now that AI statement import has shipped.
 - Start the **scenario switcher design doc** in parallel with #2/#3 — it's the
   biggest lift and benefits from early design pressure.
 
@@ -154,13 +153,10 @@ Dependency notes that override raw score:
 
 ## Integrations
 
-- **AI statement import in Client Data** _(P9 E6 L7)_ — advisor uploads
-  account/brokerage statements; Azure Foundry (or Azure OpenAI) extracts
-  accounts, liabilities, incomes, etc. against a defined schema, with a
-  review-before-commit UI before rows are written. Pattern already proven in
-  the `ethos-tools` eMoney/Addepar extractors and can be ported. Unlocks
-  plan-vs-actual tracking. _Why deferred: highest-ROI integration but no
-  advisor is blocked on it yet._
+- ~~**AI statement import in Client Data**~~ — **SHIPPED.** Import tab in
+  client-data with drag-and-drop upload, Azure OpenAI extraction for 6
+  document types, step-by-step review wizard, and batch commit with
+  `source: "extracted"`.
 
 - **Cloud storage linking for imported documents** _(P3 E5 L3)_ — connect
   advisor's cloud storage (Google Drive, Dropbox, OneDrive) to persist uploaded
