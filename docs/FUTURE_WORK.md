@@ -20,8 +20,8 @@ enablers and should ship folded into their parent feature.
 |---|------|---|---|---|-------|
 | 1 | Scenario switcher + side panel | 9 | 2 | 8 | 19 |
 | 2 | Roth conversion optimizer (now unblocked) | 7 | 5 | 5 | 17 |
-| 3 | Deduction types (IRA/401k/charitable/SALT) | 7 | 4 | 5 | 16 |
 | 4 | Year-by-year schedule for incomes & expenses | 7 | 5 | 4 | 16 |
+| — | Amortization table tab on liabilities | 5 | 6 | 3 | 14 |
 | 5 | UI/UX refresh for Income/Expenses/Savings tabs | 6 | 5 | 4 | 15 |
 | 6 | Assumption library | 4 | 6 | 6 | 16 |
 | 7 | Monte Carlo / probability of success | 8 | 4 | 3 | 15 |
@@ -64,6 +64,15 @@ Dependency notes that override raw score:
   override first, falls back to growth-rate calc. _Why deferred: not yet
   asked, but blocks accurate planning for clients with bursty/lumpy
   cashflows (most HNW clients)._
+
+- **Amortization table tab on liabilities** _(P5 E6 L3)_ — when an advisor
+  opens a liability (mortgage, loan), show a tab with the full per-year
+  amortization schedule: payment, interest paid, principal paid, ending
+  balance. Useful for client conversations and mandatory once mortgage
+  interest deduction starts pulling from the same per-year interest values.
+  Pairs naturally with the mortgage-interest-deduction work (the same
+  per-year interest math feeds both views). _Why deferred: works around
+  via existing payment field; a real schedule is a polish layer._
 
 - **Extra payment field for liabilities + year-by-year schedule** _(P6 E6 L3)_
   — liabilities currently model a monthly payment that pays interest +
@@ -153,14 +162,15 @@ Dependency notes that override raw score:
   with Income Breakdown and Federal Tax Breakdown tabs, column tooltips, and
   first-year regime-transition indicators. State tax stays flat (MVP).
 
-- **Deduction types** _(P7 E4 L5)_ — support itemized deductions beyond the
-  standard: IRA/401k contributions (above-line), charitable gifts, SALT
-  (capped at $10k), mortgage interest, medical-expense threshold, etc. New
-  schema: `client_deductions` table with type, amount, year range. Engine
-  reads them into `aboveLineDeductions` or `itemizedDeductions` per type.
-  UI: new section in Assumptions or per-client "Deductions" subtab. _Why
-  deferred: v1 tax engine treats above-line as 0 and falls back to standard.
-  Prerequisite for a credible Roth conversion optimizer._
+- ~~**Deduction types**~~ — **SHIPPED.** `client_deductions` table holds
+  itemized line items (charitable cash, charitable non-cash, SALT capped at
+  $10k, mortgage interest, other itemized). Above-line auto-derived from
+  existing savings rules to traditional IRA / 401k accounts. Bracket mode
+  is now the default. Followups still in scope for a v2 deductions pass:
+  medical expense above 7.5% AGI, student loan interest (capped),
+  529 state deduction, IRA deduction phase-out for high earners with
+  workplace plan, HSA support (needs HSA account subtype), per-year
+  override schedule for deductions.
 
 - **Trust taxes for non-grantor entities** _(P5 E4 L3)_ — when an entity is
   not flagged `is_grantor`, household taxes are correctly skipped, but the
