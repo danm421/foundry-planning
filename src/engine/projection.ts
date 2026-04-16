@@ -82,6 +82,12 @@ export function runProjection(data: ClientData): ProjectionYear[] {
   const years: ProjectionYear[] = [];
 
   const taxYearRows: TaxYearParameters[] = data.taxYearRows ?? [];
+  if (planSettings.taxEngineMode === "bracket" && taxYearRows.length === 0) {
+    console.warn(
+      "[tax engine] Bracket mode selected but no tax_year_parameters rows available. " +
+      "Falling back to flat mode. Run `npm run seed:tax-data` to populate."
+    );
+  }
   const taxResolver = taxYearRows.length > 0
     ? createTaxResolver(taxYearRows, {
         taxInflationRate: planSettings.taxInflationRate != null
