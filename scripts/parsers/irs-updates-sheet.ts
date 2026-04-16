@@ -43,20 +43,20 @@ export function parseIrsUpdatesSheet(filePath: string): TaxYearParameters[] {
 
 // Generic section parser: finds a row whose col A starts with `headerText`,
 // skips the column-header row, then collects rows where col A is a year integer.
-function parseSection(rows: Row[], headerText: string, valueCols: number): Record<number, number[]> {
+function parseSection(rows: Row[], headerText: string, valueCols: number): Record<number, (number | null)[]> {
   const headerIdx = rows.findIndex((r) => typeof r[0] === "string" && (r[0] as string).includes(headerText));
   if (headerIdx === -1) throw new Error(`Section header not found: "${headerText}"`);
 
-  const result: Record<number, number[]> = {};
+  const result: Record<number, (number | null)[]> = {};
   // Walk forward from headerIdx, skipping rows until we hit year rows.
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const first = rows[i][0];
     if (typeof first === "number" && first >= 2000 && first <= 2050) {
       // Year row — read next valueCols cells.
-      const vals: number[] = [];
+      const vals: (number | null)[] = [];
       for (let c = 1; c <= valueCols; c++) {
         const v = rows[i][c];
-        vals.push(typeof v === "number" ? v : 0);
+        vals.push(typeof v === "number" ? v : null);
       }
       result[first] = vals;
     } else if (typeof first === "string" && Object.keys(result).length > 0) {
@@ -71,7 +71,7 @@ function parseSection(rows: Row[], headerText: string, valueCols: number): Recor
 }
 
 // Income brackets: 4 sub-sections per filing status, each with 7 upper-limit columns.
-function parseIncomeBrackets(rows: Row[]): Record<FilingStatus, Record<number, number[]>> {
+function parseIncomeBrackets(rows: Row[]): Record<FilingStatus, Record<number, (number | null)[]>> {
   return {
     married_joint: parseSection(rows, "Married Filing Jointly", 7),
     single: parseSectionUnique(rows, "Single", 7, "Federal Income Tax"),
@@ -82,7 +82,7 @@ function parseIncomeBrackets(rows: Row[]): Record<FilingStatus, Record<number, n
 
 // "Single" appears in multiple sections (income brackets, cap gains).
 // parseSectionUnique scopes the search to be after a parent section anchor.
-function parseSectionUnique(rows: Row[], headerText: string, valueCols: number, afterParent: string): Record<number, number[]> {
+function parseSectionUnique(rows: Row[], headerText: string, valueCols: number, afterParent: string): Record<number, (number | null)[]> {
   const parentIdx = rows.findIndex((r) => typeof r[0] === "string" && (r[0] as string).includes(afterParent));
   const subset = rows.slice(parentIdx);
   const out = parseSection(subset, headerText, valueCols);
@@ -90,7 +90,7 @@ function parseSectionUnique(rows: Row[], headerText: string, valueCols: number, 
 }
 
 // Cap gains: 4 statuses, each with 3 thresholds (0% top, 15% top, 20% applies above).
-function parseCapGains(rows: Row[]): Record<FilingStatus, Record<number, number[]>> {
+function parseCapGains(rows: Row[]): Record<FilingStatus, Record<number, (number | null)[]>> {
   // Each cap-gains sub-section is preceded by the parent header
   // "Long-Term Capital Gains & Qualified Dividends".
   const parent = "Long-Term Capital Gains";
@@ -113,11 +113,11 @@ function buildYearParams(year: number, raw: any): TaxYearParameters {
   const [amtPoMfj, amtPoShoh, amtPoMfs] = raw.amtPhaseout[year];
 
   // Each income-bracket array is 7 upper limits → convert to BracketTier[].
-  const buildBrackets = (uppers: number[]) => {
+  const buildBrackets = (uppers: (number | null)[]) => {
     const tiers = [];
     let prev = 0;
     for (let i = 0; i < BRACKET_RATES.length; i++) {
-      const upper = i === BRACKET_RATES.length - 1 ? null : uppers[i];
+      const upper = i === BRACKET_RATES.length - 1 ? null : (uppers[i] ?? 0);
       tiers.push({ from: prev, to: upper, rate: BRACKET_RATES[i] });
       if (upper !== null) prev = upper;
     }
@@ -160,7 +160,7 @@ function buildYearParams(year: number, raw: any): TaxYearParameters {
     ssTaxRate: ssRate,
     ssWageBase: ssBase,
     medicareTaxRate: medRate,
-    addlMedicareRate: addlMed || STATUTORY_FIXED.addlMedicareRate,
+    addlMedicareRate: addlMed ?? STATUTORY_FIXED.addlMedicareRate,
     addlMedicareThreshold: {
       mfj: STATUTORY_FIXED.addlMedicareThresholdMfj,
       single: STATUTORY_FIXED.addlMedicareThresholdSingle,
