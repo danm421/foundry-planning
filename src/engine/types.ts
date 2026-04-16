@@ -46,6 +46,14 @@ export interface Account {
   rmdEnabled: boolean;
   ownerEntityId?: string;
   isDefaultChecking?: boolean;
+  // CMA realization model — present when account uses a model portfolio or has overrides
+  realization?: {
+    pctOrdinaryIncome: number;
+    pctLtCapitalGains: number;
+    pctQualifiedDividends: number;
+    pctTaxExempt: number;
+    turnoverPct: number;
+  };
 }
 
 export interface Income {
@@ -69,6 +77,7 @@ export interface Income {
   // Cash account this income deposits into. When unset, the engine falls back to the
   // household default checking (or the entity's default checking if ownerEntityId is set).
   cashAccountId?: string;
+  taxType?: "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg";
 }
 
 export interface Expense {
@@ -144,6 +153,17 @@ export interface ProjectionYear {
     bySource: Record<string, number>;
   };
 
+  taxDetail?: {
+    earnedIncome: number;
+    ordinaryIncome: number;
+    dividends: number;
+    capitalGains: number;
+    stCapitalGains: number;
+    qbi: number;
+    taxExempt: number;
+    bySource: Record<string, { type: string; amount: number }>;
+  };
+
   withdrawals: {
     byAccount: Record<string, number>;
     total: number;
@@ -201,6 +221,14 @@ export interface AccountLedger {
    * in the order it was applied. Amounts are signed: positive = inflow, negative = outflow.
    */
   entries: AccountLedgerEntry[];
+  growthDetail?: {
+    ordinaryIncome: number;
+    qualifiedDividends: number;
+    stCapitalGains: number;
+    ltCapitalGains: number;
+    taxExempt: number;
+    basisIncrease: number;
+  };
 }
 
 export interface AccountLedgerEntry {
