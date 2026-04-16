@@ -49,6 +49,31 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, ...rate
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
+
+  async function handleResetAccounts() {
+    if (!confirm("Reset all taxable, cash, and retirement accounts to use the category defaults above? Any account-level custom rates, portfolios, turnover, and realization overrides will be cleared.")) {
+      return;
+    }
+    setResetting(true);
+    setError(null);
+    setResetMessage(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/reset-account-growth`, { method: "POST" });
+      if (!res.ok) {
+        const json = await res.json();
+        throw new Error(json.error ?? "Reset failed");
+      }
+      const { resetCount } = await res.json();
+      setResetMessage(`Reset ${resetCount} account${resetCount === 1 ? "" : "s"} to use category defaults.`);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Reset failed");
+    } finally {
+      setResetting(false);
+    }
+  }
 
   // State for each investable category's growth source
   const [sources, setSources] = useState<Record<string, { source: string; portfolioId: string }>>({
@@ -218,7 +243,20 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, ...rate
         </div>
       </section>
 
-      <div className="flex justify-end pt-2">
+      {resetMessage && (
+        <p className="rounded bg-green-900/50 px-3 py-2 text-sm text-green-400">{resetMessage}</p>
+      )}
+
+      <div className="flex items-center justify-between pt-2">
+        <button
+          type="button"
+          onClick={handleResetAccounts}
+          disabled={resetting}
+          className="rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-xs font-medium text-gray-300 hover:bg-gray-700 disabled:opacity-50"
+          title="Clear account-level overrides and fall back to the category defaults above"
+        >
+          {resetting ? "Resetting..." : "Reset all accounts to defaults"}
+        </button>
         <button type="submit" disabled={loading} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
           {loading ? "Saving..." : "Save"}
         </button>
