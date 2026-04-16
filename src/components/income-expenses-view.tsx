@@ -29,6 +29,31 @@ interface Income {
   inflationStartYear?: number | null;
   startYearRef?: string | null;
   endYearRef?: string | null;
+  taxType?: string | null;
+}
+
+type IncomeTaxType = "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg";
+
+const INCOME_TAX_TYPE_LABELS: Record<IncomeTaxType, string> = {
+  earned_income: "Earned Income",
+  ordinary_income: "Ordinary Income",
+  dividends: "Dividends",
+  capital_gains: "Capital Gains",
+  qbi: "QBI",
+  tax_exempt: "Tax-Exempt",
+  stcg: "ST Capital Gains",
+};
+
+function defaultTaxTypeFor(incType: IncomeType): IncomeTaxType {
+  switch (incType) {
+    case "salary": return "earned_income";
+    case "social_security": return "ordinary_income";
+    case "business": return "ordinary_income";
+    case "deferred": return "ordinary_income";
+    case "capital_gains": return "capital_gains";
+    case "trust": return "ordinary_income";
+    default: return "ordinary_income";
+  }
 }
 
 interface Expense {
@@ -331,6 +356,9 @@ function IncomeDialog({
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
   const isSocialSecurity = type === "social_security";
+  const [taxType, setTaxType] = useState<IncomeTaxType>(
+    (editing?.taxType as IncomeTaxType) ?? defaultTaxTypeFor(type)
+  );
 
   const incDefaultRefs = !isEdit ? defaultIncomeRefs(type, owner) : null;
   const [startYearRef, setStartYearRef] = useState<YearRef | null>(
@@ -387,6 +415,7 @@ function IncomeDialog({
       inflationStartYear: todaysDollars ? planStartYear : null,
       startYearRef: isSocialSecurity ? null : startYearRef,
       endYearRef: isSocialSecurity ? null : endYearRef,
+      taxType,
     };
 
     try {
@@ -444,6 +473,21 @@ function IncomeDialog({
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
                 {Object.entries(INCOME_TYPE_LABELS).map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300" htmlFor="inc-taxType">Tax Treatment</label>
+              <select
+                id="inc-taxType"
+                name="taxType"
+                value={taxType}
+                onChange={(e) => setTaxType(e.target.value as IncomeTaxType)}
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                {Object.entries(INCOME_TAX_TYPE_LABELS).map(([v, l]) => (
                   <option key={v} value={v}>{l}</option>
                 ))}
               </select>

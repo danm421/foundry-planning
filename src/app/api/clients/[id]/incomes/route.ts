@@ -80,6 +80,7 @@ export async function POST(
     } = body;
     const startYearRef = body.startYearRef ?? null;
     const endYearRef = body.endYearRef ?? null;
+    const taxType = body.taxType ?? null;
 
     if (!type || !name || !startYear || !endYear) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -104,6 +105,7 @@ export async function POST(
         inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,
         startYearRef,
         endYearRef,
+        taxType,
       })
       .returning();
 

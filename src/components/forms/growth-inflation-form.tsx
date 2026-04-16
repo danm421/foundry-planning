@@ -3,6 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+interface ModelPortfolioOption {
+  id: string;
+  name: string;
+  blendedReturn: number;
+}
+
 interface GrowthInflationFormProps {
   clientId: string;
   inflationRate: string;
@@ -12,28 +18,61 @@ interface GrowthInflationFormProps {
   defaultGrowthRealEstate: string;
   defaultGrowthBusiness: string;
   defaultGrowthLifeInsurance: string;
+  // CMA growth sources for investable categories
+  growthSourceTaxable?: string;
+  growthSourceCash?: string;
+  growthSourceRetirement?: string;
+  modelPortfolioIdTaxable?: string | null;
+  modelPortfolioIdCash?: string | null;
+  modelPortfolioIdRetirement?: string | null;
+  modelPortfolios?: ModelPortfolioOption[];
 }
 
-const GROWTH_FIELDS: {
-  key: string;
-  label: string;
-  description: string;
-}[] = [
-  { key: "defaultGrowthTaxable", label: "Taxable", description: "Brokerage, trust, other taxable accounts" },
-  { key: "defaultGrowthCash", label: "Cash", description: "Savings, checking, money-market" },
-  { key: "defaultGrowthRetirement", label: "Retirement", description: "IRA, 401(k), Roth, 529" },
+// Non-investable categories — always flat rate
+const FLAT_RATE_FIELDS: { key: string; label: string; description: string }[] = [
   { key: "defaultGrowthRealEstate", label: "Real Estate", description: "Residences and property" },
   { key: "defaultGrowthBusiness", label: "Business", description: "Ownership interests and entities" },
   { key: "defaultGrowthLifeInsurance", label: "Life Insurance", description: "Cash-value life policies" },
 ];
 
+// Investable categories — support portfolio dropdown
+const CMA_CATEGORIES: { category: string; label: string; description: string; rateKey: string; sourceKey: string; portfolioKey: string }[] = [
+  { category: "taxable", label: "Taxable", description: "Brokerage, trust, other taxable accounts", rateKey: "defaultGrowthTaxable", sourceKey: "growthSourceTaxable", portfolioKey: "modelPortfolioIdTaxable" },
+  { category: "cash", label: "Cash", description: "Savings, checking, money-market", rateKey: "defaultGrowthCash", sourceKey: "growthSourceCash", portfolioKey: "modelPortfolioIdCash" },
+  { category: "retirement", label: "Retirement", description: "IRA, 401(k), Roth, 529", rateKey: "defaultGrowthRetirement", sourceKey: "growthSourceRetirement", portfolioKey: "modelPortfolioIdRetirement" },
+];
+
 const pct = (v: string) => (Number(v) * 100).toFixed(2);
 
-export default function GrowthInflationForm({ clientId, ...rates }: GrowthInflationFormProps) {
+export default function GrowthInflationForm({ clientId, modelPortfolios, ...rates }: GrowthInflationFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  // State for each investable category's growth source
+  const [sources, setSources] = useState<Record<string, { source: string; portfolioId: string }>>({
+    taxable: {
+      source: rates.growthSourceTaxable ?? "custom",
+      portfolioId: rates.modelPortfolioIdTaxable ?? "",
+    },
+    cash: {
+      source: rates.growthSourceCash ?? "custom",
+      portfolioId: rates.modelPortfolioIdCash ?? "",
+    },
+    retirement: {
+      source: rates.growthSourceRetirement ?? "custom",
+      portfolioId: rates.modelPortfolioIdRetirement ?? "",
+    },
+  });
+
+  function setSource(category: string, value: string) {
+    if (value.startsWith("mp:")) {
+      setSources((prev) => ({ ...prev, [category]: { source: "model_portfolio", portfolioId: value.slice(3) } }));
+    } else {
+      setSources((prev) => ({ ...prev, [category]: { source: "custom", portfolioId: "" } }));
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -44,15 +83,20 @@ export default function GrowthInflationForm({ clientId, ...rates }: GrowthInflat
     const data = new FormData(e.currentTarget);
     const toDec = (name: string) => String(Number(data.get(name) as string) / 100);
 
-    const body = {
+    const body: Record<string, unknown> = {
       inflationRate: toDec("inflationRate"),
-      defaultGrowthTaxable: toDec("defaultGrowthTaxable"),
-      defaultGrowthCash: toDec("defaultGrowthCash"),
-      defaultGrowthRetirement: toDec("defaultGrowthRetirement"),
       defaultGrowthRealEstate: toDec("defaultGrowthRealEstate"),
       defaultGrowthBusiness: toDec("defaultGrowthBusiness"),
       defaultGrowthLifeInsurance: toDec("defaultGrowthLifeInsurance"),
     };
+
+    // For each investable category, send growth source + portfolio id + custom rate
+    for (const cat of CMA_CATEGORIES) {
+      const s = sources[cat.category];
+      body[cat.sourceKey] = s.source;
+      body[cat.portfolioKey] = s.source === "model_portfolio" ? s.portfolioId : null;
+      body[cat.rateKey] = toDec(cat.rateKey);
+    }
 
     try {
       const res = await fetch(`/api/clients/${clientId}/plan-settings`, {
@@ -101,7 +145,56 @@ export default function GrowthInflationForm({ clientId, ...rates }: GrowthInflat
         </header>
 
         <div className="divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/60">
-          {GROWTH_FIELDS.map((field) => (
+          {/* Investable categories — dropdown for model portfolio or custom */}
+          {CMA_CATEGORIES.map((cat) => {
+            const s = sources[cat.category];
+            const selectVal = s.source === "model_portfolio" ? `mp:${s.portfolioId}` : "custom";
+            return (
+              <div key={cat.category} className="px-4 py-3">
+                <div className="flex items-center justify-between gap-6">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-100">{cat.label}</p>
+                    <p className="text-xs text-gray-500">{cat.description}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectVal}
+                      onChange={(e) => setSource(cat.category, e.target.value)}
+                      className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                    >
+                      {modelPortfolios?.map((mp) => (
+                        <option key={mp.id} value={`mp:${mp.id}`}>
+                          {mp.name} ({(mp.blendedReturn * 100).toFixed(2)}%)
+                        </option>
+                      ))}
+                      <option value="custom">Custom %</option>
+                    </select>
+                    {s.source === "custom" && (
+                      <div className="relative w-28 flex-shrink-0">
+                        <input
+                          name={cat.rateKey}
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          max={30}
+                          defaultValue={pct((rates as Record<string, string>)[cat.rateKey])}
+                          className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 pr-8 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
+                      </div>
+                    )}
+                    {/* Hidden input so the rate key is always submitted even when dropdown is shown */}
+                    {s.source !== "custom" && (
+                      <input type="hidden" name={cat.rateKey} value={pct((rates as Record<string, string>)[cat.rateKey])} />
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Non-investable categories — flat rate only */}
+          {FLAT_RATE_FIELDS.map((field) => (
             <div key={field.key} className="flex items-center justify-between gap-6 px-4 py-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-gray-100">{field.label}</p>
@@ -127,7 +220,7 @@ export default function GrowthInflationForm({ clientId, ...rates }: GrowthInflat
 
       <div className="flex justify-end pt-2">
         <button type="submit" disabled={loading} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-          {loading ? "Saving…" : "Save"}
+          {loading ? "Saving..." : "Save"}
         </button>
       </div>
     </form>

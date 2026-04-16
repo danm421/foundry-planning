@@ -82,6 +82,12 @@ interface LedgerModal {
   ledger: AccountLedger;
 }
 
+interface TaxDrillModal {
+  year: number;
+  detail: NonNullable<ProjectionYear["taxDetail"]>;
+  totalTaxes: number;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const fmt = new Intl.NumberFormat("en-US", {
@@ -197,6 +203,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const [drillPath, setDrillPath] = useState<string[]>([]);
   const [chartView, setChartView] = useState<"portfolio" | "cashflow">("portfolio");
   const [ledgerModal, setLedgerModal] = useState<LedgerModal | null>(null);
+  const [taxDrillModal, setTaxDrillModal] = useState<TaxDrillModal | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
@@ -759,7 +766,19 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol("expenses_liabilities", "Liabilities", (r) => r.expenses.liabilities),
         numCol("expenses_other", () => <DrillBtn segment="other_expense" label="Other" />, (r) => r.expenses.other),
         numCol("expenses_insurance", () => <DrillBtn segment="insurance" label="Insurance" />, (r) => r.expenses.insurance),
-        numCol("expenses_taxes", "Taxes", (r) => r.expenses.taxes),
+        col("expenses_taxes", "Taxes", (r) => r.expenses.taxes, (info) => {
+          const row = info.row.original;
+          const v = fmtNum(info.getValue() as number);
+          return row.taxDetail ? (
+            <button
+              className="text-right hover:text-blue-400 hover:underline"
+              title="View tax detail"
+              onClick={() => setTaxDrillModal({ year: row.year, detail: row.taxDetail!, totalTaxes: row.expenses.taxes })}
+            >
+              {v}
+            </button>
+          ) : v;
+        }),
         numCol("expenses_total", "Total", (r) => r.expenses.total, true),
       ];
     }
@@ -1276,6 +1295,30 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 )}
               </div>
 
+              {ledgerModal.ledger.growthDetail && (
+                <div className="rounded-md border border-gray-800 bg-gray-800/30 px-3 py-2">
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Growth Realization</p>
+                  <div className="space-y-1 text-sm">
+                    {[
+                      { label: "Ordinary Income", amount: ledgerModal.ledger.growthDetail.ordinaryIncome, note: "taxed, +basis" },
+                      { label: "Qualified Dividends", amount: ledgerModal.ledger.growthDetail.qualifiedDividends, note: "taxed, +basis" },
+                      { label: "ST Capital Gains", amount: ledgerModal.ledger.growthDetail.stCapitalGains, note: "taxed, +basis" },
+                      { label: "LT Capital Gains", amount: ledgerModal.ledger.growthDetail.ltCapitalGains, note: "+value only" },
+                      { label: "Tax-Exempt", amount: ledgerModal.ledger.growthDetail.taxExempt, note: "+basis" },
+                    ].filter((r) => r.amount > 0).map((r) => (
+                      <div key={r.label} className="flex justify-between">
+                        <span className="text-gray-400">{r.label} <span className="text-gray-600 text-xs">({r.note})</span></span>
+                        <span className="tabular-nums text-gray-300">{fmtNum(r.amount)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between border-t border-gray-700 pt-1">
+                      <span className="text-gray-400">Basis increase</span>
+                      <span className="tabular-nums font-medium text-gray-200">{fmtNum(ledgerModal.ledger.growthDetail.basisIncrease)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-between border-t border-gray-800 pt-3 text-sm">
                 <span className="text-gray-400">Net change</span>
                 <span
@@ -1297,6 +1340,47 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {taxDrillModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={() => setTaxDrillModal(null)}
+        >
+          <div
+            className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-100">Tax Detail — {taxDrillModal.year}</h3>
+              <button onClick={() => setTaxDrillModal(null)} className="text-gray-400 hover:text-gray-200">✕</button>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                { label: "Earned Income", key: "earnedIncome" as const },
+                { label: "Ordinary Income", key: "ordinaryIncome" as const },
+                { label: "Dividends", key: "dividends" as const },
+                { label: "Capital Gains (LT)", key: "capitalGains" as const },
+                { label: "ST Capital Gains", key: "stCapitalGains" as const },
+                { label: "QBI", key: "qbi" as const },
+                { label: "Tax-Exempt", key: "taxExempt" as const },
+              ]
+                .filter((row) => taxDrillModal.detail[row.key] > 0)
+                .map((row) => (
+                  <div key={row.key} className="flex justify-between rounded-md bg-gray-800/40 px-3 py-2 text-sm">
+                    <span className="font-medium text-gray-200">{row.label}</span>
+                    <span className="tabular-nums text-gray-300">{fmtNum(taxDrillModal.detail[row.key])}</span>
+                  </div>
+                ))}
+            </div>
+
+            <div className="mt-4 flex justify-between border-t border-gray-700 pt-3 text-sm font-semibold text-gray-100">
+              <span>Total Taxes</span>
+              <span className="tabular-nums">{fmtNum(taxDrillModal.totalTaxes)}</span>
             </div>
           </div>
         </div>
