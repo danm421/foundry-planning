@@ -13,32 +13,40 @@ Items are scored on three axes:
 ## Suggested Order
 
 Filtered to P ≥ 4 and sorted by P+E+L. Items below this cutoff are genuinely
-backlog; two of them (per-entity tax fields, family members as owners) are
+backlog; some of them (family members as owners, per-entity tax fields) are
 enablers and should ship folded into their parent feature.
 
 | # | Item | P | E | L | Total |
 |---|------|---|---|---|-------|
-| 1 | CMAs + model portfolios | 7 | 5 | 9 | 21 |
-| 2 | Robust tax engine (Excel-driven) | 8 | 3 | 9 | 20 |
-| 3 | Scenario switcher + side panel | 9 | 2 | 8 | 19 |
+| 1 | Scenario switcher + side panel | 9 | 2 | 8 | 19 |
+| 2 | Roth conversion optimizer (now unblocked) | 7 | 5 | 5 | 17 |
+| 3 | Deduction types (IRA/401k/charitable/SALT) | 7 | 4 | 5 | 16 |
 | 4 | Assumption library | 4 | 6 | 6 | 16 |
 | 5 | Monte Carlo / probability of success | 8 | 4 | 3 | 15 |
 | 6 | Plan PDF export | 5 | 6 | 4 | 15 |
-| 7 | SS claiming optimizer | 5 | 6 | 2 | 13 |
-| 8 | Client-facing read-only view | 4 | 6 | 3 | 13 |
-| 9 | Estate planning report | 7 | 2 | 3 | 12 |
-| 10 | Plan vs actual tracking | 4 | 4 | 3 | 11 |
-| 11 | Roth conversion optimizer | 5 | 3 | 3 | 11 |
+| 7 | CSV export for reports (cross-cutting) | 5 | 7 | 3 | 15 |
+| 8 | Year-range slider on plan pages | 6 | 6 | 2 | 14 |
+| 9 | Per-year ledger drill-in for tax tables | 6 | 5 | 3 | 14 |
+| 10 | SS claiming optimizer | 5 | 6 | 2 | 13 |
+| 11 | Client-facing read-only view | 4 | 6 | 3 | 13 |
+| 12 | Trust taxes for non-grantor entities | 5 | 4 | 3 | 12 |
+| 13 | IRMAA tiers in tax engine | 5 | 4 | 3 | 12 |
+| 14 | Estate planning report | 7 | 2 | 3 | 12 |
+| 15 | Plan vs actual tracking | 4 | 4 | 3 | 11 |
+| 16 | State-level bracket tax | 5 | 2 | 4 | 11 |
+| 17 | Trust/estate brackets (data ready) | 4 | 7 | 2 | 13 |
 
 Dependency notes that override raw score:
 
-- Ship **CMAs before Monte Carlo** (MC depends on CMA data).
-- Ship **per-entity tax fields with the tax engine** (enabler, P3/L6).
+- Ship **deduction types before the Roth optimizer** — the optimizer needs
+  real above-line deductions to honestly compute "how much bracket room is left."
 - Ship **family members as owners before estate report** (enabler, P3/L6).
-- **Roth optimizer** is cheap only after the tax engine lands.
-- **Plan vs actual** is cheap now that AI statement import has shipped.
-- Start the **scenario switcher design doc** in parallel with #2/#3 — it's the
-  biggest lift and benefits from early design pressure.
+- Start the **scenario switcher design doc** in parallel with other work — it's
+  the biggest lift and benefits from early design pressure.
+- **Year-range slider** is a prerequisite for making multi-year tables
+  (cashflow, tax detail, account ledgers) scale to 30+ year projections.
+- **Trust/estate brackets** are a tiny add since the data is already in the
+  seed workbook; they unlock the **trust taxes for non-grantor** work.
 
 ## UI
 
@@ -50,6 +58,21 @@ Dependency notes that override raw score:
   model (base changes propagate, scenario stores only deltas) vs copy model
   (scenario forks at creation). Leaning overlay with a "detach" action. _Why
   deferred: large effort; base case first._
+
+- **Year-range slider on plan pages** _(P6 E6 L2)_ — a slider at the top of the
+  cashflow page (and other multi-year views) that constrains charts and tables
+  to a selected year window (e.g., "show only 2026–2040"). Makes 30-year
+  projections scannable. _Why deferred: base full-range view works; scoping
+  and design to be decided with other multi-year UI improvements._
+
+- **Per-year ledger drill-in for tax-detail tables** _(P6 E5 L3)_ — clicking a
+  cell in the multi-year Tax Detail modal (e.g., "Below Line Deduct" for 2028)
+  should open a per-year breakdown showing what composes that field (std
+  deduction, charitable gifts, SALT, etc.). Paired with deduction-types work:
+  only meaningful once itemized components exist in the model. _Why deferred:
+  the drill-down currently only wires the per-source tax ledger for total
+  income/tax categories; per-cell breakdown for deductions and flow fields is
+  the next layer of detail._
 
 - **Client-facing read-only view** _(P4 E6 L3)_ — shareable link with a
   limited surface (balance sheet, cash-flow chart, plan summary) so advisors
@@ -83,20 +106,78 @@ Dependency notes that override raw score:
 
 ## Engine
 
-- **Robust tax engine driven by uploadable tax-year data** _(P8 E3 L9)_ —
-  replace hard-coded brackets/limits with a `tax_year_parameters` table
-  seeded from an advisor-maintained Excel workbook (brackets, standard
-  deduction, SS wage base, AMT, NIIT thresholds, IRMAA tiers, etc.). Engine
-  layer then covers AMT, NIIT, QBI, capital-gains stacking, SS taxability,
-  and state tax. Unlocks the Roth optimizer and non-grantor entity tax work.
-  _Why deferred: two-phase effort (data model + upload pipeline, then engine
-  work); current flat-rate approximation is acceptable for MVP._
+- ~~**Robust tax engine driven by uploadable tax-year data**~~ — **SHIPPED.**
+  `tax_year_parameters` table seeded from the advisor workbook (2022-2026).
+  Bracket-based federal tax with progressive brackets for 4 filing statuses,
+  LT cap gains 0/15/20% stacking, AMT with exemption phase-out, NIIT, FICA +
+  Additional Medicare, QBI (simplified), SS taxability per IRS Pub 915. Opt-in
+  per client via `tax_engine_mode` toggle. Multi-year inflation forward-projection
+  using plan's tax-inflation and SS-wage-growth rates. Multi-year drill-down UI
+  with Income Breakdown and Federal Tax Breakdown tabs, column tooltips, and
+  first-year regime-transition indicators. State tax stays flat (MVP).
 
-- **Non-grantor entity-level taxes** _(P3 E5 L2)_ — when an entity is not
-  flagged `is_grantor`, household taxes are correctly skipped but the entity
-  itself owes tax on its income and RMDs. That tax isn't modeled; the
-  entity's checking grows as if pre-tax. _Why deferred: depends on robust
-  tax engine + per-entity tax rate fields._
+- **Deduction types** _(P7 E4 L5)_ — support itemized deductions beyond the
+  standard: IRA/401k contributions (above-line), charitable gifts, SALT
+  (capped at $10k), mortgage interest, medical-expense threshold, etc. New
+  schema: `client_deductions` table with type, amount, year range. Engine
+  reads them into `aboveLineDeductions` or `itemizedDeductions` per type.
+  UI: new section in Assumptions or per-client "Deductions" subtab. _Why
+  deferred: v1 tax engine treats above-line as 0 and falls back to standard.
+  Prerequisite for a credible Roth conversion optimizer._
+
+- **Trust taxes for non-grantor entities** _(P5 E4 L3)_ — when an entity is
+  not flagged `is_grantor`, household taxes are correctly skipped, but the
+  entity itself owes tax on its income and RMDs at trust/estate rates (much
+  compressed brackets). That tax isn't modeled; the entity's checking grows
+  as if pre-tax. Depends on `trust/estate brackets` item below. Replaces the
+  old "Non-grantor entity-level taxes" entry now that the tax engine has
+  landed — the remaining work is applying the existing trust/estate brackets
+  in the engine when `is_grantor === false`. _Why deferred: data in the
+  workbook, but engine integration for entity tax tracking is its own project._
+
+- **Trust/estate brackets in tax engine** _(P4 E7 L2)_ — the seed workbook
+  already includes trust/estate brackets (10/24/35/37% compressed thresholds),
+  but the engine only uses the four individual filing-status brackets.
+  Wire the trust brackets into `calculate.ts` so entity-level calcs can use
+  them. Small add; mostly plumbing. _Why deferred: no non-grantor entity
+  client in production yet driving demand._
+
+- **IRMAA tiers in tax engine** _(P5 E4 L3)_ — Medicare Part B + D premium
+  surcharges for retirees whose MAGI (from 2 years prior) exceeds the IRMAA
+  thresholds. 6 tiers, separate for Part B and Part D, indexed annually.
+  Data source: CMS, not the existing workbook. _Why deferred: MVP tax engine
+  scoped out; advisors will increasingly request it as we get more retiree
+  clients — retirees who plan drawdowns without IRMAA modeling can get
+  surprised by $4k-$10k/year Medicare premium increases._
+
+- **QBI SSTB + W-2 wage cap** _(P4 E3 L2)_ — v1 QBI collapses above-phase-in
+  to $0 for everyone. Real Section 199A: above phase-in, SSTB (health, law,
+  accounting) gets $0 but non-SSTB gets deduction capped by 50% × W-2 wages
+  or 25% × wages + 2.5% × UBIA. Need `is_sstb` flag on business income and
+  optional W-2 wage tracking. _Why deferred: under-deducts non-SSTB business
+  owners; file when an advisor flags it in real numbers._
+
+- **NIIT: include taxable interest in investment income** _(P3 E6 L1)_ — v1
+  NIIT uses `qualifiedDividends + LTCG + STCG` as the investment-income input.
+  Taxable interest (from the "ordinary income" bucket) also counts per IRC
+  §1411 but isn't surfaced because our `taxDetail.ordinaryIncome` is a blend
+  (interest + non-qual div + RMDs + IRA distros). To fix, split the ordinary
+  bucket so NIIT can count only the investment-interest portion. _Why
+  deferred: small precision bug; hits bond-heavy portfolios. Fix by tracking
+  `taxable_interest` as a separate income type in `taxDetail`._
+
+- **AMT credit carryover** _(P2 E4 L1)_ — in real tax, years where AMT
+  applies generate a credit that reduces future regular-tax AMT obligations.
+  Requires multi-year stateful tracking of AMT paid vs recovered. _Why
+  deferred: edge case for most planning clients; significant complexity._
+
+- **State-level bracket tax** _(P5 E2 L4)_ — replace flat state rate with
+  per-state progressive brackets. Needs a data-ingestion pipeline covering
+  all 50 states + DC (bracket thresholds vary per state, update annually).
+  Some states tax LTCG as ordinary (most), some have no state tax (FL, TX,
+  etc.), some have local/city tax (NY, NYC). Big data project. _Why deferred:
+  flat-rate approximation within ~1% of actual state tax for most clients
+  is acceptable for planning-horizon work._
 
 - **Entity withdrawal strategy** _(P2 E5 L2)_ — when an entity's checking
   goes negative, the engine leaves it negative instead of pulling from the
@@ -115,21 +196,24 @@ Dependency notes that override raw score:
 
 ## Analytics
 
-- **Capital market assumptions (CMAs) + model portfolios** _(P7 E5 L9)_ —
-  firm-level library of asset classes with expected return, mean, and
-  standard deviation, composed into reusable model portfolios that can be
-  attached to any client account. Prerequisite for Monte Carlo. _Why
-  deferred: no data model yet; advisors currently set per-account return
-  assumptions by hand._
+- ~~**Capital market assumptions (CMAs) + model portfolios**~~ — **SHIPPED.**
+  Global `/cma` page, asset classes + model portfolios tables, realization-based
+  growth splitting in the engine, tax-bucket plumbing that fed into the tax
+  engine.
 
 - **Monte Carlo / probability of success** _(P8 E4 L3)_ — stochastic
   projection over N trials using CMA-driven portfolio returns; surface
   probability-of-success and percentile cones on the cash-flow chart. _Why
-  deferred: depends on CMAs; current engine is deterministic._
+  deferred: CMAs shipped (unblocking this); defer for now since current
+  deterministic projection is advisor-usable and monte carlo is a significant
+  compute + UI effort._
 
-- **Roth conversion optimizer** _(P5 E3 L3)_ — recommend annual conversion
-  amounts that fill a target bracket across the plan horizon. _Why deferred:
-  depends on robust tax engine._
+- **Roth conversion optimizer** _(P7 E5 L5)_ — recommend annual conversion
+  amounts that fill a target bracket across the plan horizon. Now unblocked
+  by the tax engine. Best shipped right after deduction types (otherwise the
+  optimizer has incomplete bracket room awareness). _Why deferred: tax engine
+  just landed; deduction types should ship first so the optimizer can honestly
+  compute bracket headroom._
 
 - **Social Security claiming optimizer** _(P5 E6 L2)_ — compare claim ages
   with breakeven analysis and survivor impact. _Why deferred: small but not
@@ -147,9 +231,16 @@ Dependency notes that override raw score:
   data-model work._
 
 - **Plan PDF export** _(P5 E6 L4)_ — server-rendered PDF summary of the
-  plan (balance sheet, cash flow, assumptions). Reportlab patterns from
-  `ethos-tools` can be ported. _Why deferred: no advisor has asked for a
-  polished export yet._
+  plan (balance sheet, cash flow, assumptions, tax detail). Reportlab
+  patterns from `ethos-tools` can be ported. _Why deferred: no advisor has
+  asked for a polished export yet._
+
+- **CSV export for reports (cross-cutting)** _(P5 E7 L3)_ — per-table CSV
+  download button on cashflow, balance sheet, tax detail, and account
+  ledger views. Advisors hand the CSV to CPAs or paste into Excel for
+  what-if tinkering. Cross-cutting, not tax-specific. _Why deferred:
+  deferred from the tax drill-down work since it applies to all reports;
+  better shipped as one coherent project._
 
 ## Integrations
 
@@ -173,15 +264,29 @@ Dependency notes that override raw score:
 ## Schema
 
 - **Per-entity tax rate / election fields** _(P3 E8 L6)_ — needed before we
-  can model non-grantor entity taxes. Ship as part of the robust tax engine
+  can model non-grantor entity taxes with per-entity overrides (e.g., trust
+  with a specific tax ID and rate election). Ship as part of the trust-taxes
   work. _Why deferred: enabler, not standalone feature._
 
 - **Assumption library** _(P4 E6 L6)_ — reusable advisor- or firm-level
   presets for return, inflation, tax rates, life expectancy, etc. _Why
   deferred: current per-client assumptions are workable; revisit once CMAs
-  land._
+  land._ (Note: CMAs have shipped, so this is technically unblocked now.)
+
+- **Deprecate `flat_federal_rate` column** _(P2 E8 L1)_ — after bracket mode
+  has been proven in production for ~6 months and no active clients remain
+  on flat mode, the `flat_federal_rate` column can be dropped from
+  `plan_settings` and the flat-path shim in `src/engine/tax.ts` removed.
+  _Why deferred: safety net while bracket mode matures._
 
 ## Tooling
+
+- **React component testing setup (RTL)** _(P3 E5 L2)_ — the repo has vitest
+  for pure-logic tests but no React Testing Library. The tax drill-down modal
+  (and earlier UI work) is validated by manual smoke test only. Adding RTL
+  would let us write component-level tests for modal interactions, table
+  rendering, keyboard accessibility, etc. _Why deferred: manual smoke tests
+  have caught all issues so far; setup overhead not justified per-feature._
 
 - **Scheduled / automated migrations in CI** _(P2 E7 L5)_ — migrations are
   applied manually via `drizzle-kit migrate` against the Neon URL in
