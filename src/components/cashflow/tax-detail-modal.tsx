@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { ProjectionYear } from "@/engine";
 import { TaxDetailIncomeTable } from "./tax-detail-income-table";
 import { TaxDetailFlowTable } from "./tax-detail-flow-table";
+
+type Tab = "income" | "federal";
 
 interface TaxDetailModalProps {
   years: ProjectionYear[];
@@ -12,7 +14,8 @@ interface TaxDetailModalProps {
 }
 
 export function TaxDetailModal({ years, onClose, onYearClick }: TaxDetailModalProps) {
-  // Close on ESC
+  const [activeTab, setActiveTab] = useState<Tab>("income");
+
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -30,18 +33,32 @@ export function TaxDetailModal({ years, onClose, onYearClick }: TaxDetailModalPr
         className="flex h-[90vh] w-[90vw] max-w-[1600px] flex-col overflow-hidden rounded-xl border border-gray-700 bg-gray-900 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-800 px-6 py-4">
-          <div>
+        {/* Header with tabs */}
+        <div className="flex items-start justify-between border-b border-gray-800 px-6 pt-4">
+          <div className="flex-1">
             <h2 className="text-lg font-semibold text-gray-100">Tax Detail — All Years</h2>
             <p className="mt-1 text-xs text-gray-500">
               Hover column headers for explanations. Click a year to see that year&apos;s per-source breakdown.
             </p>
+            <nav className="mt-4 flex gap-1 border-b border-transparent" role="tablist">
+              <TabButton
+                active={activeTab === "income"}
+                onClick={() => setActiveTab("income")}
+              >
+                Income Breakdown
+              </TabButton>
+              <TabButton
+                active={activeTab === "federal"}
+                onClick={() => setActiveTab("federal")}
+              >
+                Federal Tax Breakdown
+              </TabButton>
+            </nav>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-xl text-gray-400 hover:text-gray-200"
+            className="-mr-2 text-xl text-gray-400 hover:text-gray-200"
             aria-label="Close"
           >
             ×
@@ -49,18 +66,40 @@ export function TaxDetailModal({ years, onClose, onYearClick }: TaxDetailModalPr
         </div>
 
         {/* Body */}
-        <div className="flex-1 space-y-6 overflow-auto p-6">
-          <section>
-            <h3 className="mb-3 text-sm font-semibold text-gray-300">Income Breakdown</h3>
+        <div className="flex-1 overflow-auto p-6">
+          {activeTab === "income" ? (
             <TaxDetailIncomeTable years={years} onYearClick={onYearClick} />
-          </section>
-
-          <section>
-            <h3 className="mb-3 text-sm font-semibold text-gray-300">Tax Calculation Flow</h3>
+          ) : (
             <TaxDetailFlowTable years={years} onYearClick={onYearClick} />
-          </section>
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+        active
+          ? "border-blue-500 text-gray-100"
+          : "border-transparent text-gray-400 hover:text-gray-200"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
