@@ -1,3 +1,5 @@
+import type { TaxResult } from "../lib/tax/types";
+
 // ── Input Types ──────────────────────────────────────────────────────────────
 
 export interface ClientData {
@@ -163,6 +165,8 @@ export interface ProjectionYear {
     taxExempt: number;
     bySource: Record<string, { type: string; amount: number }>;
   };
+
+  taxResult?: TaxResult;
 
   withdrawals: {
     byAccount: Record<string, number>;
