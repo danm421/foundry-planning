@@ -271,6 +271,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     // no household tax (entity handles its own, not modeled yet).
     let householdRmdIncome = 0;
     let grantorRmdTaxable = 0;
+    const rmdBySource: Record<string, { type: string; amount: number }> = {};
     for (const acct of data.accounts) {
       if (!acct.rmdEnabled) continue;
       let ownerBirthYear: number;
@@ -299,6 +300,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       const rmdLabel = `RMD from ${acct.name}`;
       if (acct.ownerEntityId == null) {
         householdRmdIncome += rmd;
+        rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmd };
         creditCash(defaultChecking?.id, rmd, { category: "rmd", label: rmdLabel, sourceId: acct.id });
       } else {
         creditCash(entityCheckingByEntityId[acct.ownerEntityId], rmd, {
@@ -306,7 +308,10 @@ export function runProjection(data: ClientData): ProjectionYear[] {
           label: rmdLabel,
           sourceId: acct.id,
         });
-        if (isGrantorEntity(acct.ownerEntityId)) grantorRmdTaxable += rmd;
+        if (isGrantorEntity(acct.ownerEntityId)) {
+          grantorRmdTaxable += rmd;
+          rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmd };
+        }
       }
     }
 
@@ -339,7 +344,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       stCapitalGains: realizationSTCG,
       qbi: 0,
       taxExempt: 0,
-      bySource: { ...realizationBySource },
+      bySource: { ...realizationBySource, ...rmdBySource },
     };
     // Map income entries to tax categories
     for (const inc of data.incomes) {
