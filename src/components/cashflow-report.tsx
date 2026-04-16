@@ -1421,6 +1421,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               });
             }
           }}
+          yearRange={yearRange}
+          onYearRangeChange={setYearRange}
+          planStartYear={planStartYear}
+          planEndYear={planEndYear}
+          clientRetirementYear={clientRetirementYear}
         />
       )}
 

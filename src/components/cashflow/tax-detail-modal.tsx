@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { ProjectionYear } from "@/engine";
 import { TaxDetailIncomeTable } from "./tax-detail-income-table";
 import { TaxDetailFlowTable } from "./tax-detail-flow-table";
+import { YearRangeSlider } from "./year-range-slider";
 
 type Tab = "income" | "federal";
 
@@ -11,9 +12,24 @@ interface TaxDetailModalProps {
   years: ProjectionYear[];
   onClose: () => void;
   onYearClick: (year: ProjectionYear) => void;
+  // Year-range slider — shared with the cashflow page so changes flow both ways
+  yearRange: [number, number];
+  onYearRangeChange: (next: [number, number]) => void;
+  planStartYear: number;
+  planEndYear: number;
+  clientRetirementYear: number | null;
 }
 
-export function TaxDetailModal({ years, onClose, onYearClick }: TaxDetailModalProps) {
+export function TaxDetailModal({
+  years,
+  onClose,
+  onYearClick,
+  yearRange,
+  onYearRangeChange,
+  planStartYear,
+  planEndYear,
+  clientRetirementYear,
+}: TaxDetailModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>("income");
 
   useEffect(() => {
@@ -67,6 +83,16 @@ export function TaxDetailModal({ years, onClose, onYearClick }: TaxDetailModalPr
 
         {/* Body */}
         <div className="flex-1 overflow-auto p-6">
+          <div className="mb-4">
+            <YearRangeSlider
+              min={planStartYear}
+              max={planEndYear}
+              value={yearRange}
+              onChange={onYearRangeChange}
+              clientRetirementYear={clientRetirementYear}
+            />
+          </div>
+
           {activeTab === "income" ? (
             <TaxDetailIncomeTable years={years} onYearClick={onYearClick} />
           ) : (
