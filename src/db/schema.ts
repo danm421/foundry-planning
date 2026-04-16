@@ -133,6 +133,14 @@ export const taxEngineModeEnum = pgEnum("tax_engine_mode", [
   "bracket",
 ]);
 
+export const deductionTypeEnum = pgEnum("deduction_type", [
+  "charitable_cash",
+  "charitable_non_cash",
+  "salt",
+  "mortgage_interest",
+  "other_itemized",
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
@@ -178,7 +186,7 @@ export const planSettings = pgTable("plan_settings", {
   flatStateRate: decimal("flat_state_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.05"),
-  taxEngineMode: taxEngineModeEnum("tax_engine_mode").notNull().default("flat"),
+  taxEngineMode: taxEngineModeEnum("tax_engine_mode").notNull().default("bracket"),
   taxInflationRate: decimal("tax_inflation_rate", { precision: 5, scale: 4 }),
   ssWageGrowthRate: decimal("ss_wage_growth_rate", { precision: 5, scale: 4 }),
   inflationRate: decimal("inflation_rate", { precision: 5, scale: 4 })
@@ -640,6 +648,34 @@ export const planSettingsRelations = relations(planSettings, ({ one }) => ({
     references: [scenarios.id],
   }),
 }));
+
+// ── Client Deductions ─────────────────────────────────────────────────────────
+
+export const clientDeductions = pgTable("client_deductions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  scenarioId: uuid("scenario_id")
+    .notNull()
+    .references(() => scenarios.id, { onDelete: "cascade" }),
+
+  type: deductionTypeEnum("type").notNull(),
+  name: text("name"),
+  owner: ownerEnum("owner").notNull().default("joint"),
+  annualAmount: decimal("annual_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  growthRate: decimal("growth_rate", { precision: 5, scale: 4 }).notNull().default("0"),
+
+  startYear: integer("start_year").notNull(),
+  endYear: integer("end_year").notNull(),
+  startYearRef: yearRefEnum("start_year_ref"),
+  endYearRef: yearRefEnum("end_year_ref"),
+
+  source: sourceEnum("source").notNull().default("manual"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
 // ── Tax Reference Data ────────────────────────────────────────────────────────
 
