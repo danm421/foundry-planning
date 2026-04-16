@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -25,6 +25,7 @@ import {
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear, AccountLedger } from "@/engine";
 import { TaxDetailModal } from "@/components/cashflow/tax-detail-modal";
+import { YearRangeSlider } from "@/components/cashflow/year-range-slider";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
 
@@ -210,6 +211,38 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const tableRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
+  // ── Year-range slider state ────────────────────────────────────────────────
+
+  const planStartYear =
+    clientData?.planSettings.planStartYear ?? new Date().getFullYear();
+  const planEndYear =
+    clientData?.planSettings.planEndYear ?? planStartYear + 50;
+
+  const clientRetirementYear = useMemo(() => {
+    if (!clientData?.client.dateOfBirth || !clientData?.client.retirementAge) {
+      return null;
+    }
+    return (
+      parseInt(clientData.client.dateOfBirth.slice(0, 4), 10) +
+      clientData.client.retirementAge
+    );
+  }, [clientData]);
+
+  const [yearRange, setYearRange] = useState<[number, number]>([
+    planStartYear,
+    planEndYear,
+  ]);
+
+  // Reset slider when plan boundaries change (e.g., advisor edits planEndYear in Assumptions)
+  useEffect(() => {
+    setYearRange([planStartYear, planEndYear]);
+  }, [planStartYear, planEndYear]);
+
+  const visibleYears = useMemo(
+    () => years.filter((y) => y.year >= yearRange[0] && y.year <= yearRange[1]),
+    [years, yearRange]
+  );
+
   // ── Data loading ───────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -265,15 +298,15 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   // ── Chart configurations ────────────────────────────────────────────────────
 
-  const chartLabels = years.map((y) => String(y.year));
+  const chartLabels = visibleYears.map((y) => String(y.year));
 
   // Life events — retirement and life-expectancy end — for each client, mapped
   // onto the chart's year axis. Also used to badge the table rows so advisors can
   // jump to an event year quickly.
-  const firstYear = years[0]?.year ?? 0;
+  const firstYear = visibleYears[0]?.year ?? 0;
   const yearIndex = (year: number) => year - firstYear;
   const inRange = (year: number) =>
-    years.length > 0 && year >= firstYear && year <= years[years.length - 1].year;
+    visibleYears.length > 0 && year >= firstYear && year <= visibleYears[visibleYears.length - 1].year;
 
   const timelineMarkers: TimelineMarker[] = [];
   const eventsByYear: Record<number, { label: string; color: string }[]> = {};
@@ -312,7 +345,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     onClick: (_event: unknown, elements: Array<{ index: number }>) => {
       if (elements.length > 0) {
         const idx = elements[0].index;
-        const year = years[idx]?.year;
+        const year = visibleYears[idx]?.year;
         if (year != null) scrollToYear(year);
       }
     },
@@ -352,7 +385,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     datasets: [
       {
         label: "Total Portfolio Assets",
-        data: years.map((y) => y.portfolioAssets.total),
+        data: visibleYears.map((y) => y.portfolioAssets.total),
         borderColor: "#3b82f6",
         backgroundColor: "rgba(59, 130, 246, 0.15)",
         fill: true,
@@ -399,42 +432,42 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       {
         type: "bar" as const,
         label: "Social Security",
-        data: years.map((y) => y.income.socialSecurity),
+        data: visibleYears.map((y) => y.income.socialSecurity),
         backgroundColor: "#2563eb",
         stack: "inflows",
       },
       {
         type: "bar" as const,
         label: "Salaries",
-        data: years.map((y) => y.income.salaries),
+        data: visibleYears.map((y) => y.income.salaries),
         backgroundColor: "#16a34a",
         stack: "inflows",
       },
       {
         type: "bar" as const,
         label: "Other Income",
-        data: years.map(otherIncomeForYear),
+        data: visibleYears.map(otherIncomeForYear),
         backgroundColor: "#99f6e4",
         stack: "inflows",
       },
       {
         type: "bar" as const,
         label: "RMDs",
-        data: years.map(rmdForYear),
+        data: visibleYears.map(rmdForYear),
         backgroundColor: "#f97316",
         stack: "inflows",
       },
       {
         type: "bar" as const,
         label: "Withdrawals",
-        data: years.map((y) => y.withdrawals.total),
+        data: visibleYears.map((y) => y.withdrawals.total),
         backgroundColor: "#ef4444",
         stack: "inflows",
       },
       {
         type: "line" as const,
         label: "Total Expenses",
-        data: years.map((y) => y.expenses.total),
+        data: visibleYears.map((y) => y.expenses.total),
         borderColor: "#ffffff",
         backgroundColor: "transparent",
         borderWidth: 2,
@@ -533,8 +566,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     return sum;
   }
 
-  function portfolioBoy(r: ProjectionYear, idx: number): number {
-    if (idx > 0) return years[idx - 1].portfolioAssets.total;
+  function portfolioBoy(r: ProjectionYear, _idx: number): number {
+    // Look up previous year in the full projection (not the visible window) so
+    // BoY is always the actual prior-year ending balance, even when the slider
+    // starts mid-projection.
+    const prevYear = years.find((y) => y.year === r.year - 1);
+    if (prevYear) return prevYear.portfolioAssets.total;
     return Object.values(r.accountLedgers).reduce((s, l) => s + l.beginningValue, 0);
   }
 
@@ -1069,7 +1106,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   // ── Table instance ─────────────────────────────────────────────────────────
 
   const table = useReactTable({
-    data: years,
+    data: visibleYears,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
@@ -1114,6 +1151,17 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           <option value="base">Base Case</option>
         </select>
         <span className="text-xs text-gray-500">(Multi-scenario support coming soon)</span>
+      </div>
+
+      {/* Year-range slider */}
+      <div className="mb-4">
+        <YearRangeSlider
+          min={planStartYear}
+          max={planEndYear}
+          value={yearRange}
+          onChange={setYearRange}
+          clientRetirementYear={clientRetirementYear}
+        />
       </div>
 
       {/* Chart selector + chart */}
@@ -1362,7 +1410,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
       {showTaxDetailModal && (
         <TaxDetailModal
-          years={years}
+          years={visibleYears}
           onClose={() => setShowTaxDetailModal(false)}
           onYearClick={(y) => {
             if (y.taxDetail) {
@@ -1373,6 +1421,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               });
             }
           }}
+          yearRange={yearRange}
+          onYearRangeChange={setYearRange}
+          planStartYear={planStartYear}
+          planEndYear={planEndYear}
+          clientRetirementYear={clientRetirementYear}
         />
       )}
 
