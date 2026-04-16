@@ -110,6 +110,22 @@ export const yearRefEnum = pgEnum("year_ref", [
   "spouse_ss_70",
 ]);
 
+export const growthSourceEnum = pgEnum("growth_source", [
+  "default",
+  "model_portfolio",
+  "custom",
+]);
+
+export const incomeTaxTypeEnum = pgEnum("income_tax_type", [
+  "earned_income",
+  "ordinary_income",
+  "dividends",
+  "capital_gains",
+  "qbi",
+  "tax_exempt",
+  "stcg",
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
@@ -179,6 +195,13 @@ export const planSettings = pgTable("plan_settings", {
   defaultGrowthLifeInsurance: decimal("default_growth_life_insurance", { precision: 5, scale: 4 })
     .notNull()
     .default("0.03"),
+  growthSourceTaxable: growthSourceEnum("growth_source_taxable").notNull().default("custom"),
+  modelPortfolioIdTaxable: uuid("model_portfolio_id_taxable").references(() => modelPortfolios.id, { onDelete: "set null" }),
+  growthSourceCash: growthSourceEnum("growth_source_cash").notNull().default("custom"),
+  modelPortfolioIdCash: uuid("model_portfolio_id_cash").references(() => modelPortfolios.id, { onDelete: "set null" }),
+  growthSourceRetirement: growthSourceEnum("growth_source_retirement").notNull().default("custom"),
+  modelPortfolioIdRetirement: uuid("model_portfolio_id_retirement").references(() => modelPortfolios.id, { onDelete: "set null" }),
+  useCustomCma: boolean("use_custom_cma").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -213,6 +236,62 @@ export const familyMembers = pgTable("family_members", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const assetClasses = pgTable("asset_classes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  firmId: text("firm_id").notNull(),
+  name: text("name").notNull(),
+  geometricReturn: decimal("geometric_return", { precision: 7, scale: 4 }).notNull().default("0.07"),
+  arithmeticMean: decimal("arithmetic_mean", { precision: 7, scale: 4 }).notNull().default("0.085"),
+  volatility: decimal("volatility", { precision: 7, scale: 4 }).notNull().default("0.15"),
+  pctOrdinaryIncome: decimal("pct_ordinary_income", { precision: 5, scale: 4 }).notNull().default("0"),
+  pctLtCapitalGains: decimal("pct_lt_capital_gains", { precision: 5, scale: 4 }).notNull().default("0.85"),
+  pctQualifiedDividends: decimal("pct_qualified_dividends", { precision: 5, scale: 4 }).notNull().default("0.15"),
+  pctTaxExempt: decimal("pct_tax_exempt", { precision: 5, scale: 4 }).notNull().default("0"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const modelPortfolios = pgTable("model_portfolios", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  firmId: text("firm_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const modelPortfolioAllocations = pgTable("model_portfolio_allocations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  modelPortfolioId: uuid("model_portfolio_id")
+    .notNull()
+    .references(() => modelPortfolios.id, { onDelete: "cascade" }),
+  assetClassId: uuid("asset_class_id")
+    .notNull()
+    .references(() => assetClasses.id, { onDelete: "cascade" }),
+  weight: decimal("weight", { precision: 5, scale: 4 }).notNull(),
+});
+
+export const clientCmaOverrides = pgTable("client_cma_overrides", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  sourceAssetClassId: uuid("source_asset_class_id")
+    .references(() => assetClasses.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  geometricReturn: decimal("geometric_return", { precision: 7, scale: 4 }).notNull(),
+  arithmeticMean: decimal("arithmetic_mean", { precision: 7, scale: 4 }).notNull(),
+  volatility: decimal("volatility", { precision: 7, scale: 4 }).notNull(),
+  pctOrdinaryIncome: decimal("pct_ordinary_income", { precision: 5, scale: 4 }).notNull(),
+  pctLtCapitalGains: decimal("pct_lt_capital_gains", { precision: 5, scale: 4 }).notNull(),
+  pctQualifiedDividends: decimal("pct_qualified_dividends", { precision: 5, scale: 4 }).notNull(),
+  pctTaxExempt: decimal("pct_tax_exempt", { precision: 5, scale: 4 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const accounts = pgTable("accounts", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
@@ -239,6 +318,15 @@ export const accounts = pgTable("accounts", {
   ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
     onDelete: "set null",
   }),
+  growthSource: growthSourceEnum("growth_source").notNull().default("default"),
+  modelPortfolioId: uuid("model_portfolio_id").references(() => modelPortfolios.id, {
+    onDelete: "set null",
+  }),
+  turnoverPct: decimal("turnover_pct", { precision: 5, scale: 4 }).notNull().default("0"),
+  overridePctOi: decimal("override_pct_oi", { precision: 5, scale: 4 }),
+  overridePctLtCg: decimal("override_pct_lt_cg", { precision: 5, scale: 4 }),
+  overridePctQdiv: decimal("override_pct_qdiv", { precision: 5, scale: 4 }),
+  overridePctTaxExempt: decimal("override_pct_tax_exempt", { precision: 5, scale: 4 }),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -280,6 +368,7 @@ export const incomes = pgTable("incomes", {
   cashAccountId: uuid("cash_account_id").references(() => accounts.id, {
     onDelete: "set null",
   }),
+  taxType: incomeTaxTypeEnum("tax_type"),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
