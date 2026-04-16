@@ -81,6 +81,7 @@ export default function AssumptionsClient({
             clientId={clientId}
             flatFederalRate={settings.flatFederalRate}
             flatStateRate={settings.flatStateRate}
+            initialMode={settings.taxEngineMode}
           />
         )}
         {activeTab === "growth-inflation" && (

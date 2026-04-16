@@ -7,15 +7,17 @@ interface TaxRatesFormProps {
   clientId: string;
   flatFederalRate: string;
   flatStateRate: string;
+  initialMode?: "flat" | "bracket";
 }
 
 const pct = (v: string) => (Number(v) * 100).toFixed(2);
 
-export default function TaxRatesForm({ clientId, flatFederalRate, flatStateRate }: TaxRatesFormProps) {
+export default function TaxRatesForm({ clientId, flatFederalRate, flatStateRate, initialMode = "flat" }: TaxRatesFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [mode, setMode] = useState<"flat" | "bracket">(initialMode);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -26,10 +28,14 @@ export default function TaxRatesForm({ clientId, flatFederalRate, flatStateRate 
     const data = new FormData(e.currentTarget);
     const toDec = (name: string) => String(Number(data.get(name) as string) / 100);
 
-    const body = {
-      flatFederalRate: toDec("flatFederalRate"),
+    const body: Record<string, string | undefined> = {
       flatStateRate: toDec("flatStateRate"),
+      taxEngineMode: mode,
     };
+
+    if (mode === "flat") {
+      body.flatFederalRate = toDec("flatFederalRate");
+    }
 
     try {
       const res = await fetch(`/api/clients/${clientId}/plan-settings`, {
@@ -60,14 +66,39 @@ export default function TaxRatesForm({ clientId, flatFederalRate, flatStateRate 
         <p className="mt-1 text-xs text-gray-500">Flat rates applied across the projection.</p>
       </header>
 
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-gray-400" htmlFor="flatFederalRate">Federal rate</label>
-          <div className="relative mt-1">
-            <input id="flatFederalRate" name="flatFederalRate" type="number" step="0.01" min={0} max={50} defaultValue={pct(flatFederalRate)} className="block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 pr-8 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-            <span className="absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
-          </div>
+      <div className="mb-4">
+        <label className="block text-xs font-medium text-gray-400 mb-2">Tax calculation method</label>
+        <div className="inline-flex rounded-md bg-gray-800 p-1">
+          <button
+            type="button"
+            onClick={() => setMode("flat")}
+            className={`px-3 py-1.5 text-sm rounded ${mode === "flat" ? "bg-gray-700 text-white" : "text-gray-400"}`}
+          >
+            Flat rate
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("bracket")}
+            className={`px-3 py-1.5 text-sm rounded ${mode === "bracket" ? "bg-gray-700 text-white" : "text-gray-400"}`}
+          >
+            Bracket-based
+          </button>
         </div>
+        <p className="mt-1 text-xs text-gray-500">
+          Bracket mode uses progressive federal brackets, AMT, NIIT, and FICA based on filing status. Flat mode multiplies taxable income by your federal rate.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        {mode === "flat" && (
+          <div>
+            <label className="block text-xs font-medium text-gray-400" htmlFor="flatFederalRate">Federal rate</label>
+            <div className="relative mt-1">
+              <input id="flatFederalRate" name="flatFederalRate" type="number" step="0.01" min={0} max={50} defaultValue={pct(flatFederalRate)} className="block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 pr-8 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <span className="absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
+            </div>
+          </div>
+        )}
         <div>
           <label className="block text-xs font-medium text-gray-400" htmlFor="flatStateRate">State rate</label>
           <div className="relative mt-1">
