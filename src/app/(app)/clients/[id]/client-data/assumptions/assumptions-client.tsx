@@ -27,6 +27,9 @@ export interface AssumptionsSettings {
   modelPortfolioIdTaxable?: string | null;
   modelPortfolioIdCash?: string | null;
   modelPortfolioIdRetirement?: string | null;
+  taxEngineMode: "flat" | "bracket";
+  taxInflationRate: string;
+  ssWageGrowthRate: string;
 }
 
 interface ModelPortfolioOption {
@@ -78,6 +81,7 @@ export default function AssumptionsClient({
             clientId={clientId}
             flatFederalRate={settings.flatFederalRate}
             flatStateRate={settings.flatStateRate}
+            initialMode={settings.taxEngineMode}
           />
         )}
         {activeTab === "growth-inflation" && (
@@ -97,6 +101,8 @@ export default function AssumptionsClient({
             modelPortfolioIdCash={settings.modelPortfolioIdCash}
             modelPortfolioIdRetirement={settings.modelPortfolioIdRetirement}
             modelPortfolios={modelPortfolios}
+            taxInflationRate={settings.taxInflationRate}
+            ssWageGrowthRate={settings.ssWageGrowthRate}
           />
         )}
         {activeTab === "withdrawal" && (

@@ -1,0 +1,1122 @@
+[
+  {
+    "year": 2022,
+    "incomeBrackets": {
+      "married_joint": [
+        {
+          "from": 0,
+          "to": 20550,
+          "rate": 0.1
+        },
+        {
+          "from": 20550,
+          "to": 83550,
+          "rate": 0.12
+        },
+        {
+          "from": 83550,
+          "to": 178150,
+          "rate": 0.22
+        },
+        {
+          "from": 178150,
+          "to": 340100,
+          "rate": 0.24
+        },
+        {
+          "from": 340100,
+          "to": 431900,
+          "rate": 0.32
+        },
+        {
+          "from": 431900,
+          "to": 647850,
+          "rate": 0.35
+        },
+        {
+          "from": 647850,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "single": [
+        {
+          "from": 0,
+          "to": 10275,
+          "rate": 0.1
+        },
+        {
+          "from": 10275,
+          "to": 41775,
+          "rate": 0.12
+        },
+        {
+          "from": 41775,
+          "to": 89075,
+          "rate": 0.22
+        },
+        {
+          "from": 89075,
+          "to": 170050,
+          "rate": 0.24
+        },
+        {
+          "from": 170050,
+          "to": 215950,
+          "rate": 0.32
+        },
+        {
+          "from": 215950,
+          "to": 539900,
+          "rate": 0.35
+        },
+        {
+          "from": 539900,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "head_of_household": [
+        {
+          "from": 0,
+          "to": 14650,
+          "rate": 0.1
+        },
+        {
+          "from": 14650,
+          "to": 55900,
+          "rate": 0.12
+        },
+        {
+          "from": 55900,
+          "to": 89050,
+          "rate": 0.22
+        },
+        {
+          "from": 89050,
+          "to": 170050,
+          "rate": 0.24
+        },
+        {
+          "from": 170050,
+          "to": 215950,
+          "rate": 0.32
+        },
+        {
+          "from": 215950,
+          "to": 539900,
+          "rate": 0.35
+        },
+        {
+          "from": 539900,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "married_separate": [
+        {
+          "from": 0,
+          "to": 10275,
+          "rate": 0.1
+        },
+        {
+          "from": 10275,
+          "to": 41775,
+          "rate": 0.12
+        },
+        {
+          "from": 41775,
+          "to": 89075,
+          "rate": 0.22
+        },
+        {
+          "from": 89075,
+          "to": 170050,
+          "rate": 0.24
+        },
+        {
+          "from": 170050,
+          "to": 215950,
+          "rate": 0.32
+        },
+        {
+          "from": 215950,
+          "to": 323925,
+          "rate": 0.35
+        },
+        {
+          "from": 323925,
+          "to": null,
+          "rate": 0.37
+        }
+      ]
+    },
+    "capGainsBrackets": {
+      "married_joint": {
+        "zeroPctTop": 83350,
+        "fifteenPctTop": 517200
+      },
+      "single": {
+        "zeroPctTop": 41675,
+        "fifteenPctTop": 459750
+      },
+      "head_of_household": {
+        "zeroPctTop": 55800,
+        "fifteenPctTop": 488500
+      },
+      "married_separate": {
+        "zeroPctTop": 41675,
+        "fifteenPctTop": 258600
+      }
+    },
+    "stdDeduction": {
+      "married_joint": 25900,
+      "single": 12950,
+      "head_of_household": 19400,
+      "married_separate": 12950
+    },
+    "amtExemption": {
+      "mfj": 118100,
+      "singleHoh": 75900,
+      "mfs": 59050
+    },
+    "amtBreakpoint2628": {
+      "mfjShoh": 206100,
+      "mfs": 103050
+    },
+    "amtPhaseoutStart": {
+      "mfj": 1079800,
+      "singleHoh": 539900,
+      "mfs": 539900
+    },
+    "ssTaxRate": 0.062,
+    "ssWageBase": 147000,
+    "medicareTaxRate": 0.0145,
+    "addlMedicareRate": 0.009,
+    "addlMedicareThreshold": {
+      "mfj": 250000,
+      "single": 200000,
+      "mfs": 125000
+    },
+    "niitRate": 0.038,
+    "niitThreshold": {
+      "mfj": 250000,
+      "single": 200000,
+      "mfs": 125000
+    },
+    "qbi": {
+      "thresholdMfj": 340100,
+      "thresholdSingleHohMfs": 170050,
+      "phaseInRangeMfj": 100000,
+      "phaseInRangeOther": 50000
+    },
+    "contribLimits": {
+      "ira401kElective": 20500,
+      "ira401kCatchup50": 6500,
+      "ira401kCatchup6063": null,
+      "iraTradLimit": 6000,
+      "iraCatchup50": 1000,
+      "simpleLimitRegular": 14000,
+      "simpleCatchup50": 3000,
+      "hsaLimitSelf": 3650,
+      "hsaLimitFamily": 7300,
+      "hsaCatchup55": 1000
+    }
+  },
+  {
+    "year": 2023,
+    "incomeBrackets": {
+      "married_joint": [
+        {
+          "from": 0,
+          "to": 22000,
+          "rate": 0.1
+        },
+        {
+          "from": 22000,
+          "to": 89450,
+          "rate": 0.12
+        },
+        {
+          "from": 89450,
+          "to": 190750,
+          "rate": 0.22
+        },
+        {
+          "from": 190750,
+          "to": 364200,
+          "rate": 0.24
+        },
+        {
+          "from": 364200,
+          "to": 462500,
+          "rate": 0.32
+        },
+        {
+          "from": 462500,
+          "to": 693750,
+          "rate": 0.35
+        },
+        {
+          "from": 693750,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "single": [
+        {
+          "from": 0,
+          "to": 11000,
+          "rate": 0.1
+        },
+        {
+          "from": 11000,
+          "to": 44725,
+          "rate": 0.12
+        },
+        {
+          "from": 44725,
+          "to": 95375,
+          "rate": 0.22
+        },
+        {
+          "from": 95375,
+          "to": 182100,
+          "rate": 0.24
+        },
+        {
+          "from": 182100,
+          "to": 231250,
+          "rate": 0.32
+        },
+        {
+          "from": 231250,
+          "to": 578125,
+          "rate": 0.35
+        },
+        {
+          "from": 578125,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "head_of_household": [
+        {
+          "from": 0,
+          "to": 15700,
+          "rate": 0.1
+        },
+        {
+          "from": 15700,
+          "to": 59850,
+          "rate": 0.12
+        },
+        {
+          "from": 59850,
+          "to": 95350,
+          "rate": 0.22
+        },
+        {
+          "from": 95350,
+          "to": 182100,
+          "rate": 0.24
+        },
+        {
+          "from": 182100,
+          "to": 231250,
+          "rate": 0.32
+        },
+        {
+          "from": 231250,
+          "to": 578100,
+          "rate": 0.35
+        },
+        {
+          "from": 578100,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "married_separate": [
+        {
+          "from": 0,
+          "to": 11000,
+          "rate": 0.1
+        },
+        {
+          "from": 11000,
+          "to": 44725,
+          "rate": 0.12
+        },
+        {
+          "from": 44725,
+          "to": 95375,
+          "rate": 0.22
+        },
+        {
+          "from": 95375,
+          "to": 182100,
+          "rate": 0.24
+        },
+        {
+          "from": 182100,
+          "to": 231250,
+          "rate": 0.32
+        },
+        {
+          "from": 231250,
+          "to": 346875,
+          "rate": 0.35
+        },
+        {
+          "from": 346875,
+          "to": null,
+          "rate": 0.37
+        }
+      ]
+    },
+    "capGainsBrackets": {
+      "married_joint": {
+        "zeroPctTop": 89250,
+        "fifteenPctTop": 553850
+      },
+      "single": {
+        "zeroPctTop": 44625,
+        "fifteenPctTop": 492300
+      },
+      "head_of_household": {
+        "zeroPctTop": 59750,
+        "fifteenPctTop": 523050
+      },
+      "married_separate": {
+        "zeroPctTop": 44625,
+        "fifteenPctTop": 276900
+      }
+    },
+    "stdDeduction": {
+      "married_joint": 27700,
+      "single": 13850,
+      "head_of_household": 20800,
+      "married_separate": 13850
+    },
+    "amtExemption": {
+      "mfj": 126500,
+      "singleHoh": 81300,
+      "mfs": 63250
+    },
+    "amtBreakpoint2628": {
+      "mfjShoh": 220700,
+      "mfs": 110350
+    },
+    "amtPhaseoutStart": {
+      "mfj": 1156300,
+      "singleHoh": 578150,
+      "mfs": 578150
+    },
+    "ssTaxRate": 0.062,
+    "ssWageBase": 160200,
+    "medicareTaxRate": 0.0145,
+    "addlMedicareRate": 0.009,
+    "addlMedicareThreshold": {
+      "mfj": 250000,
+      "single": 200000,
+      "mfs": 125000
+    },
+    "niitRate": 0.038,
+    "niitThreshold": {
+      "mfj": 250000,
+      "single": 200000,
+      "mfs": 125000
+    },
+    "qbi": {
+      "thresholdMfj": 364200,
+      "thresholdSingleHohMfs": 182100,
+      "phaseInRangeMfj": 100000,
+      "phaseInRangeOther": 50000
+    },
+    "contribLimits": {
+      "ira401kElective": 22500,
+      "ira401kCatchup50": 7500,
+      "ira401kCatchup6063": null,
+      "iraTradLimit": 6500,
+      "iraCatchup50": 1000,
+      "simpleLimitRegular": 15500,
+      "simpleCatchup50": 3500,
+      "hsaLimitSelf": 3850,
+      "hsaLimitFamily": 7750,
+      "hsaCatchup55": 1000
+    }
+  },
+  {
+    "year": 2024,
+    "incomeBrackets": {
+      "married_joint": [
+        {
+          "from": 0,
+          "to": 23200,
+          "rate": 0.1
+        },
+        {
+          "from": 23200,
+          "to": 94300,
+          "rate": 0.12
+        },
+        {
+          "from": 94300,
+          "to": 201050,
+          "rate": 0.22
+        },
+        {
+          "from": 201050,
+          "to": 383900,
+          "rate": 0.24
+        },
+        {
+          "from": 383900,
+          "to": 487450,
+          "rate": 0.32
+        },
+        {
+          "from": 487450,
+          "to": 731200,
+          "rate": 0.35
+        },
+        {
+          "from": 731200,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "single": [
+        {
+          "from": 0,
+          "to": 11600,
+          "rate": 0.1
+        },
+        {
+          "from": 11600,
+          "to": 47150,
+          "rate": 0.12
+        },
+        {
+          "from": 47150,
+          "to": 100525,
+          "rate": 0.22
+        },
+        {
+          "from": 100525,
+          "to": 191950,
+          "rate": 0.24
+        },
+        {
+          "from": 191950,
+          "to": 243725,
+          "rate": 0.32
+        },
+        {
+          "from": 243725,
+          "to": 609350,
+          "rate": 0.35
+        },
+        {
+          "from": 609350,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "head_of_household": [
+        {
+          "from": 0,
+          "to": 16550,
+          "rate": 0.1
+        },
+        {
+          "from": 16550,
+          "to": 63100,
+          "rate": 0.12
+        },
+        {
+          "from": 63100,
+          "to": 100500,
+          "rate": 0.22
+        },
+        {
+          "from": 100500,
+          "to": 191950,
+          "rate": 0.24
+        },
+        {
+          "from": 191950,
+          "to": 243700,
+          "rate": 0.32
+        },
+        {
+          "from": 243700,
+          "to": 609350,
+          "rate": 0.35
+        },
+        {
+          "from": 609350,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "married_separate": [
+        {
+          "from": 0,
+          "to": 11600,
+          "rate": 0.1
+        },
+        {
+          "from": 11600,
+          "to": 47150,
+          "rate": 0.12
+        },
+        {
+          "from": 47150,
+          "to": 100525,
+          "rate": 0.22
+        },
+        {
+          "from": 100525,
+          "to": 191950,
+          "rate": 0.24
+        },
+        {
+          "from": 191950,
+          "to": 243725,
+          "rate": 0.32
+        },
+        {
+          "from": 243725,
+          "to": 365600,
+          "rate": 0.35
+        },
+        {
+          "from": 365600,
+          "to": null,
+          "rate": 0.37
+        }
+      ]
+    },
+    "capGainsBrackets": {
+      "married_joint": {
+        "zeroPctTop": 94050,
+        "fifteenPctTop": 583750
+      },
+      "single": {
+        "zeroPctTop": 47025,
+        "fifteenPctTop": 518900
+      },
+      "head_of_household": {
+        "zeroPctTop": 63000,
+        "fifteenPctTop": 551350
+      },
+      "married_separate": {
+        "zeroPctTop": 47025,
+        "fifteenPctTop": 291850
+      }
+    },
+    "stdDeduction": {
+      "married_joint": 29200,
+      "single": 14600,
+      "head_of_household": 21900,
+      "married_separate": 14600
+    },
+    "amtExemption": {
+      "mfj": 133300,
+      "singleHoh": 85700,
+      "mfs": 66650
+    },
+    "amtBreakpoint2628": {
+      "mfjShoh": 232600,
+      "mfs": 116300
+    },
+    "amtPhaseoutStart": {
+      "mfj": 1218700,
+      "singleHoh": 609350,
+      "mfs": 609350
+    },
+    "ssTaxRate": 0.062,
+    "ssWageBase": 168600,
+    "medicareTaxRate": 0.0145,
+    "addlMedicareRate": 0.009,
+    "addlMedicareThreshold": {
+      "mfj": 250000,
+      "single": 200000,
+      "mfs": 125000
+    },
+    "niitRate": 0.038,
+    "niitThreshold": {
+      "mfj": 250000,
+      "single": 200000,
+      "mfs": 125000
+    },
+    "qbi": {
+      "thresholdMfj": 383900,
+      "thresholdSingleHohMfs": 191950,
+      "phaseInRangeMfj": 100000,
+      "phaseInRangeOther": 50000
+    },
+    "contribLimits": {
+      "ira401kElective": 23000,
+      "ira401kCatchup50": 7500,
+      "ira401kCatchup6063": null,
+      "iraTradLimit": 7000,
+      "iraCatchup50": 1000,
+      "simpleLimitRegular": 16000,
+      "simpleCatchup50": 3500,
+      "hsaLimitSelf": 4150,
+      "hsaLimitFamily": 8300,
+      "hsaCatchup55": 1000
+    }
+  },
+  {
+    "year": 2025,
+    "incomeBrackets": {
+      "married_joint": [
+        {
+          "from": 0,
+          "to": 23850,
+          "rate": 0.1
+        },
+        {
+          "from": 23850,
+          "to": 96950,
+          "rate": 0.12
+        },
+        {
+          "from": 96950,
+          "to": 206700,
+          "rate": 0.22
+        },
+        {
+          "from": 206700,
+          "to": 394600,
+          "rate": 0.24
+        },
+        {
+          "from": 394600,
+          "to": 501050,
+          "rate": 0.32
+        },
+        {
+          "from": 501050,
+          "to": 751600,
+          "rate": 0.35
+        },
+        {
+          "from": 751600,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "single": [
+        {
+          "from": 0,
+          "to": 11925,
+          "rate": 0.1
+        },
+        {
+          "from": 11925,
+          "to": 48475,
+          "rate": 0.12
+        },
+        {
+          "from": 48475,
+          "to": 103350,
+          "rate": 0.22
+        },
+        {
+          "from": 103350,
+          "to": 197300,
+          "rate": 0.24
+        },
+        {
+          "from": 197300,
+          "to": 250525,
+          "rate": 0.32
+        },
+        {
+          "from": 250525,
+          "to": 626350,
+          "rate": 0.35
+        },
+        {
+          "from": 626350,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "head_of_household": [
+        {
+          "from": 0,
+          "to": 17000,
+          "rate": 0.1
+        },
+        {
+          "from": 17000,
+          "to": 64850,
+          "rate": 0.12
+        },
+        {
+          "from": 64850,
+          "to": 103350,
+          "rate": 0.22
+        },
+        {
+          "from": 103350,
+          "to": 197300,
+          "rate": 0.24
+        },
+        {
+          "from": 197300,
+          "to": 250500,
+          "rate": 0.32
+        },
+        {
+          "from": 250500,
+          "to": 626350,
+          "rate": 0.35
+        },
+        {
+          "from": 626350,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "married_separate": [
+        {
+          "from": 0,
+          "to": 11925,
+          "rate": 0.1
+        },
+        {
+          "from": 11925,
+          "to": 48475,
+          "rate": 0.12
+        },
+        {
+          "from": 48475,
+          "to": 103350,
+          "rate": 0.22
+        },
+        {
+          "from": 103350,
+          "to": 197300,
+          "rate": 0.24
+        },
+        {
+          "from": 197300,
+          "to": 250525,
+          "rate": 0.32
+        },
+        {
+          "from": 250525,
+          "to": 375800,
+          "rate": 0.35
+        },
+        {
+          "from": 375800,
+          "to": null,
+          "rate": 0.37
+        }
+      ]
+    },
+    "capGainsBrackets": {
+      "married_joint": {
+        "zeroPctTop": 96700,
+        "fifteenPctTop": 600050
+      },
+      "single": {
+        "zeroPctTop": 48350,
+        "fifteenPctTop": 533400
+      },
+      "head_of_household": {
+        "zeroPctTop": 64750,
+        "fifteenPctTop": 566700
+      },
+      "married_separate": {
+        "zeroPctTop": 48350,
+        "fifteenPctTop": 300000
+      }
+    },
+    "stdDeduction": {
+      "married_joint": 31500,
+      "single": 15750,
+      "head_of_household": 23625,
+      "married_separate": 15750
+    },
+    "amtExemption": {
+      "mfj": 137000,
+      "singleHoh": 88100,
+      "mfs": 68500
+    },
+    "amtBreakpoint2628": {
+      "mfjShoh": 239100,
+      "mfs": 119550
+    },
+    "amtPhaseoutStart": {
+      "mfj": 1252700,
+      "singleHoh": 626350,
+      "mfs": 626350
+    },
+    "ssTaxRate": 0.062,
+    "ssWageBase": 176100,
+    "medicareTaxRate": 0.0145,
+    "addlMedicareRate": 0.009,
+    "addlMedicareThreshold": {
+      "mfj": 250000,
+      "single": 200000,
+      "mfs": 125000
+    },
+    "niitRate": 0.038,
+    "niitThreshold": {
+      "mfj": 250000,
+      "single": 200000,
+      "mfs": 125000
+    },
+    "qbi": {
+      "thresholdMfj": 394600,
+      "thresholdSingleHohMfs": 197300,
+      "phaseInRangeMfj": 100000,
+      "phaseInRangeOther": 50000
+    },
+    "contribLimits": {
+      "ira401kElective": 23500,
+      "ira401kCatchup50": 7500,
+      "ira401kCatchup6063": 11250,
+      "iraTradLimit": 7000,
+      "iraCatchup50": 1000,
+      "simpleLimitRegular": 16500,
+      "simpleCatchup50": 3500,
+      "hsaLimitSelf": 4300,
+      "hsaLimitFamily": 8550,
+      "hsaCatchup55": 1000
+    }
+  },
+  {
+    "year": 2026,
+    "incomeBrackets": {
+      "married_joint": [
+        {
+          "from": 0,
+          "to": 24800,
+          "rate": 0.1
+        },
+        {
+          "from": 24800,
+          "to": 100800,
+          "rate": 0.12
+        },
+        {
+          "from": 100800,
+          "to": 211950,
+          "rate": 0.22
+        },
+        {
+          "from": 211950,
+          "to": 405000,
+          "rate": 0.24
+        },
+        {
+          "from": 405000,
+          "to": 510400,
+          "rate": 0.32
+        },
+        {
+          "from": 510400,
+          "to": 768700,
+          "rate": 0.35
+        },
+        {
+          "from": 768700,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "single": [
+        {
+          "from": 0,
+          "to": 12400,
+          "rate": 0.1
+        },
+        {
+          "from": 12400,
+          "to": 50400,
+          "rate": 0.12
+        },
+        {
+          "from": 50400,
+          "to": 105700,
+          "rate": 0.22
+        },
+        {
+          "from": 105700,
+          "to": 201775,
+          "rate": 0.24
+        },
+        {
+          "from": 201775,
+          "to": 255350,
+          "rate": 0.32
+        },
+        {
+          "from": 255350,
+          "to": 640600,
+          "rate": 0.35
+        },
+        {
+          "from": 640600,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "head_of_household": [
+        {
+          "from": 0,
+          "to": 17700,
+          "rate": 0.1
+        },
+        {
+          "from": 17700,
+          "to": 67450,
+          "rate": 0.12
+        },
+        {
+          "from": 67450,
+          "to": 105700,
+          "rate": 0.22
+        },
+        {
+          "from": 105700,
+          "to": 201750,
+          "rate": 0.24
+        },
+        {
+          "from": 201750,
+          "to": 256200,
+          "rate": 0.32
+        },
+        {
+          "from": 256200,
+          "to": 640600,
+          "rate": 0.35
+        },
+        {
+          "from": 640600,
+          "to": null,
+          "rate": 0.37
+        }
+      ],
+      "married_separate": [
+        {
+          "from": 0,
+          "to": 12400,
+          "rate": 0.1
+        },
+        {
+          "from": 12400,
+          "to": 50400,
+          "rate": 0.12
+        },
+        {
+          "from": 50400,
+          "to": 105875,
+          "rate": 0.22
+        },
+        {
+          "from": 105875,
+          "to": 201775,
+          "rate": 0.24
+        },
+        {
+          "from": 201775,
+          "to": 255350,
+          "rate": 0.32
+        },
+        {
+          "from": 255350,
+          "to": 384350,
+          "rate": 0.35
+        },
+        {
+          "from": 384350,
+          "to": null,
+          "rate": 0.37
+        }
+      ]
+    },
+    "capGainsBrackets": {
+      "married_joint": {
+        "zeroPctTop": 99200,
+        "fifteenPctTop": 615900
+      },
+      "single": {
+        "zeroPctTop": 49600,
+        "fifteenPctTop": 547500
+      },
+      "head_of_household": {
+        "zeroPctTop": 66450,
+        "fifteenPctTop": 581550
+      },
+      "married_separate": {
+        "zeroPctTop": 49600,
+        "fifteenPctTop": 307950
+      }
+    },
+    "stdDeduction": {
+      "married_joint": 32200,
+      "single": 16100,
+      "head_of_household": 24150,
+      "married_separate": 16100
+    },
+    "amtExemption": {
+      "mfj": 140200,
+      "singleHoh": 90100,
+      "mfs": 70100
+    },
+    "amtBreakpoint2628": {
+      "mfjShoh": 244500,
+      "mfs": 122250
+    },
+    "amtPhaseoutStart": {
+      "mfj": 1000000,
+      "singleHoh": 500000,
+      "mfs": 500000
+    },
+    "ssTaxRate": 0.062,
+    "ssWageBase": 184500,
+    "medicareTaxRate": 0.0145,
+    "addlMedicareRate": 0.009,
+    "addlMedicareThreshold": {
+      "mfj": 250000,
+      "single": 200000,
+      "mfs": 125000
+    },
+    "niitRate": 0.038,
+    "niitThreshold": {
+      "mfj": 250000,
+      "single": 200000,
+      "mfs": 125000
+    },
+    "qbi": {
+      "thresholdMfj": 405000,
+      "thresholdSingleHohMfs": 201775,
+      "phaseInRangeMfj": 150000,
+      "phaseInRangeOther": 75000
+    },
+    "contribLimits": {
+      "ira401kElective": 24500,
+      "ira401kCatchup50": 8000,
+      "ira401kCatchup6063": 11250,
+      "iraTradLimit": 7500,
+      "iraCatchup50": 1100,
+      "simpleLimitRegular": 17000,
+      "simpleCatchup50": 4000,
+      "hsaLimitSelf": 4400,
+      "hsaLimitFamily": 8750,
+      "hsaCatchup55": 1000
+    }
+  }
+]

@@ -106,6 +106,20 @@
       "when": 1744855200000,
       "tag": "0014_cma_unique_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1776353901315,
+      "tag": "0015_tax_year_parameters",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1776354132101,
+      "tag": "0016_plan_settings_tax_assumptions",
+      "breakpoints": true
     }
   ]
 }

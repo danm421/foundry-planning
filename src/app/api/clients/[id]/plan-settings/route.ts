@@ -72,6 +72,9 @@ export async function PUT(
       flatFederalRate,
       flatStateRate,
       inflationRate,
+      taxEngineMode,
+      taxInflationRate,
+      ssWageGrowthRate,
       planStartYear,
       planEndYear,
       defaultGrowthTaxable,
@@ -88,12 +91,29 @@ export async function PUT(
       modelPortfolioIdRetirement,
     } = body;
 
+    if (typeof planStartYear === "number") {
+      const currentYear = new Date().getFullYear();
+      if (planStartYear < currentYear) {
+        return NextResponse.json(
+          { error: `Plan start year cannot be before current year (${currentYear})` },
+          { status: 400 }
+        );
+      }
+    }
+
     const [updated] = await db
       .update(planSettings)
       .set({
         flatFederalRate: flatFederalRate != null ? String(flatFederalRate) : undefined,
         flatStateRate: flatStateRate != null ? String(flatStateRate) : undefined,
         inflationRate: inflationRate != null ? String(inflationRate) : undefined,
+        taxEngineMode: taxEngineMode != null ? taxEngineMode : undefined,
+        taxInflationRate: "taxInflationRate" in body
+          ? (taxInflationRate === null ? null : String(taxInflationRate))
+          : undefined,
+        ssWageGrowthRate: "ssWageGrowthRate" in body
+          ? (ssWageGrowthRate === null ? null : String(ssWageGrowthRate))
+          : undefined,
         planStartYear: planStartYear != null ? Number(planStartYear) : undefined,
         planEndYear: planEndYear != null ? Number(planEndYear) : undefined,
         defaultGrowthTaxable: defaultGrowthTaxable != null ? String(defaultGrowthTaxable) : undefined,
