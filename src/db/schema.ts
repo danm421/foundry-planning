@@ -9,6 +9,7 @@ import {
   timestamp,
   pgEnum,
   unique,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -127,6 +128,11 @@ export const incomeTaxTypeEnum = pgEnum("income_tax_type", [
   "stcg",
 ]);
 
+export const taxEngineModeEnum = pgEnum("tax_engine_mode", [
+  "flat",
+  "bracket",
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
@@ -172,6 +178,9 @@ export const planSettings = pgTable("plan_settings", {
   flatStateRate: decimal("flat_state_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.05"),
+  taxEngineMode: taxEngineModeEnum("tax_engine_mode").notNull().default("flat"),
+  taxInflationRate: decimal("tax_inflation_rate", { precision: 5, scale: 4 }),
+  ssWageGrowthRate: decimal("ss_wage_growth_rate", { precision: 5, scale: 4 }),
   inflationRate: decimal("inflation_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.03"),
@@ -631,3 +640,58 @@ export const planSettingsRelations = relations(planSettings, ({ one }) => ({
     references: [scenarios.id],
   }),
 }));
+
+// ── Tax Reference Data ────────────────────────────────────────────────────────
+
+export const taxYearParameters = pgTable("tax_year_parameters", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  year: integer("year").notNull().unique(),
+
+  incomeBrackets: jsonb("income_brackets").notNull(),
+  capGainsBrackets: jsonb("cap_gains_brackets").notNull(),
+
+  stdDeductionMfj: decimal("std_deduction_mfj", { precision: 10, scale: 2 }).notNull(),
+  stdDeductionSingle: decimal("std_deduction_single", { precision: 10, scale: 2 }).notNull(),
+  stdDeductionHoh: decimal("std_deduction_hoh", { precision: 10, scale: 2 }).notNull(),
+  stdDeductionMfs: decimal("std_deduction_mfs", { precision: 10, scale: 2 }).notNull(),
+
+  amtExemptionMfj: decimal("amt_exemption_mfj", { precision: 12, scale: 2 }).notNull(),
+  amtExemptionSingleHoh: decimal("amt_exemption_single_hoh", { precision: 12, scale: 2 }).notNull(),
+  amtExemptionMfs: decimal("amt_exemption_mfs", { precision: 12, scale: 2 }).notNull(),
+  amtBreakpoint2628MfjShoh: decimal("amt_breakpoint_2628_mfj_shoh", { precision: 12, scale: 2 }).notNull(),
+  amtBreakpoint2628Mfs: decimal("amt_breakpoint_2628_mfs", { precision: 12, scale: 2 }).notNull(),
+  amtPhaseoutStartMfj: decimal("amt_phaseout_start_mfj", { precision: 12, scale: 2 }).notNull(),
+  amtPhaseoutStartSingleHoh: decimal("amt_phaseout_start_single_hoh", { precision: 12, scale: 2 }).notNull(),
+  amtPhaseoutStartMfs: decimal("amt_phaseout_start_mfs", { precision: 12, scale: 2 }).notNull(),
+
+  ssTaxRate: decimal("ss_tax_rate", { precision: 5, scale: 4 }).notNull(),
+  ssWageBase: decimal("ss_wage_base", { precision: 12, scale: 2 }).notNull(),
+  medicareTaxRate: decimal("medicare_tax_rate", { precision: 5, scale: 4 }).notNull(),
+  addlMedicareRate: decimal("addl_medicare_rate", { precision: 5, scale: 4 }).notNull(),
+  addlMedicareThresholdMfj: decimal("addl_medicare_threshold_mfj", { precision: 12, scale: 2 }).notNull(),
+  addlMedicareThresholdSingle: decimal("addl_medicare_threshold_single", { precision: 12, scale: 2 }).notNull(),
+  addlMedicareThresholdMfs: decimal("addl_medicare_threshold_mfs", { precision: 12, scale: 2 }).notNull(),
+
+  niitRate: decimal("niit_rate", { precision: 5, scale: 4 }).notNull(),
+  niitThresholdMfj: decimal("niit_threshold_mfj", { precision: 12, scale: 2 }).notNull(),
+  niitThresholdSingle: decimal("niit_threshold_single", { precision: 12, scale: 2 }).notNull(),
+  niitThresholdMfs: decimal("niit_threshold_mfs", { precision: 12, scale: 2 }).notNull(),
+
+  qbiThresholdMfj: decimal("qbi_threshold_mfj", { precision: 12, scale: 2 }).notNull(),
+  qbiThresholdSingleHohMfs: decimal("qbi_threshold_single_hoh_mfs", { precision: 12, scale: 2 }).notNull(),
+  qbiPhaseInRangeMfj: decimal("qbi_phase_in_range_mfj", { precision: 12, scale: 2 }).notNull(),
+  qbiPhaseInRangeOther: decimal("qbi_phase_in_range_other", { precision: 12, scale: 2 }).notNull(),
+
+  ira401kElective: decimal("ira_401k_elective", { precision: 10, scale: 2 }).notNull(),
+  ira401kCatchup50: decimal("ira_401k_catchup_50", { precision: 10, scale: 2 }).notNull(),
+  ira401kCatchup6063: decimal("ira_401k_catchup_60_63", { precision: 10, scale: 2 }),
+  iraTradLimit: decimal("ira_trad_limit", { precision: 10, scale: 2 }).notNull(),
+  iraCatchup50: decimal("ira_catchup_50", { precision: 10, scale: 2 }).notNull(),
+  simpleLimitRegular: decimal("simple_limit_regular", { precision: 10, scale: 2 }).notNull(),
+  simpleCatchup50: decimal("simple_catchup_50", { precision: 10, scale: 2 }).notNull(),
+  hsaLimitSelf: decimal("hsa_limit_self", { precision: 10, scale: 2 }).notNull(),
+  hsaLimitFamily: decimal("hsa_limit_family", { precision: 10, scale: 2 }).notNull(),
+  hsaCatchup55: decimal("hsa_catchup_55", { precision: 10, scale: 2 }).notNull(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
