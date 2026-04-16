@@ -80,6 +80,12 @@ export async function PUT(
       defaultGrowthRealEstate,
       defaultGrowthBusiness,
       defaultGrowthLifeInsurance,
+      growthSourceTaxable,
+      growthSourceCash,
+      growthSourceRetirement,
+      modelPortfolioIdTaxable,
+      modelPortfolioIdCash,
+      modelPortfolioIdRetirement,
     } = body;
 
     const [updated] = await db
@@ -96,6 +102,12 @@ export async function PUT(
         defaultGrowthRealEstate: defaultGrowthRealEstate != null ? String(defaultGrowthRealEstate) : undefined,
         defaultGrowthBusiness: defaultGrowthBusiness != null ? String(defaultGrowthBusiness) : undefined,
         defaultGrowthLifeInsurance: defaultGrowthLifeInsurance != null ? String(defaultGrowthLifeInsurance) : undefined,
+        growthSourceTaxable: growthSourceTaxable ?? undefined,
+        growthSourceCash: growthSourceCash ?? undefined,
+        growthSourceRetirement: growthSourceRetirement ?? undefined,
+        modelPortfolioIdTaxable: modelPortfolioIdTaxable !== undefined ? modelPortfolioIdTaxable : undefined,
+        modelPortfolioIdCash: modelPortfolioIdCash !== undefined ? modelPortfolioIdCash : undefined,
+        modelPortfolioIdRetirement: modelPortfolioIdRetirement !== undefined ? modelPortfolioIdRetirement : undefined,
         updatedAt: new Date(),
       })
       .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenarioId)))

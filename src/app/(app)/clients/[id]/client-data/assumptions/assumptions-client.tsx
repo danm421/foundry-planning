@@ -21,6 +21,18 @@ export interface AssumptionsSettings {
   defaultGrowthRealEstate: string;
   defaultGrowthBusiness: string;
   defaultGrowthLifeInsurance: string;
+  growthSourceTaxable?: string;
+  growthSourceCash?: string;
+  growthSourceRetirement?: string;
+  modelPortfolioIdTaxable?: string | null;
+  modelPortfolioIdCash?: string | null;
+  modelPortfolioIdRetirement?: string | null;
+}
+
+interface ModelPortfolioOption {
+  id: string;
+  name: string;
+  blendedReturn: number;
 }
 
 interface AssumptionsClientProps {
@@ -29,6 +41,7 @@ interface AssumptionsClientProps {
   accounts: WithdrawalAccount[];
   withdrawalStrategies: WithdrawalStrategy[];
   milestones?: ClientMilestones;
+  modelPortfolios?: ModelPortfolioOption[];
 }
 
 const TABS = [
@@ -44,6 +57,7 @@ export default function AssumptionsClient({
   accounts,
   withdrawalStrategies,
   milestones,
+  modelPortfolios,
 }: AssumptionsClientProps) {
   const [activeTab, setActiveTab] = useState("plan-horizon");
 
@@ -76,6 +90,13 @@ export default function AssumptionsClient({
             defaultGrowthRealEstate={settings.defaultGrowthRealEstate}
             defaultGrowthBusiness={settings.defaultGrowthBusiness}
             defaultGrowthLifeInsurance={settings.defaultGrowthLifeInsurance}
+            growthSourceTaxable={settings.growthSourceTaxable}
+            growthSourceCash={settings.growthSourceCash}
+            growthSourceRetirement={settings.growthSourceRetirement}
+            modelPortfolioIdTaxable={settings.modelPortfolioIdTaxable}
+            modelPortfolioIdCash={settings.modelPortfolioIdCash}
+            modelPortfolioIdRetirement={settings.modelPortfolioIdRetirement}
+            modelPortfolios={modelPortfolios}
           />
         )}
         {activeTab === "withdrawal" && (

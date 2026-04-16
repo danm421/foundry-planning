@@ -6,6 +6,9 @@ import {
   planSettings,
   accounts,
   withdrawalStrategies,
+  modelPortfolios,
+  modelPortfolioAllocations,
+  assetClasses,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -40,7 +43,7 @@ export default async function AssumptionsPage({ params }: PageProps) {
     );
   }
 
-  const [settingsRows, accountRows, withdrawalRows] = await Promise.all([
+  const [settingsRows, accountRows, withdrawalRows, portfolioRows, allocationRows, assetClassRows] = await Promise.all([
     db
       .select()
       .from(planSettings)
@@ -58,6 +61,9 @@ export default async function AssumptionsPage({ params }: PageProps) {
           eq(withdrawalStrategies.scenarioId, scenario.id)
         )
       ),
+    db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
+    db.select().from(modelPortfolioAllocations),
+    db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
   ]);
 
   const settings = settingsRows[0];
@@ -68,6 +74,18 @@ export default async function AssumptionsPage({ params }: PageProps) {
       </div>
     );
   }
+
+  // Compute blended returns for each model portfolio
+  const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
+  const modelPortfolioOptions = portfolioRows.map((p) => {
+    const allocs = allocationRows.filter((a) => a.modelPortfolioId === p.id);
+    let blendedReturn = 0;
+    for (const alloc of allocs) {
+      const ac = acMap.get(alloc.assetClassId);
+      if (ac) blendedReturn += parseFloat(alloc.weight) * parseFloat(ac.geometricReturn);
+    }
+    return { id: p.id, name: p.name, blendedReturn };
+  });
 
   const milestones = buildClientMilestones(client, settings.planStartYear, settings.planEndYear);
 
@@ -112,7 +130,14 @@ export default async function AssumptionsPage({ params }: PageProps) {
           defaultGrowthRealEstate: String(settings.defaultGrowthRealEstate),
           defaultGrowthBusiness: String(settings.defaultGrowthBusiness),
           defaultGrowthLifeInsurance: String(settings.defaultGrowthLifeInsurance),
+          growthSourceTaxable: settings.growthSourceTaxable,
+          growthSourceCash: settings.growthSourceCash,
+          growthSourceRetirement: settings.growthSourceRetirement,
+          modelPortfolioIdTaxable: settings.modelPortfolioIdTaxable,
+          modelPortfolioIdCash: settings.modelPortfolioIdCash,
+          modelPortfolioIdRetirement: settings.modelPortfolioIdRetirement,
         }}
+        modelPortfolios={modelPortfolioOptions}
         accounts={accountRows.map((a) => ({
           id: a.id,
           name: a.name,
