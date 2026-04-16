@@ -17,6 +17,19 @@ export interface AccountFormInitial {
   growthRate: string | null;
   rmdEnabled?: boolean | null;
   ownerEntityId?: string | null;
+  growthSource?: string;
+  modelPortfolioId?: string | null;
+  turnoverPct?: string;
+  overridePctOi?: string | null;
+  overridePctLtCg?: string | null;
+  overridePctQdiv?: string | null;
+  overridePctTaxExempt?: string | null;
+}
+
+export interface ModelPortfolioOption {
+  id: string;
+  name: string;
+  blendedReturn: number;
 }
 
 export interface EntityOption {
@@ -42,6 +55,7 @@ interface AddAccountFormProps {
   categoryDefaults?: CategoryDefaults;
   /** Real names used in the owner dropdown. Falls back to "Client"/"Spouse" if absent. */
   ownerNames?: { clientName: string; spouseName: string | null };
+  modelPortfolios?: ModelPortfolioOption[];
   onSuccess?: () => void;
   onDelete?: () => void;
 }
@@ -100,6 +114,7 @@ export default function AddAccountForm({
   entities,
   categoryDefaults,
   ownerNames,
+  modelPortfolios,
   onSuccess,
   onDelete,
 }: AddAccountFormProps) {
@@ -113,7 +128,7 @@ export default function AddAccountForm({
   const [category, setCategory] = useState<AccountCategory>(
     initial?.category ?? defaultCategory ?? "taxable"
   );
-  const [activeTab, setActiveTab] = useState<"details" | "savings">("details");
+  const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization">("details");
   const [subType, setSubType] = useState(
     initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
   );
@@ -130,9 +145,18 @@ export default function AddAccountForm({
     : { kind: "individual", value: initial?.owner ?? "client" };
   const [ownerChoice, setOwnerChoice] = useState<OwnerChoice>(initialOwnerChoice);
 
-  // Growth rate: "use default" (null) vs explicit override
+  // Growth source: "default" (category default), "model_portfolio", or "custom"
+  const isInvestable = ["taxable", "cash", "retirement"].includes(category);
+  const [growthSource, setGrowthSource] = useState<"default" | "model_portfolio" | "custom">(
+    (initial?.growthSource as "default" | "model_portfolio" | "custom") ?? "default"
+  );
+  const [modelPortfolioId, setModelPortfolioId] = useState<string>(
+    initial?.modelPortfolioId ?? ""
+  );
+
+  // Legacy compat: map old useDefaultGrowth behavior into growthSource
   const hasExplicitGrowth = initial?.growthRate != null && initial.growthRate !== "";
-  const [useDefaultGrowth, setUseDefaultGrowth] = useState<boolean>(!hasExplicitGrowth && isEdit ? true : !isEdit);
+  const useDefaultGrowth = growthSource === "default";
   const defaultPctForCategory = categoryDefaults
     ? Math.round(Number(categoryDefaults[category]) * 10000) / 100
     : null;
@@ -165,9 +189,14 @@ export default function AddAccountForm({
     const individualOwner = ownerChoice.kind === "individual" ? ownerChoice.value : "client";
     const ownerEntityId = ownerChoice.kind === "entity" ? ownerChoice.value : null;
 
-    const growthRate = useDefaultGrowth
-      ? null
-      : String(Number(data.get("growthRate")) / 100);
+    const growthRate = growthSource === "custom"
+      ? String(Number(data.get("growthRate")) / 100)
+      : isInvestable ? null : String(Number(data.get("growthRate")) / 100);
+
+    const toPctOrNull = (name: string) => {
+      const v = data.get(name) as string;
+      return v !== "" && v != null ? String(Number(v) / 100) : null;
+    };
 
     const accountBody = {
       name: data.get("name") as string,
@@ -179,6 +208,13 @@ export default function AddAccountForm({
       growthRate,
       rmdEnabled,
       ownerEntityId,
+      growthSource: isInvestable ? growthSource : "custom",
+      modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
+      turnoverPct: toPctOrNull("turnoverPct") ?? "0",
+      overridePctOi: toPctOrNull("overridePctOi"),
+      overridePctLtCg: toPctOrNull("overridePctLtCg"),
+      overridePctQdiv: toPctOrNull("overridePctQdiv"),
+      overridePctTaxExempt: toPctOrNull("overridePctTaxExempt"),
     };
 
     try {
@@ -247,20 +283,20 @@ export default function AddAccountForm({
         <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
       )}
 
-      {/* Tab bar — savings tab only shown on create */}
-      {!isEdit && (
-        <div className="flex border-b border-gray-700">
-          <button
-            type="button"
-            onClick={() => setActiveTab("details")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-              activeTab === "details"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            Account Details
-          </button>
+      {/* Tab bar */}
+      <div className="flex border-b border-gray-700">
+        <button
+          type="button"
+          onClick={() => setActiveTab("details")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+            activeTab === "details"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-gray-400 hover:text-gray-200"
+          }`}
+        >
+          Account Details
+        </button>
+        {!isEdit && (
           <button
             type="button"
             onClick={() => setActiveTab("savings")}
@@ -272,11 +308,24 @@ export default function AddAccountForm({
           >
             Savings
           </button>
-        </div>
-      )}
+        )}
+        {isInvestable && category !== "cash" && (
+          <button
+            type="button"
+            onClick={() => setActiveTab("realization")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+              activeTab === "realization"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Realization
+          </button>
+        )}
+      </div>
 
       {/* Account Details */}
-      <div className={!isEdit && activeTab !== "details" ? "hidden" : ""}>
+      <div className={activeTab !== "details" ? "hidden" : ""}>
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-300" htmlFor="name">
@@ -373,11 +422,57 @@ export default function AddAccountForm({
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="growthRate">
-                Growth Rate (%)
-              </label>
-              <div className="mt-1 flex items-center gap-2">
+            {isInvestable ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
+                <select
+                  value={growthSource === "model_portfolio" ? `mp:${modelPortfolioId}` : growthSource}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v.startsWith("mp:")) {
+                      setGrowthSource("model_portfolio");
+                      setModelPortfolioId(v.slice(3));
+                    } else if (v === "custom") {
+                      setGrowthSource("custom");
+                      setModelPortfolioId("");
+                    } else {
+                      setGrowthSource("default");
+                      setModelPortfolioId("");
+                    }
+                  }}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="default">
+                    Use category default{defaultPctForCategory !== null ? ` (${defaultPctForCategory}%)` : ""}
+                  </option>
+                  {modelPortfolios?.map((mp) => (
+                    <option key={mp.id} value={`mp:${mp.id}`}>
+                      {mp.name} ({(mp.blendedReturn * 100).toFixed(2)}%)
+                    </option>
+                  ))}
+                  <option value="custom">Custom %</option>
+                </select>
+                {growthSource === "custom" && (
+                  <div className="relative mt-2">
+                    <input
+                      id="growthRate"
+                      name="growthRate"
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      max={30}
+                      defaultValue={hasExplicitGrowth ? initialGrowthPct : 7}
+                      className="block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 pr-8 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <span className="absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="growthRate">
+                  Growth Rate (%)
+                </label>
                 <input
                   id="growthRate"
                   name="growthRate"
@@ -386,20 +481,10 @@ export default function AddAccountForm({
                   min={0}
                   max={30}
                   defaultValue={initialGrowthPct}
-                  disabled={useDefaultGrowth}
-                  className="block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
-              <label className="mt-1 flex items-center gap-1.5 text-xs text-gray-400">
-                <input
-                  type="checkbox"
-                  checked={useDefaultGrowth}
-                  onChange={(e) => setUseDefaultGrowth(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
-                />
-                Use category default{defaultPctForCategory !== null ? ` (${defaultPctForCategory}%)` : ""}
-              </label>
-            </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-300" htmlFor="value">
@@ -549,6 +634,54 @@ export default function AddAccountForm({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Realization tab — taxable and retirement accounts */}
+      {isInvestable && category !== "cash" && (
+        <div className={activeTab === "realization" ? "" : "hidden"}>
+          <div className="space-y-4">
+            <p className="text-xs text-gray-500">
+              How growth is realized for tax purposes. Leave blank to inherit from the model portfolio.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300">Ordinary Income %</label>
+                <input name="overridePctOi" type="number" step="0.01" min={0} max={100}
+                  defaultValue={initial?.overridePctOi ? (Number(initial.overridePctOi) * 100).toFixed(2) : ""}
+                  placeholder="From portfolio"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300">LT Capital Gains %</label>
+                <input name="overridePctLtCg" type="number" step="0.01" min={0} max={100}
+                  defaultValue={initial?.overridePctLtCg ? (Number(initial.overridePctLtCg) * 100).toFixed(2) : ""}
+                  placeholder="From portfolio"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300">Qualified Dividends %</label>
+                <input name="overridePctQdiv" type="number" step="0.01" min={0} max={100}
+                  defaultValue={initial?.overridePctQdiv ? (Number(initial.overridePctQdiv) * 100).toFixed(2) : ""}
+                  placeholder="From portfolio"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300">Tax-Exempt %</label>
+                <input name="overridePctTaxExempt" type="number" step="0.01" min={0} max={100}
+                  defaultValue={initial?.overridePctTaxExempt ? (Number(initial.overridePctTaxExempt) * 100).toFixed(2) : ""}
+                  placeholder="From portfolio"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300">Turnover %</label>
+                <input name="turnoverPct" type="number" step="0.01" min={0} max={100}
+                  defaultValue={initial?.turnoverPct ? (Number(initial.turnoverPct) * 100).toFixed(2) : "0"}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                <p className="mt-1 text-xs text-gray-500">Portion of LT CG realized as short-term each year.</p>
+              </div>
+            </div>
           </div>
         </div>
       )}
