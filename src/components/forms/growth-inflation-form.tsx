@@ -26,6 +26,9 @@ interface GrowthInflationFormProps {
   modelPortfolioIdCash?: string | null;
   modelPortfolioIdRetirement?: string | null;
   modelPortfolios?: ModelPortfolioOption[];
+  // Optional advanced inflation overrides
+  taxInflationRate?: string;
+  ssWageGrowthRate?: string;
 }
 
 // Non-investable categories — always flat rate
@@ -44,13 +47,16 @@ const CMA_CATEGORIES: { category: string; label: string; description: string; ra
 
 const pct = (v: string) => (Number(v) * 100).toFixed(2);
 
-export default function GrowthInflationForm({ clientId, modelPortfolios, ...rates }: GrowthInflationFormProps) {
+export default function GrowthInflationForm({ clientId, modelPortfolios, taxInflationRate, ssWageGrowthRate, ...rates }: GrowthInflationFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(
+    Boolean(taxInflationRate || ssWageGrowthRate)
+  );
 
   async function handleResetAccounts() {
     if (!confirm("Reset all taxable, cash, and retirement accounts to use the category defaults above? Any account-level custom rates, portfolios, turnover, and realization overrides will be cleared.")) {
@@ -122,6 +128,12 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, ...rate
       body[cat.portfolioKey] = s.source === "model_portfolio" ? s.portfolioId : null;
       body[cat.rateKey] = toDec(cat.rateKey);
     }
+
+    // Advanced optional inflation overrides — send null if blank
+    const taxInflRaw = (data.get("taxInflationRate") as string) || "";
+    const ssWageGrowthRaw = (data.get("ssWageGrowthRate") as string) || "";
+    body.taxInflationRate = taxInflRaw ? Number(taxInflRaw) / 100 : null;
+    body.ssWageGrowthRate = ssWageGrowthRaw ? Number(ssWageGrowthRaw) / 100 : null;
 
     try {
       const res = await fetch(`/api/clients/${clientId}/plan-settings`, {
@@ -242,6 +254,49 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, ...rate
           ))}
         </div>
       </section>
+
+      <details
+        className="mt-4 rounded border border-gray-800 p-3"
+        open={advancedOpen}
+        onToggle={(e) => setAdvancedOpen((e.currentTarget as HTMLDetailsElement).open)}
+      >
+        <summary className="cursor-pointer text-sm text-gray-300">Advanced — separate tax &amp; SS inflation</summary>
+
+        <div className="mt-3 space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-400" htmlFor="taxInflationRate">
+              Tax bracket inflation rate (% per year)
+            </label>
+            <input
+              id="taxInflationRate"
+              name="taxInflationRate"
+              type="number"
+              step="0.01"
+              defaultValue={taxInflationRate ? pct(taxInflationRate) : ""}
+              placeholder={`Defaults to ${pct(rates.inflationRate)} (general)`}
+              className="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Used to inflate IRS-published thresholds (brackets, deductions, AMT, contribution limits) into future projection years.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-400" htmlFor="ssWageGrowthRate">
+              SS wage base growth rate (% per year)
+            </label>
+            <input
+              id="ssWageGrowthRate"
+              name="ssWageGrowthRate"
+              type="number"
+              step="0.01"
+              defaultValue={ssWageGrowthRate ? pct(ssWageGrowthRate) : ""}
+              placeholder={`Defaults to ${pct(rates.inflationRate)} + 0.5% (wages typically outpace CPI)`}
+              className="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100"
+            />
+          </div>
+        </div>
+      </details>
 
       {resetMessage && (
         <p className="rounded bg-green-900/50 px-3 py-2 text-sm text-green-400">{resetMessage}</p>

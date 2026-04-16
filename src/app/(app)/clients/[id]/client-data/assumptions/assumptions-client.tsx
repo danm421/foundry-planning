@@ -101,6 +101,8 @@ export default function AssumptionsClient({
             modelPortfolioIdCash={settings.modelPortfolioIdCash}
             modelPortfolioIdRetirement={settings.modelPortfolioIdRetirement}
             modelPortfolios={modelPortfolios}
+            taxInflationRate={settings.taxInflationRate}
+            ssWageGrowthRate={settings.ssWageGrowthRate}
           />
         )}
         {activeTab === "withdrawal" && (
