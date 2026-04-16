@@ -59,4 +59,20 @@ describe("blendPortfolio", () => {
     expect(result.arithmeticMean).toBe(0);
     expect(result.volatility).toBe(0);
   });
+
+  // Contract lock: the straight-line cash-flow engine uses geometric return,
+  // which is always <= arithmetic mean for any volatile asset. Arithmetic mean
+  // and volatility are reserved for the future Monte Carlo simulator. This
+  // test guards against an accidental swap of which stat drives the projection.
+  it("keeps geometric and arithmetic returns as distinct blended outputs", () => {
+    const allocs: AllocationEntry[] = [
+      { assetClassId: "ac1", weight: 0.5 },
+      { assetClassId: "ac2", weight: 0.5 },
+    ];
+    const result = blendPortfolio(allocs, sampleClasses);
+    // Both samples have arith > geo, so the blend must too.
+    expect(result.arithmeticMean).toBeGreaterThan(result.geometricReturn);
+    // Volatility is blended independently; not a scaled version of return.
+    expect(result.volatility).toBeGreaterThan(0);
+  });
 });

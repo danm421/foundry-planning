@@ -90,6 +90,13 @@ export async function GET(
       allocsByPortfolio.set(alloc.modelPortfolioId, list);
     }
 
+    // Resolve a model portfolio to the inputs the deterministic cash-flow engine
+    // needs. We blend the geometric return — the straight-line projection
+    // compounds a single rate each year, and geometric return is the correct
+    // single-rate summary of a volatile series. Arithmetic mean and volatility
+    // are intentionally NOT read here; they stay on the asset class for the
+    // future Monte Carlo simulator, which will sample returns with drift and
+    // dispersion (that's where sequence-of-returns risk lives).
     function resolvePortfolio(portfolioId: string) {
       const allocs = allocsByPortfolio.get(portfolioId) ?? [];
       let geoReturn = 0;
