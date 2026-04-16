@@ -120,6 +120,13 @@
       "when": 1777168100000,
       "tag": "0016_plan_settings_tax_assumptions",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1777168200000,
+      "tag": "0017_client_deductions",
+      "breakpoints": true
     }
   ]
 }
