@@ -309,7 +309,7 @@ export default function AddAccountForm({
             Savings
           </button>
         )}
-        {isInvestable && category !== "cash" && (
+        {category === "taxable" && (
           <button
             type="button"
             onClick={() => setActiveTab("realization")}
@@ -639,7 +639,7 @@ export default function AddAccountForm({
       )}
 
       {/* Realization tab — taxable and retirement accounts */}
-      {isInvestable && category !== "cash" && (
+      {category === "taxable" && (
         <div className={activeTab === "realization" ? "" : "hidden"}>
           <div className="space-y-4">
             <p className="text-xs text-gray-500">

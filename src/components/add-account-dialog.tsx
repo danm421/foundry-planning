@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults } from "./forms/add-account-form";
+import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -16,6 +16,7 @@ interface AddAccountDialogProps {
   onRequestDelete?: () => void;
   entities?: EntityOption[];
   categoryDefaults?: CategoryDefaults;
+  modelPortfolios?: ModelPortfolioOption[];
   ownerNames?: { clientName: string; spouseName: string | null };
 }
 
@@ -29,6 +30,7 @@ export default function AddAccountDialog({
   onRequestDelete,
   entities,
   categoryDefaults,
+  modelPortfolios,
   ownerNames,
 }: AddAccountDialogProps) {
   const isControlled = open !== undefined;
@@ -77,6 +79,7 @@ export default function AddAccountDialog({
               initial={editing}
               entities={entities}
               categoryDefaults={categoryDefaults}
+              modelPortfolios={modelPortfolios}
               ownerNames={ownerNames}
               onSuccess={close}
               onDelete={onRequestDelete}

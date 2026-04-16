@@ -7,6 +7,9 @@ import {
   liabilities,
   entities,
   planSettings,
+  modelPortfolios,
+  modelPortfolioAllocations,
+  assetClasses,
 } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -40,7 +43,7 @@ export default async function BalanceSheetPage({ params }: PageProps) {
     );
   }
 
-  const [accountRows, liabilityRows, entityRows, settingsRows] = await Promise.all([
+  const [accountRows, liabilityRows, entityRows, settingsRows, portfolioRows, allocationRows, assetClassRows] = await Promise.all([
     db
       .select()
       .from(accounts)
@@ -54,7 +57,22 @@ export default async function BalanceSheetPage({ params }: PageProps) {
       .select()
       .from(planSettings)
       .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
+    db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
+    db.select().from(modelPortfolioAllocations),
+    db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
   ]);
+
+  // Compute blended returns for each model portfolio
+  const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
+  const modelPortfolioOptions = portfolioRows.map((p) => {
+    const allocs = allocationRows.filter((a) => a.modelPortfolioId === p.id);
+    let blendedReturn = 0;
+    for (const alloc of allocs) {
+      const ac = acMap.get(alloc.assetClassId);
+      if (ac) blendedReturn += parseFloat(alloc.weight) * parseFloat(ac.geometricReturn);
+    }
+    return { id: p.id, name: p.name, blendedReturn };
+  });
 
   const settings = settingsRows[0];
 
@@ -69,6 +87,13 @@ export default async function BalanceSheetPage({ params }: PageProps) {
     growthRate: a.growthRate == null ? null : String(a.growthRate),
     rmdEnabled: a.rmdEnabled ?? null,
     ownerEntityId: a.ownerEntityId ?? null,
+    growthSource: a.growthSource ?? "default",
+    modelPortfolioId: a.modelPortfolioId ?? null,
+    turnoverPct: a.turnoverPct == null ? null : String(a.turnoverPct),
+    overridePctOi: a.overridePctOi == null ? null : String(a.overridePctOi),
+    overridePctLtCg: a.overridePctLtCg == null ? null : String(a.overridePctLtCg),
+    overridePctQdiv: a.overridePctQdiv == null ? null : String(a.overridePctQdiv),
+    overridePctTaxExempt: a.overridePctTaxExempt == null ? null : String(a.overridePctTaxExempt),
   }));
 
   const liabilityProps: LiabilityRow[] = liabilityRows.map((l) => ({
@@ -110,6 +135,7 @@ export default async function BalanceSheetPage({ params }: PageProps) {
       liabilities={liabilityProps}
       entities={entityOptions}
       categoryDefaults={categoryDefaults}
+      modelPortfolios={modelPortfolioOptions}
       ownerNames={{
         clientName: `${client.firstName} ${client.lastName}`,
         spouseName: client.spouseName

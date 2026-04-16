@@ -74,6 +74,13 @@ export async function POST(
       growthRate,
       rmdEnabled,
       ownerEntityId,
+      growthSource,
+      modelPortfolioId,
+      turnoverPct,
+      overridePctOi,
+      overridePctLtCg,
+      overridePctQdiv,
+      overridePctTaxExempt,
     } = body;
 
     if (!name || !category) {
@@ -95,6 +102,13 @@ export async function POST(
         growthRate: growthRate ?? null,
         rmdEnabled: rmdEnabled ?? false,
         ownerEntityId: ownerEntityId ?? null,
+        growthSource: growthSource ?? "default",
+        modelPortfolioId: modelPortfolioId ?? null,
+        turnoverPct: turnoverPct ?? "0",
+        overridePctOi: overridePctOi ?? null,
+        overridePctLtCg: overridePctLtCg ?? null,
+        overridePctQdiv: overridePctQdiv ?? null,
+        overridePctTaxExempt: overridePctTaxExempt ?? null,
       })
       .returning();
 

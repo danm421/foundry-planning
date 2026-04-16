@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import AddAccountDialog from "./add-account-dialog";
 import AddLiabilityDialog from "./add-liability-dialog";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
-import { AccountFormInitial, EntityOption, CategoryDefaults } from "./forms/add-account-form";
+import { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
 import { LiabilityFormInitial } from "./forms/add-liability-form";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 
@@ -22,6 +22,13 @@ export interface AccountRow {
   growthRate: string | null;
   rmdEnabled?: boolean | null;
   ownerEntityId?: string | null;
+  growthSource?: string;
+  modelPortfolioId?: string | null;
+  turnoverPct?: string | null;
+  overridePctOi?: string | null;
+  overridePctLtCg?: string | null;
+  overridePctQdiv?: string | null;
+  overridePctTaxExempt?: string | null;
 }
 
 export interface LiabilityRow {
@@ -42,6 +49,7 @@ interface BalanceSheetViewProps {
   liabilities: LiabilityRow[];
   entities: EntityOption[];
   categoryDefaults: CategoryDefaults;
+  modelPortfolios?: ModelPortfolioOption[];
   ownerNames: OwnerNames;
 }
 
@@ -102,6 +110,13 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     growthRate: a.growthRate,
     rmdEnabled: a.rmdEnabled ?? null,
     ownerEntityId: a.ownerEntityId ?? null,
+    growthSource: a.growthSource,
+    modelPortfolioId: a.modelPortfolioId ?? null,
+    turnoverPct: a.turnoverPct ?? undefined,
+    overridePctOi: a.overridePctOi ?? null,
+    overridePctLtCg: a.overridePctLtCg ?? null,
+    overridePctQdiv: a.overridePctQdiv ?? null,
+    overridePctTaxExempt: a.overridePctTaxExempt ?? null,
   };
 }
 
@@ -170,6 +185,7 @@ export default function BalanceSheetView({
   liabilities,
   entities,
   categoryDefaults,
+  modelPortfolios,
   ownerNames,
 }: BalanceSheetViewProps) {
   const router = useRouter();
@@ -397,6 +413,7 @@ export default function BalanceSheetView({
         label={addCategory ? CATEGORY_LABELS[addCategory] : undefined}
         entities={entities}
         categoryDefaults={categoryDefaults}
+        modelPortfolios={modelPortfolios}
         ownerNames={ownerNames}
         open={addCategory !== null}
         onOpenChange={(o) => !o && setAddCategory(null)}
@@ -407,6 +424,7 @@ export default function BalanceSheetView({
         clientId={clientId}
         entities={entities}
         categoryDefaults={categoryDefaults}
+        modelPortfolios={modelPortfolios}
         ownerNames={ownerNames}
         open={!!editingAccount}
         onOpenChange={(o) => !o && setEditingAccount(null)}

@@ -183,6 +183,13 @@ export async function GET(
           realization = { pctOrdinaryIncome: 1, pctLtCapitalGains: 0, pctQualifiedDividends: 0, pctTaxExempt: 0, turnoverPct: 0 };
         }
 
+        // Retirement accounts: growth is tax-deferred (pre-tax) or tax-free (Roth).
+        // Withdrawals are taxed as OI by the existing withdrawal logic. No per-year
+        // realization split applies.
+        if (a.category === "retirement") {
+          realization = undefined;
+        }
+
         // Non-investable categories: no realization, use flat defaults
         if (["real_estate", "business", "life_insurance"].includes(a.category)) {
           const flatDefaults: Record<string, string> = {
