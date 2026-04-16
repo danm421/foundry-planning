@@ -59,6 +59,8 @@ export async function PUT(
         ...(inflationStartYear !== undefined && {
           inflationStartYear: inflationStartYear == null ? null : Number(inflationStartYear),
         }),
+        ...(body.startYearRef !== undefined && { startYearRef: body.startYearRef }),
+        ...(body.endYearRef !== undefined && { endYearRef: body.endYearRef }),
         updatedAt: new Date(),
       })
       .where(and(eq(incomes.id, incomeId), eq(incomes.clientId, id)))

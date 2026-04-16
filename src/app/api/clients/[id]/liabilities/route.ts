@@ -74,6 +74,8 @@ export async function POST(
       linkedPropertyId,
       ownerEntityId,
     } = body;
+    const startYearRef = body.startYearRef ?? null;
+    const endYearRef = body.endYearRef ?? null;
 
     if (!name || startYear == null || endYear == null) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -92,6 +94,8 @@ export async function POST(
         endYear: Number(endYear),
         linkedPropertyId: linkedPropertyId ?? null,
         ownerEntityId: ownerEntityId ?? null,
+        startYearRef,
+        endYearRef,
       })
       .returning();
 

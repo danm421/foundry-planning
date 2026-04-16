@@ -75,6 +75,8 @@ export async function POST(
       cashAccountId,
       inflationStartYear,
     } = body;
+    const startYearRef = body.startYearRef ?? null;
+    const endYearRef = body.endYearRef ?? null;
 
     if (!type || !name || !startYear || !endYear) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -94,6 +96,8 @@ export async function POST(
         ownerEntityId: ownerEntityId ?? null,
         cashAccountId: cashAccountId ?? null,
         inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,
+        startYearRef,
+        endYearRef,
       })
       .returning();
 

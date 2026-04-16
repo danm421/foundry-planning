@@ -74,6 +74,8 @@ export async function POST(
       employerMatchAmount,
       annualLimit,
     } = body;
+    const startYearRef = body.startYearRef ?? null;
+    const endYearRef = body.endYearRef ?? null;
 
     if (!accountId || !startYear || !endYear) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -92,6 +94,8 @@ export async function POST(
         employerMatchCap: employerMatchCap ?? null,
         employerMatchAmount: employerMatchAmount ?? null,
         annualLimit: annualLimit ?? null,
+        startYearRef,
+        endYearRef,
       })
       .returning();
 

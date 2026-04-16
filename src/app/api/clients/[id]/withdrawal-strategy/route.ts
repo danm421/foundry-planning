@@ -65,6 +65,8 @@ export async function POST(
 
     const body = await request.json();
     const { accountId, priorityOrder, startYear, endYear } = body;
+    const startYearRef = body.startYearRef ?? null;
+    const endYearRef = body.endYearRef ?? null;
 
     if (!accountId || priorityOrder === undefined || !startYear || !endYear) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -79,6 +81,8 @@ export async function POST(
         priorityOrder: Number(priorityOrder),
         startYear: Number(startYear),
         endYear: Number(endYear),
+        startYearRef,
+        endYearRef,
       })
       .returning();
 

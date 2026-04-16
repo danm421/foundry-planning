@@ -51,6 +51,8 @@ export async function PUT(
           employerMatchAmount: employerMatchAmount ?? null,
         }),
         ...(annualLimit !== undefined && { annualLimit: annualLimit ?? null }),
+        ...(body.startYearRef !== undefined && { startYearRef: body.startYearRef }),
+        ...(body.endYearRef !== undefined && { endYearRef: body.endYearRef }),
         updatedAt: new Date(),
       })
       .where(and(eq(savingsRules.id, ruleId), eq(savingsRules.clientId, id)))

@@ -36,6 +36,8 @@ export async function PUT(
         ...(priorityOrder !== undefined && { priorityOrder: Number(priorityOrder) }),
         ...(startYear !== undefined && { startYear: Number(startYear) }),
         ...(endYear !== undefined && { endYear: Number(endYear) }),
+        ...(body.startYearRef !== undefined && { startYearRef: body.startYearRef }),
+        ...(body.endYearRef !== undefined && { endYearRef: body.endYearRef }),
         updatedAt: new Date(),
       })
       .where(and(eq(withdrawalStrategies.id, strategyId), eq(withdrawalStrategies.clientId, id)))
