@@ -92,6 +92,13 @@
       "when": 1744754400000,
       "tag": "0012_add_year_ref_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1744768800000,
+      "tag": "0013_cma_model_portfolios",
+      "breakpoints": true
     }
   ]
 }
