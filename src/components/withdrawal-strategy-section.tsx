@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
+import MilestoneYearPicker from "./milestone-year-picker";
+import type { YearRef, ClientMilestones } from "@/lib/milestones";
+import { defaultWithdrawalRefs, resolveMilestone } from "@/lib/milestones";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,12 +23,15 @@ export interface WithdrawalStrategy {
   priorityOrder: number;
   startYear: number;
   endYear: number;
+  startYearRef?: string | null;
+  endYearRef?: string | null;
 }
 
 interface WithdrawalStrategySectionProps {
   clientId: string;
   accounts: WithdrawalAccount[];
   initialStrategies: WithdrawalStrategy[];
+  milestones?: ClientMilestones;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -52,6 +58,7 @@ interface DialogProps {
   clientId: string;
   accounts: WithdrawalAccount[];
   nextPriority: number;
+  milestones?: ClientMilestones;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editing?: WithdrawalStrategy;
@@ -63,6 +70,7 @@ function WithdrawalDialog({
   clientId,
   accounts,
   nextPriority,
+  milestones,
   open,
   onOpenChange,
   editing,
@@ -73,6 +81,20 @@ function WithdrawalDialog({
   const [error, setError] = useState<string | null>(null);
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
+
+  const wdDefaultRefs = !isEdit ? defaultWithdrawalRefs() : null;
+  const [startYearRef, setStartYearRef] = useState<YearRef | null>(
+    (editing?.startYearRef as YearRef) ?? wdDefaultRefs?.startYearRef ?? null
+  );
+  const [endYearRef, setEndYearRef] = useState<YearRef | null>(
+    (editing?.endYearRef as YearRef) ?? wdDefaultRefs?.endYearRef ?? null
+  );
+  const [startYear, setStartYear] = useState<number>(
+    editing?.startYear ?? (startYearRef && milestones ? resolveMilestone(startYearRef, milestones) ?? currentYear : currentYear)
+  );
+  const [endYear, setEndYear] = useState<number>(
+    editing?.endYear ?? (endYearRef && milestones ? resolveMilestone(endYearRef, milestones) ?? (currentYear + 30) : currentYear + 30)
+  );
 
   if (!open) return null;
 
@@ -89,8 +111,10 @@ function WithdrawalDialog({
     const body = {
       accountId: data.get("accountId") as string,
       priorityOrder: Number(data.get("priorityOrder") as string),
-      startYear: data.get("startYear") as string,
-      endYear: data.get("endYear") as string,
+      startYear: String(startYear),
+      endYear: String(endYear),
+      startYearRef,
+      endYearRef,
     };
 
     try {
@@ -175,33 +199,61 @@ function WithdrawalDialog({
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="ws-start">
-                Start Year <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="ws-start"
-                name="startYear"
-                type="number"
-                required
-                defaultValue={editing?.startYear ?? currentYear}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="ws-end">
-                End Year <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="ws-end"
-                name="endYear"
-                type="number"
-                required
-                defaultValue={editing?.endYear ?? currentYear + 30}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
+            {milestones ? (
+              <>
+                <MilestoneYearPicker
+                  name="startYear"
+                  id="ws-start"
+                  value={startYear}
+                  yearRef={startYearRef}
+                  milestones={milestones}
+                  showSSRefs={false}
+                  onChange={(yr, ref) => { setStartYear(yr); setStartYearRef(ref); }}
+                  label="Start Year"
+                />
+                <MilestoneYearPicker
+                  name="endYear"
+                  id="ws-end"
+                  value={endYear}
+                  yearRef={endYearRef}
+                  milestones={milestones}
+                  showSSRefs={false}
+                  onChange={(yr, ref) => { setEndYear(yr); setEndYearRef(ref); }}
+                  label="End Year"
+                />
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400" htmlFor="ws-start">
+                    Start Year
+                  </label>
+                  <input
+                    id="ws-start"
+                    name="startYear"
+                    type="number"
+                    required
+                    value={startYear}
+                    onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400" htmlFor="ws-end">
+                    End Year
+                  </label>
+                  <input
+                    id="ws-end"
+                    name="endYear"
+                    type="number"
+                    required
+                    value={endYear}
+                    onChange={(e) => { setEndYear(Number(e.target.value)); setEndYearRef(null); }}
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           <div className="flex items-center justify-between pt-2">
@@ -236,6 +288,7 @@ export default function WithdrawalStrategySection({
   clientId,
   accounts,
   initialStrategies,
+  milestones,
 }: WithdrawalStrategySectionProps) {
   const [list, setList] = useState<WithdrawalStrategy[]>(initialStrategies);
   const [editMode, setEditMode] = useState(false);
@@ -345,6 +398,7 @@ export default function WithdrawalStrategySection({
         clientId={clientId}
         accounts={accounts}
         nextPriority={nextPriority}
+        milestones={milestones}
         open={dialog.open}
         onOpenChange={(o) => setDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
         editing={dialog.editing}

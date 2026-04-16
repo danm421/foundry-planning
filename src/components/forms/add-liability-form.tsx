@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import MilestoneYearPicker from "../milestone-year-picker";
+import type { YearRef, ClientMilestones } from "@/lib/milestones";
+import { resolveMilestone } from "@/lib/milestones";
 
 export interface LiabilityFormInitial {
   id: string;
@@ -13,12 +16,15 @@ export interface LiabilityFormInitial {
   endYear: number;
   linkedPropertyId?: string | null;
   ownerEntityId?: string | null;
+  startYearRef?: string | null;
+  endYearRef?: string | null;
 }
 
 interface AddLiabilityFormProps {
   clientId: string;
   realEstateAccounts?: { id: string; name: string }[];
   entities?: { id: string; name: string }[];
+  milestones?: ClientMilestones;
   mode?: "create" | "edit";
   initial?: LiabilityFormInitial;
   onSuccess?: () => void;
@@ -29,6 +35,7 @@ export default function AddLiabilityForm({
   clientId,
   realEstateAccounts,
   entities,
+  milestones,
   mode = "create",
   initial,
   onSuccess,
@@ -45,6 +52,19 @@ export default function AddLiabilityForm({
     ? Math.round(Number(initial.interestRate) * 10000) / 100
     : 0;
 
+  const [startYearRef, setStartYearRef] = useState<YearRef | null>(
+    (initial?.startYearRef as YearRef) ?? (!isEdit ? "plan_start" as YearRef : null)
+  );
+  const [endYearRef, setEndYearRef] = useState<YearRef | null>(
+    (initial?.endYearRef as YearRef) ?? null
+  );
+  const [startYear, setStartYear] = useState<number>(
+    initial?.startYear ?? (startYearRef && milestones ? resolveMilestone(startYearRef, milestones) ?? currentYear : currentYear)
+  );
+  const [endYear, setEndYear] = useState<number>(
+    initial?.endYear ?? (endYearRef && milestones ? resolveMilestone(endYearRef, milestones) ?? (currentYear + 30) : currentYear + 30)
+  );
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
@@ -59,10 +79,12 @@ export default function AddLiabilityForm({
       balance: data.get("balance") as string,
       interestRate: String(Number(data.get("interestRate")) / 100),
       monthlyPayment: data.get("monthlyPayment") as string,
-      startYear: Number(data.get("startYear")),
-      endYear: Number(data.get("endYear")),
+      startYear,
+      endYear,
       linkedPropertyId: linkedPropertyId || null,
       ownerEntityId: ownerEntityId || null,
+      startYearRef,
+      endYearRef,
     };
 
     try {
@@ -199,33 +221,61 @@ export default function AddLiabilityForm({
           </div>
         )}
 
-        <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="startYear">
-            Start Year <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="startYear"
-            name="startYear"
-            type="number"
-            required
-            defaultValue={initial?.startYear ?? currentYear}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="endYear">
-            End Year <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="endYear"
-            name="endYear"
-            type="number"
-            required
-            defaultValue={initial?.endYear ?? currentYear + 30}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
+        {milestones ? (
+          <>
+            <MilestoneYearPicker
+              name="startYear"
+              id="startYear"
+              value={startYear}
+              yearRef={startYearRef}
+              milestones={milestones}
+              showSSRefs={false}
+              onChange={(yr, ref) => { setStartYear(yr); setStartYearRef(ref); }}
+              label="Start Year"
+            />
+            <MilestoneYearPicker
+              name="endYear"
+              id="endYear"
+              value={endYear}
+              yearRef={endYearRef}
+              milestones={milestones}
+              showSSRefs={false}
+              onChange={(yr, ref) => { setEndYear(yr); setEndYearRef(ref); }}
+              label="End Year"
+            />
+          </>
+        ) : (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-gray-400" htmlFor="startYear">
+                Start Year
+              </label>
+              <input
+                id="startYear"
+                name="startYear"
+                type="number"
+                required
+                value={startYear}
+                onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
+                className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-400" htmlFor="endYear">
+                End Year
+              </label>
+              <input
+                id="endYear"
+                name="endYear"
+                type="number"
+                required
+                value={endYear}
+                onChange={(e) => { setEndYear(Number(e.target.value)); setEndYearRef(null); }}
+                className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+          </>
+        )}
       </div>
 
       <div className="flex items-center justify-between pt-2">

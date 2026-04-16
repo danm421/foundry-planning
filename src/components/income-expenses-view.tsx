@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
+import MilestoneYearPicker from "./milestone-year-picker";
+import type { YearRef, ClientMilestones } from "@/lib/milestones";
+import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -24,6 +27,8 @@ interface Income {
   ownerEntityId?: string | null;
   cashAccountId?: string | null;
   inflationStartYear?: number | null;
+  startYearRef?: string | null;
+  endYearRef?: string | null;
 }
 
 interface Expense {
@@ -37,6 +42,8 @@ interface Expense {
   ownerEntityId?: string | null;
   cashAccountId?: string | null;
   inflationStartYear?: number | null;
+  startYearRef?: string | null;
+  endYearRef?: string | null;
 }
 
 interface SavingsRule {
@@ -72,6 +79,7 @@ interface ClientInfo {
   spouseEndYear?: number;
   planStartYear: number;
   planEndYear: number;
+  milestones?: ClientMilestones;
 }
 
 interface IncomeExpensesViewProps {
@@ -130,57 +138,6 @@ function yearsDescriptor(start: number, end: number, planStart?: number, planEnd
   }
   if (start === end) return String(start);
   return `${start}–${end}`;
-}
-
-// ── Year Quick-Fill ────────────────────────────────────────────────────────
-
-function YearQuickFill({
-  inputId,
-  clientInfo,
-  owner,
-}: {
-  inputId: string;
-  clientInfo?: ClientInfo;
-  owner?: Owner;
-}) {
-  if (!clientInfo) return null;
-
-  function setYear(year: number) {
-    const el = document.getElementById(inputId) as HTMLInputElement | null;
-    if (el) {
-      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-      nativeSetter?.call(el, String(year));
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-  }
-
-  const retYear = owner === "spouse" && clientInfo.spouseRetirementYear
-    ? clientInfo.spouseRetirementYear
-    : clientInfo.clientRetirementYear;
-  const endYear = owner === "spouse" && clientInfo.spouseEndYear
-    ? clientInfo.spouseEndYear
-    : clientInfo.clientEndYear;
-
-  return (
-    <div className="mt-1 flex gap-1">
-      <button
-        type="button"
-        onClick={() => setYear(retYear)}
-        className="rounded bg-gray-800 px-2 py-0.5 text-[10px] text-gray-400 hover:bg-blue-900 hover:text-blue-400"
-        title={`Retirement: ${retYear}`}
-      >
-        Ret
-      </button>
-      <button
-        type="button"
-        onClick={() => setYear(endYear)}
-        className="rounded bg-gray-800 px-2 py-0.5 text-[10px] text-gray-400 hover:bg-blue-900 hover:text-blue-400"
-        title={`Life Expectancy: ${endYear}`}
-      >
-        End
-      </button>
-    </div>
-  );
 }
 
 // ── Shared atoms ──────────────────────────────────────────────────────────────
@@ -375,6 +332,20 @@ function IncomeDialog({
   const isEdit = Boolean(editing);
   const isSocialSecurity = type === "social_security";
 
+  const incDefaultRefs = !isEdit ? defaultIncomeRefs(type, owner) : null;
+  const [startYearRef, setStartYearRef] = useState<YearRef | null>(
+    (editing?.startYearRef as YearRef) ?? incDefaultRefs?.startYearRef ?? null
+  );
+  const [endYearRef, setEndYearRef] = useState<YearRef | null>(
+    (editing?.endYearRef as YearRef) ?? incDefaultRefs?.endYearRef ?? null
+  );
+  const [startYear, setStartYear] = useState<number>(
+    editing?.startYear ?? (startYearRef && clientInfo?.milestones ? resolveMilestone(startYearRef, clientInfo.milestones) ?? currentYear : currentYear)
+  );
+  const [endYear, setEndYear] = useState<number>(
+    editing?.endYear ?? (endYearRef && clientInfo?.milestones ? resolveMilestone(endYearRef, clientInfo.milestones) ?? (currentYear + 20) : currentYear + 20)
+  );
+
   if (!open) return null;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -384,17 +355,17 @@ function IncomeDialog({
 
     const data = new FormData(e.currentTarget);
 
-    let startYear: string;
-    let endYear: string;
+    let submitStartYear: string;
+    let submitEndYear: string;
     let claimingAge: string | null = null;
 
     if (isSocialSecurity) {
       claimingAge = data.get("claimingAge") as string;
-      startYear = String(clientInfo?.planStartYear ?? currentYear);
-      endYear = String(clientInfo?.planEndYear ?? currentYear + 30);
+      submitStartYear = String(clientInfo?.planStartYear ?? currentYear);
+      submitEndYear = String(clientInfo?.planEndYear ?? currentYear + 30);
     } else {
-      startYear = data.get("startYear") as string;
-      endYear = data.get("endYear") as string;
+      submitStartYear = String(startYear);
+      submitEndYear = String(endYear);
       claimingAge = data.get("claimingAge") ? (data.get("claimingAge") as string) : null;
     }
 
@@ -402,8 +373,8 @@ function IncomeDialog({
       type: data.get("type") as string,
       name: data.get("name") as string,
       annualAmount: data.get("annualAmount") as string,
-      startYear,
-      endYear,
+      startYear: submitStartYear,
+      endYear: submitEndYear,
       growthRate: String(Number(data.get("growthRate") as string) / 100),
       owner: data.get("owner") as string,
       claimingAge,
@@ -414,6 +385,8 @@ function IncomeDialog({
       // entry's startYear so retirement-era amounts can be entered in current
       // purchasing power. Null means inflate only from startYear onward.
       inflationStartYear: todaysDollars ? planStartYear : null,
+      startYearRef: isSocialSecurity ? null : startYearRef,
+      endYearRef: isSocialSecurity ? null : endYearRef,
     };
 
     try {
@@ -565,36 +538,58 @@ function IncomeDialog({
                   Start/end years are auto-set to plan range. Benefits begin at claiming age.
                 </p>
               </div>
+            ) : clientInfo?.milestones ? (
+              <>
+                <MilestoneYearPicker
+                  name="startYear"
+                  id="inc-start"
+                  value={startYear}
+                  yearRef={startYearRef}
+                  milestones={clientInfo.milestones}
+                  showSSRefs={false}
+                  onChange={(yr, ref) => { setStartYear(yr); setStartYearRef(ref); }}
+                  label="Start Year"
+                />
+                <MilestoneYearPicker
+                  name="endYear"
+                  id="inc-end"
+                  value={endYear}
+                  yearRef={endYearRef}
+                  milestones={clientInfo.milestones}
+                  showSSRefs={false}
+                  onChange={(yr, ref) => { setEndYear(yr); setEndYearRef(ref); }}
+                  label="End Year"
+                />
+              </>
             ) : (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="inc-start">
-                    Start Year <span className="text-red-500">*</span>
+                  <label className="block text-xs font-medium text-gray-400" htmlFor="inc-start">
+                    Start Year
                   </label>
                   <input
                     id="inc-start"
                     name="startYear"
                     type="number"
                     required
-                    defaultValue={editing?.startYear ?? currentYear}
-                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    value={startYear}
+                    onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
-                  <YearQuickFill inputId="inc-start" clientInfo={clientInfo} owner={owner} />
                 </div>
-
                 <div>
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="inc-end">
-                    End Year <span className="text-red-500">*</span>
+                  <label className="block text-xs font-medium text-gray-400" htmlFor="inc-end">
+                    End Year
                   </label>
                   <input
                     id="inc-end"
                     name="endYear"
                     type="number"
                     required
-                    defaultValue={editing?.endYear ?? currentYear + 20}
-                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    value={endYear}
+                    onChange={(e) => { setEndYear(Number(e.target.value)); setEndYearRef(null); }}
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
-                  <YearQuickFill inputId="inc-end" clientInfo={clientInfo} owner={owner} />
                 </div>
               </>
             )}
@@ -714,6 +709,20 @@ function ExpenseDialog({
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
 
+  const expDefaultRefs = !isEdit ? defaultExpenseRefs(editing?.type ?? defaultType) : null;
+  const [startYearRef, setStartYearRef] = useState<YearRef | null>(
+    (editing?.startYearRef as YearRef) ?? expDefaultRefs?.startYearRef ?? null
+  );
+  const [endYearRef, setEndYearRef] = useState<YearRef | null>(
+    (editing?.endYearRef as YearRef) ?? expDefaultRefs?.endYearRef ?? null
+  );
+  const [startYear, setStartYear] = useState<number>(
+    editing?.startYear ?? (startYearRef && clientInfo?.milestones ? resolveMilestone(startYearRef, clientInfo.milestones) ?? currentYear : currentYear)
+  );
+  const [endYear, setEndYear] = useState<number>(
+    editing?.endYear ?? (endYearRef && clientInfo?.milestones ? resolveMilestone(endYearRef, clientInfo.milestones) ?? (currentYear + 20) : currentYear + 20)
+  );
+
   if (!open) return null;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -726,12 +735,14 @@ function ExpenseDialog({
       type: data.get("type") as string,
       name: data.get("name") as string,
       annualAmount: data.get("annualAmount") as string,
-      startYear: data.get("startYear") as string,
-      endYear: data.get("endYear") as string,
+      startYear: String(startYear),
+      endYear: String(endYear),
       growthRate: String(Number(data.get("growthRate") as string) / 100),
       ownerEntityId: ownerEntityId || null,
       cashAccountId: cashAccountId || null,
       inflationStartYear: todaysDollars ? planStartYear : null,
+      startYearRef,
+      endYearRef,
     };
 
     try {
@@ -845,35 +856,61 @@ function ExpenseDialog({
               </label>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="exp-start">
-                Start Year <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="exp-start"
-                name="startYear"
-                type="number"
-                required
-                defaultValue={editing?.startYear ?? currentYear}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <YearQuickFill inputId="exp-start" clientInfo={clientInfo} />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="exp-end">
-                End Year <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="exp-end"
-                name="endYear"
-                type="number"
-                required
-                defaultValue={editing?.endYear ?? currentYear + 20}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <YearQuickFill inputId="exp-end" clientInfo={clientInfo} />
-            </div>
+            {clientInfo?.milestones ? (
+              <>
+                <MilestoneYearPicker
+                  name="startYear"
+                  id="exp-start"
+                  value={startYear}
+                  yearRef={startYearRef}
+                  milestones={clientInfo.milestones}
+                  showSSRefs={false}
+                  onChange={(yr, ref) => { setStartYear(yr); setStartYearRef(ref); }}
+                  label="Start Year"
+                />
+                <MilestoneYearPicker
+                  name="endYear"
+                  id="exp-end"
+                  value={endYear}
+                  yearRef={endYearRef}
+                  milestones={clientInfo.milestones}
+                  showSSRefs={false}
+                  onChange={(yr, ref) => { setEndYear(yr); setEndYearRef(ref); }}
+                  label="End Year"
+                />
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400" htmlFor="exp-start">
+                    Start Year
+                  </label>
+                  <input
+                    id="exp-start"
+                    name="startYear"
+                    type="number"
+                    required
+                    value={startYear}
+                    onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-400" htmlFor="exp-end">
+                    End Year
+                  </label>
+                  <input
+                    id="exp-end"
+                    name="endYear"
+                    type="number"
+                    required
+                    value={endYear}
+                    onChange={(e) => { setEndYear(Number(e.target.value)); setEndYearRef(null); }}
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           {entities && entities.length > 0 && (
