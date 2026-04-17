@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -58,6 +59,8 @@ interface AddAccountFormProps {
   /** Real names used in the owner dropdown. Falls back to "Client"/"Spouse" if absent. */
   ownerNames?: { clientName: string; spouseName: string | null };
   modelPortfolios?: ModelPortfolioOption[];
+  assetClasses?: AssetClassOption[];
+  portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
   onSuccess?: () => void;
   onDelete?: () => void;
 }
@@ -117,6 +120,8 @@ export default function AddAccountForm({
   categoryDefaults,
   ownerNames,
   modelPortfolios,
+  assetClasses,
+  portfolioAllocationsMap,
   onSuccess,
   onDelete,
 }: AddAccountFormProps) {
@@ -130,7 +135,7 @@ export default function AddAccountForm({
   const [category, setCategory] = useState<AccountCategory>(
     initial?.category ?? defaultCategory ?? "taxable"
   );
-  const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization">("details");
+  const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix">("details");
   const [subType, setSubType] = useState(
     initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
   );
@@ -153,12 +158,32 @@ export default function AddAccountForm({
 
   // Growth source: "default" (category default), "model_portfolio", or "custom"
   const isInvestable = ["taxable", "cash", "retirement"].includes(category);
-  const [growthSource, setGrowthSource] = useState<"default" | "model_portfolio" | "custom">(
-    (initial?.growthSource as "default" | "model_portfolio" | "custom") ?? "default"
+  const [growthSource, setGrowthSource] = useState<"default" | "model_portfolio" | "custom" | "asset_mix">(
+    (initial?.growthSource as "default" | "model_portfolio" | "custom" | "asset_mix") ?? "default"
   );
   const [modelPortfolioId, setModelPortfolioId] = useState<string>(
     initial?.modelPortfolioId ?? ""
   );
+  const [customAllocations, setCustomAllocations] = useState<{ assetClassId: string; weight: number }[]>([]);
+  const [allocationsLoaded, setAllocationsLoaded] = useState(false);
+
+  const ASSET_MIX_CATEGORIES = ["taxable", "retirement"];
+  const showAssetMixTab = ASSET_MIX_CATEGORIES.includes(category) &&
+    (growthSource === "model_portfolio" || growthSource === "asset_mix");
+
+  useEffect(() => {
+    if (mode === "edit" && initial?.id && !allocationsLoaded) {
+      fetch(`/api/clients/${clientId}/accounts/${initial.id}/allocations`)
+        .then((res) => res.json())
+        .then((rows: { assetClassId: string; weight: string }[]) => {
+          setCustomAllocations(
+            rows.map((r) => ({ assetClassId: r.assetClassId, weight: parseFloat(r.weight) }))
+          );
+          setAllocationsLoaded(true);
+        })
+        .catch(() => setAllocationsLoaded(true));
+    }
+  }, [mode, initial?.id, clientId, allocationsLoaded]);
 
   // Legacy compat: map old useDefaultGrowth behavior into growthSource
   const hasExplicitGrowth = initial?.growthRate != null && initial.growthRate !== "";
@@ -183,6 +208,28 @@ export default function AddAccountForm({
   const initialGrowthPct = hasExplicitGrowth
     ? Math.round(Number(initial!.growthRate) * 10000) / 100
     : defaultPctForCategory ?? 7;
+
+  function handleGrowthSourceChange(v: string) {
+    const prev = growthSource;
+    if (v.startsWith("mp:")) {
+      setGrowthSource("model_portfolio");
+      setModelPortfolioId(v.slice(3));
+    } else if (v === "asset_mix") {
+      setGrowthSource("asset_mix");
+      // Pre-fill from model portfolio when switching
+      if (prev === "model_portfolio" && modelPortfolioId && customAllocations.length === 0) {
+        const portfolioAllocs = portfolioAllocationsMap?.[modelPortfolioId] ?? [];
+        if (portfolioAllocs.length > 0) setCustomAllocations(portfolioAllocs);
+      }
+      setModelPortfolioId("");
+    } else if (v === "custom") {
+      setGrowthSource("custom");
+      setModelPortfolioId("");
+    } else {
+      setGrowthSource("default");
+      setModelPortfolioId("");
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -236,6 +283,14 @@ export default function AddAccountForm({
           const json = await res.json();
           throw new Error(json.error ?? "Failed to update account");
         }
+        // Save asset mix allocations for existing account
+        if (growthSource === "asset_mix" && customAllocations.length > 0) {
+          await fetch(`/api/clients/${clientId}/accounts/${initial!.id}/allocations`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ allocations: customAllocations }),
+          });
+        }
       } else {
         const res = await fetch(`/api/clients/${clientId}/accounts`, {
           method: "POST",
@@ -247,6 +302,15 @@ export default function AddAccountForm({
           throw new Error(json.error ?? "Failed to create account");
         }
         const account = await res.json();
+
+        // Save asset mix allocations for new account
+        if (growthSource === "asset_mix" && customAllocations.length > 0) {
+          await fetch(`/api/clients/${clientId}/accounts/${account.id}/allocations`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ allocations: customAllocations }),
+          });
+        }
 
         // Create savings rule if savings tab filled (create-only)
         const savingsAmount = data.get("savingsAmount") as string;
@@ -328,6 +392,19 @@ export default function AddAccountForm({
             }`}
           >
             Realization
+          </button>
+        )}
+        {showAssetMixTab && (
+          <button
+            type="button"
+            onClick={() => setActiveTab("asset_mix")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+              activeTab === "asset_mix"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Asset Mix
           </button>
         )}
       </div>
@@ -435,19 +512,7 @@ export default function AddAccountForm({
                 <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
                 <select
                   value={growthSource === "model_portfolio" ? `mp:${modelPortfolioId}` : growthSource}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v.startsWith("mp:")) {
-                      setGrowthSource("model_portfolio");
-                      setModelPortfolioId(v.slice(3));
-                    } else if (v === "custom") {
-                      setGrowthSource("custom");
-                      setModelPortfolioId("");
-                    } else {
-                      setGrowthSource("default");
-                      setModelPortfolioId("");
-                    }
-                  }}
+                  onChange={(e) => handleGrowthSourceChange(e.target.value)}
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   <option value="default">
@@ -458,6 +523,9 @@ export default function AddAccountForm({
                       {mp.name} ({(mp.blendedReturn * 100).toFixed(2)}%)
                     </option>
                   ))}
+                  {ASSET_MIX_CATEGORIES.includes(category) && (
+                    <option value="asset_mix">Asset mix (custom)</option>
+                  )}
                   <option value="custom">Custom %</option>
                 </select>
                 {growthSource === "custom" && (
@@ -725,6 +793,26 @@ export default function AddAccountForm({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Asset Mix tab */}
+      {showAssetMixTab && assetClasses && (
+        <div className={activeTab === "asset_mix" ? "" : "hidden"}>
+          <AssetMixTab
+            mode={growthSource === "model_portfolio" ? "model_portfolio" : "asset_mix"}
+            assetClasses={assetClasses}
+            portfolioAllocations={
+              growthSource === "model_portfolio" && modelPortfolioId
+                ? portfolioAllocationsMap?.[modelPortfolioId]
+                : undefined
+            }
+            portfolioName={
+              modelPortfolios?.find((mp) => mp.id === modelPortfolioId)?.name
+            }
+            allocations={customAllocations}
+            onChange={setCustomAllocations}
+          />
         </div>
       )}
 

@@ -64,6 +64,21 @@ export default async function BalanceSheetPage({ params }: PageProps) {
 
   // Compute blended returns for each model portfolio
   const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
+
+  const assetClassOptions = assetClassRows.map((ac) => ({
+    id: ac.id,
+    name: ac.name,
+    slug: ac.slug,
+    geometricReturn: parseFloat(ac.geometricReturn),
+  }));
+
+  const portfolioAllocationsMap: Record<string, { assetClassId: string; weight: number }[]> = {};
+  for (const alloc of allocationRows) {
+    const list = portfolioAllocationsMap[alloc.modelPortfolioId] ?? [];
+    list.push({ assetClassId: alloc.assetClassId, weight: parseFloat(alloc.weight) });
+    portfolioAllocationsMap[alloc.modelPortfolioId] = list;
+  }
+
   const modelPortfolioOptions = portfolioRows.map((p) => {
     const allocs = allocationRows.filter((a) => a.modelPortfolioId === p.id);
     let blendedReturn = 0;
@@ -142,6 +157,8 @@ export default async function BalanceSheetPage({ params }: PageProps) {
           ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
           : null,
       }}
+      assetClasses={assetClassOptions}
+      portfolioAllocationsMap={portfolioAllocationsMap}
     />
   );
 }

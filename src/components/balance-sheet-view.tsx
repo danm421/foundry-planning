@@ -6,6 +6,7 @@ import AddAccountDialog from "./add-account-dialog";
 import AddLiabilityDialog from "./add-liability-dialog";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
+import { type AssetClassOption } from "./forms/asset-mix-tab";
 import { LiabilityFormInitial } from "./forms/add-liability-form";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 
@@ -51,6 +52,8 @@ interface BalanceSheetViewProps {
   categoryDefaults: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
   ownerNames: OwnerNames;
+  assetClasses?: AssetClassOption[];
+  portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
 }
 
 const CATEGORY_LABELS: Record<AccountCategory, string> = {
@@ -187,6 +190,8 @@ export default function BalanceSheetView({
   categoryDefaults,
   modelPortfolios,
   ownerNames,
+  assetClasses,
+  portfolioAllocationsMap,
 }: BalanceSheetViewProps) {
   const router = useRouter();
 
@@ -415,6 +420,8 @@ export default function BalanceSheetView({
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
         ownerNames={ownerNames}
+        assetClasses={assetClasses}
+        portfolioAllocationsMap={portfolioAllocationsMap}
         open={addCategory !== null}
         onOpenChange={(o) => !o && setAddCategory(null)}
       />
@@ -426,6 +433,8 @@ export default function BalanceSheetView({
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
         ownerNames={ownerNames}
+        assetClasses={assetClasses}
+        portfolioAllocationsMap={portfolioAllocationsMap}
         open={!!editingAccount}
         onOpenChange={(o) => !o && setEditingAccount(null)}
         editing={editingAccount ? accountToInitial(editingAccount) : undefined}

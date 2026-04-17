@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
+import { type AssetClassOption } from "./forms/asset-mix-tab";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -18,6 +19,8 @@ interface AddAccountDialogProps {
   categoryDefaults?: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
   ownerNames?: { clientName: string; spouseName: string | null };
+  assetClasses?: AssetClassOption[];
+  portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
 }
 
 export default function AddAccountDialog({
@@ -32,6 +35,8 @@ export default function AddAccountDialog({
   categoryDefaults,
   modelPortfolios,
   ownerNames,
+  assetClasses,
+  portfolioAllocationsMap,
 }: AddAccountDialogProps) {
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
@@ -81,6 +86,8 @@ export default function AddAccountDialog({
               categoryDefaults={categoryDefaults}
               modelPortfolios={modelPortfolios}
               ownerNames={ownerNames}
+              assetClasses={assetClasses}
+              portfolioAllocationsMap={portfolioAllocationsMap}
               onSuccess={close}
               onDelete={onRequestDelete}
             />
