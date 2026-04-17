@@ -17,6 +17,10 @@ export interface ClientData {
   taxYearRows?: TaxYearParameters[];
   /** Itemized deduction line items (charitable, SALT, mortgage interest, etc.). */
   deductions?: ClientDeductionRow[];
+  /** Transfer techniques — move value between accounts with tax implications. */
+  transfers?: Transfer[];
+  /** Asset buy/sell transactions — acquire or dispose of assets in specific years. */
+  assetTransactions?: AssetTransaction[];
 }
 
 // Minimal entity view used by the engine to decide cash-flow treatment of entity-owned
@@ -148,6 +152,51 @@ export interface WithdrawalPriority {
   priorityOrder: number;
   startYear: number;
   endYear: number;
+}
+
+export interface Transfer {
+  id: string;
+  name: string;
+  sourceAccountId: string;
+  targetAccountId: string;
+  amount: number;
+  mode: "one_time" | "recurring" | "scheduled";
+  startYear: number;
+  endYear?: number;
+  growthRate: number;
+  schedules: TransferSchedule[];
+}
+
+export interface TransferSchedule {
+  year: number;
+  amount: number;
+}
+
+export interface AssetTransaction {
+  id: string;
+  name: string;
+  type: "buy" | "sell";
+  year: number;
+  // Sale fields
+  accountId?: string;
+  overrideSaleValue?: number;
+  overrideBasis?: number;
+  transactionCostPct?: number;
+  transactionCostFlat?: number;
+  proceedsAccountId?: string;
+  // Buy fields
+  assetName?: string;
+  assetCategory?: Account["category"];
+  assetSubType?: string;
+  purchasePrice?: number;
+  growthRate?: number;
+  basis?: number;
+  fundingAccountId?: string;
+  mortgageAmount?: number;
+  mortgageRate?: number;
+  mortgageTermMonths?: number;
+  // Resolved at API layer (same as Account.realization)
+  realization?: Account["realization"];
 }
 
 export interface PlanSettings {
