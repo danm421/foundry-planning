@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
-import { buildClientData, basePlanSettings, baseClient } from "./fixtures";
+import { buildClientData, basePlanSettings, baseClient, sampleExpenses } from "./fixtures";
 import type { TaxYearParameters } from "../../lib/tax/types";
 
 describe("runProjection", () => {
@@ -455,5 +455,52 @@ describe("projection — bracket/flat tax routing", () => {
     expect(firstYear.taxResult).toBeDefined();
     // SALT: $20k (under $40k cap for 2026) + charitable $25k = $45k itemized
     expect(firstYear.taxResult!.flow.belowLineDeductions).toBeGreaterThanOrEqual(45000);
+  });
+
+  it("derives mortgage interest deduction from isInterestDeductible liability", () => {
+    const fixture = buildClientData({
+      planSettings: { ...basePlanSettings, taxEngineMode: "bracket", planStartYear: 2026, planEndYear: 2026 },
+    });
+    const years = runProjection({ ...fixture, taxYearRows: FIXTURE_TAX_PARAMS });
+    const firstYear = years[0];
+    expect(firstYear.taxResult).toBeDefined();
+    // Mortgage balance 300k at 6.5% = ~$19,500 interest. With isInterestDeductible=true,
+    // this should appear in below-line deductions.
+    expect(firstYear.taxResult!.flow.belowLineDeductions).toBeGreaterThan(0);
+  });
+
+  it("derives property tax from real estate accounts into SALT pool", () => {
+    const fixture = buildClientData({
+      planSettings: { ...basePlanSettings, taxEngineMode: "bracket", planStartYear: 2026, planEndYear: 2026 },
+    });
+    const years = runProjection({ ...fixture, taxYearRows: FIXTURE_TAX_PARAMS });
+    const firstYear = years[0];
+    expect(firstYear.taxResult).toBeDefined();
+    // Property tax of $12k flows into SALT pool (under $40k cap)
+    expect(firstYear.taxResult!.flow.belowLineDeductions).toBeGreaterThan(0);
+    // Verify realEstate expense category is populated
+    expect(firstYear.expenses.realEstate).toBeGreaterThan(0);
+  });
+
+  it("routes charitable-tagged expense into itemized deductions", () => {
+    const charitableExpense = {
+      id: "exp-charity",
+      type: "other" as const,
+      name: "Annual Giving",
+      annualAmount: 25000,
+      startYear: 2026,
+      endYear: 2055,
+      growthRate: 0,
+      deductionType: "charitable" as const,
+    };
+    const fixture = buildClientData({
+      expenses: [...sampleExpenses, charitableExpense],
+      planSettings: { ...basePlanSettings, taxEngineMode: "bracket", planStartYear: 2026, planEndYear: 2026 },
+    });
+    const years = runProjection({ ...fixture, taxYearRows: FIXTURE_TAX_PARAMS });
+    const firstYear = years[0];
+    expect(firstYear.taxResult).toBeDefined();
+    // $25k charitable + mortgage interest + property tax SALT → below-line > 25k
+    expect(firstYear.taxResult!.flow.belowLineDeductions).toBeGreaterThanOrEqual(25000);
   });
 });
