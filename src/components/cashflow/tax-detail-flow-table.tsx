@@ -234,20 +234,118 @@ function belowLineColumns(): Column[] {
   ];
 }
 
-function DrillHeader({ label, tooltip, onClick }: { label: string; tooltip: string; onClick: () => void }) {
+function DrillHeader({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <TaxDetailTooltip
-      label={
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 font-semibold normal-case text-blue-400 hover:text-blue-300 hover:underline"
+    >
+      {label} <span className="text-xs">▸</span>
+    </button>
+  );
+}
+
+/** Map drill-down column keys to a function that extracts the relevant bySource entries. */
+function getSourcesForColumn(
+  y: ProjectionYear,
+  colKey: string
+): Array<{ label: string; amount: number }> | null {
+  const bd = y.deductionBreakdown;
+  if (!bd) return null;
+
+  // Above-line sources
+  if (colKey === "al_retirement" || colKey === "al_total") {
+    const entries = Object.values(bd.aboveLine.bySource);
+    return entries.length > 0 ? entries : null;
+  }
+
+  // Below-line: filter bySource by category
+  if (colKey === "bl_charitable") {
+    return filterBySource(bd.belowLine.bySource, "charitable", y);
+  }
+  if (colKey === "bl_interest_paid") {
+    return filterBySource(bd.belowLine.bySource, "interest", y);
+  }
+  if (colKey === "bl_taxes_paid") {
+    // SALT sources come from property tax accounts — build from the above-line bySource won't work.
+    // For now, show the capped total as a single line.
+    const amount = bd.belowLine.taxesPaid;
+    return amount > 0 ? [{ label: "SALT (capped)", amount }] : null;
+  }
+
+  return null;
+}
+
+function filterBySource(
+  bySource: Record<string, { label: string; amount: number }>,
+  _category: string,
+  _y: ProjectionYear
+): Array<{ label: string; amount: number }> | null {
+  // bySource contains all below-line entries; for now return all of them
+  const entries = Object.values(bySource);
+  return entries.length > 0 ? entries : null;
+}
+
+function SourcePopover({ sources, onClose }: {
+  sources: Array<{ label: string; amount: number }>;
+  onClose: () => void;
+}) {
+  return (
+    <div className="absolute right-0 top-full z-50 mt-1 min-w-[200px] rounded-md border border-gray-700 bg-gray-900 p-2 shadow-xl">
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-xs font-medium text-gray-400">Sources</span>
         <button
           type="button"
-          onClick={onClick}
-          className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
+          onClick={onClose}
+          className="text-xs text-gray-500 hover:text-gray-300"
         >
-          {label} <span className="text-xs">▸</span>
+          ×
         </button>
-      }
-      text={tooltip}
-    />
+      </div>
+      <ul className="space-y-0.5">
+        {sources.map((s, i) => (
+          <li key={i} className="flex items-center justify-between text-xs">
+            <span className="text-gray-300">{s.label}</span>
+            <span className="ml-3 tabular-nums text-gray-200">{fmt.format(s.amount)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Drillable cell — shows a popover with per-source detail on click. */
+function DrillCell({
+  value,
+  formatter,
+  sources,
+  isBold,
+}: {
+  value: number;
+  formatter: (n: number) => string;
+  sources: Array<{ label: string; amount: number }> | null;
+  isBold: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasDetail = sources && sources.length > 0;
+
+  return (
+    <td
+      className={`relative px-3 py-2 text-right tabular-nums ${
+        isBold
+          ? "font-semibold"
+          : value === 0
+            ? "text-gray-600"
+            : ""
+      } ${hasDetail ? "cursor-pointer hover:text-blue-400" : ""}`}
+      onClick={hasDetail ? () => setOpen(!open) : undefined}
+    >
+      {formatter(value)}
+      {open && sources && (
+        <SourcePopover sources={sources} onClose={() => setOpen(false)} />
+      )}
+    </td>
   );
 }
 
@@ -271,7 +369,6 @@ export function TaxDetailFlowTable({ years, onYearClick }: TaxDetailFlowTablePro
       return (
         <DrillHeader
           label={col.label}
-          tooltip={col.tooltip ?? ""}
           onClick={() => setDrillLevel("above_line")}
         />
       );
@@ -280,7 +377,6 @@ export function TaxDetailFlowTable({ years, onYearClick }: TaxDetailFlowTablePro
       return (
         <DrillHeader
           label={col.label}
-          tooltip={col.tooltip ?? ""}
           onClick={() => setDrillLevel("below_line")}
         />
       );
@@ -352,6 +448,17 @@ export function TaxDetailFlowTable({ years, onYearClick }: TaxDetailFlowTablePro
                   {activeColumns.map((col) => {
                     const v = col.value(y);
                     const formatter = col.formatter ?? formatCell;
+                    if (drillLevel !== "top") {
+                      return (
+                        <DrillCell
+                          key={col.key}
+                          value={v}
+                          formatter={formatter}
+                          sources={getSourcesForColumn(y, col.key)}
+                          isBold={boldKeys.has(col.key)}
+                        />
+                      );
+                    }
                     return (
                       <td
                         key={col.key}
