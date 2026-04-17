@@ -17,7 +17,6 @@ import {
   type AmortizationScheduleRow,
   type ScheduleExtraPayment,
 } from "@/lib/loan-math";
-import type { LiabilityFormInitial } from "./forms/add-liability-form";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -53,12 +52,22 @@ interface ExtraPaymentRecord {
 
 interface LiabilityAmortizationTabProps {
   clientId: string;
-  liability: LiabilityFormInitial;
+  liabilityId?: string;
+  balance: number;
+  interestRate: number;
+  monthlyPayment: number;
+  startYear: number;
+  termMonths: number;
 }
 
 export default function LiabilityAmortizationTab({
   clientId,
-  liability,
+  liabilityId,
+  balance,
+  interestRate,
+  monthlyPayment,
+  startYear,
+  termMonths,
 }: LiabilityAmortizationTabProps) {
   const [extraPaymentRecords, setExtraPaymentRecords] = useState<ExtraPaymentRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,12 +75,16 @@ export default function LiabilityAmortizationTab({
   const [epType, setEpType] = useState<"per_payment" | "lump_sum">("lump_sum");
   const [epAmount, setEpAmount] = useState("");
 
-  // Fetch extra payments on mount
+  // Fetch extra payments on mount (only when editing an existing liability)
   useEffect(() => {
+    if (!liabilityId) {
+      setLoading(false);
+      return;
+    }
     async function fetchExtraPayments() {
       try {
         const res = await fetch(
-          `/api/clients/${clientId}/liabilities/${liability.id}/extra-payments`
+          `/api/clients/${clientId}/liabilities/${liabilityId}/extra-payments`
         );
         if (res.ok) {
           const data = await res.json();
@@ -84,7 +97,7 @@ export default function LiabilityAmortizationTab({
       }
     }
     fetchExtraPayments();
-  }, [clientId, liability.id]);
+  }, [clientId, liabilityId]);
 
   // Convert extra payment records to schedule format
   const scheduleExtraPayments: ScheduleExtraPayment[] = useMemo(
@@ -99,37 +112,34 @@ export default function LiabilityAmortizationTab({
 
   // Compute amortization schedule
   const schedule: AmortizationScheduleRow[] = useMemo(() => {
-    const balance = parseFloat(liability.balance) || 0;
-    const annualRate = parseFloat(liability.interestRate) || 0;
-    const monthlyPayment = parseFloat(liability.monthlyPayment) || 0;
-    const startYear = liability.startYear;
-    const termMonths = liability.termMonths || 360;
-
+    const term = termMonths || 360;
     if (balance <= 0 || monthlyPayment <= 0) return [];
 
     return computeAmortizationSchedule(
       balance,
-      annualRate,
+      interestRate,
       monthlyPayment,
       startYear,
-      termMonths,
+      term,
       scheduleExtraPayments
     );
-  }, [liability, scheduleExtraPayments]);
+  }, [balance, interestRate, monthlyPayment, startYear, termMonths, scheduleExtraPayments]);
 
   // Chart data
   const chartData = useMemo(() => {
-    let cumPrincipal = 0;
+    let cumPayment = 0;
     let cumInterest = 0;
     const labels: string[] = [];
-    const principalData: number[] = [];
+    const balanceData: number[] = [];
+    const paymentData: number[] = [];
     const interestData: number[] = [];
 
     for (const row of schedule) {
-      cumPrincipal += row.principal + row.extraPayment;
+      cumPayment += row.payment + row.extraPayment;
       cumInterest += row.interest;
       labels.push(String(row.year));
-      principalData.push(cumPrincipal);
+      balanceData.push(row.endingBalance);
+      paymentData.push(cumPayment);
       interestData.push(cumInterest);
     }
 
@@ -137,29 +147,37 @@ export default function LiabilityAmortizationTab({
       labels,
       datasets: [
         {
-          label: "Cumulative Principal",
-          data: principalData,
+          label: "Balance",
+          data: balanceData,
           borderColor: "#3b82f6",
           backgroundColor: "rgba(59, 130, 246, 0.1)",
           tension: 0.3,
         },
         {
-          label: "Cumulative Interest",
+          label: "Interest",
           data: interestData,
-          borderColor: "#ef4444",
-          backgroundColor: "rgba(239, 68, 68, 0.1)",
+          borderColor: "#84cc16",
+          backgroundColor: "rgba(132, 204, 22, 0.1)",
+          tension: 0.3,
+        },
+        {
+          label: "Payment",
+          data: paymentData,
+          borderColor: "#991b1b",
+          backgroundColor: "rgba(153, 27, 27, 0.1)",
           tension: 0.3,
         },
       ],
     };
   }, [schedule]);
 
-  // Extra payment handlers
+  // Extra payment handlers (only functional when liabilityId is present)
   const addExtraPayment = useCallback(
     async (year: number, type: "per_payment" | "lump_sum", amount: number) => {
+      if (!liabilityId) return;
       try {
         const res = await fetch(
-          `/api/clients/${clientId}/liabilities/${liability.id}/extra-payments`,
+          `/api/clients/${clientId}/liabilities/${liabilityId}/extra-payments`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -174,28 +192,29 @@ export default function LiabilityAmortizationTab({
         console.error("Failed to add extra payment:", err);
       }
     },
-    [clientId, liability.id]
+    [clientId, liabilityId]
   );
 
   const removeExtraPayment = useCallback(
     async (epId: string) => {
+      if (!liabilityId) return;
       // Optimistic removal
       setExtraPaymentRecords((prev) => prev.filter((ep) => ep.id !== epId));
       try {
         await fetch(
-          `/api/clients/${clientId}/liabilities/${liability.id}/extra-payments/${epId}`,
+          `/api/clients/${clientId}/liabilities/${liabilityId}/extra-payments/${epId}`,
           { method: "DELETE" }
         );
       } catch (err) {
         console.error("Failed to remove extra payment:", err);
         // Re-fetch on error to restore state
         const res = await fetch(
-          `/api/clients/${clientId}/liabilities/${liability.id}/extra-payments`
+          `/api/clients/${clientId}/liabilities/${liabilityId}/extra-payments`
         );
         if (res.ok) setExtraPaymentRecords(await res.json());
       }
     },
-    [clientId, liability.id]
+    [clientId, liabilityId]
   );
 
   function handleSaveExtra() {
@@ -344,7 +363,7 @@ export default function LiabilityAmortizationTab({
                           </button>
                         ))}
                       </div>
-                    ) : row.endingBalance > 0 ? (
+                    ) : row.endingBalance > 0 && liabilityId ? (
                       <button
                         onClick={() => {
                           setEditingYear(row.year);

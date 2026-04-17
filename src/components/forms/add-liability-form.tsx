@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import MilestoneYearPicker from "../milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
@@ -22,6 +22,14 @@ export interface LiabilityFormInitial {
   isInterestDeductible?: boolean;
 }
 
+export interface LiabilityFormValues {
+  balance: number;
+  interestRate: number;
+  monthlyPayment: number;
+  startYear: number;
+  termMonths: number;
+}
+
 interface AddLiabilityFormProps {
   clientId: string;
   realEstateAccounts?: { id: string; name: string }[];
@@ -31,6 +39,7 @@ interface AddLiabilityFormProps {
   initial?: LiabilityFormInitial;
   onSuccess?: () => void;
   onDelete?: () => void;
+  onValuesChange?: (values: LiabilityFormValues) => void;
 }
 
 export default function AddLiabilityForm({
@@ -42,6 +51,7 @@ export default function AddLiabilityForm({
   initial,
   onSuccess,
   onDelete,
+  onValuesChange,
 }: AddLiabilityFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -54,6 +64,10 @@ export default function AddLiabilityForm({
   const initialInterestPct = initial
     ? Math.round(Number(initial.interestRate) * 10000) / 100
     : 0;
+
+  const [balance, setBalance] = useState<string>(initial?.balance ?? "0");
+  const [interestRatePct, setInterestRatePct] = useState<string>(String(initialInterestPct));
+  const [monthlyPayment, setMonthlyPayment] = useState<string>(initial?.monthlyPayment ?? "0");
 
   const [startYearRef, setStartYearRef] = useState<YearRef | null>(
     (initial?.startYearRef as YearRef) ?? (!isEdit ? "plan_start" as YearRef : null)
@@ -73,39 +87,56 @@ export default function AddLiabilityForm({
     initial?.termUnit ?? "annual"
   );
 
+  // Notify parent of live form values for amortization preview
+  useEffect(() => {
+    if (!onValuesChange) return;
+    const termMonths = termUnit === "annual" ? parseInt(termValue) * 12 : parseInt(termValue);
+    onValuesChange({
+      balance: parseFloat(balance) || 0,
+      interestRate: (parseFloat(interestRatePct) || 0) / 100,
+      monthlyPayment: parseFloat(monthlyPayment) || 0,
+      startYear,
+      termMonths: isNaN(termMonths) ? 0 : termMonths,
+    });
+  }, [balance, interestRatePct, monthlyPayment, startYear, termValue, termUnit, onValuesChange]);
+
   // ============================================================================
   // Calculator handlers
   // ============================================================================
 
   function handleCalcPayment() {
-    const bal = parseFloat((document.querySelector('[name="balance"]') as HTMLInputElement)?.value);
-    const rate = parseFloat((document.querySelector('[name="interestRate"]') as HTMLInputElement)?.value) / 100;
-    const months = termUnit === "annual" ? parseInt(termValue) * 12 : parseInt(termValue);
-    if (isNaN(bal) || isNaN(rate) || isNaN(months) || months <= 0) return;
-    const pmt = calcPayment(bal, rate, months);
-    const input = document.querySelector('[name="monthlyPayment"]') as HTMLInputElement;
-    if (input) input.value = pmt.toFixed(2);
+    const bal = parseFloat(balance);
+    const rate = parseFloat(interestRatePct) / 100;
+    const totalMonths = termUnit === "annual" ? parseInt(termValue) * 12 : parseInt(termValue);
+    if (isNaN(bal) || isNaN(rate) || isNaN(totalMonths) || totalMonths <= 0) return;
+    const elapsedMonths = Math.max(0, (currentYear - startYear) * 12);
+    const remainingMonths = Math.max(1, totalMonths - elapsedMonths);
+    const pmt = calcPayment(bal, rate, remainingMonths);
+    setMonthlyPayment(pmt.toFixed(2));
   }
 
   function handleCalcTerm() {
-    const bal = parseFloat((document.querySelector('[name="balance"]') as HTMLInputElement)?.value);
-    const rate = parseFloat((document.querySelector('[name="interestRate"]') as HTMLInputElement)?.value) / 100;
-    const pmt = parseFloat((document.querySelector('[name="monthlyPayment"]') as HTMLInputElement)?.value);
+    const bal = parseFloat(balance);
+    const rate = parseFloat(interestRatePct) / 100;
+    const pmt = parseFloat(monthlyPayment);
     if (isNaN(bal) || isNaN(rate) || isNaN(pmt) || pmt <= 0) return;
-    const months = calcTerm(bal, rate, pmt);
-    if (months === Infinity) return;
-    setTermValue(termUnit === "annual" ? String(Math.ceil(months / 12)) : String(months));
+    const solvedRemaining = calcTerm(bal, rate, pmt);
+    if (solvedRemaining === Infinity) return;
+    const elapsedMonths = Math.max(0, (currentYear - startYear) * 12);
+    const totalMonths = solvedRemaining + elapsedMonths;
+    setTermValue(termUnit === "annual" ? String(Math.ceil(totalMonths / 12)) : String(totalMonths));
   }
 
   function handleCalcRate() {
-    const bal = parseFloat((document.querySelector('[name="balance"]') as HTMLInputElement)?.value);
-    const months = termUnit === "annual" ? parseInt(termValue) * 12 : parseInt(termValue);
-    const pmt = parseFloat((document.querySelector('[name="monthlyPayment"]') as HTMLInputElement)?.value);
-    if (isNaN(bal) || isNaN(months) || isNaN(pmt) || months <= 0 || pmt <= 0) return;
-    const rate = calcRate(bal, months, pmt);
+    const bal = parseFloat(balance);
+    const totalMonths = termUnit === "annual" ? parseInt(termValue) * 12 : parseInt(termValue);
+    const pmt = parseFloat(monthlyPayment);
+    if (isNaN(bal) || isNaN(totalMonths) || isNaN(pmt) || totalMonths <= 0 || pmt <= 0) return;
+    const elapsedMonths = Math.max(0, (currentYear - startYear) * 12);
+    const remainingMonths = Math.max(1, totalMonths - elapsedMonths);
+    const rate = calcRate(bal, remainingMonths, pmt);
     if (rate === null) return;
-    const input = document.querySelector('[name="interestRate"]') as HTMLInputElement;
-    if (input) input.value = (rate * 100).toFixed(3);
+    setInterestRatePct((rate * 100).toFixed(3));
   }
 
   // ============================================================================
@@ -127,9 +158,9 @@ export default function AddLiabilityForm({
 
     const body = {
       name: data.get("name") as string,
-      balance: data.get("balance") as string,
-      interestRate: String(Number(data.get("interestRate")) / 100),
-      monthlyPayment: data.get("monthlyPayment") as string,
+      balance,
+      interestRate: String(parseFloat(interestRatePct) / 100),
+      monthlyPayment,
       startYear,
       termMonths,
       termUnit,
@@ -221,7 +252,8 @@ export default function AddLiabilityForm({
             type="number"
             step="0.01"
             min={0}
-            defaultValue={initial?.balance ?? 0}
+            value={balance}
+            onChange={(e) => setBalance(e.target.value)}
             className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
@@ -296,7 +328,8 @@ export default function AddLiabilityForm({
             step="0.01"
             min={0}
             max={50}
-            defaultValue={initialInterestPct}
+            value={interestRatePct}
+            onChange={(e) => setInterestRatePct(e.target.value)}
             className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
@@ -317,7 +350,8 @@ export default function AddLiabilityForm({
             type="number"
             step="0.01"
             min={0}
-            defaultValue={initial?.monthlyPayment ?? 0}
+            value={monthlyPayment}
+            onChange={(e) => setMonthlyPayment(e.target.value)}
             className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>

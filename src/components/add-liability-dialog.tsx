@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import AddLiabilityForm, { LiabilityFormInitial } from "./forms/add-liability-form";
+import { useState, useCallback } from "react";
+import AddLiabilityForm, { LiabilityFormInitial, LiabilityFormValues } from "./forms/add-liability-form";
 import LiabilityAmortizationTab from "./liability-amortization-tab";
 
 type TabId = "details" | "amortization";
@@ -29,8 +29,13 @@ export default function AddLiabilityDialog({
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("details");
+  const [liveValues, setLiveValues] = useState<LiabilityFormValues | null>(null);
   const actualOpen = isControlled ? !!open : internalOpen;
   const isEdit = Boolean(editing);
+
+  const handleValuesChange = useCallback((values: LiabilityFormValues) => {
+    setLiveValues(values);
+  }, []);
 
   function close() {
     if (isControlled) onOpenChange?.(false);
@@ -68,31 +73,29 @@ export default function AddLiabilityDialog({
               </button>
             </div>
 
-            {/* Tab bar — only shown in edit mode */}
-            {isEdit && (
-              <div className="mb-4 flex border-b border-gray-700">
-                <button
-                  onClick={() => setActiveTab("details")}
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === "details"
-                      ? "border-blue-500 text-blue-400"
-                      : "border-transparent text-gray-400 hover:text-gray-200"
-                  }`}
-                >
-                  Details
-                </button>
-                <button
-                  onClick={() => setActiveTab("amortization")}
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === "amortization"
-                      ? "border-blue-500 text-blue-400"
-                      : "border-transparent text-gray-400 hover:text-gray-200"
-                  }`}
-                >
-                  Amortization
-                </button>
-              </div>
-            )}
+            {/* Tab bar */}
+            <div className="mb-4 flex border-b border-gray-700">
+              <button
+                onClick={() => setActiveTab("details")}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === "details"
+                    ? "border-blue-500 text-blue-400"
+                    : "border-transparent text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                Details
+              </button>
+              <button
+                onClick={() => setActiveTab("amortization")}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === "amortization"
+                    ? "border-blue-500 text-blue-400"
+                    : "border-transparent text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                Amortization
+              </button>
+            </div>
 
             {/* Tab content */}
             {activeTab === "details" && (
@@ -104,12 +107,18 @@ export default function AddLiabilityDialog({
                 initial={editing}
                 onSuccess={close}
                 onDelete={onRequestDelete}
+                onValuesChange={handleValuesChange}
               />
             )}
-            {activeTab === "amortization" && isEdit && editing && (
+            {activeTab === "amortization" && liveValues && (
               <LiabilityAmortizationTab
                 clientId={clientId}
-                liability={editing}
+                liabilityId={editing?.id}
+                balance={liveValues.balance}
+                interestRate={liveValues.interestRate}
+                monthlyPayment={liveValues.monthlyPayment}
+                startYear={liveValues.startYear}
+                termMonths={liveValues.termMonths}
               />
             )}
           </div>
