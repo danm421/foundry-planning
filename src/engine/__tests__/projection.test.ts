@@ -482,6 +482,44 @@ describe("projection — bracket/flat tax routing", () => {
     expect(firstYear.expenses.realEstate).toBeGreaterThan(0);
   });
 
+  it("populates deductionBreakdown.aboveLine with retirement contributions", () => {
+    const fixture = buildClientData({
+      planSettings: { ...basePlanSettings, taxEngineMode: "bracket", planStartYear: 2026, planEndYear: 2026 },
+    });
+    const years = runProjection({ ...fixture, taxYearRows: FIXTURE_TAX_PARAMS });
+    const bd = years[0].deductionBreakdown;
+    expect(bd).toBeDefined();
+    expect(bd!.aboveLine.retirementContributions).toBe(23500);
+    expect(bd!.aboveLine.total).toBe(bd!.aboveLine.retirementContributions + bd!.aboveLine.taggedExpenses + bd!.aboveLine.manualEntries);
+  });
+
+  it("populates deductionBreakdown.belowLine with taxesPaid and interestPaid", () => {
+    const fixture = buildClientData({
+      planSettings: { ...basePlanSettings, taxEngineMode: "bracket", planStartYear: 2026, planEndYear: 2026 },
+    });
+    const years = runProjection({ ...fixture, taxYearRows: FIXTURE_TAX_PARAMS });
+    const bd = years[0].deductionBreakdown;
+    expect(bd).toBeDefined();
+    expect(bd!.belowLine.taxesPaid).toBeGreaterThan(0);
+    expect(bd!.belowLine.interestPaid).toBeGreaterThan(0);
+    expect(bd!.belowLine.itemizedTotal).toBe(
+      bd!.belowLine.charitable + bd!.belowLine.taxesPaid + bd!.belowLine.interestPaid + bd!.belowLine.otherItemized
+    );
+  });
+
+  it("belowLine.taxDeductions is max of itemizedTotal and standardDeduction", () => {
+    const fixture = buildClientData({
+      planSettings: { ...basePlanSettings, taxEngineMode: "bracket", planStartYear: 2026, planEndYear: 2026 },
+    });
+    const years = runProjection({ ...fixture, taxYearRows: FIXTURE_TAX_PARAMS });
+    const bd = years[0].deductionBreakdown;
+    expect(bd).toBeDefined();
+    expect(bd!.belowLine.taxDeductions).toBe(
+      Math.max(bd!.belowLine.itemizedTotal, bd!.belowLine.standardDeduction)
+    );
+    expect(bd!.belowLine.standardDeduction).toBeGreaterThan(0);
+  });
+
   it("routes charitable-tagged expense into itemized deductions", () => {
     const charitableExpense = {
       id: "exp-charity",
