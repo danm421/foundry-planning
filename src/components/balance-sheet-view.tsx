@@ -133,7 +133,8 @@ function liabilityToInitial(l: LiabilityRow): LiabilityFormInitial {
     interestRate: l.interestRate,
     monthlyPayment: l.monthlyPayment,
     startYear: l.startYear,
-    endYear: l.startYear + Math.ceil(l.termMonths / 12),
+    termMonths: l.termMonths,
+    termUnit: (l.termUnit === "monthly" ? "monthly" : "annual") as "monthly" | "annual",
     linkedPropertyId: l.linkedPropertyId ?? null,
     ownerEntityId: l.ownerEntityId ?? null,
   };
