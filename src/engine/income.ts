@@ -53,11 +53,16 @@ export function computeIncome(
       if (year < claimingYear) continue;
     }
 
-    // Inflation compounds from `inflationStartYear` when set (today's-dollars
-    // semantics), otherwise from the entry's own start year.
-    const inflateFrom = inc.inflationStartYear ?? inc.startYear;
-    const yearsElapsed = year - inflateFrom;
-    const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, yearsElapsed);
+    let amount: number;
+    if (inc.scheduleOverrides) {
+      amount = inc.scheduleOverrides.get(year) ?? 0;
+    } else {
+      // Inflation compounds from `inflationStartYear` when set (today's-dollars
+      // semantics), otherwise from the entry's own start year.
+      const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+      const yearsElapsed = year - inflateFrom;
+      amount = inc.annualAmount * Math.pow(1 + inc.growthRate, yearsElapsed);
+    }
     const key = incomeTypeToKey[inc.type];
     result[key] += amount;
     result.bySource[inc.id] = amount;

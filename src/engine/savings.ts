@@ -47,7 +47,11 @@ export function applySavingsRules(
     if (year < rule.startYear || year > rule.endYear) continue;
     if (remaining <= 0) break;
 
-    let contribution = Math.min(rule.annualAmount, remaining);
+    const baseAmount = rule.scheduleOverrides
+      ? (rule.scheduleOverrides.get(year) ?? 0)
+      : rule.annualAmount;
+    if (baseAmount === 0) continue;
+    let contribution = Math.min(baseAmount, remaining);
     if (rule.annualLimit != null) {
       contribution = Math.min(contribution, rule.annualLimit);
     }

@@ -36,3 +36,47 @@ describe("expense schedule overrides", () => {
     expect(result.other).toBeCloseTo(61800, 0);
   });
 });
+
+describe("savings rule schedule overrides", () => {
+  const rule: SavingsRule = {
+    id: "sav-scheduled",
+    accountId: "acct-401k",
+    annualAmount: 23500,
+    startYear: 2026,
+    endYear: 2035,
+    employerMatchPct: 0.5,
+    employerMatchCap: 0.06,
+    annualLimit: 23500,
+    scheduleOverrides: new Map([
+      [2026, 23500],
+      [2027, 23500],
+      [2028, 10000],
+    ]),
+  };
+
+  it("uses override amount instead of annualAmount", () => {
+    const result = applySavingsRules([rule], 2028, 150000);
+    expect(result.byAccount["acct-401k"]).toBe(10000);
+  });
+
+  it("uses $0 for years without override", () => {
+    const result = applySavingsRules([rule], 2030, 150000);
+    expect(result.byAccount["acct-401k"]).toBeUndefined();
+    expect(result.total).toBe(0);
+  });
+
+  it("still applies employer match on override amount", () => {
+    const result = applySavingsRules([rule], 2026, 150000);
+    expect(result.byAccount["acct-401k"]).toBe(23500);
+    expect(result.employerTotal).toBe(4500);
+  });
+
+  it("respects annualLimit even with overrides", () => {
+    const overLimit: SavingsRule = {
+      ...rule,
+      scheduleOverrides: new Map([[2026, 50000]]),
+    };
+    const result = applySavingsRules([overLimit], 2026, 150000);
+    expect(result.byAccount["acct-401k"]).toBe(23500);
+  });
+});
