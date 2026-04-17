@@ -9,6 +9,8 @@ import {
   timestamp,
   pgEnum,
   unique,
+  uniqueIndex,
+  varchar,
   jsonb,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -116,6 +118,7 @@ export const growthSourceEnum = pgEnum("growth_source", [
   "default",
   "model_portfolio",
   "custom",
+  "asset_mix",
 ]);
 
 export const incomeTaxTypeEnum = pgEnum("income_tax_type", [
@@ -257,6 +260,7 @@ export const assetClasses = pgTable("asset_classes", {
   id: uuid("id").defaultRandom().primaryKey(),
   firmId: text("firm_id").notNull(),
   name: text("name").notNull(),
+  slug: varchar("slug", { length: 50 }),
   geometricReturn: decimal("geometric_return", { precision: 7, scale: 4 }).notNull().default("0.07"),
   arithmeticMean: decimal("arithmetic_mean", { precision: 7, scale: 4 }).notNull().default("0.085"),
   volatility: decimal("volatility", { precision: 7, scale: 4 }).notNull().default("0.15"),
@@ -288,6 +292,23 @@ export const modelPortfolioAllocations = pgTable("model_portfolio_allocations", 
     .references(() => assetClasses.id, { onDelete: "cascade" }),
   weight: decimal("weight", { precision: 5, scale: 4 }).notNull(),
 });
+
+export const accountAssetAllocations = pgTable(
+  "account_asset_allocations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    assetClassId: uuid("asset_class_id")
+      .notNull()
+      .references(() => assetClasses.id, { onDelete: "cascade" }),
+    weight: decimal("weight", { precision: 5, scale: 4 })
+      .notNull()
+      .default("0"),
+  },
+  (t) => [uniqueIndex("account_asset_alloc_uniq").on(t.accountId, t.assetClassId)]
+);
 
 export const clientCmaOverrides = pgTable("client_cma_overrides", {
   id: uuid("id").defaultRandom().primaryKey(),
