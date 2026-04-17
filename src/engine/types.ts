@@ -53,6 +53,8 @@ export interface Account {
   rmdEnabled: boolean;
   ownerEntityId?: string;
   isDefaultChecking?: boolean;
+  annualPropertyTax?: number;
+  propertyTaxGrowthRate?: number;
   // CMA realization model — present when account uses a model portfolio or has overrides
   realization?: {
     pctOrdinaryIncome: number;
@@ -100,6 +102,7 @@ export interface Expense {
   ownerEntityId?: string;
   // Cash account this expense is paid from.
   cashAccountId?: string;
+  deductionType?: "charitable" | "above_line" | "below_line" | "property_tax" | null;
 }
 
 export interface Liability {
@@ -112,6 +115,7 @@ export interface Liability {
   endYear: number;
   linkedPropertyId?: string;
   ownerEntityId?: string;
+  isInterestDeductible?: boolean;
 }
 
 export interface SavingsRule {
@@ -189,6 +193,7 @@ export interface ProjectionYear {
     liabilities: number;
     other: number;
     insurance: number;
+    realEstate: number;
     taxes: number;
     total: number;
     bySource: Record<string, number>;
