@@ -256,14 +256,63 @@ function TransferCard({
 
 // ── Asset Transaction Card ────────────────────────────────────────────────────
 
+function describeTransaction(
+  transaction: AssetTransactionRow,
+  accounts: AccountOption[],
+): string {
+  const accountMap = new Map(accounts.map((a) => [a.id, a]));
+  const sellAccount = transaction.accountId ? accountMap.get(transaction.accountId) : null;
+  const hasSell = !!transaction.accountId;
+  const hasBuy = !!(transaction.assetName || (transaction.purchasePrice && parseFloat(transaction.purchasePrice) > 0));
+
+  if (hasSell && hasBuy) {
+    const sellName = sellAccount?.name ?? "Asset";
+    const buyName = transaction.assetName ?? "New Asset";
+    return `Sell ${sellName} → Buy ${buyName}`;
+  }
+  if (hasSell) {
+    return `Sell ${sellAccount?.name ?? "Asset"}`;
+  }
+  if (hasBuy) {
+    return `Buy ${transaction.assetName ?? "New Asset"}`;
+  }
+  return transaction.type === "buy" ? "Buy" : "Sell";
+}
+
+function computeTransactionNet(
+  transaction: AssetTransactionRow,
+  liabilities: LiabilityOption[],
+): number | null {
+  const hasSell = !!transaction.accountId;
+  const hasBuy = !!(transaction.assetName || (transaction.purchasePrice && parseFloat(transaction.purchasePrice) > 0));
+  if (!hasSell || !hasBuy) return null;
+
+  const saleValue = transaction.overrideSaleValue ? parseFloat(transaction.overrideSaleValue) : 0;
+  const costPct = transaction.transactionCostPct ? parseFloat(transaction.transactionCostPct) : 0;
+  const costFlat = transaction.transactionCostFlat ? parseFloat(transaction.transactionCostFlat) : 0;
+  const linkedMortgage = transaction.accountId
+    ? liabilities.find((l) => l.linkedPropertyId === transaction.accountId)
+    : null;
+  const mortgagePayoff = linkedMortgage ? parseFloat(linkedMortgage.balance) : 0;
+  const saleProceeds = saleValue - (saleValue * costPct) - costFlat - mortgagePayoff;
+
+  const price = transaction.purchasePrice ? parseFloat(transaction.purchasePrice) : 0;
+  const buyMortgage = transaction.mortgageAmount ? parseFloat(transaction.mortgageAmount) : 0;
+  const purchaseCost = price - buyMortgage;
+
+  return saleProceeds - purchaseCost;
+}
+
 function AssetTransactionCard({
   transaction,
   accounts,
+  liabilities,
   onEdit,
   onDelete,
 }: {
   transaction: AssetTransactionRow;
   accounts: AccountOption[];
+  liabilities: LiabilityOption[];
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -276,87 +325,91 @@ function AssetTransactionCard({
     ? accountMap.get(transaction.proceedsAccountId)
     : null;
 
-  const isBuy = transaction.type === "buy";
+  const hasSell = !!transaction.accountId;
+  const hasBuy = !!(transaction.assetName || (transaction.purchasePrice && parseFloat(transaction.purchasePrice) > 0));
+  const description = describeTransaction(transaction, accounts);
+  const net = computeTransactionNet(transaction, liabilities);
+
+  // Determine badge style based on what sides are filled
+  let badgeLabel: string;
+  let badgeClass: string;
+  if (hasSell && hasBuy) {
+    badgeLabel = "Sell + Buy";
+    badgeClass = "bg-blue-900/40 text-blue-300 border border-blue-700/50";
+  } else if (hasBuy) {
+    badgeLabel = "Buy";
+    badgeClass = "bg-green-900/40 text-green-300 border border-green-700/50";
+  } else {
+    badgeLabel = "Sell";
+    badgeClass = "bg-red-900/40 text-red-300 border border-red-700/50";
+  }
 
   return (
     <div className="flex items-start justify-between gap-4 border-b border-gray-800 px-4 py-3 last:border-0">
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-gray-100">{transaction.name}</span>
-          <Badge
-            label={isBuy ? "Buy" : "Sell"}
-            className={
-              isBuy
-                ? "bg-green-900/40 text-green-300 border border-green-700/50"
-                : "bg-red-900/40 text-red-300 border border-red-700/50"
-            }
-          />
+          <Badge label={badgeLabel} className={badgeClass} />
           <span className="text-xs text-gray-500">{transaction.year}</span>
         </div>
 
-        {isBuy ? (
-          <div className="space-y-0.5 text-xs text-gray-400">
-            {transaction.assetName && (
-              <div>
-                Asset: <span className="text-gray-300">{transaction.assetName}</span>
-                {transaction.assetCategory && (
-                  <span className="ml-1 text-gray-500">({transaction.assetCategory})</span>
-                )}
-              </div>
-            )}
-            {transaction.purchasePrice && (
-              <div>
-                Purchase price:{" "}
-                <span className="text-gray-300">{formatCurrency(transaction.purchasePrice)}</span>
-              </div>
-            )}
-            {fundingAccount && (
-              <div>
-                Funded by: <span className="text-gray-300">{fundingAccount.name}</span>
-              </div>
-            )}
-            {transaction.mortgageAmount && (
-              <div>
-                Mortgage:{" "}
-                <span className="text-gray-300">{formatCurrency(transaction.mortgageAmount)}</span>
-                {transaction.mortgageRate && (
-                  <span className="ml-1 text-gray-500">
-                    @ {(parseFloat(transaction.mortgageRate) * 100).toFixed(2)}%
+        <div className="text-xs text-gray-400">{description}</div>
+
+        <div className="space-y-0.5 text-xs text-gray-400">
+          {/* Sell details */}
+          {hasSell && linkedAccount && (
+            <>
+              {transaction.overrideSaleValue && (
+                <div>
+                  Sale value:{" "}
+                  <span className="text-gray-300">
+                    {formatCurrency(transaction.overrideSaleValue)}
                   </span>
-                )}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-0.5 text-xs text-gray-400">
-            {linkedAccount && (
-              <div>
-                Account: <span className="text-gray-300">{linkedAccount.name}</span>
-              </div>
-            )}
-            {transaction.overrideSaleValue && (
-              <div>
-                Sale value:{" "}
-                <span className="text-gray-300">
-                  {formatCurrency(transaction.overrideSaleValue)}
-                </span>
-              </div>
-            )}
-            {proceedsAccount && (
-              <div>
-                Proceeds to: <span className="text-gray-300">{proceedsAccount.name}</span>
-              </div>
-            )}
-            {transaction.transactionCostPct && (
-              <div>
-                Transaction cost:{" "}
-                <span className="text-gray-300">
-                  {(parseFloat(transaction.transactionCostPct) * 100).toFixed(2)}%
-                </span>
-              </div>
-            )}
-          </div>
-        )}
+                </div>
+              )}
+              {proceedsAccount && (
+                <div>
+                  Proceeds to: <span className="text-gray-300">{proceedsAccount.name}</span>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Buy details */}
+          {hasBuy && (
+            <>
+              {transaction.purchasePrice && (
+                <div>
+                  Purchase price:{" "}
+                  <span className="text-gray-300">{formatCurrency(transaction.purchasePrice)}</span>
+                </div>
+              )}
+              {fundingAccount && (
+                <div>
+                  Funded by: <span className="text-gray-300">{fundingAccount.name}</span>
+                </div>
+              )}
+              {transaction.mortgageAmount && (
+                <div>
+                  Mortgage:{" "}
+                  <span className="text-gray-300">{formatCurrency(transaction.mortgageAmount)}</span>
+                  {transaction.mortgageRate && (
+                    <span className="ml-1 text-gray-500">
+                      @ {(parseFloat(transaction.mortgageRate) * 100).toFixed(2)}%
+                    </span>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Net surplus/deficit when both sides are filled */}
+          {net != null && (
+            <div className={`font-medium ${net >= 0 ? "text-green-400" : "text-red-400"}`}>
+              Net: {net >= 0 ? "+" : ""}{formatCurrency(net)}
+            </div>
+          )}
+        </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <ActionButton onClick={(e) => { e.stopPropagation(); onEdit(); }} label={`Edit ${transaction.name}`} variant="edit" />
@@ -453,6 +506,7 @@ export default function TechniquesView({
                 key={tx.id}
                 transaction={tx}
                 accounts={accounts}
+                liabilities={liabilities}
                 onEdit={() => setEditingTransaction(tx)}
                 onDelete={() => handleDeleteTransaction(tx.id)}
               />

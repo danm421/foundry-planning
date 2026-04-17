@@ -69,12 +69,17 @@ export default function AddTransferForm({
   onClose,
   onSaved,
 }: AddTransferFormProps) {
+  // Only allow liquid accounts in transfer dropdowns
+  const liquidAccounts = accounts.filter(
+    (a) => !["business", "real_estate"].includes(a.category),
+  );
+
   const [name, setName] = useState(initialData?.name ?? "");
   const [sourceAccountId, setSourceAccountId] = useState(
-    initialData?.sourceAccountId ?? (accounts[0]?.id ?? ""),
+    initialData?.sourceAccountId ?? (liquidAccounts[0]?.id ?? ""),
   );
   const [targetAccountId, setTargetAccountId] = useState(
-    initialData?.targetAccountId ?? (accounts[0]?.id ?? ""),
+    initialData?.targetAccountId ?? (liquidAccounts[0]?.id ?? ""),
   );
   const [amount, setAmount] = useState(initialData?.amount ?? "");
   const [mode, setMode] = useState<"one_time" | "recurring" | "scheduled">(
@@ -98,8 +103,8 @@ export default function AddTransferForm({
   );
   const [submitting, setSubmitting] = useState(false);
 
-  const sourceAccount = accounts.find((a) => a.id === sourceAccountId);
-  const targetAccount = accounts.find((a) => a.id === targetAccountId);
+  const sourceAccount = liquidAccounts.find((a) => a.id === sourceAccountId);
+  const targetAccount = liquidAccounts.find((a) => a.id === targetAccountId);
 
   const taxLabel =
     sourceAccount && targetAccount
@@ -228,7 +233,7 @@ export default function AddTransferForm({
               onChange={(e) => setSourceAccountId(e.target.value)}
               className={SELECT_CLASS}
             >
-              {accounts.map((a) => (
+              {liquidAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
                 </option>
@@ -242,7 +247,7 @@ export default function AddTransferForm({
               onChange={(e) => setTargetAccountId(e.target.value)}
               className={SELECT_CLASS}
             >
-              {accounts.map((a) => (
+              {liquidAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
                 </option>

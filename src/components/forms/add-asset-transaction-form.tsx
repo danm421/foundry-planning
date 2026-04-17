@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { runProjection } from "@/engine";
+import type { ClientData, ProjectionYear } from "@/engine/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -87,6 +89,11 @@ const SUB_TYPE_LABELS: Record<string, string> = {
   variable_life: "Variable Life",
 };
 
+const FUNDING_SPECIAL_OPTIONS = [
+  { value: "", label: "Withdrawal Strategy" },
+  { value: "__from_sale_proceeds__", label: "From Sale Proceeds" },
+];
+
 // ── Shared class names ────────────────────────────────────────────────────────
 
 const INPUT_CLASS =
@@ -109,6 +116,50 @@ function formatCurrency(value: string | number): string {
   }).format(num);
 }
 
+function parseNum(v: string | undefined | null): number {
+  if (!v) return 0;
+  const n = parseFloat(v);
+  return isNaN(n) ? 0 : n;
+}
+
+// ── Collapsible Section ──────────────────────────────────────────────────────
+
+function CollapsibleSection({
+  title,
+  expanded,
+  onToggle,
+  accentColor,
+  children,
+}: {
+  title: string;
+  expanded: boolean;
+  onToggle: () => void;
+  accentColor: "red" | "green";
+  children: React.ReactNode;
+}) {
+  const borderColor = accentColor === "red" ? "border-red-800/40" : "border-green-800/40";
+  const bgColor = accentColor === "red" ? "bg-red-950/20" : "bg-green-950/20";
+  const textColor = accentColor === "red" ? "text-red-300" : "text-green-300";
+
+  return (
+    <div className={`rounded-md border ${borderColor} ${bgColor}`}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`flex w-full items-center gap-2 px-4 py-2.5 text-sm font-medium ${textColor} hover:brightness-125`}
+      >
+        <span
+          className={`inline-block text-xs transition-transform ${expanded ? "rotate-90" : ""}`}
+        >
+          ▶
+        </span>
+        {title}
+      </button>
+      {expanded && <div className="px-4 pb-4">{children}</div>}
+    </div>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function AddAssetTransactionForm({
@@ -122,100 +173,234 @@ export default function AddAssetTransactionForm({
   const isEdit = !!initialData;
   const currentYear = new Date().getFullYear();
 
-  const [txnType, setTxnType] = useState<"buy" | "sell">(initialData?.type ?? "sell");
+  // Determine initial section state from initialData
+  const initialHasSell = !initialData || initialData.type === "sell";
+  const initialHasBuy = !!initialData && initialData.type === "buy";
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sell-mode state
-  const [selectedAccountId, setSelectedAccountId] = useState<string>(
-    initialData?.accountId ?? ""
+  // ── Common fields ─────────────────────────────────────────────────────────
+  const [name, setName] = useState(initialData?.name ?? "");
+  const [year, setYear] = useState(initialData?.year ?? currentYear);
+
+  // ── Section visibility ────────────────────────────────────────────────────
+  const [sellExpanded, setSellExpanded] = useState(initialHasSell);
+  const [buyExpanded, setBuyExpanded] = useState(initialHasBuy);
+
+  // ── Sell-side state ───────────────────────────────────────────────────────
+  const [sellAccountId, setSellAccountId] = useState<string>(
+    initialData?.accountId ?? "",
+  );
+  const [overrideSaleValue, setOverrideSaleValue] = useState(
+    initialData?.overrideSaleValue ?? "",
+  );
+  const [overrideBasis, setOverrideBasis] = useState(
+    initialData?.overrideBasis ?? "",
+  );
+  const [transactionCostPct, setTransactionCostPct] = useState(
+    initialData?.transactionCostPct
+      ? String(Math.round(Number(initialData.transactionCostPct) * 10000) / 100)
+      : "",
+  );
+  const [transactionCostFlat, setTransactionCostFlat] = useState(
+    initialData?.transactionCostFlat ?? "",
+  );
+  const [proceedsAccountId, setProceedsAccountId] = useState(
+    initialData?.proceedsAccountId ?? "",
   );
 
-  // Buy-mode state
+  // ── Buy-side state ────────────────────────────────────────────────────────
+  const [assetName, setAssetName] = useState(initialData?.assetName ?? "");
   const [assetCategory, setAssetCategory] = useState<AssetCategory>(
-    (initialData?.assetCategory as AssetCategory) ?? "real_estate"
+    (initialData?.assetCategory as AssetCategory) ?? "real_estate",
   );
   const [assetSubType, setAssetSubType] = useState<string>(
-    initialData?.assetSubType ?? SUB_TYPE_BY_CATEGORY["real_estate"][0]
+    initialData?.assetSubType ?? SUB_TYPE_BY_CATEGORY["real_estate"][0],
   );
-  const [showMortgage, setShowMortgage] = useState<boolean>(
-    !!(initialData?.mortgageAmount && Number(initialData.mortgageAmount) > 0)
+  const [purchasePrice, setPurchasePrice] = useState(initialData?.purchasePrice ?? "");
+  const [buyGrowthRate, setBuyGrowthRate] = useState(
+    initialData?.growthRate
+      ? String(Math.round(Number(initialData.growthRate) * 10000) / 100)
+      : "",
+  );
+  const [buyBasis, setBuyBasis] = useState(initialData?.basis ?? "");
+  const [fundingAccountId, setFundingAccountId] = useState(
+    initialData?.fundingAccountId ?? "",
+  );
+  const [showMortgage, setShowMortgage] = useState(
+    !!(initialData?.mortgageAmount && Number(initialData.mortgageAmount) > 0),
+  );
+  const [mortgageAmount, setMortgageAmount] = useState(initialData?.mortgageAmount ?? "");
+  const [mortgageRate, setMortgageRate] = useState(
+    initialData?.mortgageRate
+      ? String(Math.round(Number(initialData.mortgageRate) * 10000) / 100)
+      : "",
+  );
+  const [mortgageTermMonths, setMortgageTermMonths] = useState(
+    String(initialData?.mortgageTermMonths ?? 360),
   );
 
-  // Derived: find linked mortgage for sell mode
-  const linkedMortgage =
-    selectedAccountId
-      ? liabilities.find((l) => l.linkedPropertyId === selectedAccountId)
-      : null;
+  // ── Projection data for projected values ──────────────────────────────────
+  const [projectionYears, setProjectionYears] = useState<ProjectionYear[] | null>(null);
 
-  // Convert stored decimals to display percentages for initial values
-  const initialTransactionCostPct = initialData?.transactionCostPct
-    ? String(Math.round(Number(initialData.transactionCostPct) * 10000) / 100)
-    : "";
-  const initialGrowthRate = initialData?.growthRate
-    ? String(Math.round(Number(initialData.growthRate) * 10000) / 100)
-    : "";
-  const initialMortgageRate = initialData?.mortgageRate
-    ? String(Math.round(Number(initialData.mortgageRate) * 10000) / 100)
-    : "";
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProjection() {
+      try {
+        const res = await fetch(`/api/clients/${clientId}/projection-data`);
+        if (!res.ok) return;
+        const data: ClientData = await res.json();
+        const projection = runProjection(data);
+        if (!cancelled) setProjectionYears(projection);
+      } catch {
+        // Silently fail — projected hints are optional
+      }
+    }
+    loadProjection();
+    return () => { cancelled = true; };
+  }, [clientId]);
 
+  // Look up projected value and basis for the sell account in the selected year
+  const projectedSellInfo = useMemo(() => {
+    if (!projectionYears || !sellAccountId || !year) return null;
+    // Find the projection year that matches (year - 1 gives us the ending value going into sale year)
+    // Actually, we want the ending value of the year prior, since the sale happens during `year`.
+    // But the projection runs year-by-year, so the `year` entry's accountLedger shows the state
+    // during that year. The beginningValue of that year is the projected value at start of year.
+    const projYear = projectionYears.find((py) => py.year === year);
+    if (!projYear) return null;
+    const ledger = projYear.accountLedgers[sellAccountId];
+    if (!ledger) return null;
+    // For basis, accumulate from the account's initial basis through growth detail
+    // We'll use beginningValue as the projected value (pre-growth in sale year)
+    // and compute basis by looking at the prior year's accumulated basis
+    let projectedBasis: number | null = null;
+    // Walk projection years to accumulate basis
+    const account = accounts.find((a) => a.id === sellAccountId);
+    if (account) {
+      // Start with original basis — we need to find it from projection data
+      // The projection-data API returns accounts with basis, but we don't have that here.
+      // We can approximate: basis grows by basisIncrease each year
+      // For now, just show the projected value; basis tracking requires more data.
+      projectedBasis = null;
+    }
+    return {
+      projectedValue: ledger.beginningValue,
+      projectedBasis,
+    };
+  }, [projectionYears, sellAccountId, year, accounts]);
+
+  // Linked mortgage for sell side
+  const linkedMortgage = sellAccountId
+    ? liabilities.find((l) => l.linkedPropertyId === sellAccountId)
+    : null;
+
+  // Projected mortgage balance from projection data
+  const projectedMortgageBalance = useMemo(() => {
+    if (!projectionYears || !linkedMortgage || !year) return null;
+    // Liabilities don't have direct ledger entries in the projection output,
+    // so we use the static balance as a fallback. The projection expenses.byLiability
+    // tracks payments but not remaining balance directly.
+    return null;
+  }, [projectionYears, linkedMortgage, year]);
+
+  // ── Net Summary calculations ──────────────────────────────────────────────
+  const sellHasData = !!(sellAccountId);
+  const buyHasData = !!(assetName || parseNum(purchasePrice as string) > 0);
+
+  const netSummary = useMemo(() => {
+    const saleValue = parseNum(overrideSaleValue as string) ||
+      (projectedSellInfo?.projectedValue ?? 0);
+    const costPct = parseNum(transactionCostPct) / 100;
+    const costFlat = parseNum(transactionCostFlat as string);
+    const totalTransactionCosts = saleValue * costPct + costFlat;
+    const mortgagePayoff = linkedMortgage ? parseNum(linkedMortgage.balance) : 0;
+    const saleProceeds = sellHasData ? saleValue - totalTransactionCosts - mortgagePayoff : 0;
+
+    const price = parseNum(purchasePrice as string);
+    const mortgage = showMortgage ? parseNum(mortgageAmount as string) : 0;
+    const purchaseCost = buyHasData ? price - mortgage : 0;
+
+    const net = saleProceeds - purchaseCost;
+
+    return {
+      saleValue: sellHasData ? saleValue : 0,
+      transactionCosts: totalTransactionCosts,
+      mortgagePayoff,
+      saleProceeds,
+      purchasePrice: price,
+      purchaseMortgage: mortgage,
+      purchaseCost,
+      net,
+      hasSell: sellHasData,
+      hasBuy: buyHasData,
+    };
+  }, [
+    overrideSaleValue, projectedSellInfo, transactionCostPct, transactionCostFlat,
+    linkedMortgage, sellHasData, purchasePrice, showMortgage, mortgageAmount, buyHasData,
+  ]);
+
+  // ── Derive transaction type from filled sides ─────────────────────────────
+  const deriveType = useCallback((): "buy" | "sell" => {
+    if (sellHasData && !buyHasData) return "sell";
+    if (!sellHasData && buyHasData) return "buy";
+    // Both filled → "sell" (primary action)
+    return "sell";
+  }, [sellHasData, buyHasData]);
+
+  // ── Submit ────────────────────────────────────────────────────────────────
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    const form = e.currentTarget;
-    const data = new FormData(form);
-
-    const toOptionalString = (key: string): string | null => {
-      const v = data.get(key) as string;
+    const toOptionalString = (v: string | null | undefined): string | null => {
       return v !== "" && v != null ? v : null;
     };
 
-    const toOptionalDecimal = (key: string): string | null => {
-      const v = data.get(key) as string;
+    const toOptionalDecimal = (v: string | null | undefined): string | null => {
       return v !== "" && v != null ? String(Number(v) / 100) : null;
     };
 
-    let body: Record<string, unknown>;
+    const txType = deriveType();
 
-    if (txnType === "sell") {
-      body = {
-        type: "sell",
-        name: data.get("name") as string,
-        year: Number(data.get("year")),
-        accountId: selectedAccountId || null,
-        overrideSaleValue: toOptionalString("overrideSaleValue"),
-        overrideBasis: toOptionalString("overrideBasis"),
-        transactionCostPct: toOptionalDecimal("transactionCostPct"),
-        transactionCostFlat: toOptionalString("transactionCostFlat"),
-        proceedsAccountId: toOptionalString("proceedsAccountId") || null,
-      };
-    } else {
-      const mortgageAmount = toOptionalString("mortgageAmount");
-      body = {
-        type: "buy",
-        name: data.get("name") as string,
-        year: Number(data.get("year")),
-        assetName: toOptionalString("assetName"),
-        assetCategory: assetCategory,
-        assetSubType: assetSubType,
-        purchasePrice: toOptionalString("purchasePrice"),
-        growthRate: toOptionalDecimal("growthRate"),
-        basis: toOptionalString("basis"),
-        fundingAccountId: toOptionalString("fundingAccountId") || null,
-        mortgageAmount: showMortgage ? mortgageAmount : null,
-        mortgageRate: showMortgage ? toOptionalDecimal("mortgageRate") : null,
-        mortgageTermMonths: showMortgage
-          ? (toOptionalString("mortgageTermMonths") ? Number(data.get("mortgageTermMonths")) : null)
-          : null,
-      };
+    // Build body with all fields — the API will use what it needs based on type
+    const body: Record<string, unknown> = {
+      type: txType,
+      name,
+      year,
+    };
+
+    // Sell-side fields (always include if sell side has data)
+    if (sellHasData) {
+      body.accountId = sellAccountId || null;
+      body.overrideSaleValue = toOptionalString(overrideSaleValue as string);
+      body.overrideBasis = toOptionalString(overrideBasis as string);
+      body.transactionCostPct = toOptionalDecimal(transactionCostPct);
+      body.transactionCostFlat = toOptionalString(transactionCostFlat as string);
+      body.proceedsAccountId = toOptionalString(proceedsAccountId) || null;
+    }
+
+    // Buy-side fields (always include if buy side has data)
+    if (buyHasData) {
+      body.assetName = toOptionalString(assetName);
+      body.assetCategory = assetCategory;
+      body.assetSubType = assetSubType;
+      body.purchasePrice = toOptionalString(purchasePrice as string);
+      body.growthRate = toOptionalDecimal(buyGrowthRate);
+      body.basis = toOptionalString(buyBasis as string);
+      const funding = fundingAccountId === "__from_sale_proceeds__" ? null : (toOptionalString(fundingAccountId) || null);
+      body.fundingAccountId = funding;
+      body.mortgageAmount = showMortgage ? toOptionalString(mortgageAmount as string) : null;
+      body.mortgageRate = showMortgage ? toOptionalDecimal(mortgageRate) : null;
+      body.mortgageTermMonths = showMortgage && mortgageTermMonths
+        ? Number(mortgageTermMonths)
+        : null;
     }
 
     try {
-      const url = isEdit
-        ? `/api/clients/${clientId}/asset-transactions`
-        : `/api/clients/${clientId}/asset-transactions`;
+      const url = `/api/clients/${clientId}/asset-transactions`;
       const method = isEdit ? "PUT" : "POST";
       const payload = isEdit ? { ...body, transactionId: initialData!.id } : body;
 
@@ -237,6 +422,10 @@ export default function AddAssetTransactionForm({
       setLoading(false);
     }
   }
+
+  // ── Selected sell account info ────────────────────────────────────────────
+  const sellAccount = accounts.find((a) => a.id === sellAccountId);
+  const isSellRealEstate = sellAccount?.category === "real_estate";
 
   return (
     <div
@@ -267,240 +456,201 @@ export default function AddAssetTransactionForm({
           <p className="mb-4 rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
         )}
 
-        {/* Buy / Sell toggle */}
-        <div className="mb-5 flex rounded-md border border-gray-700 p-1 gap-1">
-          <button
-            type="button"
-            onClick={() => setTxnType("sell")}
-            className={`flex-1 rounded py-1.5 text-sm font-medium transition-colors ${
-              txnType === "sell"
-                ? "bg-red-900/60 text-red-300 border border-red-700/50"
-                : "text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            Sell
-          </button>
-          <button
-            type="button"
-            onClick={() => setTxnType("buy")}
-            className={`flex-1 rounded py-1.5 text-sm font-medium transition-colors ${
-              txnType === "buy"
-                ? "bg-green-900/60 text-green-300 border border-green-700/50"
-                : "text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            Buy
-          </button>
+        {/* ── Common fields ──────────────────────────────────────────────── */}
+        <div className="mb-5 space-y-4">
+          <div>
+            <label className={LABEL_CLASS} htmlFor="txn-name">
+              Transaction Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="txn-name"
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g., Sell Home A, Buy Rental Property"
+              className={INPUT_CLASS}
+            />
+          </div>
+
+          <div className="w-1/2">
+            <label className={LABEL_CLASS} htmlFor="txn-year">
+              Year <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="txn-year"
+              type="number"
+              required
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className={INPUT_CLASS}
+            />
+          </div>
         </div>
 
         <div className="space-y-4">
-          {/* ── Sell fields ─────────────────────────────────────────────────── */}
-          {txnType === "sell" && (
-            <>
-              {/* Name */}
+          {/* ── Sell Side ───────────────────────────────────────────────── */}
+          <CollapsibleSection
+            title="Sell Side"
+            expanded={sellExpanded}
+            onToggle={() => setSellExpanded((v) => !v)}
+            accentColor="red"
+          >
+            <div className="space-y-4">
+              {/* Account to sell */}
               <div>
-                <label className={LABEL_CLASS} htmlFor="sell-name">
-                  Name <span className="text-red-500">*</span>
+                <label className={LABEL_CLASS} htmlFor="sellAccountId">
+                  Account to Sell
                 </label>
-                <input
-                  id="sell-name"
-                  name="name"
-                  type="text"
-                  required
-                  defaultValue={initialData?.name ?? ""}
-                  placeholder="e.g., Sell Primary Home"
-                  className={INPUT_CLASS}
-                />
+                <select
+                  id="sellAccountId"
+                  value={sellAccountId}
+                  onChange={(e) => setSellAccountId(e.target.value)}
+                  className={SELECT_CLASS}
+                >
+                  <option value="">-- Select account --</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              {/* Account to sell + Year */}
+              {/* Override Sale Value + Basis */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
-                  <label className={LABEL_CLASS} htmlFor="accountId">
-                    Account to Sell
-                  </label>
-                  <select
-                    id="accountId"
-                    value={selectedAccountId}
-                    onChange={(e) => setSelectedAccountId(e.target.value)}
-                    className={SELECT_CLASS}
-                  >
-                    <option value="">— Select account —</option>
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className={LABEL_CLASS} htmlFor="sell-year">
-                    Year <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="sell-year"
-                    name="year"
-                    type="number"
-                    required
-                    defaultValue={initialData?.year ?? currentYear}
-                    className={INPUT_CLASS}
-                  />
-                </div>
-
-                {/* Override Sale Value */}
                 <div>
                   <label className={LABEL_CLASS} htmlFor="overrideSaleValue">
                     Override Sale Value ($)
                   </label>
                   <input
                     id="overrideSaleValue"
-                    name="overrideSaleValue"
                     type="number"
                     step="0.01"
                     min={0}
-                    defaultValue={initialData?.overrideSaleValue ?? ""}
+                    value={overrideSaleValue}
+                    onChange={(e) => setOverrideSaleValue(e.target.value)}
                     placeholder="Leave blank for projected"
                     className={INPUT_CLASS}
                   />
+                  {projectedSellInfo && projectedSellInfo.projectedValue > 0 && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Projected value in {year}:{" "}
+                      <span className="text-gray-400">
+                        {formatCurrency(projectedSellInfo.projectedValue)}
+                      </span>
+                    </p>
+                  )}
                 </div>
 
-                {/* Override Basis */}
                 <div>
                   <label className={LABEL_CLASS} htmlFor="overrideBasis">
                     Override Basis ($)
                   </label>
                   <input
                     id="overrideBasis"
-                    name="overrideBasis"
                     type="number"
                     step="0.01"
                     min={0}
-                    defaultValue={initialData?.overrideBasis ?? ""}
+                    value={overrideBasis}
+                    onChange={(e) => setOverrideBasis(e.target.value)}
                     placeholder="Leave blank for projected"
                     className={INPUT_CLASS}
                   />
+                  {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Projected basis in {year}:{" "}
+                      <span className="text-gray-400">
+                        {formatCurrency(projectedSellInfo.projectedBasis)}
+                      </span>
+                    </p>
+                  )}
                 </div>
+              </div>
 
-                {/* Transaction Cost % */}
+              {/* Transaction Costs */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={LABEL_CLASS} htmlFor="transactionCostPct">
                     Transaction Cost (%)
                   </label>
                   <input
                     id="transactionCostPct"
-                    name="transactionCostPct"
                     type="number"
                     step="0.01"
                     min={0}
                     max={100}
-                    defaultValue={initialTransactionCostPct}
+                    value={transactionCostPct}
+                    onChange={(e) => setTransactionCostPct(e.target.value)}
                     placeholder="Optional"
                     className={INPUT_CLASS}
                   />
                 </div>
-
-                {/* Transaction Cost $ */}
                 <div>
                   <label className={LABEL_CLASS} htmlFor="transactionCostFlat">
                     Transaction Cost ($)
                   </label>
                   <input
                     id="transactionCostFlat"
-                    name="transactionCostFlat"
                     type="number"
                     step="0.01"
                     min={0}
-                    defaultValue={initialData?.transactionCostFlat ?? ""}
+                    value={transactionCostFlat}
+                    onChange={(e) => setTransactionCostFlat(e.target.value)}
                     placeholder="Optional"
                     className={INPUT_CLASS}
                   />
                 </div>
-
-                {/* Proceeds Destination */}
-                <div className="col-span-2">
-                  <label className={LABEL_CLASS} htmlFor="proceedsAccountId">
-                    Proceeds Destination
-                  </label>
-                  <select
-                    id="proceedsAccountId"
-                    name="proceedsAccountId"
-                    defaultValue={initialData?.proceedsAccountId ?? ""}
-                    className={SELECT_CLASS}
-                  >
-                    <option value="">Default Checking</option>
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
               </div>
 
-              {/* Linked mortgage display */}
-              {linkedMortgage && (
+              {/* Linked mortgage display for real estate */}
+              {isSellRealEstate && linkedMortgage && (
                 <div className="rounded-md border border-amber-700/40 bg-amber-900/20 px-3 py-2 text-sm text-amber-300">
-                  <span className="font-medium">Linked Mortgage:</span>{" "}
-                  {linkedMortgage.name} — Balance:{" "}
-                  {formatCurrency(linkedMortgage.balance)}{" "}
-                  <span className="text-amber-400/70">(will be paid off at sale)</span>
+                  <div>
+                    <span className="font-medium">Linked Mortgage:</span>{" "}
+                    {linkedMortgage.name}
+                  </div>
+                  <div className="mt-0.5">
+                    Remaining Balance: {formatCurrency(linkedMortgage.balance)}
+                    {projectedMortgageBalance != null && (
+                      <span className="ml-1 text-amber-400/70">
+                        (projected: {formatCurrency(projectedMortgageBalance)})
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-amber-400/70">
+                    Will be paid off at sale
+                  </div>
                 </div>
               )}
-            </>
-          )}
+            </div>
+          </CollapsibleSection>
 
-          {/* ── Buy fields ──────────────────────────────────────────────────── */}
-          {txnType === "buy" && (
-            <>
-              {/* Name */}
+          {/* ── Buy Side ────────────────────────────────────────────────── */}
+          <CollapsibleSection
+            title="Buy Side"
+            expanded={buyExpanded}
+            onToggle={() => setBuyExpanded((v) => !v)}
+            accentColor="green"
+          >
+            <div className="space-y-4">
+              {/* Asset Name */}
               <div>
-                <label className={LABEL_CLASS} htmlFor="buy-name">
-                  Name <span className="text-red-500">*</span>
+                <label className={LABEL_CLASS} htmlFor="assetName">
+                  Asset Name
                 </label>
                 <input
-                  id="buy-name"
-                  name="name"
+                  id="assetName"
                   type="text"
-                  required
-                  defaultValue={initialData?.name ?? ""}
-                  placeholder="e.g., Buy Rental Property"
+                  value={assetName}
+                  onChange={(e) => setAssetName(e.target.value)}
+                  placeholder="e.g., 123 Main St"
                   className={INPUT_CLASS}
                 />
               </div>
 
-              {/* Year */}
+              {/* Category + Sub-Type */}
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={LABEL_CLASS} htmlFor="buy-year">
-                    Year <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="buy-year"
-                    name="year"
-                    type="number"
-                    required
-                    defaultValue={initialData?.year ?? currentYear}
-                    className={INPUT_CLASS}
-                  />
-                </div>
-
-                {/* Asset Name */}
-                <div>
-                  <label className={LABEL_CLASS} htmlFor="assetName">
-                    Asset Name
-                  </label>
-                  <input
-                    id="assetName"
-                    name="assetName"
-                    type="text"
-                    defaultValue={initialData?.assetName ?? ""}
-                    placeholder="e.g., 123 Main St"
-                    className={INPUT_CLASS}
-                  />
-                </div>
-
-                {/* Asset Category */}
                 <div>
                   <label className={LABEL_CLASS} htmlFor="assetCategory">
                     Asset Category
@@ -522,11 +672,9 @@ export default function AddAssetTransactionForm({
                     ))}
                   </select>
                 </div>
-
-                {/* Asset Sub-Type */}
                 <div>
                   <label className={LABEL_CLASS} htmlFor="assetSubType">
-                    Asset Sub-Type
+                    Sub-Type
                   </label>
                   <select
                     id="assetSubType"
@@ -541,70 +689,74 @@ export default function AddAssetTransactionForm({
                     ))}
                   </select>
                 </div>
+              </div>
 
-                {/* Purchase Price */}
+              {/* Purchase Price + Growth Rate */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={LABEL_CLASS} htmlFor="purchasePrice">
                     Purchase Price ($)
                   </label>
                   <input
                     id="purchasePrice"
-                    name="purchasePrice"
                     type="number"
                     step="0.01"
                     min={0}
-                    defaultValue={initialData?.purchasePrice ?? ""}
+                    value={purchasePrice}
+                    onChange={(e) => setPurchasePrice(e.target.value)}
                     className={INPUT_CLASS}
                   />
                 </div>
-
-                {/* Growth Rate */}
                 <div>
-                  <label className={LABEL_CLASS} htmlFor="growthRate">
+                  <label className={LABEL_CLASS} htmlFor="buyGrowthRate">
                     Growth Rate (%)
                   </label>
                   <input
-                    id="growthRate"
-                    name="growthRate"
+                    id="buyGrowthRate"
                     type="number"
                     step="0.01"
                     min={0}
                     max={30}
-                    defaultValue={initialGrowthRate}
+                    value={buyGrowthRate}
+                    onChange={(e) => setBuyGrowthRate(e.target.value)}
                     placeholder="e.g., 3.5"
                     className={INPUT_CLASS}
                   />
                 </div>
+              </div>
 
-                {/* Basis */}
+              {/* Basis + Funding Source */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className={LABEL_CLASS} htmlFor="basis">
+                  <label className={LABEL_CLASS} htmlFor="buyBasis">
                     Basis ($)
                   </label>
                   <input
-                    id="basis"
-                    name="basis"
+                    id="buyBasis"
                     type="number"
                     step="0.01"
                     min={0}
-                    defaultValue={initialData?.basis ?? ""}
+                    value={buyBasis}
+                    onChange={(e) => setBuyBasis(e.target.value)}
                     placeholder="Optional"
                     className={INPUT_CLASS}
                   />
                 </div>
-
-                {/* Funding Source */}
                 <div>
                   <label className={LABEL_CLASS} htmlFor="fundingAccountId">
                     Funding Source
                   </label>
                   <select
                     id="fundingAccountId"
-                    name="fundingAccountId"
-                    defaultValue={initialData?.fundingAccountId ?? ""}
+                    value={fundingAccountId}
+                    onChange={(e) => setFundingAccountId(e.target.value)}
                     className={SELECT_CLASS}
                   >
-                    <option value="">Withdrawal Strategy</option>
+                    {FUNDING_SPECIAL_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                     {accounts.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}
@@ -615,7 +767,7 @@ export default function AddAssetTransactionForm({
               </div>
 
               {/* Collapsible Mortgage section */}
-              <div className="mt-2">
+              <div>
                 <button
                   type="button"
                   onClick={() => setShowMortgage((v) => !v)}
@@ -633,54 +785,162 @@ export default function AddAssetTransactionForm({
                   <div className="mt-3 grid grid-cols-3 gap-4 rounded-md border border-gray-700 bg-gray-800/50 p-4">
                     <div>
                       <label className={LABEL_CLASS} htmlFor="mortgageAmount">
-                        Mortgage Amount ($)
+                        Amount ($)
                       </label>
                       <input
                         id="mortgageAmount"
-                        name="mortgageAmount"
                         type="number"
                         step="0.01"
                         min={0}
-                        defaultValue={initialData?.mortgageAmount ?? ""}
+                        value={mortgageAmount}
+                        onChange={(e) => setMortgageAmount(e.target.value)}
                         className={INPUT_CLASS}
                       />
                     </div>
-
                     <div>
                       <label className={LABEL_CLASS} htmlFor="mortgageRate">
-                        Interest Rate (%)
+                        Rate (%)
                       </label>
                       <input
                         id="mortgageRate"
-                        name="mortgageRate"
                         type="number"
                         step="0.01"
                         min={0}
                         max={30}
-                        defaultValue={initialMortgageRate}
+                        value={mortgageRate}
+                        onChange={(e) => setMortgageRate(e.target.value)}
                         placeholder="e.g., 6.75"
                         className={INPUT_CLASS}
                       />
                     </div>
-
                     <div>
                       <label className={LABEL_CLASS} htmlFor="mortgageTermMonths">
-                        Term (months)
+                        Term (mo)
                       </label>
                       <input
                         id="mortgageTermMonths"
-                        name="mortgageTermMonths"
                         type="number"
                         step="1"
                         min={1}
-                        defaultValue={initialData?.mortgageTermMonths ?? 360}
+                        value={mortgageTermMonths}
+                        onChange={(e) => setMortgageTermMonths(e.target.value)}
                         className={INPUT_CLASS}
                       />
                     </div>
                   </div>
                 )}
               </div>
-            </>
+            </div>
+          </CollapsibleSection>
+
+          {/* ── Net Summary ─────────────────────────────────────────────── */}
+          {(netSummary.hasSell || netSummary.hasBuy) && (
+            <div className="rounded-md border border-gray-700 bg-gray-800/50 px-4 py-3">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                Net Summary
+              </h4>
+              <div className="space-y-1 text-sm">
+                {netSummary.hasSell && (
+                  <>
+                    <div className="flex justify-between text-gray-300">
+                      <span>Sale Value</span>
+                      <span>{formatCurrency(netSummary.saleValue)}</span>
+                    </div>
+                    {netSummary.transactionCosts > 0 && (
+                      <div className="flex justify-between text-gray-400">
+                        <span className="pl-3">- Transaction Costs</span>
+                        <span>{formatCurrency(netSummary.transactionCosts)}</span>
+                      </div>
+                    )}
+                    {netSummary.mortgagePayoff > 0 && (
+                      <div className="flex justify-between text-gray-400">
+                        <span className="pl-3">- Mortgage Payoff</span>
+                        <span>{formatCurrency(netSummary.mortgagePayoff)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-medium text-gray-200">
+                      <span>Sale Proceeds</span>
+                      <span>{formatCurrency(netSummary.saleProceeds)}</span>
+                    </div>
+                  </>
+                )}
+                {netSummary.hasBuy && (
+                  <>
+                    {netSummary.hasSell && (
+                      <div className="my-1 border-t border-gray-700" />
+                    )}
+                    <div className="flex justify-between text-gray-300">
+                      <span>Purchase Price</span>
+                      <span>{formatCurrency(netSummary.purchasePrice)}</span>
+                    </div>
+                    {netSummary.purchaseMortgage > 0 && (
+                      <div className="flex justify-between text-gray-400">
+                        <span className="pl-3">- Mortgage</span>
+                        <span>{formatCurrency(netSummary.purchaseMortgage)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-medium text-gray-200">
+                      <span>Cash Needed</span>
+                      <span>{formatCurrency(netSummary.purchaseCost)}</span>
+                    </div>
+                  </>
+                )}
+                {netSummary.hasSell && netSummary.hasBuy && (
+                  <>
+                    <div className="my-1 border-t border-gray-700" />
+                    <div
+                      className={`flex justify-between font-semibold ${
+                        netSummary.net >= 0 ? "text-green-400" : "text-red-400"
+                      }`}
+                    >
+                      <span>Net</span>
+                      <span>
+                        {netSummary.net >= 0 ? "+" : ""}
+                        {formatCurrency(netSummary.net)}
+                      </span>
+                    </div>
+                    {netSummary.net < 0 && fundingAccountId && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Deficit will be funded from{" "}
+                        {fundingAccountId === "__from_sale_proceeds__"
+                          ? "sale proceeds"
+                          : accounts.find((a) => a.id === fundingAccountId)?.name ?? "withdrawal strategy"}
+                      </p>
+                    )}
+                    {netSummary.net > 0 && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Surplus will go to{" "}
+                        {proceedsAccountId
+                          ? accounts.find((a) => a.id === proceedsAccountId)?.name ?? "selected account"
+                          : "default checking"}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Proceeds Destination (when surplus or sell-only) ────────── */}
+          {sellHasData && (netSummary.net > 0 || !buyHasData) && (
+            <div>
+              <label className={LABEL_CLASS} htmlFor="proceedsAccountId">
+                Proceeds Destination
+              </label>
+              <select
+                id="proceedsAccountId"
+                value={proceedsAccountId}
+                onChange={(e) => setProceedsAccountId(e.target.value)}
+                className={SELECT_CLASS}
+              >
+                <option value="">Default Checking</option>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
         </div>
 
@@ -695,10 +955,10 @@ export default function AddAssetTransactionForm({
           </button>
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (!sellHasData && !buyHasData)}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
-            {loading ? "Saving…" : isEdit ? "Save Changes" : txnType === "buy" ? "Add Buy" : "Add Sell"}
+            {loading ? "Saving..." : isEdit ? "Save Changes" : "Save"}
           </button>
         </div>
       </form>
