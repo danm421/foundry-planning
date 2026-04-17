@@ -9,8 +9,11 @@ import {
   savingsRules,
   planSettings,
   entities,
+  incomeScheduleOverrides,
+  expenseScheduleOverrides,
+  savingsScheduleOverrides,
 } from "@/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import IncomeExpensesView from "@/components/income-expenses-view";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
@@ -51,6 +54,37 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
     db.select().from(planSettings).where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
     db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
   ]);
+
+  const incomeIds = incomeRows.map((i) => i.id);
+  const expenseIds = expenseRows.map((e) => e.id);
+  const savingsRuleIds = savingsRuleRows.map((s) => s.id);
+
+  const [incOverrides, expOverrides, savOverrides] = await Promise.all([
+    incomeIds.length > 0
+      ? db.select().from(incomeScheduleOverrides).where(inArray(incomeScheduleOverrides.incomeId, incomeIds))
+      : Promise.resolve([]),
+    expenseIds.length > 0
+      ? db.select().from(expenseScheduleOverrides).where(inArray(expenseScheduleOverrides.expenseId, expenseIds))
+      : Promise.resolve([]),
+    savingsRuleIds.length > 0
+      ? db.select().from(savingsScheduleOverrides).where(inArray(savingsScheduleOverrides.savingsRuleId, savingsRuleIds))
+      : Promise.resolve([]),
+  ]);
+
+  const incomeScheduleMap: Record<string, { year: number; amount: number }[]> = {};
+  for (const row of incOverrides) {
+    (incomeScheduleMap[row.incomeId] ??= []).push({ year: row.year, amount: parseFloat(row.amount) });
+  }
+
+  const expenseScheduleMap: Record<string, { year: number; amount: number }[]> = {};
+  for (const row of expOverrides) {
+    (expenseScheduleMap[row.expenseId] ??= []).push({ year: row.year, amount: parseFloat(row.amount) });
+  }
+
+  const savingsScheduleMap: Record<string, { year: number; amount: number }[]> = {};
+  for (const row of savOverrides) {
+    (savingsScheduleMap[row.savingsRuleId] ??= []).push({ year: row.year, amount: parseFloat(row.amount) });
+  }
 
   const settings = planSettingsRows[0];
 
@@ -143,6 +177,9 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
         planEndYear,
         milestones,
       }}
+      incomeSchedules={incomeScheduleMap}
+      expenseSchedules={expenseScheduleMap}
+      savingsSchedules={savingsScheduleMap}
     />
   );
 }

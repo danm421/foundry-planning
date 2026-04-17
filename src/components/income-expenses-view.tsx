@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import MilestoneYearPicker from "./milestone-year-picker";
+import ScheduleTab from "./schedule-tab";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
@@ -108,6 +109,8 @@ interface ClientInfo {
   milestones?: ClientMilestones;
 }
 
+type ScheduleMap = Record<string, { year: number; amount: number }[]>;
+
 interface IncomeExpensesViewProps {
   clientId: string;
   initialIncomes: Income[];
@@ -117,6 +120,9 @@ interface IncomeExpensesViewProps {
   entities?: Entity[];
   clientInfo?: ClientInfo;
   ownerNames: OwnerNames;
+  incomeSchedules: ScheduleMap;
+  expenseSchedules: ScheduleMap;
+  savingsSchedules: ScheduleMap;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -329,6 +335,7 @@ interface IncomeDialogProps {
   editing?: Income;
   onSaved: (income: Income, mode: "create" | "edit") => void;
   onRequestDelete?: () => void;
+  schedule?: { year: number; amount: number }[];
 }
 
 function IncomeDialog({
@@ -343,7 +350,11 @@ function IncomeDialog({
   editing,
   onSaved,
   onRequestDelete,
+  schedule,
 }: IncomeDialogProps) {
+  type TabId = "details" | "schedule";
+  const [activeTab, setActiveTab] = useState<TabId>("details");
+  const [hasSchedule, setHasSchedule] = useState((schedule ?? []).length > 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [type, setType] = useState<IncomeType>(editing?.type ?? defaultType);
@@ -459,7 +470,14 @@ function IncomeDialog({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="mb-4 flex border-b border-gray-700">
+          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Details</button>
+          {editing && (
+            <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Schedule</button>
+          )}
+        </div>
+
+        {activeTab === "details" && (<form onSubmit={handleSubmit} className="space-y-4">
           {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
 
           <div className="grid grid-cols-2 gap-4">
@@ -544,28 +562,34 @@ function IncomeDialog({
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="inc-growth">Growth Rate (%)</label>
-              <input
-                id="inc-growth"
-                name="growthRate"
-                type="number"
-                step="0.1"
-                min={0}
-                max={30}
-                defaultValue={pctFromDecimal(editing?.growthRate, isSocialSecurity ? 2 : 3)}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <label className="mt-1 flex items-center gap-1.5 text-[11px] text-gray-400">
+            {hasSchedule ? (
+              <div className="flex items-end">
+                <p className="text-xs text-blue-400 cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="inc-growth">Growth Rate (%)</label>
                 <input
-                  type="checkbox"
-                  checked={todaysDollars}
-                  onChange={(e) => setTodaysDollars(e.target.checked)}
-                  className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+                  id="inc-growth"
+                  name="growthRate"
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={30}
+                  defaultValue={pctFromDecimal(editing?.growthRate, isSocialSecurity ? 2 : 3)}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
-                Amount in today&apos;s dollars (inflate from {planStartYear})
-              </label>
-            </div>
+                <label className="mt-1 flex items-center gap-1.5 text-[11px] text-gray-400">
+                  <input
+                    type="checkbox"
+                    checked={todaysDollars}
+                    onChange={(e) => setTodaysDollars(e.target.checked)}
+                    className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+                  />
+                  Amount in today&apos;s dollars (inflate from {planStartYear})
+                </label>
+              </div>
+            )}
 
             {isSocialSecurity ? (
               <div className="col-span-2">
@@ -710,7 +734,27 @@ function IncomeDialog({
               {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Income"}
             </button>
           </div>
-        </form>
+        </form>)}
+
+        {activeTab === "schedule" && editing && (
+          <ScheduleTab
+            startYear={startYear}
+            endYear={endYear}
+            initialOverrides={schedule ?? []}
+            onSave={async (overrides) => {
+              await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ overrides }),
+              });
+              setHasSchedule(overrides.length > 0);
+            }}
+            onClear={async () => {
+              await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, { method: "DELETE" });
+              setHasSchedule(false);
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -729,6 +773,7 @@ interface ExpenseDialogProps {
   editing?: Expense;
   onSaved: (expense: Expense, mode: "create" | "edit") => void;
   onRequestDelete?: () => void;
+  schedule?: { year: number; amount: number }[];
 }
 
 function ExpenseDialog({
@@ -742,7 +787,11 @@ function ExpenseDialog({
   editing,
   onSaved,
   onRequestDelete,
+  schedule,
 }: ExpenseDialogProps) {
+  type ExpTabId = "details" | "schedule";
+  const [activeTab, setActiveTab] = useState<ExpTabId>("details");
+  const [hasSchedule, setHasSchedule] = useState((schedule ?? []).length > 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ownerEntityId, setOwnerEntityId] = useState<string>(editing?.ownerEntityId ?? "");
@@ -830,7 +879,14 @@ function ExpenseDialog({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="mb-4 flex border-b border-gray-700">
+          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Details</button>
+          {editing && (
+            <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Schedule</button>
+          )}
+        </div>
+
+        {activeTab === "details" && (<form onSubmit={handleSubmit} className="space-y-4">
           {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
 
           <div>
@@ -880,28 +936,34 @@ function ExpenseDialog({
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="exp-growth">Growth Rate (%)</label>
-              <input
-                id="exp-growth"
-                name="growthRate"
-                type="number"
-                step="0.1"
-                min={0}
-                max={30}
-                defaultValue={pctFromDecimal(editing?.growthRate, 3)}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <label className="mt-1 flex items-center gap-1.5 text-[11px] text-gray-400">
+            {hasSchedule ? (
+              <div className="flex items-end">
+                <p className="text-xs text-blue-400 cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="exp-growth">Growth Rate (%)</label>
                 <input
-                  type="checkbox"
-                  checked={todaysDollars}
-                  onChange={(e) => setTodaysDollars(e.target.checked)}
-                  className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+                  id="exp-growth"
+                  name="growthRate"
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={30}
+                  defaultValue={pctFromDecimal(editing?.growthRate, 3)}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
-                Amount in today&apos;s dollars (inflate from {planStartYear})
-              </label>
-            </div>
+                <label className="mt-1 flex items-center gap-1.5 text-[11px] text-gray-400">
+                  <input
+                    type="checkbox"
+                    checked={todaysDollars}
+                    onChange={(e) => setTodaysDollars(e.target.checked)}
+                    className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+                  />
+                  Amount in today&apos;s dollars (inflate from {planStartYear})
+                </label>
+              </div>
+            )}
 
             {clientInfo?.milestones ? (
               <>
@@ -1027,7 +1089,27 @@ function ExpenseDialog({
               {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Expense"}
             </button>
           </div>
-        </form>
+        </form>)}
+
+        {activeTab === "schedule" && editing && (
+          <ScheduleTab
+            startYear={startYear}
+            endYear={endYear}
+            initialOverrides={schedule ?? []}
+            onSave={async (overrides) => {
+              await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ overrides }),
+              });
+              setHasSchedule(overrides.length > 0);
+            }}
+            onClear={async () => {
+              await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, { method: "DELETE" });
+              setHasSchedule(false);
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -1043,6 +1125,7 @@ interface SavingsRuleDialogProps {
   editing?: SavingsRule;
   onSaved: (rule: SavingsRule, mode: "create" | "edit") => void;
   onRequestDelete?: () => void;
+  schedule?: { year: number; amount: number }[];
 }
 
 function SavingsRuleDialog({
@@ -1053,7 +1136,11 @@ function SavingsRuleDialog({
   editing,
   onSaved,
   onRequestDelete,
+  schedule,
 }: SavingsRuleDialogProps) {
+  type SavTabId = "details" | "schedule";
+  const [activeTab, setActiveTab] = useState<SavTabId>("details");
+  const [hasSchedule, setHasSchedule] = useState((schedule ?? []).length > 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const currentYear = new Date().getFullYear();
@@ -1132,7 +1219,14 @@ function SavingsRuleDialog({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="mb-4 flex border-b border-gray-700">
+          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Details</button>
+          {editing && (
+            <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Schedule</button>
+          )}
+        </div>
+
+        {activeTab === "details" && (<form onSubmit={handleSubmit} className="space-y-4">
           {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
 
           <div>
@@ -1167,6 +1261,9 @@ function SavingsRuleDialog({
                 defaultValue={editing?.annualAmount ?? 0}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
+              {hasSchedule && (
+                <p className="mt-1 text-xs text-blue-400 cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-300" htmlFor="sr-limit">Annual Limit ($)</label>
@@ -1318,7 +1415,27 @@ function SavingsRuleDialog({
               {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Rule"}
             </button>
           </div>
-        </form>
+        </form>)}
+
+        {activeTab === "schedule" && editing && (
+          <ScheduleTab
+            startYear={editing.startYear}
+            endYear={editing.endYear}
+            initialOverrides={schedule ?? []}
+            onSave={async (overrides) => {
+              await fetch(`/api/clients/${clientId}/savings-rules/${editing.id}/schedule`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ overrides }),
+              });
+              setHasSchedule(overrides.length > 0);
+            }}
+            onClear={async () => {
+              await fetch(`/api/clients/${clientId}/savings-rules/${editing.id}/schedule`, { method: "DELETE" });
+              setHasSchedule(false);
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -1335,6 +1452,9 @@ export default function IncomeExpensesView({
   entities,
   clientInfo,
   ownerNames,
+  incomeSchedules,
+  expenseSchedules,
+  savingsSchedules,
 }: IncomeExpensesViewProps) {
   const [incomeList, setIncomeList] = useState<Income[]>(initialIncomes);
   const [expenseList, setExpenseList] = useState<Expense[]>(initialExpenses);
@@ -1614,6 +1734,7 @@ export default function IncomeExpensesView({
         onRequestDelete={() => {
           if (incomeDialog.editing) setDeletingIncome(incomeDialog.editing);
         }}
+        schedule={incomeDialog.editing ? incomeSchedules[incomeDialog.editing.id] : undefined}
       />
 
       <ExpenseDialog
@@ -1632,6 +1753,7 @@ export default function IncomeExpensesView({
         onRequestDelete={() => {
           if (expenseDialog.editing) setDeletingExpense(expenseDialog.editing);
         }}
+        schedule={expenseDialog.editing ? expenseSchedules[expenseDialog.editing.id] : undefined}
       />
 
       <SavingsRuleDialog
@@ -1647,6 +1769,7 @@ export default function IncomeExpensesView({
         onRequestDelete={() => {
           if (savingsDialog.editing) setDeletingSavings(savingsDialog.editing);
         }}
+        schedule={savingsDialog.editing ? savingsSchedules[savingsDialog.editing.id] : undefined}
       />
 
       {/* Delete confirms */}
