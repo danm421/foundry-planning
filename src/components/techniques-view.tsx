@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import AddTransferForm from "./forms/add-transfer-form";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -459,23 +460,15 @@ export default function TechniquesView({
         )}
       </div>
 
-      {/* ── Transfer form placeholder (Task 13) ───────────────────────────── */}
+      {/* ── Transfer form (Task 13) ───────────────────────────────────────── */}
       {(showAddTransfer || editingTransfer) && (
-        // AddTransferForm will be added in Task 13
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          onClick={() => {
-            setShowAddTransfer(false);
-            setEditingTransfer(null);
-          }}
-        >
-          <div
-            className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-gray-100"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p>Transfer form placeholder — Task 13</p>
-          </div>
-        </div>
+        <AddTransferForm
+          clientId={clientId}
+          accounts={accounts}
+          initialData={editingTransfer ?? undefined}
+          onClose={() => { setShowAddTransfer(false); setEditingTransfer(null); }}
+          onSaved={() => { setShowAddTransfer(false); setEditingTransfer(null); router.refresh(); }}
+        />
       )}
 
       {/* ── Asset Transaction form placeholder (Task 14) ──────────────────── */}
