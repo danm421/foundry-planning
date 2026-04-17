@@ -54,6 +54,7 @@ interface BalanceSheetViewProps {
   ownerNames: OwnerNames;
   assetClasses?: AssetClassOption[];
   portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
+  categoryDefaultSources?: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }>;
 }
 
 const CATEGORY_LABELS: Record<AccountCategory, string> = {
@@ -192,6 +193,7 @@ export default function BalanceSheetView({
   ownerNames,
   assetClasses,
   portfolioAllocationsMap,
+  categoryDefaultSources,
 }: BalanceSheetViewProps) {
   const router = useRouter();
 
@@ -422,6 +424,7 @@ export default function BalanceSheetView({
         ownerNames={ownerNames}
         assetClasses={assetClasses}
         portfolioAllocationsMap={portfolioAllocationsMap}
+        categoryDefaultSources={categoryDefaultSources}
         open={addCategory !== null}
         onOpenChange={(o) => !o && setAddCategory(null)}
       />
@@ -434,6 +437,7 @@ export default function BalanceSheetView({
         modelPortfolios={modelPortfolios}
         ownerNames={ownerNames}
         assetClasses={assetClasses}
+        categoryDefaultSources={categoryDefaultSources}
         portfolioAllocationsMap={portfolioAllocationsMap}
         open={!!editingAccount}
         onOpenChange={(o) => !o && setEditingAccount(null)}

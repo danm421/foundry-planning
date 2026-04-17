@@ -15,26 +15,23 @@ interface Allocation {
 }
 
 interface AssetMixTabProps {
-  mode: "model_portfolio" | "asset_mix";
   assetClasses: AssetClassOption[];
-  portfolioAllocations?: Allocation[];
-  portfolioName?: string;
+  /** Name of the inherited portfolio (shown as info banner) */
+  inheritedPortfolioName?: string;
+  /** Current allocations (always editable) */
   allocations: Allocation[];
   onChange: (allocations: Allocation[]) => void;
 }
 
 export function AssetMixTab({
-  mode,
   assetClasses,
-  portfolioAllocations,
-  portfolioName,
+  inheritedPortfolioName,
   allocations,
   onChange,
 }: AssetMixTabProps) {
   const [hideZero, setHideZero] = useState(false);
 
-  const isReadOnly = mode === "model_portfolio";
-  const displayAllocations = isReadOnly ? (portfolioAllocations ?? []) : allocations;
+  const displayAllocations = allocations;
 
   const weightMap = new Map<string, number>();
   for (const a of displayAllocations) {
@@ -86,69 +83,60 @@ export function AssetMixTab({
         </span>
       </div>
 
-      {/* Read-only notice for model_portfolio mode */}
-      {isReadOnly && (
+      {/* Info banner when allocations are inherited from a portfolio */}
+      {inheritedPortfolioName && (
         <div className="rounded-md border border-blue-700 bg-blue-950 px-3 py-2 text-sm text-blue-200">
-          Allocation inherited from <strong>{portfolioName}</strong>. Switch
-          growth source to Asset Mix for custom weights.
+          Pre-filled from <strong>{inheritedPortfolioName}</strong>. Edit to customize.
         </div>
       )}
 
-      {/* Hide zero toggle — only in editable mode */}
-      {!isReadOnly && (
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              id="hide-zero"
-              type="checkbox"
-              checked={hideZero}
-              onChange={(e) => setHideZero(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
-            />
-            <span className="text-sm text-gray-300">Hide 0% allocations</span>
-          </label>
-        </div>
-      )}
+      {/* Hide zero toggle */}
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            id="hide-zero"
+            type="checkbox"
+            checked={hideZero}
+            onChange={(e) => setHideZero(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+          />
+          <span className="text-sm text-gray-300">Hide 0% allocations</span>
+        </label>
+      </div>
 
-      {/* Asset class rows */}
-      <div className="space-y-2">
+      {/* Asset class rows — two-column grid */}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1">
         {visibleClasses.map((ac) => {
           const weight = weightMap.get(ac.id) ?? 0;
           return (
             <div
               key={ac.id}
-              className="flex items-center justify-between gap-3"
+              className="flex items-center justify-between gap-2"
             >
               <span className="text-sm flex-1 truncate text-gray-200">{ac.name}</span>
-              <span className="text-xs text-gray-500 w-16 text-right">
+              <span className="text-xs text-gray-500 w-14 text-right shrink-0">
                 {(ac.geometricReturn * 100).toFixed(2)}%
               </span>
-              {isReadOnly ? (
-                <span className="text-sm font-medium w-20 text-right text-gray-100">
-                  {(weight * 100).toFixed(1)}%
-                </span>
-              ) : (
-                <div className="flex items-center gap-1 w-24">
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.1}
-                    value={weight > 0 ? (weight * 100).toFixed(1) : ""}
-                    placeholder="0"
-                    onChange={(e) => handleWeightChange(ac.id, e.target.value)}
-                    className="h-8 w-full rounded-md border border-gray-600 bg-gray-800 px-2 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-500">%</span>
-                </div>
-              )}
+              <div className="flex items-center gap-1 w-20 shrink-0">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  value={weight > 0 ? (weight * 100).toFixed(1) : ""}
+                  placeholder="0"
+                  onChange={(e) => handleWeightChange(ac.id, e.target.value)}
+                  className="h-7 w-full rounded-md border border-gray-600 bg-gray-800 px-2 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-500">%</span>
+              </div>
             </div>
           );
         })}
       </div>
 
       {/* Unclassified row */}
-      {(!isReadOnly || unclassified > 0.0001) && (
+      {unclassified > 0.0001 && (
         <div className="flex items-center justify-between gap-3 border-t border-gray-700 pt-2">
           <span className="text-sm flex-1 text-gray-500 italic">
             Unclassified
@@ -164,7 +152,7 @@ export function AssetMixTab({
         </div>
       )}
 
-      {!isReadOnly && unclassified > 0.0001 && (
+      {unclassified > 0.0001 && (
         <p className="text-xs text-gray-500">
           Unclassified portion grows at the Inflation rate
           {inflationClass

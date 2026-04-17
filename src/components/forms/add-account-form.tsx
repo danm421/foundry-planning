@@ -61,6 +61,7 @@ interface AddAccountFormProps {
   modelPortfolios?: ModelPortfolioOption[];
   assetClasses?: AssetClassOption[];
   portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
+  categoryDefaultSources?: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }>;
   onSuccess?: () => void;
   onDelete?: () => void;
 }
@@ -122,6 +123,7 @@ export default function AddAccountForm({
   modelPortfolios,
   assetClasses,
   portfolioAllocationsMap,
+  categoryDefaultSources,
   onSuccess,
   onDelete,
 }: AddAccountFormProps) {
@@ -168,29 +170,46 @@ export default function AddAccountForm({
   const [allocationsLoaded, setAllocationsLoaded] = useState(false);
 
   const ASSET_MIX_CATEGORIES = ["taxable", "retirement"];
-  const showAssetMixTab = ASSET_MIX_CATEGORIES.includes(category) &&
-    (growthSource === "model_portfolio" || growthSource === "asset_mix");
+  const showAssetMixTab = ASSET_MIX_CATEGORIES.includes(category);
+
+  // Resolve category default info for display
+  const catDefaultSource = categoryDefaultSources?.[category];
 
   useEffect(() => {
-    if (mode === "edit" && initial?.id && !allocationsLoaded) {
+    if (allocationsLoaded) return;
+    if (mode === "edit" && initial?.id) {
       fetch(`/api/clients/${clientId}/accounts/${initial.id}/allocations`)
         .then((res) => res.json())
         .then((rows: { assetClassId: string; weight: string }[]) => {
-          setCustomAllocations(
-            rows.map((r) => ({ assetClassId: r.assetClassId, weight: parseFloat(r.weight) }))
-          );
+          const loaded = rows.map((r) => ({ assetClassId: r.assetClassId, weight: parseFloat(r.weight) }));
+          // If no custom allocations saved, pre-fill from the effective portfolio
+          if (loaded.length === 0) {
+            const effectivePortfolioId = modelPortfolioId || catDefaultSource?.portfolioId;
+            if (effectivePortfolioId && portfolioAllocationsMap?.[effectivePortfolioId]) {
+              setCustomAllocations(portfolioAllocationsMap[effectivePortfolioId]);
+            }
+          } else {
+            setCustomAllocations(loaded);
+          }
           setAllocationsLoaded(true);
         })
         .catch(() => setAllocationsLoaded(true));
+    } else if (mode === "create") {
+      // Pre-fill from the category default portfolio for new accounts
+      const effectivePortfolioId = catDefaultSource?.portfolioId;
+      if (effectivePortfolioId && portfolioAllocationsMap?.[effectivePortfolioId]) {
+        setCustomAllocations(portfolioAllocationsMap[effectivePortfolioId]);
+      }
+      setAllocationsLoaded(true);
     }
-  }, [mode, initial?.id, clientId, allocationsLoaded]);
-
-  // Legacy compat: map old useDefaultGrowth behavior into growthSource
+  }, [mode, initial?.id, clientId, allocationsLoaded, modelPortfolioId, portfolioAllocationsMap, catDefaultSource?.portfolioId]);
   const hasExplicitGrowth = initial?.growthRate != null && initial.growthRate !== "";
   const useDefaultGrowth = growthSource === "default";
-  const defaultPctForCategory = categoryDefaults
-    ? Math.round(Number(categoryDefaults[category]) * 10000) / 100
-    : null;
+  const defaultPctForCategory = catDefaultSource?.blendedReturn != null
+    ? Math.round(catDefaultSource.blendedReturn * 10000) / 100
+    : categoryDefaults
+      ? Math.round(Number(categoryDefaults[category]) * 10000) / 100
+      : null;
 
   const currentYear = new Date().getFullYear();
   const subTypes = SUB_TYPE_BY_CATEGORY[category];
@@ -210,17 +229,15 @@ export default function AddAccountForm({
     : defaultPctForCategory ?? 7;
 
   function handleGrowthSourceChange(v: string) {
-    const prev = growthSource;
     if (v.startsWith("mp:")) {
+      const newId = v.slice(3);
       setGrowthSource("model_portfolio");
-      setModelPortfolioId(v.slice(3));
+      setModelPortfolioId(newId);
+      // Pre-fill allocations from the selected model portfolio
+      const portfolioAllocs = portfolioAllocationsMap?.[newId] ?? [];
+      if (portfolioAllocs.length > 0) setCustomAllocations(portfolioAllocs);
     } else if (v === "asset_mix") {
       setGrowthSource("asset_mix");
-      // Pre-fill from model portfolio when switching
-      if (prev === "model_portfolio" && modelPortfolioId && customAllocations.length === 0) {
-        const portfolioAllocs = portfolioAllocationsMap?.[modelPortfolioId] ?? [];
-        if (portfolioAllocs.length > 0) setCustomAllocations(portfolioAllocs);
-      }
       setModelPortfolioId("");
     } else if (v === "custom") {
       setGrowthSource("custom");
@@ -284,7 +301,7 @@ export default function AddAccountForm({
           throw new Error(json.error ?? "Failed to update account");
         }
         // Save asset mix allocations for existing account
-        if (growthSource === "asset_mix" && customAllocations.length > 0) {
+        if (showAssetMixTab && customAllocations.length > 0) {
           await fetch(`/api/clients/${clientId}/accounts/${initial!.id}/allocations`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -304,7 +321,7 @@ export default function AddAccountForm({
         const account = await res.json();
 
         // Save asset mix allocations for new account
-        if (growthSource === "asset_mix" && customAllocations.length > 0) {
+        if (showAssetMixTab && customAllocations.length > 0) {
           await fetch(`/api/clients/${clientId}/accounts/${account.id}/allocations`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -516,7 +533,7 @@ export default function AddAccountForm({
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   <option value="default">
-                    Use category default{defaultPctForCategory !== null ? ` (${defaultPctForCategory}%)` : ""}
+                    Use category default{catDefaultSource?.portfolioName ? ` — ${catDefaultSource.portfolioName}` : ""}{defaultPctForCategory !== null ? ` (${defaultPctForCategory}%)` : ""}
                   </option>
                   {modelPortfolios?.map((mp) => (
                     <option key={mp.id} value={`mp:${mp.id}`}>
@@ -800,15 +817,13 @@ export default function AddAccountForm({
       {showAssetMixTab && assetClasses && (
         <div className={activeTab === "asset_mix" ? "" : "hidden"}>
           <AssetMixTab
-            mode={growthSource === "model_portfolio" ? "model_portfolio" : "asset_mix"}
             assetClasses={assetClasses}
-            portfolioAllocations={
+            inheritedPortfolioName={
               growthSource === "model_portfolio" && modelPortfolioId
-                ? portfolioAllocationsMap?.[modelPortfolioId]
-                : undefined
-            }
-            portfolioName={
-              modelPortfolios?.find((mp) => mp.id === modelPortfolioId)?.name
+                ? modelPortfolios?.find((mp) => mp.id === modelPortfolioId)?.name
+                : growthSource === "default" && catDefaultSource?.portfolioName
+                  ? catDefaultSource.portfolioName
+                  : undefined
             }
             allocations={customAllocations}
             onChange={setCustomAllocations}

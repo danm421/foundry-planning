@@ -125,6 +125,26 @@ export default async function BalanceSheetPage({ params }: PageProps) {
 
   const entityOptions = entityRows.map((e) => ({ id: e.id, name: e.name }));
 
+  // Build category default source info so the account form knows which portfolio
+  // backs the "Use category default" option for investable categories
+  const categoryDefaultSources: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }> = {};
+  if (settings) {
+    const investable = [
+      { category: "taxable", source: settings.growthSourceTaxable, portfolioId: settings.modelPortfolioIdTaxable },
+      { category: "cash", source: settings.growthSourceCash, portfolioId: settings.modelPortfolioIdCash },
+      { category: "retirement", source: settings.growthSourceRetirement, portfolioId: settings.modelPortfolioIdRetirement },
+    ];
+    for (const entry of investable) {
+      const mp = entry.portfolioId ? modelPortfolioOptions.find((p) => p.id === entry.portfolioId) : undefined;
+      categoryDefaultSources[entry.category] = {
+        source: entry.source,
+        portfolioId: entry.portfolioId ?? undefined,
+        portfolioName: mp?.name,
+        blendedReturn: mp?.blendedReturn,
+      };
+    }
+  }
+
   const categoryDefaults = settings
     ? {
         taxable: String(settings.defaultGrowthTaxable),
@@ -159,6 +179,7 @@ export default async function BalanceSheetPage({ params }: PageProps) {
       }}
       assetClasses={assetClassOptions}
       portfolioAllocationsMap={portfolioAllocationsMap}
+      categoryDefaultSources={categoryDefaultSources}
     />
   );
 }
