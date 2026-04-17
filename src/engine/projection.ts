@@ -246,25 +246,124 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     );
     currentLiabilities = liabResult.updatedLiabilities;
 
-    // 4. Grow every account. When the account has a realization model, split
+    // Initialize per-account ledgers with the year-start balances. Ledgers are
+    // populated first so that BoY sales/purchases (next) can append their entries
+    // before the growth pass adds its own.
+    const accountLedgers: Record<string, AccountLedger> = {};
+    for (const acct of workingAccounts) {
+      const beginningValue = accountBalances[acct.id] ?? 0;
+      accountLedgers[acct.id] = {
+        beginningValue,
+        growth: 0,
+        contributions: 0,
+        distributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        endingValue: beginningValue,
+        entries: [],
+      };
+    }
+
+    // ── BoY: Asset Sales ─────────────────────────────────────────────────────
+    // Sales happen on the first day of the year: the sold asset doesn't earn
+    // growth this year, and sale proceeds land in the cash account in time to
+    // earn the year's cash growth.
+    let saleResult = {
+      capitalGains: 0,
+      removedAccountIds: [] as string[],
+      removedLiabilityIds: [] as string[],
+      breakdown: [] as { transactionId: string; accountId: string; saleValue: number; basis: number; transactionCosts: number; netProceeds: number; capitalGain: number; mortgagePaidOff: number; proceedsAccountId: string }[],
+    };
+    if (data.assetTransactions && data.assetTransactions.length > 0) {
+      const sales = data.assetTransactions.filter((t) => t.type === "sell");
+      if (sales.length > 0) {
+        saleResult = applyAssetSales({
+          sales,
+          accounts: workingAccounts,
+          liabilities: currentLiabilities,
+          accountBalances,
+          basisMap,
+          accountLedgers,
+          year,
+          defaultCheckingId: defaultChecking?.id ?? "",
+        });
+
+        if (saleResult.removedAccountIds.length > 0) {
+          const removed = new Set(saleResult.removedAccountIds);
+          workingAccounts = workingAccounts.filter((a) => !removed.has(a.id));
+        }
+
+        if (saleResult.removedLiabilityIds.length > 0) {
+          const removed = new Set(saleResult.removedLiabilityIds);
+          currentLiabilities = currentLiabilities.filter((l) => !removed.has(l.id));
+        }
+      }
+    }
+
+    // ── BoY: Asset Purchases ─────────────────────────────────────────────────
+    // Purchases happen on the first day of the year: equity leaves the funding
+    // account immediately, and the newly-bought asset earns a full year of
+    // growth. If a paired sale funded the purchase, its proceeds are already in
+    // the cash account from the sale step above.
+    let purchaseBreakdown: { transactionId: string; name: string; equity: number; purchasePrice: number; mortgageAmount: number; fundingAccountId: string }[] = [];
+    if (data.assetTransactions && data.assetTransactions.length > 0) {
+      const purchases = data.assetTransactions.filter((t) => t.type === "buy");
+      if (purchases.length > 0) {
+        const purchaseResult = applyAssetPurchases({
+          purchases,
+          accounts: workingAccounts,
+          liabilities: currentLiabilities,
+          accountBalances,
+          basisMap,
+          accountLedgers,
+          year,
+          defaultCheckingId: defaultChecking?.id ?? "",
+        });
+
+        purchaseBreakdown = purchaseResult.breakdown;
+        for (const newAcct of purchaseResult.newAccounts) {
+          workingAccounts.push(newAcct);
+        }
+        for (const newLiab of purchaseResult.newLiabilities) {
+          currentLiabilities.push(newLiab);
+        }
+      }
+    }
+
+    // 4. Grow every account (post-BoY: sold accounts are gone, newly-bought
+    // accounts are included). When the account has a realization model, split
     // growth into tax buckets: OI, QDiv, STCG, LTCG, Tax-Exempt. Turnover %
     // determines the ST/LT CG split. Taxable amounts are added to the year's
     // tax detail; basis is increased for everything except LTCG.
-    const accountLedgers: Record<string, AccountLedger> = {};
-    // Accumulate realization-sourced taxable income across all accounts.
     let realizationOI = 0;
     let realizationQDiv = 0;
     let realizationSTCG = 0;
     const realizationBySource: Record<string, { type: string; amount: number }> = {};
 
     for (const acct of workingAccounts) {
-      const beginningValue = accountBalances[acct.id] ?? 0;
-      const growth = beginningValue * acct.growthRate;
-      const entries: AccountLedgerEntry[] = [];
+      const currentBalance = accountBalances[acct.id] ?? 0;
+      const growth = currentBalance * acct.growthRate;
+
+      // Defensive: ensure a ledger exists (applyAssetPurchases initializes one
+      // for new accounts; this covers any edge case where it didn't).
+      if (!accountLedgers[acct.id]) {
+        accountLedgers[acct.id] = {
+          beginningValue: currentBalance,
+          growth: 0,
+          contributions: 0,
+          distributions: 0,
+          rmdAmount: 0,
+          fees: 0,
+          endingValue: currentBalance,
+          entries: [],
+        };
+      }
+
+      if (growth === 0) continue;
 
       let growthDetail: AccountLedger["growthDetail"];
 
-      if (growth !== 0 && acct.realization) {
+      if (acct.realization) {
         const r = acct.realization;
         const oi = growth * r.pctOrdinaryIncome;
         const qdiv = growth * r.pctQualifiedDividends;
@@ -277,12 +376,6 @@ export function runProjection(data: ClientData): ProjectionYear[] {
 
         growthDetail = { ordinaryIncome: oi, qualifiedDividends: qdiv, stCapitalGains: stcg, ltCapitalGains: ltcg, taxExempt, basisIncrease };
 
-        entries.push({
-          category: "growth",
-          label: `Growth (${(acct.growthRate * 100).toFixed(2)}%)`,
-          amount: growth,
-        });
-
         // Only taxable accounts generate current-year tax from realization.
         // Retirement accounts defer all tax until withdrawal; cash accounts
         // are always 100% OI but that's baked into the realization model.
@@ -294,26 +387,18 @@ export function runProjection(data: ClientData): ProjectionYear[] {
           if (qdiv > 0) realizationBySource[`${acct.id}:qdiv`] = { type: "dividends", amount: qdiv };
           if (stcg > 0) realizationBySource[`${acct.id}:stcg`] = { type: "stcg", amount: stcg };
         }
-      } else if (growth !== 0) {
-        entries.push({
-          category: "growth",
-          label: `Growth (${(acct.growthRate * 100).toFixed(2)}%)`,
-          amount: growth,
-        });
       }
 
-      accountLedgers[acct.id] = {
-        beginningValue,
-        growth,
-        contributions: 0,
-        distributions: 0,
-        rmdAmount: 0,
-        fees: 0,
-        endingValue: beginningValue + growth,
-        entries,
-        growthDetail,
-      };
-      accountBalances[acct.id] = beginningValue + growth;
+      accountLedgers[acct.id].growth += growth;
+      accountLedgers[acct.id].endingValue += growth;
+      accountLedgers[acct.id].entries.push({
+        category: "growth",
+        label: `Growth (${(acct.growthRate * 100).toFixed(2)}%)`,
+        amount: growth,
+      });
+      if (growthDetail) accountLedgers[acct.id].growthDetail = growthDetail;
+
+      accountBalances[acct.id] = currentBalance + growth;
     }
 
     // Per-account cash deltas plus per-account entry lists for this year. A "credit"
@@ -350,41 +435,6 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         year,
         ownerAges: { client: ages.client, spouse: ages.spouse },
       });
-    }
-
-    // ── Apply Asset Sales ───────────────────────────────────────────────────
-    let saleResult = {
-      capitalGains: 0,
-      removedAccountIds: [] as string[],
-      removedLiabilityIds: [] as string[],
-      breakdown: [] as { transactionId: string; accountId: string; saleValue: number; basis: number; transactionCosts: number; netProceeds: number; capitalGain: number; mortgagePaidOff: number; proceedsAccountId: string }[],
-    };
-    if (data.assetTransactions && data.assetTransactions.length > 0) {
-      const sales = data.assetTransactions.filter((t) => t.type === "sell");
-      if (sales.length > 0) {
-        saleResult = applyAssetSales({
-          sales,
-          accounts: workingAccounts,
-          liabilities: currentLiabilities,
-          accountBalances,
-          basisMap,
-          accountLedgers,
-          year,
-          defaultCheckingId: defaultChecking?.id ?? "",
-        });
-
-        // Remove sold accounts from working list
-        if (saleResult.removedAccountIds.length > 0) {
-          const removed = new Set(saleResult.removedAccountIds);
-          workingAccounts = workingAccounts.filter((a) => !removed.has(a.id));
-        }
-
-        // Remove paid-off mortgages
-        if (saleResult.removedLiabilityIds.length > 0) {
-          const removed = new Set(saleResult.removedLiabilityIds);
-          currentLiabilities = currentLiabilities.filter((l) => !removed.has(l.id));
-        }
-      }
     }
 
     // 4b. RMDs. Source account balance is decremented; the cash lands in the
@@ -876,18 +926,17 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       }
     }
 
-    // 12. Withdrawals + purchase gap-fill. Household checking should never end the
-    // year negative: any deficit after income/expenses/taxes/savings/purchases is
-    // refilled from the withdrawal strategy (grossed up for tax).
+    // 12. Withdrawals + gap-fill. Household checking should never end the year
+    // negative: any deficit after income/expenses/taxes/savings (and the BoY
+    // purchase equity) is refilled from the withdrawal strategy (grossed up
+    // for tax).
     let withdrawals = { byAccount: {} as Record<string, number>, total: 0 };
     let withdrawalTax = 0;
 
-    // 12a. Cash drawdown reporting — when this year's P&L ate into a prior-year
-    // surplus sitting in household checking, attribute the consumed portion as a
-    // withdrawal from cash. Reporting-only; balance movement is already captured by
-    // the expense/tax entries. Runs before purchases so the drill separates
-    // "cash drawdown from P&L" from "cash used to fund a purchase" (which shows up
-    // as a technique expense).
+    // 12a. Cash drawdown reporting — when this year's net flow ate into a
+    // prior-year surplus sitting in household checking, attribute the consumed
+    // portion as a withdrawal from cash. Reporting-only; balance movement was
+    // already captured by the individual entries.
     if (hasChecking) {
       const checkingId = defaultChecking!.id;
       const endingAfterDeltas = accountBalances[checkingId] ?? 0;
@@ -902,37 +951,9 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       }
     }
 
-    // 12b. Apply Asset Purchases BEFORE the gap-fill so a purchase that drains
-    // checking triggers a withdrawal from the investment strategy, keeping the
-    // household cash account from going negative.
-    let purchaseBreakdown: { transactionId: string; name: string; equity: number; purchasePrice: number; mortgageAmount: number; fundingAccountId: string }[] = [];
-    if (data.assetTransactions && data.assetTransactions.length > 0) {
-      const purchases = data.assetTransactions.filter((t) => t.type === "buy");
-      if (purchases.length > 0) {
-        const purchaseResult = applyAssetPurchases({
-          purchases,
-          accounts: workingAccounts,
-          liabilities: currentLiabilities,
-          accountBalances,
-          basisMap,
-          accountLedgers,
-          year,
-          defaultCheckingId: defaultChecking?.id ?? "",
-        });
-
-        purchaseBreakdown = purchaseResult.breakdown;
-        for (const newAcct of purchaseResult.newAccounts) {
-          workingAccounts.push(newAcct);
-        }
-        for (const newLiab of purchaseResult.newLiabilities) {
-          currentLiabilities.push(newLiab);
-        }
-      }
-    }
-
-    // 12c. Build withdrawal source balances AFTER purchases so any brokerage-funded
-    // purchase is reflected, and gap-fill doesn't pull from an account that was
-    // just drained.
+    // 12b. Build withdrawal source balances reflecting post-BoY-purchase state
+    // so gap-fill doesn't pull from an account that was just drained to fund a
+    // purchase.
     const householdWithdrawBalances: Record<string, number> = {};
     for (const acct of workingAccounts) {
       if (acct.ownerEntityId != null) continue;

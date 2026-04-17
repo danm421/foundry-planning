@@ -732,4 +732,84 @@ describe("techniques integration", () => {
     // And a withdrawal from brokerage must have happened to fund the purchase.
     expect(year2026.withdrawals.byAccount["acct-brokerage"]).toBeGreaterThan(0);
   });
+
+  it("BoY: a sold asset earns no growth in its sale year", () => {
+    // Asset with 10% growth, value 100k, sold BoY. If the sale were EoY the
+    // asset would grow 10% first and the sale would yield 110k. BoY means no
+    // growth; proceeds = 100k.
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Cash",
+          category: "cash",
+          subType: "checking",
+          owner: "joint",
+          value: 0, basis: 0, growthRate: 0, rmdEnabled: false,
+          isDefaultChecking: true,
+        },
+        {
+          id: "acct-brokerage",
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          owner: "joint",
+          value: 100000, basis: 100000, growthRate: 0.10, rmdEnabled: false,
+        },
+      ],
+      incomes: [], expenses: [], liabilities: [], savingsRules: [],
+      withdrawalStrategy: [],
+      assetTransactions: [
+        {
+          id: "sale-boy", name: "Sell", type: "sell" as const,
+          year: 2026, accountId: "acct-brokerage",
+        },
+      ],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const result = runProjection(data);
+    const year2026 = result[0];
+    // Sold account's brokerage ledger shows no growth
+    expect(year2026.accountLedgers["acct-brokerage"].growth).toBe(0);
+    // Proceeds in cash are the pre-growth 100k (minus cash growth on those proceeds)
+    const checkingBal = year2026.portfolioAssets.cash["acct-checking"];
+    // Checking growthRate is 0, so exactly 100k
+    expect(checkingBal).toBeCloseTo(100000, 0);
+  });
+
+  it("BoY: a newly-bought asset earns a full year of growth in its purchase year", () => {
+    // Buy a 100k asset with 10% growth BoY 2026 funded by 100k savings account.
+    // By EoY 2026 the new asset should be worth 110k.
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Cash",
+          category: "cash",
+          subType: "checking",
+          owner: "joint",
+          value: 100000, basis: 100000, growthRate: 0, rmdEnabled: false,
+          isDefaultChecking: true,
+        },
+      ],
+      incomes: [], expenses: [], liabilities: [], savingsRules: [],
+      withdrawalStrategy: [],
+      assetTransactions: [
+        {
+          id: "buy-boy", name: "Buy", type: "buy" as const,
+          year: 2026,
+          assetName: "New Asset",
+          assetCategory: "taxable" as const,
+          assetSubType: "brokerage",
+          purchasePrice: 100000,
+          growthRate: 0.10,
+        },
+      ],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const result = runProjection(data);
+    const year2026 = result[0];
+    // Newly-bought real estate should be worth ~110k (100k * 1.10) by EoY
+    expect(year2026.portfolioAssets.taxableTotal).toBeCloseTo(110000, 0);
+  });
 });
