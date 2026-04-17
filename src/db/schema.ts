@@ -783,3 +783,73 @@ export const taxYearParameters = pgTable("tax_year_parameters", {
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// ============================================================================
+// Transfers
+// ============================================================================
+
+export const transferModeEnum = pgEnum("transfer_mode", ["one_time", "recurring", "scheduled"]);
+
+export const transfers = pgTable("transfers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  scenarioId: uuid("scenario_id").notNull().references(() => scenarios.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  sourceAccountId: uuid("source_account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  targetAccountId: uuid("target_account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  mode: transferModeEnum("mode").notNull().default("one_time"),
+  startYear: integer("start_year").notNull(),
+  startYearRef: yearRefEnum("start_year_ref"),
+  endYear: integer("end_year"),
+  endYearRef: yearRefEnum("end_year_ref"),
+  growthRate: decimal("growth_rate", { precision: 5, scale: 4 }).notNull().default("0"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const transferSchedules = pgTable("transfer_schedules", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  transferId: uuid("transfer_id").notNull().references(() => transfers.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ============================================================================
+// Asset Transactions
+// ============================================================================
+
+export const assetTransactionTypeEnum = pgEnum("asset_transaction_type", ["buy", "sell"]);
+
+export const assetTransactions = pgTable("asset_transactions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  scenarioId: uuid("scenario_id").notNull().references(() => scenarios.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  type: assetTransactionTypeEnum("type").notNull(),
+  year: integer("year").notNull(),
+  // Sale fields
+  accountId: uuid("account_id").references(() => accounts.id, { onDelete: "cascade" }),
+  overrideSaleValue: decimal("override_sale_value", { precision: 15, scale: 2 }),
+  overrideBasis: decimal("override_basis", { precision: 15, scale: 2 }),
+  transactionCostPct: decimal("transaction_cost_pct", { precision: 5, scale: 4 }),
+  transactionCostFlat: decimal("transaction_cost_flat", { precision: 15, scale: 2 }),
+  proceedsAccountId: uuid("proceeds_account_id").references(() => accounts.id, { onDelete: "set null" }),
+  // Buy fields
+  assetName: text("asset_name"),
+  assetCategory: accountCategoryEnum("asset_category"),
+  assetSubType: accountSubTypeEnum("asset_sub_type"),
+  purchasePrice: decimal("purchase_price", { precision: 15, scale: 2 }),
+  growthRate: decimal("growth_rate", { precision: 5, scale: 4 }),
+  growthSource: growthSourceEnum("asset_growth_source"),
+  modelPortfolioId: uuid("asset_model_portfolio_id").references(() => modelPortfolios.id, { onDelete: "set null" }),
+  basis: decimal("basis", { precision: 15, scale: 2 }),
+  fundingAccountId: uuid("funding_account_id").references(() => accounts.id, { onDelete: "set null" }),
+  mortgageAmount: decimal("mortgage_amount", { precision: 15, scale: 2 }),
+  mortgageRate: decimal("mortgage_rate", { precision: 5, scale: 4 }),
+  mortgageTermMonths: integer("mortgage_term_months"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
