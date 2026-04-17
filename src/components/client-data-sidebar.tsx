@@ -65,6 +65,14 @@ function ImportIcon() {
   );
 }
 
+function TechniquesIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 8h8M7 4l-3 4 3 4M9 4l3 4-3 4" />
+    </svg>
+  );
+}
+
 function DeductionsIcon() {
   return (
     <svg className={ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -80,6 +88,7 @@ const TABS: SidebarTab[] = [
   { label: "Family", href: "family", icon: <FamilyIcon /> },
   { label: "Balance Sheet", href: "balance-sheet", icon: <BalanceSheetIcon /> },
   { label: "Income, Expenses & Savings", href: "income-expenses", icon: <CashflowIcon /> },
+  { label: "Techniques", href: "techniques", icon: <TechniquesIcon /> },
   { label: "Deductions", href: "deductions", icon: <DeductionsIcon /> },
   { label: "Assumptions", href: "assumptions", icon: <AssumptionsIcon /> },
   { label: "Import", href: "import", icon: <ImportIcon /> },
