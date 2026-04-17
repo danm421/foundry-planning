@@ -75,6 +75,19 @@ export const sampleAccounts: Account[] = [
     growthRate: 0.04,
     rmdEnabled: false,
   },
+  {
+    id: "acct-home",
+    name: "Primary Home",
+    category: "real_estate",
+    subType: "primary_residence",
+    owner: "joint",
+    value: 750000,
+    basis: 500000,
+    growthRate: 0.04,
+    rmdEnabled: false,
+    annualPropertyTax: 12000,
+    propertyTaxGrowthRate: 0.03,
+  },
 ];
 
 export const sampleIncomes: Income[] = [
@@ -141,6 +154,7 @@ export const sampleLiabilities: Liability[] = [
     monthlyPayment: 2500,
     startYear: 2026,
     endYear: 2046,
+    isInterestDeductible: true,
   },
 ];
 

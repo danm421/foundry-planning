@@ -134,11 +134,10 @@ export const taxEngineModeEnum = pgEnum("tax_engine_mode", [
 ]);
 
 export const deductionTypeEnum = pgEnum("deduction_type", [
-  "charitable_cash",
-  "charitable_non_cash",
-  "salt",
-  "mortgage_interest",
-  "other_itemized",
+  "charitable",
+  "above_line",
+  "below_line",
+  "property_tax",
 ]);
 
 // ── Tables ───────────────────────────────────────────────────────────────────
@@ -345,6 +344,8 @@ export const accounts = pgTable("accounts", {
   overridePctLtCg: decimal("override_pct_lt_cg", { precision: 5, scale: 4 }),
   overridePctQdiv: decimal("override_pct_qdiv", { precision: 5, scale: 4 }),
   overridePctTaxExempt: decimal("override_pct_tax_exempt", { precision: 5, scale: 4 }),
+  annualPropertyTax: decimal("annual_property_tax", { precision: 15, scale: 2 }).notNull().default("0"),
+  propertyTaxGrowthRate: decimal("property_tax_growth_rate", { precision: 5, scale: 4 }).notNull().default("0.03"),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -422,6 +423,7 @@ export const expenses = pgTable("expenses", {
   cashAccountId: uuid("cash_account_id").references(() => accounts.id, {
     onDelete: "set null",
   }),
+  deductionType: deductionTypeEnum("deduction_type"),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -455,6 +457,7 @@ export const liabilities = pgTable("liabilities", {
   ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
     onDelete: "set null",
   }),
+  isInterestDeductible: boolean("is_interest_deductible").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

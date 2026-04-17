@@ -53,6 +53,8 @@ export interface Account {
   rmdEnabled: boolean;
   ownerEntityId?: string;
   isDefaultChecking?: boolean;
+  annualPropertyTax?: number;
+  propertyTaxGrowthRate?: number;
   // CMA realization model — present when account uses a model portfolio or has overrides
   realization?: {
     pctOrdinaryIncome: number;
@@ -100,6 +102,7 @@ export interface Expense {
   ownerEntityId?: string;
   // Cash account this expense is paid from.
   cashAccountId?: string;
+  deductionType?: "charitable" | "above_line" | "below_line" | "property_tax" | null;
 }
 
 export interface Liability {
@@ -112,6 +115,7 @@ export interface Liability {
   endYear: number;
   linkedPropertyId?: string;
   ownerEntityId?: string;
+  isInterestDeductible?: boolean;
 }
 
 export interface SavingsRule {
@@ -179,6 +183,8 @@ export interface ProjectionYear {
 
   taxResult?: TaxResult;
 
+  deductionBreakdown?: DeductionBreakdown;
+
   withdrawals: {
     byAccount: Record<string, number>;
     total: number;
@@ -189,6 +195,7 @@ export interface ProjectionYear {
     liabilities: number;
     other: number;
     insurance: number;
+    realEstate: number;
     taxes: number;
     total: number;
     bySource: Record<string, number>;
@@ -261,4 +268,26 @@ export interface AccountLedgerEntry {
   label: string;
   amount: number;
   sourceId?: string;
+}
+
+export interface DeductionBreakdown {
+  aboveLine: {
+    retirementContributions: number;
+    taggedExpenses: number;
+    manualEntries: number;
+    total: number;
+    bySource: Record<string, { label: string; amount: number }>;
+  };
+  belowLine: {
+    charitable: number;
+    taxesPaid: number;           // SALT total (capped): state income tax + property taxes
+    stateIncomeTax: number;      // estimated state income tax (AGI × flat rate), pre-cap
+    propertyTaxes: number;       // property taxes from all sources, pre-cap
+    interestPaid: number;
+    otherItemized: number;
+    itemizedTotal: number;
+    standardDeduction: number;
+    taxDeductions: number;
+    bySource: Record<string, { label: string; amount: number }>;
+  };
 }

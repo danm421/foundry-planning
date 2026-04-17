@@ -127,6 +127,13 @@
       "when": 1777168200000,
       "tag": "0017_client_deductions",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1777168300000,
+      "tag": "0018_deduction_types_v2",
+      "breakpoints": true
     }
   ]
 }

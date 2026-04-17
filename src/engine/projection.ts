@@ -8,6 +8,7 @@ import type {
   Account,
   WithdrawalPriority,
   PlanSettings,
+  DeductionBreakdown,
 } from "./types";
 import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
@@ -17,7 +18,13 @@ import { createTaxResolver } from "../lib/tax/resolver";
 import type { TaxYearParameters, FilingStatus } from "../lib/tax/types";
 import {
   deriveAboveLineFromSavings,
+  deriveAboveLineFromExpenses,
+  deriveItemizedFromExpenses,
+  deriveMortgageInterestFromLiabilities,
+  derivePropertyTaxFromAccounts,
   sumItemizedFromEntries,
+  aggregateDeductions,
+  saltCap,
 } from "../lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch } from "./savings";
 import { executeWithdrawals } from "./withdrawal";
@@ -185,7 +192,30 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       (inc) => inc.ownerEntityId != null && isGrantorEntity(inc.ownerEntityId)
     );
 
+    // Inject synthetic property-tax expenses for real estate accounts.
+    // These are not persisted — they exist only at projection time.
+    const syntheticExpenses: typeof data.expenses = [];
+    for (const acct of data.accounts) {
+      if (acct.category !== "real_estate") continue;
+      const propTax = acct.annualPropertyTax ?? 0;
+      if (propTax <= 0) continue;
+      const elapsed = year - planSettings.planStartYear;
+      const inflated = propTax * Math.pow(1 + (acct.propertyTaxGrowthRate ?? 0.03), Math.max(0, elapsed));
+      syntheticExpenses.push({
+        id: `synth-proptax-${acct.id}`,
+        type: "other",
+        name: `Property Tax – ${acct.name}`,
+        annualAmount: inflated,
+        startYear: planSettings.planStartYear,
+        endYear: planSettings.planEndYear,
+        growthRate: 0, // already inflated
+      });
+    }
+    const allExpenses = [...data.expenses, ...syntheticExpenses];
+
     // 2. Household expenses (entity-owned expenses are paid by the entity).
+    // Pass only real expenses — synthetic property-tax expenses are tracked
+    // separately in the realEstate bucket to avoid double-counting in "Other".
     const expenseBreakdown = computeExpenses(
       data.expenses,
       year,
@@ -405,8 +435,12 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     const filingStatus = (client.filingStatus ?? "single") as FilingStatus;
     const useBracket = planSettings.taxEngineMode === "bracket" && resolved != null;
 
-    const aboveLineDeductions = useBracket
-      ? deriveAboveLineFromSavings(
+    let aboveLineDeductions = 0;
+    let itemizedDeductions = 0;
+    let deductionBreakdownResult: DeductionBreakdown | undefined;
+    if (useBracket) {
+      const contributions = [
+        deriveAboveLineFromSavings(
           year,
           data.savingsRules.map((r) => ({
             accountId: r.accountId,
@@ -420,12 +454,134 @@ export function runProjection(data: ClientData): ProjectionYear[] {
             ownerEntityId: a.ownerEntityId,
           })),
           isGrantorEntity
-        )
-      : 0;
+        ),
+        deriveAboveLineFromExpenses(year, allExpenses.map((e) => ({
+          deductionType: e.deductionType ?? null,
+          annualAmount: e.annualAmount,
+          startYear: e.startYear,
+          endYear: e.endYear,
+          growthRate: e.growthRate,
+          inflationStartYear: e.inflationStartYear,
+        }))),
+        deriveItemizedFromExpenses(year, allExpenses.map((e) => ({
+          deductionType: e.deductionType ?? null,
+          annualAmount: e.annualAmount,
+          startYear: e.startYear,
+          endYear: e.endYear,
+          growthRate: e.growthRate,
+          inflationStartYear: e.inflationStartYear,
+        }))),
+        deriveMortgageInterestFromLiabilities(
+          year,
+          currentLiabilities.map((l) => ({
+            id: l.id,
+            isInterestDeductible: l.isInterestDeductible ?? false,
+            startYear: l.startYear,
+            endYear: l.endYear,
+          })),
+          liabResult.interestByLiability
+        ),
+        derivePropertyTaxFromAccounts(
+          year,
+          data.accounts.map((a) => ({
+            id: a.id,
+            name: a.name,
+            category: a.category,
+            annualPropertyTax: a.annualPropertyTax ?? 0,
+            propertyTaxGrowthRate: a.propertyTaxGrowthRate ?? 0.03,
+          })),
+          planSettings.planStartYear
+        ),
+        sumItemizedFromEntries(year, data.deductions ?? []),
+      ];
+      // Estimate state income tax for SALT pool before aggregation.
+      const preAGI = Math.max(0, taxableIncome - contributions[0].aboveLine - contributions[1].aboveLine - contributions[5].aboveLine);
+      const estStateTax = preAGI * planSettings.flatStateRate;
+      const stateIncomeTaxContribution: import("../lib/tax/derive-deductions").DeductionContribution = {
+        aboveLine: 0,
+        itemized: 0,
+        saltPool: estStateTax,
+      };
+      const agg = aggregateDeductions(year, ...contributions, stateIncomeTaxContribution);
+      aboveLineDeductions = agg.aboveLine;
+      itemizedDeductions = agg.itemized;
 
-    const itemizedDeductions = useBracket
-      ? sumItemizedFromEntries(year, data.deductions ?? [])
-      : 0;
+      // Assemble per-source breakdown for drill-down UI.
+      const retirementContributions = contributions[0].aboveLine;
+      const expenseAboveLine = contributions[1].aboveLine;
+      const manualAboveLine = contributions[5].aboveLine;
+
+      // Below-line per-category split from source data
+      let charitable = 0;
+      let otherItemized = 0;
+      const belowLineBySource: Record<string, { label: string; amount: number }> = {};
+
+      for (const exp of allExpenses) {
+        if (!exp.deductionType || exp.deductionType === "above_line" || exp.deductionType === "property_tax") continue;
+        if (year < exp.startYear || year > exp.endYear) continue;
+        const inflateFrom = exp.inflationStartYear ?? exp.startYear;
+        const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, year - inflateFrom);
+        if (exp.deductionType === "charitable") {
+          charitable += amount;
+          belowLineBySource[exp.id] = { label: `Expense: ${exp.name}`, amount };
+        } else {
+          otherItemized += amount;
+          belowLineBySource[exp.id] = { label: `Expense: ${exp.name}`, amount };
+        }
+      }
+
+      for (const row of data.deductions ?? []) {
+        if (year < row.startYear || year > row.endYear) continue;
+        const yearsSinceStart = year - row.startYear;
+        const inflated = row.annualAmount * Math.pow(1 + row.growthRate, yearsSinceStart);
+        if (row.type === "charitable") {
+          charitable += inflated;
+        } else if (row.type === "below_line") {
+          otherItemized += inflated;
+        }
+      }
+
+      const interestPaid = contributions[3].itemized;
+      const rawPropertyTax = contributions[2].saltPool + contributions[4].saltPool + contributions[5].saltPool;
+      // estStateTax already computed above for aggregateDeductions
+      const rawSalt = rawPropertyTax + estStateTax;
+      const taxesPaid = Math.min(rawSalt, saltCap(year));
+      const itemizedTotal = charitable + taxesPaid + interestPaid + otherItemized;
+
+      const aboveLineBySource: Record<string, { label: string; amount: number }> = {};
+      for (const rule of data.savingsRules) {
+        if (year < rule.startYear || year > rule.endYear) continue;
+        const acct = data.accounts.find((a) => a.id === rule.accountId);
+        if (!acct) continue;
+        const subType = acct.subType ?? "";
+        if (subType !== "traditional_ira" && subType !== "401k") continue;
+        if (acct.ownerEntityId != null && !isGrantorEntity(acct.ownerEntityId)) continue;
+        aboveLineBySource[rule.id] = { label: acct.name, amount: rule.annualAmount };
+      }
+
+      const stdDed = resolved!.params.stdDeduction[filingStatus];
+      deductionBreakdownResult = {
+        aboveLine: {
+          retirementContributions,
+          taggedExpenses: expenseAboveLine,
+          manualEntries: manualAboveLine,
+          total: aboveLineDeductions,
+          bySource: aboveLineBySource,
+        },
+        belowLine: {
+          charitable,
+          taxesPaid,
+          stateIncomeTax: estStateTax,
+          propertyTaxes: rawPropertyTax,
+          interestPaid,
+          otherItemized,
+          itemizedTotal,
+          standardDeduction: stdDed,
+          taxDeductions: Math.max(itemizedTotal, stdDed),
+          bySource: belowLineBySource,
+        },
+      };
+    }
 
     const taxResult = useBracket
       ? calculateTaxYearBracket({
@@ -484,7 +640,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     }
 
     // 7. Route each expense as an outflow from its cash account.
-    for (const exp of data.expenses) {
+    for (const exp of allExpenses) {
       if (year < exp.startYear || year > exp.endYear) continue;
       const inflateFrom = exp.inflationStartYear ?? exp.startYear;
       const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, year - inflateFrom);
@@ -796,14 +952,19 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       liabilities: liabResult.totalPayment,
       other: expenseBreakdown.other,
       insurance: expenseBreakdown.insurance,
+      realEstate: syntheticExpenses.reduce((sum, s) => sum + s.annualAmount, 0),
       taxes: totalTaxes,
       total:
         expenseBreakdown.living +
         expenseBreakdown.other +
         expenseBreakdown.insurance +
+        syntheticExpenses.reduce((sum, s) => sum + s.annualAmount, 0) +
         liabResult.totalPayment +
         totalTaxes,
-      bySource: expenseBreakdown.bySource,
+      bySource: {
+        ...expenseBreakdown.bySource,
+        ...Object.fromEntries(syntheticExpenses.map((s) => [s.id, s.annualAmount])),
+      },
     };
 
     const totalIncome = income.total + householdRmdIncome;
@@ -816,6 +977,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       income,
       taxDetail,
       taxResult,
+      deductionBreakdown: deductionBreakdownResult,
       withdrawals,
       expenses,
       savings,

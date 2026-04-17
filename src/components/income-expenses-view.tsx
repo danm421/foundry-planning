@@ -69,6 +69,7 @@ interface Expense {
   inflationStartYear?: number | null;
   startYearRef?: string | null;
   endYearRef?: string | null;
+  deductionType?: string | null;
 }
 
 interface SavingsRule {
@@ -746,6 +747,7 @@ function ExpenseDialog({
   const [error, setError] = useState<string | null>(null);
   const [ownerEntityId, setOwnerEntityId] = useState<string>(editing?.ownerEntityId ?? "");
   const [cashAccountId, setCashAccountId] = useState<string>(editing?.cashAccountId ?? "");
+  const [deductionType, setDeductionType] = useState<string>(editing?.deductionType ?? "");
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
     editing?.inflationStartYear != null && editing.inflationStartYear < editing.startYear
@@ -787,6 +789,7 @@ function ExpenseDialog({
       inflationStartYear: todaysDollars ? planStartYear : null,
       startYearRef,
       endYearRef,
+      deductionType: deductionType || null,
     };
 
     try {
@@ -987,6 +990,22 @@ function ExpenseDialog({
             value={cashAccountId}
             onChange={setCashAccountId}
           />
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300" htmlFor="exp-deductionType">Tax Treatment</label>
+            <select
+              id="exp-deductionType"
+              value={deductionType}
+              onChange={(e) => setDeductionType(e.target.value)}
+              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">None (not a deduction)</option>
+              <option value="charitable">Charitable Gift</option>
+              <option value="above_line">Above Line Deduction</option>
+              <option value="below_line">Below Line Deduction</option>
+              <option value="property_tax">Property Tax</option>
+            </select>
+          </div>
 
           <div className="flex items-center justify-between pt-2">
             {isEdit && onRequestDelete ? (

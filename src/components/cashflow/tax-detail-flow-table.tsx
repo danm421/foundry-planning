@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { ProjectionYear } from "@/engine";
 import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
@@ -42,6 +43,8 @@ interface Column {
   value: (y: ProjectionYear) => number;
   formatter?: (n: number) => string;
 }
+
+type DrillLevel = "top" | "above_line" | "below_line";
 
 const COLUMNS: Column[] = [
   {
@@ -151,64 +154,349 @@ const COLUMNS: Column[] = [
   },
 ];
 
-export function TaxDetailFlowTable({ years, onYearClick }: TaxDetailFlowTableProps) {
-  const transitions = detectRegimeTransitions(years);
+function aboveLineColumns(years: ProjectionYear[]): Column[] {
+  const cols: Column[] = [
+    {
+      key: "al_retirement",
+      label: "Retirement Contributions",
+      tooltip: "401(k) and Traditional IRA employee elective deferrals.",
+      value: (y) => y.deductionBreakdown?.aboveLine.retirementContributions ?? 0,
+    },
+    {
+      key: "al_expenses",
+      label: "Tagged Expenses",
+      tooltip: "Expenses with Tax Treatment set to Above Line.",
+      value: (y) => y.deductionBreakdown?.aboveLine.taggedExpenses ?? 0,
+    },
+    {
+      key: "al_manual",
+      label: "Manual Entries",
+      tooltip: "Manual above-line deduction entries from the Deductions page.",
+      value: (y) => y.deductionBreakdown?.aboveLine.manualEntries ?? 0,
+    },
+    {
+      key: "al_total",
+      label: "Above-Line Total",
+      tooltip: "Sum of all above-line deduction sources.",
+      value: (y) => y.deductionBreakdown?.aboveLine.total ?? 0,
+    },
+  ];
+  // Zero-suppress: hide columns where all years are $0, except the total
+  return cols.filter((col) =>
+    col.key === "al_total" || years.some((y) => col.value(y) !== 0)
+  );
+}
+
+function belowLineColumns(): Column[] {
+  return [
+    {
+      key: "bl_charitable",
+      label: "Charitable",
+      tooltip: "Charitable gift deductions from tagged expenses and manual entries.",
+      value: (y) => y.deductionBreakdown?.belowLine.charitable ?? 0,
+    },
+    {
+      key: "bl_taxes_paid",
+      label: "Taxes Paid",
+      tooltip: "State and local taxes (SALT), capped at $40,000 (OBBBA).",
+      value: (y) => y.deductionBreakdown?.belowLine.taxesPaid ?? 0,
+    },
+    {
+      key: "bl_interest_paid",
+      label: "Interest Paid",
+      tooltip: "Mortgage interest from liabilities marked tax-deductible.",
+      value: (y) => y.deductionBreakdown?.belowLine.interestPaid ?? 0,
+    },
+    {
+      key: "bl_other",
+      label: "Other Itemized",
+      tooltip: "Other below-line deductions from tagged expenses and manual entries.",
+      value: (y) => y.deductionBreakdown?.belowLine.otherItemized ?? 0,
+    },
+    {
+      key: "bl_itemized_total",
+      label: "Itemized Total",
+      tooltip: "Sum of all itemized deduction sources.",
+      value: (y) => y.deductionBreakdown?.belowLine.itemizedTotal ?? 0,
+    },
+    {
+      key: "bl_standard",
+      label: "Standard Deduction",
+      tooltip: "IRS standard deduction for filing status, inflation-adjusted.",
+      value: (y) => y.deductionBreakdown?.belowLine.standardDeduction ?? 0,
+    },
+    {
+      key: "bl_tax_deductions",
+      label: "Tax Deductions",
+      tooltip: "The greater of Itemized Total or Standard Deduction.",
+      value: (y) => y.deductionBreakdown?.belowLine.taxDeductions ?? 0,
+    },
+  ];
+}
+
+function DrillHeader({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 font-semibold normal-case text-blue-400 hover:text-blue-300 hover:underline"
+    >
+      {label} <span className="text-xs">▸</span>
+    </button>
+  );
+}
+
+/** Map drill-down column keys to a function that extracts the relevant bySource entries. */
+function getSourcesForColumn(
+  y: ProjectionYear,
+  colKey: string
+): Array<{ label: string; amount: number }> | null {
+  const bd = y.deductionBreakdown;
+  if (!bd) return null;
+
+  // Above-line sources
+  if (colKey === "al_retirement" || colKey === "al_total") {
+    const entries = Object.values(bd.aboveLine.bySource);
+    return entries.length > 0 ? entries : null;
+  }
+
+  // Below-line: filter bySource by category
+  if (colKey === "bl_charitable") {
+    return filterBySource(bd.belowLine.bySource, "charitable", y);
+  }
+  if (colKey === "bl_interest_paid") {
+    return filterBySource(bd.belowLine.bySource, "interest", y);
+  }
+  if (colKey === "bl_taxes_paid") {
+    const sources: Array<{ label: string; amount: number }> = [];
+    if (bd.belowLine.stateIncomeTax > 0) {
+      sources.push({ label: "State Income Tax", amount: bd.belowLine.stateIncomeTax });
+    }
+    if (bd.belowLine.propertyTaxes > 0) {
+      sources.push({ label: "Property Taxes", amount: bd.belowLine.propertyTaxes });
+    }
+    const rawTotal = bd.belowLine.stateIncomeTax + bd.belowLine.propertyTaxes;
+    if (rawTotal > bd.belowLine.taxesPaid) {
+      sources.push({ label: `SALT Cap Applied`, amount: bd.belowLine.taxesPaid - rawTotal });
+    }
+    return sources.length > 0 ? sources : null;
+  }
+  if (colKey === "bl_other") {
+    const amount = bd.belowLine.otherItemized;
+    if (amount <= 0) return null;
+    // Filter bySource to entries that are below_line (not charitable)
+    const entries = Object.values(bd.belowLine.bySource).filter(
+      (s) => !s.label.toLowerCase().includes("charit")
+    );
+    return entries.length > 0 ? entries : [{ label: "Other itemized", amount }];
+  }
+
+  return null;
+}
+
+function filterBySource(
+  bySource: Record<string, { label: string; amount: number }>,
+  _category: string,
+  _y: ProjectionYear
+): Array<{ label: string; amount: number }> | null {
+  // bySource contains all below-line entries; for now return all of them
+  const entries = Object.values(bySource);
+  return entries.length > 0 ? entries : null;
+}
+
+function SourcePopover({ sources, onClose }: {
+  sources: Array<{ label: string; amount: number }>;
+  onClose: () => void;
+}) {
+  return (
+    <div className="absolute right-0 top-full z-50 mt-1 min-w-[200px] rounded-md border border-gray-700 bg-gray-900 p-2 shadow-xl">
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-xs font-medium text-gray-400">Sources</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-xs text-gray-500 hover:text-gray-300"
+        >
+          ×
+        </button>
+      </div>
+      <ul className="space-y-0.5">
+        {sources.map((s, i) => (
+          <li key={i} className="flex items-center justify-between text-xs">
+            <span className="text-gray-300">{s.label}</span>
+            <span className="ml-3 tabular-nums text-gray-200">{fmt.format(s.amount)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Drillable cell — shows a popover with per-source detail on click. */
+function DrillCell({
+  value,
+  formatter,
+  sources,
+  isBold,
+}: {
+  value: number;
+  formatter: (n: number) => string;
+  sources: Array<{ label: string; amount: number }> | null;
+  isBold: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasDetail = sources && sources.length > 0;
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-800 bg-gray-900/60">
-      <table className="min-w-full border-collapse text-sm">
-        <thead className="bg-gray-900 text-xs uppercase text-gray-400">
-          <tr>
-            <th className="sticky left-0 z-10 bg-gray-900 px-3 py-2 text-left">Year</th>
-            <th className="px-3 py-2 text-left">Age</th>
-            {COLUMNS.map((col) => (
-              <th key={col.key} className="px-3 py-2 text-right font-medium">
-                {col.tooltip ? (
-                  <TaxDetailTooltip label={col.label} text={col.tooltip} />
-                ) : (
-                  col.label
-                )}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-800 text-gray-200">
-          {years.map((y) => {
-            const yearTransitions = transitions[y.year];
-            const borderClass = yearTransitions
-              ? TRANSITION_BORDER_CLASS[pickBorderTransition(yearTransitions)]
-              : "";
-            const tooltip = yearTransitions
-              ?.map((t: TransitionType) => TRANSITION_TOOLTIPS[t])
-              .join("\n");
+    <td
+      className={`relative px-3 py-2 text-right tabular-nums ${
+        isBold
+          ? "font-semibold"
+          : value === 0
+            ? "text-gray-600"
+            : ""
+      } ${hasDetail ? "cursor-pointer hover:text-blue-400" : ""}`}
+      onClick={hasDetail ? () => setOpen(!open) : undefined}
+    >
+      {formatter(value)}
+      {open && sources && (
+        <SourcePopover sources={sources} onClose={() => setOpen(false)} />
+      )}
+    </td>
+  );
+}
 
-            return (
-              <tr key={y.year} className="hover:bg-gray-800/40">
-                <td
-                  className={`sticky left-0 z-10 cursor-pointer bg-gray-900/80 px-3 py-2 text-left hover:text-blue-400 ${borderClass}`}
-                  onClick={() => onYearClick(y)}
-                  title={tooltip ?? `View per-source breakdown for ${y.year}`}
+export function TaxDetailFlowTable({ years, onYearClick }: TaxDetailFlowTableProps) {
+  const [drillLevel, setDrillLevel] = useState<DrillLevel>("top");
+  const transitions = detectRegimeTransitions(years);
+
+  // Choose columns based on drill level
+  const activeColumns: Column[] = drillLevel === "above_line"
+    ? aboveLineColumns(years)
+    : drillLevel === "below_line"
+      ? belowLineColumns()
+      : COLUMNS;
+
+  // Bold column keys (totals/winners)
+  const boldKeys = new Set(["al_total", "bl_tax_deductions"]);
+
+  // Make Above-Line and Below-Line headers clickable at top level
+  const renderHeader = (col: Column) => {
+    if (drillLevel === "top" && col.key === "aboveLineDeductions") {
+      return (
+        <DrillHeader
+          label={col.label}
+          onClick={() => setDrillLevel("above_line")}
+        />
+      );
+    }
+    if (drillLevel === "top" && col.key === "belowLineDeductions") {
+      return (
+        <DrillHeader
+          label={col.label}
+          onClick={() => setDrillLevel("below_line")}
+        />
+      );
+    }
+    return col.tooltip ? (
+      <TaxDetailTooltip label={col.label} text={col.tooltip} />
+    ) : (
+      col.label
+    );
+  };
+
+  const drillLabel = drillLevel === "above_line"
+    ? "Above-Line Deductions"
+    : drillLevel === "below_line"
+      ? "Below-Line Deductions"
+      : null;
+
+  return (
+    <div>
+      {drillLabel && (
+        <nav className="mb-2 text-xs text-gray-400">
+          <button
+            type="button"
+            onClick={() => setDrillLevel("top")}
+            className="text-blue-400 hover:text-blue-300"
+          >
+            Federal Tax Breakdown
+          </button>
+          <span className="mx-1">/</span>
+          <span className="text-gray-200">{drillLabel}</span>
+        </nav>
+      )}
+      <div className="overflow-x-auto rounded-lg border border-gray-800 bg-gray-900/60">
+        <table className="min-w-full border-collapse text-sm">
+          <thead className="bg-gray-900 text-xs uppercase text-gray-400">
+            <tr>
+              <th className="sticky left-0 z-10 bg-gray-900 px-3 py-2 text-left">Year</th>
+              <th className="px-3 py-2 text-left">Age</th>
+              {activeColumns.map((col) => (
+                <th
+                  key={col.key}
+                  className={`px-3 py-2 text-right font-medium ${boldKeys.has(col.key) ? "text-gray-200" : ""}`}
                 >
-                  {y.year}
-                </td>
-                <td className="px-3 py-2 text-left text-gray-400">{formatAge(y.ages)}</td>
-                {COLUMNS.map((col) => {
-                  const v = col.value(y);
-                  const formatter = col.formatter ?? formatCell;
-                  return (
-                    <td
-                      key={col.key}
-                      className={`px-3 py-2 text-right tabular-nums ${v === 0 ? "text-gray-600" : ""}`}
-                    >
-                      {formatter(v)}
-                    </td>
-                  );
-                })}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                  {renderHeader(col)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800 text-gray-200">
+            {years.map((y) => {
+              const yearTransitions = transitions[y.year];
+              const borderClass = yearTransitions
+                ? TRANSITION_BORDER_CLASS[pickBorderTransition(yearTransitions)]
+                : "";
+              const tooltip = yearTransitions
+                ?.map((t: TransitionType) => TRANSITION_TOOLTIPS[t])
+                .join("\n");
+
+              return (
+                <tr key={y.year} className="hover:bg-gray-800/40">
+                  <td
+                    className={`sticky left-0 z-10 cursor-pointer bg-gray-900/80 px-3 py-2 text-left hover:text-blue-400 ${borderClass}`}
+                    onClick={() => onYearClick(y)}
+                    title={tooltip ?? `View per-source breakdown for ${y.year}`}
+                  >
+                    {y.year}
+                  </td>
+                  <td className="px-3 py-2 text-left text-gray-400">{formatAge(y.ages)}</td>
+                  {activeColumns.map((col) => {
+                    const v = col.value(y);
+                    const formatter = col.formatter ?? formatCell;
+                    if (drillLevel !== "top") {
+                      return (
+                        <DrillCell
+                          key={col.key}
+                          value={v}
+                          formatter={formatter}
+                          sources={getSourcesForColumn(y, col.key)}
+                          isBold={boldKeys.has(col.key)}
+                        />
+                      );
+                    }
+                    return (
+                      <td
+                        key={col.key}
+                        className={`px-3 py-2 text-right tabular-nums ${
+                          boldKeys.has(col.key)
+                            ? "font-semibold"
+                            : v === 0
+                              ? "text-gray-600"
+                              : ""
+                        }`}
+                      >
+                        {formatter(v)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

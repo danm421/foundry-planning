@@ -18,6 +18,7 @@ export interface LiabilityFormInitial {
   ownerEntityId?: string | null;
   startYearRef?: string | null;
   endYearRef?: string | null;
+  isInterestDeductible?: boolean;
 }
 
 interface AddLiabilityFormProps {
@@ -45,6 +46,7 @@ export default function AddLiabilityForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ownerEntityId, setOwnerEntityId] = useState<string>(initial?.ownerEntityId ?? "");
+  const [isInterestDeductible, setIsInterestDeductible] = useState(initial?.isInterestDeductible ?? false);
   const isEdit = mode === "edit" && !!initial;
 
   const currentYear = new Date().getFullYear();
@@ -85,6 +87,7 @@ export default function AddLiabilityForm({
       ownerEntityId: ownerEntityId || null,
       startYearRef,
       endYearRef,
+      isInterestDeductible,
     };
 
     try {
@@ -220,6 +223,21 @@ export default function AddLiabilityForm({
             )}
           </div>
         )}
+
+        <div className="col-span-2">
+          <label className="flex items-center gap-2 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              checked={isInterestDeductible}
+              onChange={(e) => setIsInterestDeductible(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+            />
+            Interest is tax-deductible
+          </label>
+          <p className="mt-1 ml-6 text-xs text-gray-500">
+            When checked, the annual interest portion flows into your itemized deductions (e.g., mortgage interest).
+          </p>
+        </div>
 
         {milestones ? (
           <>

@@ -55,6 +55,7 @@ export async function PUT(
         }),
         ...(body.startYearRef !== undefined && { startYearRef: body.startYearRef }),
         ...(body.endYearRef !== undefined && { endYearRef: body.endYearRef }),
+        ...(body.deductionType !== undefined && { deductionType: body.deductionType }),
         updatedAt: new Date(),
       })
       .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, id)))

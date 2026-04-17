@@ -27,7 +27,12 @@ export async function PUT(
 
     const [updated] = await db
       .update(accounts)
-      .set({ ...body, updatedAt: new Date() })
+      .set({
+        ...body,
+        ...(body.annualPropertyTax !== undefined && { annualPropertyTax: body.annualPropertyTax }),
+        ...(body.propertyTaxGrowthRate !== undefined && { propertyTaxGrowthRate: body.propertyTaxGrowthRate }),
+        updatedAt: new Date(),
+      })
       .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)))
       .returning();
 
