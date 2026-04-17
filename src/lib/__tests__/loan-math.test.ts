@@ -3,6 +3,7 @@ import {
   calcPayment,
   calcTerm,
   calcRate,
+  calcOriginalBalance,
   computeAmortizationSchedule,
 } from "../loan-math";
 
@@ -52,6 +53,32 @@ describe("calcRate", () => {
     // Payment less than any positive-rate amortization of this balance/term
     const rate = calcRate(1000000, 12, 1);
     expect(rate).toBeNull();
+  });
+});
+
+describe("calcOriginalBalance", () => {
+  it("recovers original balance from current balance and elapsed months", () => {
+    // A $300k loan at 6.5% for 360 months, after 48 months
+    const payment = calcPayment(300000, 0.065, 360);
+    // Simulate 48 months of payments to get the balance
+    let bal = 300000;
+    const r = 0.065 / 12;
+    for (let i = 0; i < 48; i++) {
+      bal = bal * (1 + r) - payment;
+    }
+    // Now back-calculate
+    const original = calcOriginalBalance(bal, 0.065, payment, 48);
+    expect(original).toBeCloseTo(300000, 0);
+  });
+
+  it("returns currentBalance when no months elapsed", () => {
+    const result = calcOriginalBalance(300000, 0.065, 2000, 0);
+    expect(result).toBe(300000);
+  });
+
+  it("handles zero interest rate", () => {
+    const result = calcOriginalBalance(100000, 0, 1000, 24);
+    expect(result).toBe(124000);
   });
 });
 

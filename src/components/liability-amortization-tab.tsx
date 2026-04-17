@@ -14,6 +14,7 @@ import {
 } from "chart.js";
 import {
   computeAmortizationSchedule,
+  calcOriginalBalance,
   type AmortizationScheduleRow,
   type ScheduleExtraPayment,
 } from "@/lib/loan-math";
@@ -57,7 +58,10 @@ interface LiabilityAmortizationTabProps {
   interestRate: number;
   monthlyPayment: number;
   startYear: number;
+  startMonth: number;
   termMonths: number;
+  balanceAsOfMonth?: number;
+  balanceAsOfYear?: number;
 }
 
 export default function LiabilityAmortizationTab({
@@ -67,7 +71,10 @@ export default function LiabilityAmortizationTab({
   interestRate,
   monthlyPayment,
   startYear,
+  startMonth,
   termMonths,
+  balanceAsOfMonth,
+  balanceAsOfYear,
 }: LiabilityAmortizationTabProps) {
   const [extraPaymentRecords, setExtraPaymentRecords] = useState<ExtraPaymentRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,20 +117,30 @@ export default function LiabilityAmortizationTab({
     [extraPaymentRecords]
   );
 
-  // Compute amortization schedule
+  // Back-calculate original balance at loan origination
+  const currentYear = new Date().getFullYear();
+  const { originalBalance, elapsedMonths } = useMemo(() => {
+    const asOfMonth = balanceAsOfMonth || new Date().getMonth() + 1;
+    const asOfYear = balanceAsOfYear || currentYear;
+    const elapsed = Math.max(0, (asOfYear - startYear) * 12 + (asOfMonth - (startMonth || 1)));
+    const origBal = calcOriginalBalance(balance, interestRate, monthlyPayment, elapsed);
+    return { originalBalance: origBal, elapsedMonths: elapsed };
+  }, [balance, interestRate, monthlyPayment, startYear, startMonth, balanceAsOfMonth, balanceAsOfYear, currentYear]);
+
+  // Compute amortization schedule from original balance at origination
   const schedule: AmortizationScheduleRow[] = useMemo(() => {
     const term = termMonths || 360;
     if (balance <= 0 || monthlyPayment <= 0) return [];
 
     return computeAmortizationSchedule(
-      balance,
+      originalBalance,
       interestRate,
       monthlyPayment,
       startYear,
       term,
       scheduleExtraPayments
     );
-  }, [balance, interestRate, monthlyPayment, startYear, termMonths, scheduleExtraPayments]);
+  }, [originalBalance, balance, interestRate, monthlyPayment, startYear, termMonths, scheduleExtraPayments]);
 
   // Chart data
   const chartData = useMemo(() => {
@@ -291,11 +308,17 @@ export default function LiabilityAmortizationTab({
             {schedule.map((row) => {
               const yearExtras = epByYear.get(row.year) || [];
               const isPaidOff = row.endingBalance === 0;
+              const isCurrentYear = row.year === currentYear;
+              const isFutureOrCurrent = row.year >= currentYear;
 
               return (
                 <tr
                   key={row.year}
                   className={`border-b border-gray-800 ${
+                    isCurrentYear
+                      ? "bg-blue-900/20 border-l-2 border-l-blue-500"
+                      : ""
+                  } ${
                     isPaidOff ? "text-green-400" : "text-gray-100"
                   }`}
                 >
@@ -363,7 +386,7 @@ export default function LiabilityAmortizationTab({
                           </button>
                         ))}
                       </div>
-                    ) : row.endingBalance > 0 && liabilityId ? (
+                    ) : row.endingBalance > 0 && liabilityId && isFutureOrCurrent ? (
                       <button
                         onClick={() => {
                           setEditingYear(row.year);

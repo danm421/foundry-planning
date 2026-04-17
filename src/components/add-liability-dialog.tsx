@@ -119,7 +119,10 @@ export default function AddLiabilityDialog({
                   interestRate={liveValues.interestRate}
                   monthlyPayment={liveValues.monthlyPayment}
                   startYear={liveValues.startYear}
+                  startMonth={liveValues.startMonth}
                   termMonths={liveValues.termMonths}
+                  balanceAsOfMonth={liveValues.balanceAsOfMonth}
+                  balanceAsOfYear={liveValues.balanceAsOfYear}
                 />
               )}
             </div>

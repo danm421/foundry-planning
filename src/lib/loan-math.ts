@@ -70,6 +70,26 @@ export function calcRate(
   return null;
 }
 
+/**
+ * Back-calculate the original loan balance at origination given the current
+ * balance, annual interest rate, monthly payment, and elapsed months.
+ *
+ * Formula: B = (B_k + P * ((1+r)^k - 1) / r) / (1+r)^k
+ * where r = annualRate/12, k = elapsedMonths, B_k = currentBalance, P = monthlyPayment.
+ */
+export function calcOriginalBalance(
+  currentBalance: number,
+  annualRate: number,
+  monthlyPayment: number,
+  elapsedMonths: number
+): number {
+  if (elapsedMonths <= 0) return currentBalance;
+  if (annualRate === 0) return currentBalance + monthlyPayment * elapsedMonths;
+  const r = annualRate / 12;
+  const factor = Math.pow(1 + r, elapsedMonths);
+  return (currentBalance + monthlyPayment * (factor - 1) / r) / factor;
+}
+
 export interface AmortizationScheduleRow {
   year: number;
   beginningBalance: number;
