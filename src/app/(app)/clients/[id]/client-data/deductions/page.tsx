@@ -86,7 +86,8 @@ export default async function DeductionsPage({ params }: PageProps) {
           interestRate: parseFloat(l.interestRate),
           monthlyPayment: parseFloat(l.monthlyPayment),
           startYear: l.startYear,
-          endYear: l.endYear,
+          termMonths: l.termMonths,
+          extraPayments: [],
         },
         currentYear,
       );
