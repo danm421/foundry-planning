@@ -552,19 +552,28 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // These use synthetic bySource keys added by the projection engine.
     for (const txn of clientData.assetTransactions ?? []) {
       if (txn.type === "sell") {
+        // Sale proceeds as income
         const proceedsKey = `technique-proceeds:${txn.id}`;
         incomeNames[proceedsKey] = `Sale Proceeds: ${txn.name}`;
         if (!incomesByType["other_income"]) incomesByType["other_income"] = [];
         incomesByType["other_income"].push(proceedsKey);
 
-        const costKey = `technique-cost:${txn.id}`;
-        expenseNames[costKey] = `Transaction Costs: ${txn.name}`;
-        if (!expensesByType["other_expense"]) expensesByType["other_expense"] = [];
-        expensesByType["other_expense"].push(costKey);
+        // Transaction costs as expense (only if costs are configured)
+        const hasCosts = (txn.transactionCostPct ?? 0) > 0 || (txn.transactionCostFlat ?? 0) > 0;
+        if (hasCosts) {
+          const costKey = `technique-cost:${txn.id}`;
+          expenseNames[costKey] = `Transaction Costs: ${txn.name}`;
+          if (!expensesByType["other_expense"]) expensesByType["other_expense"] = [];
+          expensesByType["other_expense"].push(costKey);
+        }
       }
-      // Note: purchase equity is not shown as an expense — it's a portfolio
-      // rebalance (account debit), not a P&L item. Only transaction costs
-      // from sales are expenses.
+      if (txn.type === "buy") {
+        // Buy-only transactions: purchase equity is a real cash outflow
+        const purchaseKey = `technique-purchase:${txn.id}`;
+        expenseNames[purchaseKey] = `Purchase: ${txn.name}`;
+        if (!expensesByType["other_expense"]) expensesByType["other_expense"] = [];
+        expensesByType["other_expense"].push(purchaseKey);
+      }
     }
   }
 
@@ -718,49 +727,43 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     year: number,
     netAmount: number
   ): { label: string; amount: number }[] {
+    // Use engine-computed breakdown when available
+    const yearData = years.find((y: ProjectionYear) => y.year === year);
+    const tb = yearData?.techniqueBreakdown;
+
     if (sourceId.startsWith("technique-proceeds:")) {
       const txnId = sourceId.replace("technique-proceeds:", "");
-      const txn = clientData?.assetTransactions?.find((t) => t.id === txnId);
-      if (!txn) return [{ label: "Net Proceeds", amount: netAmount }];
-
-      // Find linked mortgage from liabilities
-      const linkedMortgage = txn.accountId
-        ? clientData?.liabilities?.find((l) => l.linkedPropertyId === txn.accountId)
-        : undefined;
-
-      // Compute sale value from projection — look up what the account was worth
-      // We can back-calculate: netProceeds = saleValue - costs - mortgage
-      const costPct = txn.transactionCostPct ?? 0;
-      const costFlat = txn.transactionCostFlat ?? 0;
-      const mortgageBalance = linkedMortgage ? parseFloat(String(linkedMortgage.balance)) : 0;
-
-      // saleValue = netProceeds + costs + mortgage
-      // costs = saleValue * costPct + costFlat
-      // So: saleValue = netProceeds + saleValue * costPct + costFlat + mortgageBalance
-      // saleValue * (1 - costPct) = netProceeds + costFlat + mortgageBalance
-      const saleValue = costPct < 1
-        ? (netAmount + costFlat + mortgageBalance) / (1 - costPct)
-        : netAmount;
-      const totalCosts = saleValue * costPct + costFlat;
-
-      const details: { label: string; amount: number }[] = [
-        { label: "Sale Value", amount: saleValue },
-      ];
-      if (totalCosts > 0) details.push({ label: "Transaction Costs", amount: -totalCosts });
-      if (mortgageBalance > 0) details.push({ label: "Mortgage Payoff", amount: -mortgageBalance });
-      return details;
+      const sale = tb?.sales.find((s) => s.transactionId === txnId);
+      if (sale) {
+        const details: { label: string; amount: number }[] = [
+          { label: "Sale Value", amount: sale.saleValue },
+        ];
+        if (sale.transactionCosts > 0) details.push({ label: "Transaction Costs", amount: -sale.transactionCosts });
+        if (sale.mortgagePaidOff > 0) details.push({ label: "Mortgage Payoff", amount: -sale.mortgagePaidOff });
+        return details;
+      }
+      return [{ label: "Net Proceeds", amount: netAmount }];
     }
     if (sourceId.startsWith("technique-cost:")) {
       const txnId = sourceId.replace("technique-cost:", "");
-      const txn = clientData?.assetTransactions?.find((t) => t.id === txnId);
-      if (!txn) return [{ label: "Transaction Costs", amount: netAmount }];
-      const costPct = txn.transactionCostPct ?? 0;
-      const costFlat = txn.transactionCostFlat ?? 0;
-      const details: { label: string; amount: number }[] = [];
-      if (costPct > 0) details.push({ label: `Commission (${(costPct * 100).toFixed(1)}%)`, amount: netAmount - costFlat });
-      if (costFlat > 0) details.push({ label: "Flat Cost", amount: costFlat });
-      if (details.length === 0) details.push({ label: "Transaction Costs", amount: netAmount });
-      return details;
+      const sale = tb?.sales.find((s) => s.transactionId === txnId);
+      if (sale && sale.transactionCosts > 0) {
+        return [{ label: "Transaction Costs", amount: sale.transactionCosts }];
+      }
+      return [{ label: "Transaction Costs", amount: netAmount }];
+    }
+    if (sourceId.startsWith("technique-purchase:")) {
+      const txnId = sourceId.replace("technique-purchase:", "");
+      const purchase = tb?.purchases.find((p) => p.transactionId === txnId);
+      if (purchase) {
+        const details: { label: string; amount: number }[] = [
+          { label: "Purchase Price", amount: purchase.purchasePrice },
+        ];
+        if (purchase.mortgageAmount > 0) details.push({ label: "Mortgage", amount: -purchase.mortgageAmount });
+        details.push({ label: "Cash Needed", amount: purchase.equity });
+        return details;
+      }
+      return [{ label: "Purchase Equity", amount: netAmount }];
     }
     return [{ label: "Amount", amount: netAmount }];
   }

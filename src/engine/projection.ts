@@ -1086,10 +1086,22 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         techniqueExpenseBySource[`technique-cost:${item.transactionId}`] = item.transactionCosts;
       }
     }
-    // Note: purchase equity is NOT added as an expense here. The purchase
-    // debits a funding account (portfolio rebalance), which is already
-    // reflected in the account balances. Only transaction costs are true
-    // P&L expenses.
+    // Purchase equity for buy-only transactions (no paired sale) is a real
+    // cash outflow that should appear as an expense. When a sale and buy are
+    // paired (same transaction record), the sale proceeds already account for
+    // the cash flow — the purchase is funded internally.
+    for (const item of purchaseBreakdown) {
+      if (item.equity > 0) {
+        // Check if this purchase's transaction also had a sale side
+        const hasSaleSide = saleResult.breakdown.some(
+          (s) => s.transactionId === item.transactionId
+        );
+        if (!hasSaleSide) {
+          techniqueExpenses += item.equity;
+          techniqueExpenseBySource[`technique-purchase:${item.transactionId}`] = item.equity;
+        }
+      }
+    }
 
     // Fold technique amounts into income
     income.other += techniqueIncome;
@@ -1125,6 +1137,10 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     const totalExpenses = expenses.total + savings.total;
     const netCashFlow = totalIncome - totalExpenses;
 
+    // Build technique breakdown for drill-down UI
+    const hasTechniques = saleResult.breakdown.length > 0 || purchaseBreakdown.length > 0;
+    const txnNameMap = new Map((data.assetTransactions ?? []).map((t) => [t.id, t.name]));
+
     years.push({
       year,
       ages,
@@ -1140,6 +1156,28 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       netCashFlow,
       portfolioAssets,
       accountLedgers,
+      ...(hasTechniques
+        ? {
+            techniqueBreakdown: {
+              sales: saleResult.breakdown.map((s) => ({
+                transactionId: s.transactionId,
+                name: txnNameMap.get(s.transactionId) ?? s.transactionId,
+                saleValue: s.saleValue,
+                transactionCosts: s.transactionCosts,
+                mortgagePaidOff: s.mortgagePaidOff,
+                netProceeds: s.netProceeds,
+                capitalGain: s.capitalGain,
+              })),
+              purchases: purchaseBreakdown.map((p) => ({
+                transactionId: p.transactionId,
+                name: p.name,
+                purchasePrice: p.purchasePrice,
+                mortgageAmount: p.mortgageAmount,
+                equity: p.equity,
+              })),
+            },
+          }
+        : {}),
     });
   }
 

@@ -291,6 +291,26 @@ export interface ProjectionYear {
   };
 
   accountLedgers: Record<string, AccountLedger>;
+
+  /** Technique breakdown for drill-down UI — only present in years where techniques execute. */
+  techniqueBreakdown?: {
+    sales: {
+      transactionId: string;
+      name: string;
+      saleValue: number;
+      transactionCosts: number;
+      mortgagePaidOff: number;
+      netProceeds: number;
+      capitalGain: number;
+    }[];
+    purchases: {
+      transactionId: string;
+      name: string;
+      purchasePrice: number;
+      mortgageAmount: number;
+      equity: number;
+    }[];
+  };
 }
 
 export interface AccountLedger {
