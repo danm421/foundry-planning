@@ -183,6 +183,8 @@ export interface ProjectionYear {
 
   taxResult?: TaxResult;
 
+  deductionBreakdown?: DeductionBreakdown;
+
   withdrawals: {
     byAccount: Record<string, number>;
     total: number;
@@ -266,4 +268,24 @@ export interface AccountLedgerEntry {
   label: string;
   amount: number;
   sourceId?: string;
+}
+
+export interface DeductionBreakdown {
+  aboveLine: {
+    retirementContributions: number;
+    taggedExpenses: number;
+    manualEntries: number;
+    total: number;
+    bySource: Record<string, { label: string; amount: number }>;
+  };
+  belowLine: {
+    charitable: number;
+    taxesPaid: number;
+    interestPaid: number;
+    otherItemized: number;
+    itemizedTotal: number;
+    standardDeduction: number;
+    taxDeductions: number;
+    bySource: Record<string, { label: string; amount: number }>;
+  };
 }
