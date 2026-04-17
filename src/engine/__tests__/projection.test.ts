@@ -597,3 +597,79 @@ describe("asset mix blending", () => {
     expect(result.pctLtcg).toBeCloseTo(0, 6);
   });
 });
+
+// ============================================================================
+// Techniques integration tests (Task 7)
+// ============================================================================
+
+describe("techniques integration", () => {
+  it("Roth conversion reduces IRA and increases Roth, taxed as ordinary income", () => {
+    const data = buildClientData({
+      transfers: [
+        {
+          id: "t-roth",
+          name: "Roth Conversion",
+          sourceAccountId: "acct-401k",
+          targetAccountId: "acct-roth",
+          amount: 50000,
+          mode: "one_time" as const,
+          startYear: 2028,
+          growthRate: 0,
+          schedules: [],
+        },
+      ],
+    });
+
+    const result = runProjection(data);
+    const year2028 = result.find((y) => y.year === 2028)!;
+
+    expect(year2028.taxDetail!.ordinaryIncome).toBeGreaterThan(0);
+    const k401Ledger = year2028.accountLedgers["acct-401k"];
+    expect(k401Ledger.distributions).toBeGreaterThan(0);
+  });
+
+  it("asset sale removes account and generates capital gains", () => {
+    const data = buildClientData({
+      assetTransactions: [
+        {
+          id: "sale-1",
+          name: "Sell Brokerage",
+          type: "sell" as const,
+          year: 2028,
+          accountId: "acct-brokerage",
+        },
+      ],
+    });
+
+    const result = runProjection(data);
+    const year2028 = result.find((y) => y.year === 2028)!;
+    expect(year2028.taxDetail!.capitalGains).toBeGreaterThan(0);
+
+    // Account should be gone in subsequent years
+    const year2029 = result.find((y) => y.year === 2029)!;
+    expect(year2029.accountLedgers["acct-brokerage"]).toBeUndefined();
+  });
+
+  it("asset purchase creates new account visible in later years", () => {
+    const data = buildClientData({
+      assetTransactions: [
+        {
+          id: "buy-1",
+          name: "Buy Rental",
+          type: "buy" as const,
+          year: 2028,
+          assetName: "Rental Property",
+          assetCategory: "real_estate" as const,
+          assetSubType: "rental_property",
+          purchasePrice: 300000,
+          growthRate: 0.03,
+          fundingAccountId: "acct-savings",
+        },
+      ],
+    });
+
+    const result = runProjection(data);
+    const year2029 = result.find((y) => y.year === 2029)!;
+    expect(year2029.portfolioAssets.realEstateTotal).toBeGreaterThan(0);
+  });
+});

@@ -210,6 +210,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const [drillPath, setDrillPath] = useState<string[]>([]);
   const [chartView, setChartView] = useState<"portfolio" | "cashflow">("portfolio");
   const [ledgerModal, setLedgerModal] = useState<LedgerModal | null>(null);
+  const [sourceDetailModal, setSourceDetailModal] = useState<{
+    name: string;
+    year: number;
+    amount: number;
+    details: { label: string; amount: number }[];
+  } | null>(null);
   const [taxDrillModal, setTaxDrillModal] = useState<TaxDrillModal | null>(null);
   const [showTaxDetailModal, setShowTaxDetailModal] = useState(false);
   const [taxDrillExpanded, setTaxDrillExpanded] = useState<Set<string>>(new Set());
@@ -495,6 +501,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   // incomesByType: segment key → array of income IDs with that type
   const incomesByType: Record<string, string[]> = {};
   const incomeNames: Record<string, string> = {};
+  const techniqueIncomeIds: string[] = [];
+  const techniqueExpenseIds: string[] = [];
   if (clientData) {
     for (const inc of clientData.incomes) {
       incomeNames[inc.id] = inc.name;
@@ -540,6 +548,43 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       expenseNames[synthId] = `Property Tax – ${acc.name}`;
       if (!expensesByType["real_estate_expense"]) expensesByType["real_estate_expense"] = [];
       expensesByType["real_estate_expense"].push(synthId);
+    }
+
+    // Technique-generated income and expense sources (sales and purchases).
+    // These use synthetic bySource keys added by the projection engine.
+    // Technique income sources go into "technique_income" (for Level 0 Other Income
+    // drill only), NOT into "other_income" (which is the Income > Other Level 1 drill).
+    techniqueIncomeIds.length = 0;
+    techniqueExpenseIds.length = 0;
+
+    for (const txn of clientData.assetTransactions ?? []) {
+      if (txn.type === "sell") {
+        // Net surplus as income (may not exist if deficit)
+        const proceedsKey = `technique-proceeds:${txn.id}`;
+        incomeNames[proceedsKey] = `Net Proceeds: ${txn.name}`;
+        techniqueIncomeIds.push(proceedsKey);
+
+        // Deficit as expense (may not exist if surplus)
+        const deficitKey = `technique-deficit:${txn.id}`;
+        expenseNames[deficitKey] = `Net Deficit: ${txn.name}`;
+        techniqueExpenseIds.push(deficitKey);
+
+        // Transaction costs as expense (only if costs are configured)
+        const hasCosts = (txn.transactionCostPct ?? 0) > 0 || (txn.transactionCostFlat ?? 0) > 0;
+        if (hasCosts) {
+          const costKey = `technique-cost:${txn.id}`;
+          expenseNames[costKey] = `Transaction Costs: ${txn.name}`;
+          if (!expensesByType["other_expense"]) expensesByType["other_expense"] = [];
+          expensesByType["other_expense"].push(costKey);
+        }
+      }
+      if (txn.type === "buy") {
+        // Buy-only transactions: purchase equity is a real cash outflow
+        const purchaseKey = `technique-purchase:${txn.id}`;
+        expenseNames[purchaseKey] = `Purchase: ${txn.name}`;
+        if (!expensesByType["other_expense"]) expensesByType["other_expense"] = [];
+        expensesByType["other_expense"].push(purchaseKey);
+      }
     }
   }
 
@@ -688,6 +733,52 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   // ── Column definitions based on drill path ────────────────────────────────
 
+  function buildTechniqueDetails(
+    sourceId: string,
+    year: number,
+    netAmount: number
+  ): { label: string; amount: number }[] {
+    // Use engine-computed breakdown when available
+    const yearData = years.find((y: ProjectionYear) => y.year === year);
+    const tb = yearData?.techniqueBreakdown;
+
+    if (sourceId.startsWith("technique-proceeds:")) {
+      const txnId = sourceId.replace("technique-proceeds:", "");
+      const sale = tb?.sales.find((s) => s.transactionId === txnId);
+      if (sale) {
+        const details: { label: string; amount: number }[] = [
+          { label: "Sale Value", amount: sale.saleValue },
+        ];
+        if (sale.transactionCosts > 0) details.push({ label: "Transaction Costs", amount: -sale.transactionCosts });
+        if (sale.mortgagePaidOff > 0) details.push({ label: "Mortgage Payoff", amount: -sale.mortgagePaidOff });
+        return details;
+      }
+      return [{ label: "Net Proceeds", amount: netAmount }];
+    }
+    if (sourceId.startsWith("technique-cost:")) {
+      const txnId = sourceId.replace("technique-cost:", "");
+      const sale = tb?.sales.find((s) => s.transactionId === txnId);
+      if (sale && sale.transactionCosts > 0) {
+        return [{ label: "Transaction Costs", amount: sale.transactionCosts }];
+      }
+      return [{ label: "Transaction Costs", amount: netAmount }];
+    }
+    if (sourceId.startsWith("technique-purchase:")) {
+      const txnId = sourceId.replace("technique-purchase:", "");
+      const purchase = tb?.purchases.find((p) => p.transactionId === txnId);
+      if (purchase) {
+        const details: { label: string; amount: number }[] = [
+          { label: "Purchase Price", amount: purchase.purchasePrice },
+        ];
+        if (purchase.mortgageAmount > 0) details.push({ label: "Mortgage", amount: -purchase.mortgageAmount });
+        details.push({ label: "Cash Needed", amount: purchase.equity });
+        return details;
+      }
+      return [{ label: "Purchase Equity", amount: netAmount }];
+    }
+    return [{ label: "Amount", amount: netAmount }];
+  }
+
   function buildColumns(): ColumnDef<ProjectionYear>[] {
     const level = drillPath[0];
     const subLevel = drillPath[1];
@@ -729,6 +820,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           "RMDs",
           (r) => Object.values(r.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0)
         ),
+        numCol(
+          "other_income_l0",
+          () => <DrillBtn segment="other_income_detail" label="Other Income" />,
+          (r) => r.income.other
+        ),
         numCol("totalIncome", "Total Income", (r) => r.totalIncome, true),
         numCol("expenses_total", () => <DrillBtn segment="expenses" label="Expenses" />, (r) => r.expenses.total),
         numCol("savings_total", () => <DrillBtn segment="savings" label="Savings" />, (r) => r.savings.total),
@@ -760,6 +856,53 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       ];
     }
 
+    // ── Other Income direct drill (from Level 0) ────────────────────────
+    if (level === "other_income_detail") {
+      const sourceIds = techniqueIncomeIds;
+      return [
+        ...baseColumns,
+        ...sourceIds.map((id) => {
+          const isTechnique = id.startsWith("technique-");
+          if (isTechnique) {
+            return col(
+              `oi_src_${id}`,
+              incomeNames[id] ?? id,
+              (r) => r.income.bySource[id] ?? 0,
+              (info) => {
+                const v = info.getValue() as number;
+                if (v === 0) return <span className="tabular-nums text-gray-500">&mdash;</span>;
+                const row = info.row.original;
+                return (
+                  <button
+                    onClick={() => {
+                      const details = buildTechniqueDetails(id, row.year, v);
+                      setSourceDetailModal({
+                        name: incomeNames[id] ?? id,
+                        year: row.year,
+                        amount: v,
+                        details,
+                      });
+                    }}
+                    className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                    title="View source details"
+                  >
+                    {fmtNum(v)}
+                  </button>
+                );
+              }
+            );
+          }
+          return numCol(`oi_src_${id}`, incomeNames[id] ?? id, (r) => r.income.bySource[id] ?? 0);
+        }),
+        numCol(
+          "oi_total",
+          "Other Income Total",
+          (r) => sourceIds.reduce((sum, id) => sum + (r.income.bySource[id] ?? 0), 0),
+          true
+        ),
+      ];
+    }
+
     // ── Income drill-down ──────────────────────────────────────────────────
 
     if (level === "income") {
@@ -768,13 +911,43 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         const sourceIds = incomesByType[subLevel] ?? [];
         return [
           ...baseColumns,
-          ...sourceIds.map((id) =>
-            numCol(
+          ...sourceIds.map((id) => {
+            const isTechnique = id.startsWith("technique-");
+            if (isTechnique) {
+              return col(
+                `income_src_${id}`,
+                incomeNames[id] ?? id,
+                (r) => r.income.bySource[id] ?? 0,
+                (info) => {
+                  const v = info.getValue() as number;
+                  if (v === 0) return <span className="tabular-nums text-gray-500">&mdash;</span>;
+                  const row = info.row.original;
+                  return (
+                    <button
+                      onClick={() => {
+                        const details = buildTechniqueDetails(id, row.year, v);
+                        setSourceDetailModal({
+                          name: incomeNames[id] ?? id,
+                          year: row.year,
+                          amount: v,
+                          details,
+                        });
+                      }}
+                      className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                      title="View source details"
+                    >
+                      {fmtNum(v)}
+                    </button>
+                  );
+                }
+              );
+            }
+            return numCol(
               `income_src_${id}`,
               incomeNames[id] ?? id,
               (r) => r.income.bySource[id] ?? 0
-            )
-          ),
+            );
+          }),
           numCol(
             "income_subtype_total",
             `${DRILL_LABELS[subLevel] ?? subLevel} Total`,
@@ -827,13 +1000,43 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         const sourceIds = expensesByType[subLevel] ?? [];
         return [
           ...baseColumns,
-          ...sourceIds.map((id) =>
-            numCol(
+          ...sourceIds.map((id) => {
+            const isTechnique = id.startsWith("technique-");
+            if (isTechnique) {
+              return col(
+                `exp_src_${id}`,
+                expenseNames[id] ?? id,
+                (r) => r.expenses.bySource[id] ?? 0,
+                (info) => {
+                  const v = info.getValue() as number;
+                  if (v === 0) return <span className="tabular-nums text-gray-500">&mdash;</span>;
+                  const row = info.row.original;
+                  return (
+                    <button
+                      onClick={() => {
+                        const details = buildTechniqueDetails(id, row.year, v);
+                        setSourceDetailModal({
+                          name: expenseNames[id] ?? id,
+                          year: row.year,
+                          amount: v,
+                          details,
+                        });
+                      }}
+                      className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                      title="View source details"
+                    >
+                      {fmtNum(v)}
+                    </button>
+                  );
+                }
+              );
+            }
+            return numCol(
               `exp_src_${id}`,
               expenseNames[id] ?? id,
               (r) => r.expenses.bySource[id] ?? 0
-            )
-          ),
+            );
+          }),
           numCol(
             "exp_subtype_total",
             `${DRILL_LABELS[subLevel] ?? subLevel} Total`,
@@ -1448,6 +1651,37 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Source Detail Modal */}
+      {sourceDetailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setSourceDetailModal(null)}>
+          <div className="w-full max-w-md rounded-lg border border-gray-700 bg-gray-900 p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-100">{sourceDetailModal.name}</h3>
+              <button onClick={() => setSourceDetailModal(null)} className="text-gray-400 hover:text-gray-200 focus:outline-none" aria-label="Close">
+                ✕
+              </button>
+            </div>
+            <p className="text-sm text-gray-400 mb-3">Year: {sourceDetailModal.year}</p>
+            <div className="space-y-2">
+              {sourceDetailModal.details.map((d, i) => (
+                <div key={i} className="flex justify-between text-sm">
+                  <span className="text-gray-300">{d.label}</span>
+                  <span className={`tabular-nums ${d.amount < 0 ? "text-red-400" : "text-gray-100"}`}>
+                    {fmtNum(d.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 pt-3 border-t border-gray-700 flex justify-between text-sm font-semibold">
+              <span className="text-gray-200">Total</span>
+              <span className="text-gray-100 tabular-nums">
+                {fmtNum(sourceDetailModal.amount)}
+              </span>
             </div>
           </div>
         </div>
