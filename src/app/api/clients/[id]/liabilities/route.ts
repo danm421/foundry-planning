@@ -96,6 +96,7 @@ export async function POST(
         ownerEntityId: ownerEntityId ?? null,
         startYearRef,
         endYearRef,
+        isInterestDeductible: body.isInterestDeductible ?? false,
       })
       .returning();
 

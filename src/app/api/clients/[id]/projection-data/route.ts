@@ -245,6 +245,8 @@ export async function GET(
           ownerEntityId: a.ownerEntityId ?? undefined,
           isDefaultChecking: a.isDefaultChecking,
           realization,
+          annualPropertyTax: parseFloat(a.annualPropertyTax),
+          propertyTaxGrowthRate: parseFloat(a.propertyTaxGrowthRate),
         };
       }),
       incomes: incomeRows.map((i) => ({
@@ -274,6 +276,7 @@ export async function GET(
         ownerEntityId: e.ownerEntityId ?? undefined,
         cashAccountId: e.cashAccountId ?? undefined,
         inflationStartYear: e.inflationStartYear ?? undefined,
+        deductionType: e.deductionType ?? undefined,
       })),
       liabilities: liabilityRows.map((l) => ({
         id: l.id,
@@ -285,6 +288,7 @@ export async function GET(
         endYear: l.endYear,
         linkedPropertyId: l.linkedPropertyId ?? undefined,
         ownerEntityId: l.ownerEntityId ?? undefined,
+        isInterestDeductible: l.isInterestDeductible,
       })),
       savingsRules: savingsRuleRows.map((s) => ({
         id: s.id,

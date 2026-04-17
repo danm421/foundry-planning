@@ -109,6 +109,8 @@ export async function POST(
         overridePctLtCg: overridePctLtCg ?? null,
         overridePctQdiv: overridePctQdiv ?? null,
         overridePctTaxExempt: overridePctTaxExempt ?? null,
+        annualPropertyTax: body.annualPropertyTax ?? "0",
+        propertyTaxGrowthRate: body.propertyTaxGrowthRate ?? "0.03",
       })
       .returning();
 

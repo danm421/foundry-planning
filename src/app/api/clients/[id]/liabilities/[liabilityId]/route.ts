@@ -27,7 +27,11 @@ export async function PUT(
 
     const [updated] = await db
       .update(liabilities)
-      .set({ ...body, updatedAt: new Date() })
+      .set({
+        ...body,
+        ...(body.isInterestDeductible !== undefined && { isInterestDeductible: body.isInterestDeductible }),
+        updatedAt: new Date(),
+      })
       .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)))
       .returning();
 

@@ -74,6 +74,7 @@ export async function POST(
       ownerEntityId,
       cashAccountId,
       inflationStartYear,
+      deductionType,
     } = body;
     const startYearRef = body.startYearRef ?? null;
     const endYearRef = body.endYearRef ?? null;
@@ -98,6 +99,7 @@ export async function POST(
         inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,
         startYearRef,
         endYearRef,
+        deductionType: deductionType ?? null,
       })
       .returning();
 
