@@ -562,12 +562,9 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         if (!expensesByType["other_expense"]) expensesByType["other_expense"] = [];
         expensesByType["other_expense"].push(costKey);
       }
-      if (txn.type === "buy") {
-        const purchaseKey = `technique-purchase:${txn.id}`;
-        expenseNames[purchaseKey] = `Purchase: ${txn.name}`;
-        if (!expensesByType["other_expense"]) expensesByType["other_expense"] = [];
-        expensesByType["other_expense"].push(purchaseKey);
-      }
+      // Note: purchase equity is not shown as an expense — it's a portfolio
+      // rebalance (account debit), not a P&L item. Only transaction costs
+      // from sales are expenses.
     }
   }
 
@@ -791,7 +788,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           "RMDs",
           (r) => Object.values(r.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0)
         ),
-        numCol("other_income_l0", "Other Income", (r) => r.income.other),
+        numCol(
+          "other_income_l0",
+          () => <DrillBtn segment="other_income_detail" label="Other Income" />,
+          (r) => r.income.other
+        ),
         numCol("totalIncome", "Total Income", (r) => r.totalIncome, true),
         numCol("expenses_total", () => <DrillBtn segment="expenses" label="Expenses" />, (r) => r.expenses.total),
         numCol("savings_total", () => <DrillBtn segment="savings" label="Savings" />, (r) => r.savings.total),
@@ -820,6 +821,53 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           (r) => additionsTotal(r) - distributionsTotal(r)
         ),
         numCol("portfolio_total", () => <DrillBtn segment="portfolio" label="Portfolio Assets" />, (r) => r.portfolioAssets.total),
+      ];
+    }
+
+    // ── Other Income direct drill (from Level 0) ────────────────────────
+    if (level === "other_income_detail") {
+      const sourceIds = incomesByType["other_income"] ?? [];
+      return [
+        ...baseColumns,
+        ...sourceIds.map((id) => {
+          const isTechnique = id.startsWith("technique-");
+          if (isTechnique) {
+            return col(
+              `oi_src_${id}`,
+              incomeNames[id] ?? id,
+              (r) => r.income.bySource[id] ?? 0,
+              (info) => {
+                const v = info.getValue() as number;
+                if (v === 0) return <span className="tabular-nums text-gray-500">&mdash;</span>;
+                const row = info.row.original;
+                return (
+                  <button
+                    onClick={() => {
+                      const details = buildTechniqueDetails(id);
+                      setSourceDetailModal({
+                        name: incomeNames[id] ?? id,
+                        year: row.year,
+                        amount: v,
+                        details: details.length > 0 ? details : [{ label: "Net Proceeds", amount: v }],
+                      });
+                    }}
+                    className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                    title="View source details"
+                  >
+                    {fmtNum(v)}
+                  </button>
+                );
+              }
+            );
+          }
+          return numCol(`oi_src_${id}`, incomeNames[id] ?? id, (r) => r.income.bySource[id] ?? 0);
+        }),
+        numCol(
+          "oi_total",
+          "Other Income Total",
+          (r) => sourceIds.reduce((sum, id) => sum + (r.income.bySource[id] ?? 0), 0),
+          true
+        ),
       ];
     }
 

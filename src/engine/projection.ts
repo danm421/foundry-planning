@@ -1086,12 +1086,10 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         techniqueExpenseBySource[`technique-cost:${item.transactionId}`] = item.transactionCosts;
       }
     }
-    for (const item of purchaseBreakdown) {
-      if (item.equity > 0) {
-        techniqueExpenses += item.equity;
-        techniqueExpenseBySource[`technique-purchase:${item.transactionId}`] = item.equity;
-      }
-    }
+    // Note: purchase equity is NOT added as an expense here. The purchase
+    // debits a funding account (portfolio rebalance), which is already
+    // reflected in the account balances. Only transaction costs are true
+    // P&L expenses.
 
     // Fold technique amounts into income
     income.other += techniqueIncome;
