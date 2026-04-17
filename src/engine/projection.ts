@@ -17,6 +17,10 @@ import { createTaxResolver } from "../lib/tax/resolver";
 import type { TaxYearParameters, FilingStatus } from "../lib/tax/types";
 import {
   deriveAboveLineFromSavings,
+  deriveAboveLineFromExpenses,
+  deriveItemizedFromExpenses,
+  deriveMortgageInterestFromLiabilities,
+  derivePropertyTaxFromAccounts,
   sumItemizedFromEntries,
   aggregateDeductions,
 } from "../lib/tax/derive-deductions";
@@ -186,9 +190,30 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       (inc) => inc.ownerEntityId != null && isGrantorEntity(inc.ownerEntityId)
     );
 
+    // Inject synthetic property-tax expenses for real estate accounts.
+    // These are not persisted — they exist only at projection time.
+    const syntheticExpenses: typeof data.expenses = [];
+    for (const acct of data.accounts) {
+      if (acct.category !== "real_estate") continue;
+      const propTax = acct.annualPropertyTax ?? 0;
+      if (propTax <= 0) continue;
+      const elapsed = year - planSettings.planStartYear;
+      const inflated = propTax * Math.pow(1 + (acct.propertyTaxGrowthRate ?? 0.03), Math.max(0, elapsed));
+      syntheticExpenses.push({
+        id: `synth-proptax-${acct.id}`,
+        type: "other",
+        name: `Property Tax – ${acct.name}`,
+        annualAmount: inflated,
+        startYear: planSettings.planStartYear,
+        endYear: planSettings.planEndYear,
+        growthRate: 0, // already inflated
+      });
+    }
+    const allExpenses = [...data.expenses, ...syntheticExpenses];
+
     // 2. Household expenses (entity-owned expenses are paid by the entity).
     const expenseBreakdown = computeExpenses(
-      data.expenses,
+      allExpenses,
       year,
       (exp) => exp.ownerEntityId == null
     );
@@ -406,8 +431,11 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     const filingStatus = (client.filingStatus ?? "single") as FilingStatus;
     const useBracket = planSettings.taxEngineMode === "bracket" && resolved != null;
 
-    const savingsContribution = useBracket
-      ? deriveAboveLineFromSavings(
+    let aboveLineDeductions = 0;
+    let itemizedDeductions = 0;
+    if (useBracket) {
+      const contributions = [
+        deriveAboveLineFromSavings(
           year,
           data.savingsRules.map((r) => ({
             accountId: r.accountId,
@@ -421,16 +449,50 @@ export function runProjection(data: ClientData): ProjectionYear[] {
             ownerEntityId: a.ownerEntityId,
           })),
           isGrantorEntity
-        )
-      : { aboveLine: 0, itemized: 0, saltPool: 0 };
-
-    const manualContribution = useBracket
-      ? sumItemizedFromEntries(year, data.deductions ?? [])
-      : { aboveLine: 0, itemized: 0, saltPool: 0 };
-
-    const { aboveLine: aboveLineDeductions, itemized: itemizedDeductions } = useBracket
-      ? aggregateDeductions(year, savingsContribution, manualContribution)
-      : { aboveLine: 0, itemized: 0 };
+        ),
+        deriveAboveLineFromExpenses(year, allExpenses.map((e) => ({
+          deductionType: e.deductionType ?? null,
+          annualAmount: e.annualAmount,
+          startYear: e.startYear,
+          endYear: e.endYear,
+          growthRate: e.growthRate,
+          inflationStartYear: e.inflationStartYear,
+        }))),
+        deriveItemizedFromExpenses(year, allExpenses.map((e) => ({
+          deductionType: e.deductionType ?? null,
+          annualAmount: e.annualAmount,
+          startYear: e.startYear,
+          endYear: e.endYear,
+          growthRate: e.growthRate,
+          inflationStartYear: e.inflationStartYear,
+        }))),
+        deriveMortgageInterestFromLiabilities(
+          year,
+          currentLiabilities.map((l) => ({
+            id: l.id,
+            isInterestDeductible: l.isInterestDeductible ?? false,
+            startYear: l.startYear,
+            endYear: l.endYear,
+          })),
+          liabResult.interestByLiability
+        ),
+        derivePropertyTaxFromAccounts(
+          year,
+          data.accounts.map((a) => ({
+            id: a.id,
+            name: a.name,
+            category: a.category,
+            annualPropertyTax: a.annualPropertyTax ?? 0,
+            propertyTaxGrowthRate: a.propertyTaxGrowthRate ?? 0.03,
+          })),
+          planSettings.planStartYear
+        ),
+        sumItemizedFromEntries(year, data.deductions ?? []),
+      ];
+      const agg = aggregateDeductions(year, ...contributions);
+      aboveLineDeductions = agg.aboveLine;
+      itemizedDeductions = agg.itemized;
+    }
 
     const taxResult = useBracket
       ? calculateTaxYearBracket({
@@ -489,7 +551,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     }
 
     // 7. Route each expense as an outflow from its cash account.
-    for (const exp of data.expenses) {
+    for (const exp of allExpenses) {
       if (year < exp.startYear || year > exp.endYear) continue;
       const inflateFrom = exp.inflationStartYear ?? exp.startYear;
       const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, year - inflateFrom);
@@ -801,6 +863,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       liabilities: liabResult.totalPayment,
       other: expenseBreakdown.other,
       insurance: expenseBreakdown.insurance,
+      realEstate: syntheticExpenses.reduce((sum, s) => sum + s.annualAmount, 0),
       taxes: totalTaxes,
       total:
         expenseBreakdown.living +
