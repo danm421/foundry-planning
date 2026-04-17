@@ -1,17 +1,13 @@
 "use client";
 
-import { DeductionsDerivedSummary } from "@/components/deductions-derived-summary";
+import {
+  DeductionsDerivedSummary,
+  type DerivedRow,
+  type ExpenseDeductionRow,
+  type MortgageInterestRow,
+  type PropertyTaxRow,
+} from "@/components/deductions-derived-summary";
 import { DeductionsItemizedList } from "@/components/deductions-itemized-list";
-
-interface DerivedRow {
-  id: string;
-  accountName: string;
-  subType: string;
-  annualAmount: number;
-  owner: "client" | "spouse" | "joint";
-  startYear: number;
-  endYear: number;
-}
 
 interface ItemizedRow {
   id: string;
@@ -29,16 +25,36 @@ interface ItemizedRow {
 interface DeductionsClientProps {
   clientId: string;
   derivedRows: DerivedRow[];
+  expenseDeductionRows: ExpenseDeductionRow[];
+  mortgageRows: MortgageInterestRow[];
+  propertyTaxRows: PropertyTaxRow[];
   itemizedRows: ItemizedRow[];
   currentYear: number;
+  saltCap: number;
 }
 
-export function DeductionsClient({ clientId, derivedRows, itemizedRows, currentYear }: DeductionsClientProps) {
+export function DeductionsClient({
+  clientId,
+  derivedRows,
+  expenseDeductionRows,
+  mortgageRows,
+  propertyTaxRows,
+  itemizedRows,
+  currentYear,
+  saltCap,
+}: DeductionsClientProps) {
   return (
     <div className="space-y-6 p-6">
       <h1 className="text-2xl font-bold text-gray-100">Deductions</h1>
 
-      <DeductionsDerivedSummary rows={derivedRows} currentYear={currentYear} />
+      <DeductionsDerivedSummary
+        savingsRows={derivedRows}
+        expenseRows={expenseDeductionRows}
+        mortgageRows={mortgageRows}
+        propertyTaxRows={propertyTaxRows}
+        currentYear={currentYear}
+        saltCap={saltCap}
+      />
 
       <DeductionsItemizedList
         clientId={clientId}
