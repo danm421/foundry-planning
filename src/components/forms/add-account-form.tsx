@@ -17,6 +17,8 @@ export interface AccountFormInitial {
   growthRate: string | null;
   rmdEnabled?: boolean | null;
   ownerEntityId?: string | null;
+  annualPropertyTax?: string;
+  propertyTaxGrowthRate?: string;
   growthSource?: string;
   modelPortfolioId?: string | null;
   turnoverPct?: string;
@@ -137,6 +139,10 @@ export default function AddAccountForm({
       initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
     )
   );
+  const [annualPropertyTax, setAnnualPropertyTax] = useState(initial?.annualPropertyTax ?? "0");
+  const [propertyTaxGrowthRate, setPropertyTaxGrowthRate] = useState(
+    initial?.propertyTaxGrowthRate != null ? (Number(initial.propertyTaxGrowthRate) * 100).toString() : "3"
+  );
 
   // Owner selection: either an "individual" owner (client/spouse/joint) or an entity id.
   type OwnerChoice = { kind: "individual"; value: string } | { kind: "entity"; value: string };
@@ -215,6 +221,8 @@ export default function AddAccountForm({
       overridePctLtCg: toPctOrNull("overridePctLtCg"),
       overridePctQdiv: toPctOrNull("overridePctQdiv"),
       overridePctTaxExempt: toPctOrNull("overridePctTaxExempt"),
+      annualPropertyTax: category === "real_estate" ? annualPropertyTax : undefined,
+      propertyTaxGrowthRate: category === "real_estate" ? String(Number(propertyTaxGrowthRate) / 100) : undefined,
     };
 
     try {
@@ -516,6 +524,40 @@ export default function AddAccountForm({
               />
             </div>
           </div>
+
+          {category === "real_estate" && (
+            <>
+              <h4 className="col-span-2 mt-2 text-sm font-medium text-gray-400">Real Estate Details</h4>
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="annualPropertyTax">
+                  Annual Property Tax ($)
+                </label>
+                <input
+                  id="annualPropertyTax"
+                  type="number"
+                  step="100"
+                  min={0}
+                  value={annualPropertyTax}
+                  onChange={(e) => setAnnualPropertyTax(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="propertyTaxGrowthRate">
+                  Property Tax Growth Rate (%)
+                </label>
+                <input
+                  id="propertyTaxGrowthRate"
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  value={propertyTaxGrowthRate}
+                  onChange={(e) => setPropertyTaxGrowthRate(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </>
+          )}
 
           {showRmdCheckbox && (
             <div className="mt-2">
