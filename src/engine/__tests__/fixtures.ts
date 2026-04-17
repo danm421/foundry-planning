@@ -153,8 +153,9 @@ export const sampleLiabilities: Liability[] = [
     interestRate: 0.065,
     monthlyPayment: 2500,
     startYear: 2026,
-    endYear: 2046,
+    termMonths: 240,
     isInterestDeductible: true,
+    extraPayments: [],
   },
 ];
 

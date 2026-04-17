@@ -374,10 +374,11 @@ export async function GET(
         interestRate: parseFloat(l.interestRate),
         monthlyPayment: parseFloat(l.monthlyPayment),
         startYear: l.startYear,
-        endYear: l.endYear,
+        termMonths: (l.endYear - l.startYear + 1) * 12,
         linkedPropertyId: l.linkedPropertyId ?? undefined,
         ownerEntityId: l.ownerEntityId ?? undefined,
         isInterestDeductible: l.isInterestDeductible,
+        extraPayments: [],
       })),
       savingsRules: savingsRuleRows.map((s) => ({
         id: s.id,

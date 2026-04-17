@@ -477,7 +477,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
             id: l.id,
             isInterestDeductible: l.isInterestDeductible ?? false,
             startYear: l.startYear,
-            endYear: l.endYear,
+            endYear: l.startYear + Math.ceil(l.termMonths / 12) - 1,
           })),
           liabResult.interestByLiability
         ),
