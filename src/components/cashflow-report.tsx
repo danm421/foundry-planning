@@ -153,6 +153,7 @@ const DRILL_LABELS: Record<string, string> = {
   living: "Living Expenses",
   other_expense: "Other Expenses",
   insurance: "Insurance",
+  real_estate_expense: "Real Estate Expenses",
   // Portfolio sub-types
   taxable: "Taxable",
   cash: "Cash",
@@ -174,10 +175,13 @@ const INCOME_SEGMENT_TO_TYPE: Record<string, string> = {
 };
 
 // Map from expense drill segment → expense type value in ClientData
+// Note: "real_estate_expense" sources are synthetic (synth-proptax-*) and
+// are populated separately from accounts rather than from clientData.expenses.
 const EXPENSE_SEGMENT_TO_TYPE: Record<string, string> = {
   living: "living",
   other_expense: "other",
   insurance: "insurance",
+  real_estate_expense: "real_estate",
 };
 
 // Map from portfolio drill segment → account category value in ClientData
@@ -518,6 +522,16 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         expensesByType[segmentKey].push(exp.id);
       }
     }
+    // Synthetic property-tax expenses are generated at projection time (not in
+    // clientData.expenses). Build the real_estate_expense drill list from accounts.
+    for (const acc of clientData.accounts) {
+      if (acc.category !== "real_estate") continue;
+      if ((acc.annualPropertyTax ?? 0) <= 0) continue;
+      const synthId = `synth-proptax-${acc.id}`;
+      expenseNames[synthId] = `Property Tax – ${acc.name}`;
+      if (!expensesByType["real_estate_expense"]) expensesByType["real_estate_expense"] = [];
+      expensesByType["real_estate_expense"].push(synthId);
+    }
   }
 
   // accountsByCategory: segment key → array of account IDs with that category
@@ -806,6 +820,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol("expenses_liabilities", "Liabilities", (r) => r.expenses.liabilities),
         numCol("expenses_other", () => <DrillBtn segment="other_expense" label="Other" />, (r) => r.expenses.other),
         numCol("expenses_insurance", () => <DrillBtn segment="insurance" label="Insurance" />, (r) => r.expenses.insurance),
+        numCol("expenses_real_estate", () => <DrillBtn segment="real_estate_expense" label="Real Estate" />, (r) => r.expenses.realEstate),
         col("expenses_taxes", () => (
           <button
             type="button"
