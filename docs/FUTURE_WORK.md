@@ -19,24 +19,26 @@ enablers and should ship folded into their parent feature.
 | # | Item | P | E | L | Total |
 |---|------|---|---|---|-------|
 | 1 | Scenario switcher + side panel | 9 | 2 | 8 | 19 |
-| 2 | Roth conversion optimizer (now unblocked) | 7 | 5 | 5 | 17 |
+| 2 | Asset mix tab on investment accounts | 7 | 5 | 6 | 18 |
+| 3 | Roth conversion optimizer (now unblocked) | 7 | 5 | 5 | 17 |
 | 4 | Year-by-year schedule for incomes & expenses | 7 | 5 | 4 | 16 |
-| — | Amortization table tab on liabilities | 5 | 6 | 3 | 14 |
-| 5 | UI/UX refresh for Income/Expenses/Savings tabs | 6 | 5 | 4 | 15 |
+| 5 | Investments report (asset allocation) | 7 | 4 | 5 | 16 |
 | 6 | Assumption library | 4 | 6 | 6 | 16 |
 | 7 | Monte Carlo / probability of success | 8 | 4 | 3 | 15 |
-| 8 | Plan PDF export | 5 | 6 | 4 | 15 |
-| 9 | CSV export for reports (cross-cutting) | 5 | 7 | 3 | 15 |
-| 10 | Liability extra payment + year-by-year schedule | 6 | 6 | 3 | 15 |
-| 11 | Per-year ledger drill-in for tax tables | 6 | 5 | 3 | 14 |
-| 12 | SS claiming optimizer | 5 | 6 | 2 | 13 |
-| 13 | Client-facing read-only view | 4 | 6 | 3 | 13 |
-| 14 | Trust taxes for non-grantor entities | 5 | 4 | 3 | 12 |
-| 15 | IRMAA tiers in tax engine | 5 | 4 | 3 | 12 |
-| 16 | Estate planning report | 7 | 2 | 3 | 12 |
-| 17 | Plan vs actual tracking | 4 | 4 | 3 | 11 |
-| 18 | State-level bracket tax | 5 | 2 | 4 | 11 |
-| 19 | Trust/estate brackets (data ready) | 4 | 7 | 2 | 13 |
+| 8 | UI/UX refresh for Income/Expenses/Savings tabs | 6 | 5 | 4 | 15 |
+| 9 | Amortization table + extra payments on liabilities | 6 | 5 | 4 | 15 |
+| 10 | Asset allocation extraction from statements | 6 | 4 | 5 | 15 |
+| 11 | Plan PDF export | 5 | 6 | 4 | 15 |
+| 12 | CSV export for reports (cross-cutting) | 5 | 7 | 3 | 15 |
+| 13 | Per-year ledger drill-in for tax tables | 6 | 5 | 3 | 14 |
+| 14 | SS claiming optimizer | 5 | 6 | 2 | 13 |
+| 15 | Client-facing read-only view | 4 | 6 | 3 | 13 |
+| 16 | Trust/estate brackets (data ready) | 4 | 7 | 2 | 13 |
+| 17 | Trust taxes for non-grantor entities | 5 | 4 | 3 | 12 |
+| 18 | IRMAA tiers in tax engine | 5 | 4 | 3 | 12 |
+| 19 | Estate planning report | 7 | 2 | 3 | 12 |
+| 20 | Plan vs actual tracking | 4 | 4 | 3 | 11 |
+| 21 | State-level bracket tax | 5 | 2 | 4 | 11 |
 
 Dependency notes that override raw score:
 
@@ -47,9 +49,13 @@ Dependency notes that override raw score:
   the biggest lift and benefits from early design pressure.
 - **Trust/estate brackets** are a tiny add since the data is already in the
   seed workbook; they unlock the **trust taxes for non-grantor** work.
-- **Year-by-year schedules + Liability extra payment + UI refresh** all
+- **Year-by-year schedules + Amortization/extra payments + UI refresh** all
   touch the Income/Expenses/Savings/Liabilities forms — ship as one
   coherent Client Data refresh once we're ready to revisit those tabs.
+- Ship **asset mix tab before Investments report** — the report needs
+  per-account allocation data to render. **Asset allocation extraction**
+  also targets the same per-account asset mix structure, so it should
+  ship after the tab exists.
 
 ## Client Data
 
@@ -65,22 +71,30 @@ Dependency notes that override raw score:
   asked, but blocks accurate planning for clients with bursty/lumpy
   cashflows (most HNW clients)._
 
-- **Amortization table tab on liabilities** _(P5 E6 L3)_ — when an advisor
-  opens a liability (mortgage, loan), show a tab with the full per-year
-  amortization schedule: payment, interest paid, principal paid, ending
-  balance. Useful for client conversations and mandatory once mortgage
-  interest deduction starts pulling from the same per-year interest values.
-  Pairs naturally with the mortgage-interest-deduction work (the same
-  per-year interest math feeds both views). _Why deferred: works around
-  via existing payment field; a real schedule is a polish layer._
+- **Amortization table tab on liabilities with extra payments** _(P6 E5 L4)_
+  — add an "Amortization" tab to the liability data entry screen showing
+  the full per-year schedule: payment, interest paid, principal paid,
+  ending balance. Within the tab, advisors can add extra principal
+  payments (one-time or recurring) and immediately see how they impact
+  the payoff timeline and total interest. When saved, the extra payments
+  flow through to the cash flow projection — the engine picks them up
+  as additional outflows in the appropriate years and adjusts the
+  liability balance accordingly. Pairs with mortgage-interest-deduction
+  work (same per-year interest math feeds both views). Consolidates the
+  former "amortization table" and "extra payment" items into one
+  feature. _Why deferred: works around via existing payment field; a
+  real schedule + extra-payment modeling is the next layer of polish._
 
-- **Extra payment field for liabilities + year-by-year schedule** _(P6 E6 L3)_
-  — liabilities currently model a monthly payment that pays interest +
-  scheduled principal. Add an "extra principal payment" field for clients
-  who pay down debt aggressively, plus a per-year schedule so advisors can
-  model "extra $20k toward mortgage in 2027 from a bonus." Pairs with the
-  variable-schedule item above — same UX pattern. _Why deferred: small but
-  not yet requested; pair with the variable-schedule work for shared UX._
+- **Asset mix tab on investment accounts** _(P7 E5 L6)_ — add an "Asset
+  Mix" tab to the data entry screen for taxable and retirement accounts.
+  Two modes: (1) "Use model portfolio" — the account inherits the asset
+  allocation from whatever model portfolio is assigned for its growth
+  rate, staying in sync automatically; (2) "Custom" — advisor enters
+  manual percentages based on the asset classes defined in the system's
+  CMAs. Enables per-account allocation tracking, feeds the new
+  Investments report (see Reports section), and gives the AI statement
+  extractor a target to map into. _Why deferred: accounts currently
+  only track a single growth model; allocation detail is the next layer._
 
 - **UI/UX refresh for Income, Expenses, and Savings tabs** _(P6 E5 L4)_ —
   the current forms are functional but feel like a stack of plain inputs.
@@ -277,6 +291,17 @@ Dependency notes that override raw score:
   into "Family members as owners". _Why deferred: large; depends on
   data-model work._
 
+- **Investments report (asset allocation)** _(P7 E4 L5)_ — new top-level
+  report tab alongside Client Data and Cash Flow called "Investments."
+  Shows all accounts and their asset allocation in a unified view: a
+  summary pie chart for the household-level allocation, per-account
+  allocation breakdowns, and a table listing every account with its
+  asset class weights. Data sourced from per-account asset mix (see
+  Client Data section). Enables advisors to quickly assess overall
+  portfolio positioning and identify drift from target allocations.
+  _Why deferred: depends on per-account asset mix tab shipping first
+  to provide the underlying data._
+
 - **Plan PDF export** _(P5 E6 L4)_ — server-rendered PDF summary of the
   plan (balance sheet, cash flow, assumptions, tax detail). Reportlab
   patterns from `ethos-tools` can be ported. _Why deferred: no advisor has
@@ -295,6 +320,17 @@ Dependency notes that override raw score:
   client-data with drag-and-drop upload, Azure OpenAI extraction for 6
   document types, step-by-step review wizard, and batch commit with
   `source: "extracted"`.
+
+- **Asset allocation extraction from statements** _(P6 E4 L5)_ — extend
+  the AI statement import pipeline to detect and extract asset allocation
+  data when available in uploaded statements (e.g., brokerage summaries,
+  quarterly reports). The extractor maps each holding or asset class to
+  the closest matching asset class in the system's CMAs, producing a
+  draft allocation the advisor reviews before saving. Feeds directly
+  into the per-account asset mix tab (see Client Data section) and the
+  Investments report. _Why deferred: statement import works for balances
+  and holdings; allocation mapping requires CMA-aware matching logic and
+  advisor review UX._
 
 - **Cloud storage linking for imported documents** _(P3 E5 L3)_ — connect
   advisor's cloud storage (Google Drive, Dropbox, OneDrive) to persist uploaded
