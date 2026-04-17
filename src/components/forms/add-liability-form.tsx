@@ -7,6 +7,11 @@ import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { resolveMilestone } from "@/lib/milestones";
 import { calcPayment, calcTerm, calcRate } from "@/lib/loan-math";
 
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
 export interface LiabilityFormInitial {
   id: string;
   name: string;
@@ -14,8 +19,11 @@ export interface LiabilityFormInitial {
   interestRate: string; // decimal fraction, e.g. "0.065"
   monthlyPayment: string;
   startYear: number;
+  startMonth: number; // 1-12
   termMonths: number;
   termUnit: "monthly" | "annual";
+  balanceAsOfMonth?: number | null;
+  balanceAsOfYear?: number | null;
   linkedPropertyId?: string | null;
   ownerEntityId?: string | null;
   startYearRef?: string | null;
@@ -27,7 +35,10 @@ export interface LiabilityFormValues {
   interestRate: number;
   monthlyPayment: number;
   startYear: number;
+  startMonth: number;
   termMonths: number;
+  balanceAsOfMonth?: number;
+  balanceAsOfYear?: number;
 }
 
 interface AddLiabilityFormProps {
@@ -75,6 +86,9 @@ export default function AddLiabilityForm({
   const [startYear, setStartYear] = useState<number>(
     initial?.startYear ?? (startYearRef && milestones ? resolveMilestone(startYearRef, milestones) ?? currentYear : currentYear)
   );
+  const [startMonth, setStartMonth] = useState<number>(initial?.startMonth ?? 1);
+  const [balanceAsOfMonth, setBalanceAsOfMonth] = useState<number>(initial?.balanceAsOfMonth ?? new Date().getMonth() + 1);
+  const [balanceAsOfYear, setBalanceAsOfYear] = useState<number>(initial?.balanceAsOfYear ?? new Date().getFullYear());
 
   const [termValue, setTermValue] = useState(
     initial
@@ -96,20 +110,33 @@ export default function AddLiabilityForm({
       interestRate: (parseFloat(interestRatePct) || 0) / 100,
       monthlyPayment: parseFloat(monthlyPayment) || 0,
       startYear,
+      startMonth,
       termMonths: isNaN(termMonths) ? 0 : termMonths,
+      balanceAsOfMonth,
+      balanceAsOfYear,
     });
-  }, [balance, interestRatePct, monthlyPayment, startYear, termValue, termUnit, onValuesChange]);
+  }, [balance, interestRatePct, monthlyPayment, startYear, startMonth, termValue, termUnit, balanceAsOfMonth, balanceAsOfYear, onValuesChange]);
 
   // ============================================================================
   // Calculator handlers
   // ============================================================================
+
+  function computeElapsedMonths() {
+    // Use balance-as-of date if provided, otherwise use current date
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1; // 1-12
+    const currentYr = now.getFullYear();
+    const asOfMonth = balanceAsOfMonth || currentMonth;
+    const asOfYear = balanceAsOfYear || currentYr;
+    return Math.max(0, (asOfYear - startYear) * 12 + (asOfMonth - startMonth));
+  }
 
   function handleCalcPayment() {
     const bal = parseFloat(balance);
     const rate = parseFloat(interestRatePct) / 100;
     const totalMonths = termUnit === "annual" ? parseInt(termValue) * 12 : parseInt(termValue);
     if (isNaN(bal) || isNaN(rate) || isNaN(totalMonths) || totalMonths <= 0) return;
-    const elapsedMonths = Math.max(0, (currentYear - startYear) * 12);
+    const elapsedMonths = computeElapsedMonths();
     const remainingMonths = Math.max(1, totalMonths - elapsedMonths);
     const pmt = calcPayment(bal, rate, remainingMonths);
     setMonthlyPayment(pmt.toFixed(2));
@@ -122,7 +149,7 @@ export default function AddLiabilityForm({
     if (isNaN(bal) || isNaN(rate) || isNaN(pmt) || pmt <= 0) return;
     const solvedRemaining = calcTerm(bal, rate, pmt);
     if (solvedRemaining === Infinity) return;
-    const elapsedMonths = Math.max(0, (currentYear - startYear) * 12);
+    const elapsedMonths = computeElapsedMonths();
     const totalMonths = solvedRemaining + elapsedMonths;
     setTermValue(termUnit === "annual" ? String(Math.ceil(totalMonths / 12)) : String(totalMonths));
   }
@@ -132,7 +159,7 @@ export default function AddLiabilityForm({
     const totalMonths = termUnit === "annual" ? parseInt(termValue) * 12 : parseInt(termValue);
     const pmt = parseFloat(monthlyPayment);
     if (isNaN(bal) || isNaN(totalMonths) || isNaN(pmt) || totalMonths <= 0 || pmt <= 0) return;
-    const elapsedMonths = Math.max(0, (currentYear - startYear) * 12);
+    const elapsedMonths = computeElapsedMonths();
     const remainingMonths = Math.max(1, totalMonths - elapsedMonths);
     const rate = calcRate(bal, remainingMonths, pmt);
     if (rate === null) return;
@@ -162,8 +189,11 @@ export default function AddLiabilityForm({
       interestRate: String(parseFloat(interestRatePct) / 100),
       monthlyPayment,
       startYear,
+      startMonth,
       termMonths,
       termUnit,
+      balanceAsOfMonth,
+      balanceAsOfYear,
       linkedPropertyId: linkedPropertyId || null,
       ownerEntityId: ownerEntityId || null,
       startYearRef,
@@ -240,7 +270,7 @@ export default function AddLiabilityForm({
         />
       </div>
 
-      {/* Row 2: Balance + Start Year */}
+      {/* Row 2: Balance + Balance as of */}
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-300" htmlFor="balance">
@@ -258,33 +288,70 @@ export default function AddLiabilityForm({
           />
         </div>
 
-        {milestones ? (
-          <MilestoneYearPicker
-            name="startYear"
-            id="startYear"
-            value={startYear}
-            yearRef={startYearRef}
-            milestones={milestones}
-            showSSRefs={false}
-            onChange={(yr, ref) => { setStartYear(yr); setStartYearRef(ref); }}
-            label="Start Year"
-          />
-        ) : (
-          <div>
-            <label className="block text-xs font-medium text-gray-400" htmlFor="startYear">
-              Start Year
-            </label>
+        <div>
+          <label className="block text-sm font-medium text-gray-300">Balance as of</label>
+          <div className="mt-1 flex gap-2">
+            <select
+              value={balanceAsOfMonth}
+              onChange={(e) => setBalanceAsOfMonth(Number(e.target.value))}
+              className="w-24 rounded-md border border-gray-600 bg-gray-800 px-2 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              {MONTH_NAMES.map((m, i) => (
+                <option key={i + 1} value={i + 1}>{m}</option>
+              ))}
+            </select>
             <input
-              id="startYear"
-              name="startYear"
               type="number"
-              required
-              value={startYear}
-              onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
-              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              value={balanceAsOfYear}
+              onChange={(e) => setBalanceAsOfYear(Number(e.target.value))}
+              className="block flex-1 rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              min={1900}
+              max={2100}
             />
           </div>
-        )}
+        </div>
+      </div>
+
+      {/* Row 2b: Start Month + Start Year */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-300">Loan Start</label>
+          <div className="mt-1 flex gap-2">
+            <select
+              value={startMonth}
+              onChange={(e) => setStartMonth(Number(e.target.value))}
+              className="w-24 rounded-md border border-gray-600 bg-gray-800 px-2 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              {MONTH_NAMES.map((m, i) => (
+                <option key={i + 1} value={i + 1}>{m}</option>
+              ))}
+            </select>
+            {milestones ? (
+              <div className="flex-1">
+                <MilestoneYearPicker
+                  name="startYear"
+                  id="startYear"
+                  value={startYear}
+                  yearRef={startYearRef}
+                  milestones={milestones}
+                  showSSRefs={false}
+                  onChange={(yr, ref) => { setStartYear(yr); setStartYearRef(ref); }}
+                  label=""
+                />
+              </div>
+            ) : (
+              <input
+                id="startYear"
+                name="startYear"
+                type="number"
+                required
+                value={startYear}
+                onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
+                className="block flex-1 rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Row 3: Term with unit toggle + calc button | Interest rate + calc button */}

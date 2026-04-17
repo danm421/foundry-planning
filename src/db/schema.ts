@@ -467,6 +467,8 @@ export const liabilities = pgTable("liabilities", {
   balance: decimal("balance", { precision: 15, scale: 2 })
     .notNull()
     .default("0"),
+  balanceAsOfMonth: integer("balance_as_of_month"),
+  balanceAsOfYear: integer("balance_as_of_year"),
   interestRate: decimal("interest_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0"),
@@ -474,6 +476,7 @@ export const liabilities = pgTable("liabilities", {
     .notNull()
     .default("0"),
   startYear: integer("start_year").notNull(),
+  startMonth: integer("start_month").notNull().default(1),
   startYearRef: yearRefEnum("start_year_ref"),
   termMonths: integer("term_months").notNull(),
   termUnit: text("term_unit").notNull().default("annual"),

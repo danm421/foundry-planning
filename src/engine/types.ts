@@ -120,7 +120,10 @@ export interface Liability {
   interestRate: number;
   monthlyPayment: number;
   startYear: number;
+  startMonth: number; // 1-12
   termMonths: number;
+  balanceAsOfMonth?: number;
+  balanceAsOfYear?: number;
   linkedPropertyId?: string;
   ownerEntityId?: string;
   isInterestDeductible?: boolean;
