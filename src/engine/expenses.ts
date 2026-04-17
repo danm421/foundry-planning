@@ -27,11 +27,16 @@ export function computeExpenses(
     if (year < exp.startYear || year > exp.endYear) continue;
     if (filter && !filter(exp)) continue;
 
-    // Inflation compounds from `inflationStartYear` when set (today's-dollars
-    // semantics), otherwise from the entry's own start year.
-    const inflateFrom = exp.inflationStartYear ?? exp.startYear;
-    const yearsElapsed = year - inflateFrom;
-    const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, yearsElapsed);
+    let amount: number;
+    if (exp.scheduleOverrides) {
+      amount = exp.scheduleOverrides.get(year) ?? 0;
+    } else {
+      // Inflation compounds from `inflationStartYear` when set (today's-dollars
+      // semantics), otherwise from the entry's own start year.
+      const inflateFrom = exp.inflationStartYear ?? exp.startYear;
+      const yearsElapsed = year - inflateFrom;
+      amount = exp.annualAmount * Math.pow(1 + exp.growthRate, yearsElapsed);
+    }
     result[exp.type] += amount;
     result.bySource[exp.id] = amount;
   }
