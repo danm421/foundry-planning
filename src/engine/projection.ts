@@ -212,8 +212,10 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     const allExpenses = [...data.expenses, ...syntheticExpenses];
 
     // 2. Household expenses (entity-owned expenses are paid by the entity).
+    // Pass only real expenses — synthetic property-tax expenses are tracked
+    // separately in the realEstate bucket to avoid double-counting in "Other".
     const expenseBreakdown = computeExpenses(
-      allExpenses,
+      data.expenses,
       year,
       (exp) => exp.ownerEntityId == null
     );
@@ -869,9 +871,13 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         expenseBreakdown.living +
         expenseBreakdown.other +
         expenseBreakdown.insurance +
+        syntheticExpenses.reduce((sum, s) => sum + s.annualAmount, 0) +
         liabResult.totalPayment +
         totalTaxes,
-      bySource: expenseBreakdown.bySource,
+      bySource: {
+        ...expenseBreakdown.bySource,
+        ...Object.fromEntries(syntheticExpenses.map((s) => [s.id, s.annualAmount])),
+      },
     };
 
     const totalIncome = income.total + householdRmdIncome;
