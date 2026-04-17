@@ -8,6 +8,7 @@ import type {
   Account,
   WithdrawalPriority,
   PlanSettings,
+  DeductionBreakdown,
 } from "./types";
 import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
@@ -23,6 +24,7 @@ import {
   derivePropertyTaxFromAccounts,
   sumItemizedFromEntries,
   aggregateDeductions,
+  saltCap,
 } from "../lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch } from "./savings";
 import { executeWithdrawals } from "./withdrawal";
@@ -435,6 +437,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
 
     let aboveLineDeductions = 0;
     let itemizedDeductions = 0;
+    let deductionBreakdownResult: DeductionBreakdown | undefined;
     if (useBracket) {
       const contributions = [
         deriveAboveLineFromSavings(
@@ -494,6 +497,78 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       const agg = aggregateDeductions(year, ...contributions);
       aboveLineDeductions = agg.aboveLine;
       itemizedDeductions = agg.itemized;
+
+      // Assemble per-source breakdown for drill-down UI.
+      const retirementContributions = contributions[0].aboveLine;
+      const expenseAboveLine = contributions[1].aboveLine;
+      const manualAboveLine = contributions[5].aboveLine;
+
+      // Below-line per-category split from source data
+      let charitable = 0;
+      let otherItemized = 0;
+      const belowLineBySource: Record<string, { label: string; amount: number }> = {};
+
+      for (const exp of allExpenses) {
+        if (!exp.deductionType || exp.deductionType === "above_line" || exp.deductionType === "property_tax") continue;
+        if (year < exp.startYear || year > exp.endYear) continue;
+        const inflateFrom = exp.inflationStartYear ?? exp.startYear;
+        const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, year - inflateFrom);
+        if (exp.deductionType === "charitable") {
+          charitable += amount;
+          belowLineBySource[exp.id] = { label: `Expense: ${exp.name}`, amount };
+        } else {
+          otherItemized += amount;
+          belowLineBySource[exp.id] = { label: `Expense: ${exp.name}`, amount };
+        }
+      }
+
+      for (const row of data.deductions ?? []) {
+        if (year < row.startYear || year > row.endYear) continue;
+        const yearsSinceStart = year - row.startYear;
+        const inflated = row.annualAmount * Math.pow(1 + row.growthRate, yearsSinceStart);
+        if (row.type === "charitable") {
+          charitable += inflated;
+        } else if (row.type === "below_line") {
+          otherItemized += inflated;
+        }
+      }
+
+      const interestPaid = contributions[3].itemized;
+      const rawSalt = contributions[2].saltPool + contributions[4].saltPool + contributions[5].saltPool;
+      const taxesPaid = Math.min(rawSalt, saltCap(year));
+      const itemizedTotal = charitable + taxesPaid + interestPaid + otherItemized;
+
+      const aboveLineBySource: Record<string, { label: string; amount: number }> = {};
+      for (const rule of data.savingsRules) {
+        if (year < rule.startYear || year > rule.endYear) continue;
+        const acct = data.accounts.find((a) => a.id === rule.accountId);
+        if (!acct) continue;
+        const subType = acct.subType ?? "";
+        if (subType !== "traditional_ira" && subType !== "401k") continue;
+        if (acct.ownerEntityId != null && !isGrantorEntity(acct.ownerEntityId)) continue;
+        aboveLineBySource[rule.id] = { label: acct.name, amount: rule.annualAmount };
+      }
+
+      const stdDed = resolved!.params.stdDeduction[filingStatus];
+      deductionBreakdownResult = {
+        aboveLine: {
+          retirementContributions,
+          taggedExpenses: expenseAboveLine,
+          manualEntries: manualAboveLine,
+          total: aboveLineDeductions,
+          bySource: aboveLineBySource,
+        },
+        belowLine: {
+          charitable,
+          taxesPaid,
+          interestPaid,
+          otherItemized,
+          itemizedTotal,
+          standardDeduction: stdDed,
+          taxDeductions: Math.max(itemizedTotal, stdDed),
+          bySource: belowLineBySource,
+        },
+      };
     }
 
     const taxResult = useBracket
@@ -890,6 +965,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       income,
       taxDetail,
       taxResult,
+      deductionBreakdown: deductionBreakdownResult,
       withdrawals,
       expenses,
       savings,
