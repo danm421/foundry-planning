@@ -174,7 +174,11 @@ export default function ReviewWizard({
             interestRate: String(liability.interestRate ?? 0),
             monthlyPayment: String(liability.monthlyPayment ?? 0),
             startYear: liability.startYear ?? defaultStartYear,
-            endYear: liability.endYear ?? defaultEndYear,
+            termMonths:
+              liability.endYear && liability.startYear
+                ? (liability.endYear - liability.startYear) * 12
+                : 360,
+            termUnit: "annual",
           }),
         });
       }
