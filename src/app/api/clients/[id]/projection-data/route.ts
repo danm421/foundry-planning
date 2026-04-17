@@ -16,8 +16,9 @@ import {
   assetClasses,
   taxYearParameters,
   clientDeductions,
+  accountAssetAllocations,
 } from "@/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 
@@ -104,9 +105,42 @@ export async function GET(
       endYear: d.endYear,
     }));
 
+    // Load account-level asset allocations (for asset_mix growth source)
+    let accountAllocRows: (typeof accountAssetAllocations.$inferSelect)[] = [];
+    if (accountRows.length > 0) {
+      accountAllocRows = await db
+        .select()
+        .from(accountAssetAllocations)
+        .where(
+          inArray(
+            accountAssetAllocations.accountId,
+            accountRows.map((a) => a.id)
+          )
+        );
+    }
+
+    const allocsByAccount = new Map<string, typeof accountAllocRows>();
+    for (const row of accountAllocRows) {
+      const list = allocsByAccount.get(row.accountId) ?? [];
+      list.push(row);
+      allocsByAccount.set(row.accountId, list);
+    }
+
     // ── CMA resolution helpers ──────────────────────────────────────────────
 
     const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
+
+    const inflationClass = assetClassRows.find((ac) => ac.slug === "inflation");
+    const inflationFallback = inflationClass
+      ? {
+          geoReturn: parseFloat(inflationClass.geometricReturn),
+          pctOi: parseFloat(inflationClass.pctOrdinaryIncome),
+          pctLtcg: parseFloat(inflationClass.pctLtCapitalGains),
+          pctQdiv: parseFloat(inflationClass.pctQualifiedDividends),
+          pctTaxEx: parseFloat(inflationClass.pctTaxExempt),
+        }
+      : { geoReturn: 0.025, pctOi: 1, pctLtcg: 0, pctQdiv: 0, pctTaxEx: 0 };
+
     const allocsByPortfolio = new Map<string, typeof allocationRows>();
     for (const alloc of allocationRows) {
       const list = allocsByPortfolio.get(alloc.modelPortfolioId) ?? [];
@@ -134,6 +168,33 @@ export async function GET(
         pctLtcg += w * parseFloat(ac.pctLtCapitalGains);
         pctQdiv += w * parseFloat(ac.pctQualifiedDividends);
         pctTaxEx += w * parseFloat(ac.pctTaxExempt);
+      }
+      return { geoReturn, pctOi, pctLtcg, pctQdiv, pctTaxEx };
+    }
+
+    function resolveAccountAllocations(accountId: string) {
+      const allocs = allocsByAccount.get(accountId) ?? [];
+      let totalWeight = 0;
+      let geoReturn = 0;
+      let pctOi = 0, pctLtcg = 0, pctQdiv = 0, pctTaxEx = 0;
+      for (const alloc of allocs) {
+        const ac = acMap.get(alloc.assetClassId);
+        if (!ac) continue;
+        const w = parseFloat(alloc.weight);
+        totalWeight += w;
+        geoReturn += w * parseFloat(ac.geometricReturn);
+        pctOi += w * parseFloat(ac.pctOrdinaryIncome);
+        pctLtcg += w * parseFloat(ac.pctLtCapitalGains);
+        pctQdiv += w * parseFloat(ac.pctQualifiedDividends);
+        pctTaxEx += w * parseFloat(ac.pctTaxExempt);
+      }
+      const unclassified = Math.max(0, 1 - totalWeight);
+      if (unclassified > 0) {
+        geoReturn += unclassified * inflationFallback.geoReturn;
+        pctOi += unclassified * inflationFallback.pctOi;
+        pctLtcg += unclassified * inflationFallback.pctLtcg;
+        pctQdiv += unclassified * inflationFallback.pctQdiv;
+        pctTaxEx += unclassified * inflationFallback.pctTaxEx;
       }
       return { geoReturn, pctOi, pctLtcg, pctQdiv, pctTaxEx };
     }
@@ -169,6 +230,15 @@ export async function GET(
       return { rate: parseFloat(entry.customRate) };
     }
 
+    function getCategoryGrowthSource(category: string): string {
+      const sourceLookup: Record<string, string> = {
+        taxable: settings.growthSourceTaxable,
+        cash: settings.growthSourceCash,
+        retirement: settings.growthSourceRetirement,
+      };
+      return sourceLookup[category] ?? "custom";
+    }
+
     // ── Build response ──────────────────────────────────────────────────────
 
     // Convert Drizzle decimal strings to numbers for the engine
@@ -190,7 +260,16 @@ export async function GET(
 
         const gs = a.growthSource ?? "default";
 
-        if (gs === "model_portfolio" && a.modelPortfolioId) {
+        // Determine effective growth source (category default may point to asset_mix)
+        let effectiveSource = gs;
+        if (effectiveSource === "default") {
+          const catSource = getCategoryGrowthSource(a.category);
+          if (catSource === "asset_mix") {
+            effectiveSource = "asset_mix";
+          }
+        }
+
+        if (effectiveSource === "model_portfolio" && a.modelPortfolioId) {
           const p = resolvePortfolio(a.modelPortfolioId);
           growthRate = p.geoReturn;
           realization = {
@@ -200,7 +279,17 @@ export async function GET(
             pctTaxExempt: a.overridePctTaxExempt != null ? parseFloat(a.overridePctTaxExempt) : p.pctTaxEx,
             turnoverPct: parseFloat(a.turnoverPct ?? "0"),
           };
-        } else if (gs === "custom" && a.growthRate != null) {
+        } else if (effectiveSource === "asset_mix") {
+          const resolved = resolveAccountAllocations(a.id);
+          growthRate = resolved.geoReturn;
+          realization = {
+            pctOrdinaryIncome: a.overridePctOi != null ? parseFloat(a.overridePctOi) : resolved.pctOi,
+            pctLtCapitalGains: a.overridePctLtCg != null ? parseFloat(a.overridePctLtCg) : resolved.pctLtcg,
+            pctQualifiedDividends: a.overridePctQdiv != null ? parseFloat(a.overridePctQdiv) : resolved.pctQdiv,
+            pctTaxExempt: a.overridePctTaxExempt != null ? parseFloat(a.overridePctTaxExempt) : resolved.pctTaxEx,
+            turnoverPct: parseFloat(a.turnoverPct ?? "0"),
+          };
+        } else if (effectiveSource === "custom" && a.growthRate != null) {
           growthRate = parseFloat(a.growthRate);
         } else {
           // "default" — resolve from category default in plan_settings

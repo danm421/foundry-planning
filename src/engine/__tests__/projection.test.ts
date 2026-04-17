@@ -542,3 +542,58 @@ describe("projection — bracket/flat tax routing", () => {
     expect(firstYear.taxResult!.flow.belowLineDeductions).toBeGreaterThanOrEqual(25000);
   });
 });
+
+describe("asset mix blending", () => {
+  function blendAllocations(
+    allocations: { weight: number; geoReturn: number; pctOi: number; pctLtcg: number; pctQdiv: number; pctTaxEx: number }[],
+    inflation: { geoReturn: number; pctOi: number; pctLtcg: number; pctQdiv: number; pctTaxEx: number }
+  ) {
+    let totalWeight = 0;
+    let geoReturn = 0;
+    let pctOi = 0, pctLtcg = 0, pctQdiv = 0, pctTaxEx = 0;
+    for (const a of allocations) {
+      totalWeight += a.weight;
+      geoReturn += a.weight * a.geoReturn;
+      pctOi += a.weight * a.pctOi;
+      pctLtcg += a.weight * a.pctLtcg;
+      pctQdiv += a.weight * a.pctQdiv;
+      pctTaxEx += a.weight * a.pctTaxEx;
+    }
+    const unclassified = Math.max(0, 1 - totalWeight);
+    if (unclassified > 0) {
+      geoReturn += unclassified * inflation.geoReturn;
+      pctOi += unclassified * inflation.pctOi;
+      pctLtcg += unclassified * inflation.pctLtcg;
+      pctQdiv += unclassified * inflation.pctQdiv;
+      pctTaxEx += unclassified * inflation.pctTaxEx;
+    }
+    return { geoReturn, pctOi, pctLtcg, pctQdiv, pctTaxEx };
+  }
+
+  const inflation = { geoReturn: 0.025, pctOi: 1, pctLtcg: 0, pctQdiv: 0, pctTaxEx: 0 };
+
+  it("blends fully allocated portfolio (no unclassified)", () => {
+    const result = blendAllocations([
+      { weight: 0.6, geoReturn: 0.08, pctOi: 0.1, pctLtcg: 0.5, pctQdiv: 0.3, pctTaxEx: 0.1 },
+      { weight: 0.4, geoReturn: 0.04, pctOi: 0.8, pctLtcg: 0.1, pctQdiv: 0.1, pctTaxEx: 0.0 },
+    ], inflation);
+    expect(result.geoReturn).toBeCloseTo(0.064, 6);
+    expect(result.pctOi).toBeCloseTo(0.38, 6);
+    expect(result.pctLtcg).toBeCloseTo(0.34, 6);
+  });
+
+  it("adds unclassified portion at inflation rate", () => {
+    const result = blendAllocations([
+      { weight: 0.7, geoReturn: 0.08, pctOi: 0.2, pctLtcg: 0.5, pctQdiv: 0.2, pctTaxEx: 0.1 },
+    ], inflation);
+    expect(result.geoReturn).toBeCloseTo(0.0635, 6);
+    expect(result.pctOi).toBeCloseTo(0.44, 6);
+  });
+
+  it("returns pure inflation when no allocations", () => {
+    const result = blendAllocations([], inflation);
+    expect(result.geoReturn).toBeCloseTo(0.025, 6);
+    expect(result.pctOi).toBeCloseTo(1.0, 6);
+    expect(result.pctLtcg).toBeCloseTo(0, 6);
+  });
+});
