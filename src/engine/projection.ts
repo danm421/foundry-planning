@@ -987,6 +987,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     }
 
     // ── Apply Asset Purchases ───────────────────────────────────────────────
+    let purchaseBreakdown: { transactionId: string; name: string; equity: number; purchasePrice: number; mortgageAmount: number; fundingAccountId: string }[] = [];
     if (data.assetTransactions && data.assetTransactions.length > 0) {
       const purchases = data.assetTransactions.filter((t) => t.type === "buy");
       if (purchases.length > 0) {
@@ -1001,6 +1002,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
           defaultCheckingId: defaultChecking?.id ?? "",
         });
 
+        purchaseBreakdown = purchaseResult.breakdown;
         for (const newAcct of purchaseResult.newAccounts) {
           workingAccounts.push(newAcct);
         }
@@ -1064,11 +1066,43 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     // When Net Cash Flow is negative, |Net Cash Flow| equals the gross withdrawal the
     // engine actually pulled from the strategy, so the two reconcile — household cash
     // drops by |Net Cash Flow| and the withdrawal refills it by the same amount.
+    // ── Technique income and expenses ──────────────────────────────────────
+    // Sale proceeds (net of transaction costs and mortgage payoff) are "other"
+    // income.  Transaction costs from sales and equity outflows from purchases
+    // are "other" expenses.  These show up in the cash-flow drill-down so
+    // advisors can see the P&L impact of techniques.
+    let techniqueIncome = 0;
+    const techniqueIncomeBySource: Record<string, number> = {};
+    let techniqueExpenses = 0;
+    const techniqueExpenseBySource: Record<string, number> = {};
+
+    for (const item of saleResult.breakdown) {
+      if (item.netProceeds > 0) {
+        techniqueIncome += item.netProceeds;
+        techniqueIncomeBySource[`technique-proceeds:${item.transactionId}`] = item.netProceeds;
+      }
+      if (item.transactionCosts > 0) {
+        techniqueExpenses += item.transactionCosts;
+        techniqueExpenseBySource[`technique-cost:${item.transactionId}`] = item.transactionCosts;
+      }
+    }
+    for (const item of purchaseBreakdown) {
+      if (item.equity > 0) {
+        techniqueExpenses += item.equity;
+        techniqueExpenseBySource[`technique-purchase:${item.transactionId}`] = item.equity;
+      }
+    }
+
+    // Fold technique amounts into income
+    income.other += techniqueIncome;
+    income.total += techniqueIncome;
+    Object.assign(income.bySource, techniqueIncomeBySource);
+
     const totalTaxes = taxes + withdrawalTax;
     const expenses = {
       living: expenseBreakdown.living,
       liabilities: liabResult.totalPayment,
-      other: expenseBreakdown.other,
+      other: expenseBreakdown.other + techniqueExpenses,
       insurance: expenseBreakdown.insurance,
       realEstate: syntheticExpenses.reduce((sum, s) => sum + s.annualAmount, 0),
       taxes: totalTaxes,
@@ -1078,10 +1112,12 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         expenseBreakdown.insurance +
         syntheticExpenses.reduce((sum, s) => sum + s.annualAmount, 0) +
         liabResult.totalPayment +
-        totalTaxes,
+        totalTaxes +
+        techniqueExpenses,
       bySource: {
         ...expenseBreakdown.bySource,
         ...Object.fromEntries(syntheticExpenses.map((s) => [s.id, s.annualAmount])),
+        ...techniqueExpenseBySource,
       },
       byLiability: liabResult.byLiability,
       interestByLiability: liabResult.interestByLiability,

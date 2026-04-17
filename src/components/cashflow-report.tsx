@@ -541,6 +541,28 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       if (!expensesByType["real_estate_expense"]) expensesByType["real_estate_expense"] = [];
       expensesByType["real_estate_expense"].push(synthId);
     }
+
+    // Technique-generated income and expense sources (sales and purchases).
+    // These use synthetic bySource keys added by the projection engine.
+    for (const txn of clientData.assetTransactions ?? []) {
+      if (txn.type === "sell") {
+        const proceedsKey = `technique-proceeds:${txn.id}`;
+        incomeNames[proceedsKey] = `Sale Proceeds: ${txn.name}`;
+        if (!incomesByType["other_income"]) incomesByType["other_income"] = [];
+        incomesByType["other_income"].push(proceedsKey);
+
+        const costKey = `technique-cost:${txn.id}`;
+        expenseNames[costKey] = `Transaction Costs: ${txn.name}`;
+        if (!expensesByType["other_expense"]) expensesByType["other_expense"] = [];
+        expensesByType["other_expense"].push(costKey);
+      }
+      if (txn.type === "buy") {
+        const purchaseKey = `technique-purchase:${txn.id}`;
+        expenseNames[purchaseKey] = `Purchase: ${txn.name}`;
+        if (!expensesByType["other_expense"]) expensesByType["other_expense"] = [];
+        expensesByType["other_expense"].push(purchaseKey);
+      }
+    }
   }
 
   // accountsByCategory: segment key → array of account IDs with that category

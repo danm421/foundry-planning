@@ -144,9 +144,19 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
 
 // ── applyAssetPurchases ───────────────────────────────────────────────────────
 
+export interface AssetPurchaseBreakdown {
+  transactionId: string;
+  name: string;
+  equity: number;
+  purchasePrice: number;
+  mortgageAmount: number;
+  fundingAccountId: string;
+}
+
 export interface AssetPurchasesResult {
   newAccounts: Account[];
   newLiabilities: Liability[];
+  breakdown: AssetPurchaseBreakdown[];
 }
 
 export interface ApplyAssetPurchasesInput {
@@ -180,6 +190,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
 
   const newAccounts: Account[] = [];
   const newLiabilities: Liability[] = [];
+  const breakdown: AssetPurchaseBreakdown[] = [];
 
   for (const purchase of purchases) {
     if (purchase.type !== "buy" || purchase.year !== year) continue;
@@ -190,6 +201,15 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
 
     // Determine funding source
     const fundingAccountId = purchase.fundingAccountId ?? defaultCheckingId;
+
+    breakdown.push({
+      transactionId: purchase.id,
+      name: purchase.name,
+      equity,
+      purchasePrice,
+      mortgageAmount,
+      fundingAccountId,
+    });
 
     // Debit equity from funding account
     accountBalances[fundingAccountId] = (accountBalances[fundingAccountId] ?? 0) - equity;
@@ -268,5 +288,5 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
     }
   }
 
-  return { newAccounts, newLiabilities };
+  return { newAccounts, newLiabilities, breakdown };
 }
