@@ -11,6 +11,7 @@ interface LiabilitiesResult {
   totalPayment: number;
   updatedLiabilities: Liability[];
   byLiability: Record<string, number>;
+  interestByLiability: Record<string, number>;
 }
 
 export function amortizeLiability(
@@ -41,6 +42,7 @@ export function computeLiabilities(
   let totalPayment = 0;
   const updatedLiabilities: Liability[] = [];
   const byLiability: Record<string, number> = {};
+  const interestByLiability: Record<string, number> = {};
 
   for (const liab of liabilities) {
     const result = amortizeLiability(liab, year);
@@ -48,9 +50,10 @@ export function computeLiabilities(
     // (e.g. entity-owned) so the stored state stays consistent across years.
     updatedLiabilities.push({ ...liab, balance: result.endingBalance });
     byLiability[liab.id] = result.annualPayment;
+    interestByLiability[liab.id] = result.interestPortion;
     if (filter && !filter(liab)) continue;
     totalPayment += result.annualPayment;
   }
 
-  return { totalPayment, updatedLiabilities, byLiability };
+  return { totalPayment, updatedLiabilities, byLiability, interestByLiability };
 }
