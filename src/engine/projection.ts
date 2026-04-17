@@ -29,6 +29,8 @@ import {
 import { applySavingsRules, computeEmployerMatch } from "./savings";
 import { executeWithdrawals } from "./withdrawal";
 import { calculateRMD } from "./rmd";
+import { applyTransfers } from "./transfers";
+import { applyAssetSales, applyAssetPurchases, _resetSyntheticIdCounter } from "./asset-transactions";
 
 // Map legacy income type to the new tax type categories.
 function legacyTaxType(
@@ -159,6 +161,18 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     accountBalances[acct.id] = acct.value;
   }
 
+  // Basis tracking for transfers and sales
+  const basisMap: Record<string, number> = {};
+  for (const acct of data.accounts) {
+    basisMap[acct.id] = acct.basis;
+  }
+
+  // Mutable accounts list — techniques can add/remove accounts
+  let workingAccounts = [...data.accounts];
+
+  // Reset synthetic ID counter for technique-created assets
+  _resetSyntheticIdCounter();
+
   let currentLiabilities: Liability[] = data.liabilities.map((l) => ({ ...l }));
 
   const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
@@ -195,7 +209,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     // Inject synthetic property-tax expenses for real estate accounts.
     // These are not persisted — they exist only at projection time.
     const syntheticExpenses: typeof data.expenses = [];
-    for (const acct of data.accounts) {
+    for (const acct of workingAccounts) {
       if (acct.category !== "real_estate") continue;
       const propTax = acct.annualPropertyTax ?? 0;
       if (propTax <= 0) continue;
@@ -243,7 +257,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     let realizationSTCG = 0;
     const realizationBySource: Record<string, { type: string; amount: number }> = {};
 
-    for (const acct of data.accounts) {
+    for (const acct of workingAccounts) {
       const beginningValue = accountBalances[acct.id] ?? 0;
       const growth = beginningValue * acct.growthRate;
       const entries: AccountLedgerEntry[] = [];
@@ -319,6 +333,60 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       }
     };
 
+    // ── Apply Transfers ─────────────────────────────────────────────────────
+    let transferResult = {
+      taxableOrdinaryIncome: 0,
+      capitalGains: 0,
+      earlyWithdrawalPenalty: 0,
+      byTransfer: {} as Record<string, { amount: number; label: string }>,
+    };
+    if (data.transfers && data.transfers.length > 0) {
+      transferResult = applyTransfers({
+        transfers: data.transfers,
+        accounts: workingAccounts,
+        accountBalances,
+        basisMap,
+        accountLedgers,
+        year,
+        ownerAges: { client: ages.client, spouse: ages.spouse },
+      });
+    }
+
+    // ── Apply Asset Sales ───────────────────────────────────────────────────
+    let saleResult = {
+      capitalGains: 0,
+      removedAccountIds: [] as string[],
+      removedLiabilityIds: [] as string[],
+      breakdown: [] as { transactionId: string; accountId: string; saleValue: number; basis: number; transactionCosts: number; netProceeds: number; capitalGain: number; mortgagePaidOff: number; proceedsAccountId: string }[],
+    };
+    if (data.assetTransactions && data.assetTransactions.length > 0) {
+      const sales = data.assetTransactions.filter((t) => t.type === "sell");
+      if (sales.length > 0) {
+        saleResult = applyAssetSales({
+          sales,
+          accounts: workingAccounts,
+          liabilities: currentLiabilities,
+          accountBalances,
+          basisMap,
+          accountLedgers,
+          year,
+          defaultCheckingId: defaultChecking?.id ?? "",
+        });
+
+        // Remove sold accounts from working list
+        if (saleResult.removedAccountIds.length > 0) {
+          const removed = new Set(saleResult.removedAccountIds);
+          workingAccounts = workingAccounts.filter((a) => !removed.has(a.id));
+        }
+
+        // Remove paid-off mortgages
+        if (saleResult.removedLiabilityIds.length > 0) {
+          const removed = new Set(saleResult.removedLiabilityIds);
+          currentLiabilities = currentLiabilities.filter((l) => !removed.has(l.id));
+        }
+      }
+    }
+
     // 4b. RMDs. Source account balance is decremented; the cash lands in the
     // appropriate checking (household or entity) via cashDelta. Tax treatment:
     // household → household tax; grantor entity → household tax; other entity →
@@ -326,7 +394,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     let householdRmdIncome = 0;
     let grantorRmdTaxable = 0;
     const rmdBySource: Record<string, { type: string; amount: number }> = {};
-    for (const acct of data.accounts) {
+    for (const acct of workingAccounts) {
       if (!acct.rmdEnabled) continue;
       let ownerBirthYear: number;
       if (acct.owner === "spouse" && spouseBirthYear != null) {
@@ -385,7 +453,10 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       grantorRmdTaxable +
       realizationOI +
       realizationQDiv +
-      realizationSTCG;
+      realizationSTCG +
+      transferResult.taxableOrdinaryIncome +
+      transferResult.capitalGains +
+      saleResult.capitalGains;
     // Build per-year tax detail breakdown. Income items use their taxType when
     // set, otherwise fall back to the legacy type-based mapping.
     const taxDetail: ProjectionYear["taxDetail"] = {
@@ -429,6 +500,23 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     if (grantorRmdTaxable > 0) {
       taxDetail.ordinaryIncome += grantorRmdTaxable;
     }
+
+    // Add transfer and sale income to tax detail
+    taxDetail.ordinaryIncome += transferResult.taxableOrdinaryIncome;
+    taxDetail.capitalGains += transferResult.capitalGains + saleResult.capitalGains;
+
+    // Track sources for drill-down
+    for (const [tid, info] of Object.entries(transferResult.byTransfer)) {
+      if (info.amount > 0) {
+        taxDetail.bySource[`transfer:${tid}`] = { type: "ordinary_income", amount: info.amount };
+      }
+    }
+    for (const item of saleResult.breakdown) {
+      if (item.capitalGain > 0) {
+        taxDetail.bySource[`sale:${item.transactionId}`] = { type: "capital_gains", amount: item.capitalGain };
+      }
+    }
+
     // 5. Taxes on household + grantor-trust income/RMDs. Routes to bracket or flat
     // engine depending on planSettings.taxEngineMode and whether tax year data is loaded.
     const resolved = taxResolver ? taxResolver.getYear(year) : null;
@@ -483,7 +571,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         ),
         derivePropertyTaxFromAccounts(
           year,
-          data.accounts.map((a) => ({
+          workingAccounts.map((a) => ({
             id: a.id,
             name: a.name,
             category: a.category,
@@ -607,6 +695,12 @@ export function runProjection(data: ClientData): ProjectionYear[] {
           flatStateRate: planSettings.flatStateRate,
           taxParams: resolved?.params ?? makeEmptyTaxParams(year),
         });
+
+    // Early withdrawal penalty from transfers
+    if (transferResult.earlyWithdrawalPenalty > 0) {
+      taxResult.flow.totalTax += transferResult.earlyWithdrawalPenalty;
+      taxResult.flow.totalFederalTax += transferResult.earlyWithdrawalPenalty;
+    }
 
     const taxes = taxResult.flow.totalTax;
 
@@ -789,7 +883,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     let withdrawalTax = 0;
 
     const householdWithdrawBalances: Record<string, number> = {};
-    for (const acct of data.accounts) {
+    for (const acct of workingAccounts) {
       if (acct.ownerEntityId != null) continue;
       if (acct.isDefaultChecking) continue;
       householdWithdrawBalances[acct.id] = acct.id in accountBalances ? accountBalances[acct.id] : 0;
@@ -892,6 +986,30 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       }
     }
 
+    // ── Apply Asset Purchases ───────────────────────────────────────────────
+    if (data.assetTransactions && data.assetTransactions.length > 0) {
+      const purchases = data.assetTransactions.filter((t) => t.type === "buy");
+      if (purchases.length > 0) {
+        const purchaseResult = applyAssetPurchases({
+          purchases,
+          accounts: workingAccounts,
+          liabilities: currentLiabilities,
+          accountBalances,
+          basisMap,
+          accountLedgers,
+          year,
+          defaultCheckingId: defaultChecking?.id ?? "",
+        });
+
+        for (const newAcct of purchaseResult.newAccounts) {
+          workingAccounts.push(newAcct);
+        }
+        for (const newLiab of purchaseResult.newLiabilities) {
+          currentLiabilities.push(newLiab);
+        }
+      }
+    }
+
     // 13. Portfolio snapshot. An account is included if it has no entity owner or if
     // its entity is flagged to roll into portfolio assets.
     const portfolioAssets = {
@@ -917,7 +1035,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       business: "business",
       life_insurance: "lifeInsurance",
     };
-    for (const acct of data.accounts) {
+    for (const acct of workingAccounts) {
       if (acct.ownerEntityId != null) {
         const entity = entityMap[acct.ownerEntityId];
         if (!entity?.includeInPortfolio) continue;
