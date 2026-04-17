@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
+import { type AssetClassOption } from "./forms/asset-mix-tab";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -18,6 +19,9 @@ interface AddAccountDialogProps {
   categoryDefaults?: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
   ownerNames?: { clientName: string; spouseName: string | null };
+  assetClasses?: AssetClassOption[];
+  portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
+  categoryDefaultSources?: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }>;
 }
 
 export default function AddAccountDialog({
@@ -32,6 +36,9 @@ export default function AddAccountDialog({
   categoryDefaults,
   modelPortfolios,
   ownerNames,
+  assetClasses,
+  portfolioAllocationsMap,
+  categoryDefaultSources,
 }: AddAccountDialogProps) {
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
@@ -61,7 +68,7 @@ export default function AddAccountDialog({
       {actualOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={close} />
-          <div className="relative z-10 w-full max-w-lg rounded-lg bg-gray-900 border border-gray-700 p-6 shadow-xl">
+          <div className="relative z-10 w-full max-w-2xl rounded-lg bg-gray-900 border border-gray-700 p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-100">
                 {isEdit ? "Edit Account" : `Add ${label ?? ""} Account`}
@@ -81,6 +88,9 @@ export default function AddAccountDialog({
               categoryDefaults={categoryDefaults}
               modelPortfolios={modelPortfolios}
               ownerNames={ownerNames}
+              assetClasses={assetClasses}
+              portfolioAllocationsMap={portfolioAllocationsMap}
+              categoryDefaultSources={categoryDefaultSources}
               onSuccess={close}
               onDelete={onRequestDelete}
             />

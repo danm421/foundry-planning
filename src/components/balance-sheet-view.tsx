@@ -6,6 +6,7 @@ import AddAccountDialog from "./add-account-dialog";
 import AddLiabilityDialog from "./add-liability-dialog";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
+import { type AssetClassOption } from "./forms/asset-mix-tab";
 import { LiabilityFormInitial } from "./forms/add-liability-form";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 
@@ -51,6 +52,9 @@ interface BalanceSheetViewProps {
   categoryDefaults: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
   ownerNames: OwnerNames;
+  assetClasses?: AssetClassOption[];
+  portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
+  categoryDefaultSources?: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }>;
 }
 
 const CATEGORY_LABELS: Record<AccountCategory, string> = {
@@ -187,6 +191,9 @@ export default function BalanceSheetView({
   categoryDefaults,
   modelPortfolios,
   ownerNames,
+  assetClasses,
+  portfolioAllocationsMap,
+  categoryDefaultSources,
 }: BalanceSheetViewProps) {
   const router = useRouter();
 
@@ -415,6 +422,9 @@ export default function BalanceSheetView({
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
         ownerNames={ownerNames}
+        assetClasses={assetClasses}
+        portfolioAllocationsMap={portfolioAllocationsMap}
+        categoryDefaultSources={categoryDefaultSources}
         open={addCategory !== null}
         onOpenChange={(o) => !o && setAddCategory(null)}
       />
@@ -426,6 +436,9 @@ export default function BalanceSheetView({
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
         ownerNames={ownerNames}
+        assetClasses={assetClasses}
+        categoryDefaultSources={categoryDefaultSources}
+        portfolioAllocationsMap={portfolioAllocationsMap}
         open={!!editingAccount}
         onOpenChange={(o) => !o && setEditingAccount(null)}
         editing={editingAccount ? accountToInitial(editingAccount) : undefined}

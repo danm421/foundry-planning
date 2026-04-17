@@ -100,6 +100,8 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
   function setSource(category: string, value: string) {
     if (value.startsWith("mp:")) {
       setSources((prev) => ({ ...prev, [category]: { source: "model_portfolio", portfolioId: value.slice(3) } }));
+    } else if (value === "asset_mix") {
+      setSources((prev) => ({ ...prev, [category]: { source: "asset_mix", portfolioId: "" } }));
     } else {
       setSources((prev) => ({ ...prev, [category]: { source: "custom", portfolioId: "" } }));
     }
@@ -185,7 +187,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
           {/* Investable categories — dropdown for model portfolio or custom */}
           {CMA_CATEGORIES.map((cat) => {
             const s = sources[cat.category];
-            const selectVal = s.source === "model_portfolio" ? `mp:${s.portfolioId}` : "custom";
+            const selectVal = s.source === "model_portfolio" ? `mp:${s.portfolioId}` : s.source === "asset_mix" ? "asset_mix" : "custom";
             return (
               <div key={cat.category} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-6">
@@ -205,6 +207,9 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                         </option>
                       ))}
                       <option value="custom">Custom %</option>
+                      {(cat.category === "taxable" || cat.category === "retirement") && (
+                        <option value="asset_mix">Asset mix (per account)</option>
+                      )}
                     </select>
                     {s.source === "custom" && (
                       <div className="relative w-28 flex-shrink-0">
@@ -226,6 +231,11 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                     )}
                   </div>
                 </div>
+                {s.source === "asset_mix" && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Each account uses its own asset mix. Accounts without a defined mix grow at the Inflation rate.
+                  </p>
+                )}
               </div>
             );
           })}
