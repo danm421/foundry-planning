@@ -18,6 +18,9 @@ import {
   taxYearParameters,
   clientDeductions,
   accountAssetAllocations,
+  transfers,
+  transferSchedules,
+  assetTransactions,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -66,6 +69,9 @@ export async function GET(
       allocationRows,
       assetClassRows,
       extraPaymentRows,
+      transferRows,
+      transferScheduleRows,
+      assetTransactionRows,
     ] = await Promise.all([
       db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
       db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
@@ -79,6 +85,9 @@ export async function GET(
       db.select().from(modelPortfolioAllocations),
       db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
       db.select().from(extraPayments),
+      db.select().from(transfers).where(and(eq(transfers.clientId, id), eq(transfers.scenarioId, scenario.id))),
+      db.select().from(transferSchedules),
+      db.select().from(assetTransactions).where(and(eq(assetTransactions.clientId, id), eq(assetTransactions.scenarioId, scenario.id))),
     ]);
 
     const [settings] = planSettingsRows;
@@ -429,6 +438,45 @@ export async function GET(
       })),
       taxYearRows: parsedTaxRows,
       deductions: parsedDeductions,
+      transfers: transferRows.map((t) => {
+        const schedules = transferScheduleRows
+          .filter((s) => s.transferId === t.id)
+          .map((s) => ({ year: s.year, amount: parseFloat(s.amount) }));
+        return {
+          id: t.id,
+          name: t.name,
+          sourceAccountId: t.sourceAccountId,
+          targetAccountId: t.targetAccountId,
+          amount: parseFloat(t.amount),
+          mode: t.mode,
+          startYear: t.startYear,
+          endYear: t.endYear ?? undefined,
+          growthRate: parseFloat(t.growthRate),
+          schedules,
+        };
+      }),
+      assetTransactions: assetTransactionRows.map((t) => ({
+        id: t.id,
+        name: t.name,
+        type: t.type,
+        year: t.year,
+        accountId: t.accountId ?? undefined,
+        overrideSaleValue: t.overrideSaleValue ? parseFloat(t.overrideSaleValue) : undefined,
+        overrideBasis: t.overrideBasis ? parseFloat(t.overrideBasis) : undefined,
+        transactionCostPct: t.transactionCostPct ? parseFloat(t.transactionCostPct) : undefined,
+        transactionCostFlat: t.transactionCostFlat ? parseFloat(t.transactionCostFlat) : undefined,
+        proceedsAccountId: t.proceedsAccountId ?? undefined,
+        assetName: t.assetName ?? undefined,
+        assetCategory: t.assetCategory ?? undefined,
+        assetSubType: t.assetSubType ?? undefined,
+        purchasePrice: t.purchasePrice ? parseFloat(t.purchasePrice) : undefined,
+        growthRate: t.growthRate ? parseFloat(t.growthRate) : undefined,
+        basis: t.basis ? parseFloat(t.basis) : undefined,
+        fundingAccountId: t.fundingAccountId ?? undefined,
+        mortgageAmount: t.mortgageAmount ? parseFloat(t.mortgageAmount) : undefined,
+        mortgageRate: t.mortgageRate ? parseFloat(t.mortgageRate) : undefined,
+        mortgageTermMonths: t.mortgageTermMonths ?? undefined,
+      })),
     });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
