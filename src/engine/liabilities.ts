@@ -1,6 +1,6 @@
 import type { Liability } from "./types";
 
-interface AmortizationResult {
+export interface AmortizationResult {
   annualPayment: number;
   interestPortion: number;
   principalPortion: number;
@@ -18,20 +18,53 @@ export function amortizeLiability(
   liability: Liability,
   year: number
 ): AmortizationResult {
-  if (year < liability.startYear || year > liability.endYear || liability.balance <= 0) {
-    return { annualPayment: 0, interestPortion: 0, principalPortion: 0, endingBalance: 0 };
+  const endYear =
+    liability.startYear + Math.ceil(liability.termMonths / 12) - 1;
+
+  if (
+    year < liability.startYear ||
+    year > endYear ||
+    liability.balance <= 0
+  ) {
+    return {
+      annualPayment: 0,
+      interestPortion: 0,
+      principalPortion: 0,
+      endingBalance: 0,
+    };
   }
 
   const interest = liability.balance * liability.interestRate;
   const scheduledPayment = liability.monthlyPayment * 12;
   const totalOwed = liability.balance + interest;
-
   const annualPayment = Math.min(scheduledPayment, totalOwed);
   const interestPortion = Math.min(interest, annualPayment);
-  const principalPortion = annualPayment - interestPortion;
-  const endingBalance = Math.max(0, liability.balance - principalPortion);
+  const principalFromPayment = annualPayment - interestPortion;
 
-  return { annualPayment, interestPortion, principalPortion, endingBalance };
+  // Extra payments for this year
+  const extras = (liability.extraPayments ?? []).filter(
+    (ep) => ep.year === year
+  );
+  const perPaymentExtra = extras
+    .filter((ep) => ep.type === "per_payment")
+    .reduce((sum, ep) => sum + ep.amount * 12, 0);
+  const lumpSumExtra = extras
+    .filter((ep) => ep.type === "lump_sum")
+    .reduce((sum, ep) => sum + ep.amount, 0);
+
+  const totalExtra = perPaymentExtra + lumpSumExtra;
+  const totalPrincipal = Math.min(
+    principalFromPayment + totalExtra,
+    liability.balance
+  );
+  const endingBalance = Math.max(0, liability.balance - totalPrincipal);
+
+  return {
+    annualPayment: annualPayment + Math.min(totalExtra, liability.balance - principalFromPayment),
+    interestPortion,
+    principalPortion: totalPrincipal,
+    endingBalance,
+  };
 }
 
 export function computeLiabilities(

@@ -143,6 +143,11 @@ export const deductionTypeEnum = pgEnum("deduction_type", [
   "property_tax",
 ]);
 
+export const extraPaymentTypeEnum = pgEnum("extra_payment_type", [
+  "per_payment",
+  "lump_sum",
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
@@ -462,6 +467,8 @@ export const liabilities = pgTable("liabilities", {
   balance: decimal("balance", { precision: 15, scale: 2 })
     .notNull()
     .default("0"),
+  balanceAsOfMonth: integer("balance_as_of_month"),
+  balanceAsOfYear: integer("balance_as_of_year"),
   interestRate: decimal("interest_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0"),
@@ -469,9 +476,10 @@ export const liabilities = pgTable("liabilities", {
     .notNull()
     .default("0"),
   startYear: integer("start_year").notNull(),
-  endYear: integer("end_year").notNull(),
+  startMonth: integer("start_month").notNull().default(1),
   startYearRef: yearRefEnum("start_year_ref"),
-  endYearRef: yearRefEnum("end_year_ref"),
+  termMonths: integer("term_months").notNull(),
+  termUnit: text("term_unit").notNull().default("annual"),
   linkedPropertyId: uuid("linked_property_id").references(() => accounts.id, {
     onDelete: "set null",
   }),
@@ -479,6 +487,18 @@ export const liabilities = pgTable("liabilities", {
     onDelete: "set null",
   }),
   isInterestDeductible: boolean("is_interest_deductible").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const extraPayments = pgTable("extra_payments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  liabilityId: uuid("liability_id")
+    .notNull()
+    .references(() => liabilities.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  type: extraPaymentTypeEnum("type").notNull(),
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -614,7 +634,7 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
   }),
 }));
 
-export const liabilitiesRelations = relations(liabilities, ({ one }) => ({
+export const liabilitiesRelations = relations(liabilities, ({ one, many }) => ({
   client: one(clients, {
     fields: [liabilities.clientId],
     references: [clients.id],
@@ -626,6 +646,14 @@ export const liabilitiesRelations = relations(liabilities, ({ one }) => ({
   linkedProperty: one(accounts, {
     fields: [liabilities.linkedPropertyId],
     references: [accounts.id],
+  }),
+  extraPayments: many(extraPayments),
+}));
+
+export const extraPaymentsRelations = relations(extraPayments, ({ one }) => ({
+  liability: one(liabilities, {
+    fields: [extraPayments.liabilityId],
+    references: [liabilities.id],
   }),
 }));
 

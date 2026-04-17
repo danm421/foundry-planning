@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import AddLiabilityForm, { LiabilityFormInitial } from "./forms/add-liability-form";
+import { useState, useCallback } from "react";
+import AddLiabilityForm, { LiabilityFormInitial, LiabilityFormValues } from "./forms/add-liability-form";
+import LiabilityAmortizationTab from "./liability-amortization-tab";
+
+type TabId = "details" | "amortization";
 
 interface AddLiabilityDialogProps {
   clientId: string;
@@ -25,12 +28,19 @@ export default function AddLiabilityDialog({
 }: AddLiabilityDialogProps) {
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabId>("details");
+  const [liveValues, setLiveValues] = useState<LiabilityFormValues | null>(null);
   const actualOpen = isControlled ? !!open : internalOpen;
   const isEdit = Boolean(editing);
+
+  const handleValuesChange = useCallback((values: LiabilityFormValues) => {
+    setLiveValues(values);
+  }, []);
 
   function close() {
     if (isControlled) onOpenChange?.(false);
     else setInternalOpen(false);
+    setActiveTab("details");
   }
 
   return (
@@ -49,9 +59,9 @@ export default function AddLiabilityDialog({
       )}
 
       {actualOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="absolute inset-0 bg-black/40" onClick={close} />
-          <div className="relative z-10 w-full max-w-lg rounded-lg bg-gray-900 border border-gray-700 p-6 shadow-xl">
+          <div className="relative z-10 w-full max-w-2xl rounded-lg bg-gray-900 border border-gray-700 p-6 shadow-xl my-auto max-h-[90vh] flex flex-col">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-100">
                 {isEdit ? "Edit Liability" : "Add Liability"}
@@ -62,15 +72,60 @@ export default function AddLiabilityDialog({
                 </svg>
               </button>
             </div>
-            <AddLiabilityForm
-              clientId={clientId}
-              realEstateAccounts={realEstateAccounts}
-              entities={entities}
-              mode={isEdit ? "edit" : "create"}
-              initial={editing}
-              onSuccess={close}
-              onDelete={onRequestDelete}
-            />
+
+            {/* Tab bar */}
+            <div className="mb-4 flex border-b border-gray-700">
+              <button
+                onClick={() => setActiveTab("details")}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === "details"
+                    ? "border-blue-500 text-blue-400"
+                    : "border-transparent text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                Details
+              </button>
+              <button
+                onClick={() => setActiveTab("amortization")}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === "amortization"
+                    ? "border-blue-500 text-blue-400"
+                    : "border-transparent text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                Amortization
+              </button>
+            </div>
+
+            {/* Tab content */}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {activeTab === "details" && (
+                <AddLiabilityForm
+                  clientId={clientId}
+                  realEstateAccounts={realEstateAccounts}
+                  entities={entities}
+                  mode={isEdit ? "edit" : "create"}
+                  initial={editing}
+                  onSuccess={close}
+                  onDelete={onRequestDelete}
+                  onValuesChange={handleValuesChange}
+                />
+              )}
+              {activeTab === "amortization" && liveValues && (
+                <LiabilityAmortizationTab
+                  clientId={clientId}
+                  liabilityId={editing?.id}
+                  balance={liveValues.balance}
+                  interestRate={liveValues.interestRate}
+                  monthlyPayment={liveValues.monthlyPayment}
+                  startYear={liveValues.startYear}
+                  startMonth={liveValues.startMonth}
+                  termMonths={liveValues.termMonths}
+                  balanceAsOfMonth={liveValues.balanceAsOfMonth}
+                  balanceAsOfYear={liveValues.balanceAsOfYear}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}

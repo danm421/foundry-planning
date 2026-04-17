@@ -105,6 +105,14 @@ export interface Expense {
   deductionType?: "charitable" | "above_line" | "below_line" | "property_tax" | null;
 }
 
+export interface ExtraPayment {
+  id: string;
+  liabilityId: string;
+  year: number;
+  type: "per_payment" | "lump_sum";
+  amount: number;
+}
+
 export interface Liability {
   id: string;
   name: string;
@@ -112,10 +120,14 @@ export interface Liability {
   interestRate: number;
   monthlyPayment: number;
   startYear: number;
-  endYear: number;
+  startMonth: number; // 1-12
+  termMonths: number;
+  balanceAsOfMonth?: number;
+  balanceAsOfYear?: number;
   linkedPropertyId?: string;
   ownerEntityId?: string;
   isInterestDeductible?: boolean;
+  extraPayments: ExtraPayment[];
 }
 
 export interface SavingsRule {
@@ -199,6 +211,8 @@ export interface ProjectionYear {
     taxes: number;
     total: number;
     bySource: Record<string, number>;
+    byLiability: Record<string, number>;
+    interestByLiability: Record<string, number>;
   };
 
   savings: {

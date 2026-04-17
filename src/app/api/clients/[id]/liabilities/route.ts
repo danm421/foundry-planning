@@ -70,14 +70,17 @@ export async function POST(
       interestRate,
       monthlyPayment,
       startYear,
-      endYear,
+      startMonth,
+      termMonths,
+      termUnit,
+      balanceAsOfMonth,
+      balanceAsOfYear,
       linkedPropertyId,
       ownerEntityId,
     } = body;
     const startYearRef = body.startYearRef ?? null;
-    const endYearRef = body.endYearRef ?? null;
 
-    if (!name || startYear == null || endYear == null) {
+    if (!name || startYear == null || termMonths == null) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
@@ -91,11 +94,14 @@ export async function POST(
         interestRate: interestRate ?? "0",
         monthlyPayment: monthlyPayment ?? "0",
         startYear: Number(startYear),
-        endYear: Number(endYear),
+        startMonth: startMonth != null ? Number(startMonth) : 1,
+        termMonths: Number(termMonths),
+        termUnit: termUnit ?? "annual",
+        balanceAsOfMonth: balanceAsOfMonth != null ? Number(balanceAsOfMonth) : null,
+        balanceAsOfYear: balanceAsOfYear != null ? Number(balanceAsOfYear) : null,
         linkedPropertyId: linkedPropertyId ?? null,
         ownerEntityId: ownerEntityId ?? null,
         startYearRef,
-        endYearRef,
         isInterestDeductible: body.isInterestDeductible ?? false,
       })
       .returning();

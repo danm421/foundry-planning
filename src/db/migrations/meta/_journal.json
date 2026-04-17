@@ -134,6 +134,27 @@
       "when": 1777168300000,
       "tag": "0018_deduction_types_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1713380000000,
+      "tag": "0019_liability_amortization",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1777254000000,
+      "tag": "0020_asset_mix",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1777340400000,
+      "tag": "0021_liability_date_precision",
+      "breakpoints": true
     }
   ]
 }

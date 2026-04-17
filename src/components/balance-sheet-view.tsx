@@ -8,6 +8,7 @@ import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import { LiabilityFormInitial } from "./forms/add-liability-form";
+import { computeAmortizationSchedule, calcOriginalBalance } from "@/lib/loan-math";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
@@ -39,9 +40,14 @@ export interface LiabilityRow {
   interestRate: string;
   monthlyPayment: string;
   startYear: number;
-  endYear: number;
+  startMonth: number;
+  termMonths: number;
+  termUnit: string;
+  balanceAsOfMonth?: number | null;
+  balanceAsOfYear?: number | null;
   linkedPropertyId?: string | null;
   ownerEntityId?: string | null;
+  isInterestDeductible?: boolean;
 }
 
 interface BalanceSheetViewProps {
@@ -132,10 +138,34 @@ function liabilityToInitial(l: LiabilityRow): LiabilityFormInitial {
     interestRate: l.interestRate,
     monthlyPayment: l.monthlyPayment,
     startYear: l.startYear,
-    endYear: l.endYear,
+    startMonth: l.startMonth,
+    termMonths: l.termMonths,
+    termUnit: (l.termUnit === "monthly" ? "monthly" : "annual") as "monthly" | "annual",
+    balanceAsOfMonth: l.balanceAsOfMonth ?? null,
+    balanceAsOfYear: l.balanceAsOfYear ?? null,
     linkedPropertyId: l.linkedPropertyId ?? null,
     ownerEntityId: l.ownerEntityId ?? null,
+    isInterestDeductible: l.isInterestDeductible,
   };
+}
+
+/** Compute the liability balance at the start of the current calendar year. */
+function currentYearBalance(l: LiabilityRow): number {
+  const bal = parseFloat(l.balance);
+  const rate = parseFloat(l.interestRate);
+  const pmt = parseFloat(l.monthlyPayment);
+  const asOfMonth = l.balanceAsOfMonth ?? 1;
+  const asOfYear = l.balanceAsOfYear ?? l.startYear;
+  const elapsedMonths = Math.max(0, (asOfYear - l.startYear) * 12 + (asOfMonth - l.startMonth));
+  const origBal = calcOriginalBalance(bal, rate, pmt, elapsedMonths);
+  const currentYear = new Date().getFullYear();
+  if (currentYear <= l.startYear) return origBal;
+  const schedule = computeAmortizationSchedule(origBal, rate, pmt, l.startYear, l.termMonths);
+  const row = schedule.find((r) => r.year === currentYear - 1);
+  if (row) return row.endingBalance;
+  // If current year is past the loan term, balance is 0
+  const lastRow = schedule[schedule.length - 1];
+  return lastRow ? lastRow.endingBalance : 0;
 }
 
 // ── Dropdown for "Add Asset" category picker ──────────────────────────────────
@@ -234,7 +264,7 @@ export default function BalanceSheetView({
   const totalInEstate = inEstate.reduce((s, a) => s + Number(a.value), 0);
   const totalOutOfEstate = outOfEstate.reduce((s, a) => s + Number(a.value), 0);
   const totalAssets = totalInEstate + totalOutOfEstate;
-  const totalLiabilities = liabilities.reduce((s, l) => s + Number(l.balance), 0);
+  const totalLiabilities = liabilities.reduce((s, l) => s + currentYearBalance(l), 0);
   const netWorth = totalInEstate - totalLiabilities;
   const realEstateAccounts = accounts
     .filter((a) => a.category === "real_estate")
@@ -357,7 +387,7 @@ export default function BalanceSheetView({
                   onDelete={() => setDeletingLiability(l)}
                   label={l.name}
                   subLabel={Number(l.interestRate) > 0 ? `${(Number(l.interestRate) * 100).toFixed(2)}% interest` : undefined}
-                  value={`(${fmt(l.balance)})`}
+                  value={`(${fmt(currentYearBalance(l))})`}
                   valueClassName="text-red-400"
                 />
               ))}

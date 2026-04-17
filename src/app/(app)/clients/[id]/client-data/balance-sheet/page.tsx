@@ -118,9 +118,14 @@ export default async function BalanceSheetPage({ params }: PageProps) {
     interestRate: String(l.interestRate),
     monthlyPayment: String(l.monthlyPayment),
     startYear: l.startYear,
-    endYear: l.endYear,
+    startMonth: l.startMonth,
+    termMonths: l.termMonths,
+    termUnit: l.termUnit,
+    balanceAsOfMonth: l.balanceAsOfMonth ?? null,
+    balanceAsOfYear: l.balanceAsOfYear ?? null,
     linkedPropertyId: l.linkedPropertyId ?? null,
     ownerEntityId: l.ownerEntityId ?? null,
+    isInterestDeductible: l.isInterestDeductible,
   }));
 
   const entityOptions = entityRows.map((e) => ({ id: e.id, name: e.name }));

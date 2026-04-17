@@ -125,6 +125,7 @@ export default function ReviewStepLiabilities({
                   <TrashIcon />
                 </button>
               </div>
+
             </div>
           </div>
         ))}

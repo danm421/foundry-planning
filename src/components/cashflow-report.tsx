@@ -154,6 +154,7 @@ const DRILL_LABELS: Record<string, string> = {
   other_expense: "Other Expenses",
   insurance: "Insurance",
   real_estate_expense: "Real Estate Expenses",
+  liabilities: "Liabilities",
   // Portfolio sub-types
   taxable: "Taxable",
   cash: "Cash",
@@ -508,6 +509,14 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     }
   }
 
+  // liabilityNames: liability id → display name
+  const liabilityNames: Record<string, string> = {};
+  if (clientData) {
+    for (const liab of clientData.liabilities) {
+      liabilityNames[liab.id] = liab.name;
+    }
+  }
+
   // expensesByType: segment key → array of expense IDs with that type
   const expensesByType: Record<string, string[]> = {};
   const expenseNames: Record<string, string> = {};
@@ -792,6 +801,27 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // ── Expenses drill-down ────────────────────────────────────────────────
 
     if (level === "expenses") {
+      // Level 2: individual liabilities
+      if (subLevel === "liabilities") {
+        const liabIds = clientData?.liabilities.map((l) => l.id) ?? [];
+        return [
+          ...baseColumns,
+          ...liabIds.map((id) =>
+            numCol(
+              `liab_${id}`,
+              liabilityNames[id] ?? id,
+              (r) => r.expenses.byLiability?.[id] ?? 0
+            )
+          ),
+          numCol(
+            "liab_total",
+            "Liabilities Total",
+            (r) => r.expenses.liabilities,
+            true
+          ),
+        ];
+      }
+
       // Level 2: individual sources for a specific expense type
       if (subLevel && EXPENSE_SEGMENT_TO_TYPE[subLevel] != null) {
         const sourceIds = expensesByType[subLevel] ?? [];
@@ -817,7 +847,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       return [
         ...baseColumns,
         numCol("expenses_living", () => <DrillBtn segment="living" label="Living" />, (r) => r.expenses.living),
-        numCol("expenses_liabilities", "Liabilities", (r) => r.expenses.liabilities),
+        numCol("expenses_liabilities", () => <DrillBtn segment="liabilities" label="Liabilities" />, (r) => r.expenses.liabilities),
         numCol("expenses_other", () => <DrillBtn segment="other_expense" label="Other" />, (r) => r.expenses.other),
         numCol("expenses_insurance", () => <DrillBtn segment="insurance" label="Insurance" />, (r) => r.expenses.insurance),
         numCol("expenses_real_estate", () => <DrillBtn segment="real_estate_expense" label="Real Estate" />, (r) => r.expenses.realEstate),

@@ -7,6 +7,7 @@ import {
   incomes,
   expenses,
   liabilities,
+  extraPayments,
   savingsRules,
   withdrawalStrategies,
   planSettings,
@@ -64,6 +65,7 @@ export async function GET(
       portfolioRows,
       allocationRows,
       assetClassRows,
+      extraPaymentRows,
     ] = await Promise.all([
       db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
       db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
@@ -76,6 +78,7 @@ export async function GET(
       db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
       db.select().from(modelPortfolioAllocations),
       db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
+      db.select().from(extraPayments),
     ]);
 
     const [settings] = planSettingsRows;
@@ -374,10 +377,22 @@ export async function GET(
         interestRate: parseFloat(l.interestRate),
         monthlyPayment: parseFloat(l.monthlyPayment),
         startYear: l.startYear,
-        endYear: l.endYear,
+        startMonth: l.startMonth,
+        termMonths: l.termMonths,
+        balanceAsOfMonth: l.balanceAsOfMonth ?? undefined,
+        balanceAsOfYear: l.balanceAsOfYear ?? undefined,
         linkedPropertyId: l.linkedPropertyId ?? undefined,
         ownerEntityId: l.ownerEntityId ?? undefined,
         isInterestDeductible: l.isInterestDeductible,
+        extraPayments: extraPaymentRows
+          .filter((ep) => ep.liabilityId === l.id)
+          .map((ep) => ({
+            id: ep.id,
+            liabilityId: ep.liabilityId,
+            year: ep.year,
+            type: ep.type,
+            amount: parseFloat(ep.amount),
+          })),
       })),
       savingsRules: savingsRuleRows.map((s) => ({
         id: s.id,
