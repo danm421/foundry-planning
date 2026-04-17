@@ -87,6 +87,8 @@ export interface Income {
   // household default checking (or the entity's default checking if ownerEntityId is set).
   cashAccountId?: string;
   taxType?: "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg";
+  /** Year-by-year amount overrides. When present, bypasses growth-rate calc. */
+  scheduleOverrides?: Map<number, number>;
 }
 
 export interface Expense {
@@ -103,6 +105,8 @@ export interface Expense {
   // Cash account this expense is paid from.
   cashAccountId?: string;
   deductionType?: "charitable" | "above_line" | "below_line" | "property_tax" | null;
+  /** Year-by-year amount overrides. When present, bypasses growth-rate calc. */
+  scheduleOverrides?: Map<number, number>;
 }
 
 export interface ExtraPayment {
@@ -141,6 +145,8 @@ export interface SavingsRule {
   /** Flat annual dollar amount. When set, overrides the percentage/cap style. */
   employerMatchAmount?: number;
   annualLimit?: number;
+  /** Year-by-year amount overrides. When present, bypasses growth-rate calc. */
+  scheduleOverrides?: Map<number, number>;
 }
 
 export interface WithdrawalPriority {
