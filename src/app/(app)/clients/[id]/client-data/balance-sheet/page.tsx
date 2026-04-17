@@ -125,6 +125,7 @@ export default async function BalanceSheetPage({ params }: PageProps) {
     balanceAsOfYear: l.balanceAsOfYear ?? null,
     linkedPropertyId: l.linkedPropertyId ?? null,
     ownerEntityId: l.ownerEntityId ?? null,
+    isInterestDeductible: l.isInterestDeductible,
   }));
 
   const entityOptions = entityRows.map((e) => ({ id: e.id, name: e.name }));
