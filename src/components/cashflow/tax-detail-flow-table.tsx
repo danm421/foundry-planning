@@ -268,10 +268,17 @@ function getSourcesForColumn(
     return filterBySource(bd.belowLine.bySource, "interest", y);
   }
   if (colKey === "bl_taxes_paid") {
-    // SALT sources come from property tax accounts — build from the above-line bySource won't work.
-    // For now, show the capped total as a single line.
     const amount = bd.belowLine.taxesPaid;
     return amount > 0 ? [{ label: "SALT (capped)", amount }] : null;
+  }
+  if (colKey === "bl_other") {
+    const amount = bd.belowLine.otherItemized;
+    if (amount <= 0) return null;
+    // Filter bySource to entries that are below_line (not charitable)
+    const entries = Object.values(bd.belowLine.bySource).filter(
+      (s) => !s.label.toLowerCase().includes("charit")
+    );
+    return entries.length > 0 ? entries : [{ label: "Other itemized", amount }];
   }
 
   return null;
