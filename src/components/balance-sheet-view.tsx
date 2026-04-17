@@ -39,7 +39,8 @@ export interface LiabilityRow {
   interestRate: string;
   monthlyPayment: string;
   startYear: number;
-  endYear: number;
+  termMonths: number;
+  termUnit: string;
   linkedPropertyId?: string | null;
   ownerEntityId?: string | null;
 }
@@ -132,7 +133,7 @@ function liabilityToInitial(l: LiabilityRow): LiabilityFormInitial {
     interestRate: l.interestRate,
     monthlyPayment: l.monthlyPayment,
     startYear: l.startYear,
-    endYear: l.endYear,
+    endYear: l.startYear + Math.ceil(l.termMonths / 12),
     linkedPropertyId: l.linkedPropertyId ?? null,
     ownerEntityId: l.ownerEntityId ?? null,
   };

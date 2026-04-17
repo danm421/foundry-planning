@@ -118,7 +118,8 @@ export default async function BalanceSheetPage({ params }: PageProps) {
     interestRate: String(l.interestRate),
     monthlyPayment: String(l.monthlyPayment),
     startYear: l.startYear,
-    endYear: l.endYear,
+    termMonths: l.termMonths,
+    termUnit: l.termUnit,
     linkedPropertyId: l.linkedPropertyId ?? null,
     ownerEntityId: l.ownerEntityId ?? null,
   }));
