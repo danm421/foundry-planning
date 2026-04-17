@@ -435,7 +435,7 @@ export default function AddAssetTransactionForm({
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg border border-gray-700 bg-gray-900 p-6"
+        className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-lg border border-gray-700 bg-gray-900 p-6"
       >
         {/* Header */}
         <div className="mb-5 flex items-center justify-between">
@@ -489,6 +489,8 @@ export default function AddAssetTransactionForm({
         </div>
 
         <div className="space-y-4">
+          {/* ── Sell + Buy Side (side by side) ──────────────────────────── */}
+          <div className="grid grid-cols-2 gap-6">
           {/* ── Sell Side ───────────────────────────────────────────────── */}
           <CollapsibleSection
             title="Sell Side"
@@ -832,6 +834,7 @@ export default function AddAssetTransactionForm({
               </div>
             </div>
           </CollapsibleSection>
+          </div>{/* end grid grid-cols-2 */}
 
           {/* ── Net Summary ─────────────────────────────────────────────── */}
           {(netSummary.hasSell || netSummary.hasBuy) && (
