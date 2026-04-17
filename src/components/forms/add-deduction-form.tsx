@@ -4,7 +4,7 @@ import { useState, FormEvent } from "react";
 
 interface DeductionRow {
   id: string;
-  type: "charitable_cash" | "charitable_non_cash" | "salt" | "mortgage_interest" | "other_itemized";
+  type: "charitable" | "above_line" | "below_line" | "property_tax";
   name: string | null;
   owner: "client" | "spouse" | "joint";
   annualAmount: number;
@@ -23,11 +23,10 @@ interface AddDeductionFormProps {
 }
 
 const TYPE_OPTIONS: Array<{ value: DeductionRow["type"]; label: string }> = [
-  { value: "charitable_cash", label: "Charitable (Cash)" },
-  { value: "charitable_non_cash", label: "Charitable (Non-Cash)" },
-  { value: "salt", label: "SALT (state + local taxes)" },
-  { value: "mortgage_interest", label: "Mortgage Interest" },
-  { value: "other_itemized", label: "Other Itemized" },
+  { value: "charitable", label: "Charitable" },
+  { value: "above_line", label: "Above-the-Line" },
+  { value: "below_line", label: "Below-the-Line" },
+  { value: "property_tax", label: "Property Tax (SALT)" },
 ];
 
 const INPUT_CLASS =
@@ -36,7 +35,7 @@ const SELECT_CLASS =
   "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none";
 
 export function AddDeductionForm({ clientId, existing, onClose, onSaved }: AddDeductionFormProps) {
-  const [type, setType] = useState<DeductionRow["type"]>(existing?.type ?? "charitable_cash");
+  const [type, setType] = useState<DeductionRow["type"]>(existing?.type ?? "charitable");
   const [name, setName] = useState(existing?.name ?? "");
   const [owner, setOwner] = useState<DeductionRow["owner"]>(existing?.owner ?? "joint");
   const [annualAmount, setAnnualAmount] = useState(existing?.annualAmount?.toString() ?? "");
@@ -111,10 +110,10 @@ export function AddDeductionForm({ clientId, existing, onClose, onSaved }: AddDe
           </select>
         </div>
 
-        {type === "salt" && (
+        {type === "property_tax" && (
           <p className="rounded-md bg-amber-900/30 px-3 py-2 text-xs text-amber-200">
-            SALT is capped at $10,000 by federal law. Enter your total state + local taxes paid;
-            the engine will apply the cap.
+            Property taxes are subject to the SALT cap ($40k for 2026+, $10k pre-2026).
+            Enter your full amount; the engine will apply the cap.
           </p>
         )}
 

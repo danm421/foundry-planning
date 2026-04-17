@@ -446,14 +446,14 @@ describe("projection — bracket/flat tax routing", () => {
     const fixtureWithDeductions = {
       ...fixture,
       deductions: [
-        { type: "salt" as const, annualAmount: 20000, growthRate: 0, startYear: 2026, endYear: 2076 },
-        { type: "charitable_cash" as const, annualAmount: 25000, growthRate: 0, startYear: 2026, endYear: 2076 },
+        { type: "property_tax" as const, annualAmount: 20000, growthRate: 0, startYear: 2026, endYear: 2076 },
+        { type: "charitable" as const, annualAmount: 25000, growthRate: 0, startYear: 2026, endYear: 2076 },
       ],
     };
     const years = runProjection({ ...fixtureWithDeductions, taxYearRows: FIXTURE_TAX_PARAMS });
     const firstYear = years[0];
     expect(firstYear.taxResult).toBeDefined();
-    // SALT capped at $10k + charitable $25k = $35k itemized (below-line is max of std vs itemized)
-    expect(firstYear.taxResult!.flow.belowLineDeductions).toBeGreaterThanOrEqual(35000);
+    // SALT: $20k (under $40k cap for 2026) + charitable $25k = $45k itemized
+    expect(firstYear.taxResult!.flow.belowLineDeductions).toBeGreaterThanOrEqual(45000);
   });
 });

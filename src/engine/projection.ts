@@ -18,6 +18,7 @@ import type { TaxYearParameters, FilingStatus } from "../lib/tax/types";
 import {
   deriveAboveLineFromSavings,
   sumItemizedFromEntries,
+  aggregateDeductions,
 } from "../lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch } from "./savings";
 import { executeWithdrawals } from "./withdrawal";
@@ -405,7 +406,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     const filingStatus = (client.filingStatus ?? "single") as FilingStatus;
     const useBracket = planSettings.taxEngineMode === "bracket" && resolved != null;
 
-    const aboveLineDeductions = useBracket
+    const savingsContribution = useBracket
       ? deriveAboveLineFromSavings(
           year,
           data.savingsRules.map((r) => ({
@@ -421,11 +422,15 @@ export function runProjection(data: ClientData): ProjectionYear[] {
           })),
           isGrantorEntity
         )
-      : 0;
+      : { aboveLine: 0, itemized: 0, saltPool: 0 };
 
-    const itemizedDeductions = useBracket
+    const manualContribution = useBracket
       ? sumItemizedFromEntries(year, data.deductions ?? [])
-      : 0;
+      : { aboveLine: 0, itemized: 0, saltPool: 0 };
+
+    const { aboveLine: aboveLineDeductions, itemized: itemizedDeductions } = useBracket
+      ? aggregateDeductions(year, savingsContribution, manualContribution)
+      : { aboveLine: 0, itemized: 0 };
 
     const taxResult = useBracket
       ? calculateTaxYearBracket({

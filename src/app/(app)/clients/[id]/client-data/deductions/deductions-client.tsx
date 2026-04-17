@@ -15,7 +15,7 @@ interface DerivedRow {
 
 interface ItemizedRow {
   id: string;
-  type: "charitable_cash" | "charitable_non_cash" | "salt" | "mortgage_interest" | "other_itemized";
+  type: "charitable" | "above_line" | "below_line" | "property_tax";
   name: string | null;
   owner: "client" | "spouse" | "joint";
   annualAmount: number;

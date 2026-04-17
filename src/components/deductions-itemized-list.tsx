@@ -6,7 +6,7 @@ import { AddDeductionForm } from "@/components/forms/add-deduction-form";
 
 interface ItemizedRow {
   id: string;
-  type: "charitable_cash" | "charitable_non_cash" | "salt" | "mortgage_interest" | "other_itemized";
+  type: "charitable" | "above_line" | "below_line" | "property_tax";
   name: string | null;
   owner: "client" | "spouse" | "joint";
   annualAmount: number;
@@ -18,14 +18,12 @@ interface ItemizedRow {
 }
 
 const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-const SALT_CAP = 10000;
 
 const TYPE_LABELS: Record<string, string> = {
-  charitable_cash: "Charitable (Cash)",
-  charitable_non_cash: "Charitable (Non-Cash)",
-  salt: "SALT",
-  mortgage_interest: "Mortgage Interest",
-  other_itemized: "Other Itemized",
+  charitable: "Charitable",
+  above_line: "Above-the-Line",
+  below_line: "Below-the-Line",
+  property_tax: "Property Tax (SALT)",
 };
 
 const OWNER_LABELS: Record<string, string> = {
@@ -49,17 +47,15 @@ export function DeductionsItemizedList({
   const [editing, setEditing] = useState<ItemizedRow | null>(null);
   const [adding, setAdding] = useState(false);
 
-  // Compute current-year totals (with SALT cap)
-  let saltTotal = 0;
-  let otherTotal = 0;
+  // Compute current-year totals (display only — engine applies SALT cap separately)
+  let total = 0;
   for (const r of rows) {
     if (currentYear < r.startYear || currentYear > r.endYear) continue;
     const yearsSinceStart = currentYear - r.startYear;
     const inflated = r.annualAmount * Math.pow(1 + r.growthRate, yearsSinceStart);
-    if (r.type === "salt") saltTotal += inflated;
-    else otherTotal += inflated;
+    total += inflated;
   }
-  const itemizedTotal = Math.min(saltTotal, SALT_CAP) + otherTotal;
+  const itemizedTotal = total;
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this deduction?")) return;
@@ -88,7 +84,7 @@ export function DeductionsItemizedList({
       ) : (
         <ul className="divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/60">
           {rows.map((r) => {
-            const isCappedSalt = r.type === "salt" && r.annualAmount > SALT_CAP;
+            const isSaltType = r.type === "property_tax";
             return (
               <li key={r.id} className="flex items-center justify-between px-4 py-2 text-sm">
                 <div className="flex flex-col">
@@ -99,8 +95,8 @@ export function DeductionsItemizedList({
                     {OWNER_LABELS[r.owner]} · {r.startYear}-{r.endYear} · {fmt.format(r.annualAmount)}/yr
                     {r.growthRate > 0 ? ` · ${(r.growthRate * 100).toFixed(1)}%/yr` : ""}
                   </span>
-                  {isCappedSalt && (
-                    <span className="mt-0.5 text-xs text-amber-400">Capped at {fmt.format(SALT_CAP)} (TCJA SALT cap)</span>
+                  {isSaltType && (
+                    <span className="mt-0.5 text-xs text-gray-500">Subject to SALT cap</span>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
