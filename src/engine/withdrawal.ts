@@ -34,3 +34,25 @@ export function executeWithdrawals(
   const total = Object.values(byAccount).reduce((sum, v) => sum + v, 0);
   return { byAccount, total };
 }
+
+export interface WithdrawalPenaltyInput {
+  amount: number;
+  accountCategory: string;
+  accountSubType: string;
+  ownerAge: number;
+  rothBasis: number;
+}
+
+export function computeWithdrawalPenalty(input: WithdrawalPenaltyInput): number {
+  const { amount, accountCategory, accountSubType, ownerAge, rothBasis } = input;
+
+  if (accountCategory !== "retirement") return 0;
+  if (ownerAge >= 59.5) return 0;
+
+  if (accountSubType === "roth_ira" || accountSubType === "roth_401k") {
+    const earningsWithdrawn = Math.max(0, amount - rothBasis);
+    return earningsWithdrawn * 0.1;
+  }
+
+  return amount * 0.1;
+}
