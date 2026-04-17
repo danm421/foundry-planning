@@ -155,6 +155,13 @@
       "when": 1777340400000,
       "tag": "0021_liability_date_precision",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1776448490220,
+      "tag": "0022_heavy_ravenous",
+      "breakpoints": true
     }
   ]
 }

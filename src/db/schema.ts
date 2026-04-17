@@ -783,3 +783,46 @@ export const taxYearParameters = pgTable("tax_year_parameters", {
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// ── Schedule Overrides ──────────────────────────────────────────────────────
+// Year-by-year amount overrides for incomes, expenses, and savings rules.
+// When a row has any overrides, the engine uses them instead of growth-rate math.
+
+export const incomeScheduleOverrides = pgTable(
+  "income_schedule_overrides",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    incomeId: uuid("income_id")
+      .notNull()
+      .references(() => incomes.id, { onDelete: "cascade" }),
+    year: integer("year").notNull(),
+    amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+  },
+  (t) => [unique("income_schedule_year_uniq").on(t.incomeId, t.year)]
+);
+
+export const expenseScheduleOverrides = pgTable(
+  "expense_schedule_overrides",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expenseId: uuid("expense_id")
+      .notNull()
+      .references(() => expenses.id, { onDelete: "cascade" }),
+    year: integer("year").notNull(),
+    amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+  },
+  (t) => [unique("expense_schedule_year_uniq").on(t.expenseId, t.year)]
+);
+
+export const savingsScheduleOverrides = pgTable(
+  "savings_schedule_overrides",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    savingsRuleId: uuid("savings_rule_id")
+      .notNull()
+      .references(() => savingsRules.id, { onDelete: "cascade" }),
+    year: integer("year").notNull(),
+    amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+  },
+  (t) => [unique("savings_schedule_year_uniq").on(t.savingsRuleId, t.year)]
+);
