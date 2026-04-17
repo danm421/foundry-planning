@@ -34,9 +34,11 @@ const mortgage: Liability = {
   interestRate: 0.065,
   monthlyPayment: 2000,
   startYear: 2020,
-  endYear: 2050,
+  startMonth: 1,
+  termMonths: 360,
   linkedPropertyId: "rental-1",
   isInterestDeductible: true,
+  extraPayments: [],
 };
 
 const checkingAccount: Account = {

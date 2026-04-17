@@ -251,8 +251,6 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
       const newLiabilityId = `technique-liab-${++_syntheticIdCounter}`;
       const termMonths = purchase.mortgageTermMonths;
       const monthlyPayment = _calcMonthlyPayment(mortgageAmount, purchase.mortgageRate, termMonths);
-      const termYears = Math.ceil(termMonths / 12);
-
       const newLiability: Liability = {
         id: newLiabilityId,
         name: `Mortgage: ${newAccount.name}`,
@@ -260,9 +258,11 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
         interestRate: purchase.mortgageRate,
         monthlyPayment,
         startYear: year,
-        endYear: year + termYears,
+        startMonth: 1,
+        termMonths: purchase.mortgageTermMonths,
         linkedPropertyId: newAccountId,
         isInterestDeductible: true,
+        extraPayments: [],
       };
       newLiabilities.push(newLiability);
     }
