@@ -280,7 +280,9 @@ export interface DeductionBreakdown {
   };
   belowLine: {
     charitable: number;
-    taxesPaid: number;
+    taxesPaid: number;           // SALT total (capped): state income tax + property taxes
+    stateIncomeTax: number;      // estimated state income tax (AGI × flat rate), pre-cap
+    propertyTaxes: number;       // property taxes from all sources, pre-cap
     interestPaid: number;
     otherItemized: number;
     itemizedTotal: number;

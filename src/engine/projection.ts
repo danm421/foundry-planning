@@ -494,7 +494,15 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         ),
         sumItemizedFromEntries(year, data.deductions ?? []),
       ];
-      const agg = aggregateDeductions(year, ...contributions);
+      // Estimate state income tax for SALT pool before aggregation.
+      const preAGI = Math.max(0, taxableIncome - contributions[0].aboveLine - contributions[1].aboveLine - contributions[5].aboveLine);
+      const estStateTax = preAGI * planSettings.flatStateRate;
+      const stateIncomeTaxContribution: import("../lib/tax/derive-deductions").DeductionContribution = {
+        aboveLine: 0,
+        itemized: 0,
+        saltPool: estStateTax,
+      };
+      const agg = aggregateDeductions(year, ...contributions, stateIncomeTaxContribution);
       aboveLineDeductions = agg.aboveLine;
       itemizedDeductions = agg.itemized;
 
@@ -534,7 +542,9 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       }
 
       const interestPaid = contributions[3].itemized;
-      const rawSalt = contributions[2].saltPool + contributions[4].saltPool + contributions[5].saltPool;
+      const rawPropertyTax = contributions[2].saltPool + contributions[4].saltPool + contributions[5].saltPool;
+      // estStateTax already computed above for aggregateDeductions
+      const rawSalt = rawPropertyTax + estStateTax;
       const taxesPaid = Math.min(rawSalt, saltCap(year));
       const itemizedTotal = charitable + taxesPaid + interestPaid + otherItemized;
 
@@ -561,6 +571,8 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         belowLine: {
           charitable,
           taxesPaid,
+          stateIncomeTax: estStateTax,
+          propertyTaxes: rawPropertyTax,
           interestPaid,
           otherItemized,
           itemizedTotal,

@@ -268,8 +268,18 @@ function getSourcesForColumn(
     return filterBySource(bd.belowLine.bySource, "interest", y);
   }
   if (colKey === "bl_taxes_paid") {
-    const amount = bd.belowLine.taxesPaid;
-    return amount > 0 ? [{ label: "SALT (capped)", amount }] : null;
+    const sources: Array<{ label: string; amount: number }> = [];
+    if (bd.belowLine.stateIncomeTax > 0) {
+      sources.push({ label: "State Income Tax", amount: bd.belowLine.stateIncomeTax });
+    }
+    if (bd.belowLine.propertyTaxes > 0) {
+      sources.push({ label: "Property Taxes", amount: bd.belowLine.propertyTaxes });
+    }
+    const rawTotal = bd.belowLine.stateIncomeTax + bd.belowLine.propertyTaxes;
+    if (rawTotal > bd.belowLine.taxesPaid) {
+      sources.push({ label: `SALT Cap Applied`, amount: bd.belowLine.taxesPaid - rawTotal });
+    }
+    return sources.length > 0 ? sources : null;
   }
   if (colKey === "bl_other") {
     const amount = bd.belowLine.otherItemized;
