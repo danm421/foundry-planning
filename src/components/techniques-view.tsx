@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import AddTransferForm from "./forms/add-transfer-form";
+import AddAssetTransactionForm from "./forms/add-asset-transaction-form";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -471,23 +472,16 @@ export default function TechniquesView({
         />
       )}
 
-      {/* ── Asset Transaction form placeholder (Task 14) ──────────────────── */}
+      {/* ── Asset Transaction form (Task 14) ─────────────────────────────── */}
       {(showAddTransaction || editingTransaction) && (
-        // AddAssetTransactionForm will be added in Task 14
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          onClick={() => {
-            setShowAddTransaction(false);
-            setEditingTransaction(null);
-          }}
-        >
-          <div
-            className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-gray-100"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p>Asset transaction form placeholder — Task 14</p>
-          </div>
-        </div>
+        <AddAssetTransactionForm
+          clientId={clientId}
+          accounts={accounts}
+          liabilities={liabilities}
+          initialData={editingTransaction ?? undefined}
+          onClose={() => { setShowAddTransaction(false); setEditingTransaction(null); }}
+          onSaved={() => { setShowAddTransaction(false); setEditingTransaction(null); router.refresh(); }}
+        />
       )}
     </div>
   );
