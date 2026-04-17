@@ -18,6 +18,9 @@ import {
   taxYearParameters,
   clientDeductions,
   accountAssetAllocations,
+  incomeScheduleOverrides,
+  expenseScheduleOverrides,
+  savingsScheduleOverrides,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -80,6 +83,42 @@ export async function GET(
       db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
       db.select().from(extraPayments),
     ]);
+
+    // Load schedule overrides for all incomes, expenses, and savings rules
+    const incomeIds = incomeRows.map((i) => i.id);
+    const expenseIds = expenseRows.map((e) => e.id);
+    const savingsRuleIds = savingsRuleRows.map((s) => s.id);
+
+    const [incomeOverrideRows, expenseOverrideRows, savingsOverrideRows] = await Promise.all([
+      incomeIds.length > 0
+        ? db.select().from(incomeScheduleOverrides).where(inArray(incomeScheduleOverrides.incomeId, incomeIds))
+        : Promise.resolve([]),
+      expenseIds.length > 0
+        ? db.select().from(expenseScheduleOverrides).where(inArray(expenseScheduleOverrides.expenseId, expenseIds))
+        : Promise.resolve([]),
+      savingsRuleIds.length > 0
+        ? db.select().from(savingsScheduleOverrides).where(inArray(savingsScheduleOverrides.savingsRuleId, savingsRuleIds))
+        : Promise.resolve([]),
+    ]);
+
+    // Build lookup maps: entityId → Map<year, amount>
+    const incomeOverrideMap = new Map<string, Map<number, number>>();
+    for (const row of incomeOverrideRows) {
+      if (!incomeOverrideMap.has(row.incomeId)) incomeOverrideMap.set(row.incomeId, new Map());
+      incomeOverrideMap.get(row.incomeId)!.set(row.year, parseFloat(row.amount));
+    }
+
+    const expenseOverrideMap = new Map<string, Map<number, number>>();
+    for (const row of expenseOverrideRows) {
+      if (!expenseOverrideMap.has(row.expenseId)) expenseOverrideMap.set(row.expenseId, new Map());
+      expenseOverrideMap.get(row.expenseId)!.set(row.year, parseFloat(row.amount));
+    }
+
+    const savingsOverrideMap = new Map<string, Map<number, number>>();
+    for (const row of savingsOverrideRows) {
+      if (!savingsOverrideMap.has(row.savingsRuleId)) savingsOverrideMap.set(row.savingsRuleId, new Map());
+      savingsOverrideMap.get(row.savingsRuleId)!.set(row.year, parseFloat(row.amount));
+    }
 
     const [settings] = planSettingsRows;
 
@@ -356,6 +395,7 @@ export async function GET(
         cashAccountId: i.cashAccountId ?? undefined,
         inflationStartYear: i.inflationStartYear ?? undefined,
         taxType: i.taxType ?? undefined,
+        scheduleOverrides: incomeOverrideMap.get(i.id),
       })),
       expenses: expenseRows.map((e) => ({
         id: e.id,
@@ -369,6 +409,7 @@ export async function GET(
         cashAccountId: e.cashAccountId ?? undefined,
         inflationStartYear: e.inflationStartYear ?? undefined,
         deductionType: e.deductionType ?? undefined,
+        scheduleOverrides: expenseOverrideMap.get(e.id),
       })),
       liabilities: liabilityRows.map((l) => ({
         id: l.id,
@@ -405,6 +446,7 @@ export async function GET(
         employerMatchAmount:
           s.employerMatchAmount != null ? parseFloat(s.employerMatchAmount) : undefined,
         annualLimit: s.annualLimit != null ? parseFloat(s.annualLimit) : undefined,
+        scheduleOverrides: savingsOverrideMap.get(s.id),
       })),
       withdrawalStrategy: withdrawalRows.map((w) => ({
         accountId: w.accountId,
