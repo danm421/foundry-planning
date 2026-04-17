@@ -1076,23 +1076,39 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     let techniqueExpenses = 0;
     const techniqueExpenseBySource: Record<string, number> = {};
 
+    // For each sale, compute the net P&L impact:
+    // - If paired with a purchase (same transaction), income = netProceeds - purchaseEquity
+    //   (surplus goes to income; deficit goes to expense)
+    // - If sale-only, income = netProceeds
+    // Transaction costs are always a separate expense line.
+    const purchaseByTxnId = new Map(
+      purchaseBreakdown.map((p) => [p.transactionId, p])
+    );
+
     for (const item of saleResult.breakdown) {
-      if (item.netProceeds > 0) {
-        techniqueIncome += item.netProceeds;
-        techniqueIncomeBySource[`technique-proceeds:${item.transactionId}`] = item.netProceeds;
-      }
       if (item.transactionCosts > 0) {
         techniqueExpenses += item.transactionCosts;
         techniqueExpenseBySource[`technique-cost:${item.transactionId}`] = item.transactionCosts;
       }
+
+      const pairedPurchase = purchaseByTxnId.get(item.transactionId);
+      const purchaseEquity = pairedPurchase?.equity ?? 0;
+      const netImpact = item.netProceeds - purchaseEquity;
+
+      if (netImpact > 0) {
+        // Surplus — record as income
+        techniqueIncome += netImpact;
+        techniqueIncomeBySource[`technique-proceeds:${item.transactionId}`] = netImpact;
+      } else if (netImpact < 0) {
+        // Deficit — record as expense
+        techniqueExpenses += Math.abs(netImpact);
+        techniqueExpenseBySource[`technique-deficit:${item.transactionId}`] = Math.abs(netImpact);
+      }
     }
-    // Purchase equity for buy-only transactions (no paired sale) is a real
-    // cash outflow that should appear as an expense. When a sale and buy are
-    // paired (same transaction record), the sale proceeds already account for
-    // the cash flow — the purchase is funded internally.
+
+    // Buy-only transactions (no paired sale): purchase equity is a real expense
     for (const item of purchaseBreakdown) {
       if (item.equity > 0) {
-        // Check if this purchase's transaction also had a sale side
         const hasSaleSide = saleResult.breakdown.some(
           (s) => s.transactionId === item.transactionId
         );

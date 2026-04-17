@@ -501,6 +501,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   // incomesByType: segment key → array of income IDs with that type
   const incomesByType: Record<string, string[]> = {};
   const incomeNames: Record<string, string> = {};
+  const techniqueIncomeIds: string[] = [];
+  const techniqueExpenseIds: string[] = [];
   if (clientData) {
     for (const inc of clientData.incomes) {
       incomeNames[inc.id] = inc.name;
@@ -550,13 +552,22 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
     // Technique-generated income and expense sources (sales and purchases).
     // These use synthetic bySource keys added by the projection engine.
+    // Technique income sources go into "technique_income" (for Level 0 Other Income
+    // drill only), NOT into "other_income" (which is the Income > Other Level 1 drill).
+    techniqueIncomeIds.length = 0;
+    techniqueExpenseIds.length = 0;
+
     for (const txn of clientData.assetTransactions ?? []) {
       if (txn.type === "sell") {
-        // Sale proceeds as income
+        // Net surplus as income (may not exist if deficit)
         const proceedsKey = `technique-proceeds:${txn.id}`;
-        incomeNames[proceedsKey] = `Sale Proceeds: ${txn.name}`;
-        if (!incomesByType["other_income"]) incomesByType["other_income"] = [];
-        incomesByType["other_income"].push(proceedsKey);
+        incomeNames[proceedsKey] = `Net Proceeds: ${txn.name}`;
+        techniqueIncomeIds.push(proceedsKey);
+
+        // Deficit as expense (may not exist if surplus)
+        const deficitKey = `technique-deficit:${txn.id}`;
+        expenseNames[deficitKey] = `Net Deficit: ${txn.name}`;
+        techniqueExpenseIds.push(deficitKey);
 
         // Transaction costs as expense (only if costs are configured)
         const hasCosts = (txn.transactionCostPct ?? 0) > 0 || (txn.transactionCostFlat ?? 0) > 0;
@@ -847,7 +858,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
     // ── Other Income direct drill (from Level 0) ────────────────────────
     if (level === "other_income_detail") {
-      const sourceIds = incomesByType["other_income"] ?? [];
+      const sourceIds = techniqueIncomeIds;
       return [
         ...baseColumns,
         ...sourceIds.map((id) => {
