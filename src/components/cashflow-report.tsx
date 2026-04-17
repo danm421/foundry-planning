@@ -713,38 +713,56 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   // ── Column definitions based on drill path ────────────────────────────────
 
-  function buildTechniqueDetails(sourceId: string): { label: string; amount: number }[] {
+  function buildTechniqueDetails(
+    sourceId: string,
+    year: number,
+    netAmount: number
+  ): { label: string; amount: number }[] {
     if (sourceId.startsWith("technique-proceeds:")) {
       const txnId = sourceId.replace("technique-proceeds:", "");
       const txn = clientData?.assetTransactions?.find((t) => t.id === txnId);
-      if (!txn) return [];
-      return [
-        { label: "Sale Value", amount: txn.overrideSaleValue ?? 0 },
-        { label: "Transaction Costs", amount: -(txn.transactionCostFlat ?? 0) },
-        { label: "Mortgage Payoff", amount: -(txn.mortgageAmount ?? 0) },
-      ].filter((d) => d.amount !== 0);
+      if (!txn) return [{ label: "Net Proceeds", amount: netAmount }];
+
+      // Find linked mortgage from liabilities
+      const linkedMortgage = txn.accountId
+        ? clientData?.liabilities?.find((l) => l.linkedPropertyId === txn.accountId)
+        : undefined;
+
+      // Compute sale value from projection — look up what the account was worth
+      // We can back-calculate: netProceeds = saleValue - costs - mortgage
+      const costPct = txn.transactionCostPct ?? 0;
+      const costFlat = txn.transactionCostFlat ?? 0;
+      const mortgageBalance = linkedMortgage ? parseFloat(String(linkedMortgage.balance)) : 0;
+
+      // saleValue = netProceeds + costs + mortgage
+      // costs = saleValue * costPct + costFlat
+      // So: saleValue = netProceeds + saleValue * costPct + costFlat + mortgageBalance
+      // saleValue * (1 - costPct) = netProceeds + costFlat + mortgageBalance
+      const saleValue = costPct < 1
+        ? (netAmount + costFlat + mortgageBalance) / (1 - costPct)
+        : netAmount;
+      const totalCosts = saleValue * costPct + costFlat;
+
+      const details: { label: string; amount: number }[] = [
+        { label: "Sale Value", amount: saleValue },
+      ];
+      if (totalCosts > 0) details.push({ label: "Transaction Costs", amount: -totalCosts });
+      if (mortgageBalance > 0) details.push({ label: "Mortgage Payoff", amount: -mortgageBalance });
+      return details;
     }
     if (sourceId.startsWith("technique-cost:")) {
       const txnId = sourceId.replace("technique-cost:", "");
       const txn = clientData?.assetTransactions?.find((t) => t.id === txnId);
-      if (!txn) return [];
-      const pctCost = (txn.overrideSaleValue ?? 0) * (txn.transactionCostPct ?? 0) / 100;
-      const flatCost = txn.transactionCostFlat ?? 0;
-      return [
-        ...(pctCost > 0 ? [{ label: `Percentage Cost (${txn.transactionCostPct}%)`, amount: pctCost }] : []),
-        ...(flatCost > 0 ? [{ label: "Flat Cost", amount: flatCost }] : []),
-      ];
+      if (!txn) return [{ label: "Transaction Costs", amount: netAmount }];
+      const costPct = txn.transactionCostPct ?? 0;
+      const costFlat = txn.transactionCostFlat ?? 0;
+      const details: { label: string; amount: number }[] = [];
+      if (costPct > 0) details.push({ label: `Commission (${(costPct * 100).toFixed(1)}%)`, amount: netAmount - costFlat });
+      if (costFlat > 0) details.push({ label: "Flat Cost", amount: costFlat });
+      if (details.length === 0) details.push({ label: "Transaction Costs", amount: netAmount });
+      return details;
     }
-    if (sourceId.startsWith("technique-purchase:")) {
-      const txnId = sourceId.replace("technique-purchase:", "");
-      const txn = clientData?.assetTransactions?.find((t) => t.id === txnId);
-      if (!txn) return [];
-      return [
-        { label: "Purchase Price", amount: txn.purchasePrice ?? 0 },
-        { label: "Mortgage Amount", amount: -(txn.mortgageAmount ?? 0) },
-      ].filter((d) => d.amount !== 0);
-    }
-    return [];
+    return [{ label: "Amount", amount: netAmount }];
   }
 
   function buildColumns(): ColumnDef<ProjectionYear>[] {
@@ -843,12 +861,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 return (
                   <button
                     onClick={() => {
-                      const details = buildTechniqueDetails(id);
+                      const details = buildTechniqueDetails(id, row.year, v);
                       setSourceDetailModal({
                         name: incomeNames[id] ?? id,
                         year: row.year,
                         amount: v,
-                        details: details.length > 0 ? details : [{ label: "Net Proceeds", amount: v }],
+                        details,
                       });
                     }}
                     className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
@@ -893,12 +911,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   return (
                     <button
                       onClick={() => {
-                        const details = buildTechniqueDetails(id);
+                        const details = buildTechniqueDetails(id, row.year, v);
                         setSourceDetailModal({
                           name: incomeNames[id] ?? id,
                           year: row.year,
                           amount: v,
-                          details: details.length > 0 ? details : [{ label: "Net Proceeds", amount: v }],
+                          details,
                         });
                       }}
                       className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
@@ -982,12 +1000,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   return (
                     <button
                       onClick={() => {
-                        const details = buildTechniqueDetails(id);
+                        const details = buildTechniqueDetails(id, row.year, v);
                         setSourceDetailModal({
                           name: expenseNames[id] ?? id,
                           year: row.year,
                           amount: v,
-                          details: details.length > 0 ? details : [{ label: "Amount", amount: v }],
+                          details,
                         });
                       }}
                       className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
