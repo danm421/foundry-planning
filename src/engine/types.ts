@@ -211,6 +211,8 @@ export interface ProjectionYear {
     taxes: number;
     total: number;
     bySource: Record<string, number>;
+    byLiability: Record<string, number>;
+    interestByLiability: Record<string, number>;
   };
 
   savings: {

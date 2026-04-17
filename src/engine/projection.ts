@@ -965,6 +965,8 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         ...expenseBreakdown.bySource,
         ...Object.fromEntries(syntheticExpenses.map((s) => [s.id, s.annualAmount])),
       },
+      byLiability: liabResult.byLiability,
+      interestByLiability: liabResult.interestByLiability,
     };
 
     const totalIncome = income.total + householdRmdIncome;
