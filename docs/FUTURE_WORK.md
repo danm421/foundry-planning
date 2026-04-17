@@ -19,7 +19,7 @@ enablers and should ship folded into their parent feature.
 | # | Item | P | E | L | Total |
 |---|------|---|---|---|-------|
 | 1 | Scenario switcher + side panel | 9 | 2 | 8 | 19 |
-| 2 | Asset mix tab on investment accounts | 7 | 5 | 6 | 18 |
+| ~~2~~ | ~~Asset mix tab on investment accounts~~ | — | — | — | SHIPPED |
 | 3 | Roth conversion optimizer (now unblocked) | 7 | 5 | 5 | 17 |
 | 4 | Year-by-year schedule for incomes & expenses | 7 | 5 | 4 | 16 |
 | 5 | Investments report (asset allocation) | 7 | 4 | 5 | 16 |
@@ -52,10 +52,9 @@ Dependency notes that override raw score:
 - **Year-by-year schedules + Amortization/extra payments + UI refresh** all
   touch the Income/Expenses/Savings/Liabilities forms — ship as one
   coherent Client Data refresh once we're ready to revisit those tabs.
-- Ship **asset mix tab before Investments report** — the report needs
-  per-account allocation data to render. **Asset allocation extraction**
-  also targets the same per-account asset mix structure, so it should
-  ship after the tab exists.
+- ~~Ship **asset mix tab before Investments report**~~ — DONE. Asset mix
+  tab shipped; **Investments report** and **asset allocation extraction**
+  are now unblocked.
 
 ## Client Data
 
@@ -85,16 +84,10 @@ Dependency notes that override raw score:
   feature. _Why deferred: works around via existing payment field; a
   real schedule + extra-payment modeling is the next layer of polish._
 
-- **Asset mix tab on investment accounts** _(P7 E5 L6)_ — add an "Asset
-  Mix" tab to the data entry screen for taxable and retirement accounts.
-  Two modes: (1) "Use model portfolio" — the account inherits the asset
-  allocation from whatever model portfolio is assigned for its growth
-  rate, staying in sync automatically; (2) "Custom" — advisor enters
-  manual percentages based on the asset classes defined in the system's
-  CMAs. Enables per-account allocation tracking, feeds the new
-  Investments report (see Reports section), and gives the AI statement
-  extractor a target to map into. _Why deferred: accounts currently
-  only track a single growth model; allocation detail is the next layer._
+- ~~**Asset mix tab on investment accounts**~~ — **SHIPPED.** Per-account
+  asset allocation tab with two modes: "Use model portfolio" (inherits from
+  assigned growth model) and "Custom" (manual percentages against CMA asset
+  classes). Unblocks the Investments report and asset allocation extraction.
 
 - **UI/UX refresh for Income, Expenses, and Savings tabs** _(P6 E5 L4)_ —
   the current forms are functional but feel like a stack of plain inputs.
