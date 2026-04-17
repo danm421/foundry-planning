@@ -876,26 +876,20 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       }
     }
 
-    // 12. If household checking went negative, cover the shortfall from the withdrawal
-    // strategy — grossed up by the marginal rate so the post-tax amount covers the gap.
-    // The extra tax is added to the year's tax expense.
+    // 12. Withdrawals + purchase gap-fill. Household checking should never end the
+    // year negative: any deficit after income/expenses/taxes/savings/purchases is
+    // refilled from the withdrawal strategy (grossed up for tax).
     let withdrawals = { byAccount: {} as Record<string, number>, total: 0 };
     let withdrawalTax = 0;
 
-    const householdWithdrawBalances: Record<string, number> = {};
-    for (const acct of workingAccounts) {
-      if (acct.ownerEntityId != null) continue;
-      if (acct.isDefaultChecking) continue;
-      householdWithdrawBalances[acct.id] = acct.id in accountBalances ? accountBalances[acct.id] : 0;
-    }
-
+    // 12a. Cash drawdown reporting — when this year's P&L ate into a prior-year
+    // surplus sitting in household checking, attribute the consumed portion as a
+    // withdrawal from cash. Reporting-only; balance movement is already captured by
+    // the expense/tax entries. Runs before purchases so the drill separates
+    // "cash drawdown from P&L" from "cash used to fund a purchase" (which shows up
+    // as a technique expense).
     if (hasChecking) {
       const checkingId = defaultChecking!.id;
-
-      // Cash drawdown: when this year's outflows ate into a prior-year surplus sitting
-      // in household checking, attribute the consumed portion as a withdrawal from
-      // cash. Reporting-only — the balance movement was already captured by the
-      // individual expense/tax entries.
       const endingAfterDeltas = accountBalances[checkingId] ?? 0;
       const consumed = checkingBalanceBeforeDeltas - endingAfterDeltas;
       const cashDrawdown = Math.max(
@@ -906,9 +900,53 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         withdrawals.byAccount[checkingId] = cashDrawdown;
         withdrawals.total += cashDrawdown;
       }
+    }
 
-      // If checking is still negative after drawing down the surplus, fall through
-      // to the supplemental withdrawal strategy to close the remaining gap.
+    // 12b. Apply Asset Purchases BEFORE the gap-fill so a purchase that drains
+    // checking triggers a withdrawal from the investment strategy, keeping the
+    // household cash account from going negative.
+    let purchaseBreakdown: { transactionId: string; name: string; equity: number; purchasePrice: number; mortgageAmount: number; fundingAccountId: string }[] = [];
+    if (data.assetTransactions && data.assetTransactions.length > 0) {
+      const purchases = data.assetTransactions.filter((t) => t.type === "buy");
+      if (purchases.length > 0) {
+        const purchaseResult = applyAssetPurchases({
+          purchases,
+          accounts: workingAccounts,
+          liabilities: currentLiabilities,
+          accountBalances,
+          basisMap,
+          accountLedgers,
+          year,
+          defaultCheckingId: defaultChecking?.id ?? "",
+        });
+
+        purchaseBreakdown = purchaseResult.breakdown;
+        for (const newAcct of purchaseResult.newAccounts) {
+          workingAccounts.push(newAcct);
+        }
+        for (const newLiab of purchaseResult.newLiabilities) {
+          currentLiabilities.push(newLiab);
+        }
+      }
+    }
+
+    // 12c. Build withdrawal source balances AFTER purchases so any brokerage-funded
+    // purchase is reflected, and gap-fill doesn't pull from an account that was
+    // just drained.
+    const householdWithdrawBalances: Record<string, number> = {};
+    for (const acct of workingAccounts) {
+      if (acct.ownerEntityId != null) continue;
+      if (acct.isDefaultChecking) continue;
+      householdWithdrawBalances[acct.id] = acct.id in accountBalances ? accountBalances[acct.id] : 0;
+    }
+
+    if (hasChecking) {
+      const checkingId = defaultChecking!.id;
+
+      // If checking went negative (from P&L and/or a purchase), pull from the
+      // withdrawal strategy to refill. Gross up by the marginal rate so the
+      // post-tax amount covers the gap; the extra tax is added to the year's
+      // tax expense.
       if (accountBalances[checkingId] < 0) {
         const shortfall = -accountBalances[checkingId];
         const grossNeeded = shortfall / (1 - marginalRate);
@@ -961,9 +999,12 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         }
       }
     } else {
-      // Legacy path: no default checking → deficit triggers withdrawal directly (no
-      // gross-up because the legacy path doesn't model the withdrawal tax separately).
-      const legacyNetFlow = householdInflows - householdNonSavingsOutflows - savings.total;
+      // Legacy path: no default checking → deficit triggers withdrawal directly
+      // (no gross-up because the legacy path doesn't model the withdrawal tax
+      // separately). Purchase equity is folded into outflows so a purchase-driven
+      // deficit still triggers a withdrawal.
+      const purchaseEquity = purchaseBreakdown.reduce((sum, p) => sum + p.equity, 0);
+      const legacyNetFlow = householdInflows - householdNonSavingsOutflows - savings.total - purchaseEquity;
       if (legacyNetFlow < 0) {
         withdrawals = executeWithdrawals(
           -legacyNetFlow,
@@ -982,32 +1023,6 @@ export function runProjection(data: ClientData): ProjectionYear[] {
               amount: -amount,
             });
           }
-        }
-      }
-    }
-
-    // ── Apply Asset Purchases ───────────────────────────────────────────────
-    let purchaseBreakdown: { transactionId: string; name: string; equity: number; purchasePrice: number; mortgageAmount: number; fundingAccountId: string }[] = [];
-    if (data.assetTransactions && data.assetTransactions.length > 0) {
-      const purchases = data.assetTransactions.filter((t) => t.type === "buy");
-      if (purchases.length > 0) {
-        const purchaseResult = applyAssetPurchases({
-          purchases,
-          accounts: workingAccounts,
-          liabilities: currentLiabilities,
-          accountBalances,
-          basisMap,
-          accountLedgers,
-          year,
-          defaultCheckingId: defaultChecking?.id ?? "",
-        });
-
-        purchaseBreakdown = purchaseResult.breakdown;
-        for (const newAcct of purchaseResult.newAccounts) {
-          workingAccounts.push(newAcct);
-        }
-        for (const newLiab of purchaseResult.newLiabilities) {
-          currentLiabilities.push(newLiab);
         }
       }
     }

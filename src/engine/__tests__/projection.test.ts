@@ -672,4 +672,64 @@ describe("techniques integration", () => {
     const year2029 = result.find((y) => y.year === 2029)!;
     expect(year2029.portfolioAssets.realEstateTotal).toBeGreaterThan(0);
   });
+
+  it("keeps household cash non-negative: a purchase that drains checking triggers a withdrawal from the strategy", () => {
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Cash",
+          category: "cash",
+          subType: "checking",
+          owner: "joint",
+          value: 0,
+          basis: 0,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+        },
+        {
+          id: "acct-brokerage",
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          owner: "joint",
+          value: 500000,
+          basis: 500000,
+          growthRate: 0,
+          rmdEnabled: false,
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [
+        { accountId: "acct-brokerage", priorityOrder: 1, startYear: 2026, endYear: 2030 },
+      ],
+      assetTransactions: [
+        {
+          id: "buy-home",
+          name: "Buy Home",
+          type: "buy" as const,
+          year: 2026,
+          assetName: "Home",
+          assetCategory: "real_estate" as const,
+          assetSubType: "primary_residence",
+          purchasePrice: 100000,
+          growthRate: 0,
+          // default fundingAccountId -> household checking
+        },
+      ],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+
+    const result = runProjection(data);
+    const year2026 = result[0];
+    const checkingBal = year2026.portfolioAssets.cash["acct-checking"];
+    // Checking must not end the year negative — the gap-fill should cover the purchase.
+    expect(checkingBal).toBeGreaterThanOrEqual(-0.01);
+    // And a withdrawal from brokerage must have happened to fund the purchase.
+    expect(year2026.withdrawals.byAccount["acct-brokerage"]).toBeGreaterThan(0);
+  });
 });
