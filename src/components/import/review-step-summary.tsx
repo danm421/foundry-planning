@@ -96,7 +96,7 @@ export default function ReviewStepSummary({
         disabled={!hasData || isCommitting}
         className="w-full rounded-md bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
       >
-        {isCommitting ? "Adding to Client Data..." : "Add to Client Data"}
+        {isCommitting ? "Adding to Details..." : "Add to Details"}
       </button>
 
       {!hasData && (
