@@ -300,9 +300,11 @@ export async function GET(
         dateOfBirth: client.dateOfBirth,
         retirementAge: client.retirementAge,
         planEndAge: client.planEndAge,
+        lifeExpectancy: client.lifeExpectancy,
         spouseName: client.spouseName ?? undefined,
         spouseDob: client.spouseDob ?? undefined,
         spouseRetirementAge: client.spouseRetirementAge ?? undefined,
+        spouseLifeExpectancy: client.spouseLifeExpectancy ?? null,
         filingStatus: client.filingStatus,
       },
       accounts: accountRows.map((a) => {

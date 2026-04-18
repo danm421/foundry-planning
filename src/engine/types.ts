@@ -39,9 +39,11 @@ export interface ClientInfo {
   dateOfBirth: string;
   retirementAge: number;
   planEndAge: number;
+  lifeExpectancy?: number;
   spouseName?: string;
   spouseDob?: string;
   spouseRetirementAge?: number;
+  spouseLifeExpectancy?: number | null;
   filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household";
 }
 

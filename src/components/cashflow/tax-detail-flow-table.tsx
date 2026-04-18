@@ -14,6 +14,8 @@ import type { TransitionType } from "./tax-regime-indicators";
 interface TaxDetailFlowTableProps {
   years: ProjectionYear[];
   onYearClick: (year: ProjectionYear) => void;
+  clientLifeExpectancy?: number;
+  spouseLifeExpectancy?: number | null;
 }
 
 const fmt = new Intl.NumberFormat("en-US", {
@@ -32,8 +34,17 @@ function formatCell(n: number): string {
   return n === 0 ? "—" : fmt.format(n);
 }
 
-function formatAge(ages: { client: number; spouse?: number }): string {
-  return ages.spouse != null ? `${ages.client} / ${ages.spouse}` : String(ages.client);
+function formatAge(
+  ages: { client: number; spouse?: number },
+  clientLE?: number,
+  spouseLE?: number | null,
+): string {
+  const cLE = clientLE ?? 95;
+  const sLE = spouseLE ?? 95;
+  const clientStr = ages.client > cLE ? "—" : String(ages.client);
+  if (ages.spouse == null) return clientStr;
+  const spouseStr = ages.spouse > sLE ? "—" : String(ages.spouse);
+  return `${clientStr} / ${spouseStr}`;
 }
 
 interface Column {
@@ -368,7 +379,12 @@ function DrillCell({
   );
 }
 
-export function TaxDetailFlowTable({ years, onYearClick }: TaxDetailFlowTableProps) {
+export function TaxDetailFlowTable({
+  years,
+  onYearClick,
+  clientLifeExpectancy,
+  spouseLifeExpectancy,
+}: TaxDetailFlowTableProps) {
   const [drillLevel, setDrillLevel] = useState<DrillLevel>("top");
   const transitions = detectRegimeTransitions(years);
 
@@ -471,7 +487,7 @@ export function TaxDetailFlowTable({ years, onYearClick }: TaxDetailFlowTablePro
                     {y.year}
                   </td>
                   <td className="sticky left-20 z-10 border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left text-gray-400 group-hover:bg-gray-800/40">
-                    {formatAge(y.ages)}
+                    {formatAge(y.ages, clientLifeExpectancy, spouseLifeExpectancy)}
                   </td>
                   {activeColumns.map((col, idx) => {
                     const v = col.value(y);

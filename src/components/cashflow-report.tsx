@@ -885,7 +885,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       }),
       col("ages", "Age(s)", (r) => r.ages, (info) => {
         const ages = info.getValue() as ProjectionYear["ages"];
-        return ages.spouse != null ? `${ages.client} / ${ages.spouse}` : String(ages.client);
+        const clientLE = clientData?.client.lifeExpectancy ?? 95;
+        const spouseLE = clientData?.client.spouseLifeExpectancy ?? 95;
+        const clientStr = ages.client > clientLE ? "—" : String(ages.client);
+        if (ages.spouse == null) return clientStr;
+        const spouseStr = ages.spouse > spouseLE ? "—" : String(ages.spouse);
+        return `${clientStr} / ${spouseStr}`;
       }),
     ];
 
@@ -1870,6 +1875,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           planStartYear={planStartYear}
           planEndYear={planEndYear}
           clientRetirementYear={clientRetirementYear}
+          clientLifeExpectancy={clientData?.client.lifeExpectancy}
+          spouseLifeExpectancy={clientData?.client.spouseLifeExpectancy}
         />
       )}
 

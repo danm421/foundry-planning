@@ -18,6 +18,8 @@ interface TaxDetailModalProps {
   planStartYear: number;
   planEndYear: number;
   clientRetirementYear: number | null;
+  clientLifeExpectancy?: number;
+  spouseLifeExpectancy?: number | null;
 }
 
 export function TaxDetailModal({
@@ -29,6 +31,8 @@ export function TaxDetailModal({
   planStartYear,
   planEndYear,
   clientRetirementYear,
+  clientLifeExpectancy,
+  spouseLifeExpectancy,
 }: TaxDetailModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>("income");
 
@@ -94,9 +98,19 @@ export function TaxDetailModal({
           </div>
 
           {activeTab === "income" ? (
-            <TaxDetailIncomeTable years={years} onYearClick={onYearClick} />
+            <TaxDetailIncomeTable
+              years={years}
+              onYearClick={onYearClick}
+              clientLifeExpectancy={clientLifeExpectancy}
+              spouseLifeExpectancy={spouseLifeExpectancy}
+            />
           ) : (
-            <TaxDetailFlowTable years={years} onYearClick={onYearClick} />
+            <TaxDetailFlowTable
+              years={years}
+              onYearClick={onYearClick}
+              clientLifeExpectancy={clientLifeExpectancy}
+              spouseLifeExpectancy={spouseLifeExpectancy}
+            />
           )}
         </div>
       </div>
