@@ -116,17 +116,24 @@ export async function POST(request: NextRequest) {
     const clientBirthYear = new Date(dateOfBirth).getFullYear();
     const retirementStartYear = clientBirthYear + Number(retirementAge);
     const planEndYearValue = clientBirthYear + Number(planEndAge);
+    // Living expenses are anchored to milestones so they track changes to
+    // retirement age and plan horizon: current-living runs plan_start →
+    // client_retirement, retirement-living runs client_retirement → plan_end.
     const expenseSeeds = [
       {
         name: "Current Living Expenses",
         startYear: currentYear,
-        endYear: Math.max(currentYear, retirementStartYear - 1),
+        startYearRef: "plan_start" as const,
+        endYear: Math.max(currentYear, retirementStartYear),
+        endYearRef: "client_retirement" as const,
         inflationStartYear: null as number | null,
       },
       {
         name: "Retirement Living Expenses",
         startYear: retirementStartYear,
+        startYearRef: "client_retirement" as const,
         endYear: planEndYearValue,
+        endYearRef: "plan_end" as const,
         inflationStartYear: currentYear,
       },
     ];
@@ -138,7 +145,9 @@ export async function POST(request: NextRequest) {
         name: seed.name,
         annualAmount: "0",
         startYear: seed.startYear,
+        startYearRef: seed.startYearRef,
         endYear: seed.endYear,
+        endYearRef: seed.endYearRef,
         growthRate: "0.03",
         inflationStartYear: seed.inflationStartYear,
       }))
