@@ -407,19 +407,21 @@ export default function BalanceSheetView({
           {liabilities.length === 0 ? (
             <EmptyRow message="No liabilities yet." />
           ) : (
-            <div className="divide-y divide-gray-800">
-              {liabilities.map((l) => (
-                <Row
-                  key={l.id}
-                  onClick={() => !liabilitiesEdit && setEditingLiability(l)}
-                  editMode={liabilitiesEdit}
-                  onDelete={() => setDeletingLiability(l)}
-                  label={l.name}
-                  subLabel={Number(l.interestRate) > 0 ? `${(Number(l.interestRate) * 100).toFixed(2)}% interest` : undefined}
-                  value={`(${fmt(currentYearBalance(l))})`}
-                  valueClassName="text-red-400"
-                />
-              ))}
+            <div className="overflow-hidden rounded-md border border-gray-700 bg-gray-900/60">
+              <div className="divide-y divide-gray-800">
+                {liabilities.map((l) => (
+                  <Row
+                    key={l.id}
+                    onClick={() => !liabilitiesEdit && setEditingLiability(l)}
+                    editMode={liabilitiesEdit}
+                    onDelete={() => setDeletingLiability(l)}
+                    label={l.name}
+                    subLabel={Number(l.interestRate) > 0 ? `${(Number(l.interestRate) * 100).toFixed(2)}% interest` : undefined}
+                    value={`(${fmt(currentYearBalance(l))})`}
+                    valueClassName="text-red-400"
+                  />
+                ))}
+              </div>
             </div>
           )}
         </Panel>
@@ -438,60 +440,64 @@ export default function BalanceSheetView({
             <span className="text-sm font-medium text-amber-200">{fmt(totalOutOfEstate)}</span>
           </div>
 
-          <div className="divide-y divide-amber-900/30 rounded-md border border-amber-900/30 bg-gray-900/60">
+          <div className="space-y-3">
             {Array.from(outByEntity.entries()).map(([entityId, rows]) => {
               const subtotal = rows.reduce((s, a) => s + Number(a.value), 0);
               const entityName = entityMap[entityId]?.name ?? "Unknown entity";
               return (
-                <div key={entityId}>
-                  <div className="flex items-center justify-between bg-amber-900/10 px-4 py-2">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-amber-200/80">
+                <div key={entityId} className="overflow-hidden rounded-md border border-amber-900/40 bg-gray-900/60">
+                  <div className="flex items-center justify-between border-b border-amber-900/40 bg-amber-900/15 px-3 py-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-amber-200">
                       {entityName}
                     </span>
-                    <span className="text-xs text-amber-200/70">{fmt(subtotal)}</span>
+                    <span className="text-xs font-medium text-amber-200/80">{fmt(subtotal)}</span>
                   </div>
-                  {rows.map((a) => (
-                    <div
-                      key={a.id}
-                      onClick={() => !assetsEdit && setEditingAccount(a)}
-                      className="flex cursor-pointer items-center justify-between px-4 py-2 hover:bg-gray-800/60"
-                    >
-                      <div>
-                        <div className="text-sm font-medium text-gray-100">{a.name}</div>
-                        <div className="text-xs text-gray-500">
-                          {CATEGORY_LABELS[a.category]} · {growthDisplay(a)}
+                  <div className="divide-y divide-gray-800">
+                    {rows.map((a) => (
+                      <div
+                        key={a.id}
+                        onClick={() => !assetsEdit && setEditingAccount(a)}
+                        className="flex cursor-pointer items-center justify-between px-4 py-2 hover:bg-gray-800/60"
+                      >
+                        <div>
+                          <div className="text-sm font-medium text-gray-100">{a.name}</div>
+                          <div className="text-xs text-gray-500">
+                            {CATEGORY_LABELS[a.category]} · {growthDisplay(a)}
+                          </div>
                         </div>
+                        <span className="text-sm font-medium text-gray-100">{fmt(a.value)}</span>
                       </div>
-                      <span className="text-sm font-medium text-gray-100">{fmt(a.value)}</span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               );
             })}
 
             {businessEntityRows.length > 0 && (
-              <div>
-                <div className="flex items-center justify-between bg-amber-900/10 px-4 py-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-amber-200/80">
+              <div className="overflow-hidden rounded-md border border-amber-900/40 bg-gray-900/60">
+                <div className="flex items-center justify-between border-b border-amber-900/40 bg-amber-900/15 px-3 py-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-amber-200">
                     Business interests
                   </span>
-                  <span className="text-xs text-amber-200/70">{fmt(businessEntityTotal)}</span>
+                  <span className="text-xs font-medium text-amber-200/80">{fmt(businessEntityTotal)}</span>
                 </div>
-                {businessEntityRows.map((e) => (
-                  <a
-                    key={e.id}
-                    href={`/clients/${clientId}/client-data/family`}
-                    className="flex items-center justify-between px-4 py-2 hover:bg-gray-800/60"
-                  >
-                    <div>
-                      <div className="text-sm font-medium text-gray-100">{e.name}</div>
-                      <div className="text-xs text-gray-500">
-                        {ENTITY_TYPE_LABELS[e.entityType ?? "other"] ?? "Entity"} · edit in Family
+                <div className="divide-y divide-gray-800">
+                  {businessEntityRows.map((e) => (
+                    <a
+                      key={e.id}
+                      href={`/clients/${clientId}/client-data/family`}
+                      className="flex items-center justify-between px-4 py-2 hover:bg-gray-800/60"
+                    >
+                      <div>
+                        <div className="text-sm font-medium text-gray-100">{e.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {ENTITY_TYPE_LABELS[e.entityType ?? "other"] ?? "Entity"} · edit in Family
+                        </div>
                       </div>
-                    </div>
-                    <span className="text-sm font-medium text-gray-100">{fmt(Number(e.value ?? "0"))}</span>
-                  </a>
-                ))}
+                      <span className="text-sm font-medium text-gray-100">{fmt(Number(e.value ?? "0"))}</span>
+                    </a>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -616,7 +622,7 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">
+    <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/30">
       <div className="flex items-center justify-between border-b border-gray-800 bg-gray-900 px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold text-gray-100">{title}</h2>
@@ -624,7 +630,7 @@ function Panel({
         </div>
         {actions}
       </div>
-      <div>{children}</div>
+      <div className="space-y-3 p-3">{children}</div>
     </div>
   );
 }
@@ -654,10 +660,10 @@ function CategoryGroup({
   children: React.ReactNode;
 }) {
   return (
-    <div className="border-b border-gray-800 last:border-0">
-      <div className="flex items-center justify-between bg-gray-900/40 px-4 py-1.5">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{label}</span>
-        <span className="text-[11px] text-gray-500">{total}</span>
+    <div className="overflow-hidden rounded-md border border-gray-700 bg-gray-900/60">
+      <div className="flex items-center justify-between border-b border-gray-700 bg-gray-800/60 px-3 py-2">
+        <span className="text-xs font-semibold uppercase tracking-wider text-gray-200">{label}</span>
+        <span className="text-xs font-medium text-gray-300">{total}</span>
       </div>
       <div className="divide-y divide-gray-800">{children}</div>
     </div>
