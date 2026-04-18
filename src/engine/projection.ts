@@ -13,6 +13,12 @@ import type {
 import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
 import { computeLiabilities } from "./liabilities";
+import {
+  buildLiabilitySchedule,
+  buildLiabilitySchedules,
+  scheduleBoYBalance,
+  type LiabilityScheduleMap,
+} from "./liability-schedules";
 import { calculateTaxYearBracket, calculateTaxYearFlat, makeEmptyTaxParams } from "./tax";
 import { createTaxResolver } from "../lib/tax/resolver";
 import type { TaxYearParameters, FilingStatus } from "../lib/tax/types";
@@ -173,7 +179,25 @@ export function runProjection(data: ClientData): ProjectionYear[] {
   // Reset synthetic ID counter for technique-created assets
   _resetSyntheticIdCounter();
 
-  let currentLiabilities: Liability[] = data.liabilities.map((l) => ({ ...l }));
+  // Monthly amortization schedule per liability, keyed by id. Built once at
+  // init for pre-existing liabilities and extended inline when BoY purchases
+  // create new mortgages mid-projection. Authoritative source for BoY/EoY
+  // balances, payments, and interest — replaces the previous simplified
+  // annual amortization so engine numbers match the balance sheet / tab.
+  const liabilitySchedules: LiabilityScheduleMap = buildLiabilitySchedules(
+    data.liabilities,
+  );
+
+  // Starting balance for each liability is the BoY balance at planStartYear
+  // from its schedule — not the raw DB balance, which may be as-of a
+  // different year (e.g. loan origination).
+  let currentLiabilities: Liability[] = data.liabilities.map((l) => {
+    const sched = liabilitySchedules.get(l.id);
+    const boyBalance = sched
+      ? scheduleBoYBalance(sched, planSettings.planStartYear)
+      : l.balance;
+    return { ...l, balance: boyBalance };
+  });
 
   const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
   const spouseBirthYear = client.spouseDob
@@ -239,9 +263,18 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     for (const acct of workingAccounts) {
       accountBasisBoY[acct.id] = basisMap[acct.id] ?? acct.basis;
     }
+    // BoY balance pulled from each liability's schedule at `year`. For loans
+    // originated before planStartYear this picks up the authoritative mid-
+    // schedule balance; for loans that don't originate until a later year the
+    // schedule lookup still returns the correct value (or zero after payoff).
     const liabilityBalancesBoY: Record<string, number> = {};
     for (const liab of currentLiabilities) {
-      liabilityBalancesBoY[liab.id] = liab.balance;
+      const sched = liabilitySchedules.get(liab.id);
+      const boy = sched ? scheduleBoYBalance(sched, year) : liab.balance;
+      liabilityBalancesBoY[liab.id] = boy;
+      // Keep liab.balance aligned with BoY so applyAssetSales (which reads
+      // linkedMortgage.balance) pays off the correct amount.
+      liab.balance = boy;
     }
 
     // ── BoY: Asset Sales ─────────────────────────────────────────────────────
@@ -306,6 +339,9 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         }
         for (const newLiab of purchaseResult.newLiabilities) {
           currentLiabilities.push(newLiab);
+          // Build a schedule for the new mortgage starting at its origination
+          // year (== this projection year). BoY balance == mortgageAmount.
+          liabilitySchedules.set(newLiab.id, buildLiabilitySchedule(newLiab));
         }
       }
     }
@@ -340,7 +376,8 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     const liabResult = computeLiabilities(
       currentLiabilities,
       year,
-      (liab) => liab.ownerEntityId == null
+      (liab) => liab.ownerEntityId == null,
+      liabilitySchedules,
     );
     currentLiabilities = liabResult.updatedLiabilities;
 

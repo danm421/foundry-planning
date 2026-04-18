@@ -215,6 +215,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     year: number;
     amount: number;
     details: { label: string; amount: number }[];
+    // When present, the modal renders per-transaction groups (each with its own
+    // line-item breakdown and subtotal) instead of a flat `details` list. Used
+    // by the consolidated Other Income drill so a single year-column cell can
+    // surface all asset transactions that contributed.
+    groups?: { name: string; amount: number; details: { label: string; amount: number }[] }[];
   } | null>(null);
   const [taxDrillModal, setTaxDrillModal] = useState<TaxDrillModal | null>(null);
   const [showTaxDetailModal, setShowTaxDetailModal] = useState(false);
@@ -878,47 +883,65 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
     // ── Other Income direct drill (from Level 0) ────────────────────────
     if (level === "other_income_detail") {
+      // Consolidate every surplus-producing asset transaction into a single
+      // "Net Proceeds from Asset Transactions" column. Clicking a non-zero
+      // year opens a grouped modal with the name + line-item breakdown
+      // (sale value, transaction costs, mortgage payoff) for each sale that
+      // contributed that year — supports multiple sales in one year.
       const sourceIds = techniqueIncomeIds;
+      const techniqueSourceIds = sourceIds.filter((id) => id.startsWith("technique-"));
+      const nonTechniqueSourceIds = sourceIds.filter((id) => !id.startsWith("technique-"));
+      const yearTotal = (r: ProjectionYear) =>
+        techniqueSourceIds.reduce((sum, id) => sum + (r.income.bySource[id] ?? 0), 0);
       return [
         ...baseColumns,
-        ...sourceIds.map((id) => {
-          const isTechnique = id.startsWith("technique-");
-          if (isTechnique) {
-            return col(
-              `oi_src_${id}`,
-              incomeNames[id] ?? id,
-              (r) => r.income.bySource[id] ?? 0,
-              (info) => {
-                const v = info.getValue() as number;
-                if (v === 0) return <span className="tabular-nums text-gray-500">&mdash;</span>;
-                const row = info.row.original;
-                return (
-                  <button
-                    onClick={() => {
-                      const details = buildTechniqueDetails(id, row.year, v);
-                      setSourceDetailModal({
+        col(
+          "oi_asset_transactions",
+          "Net Proceeds from Asset Transactions",
+          yearTotal,
+          (info) => {
+            const v = info.getValue() as number;
+            if (v === 0) return <span className="tabular-nums text-gray-500">&mdash;</span>;
+            const row = info.row.original;
+            return (
+              <button
+                onClick={() => {
+                  const groups = techniqueSourceIds
+                    .map((id) => {
+                      const amt = row.income.bySource[id] ?? 0;
+                      if (amt === 0) return null;
+                      return {
                         name: incomeNames[id] ?? id,
-                        year: row.year,
-                        amount: v,
-                        details,
-                      });
-                    }}
-                    className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
-                    title="View source details"
-                  >
-                    {fmtNum(v)}
-                  </button>
-                );
-              }
+                        amount: amt,
+                        details: buildTechniqueDetails(id, row.year, amt),
+                      };
+                    })
+                    .filter((g): g is NonNullable<typeof g> => g !== null);
+                  setSourceDetailModal({
+                    name: "Net Proceeds from Asset Transactions",
+                    year: row.year,
+                    amount: v,
+                    details: [],
+                    groups,
+                  });
+                }}
+                className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                title="View transaction breakdown"
+              >
+                {fmtNum(v)}
+              </button>
             );
           }
-          return numCol(`oi_src_${id}`, incomeNames[id] ?? id, (r) => r.income.bySource[id] ?? 0);
-        }),
+        ),
+        // Non-technique Other Income sources (if any) retain their own columns.
+        ...nonTechniqueSourceIds.map((id) =>
+          numCol(`oi_src_${id}`, incomeNames[id] ?? id, (r) => r.income.bySource[id] ?? 0),
+        ),
         numCol(
           "oi_total",
           "Other Income Total",
           (r) => sourceIds.reduce((sum, id) => sum + (r.income.bySource[id] ?? 0), 0),
-          true
+          true,
         ),
       ];
     }
@@ -1693,16 +1716,42 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               </button>
             </div>
             <p className="text-sm text-gray-400 mb-3">Year: {sourceDetailModal.year}</p>
-            <div className="space-y-2">
-              {sourceDetailModal.details.map((d, i) => (
-                <div key={i} className="flex justify-between text-sm">
-                  <span className="text-gray-300">{d.label}</span>
-                  <span className={`tabular-nums ${d.amount < 0 ? "text-red-400" : "text-gray-100"}`}>
-                    {fmtNum(d.amount)}
-                  </span>
-                </div>
-              ))}
-            </div>
+            {sourceDetailModal.groups && sourceDetailModal.groups.length > 0 ? (
+              <div className="space-y-4">
+                {sourceDetailModal.groups.map((g, gi) => (
+                  <div key={gi}>
+                    <div className="text-sm font-semibold text-gray-200 mb-1.5">{g.name}</div>
+                    <div className="space-y-1.5 pl-2 border-l border-gray-800">
+                      {g.details.map((d, i) => (
+                        <div key={i} className="flex justify-between text-sm">
+                          <span className="text-gray-400">{d.label}</span>
+                          <span className={`tabular-nums ${d.amount < 0 ? "text-red-400" : "text-gray-200"}`}>
+                            {fmtNum(d.amount)}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between text-sm pt-1.5 mt-1.5 border-t border-gray-800">
+                        <span className="text-gray-300 font-medium">Net Proceeds</span>
+                        <span className={`tabular-nums font-medium ${g.amount < 0 ? "text-red-400" : "text-gray-100"}`}>
+                          {fmtNum(g.amount)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {sourceDetailModal.details.map((d, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-gray-300">{d.label}</span>
+                    <span className={`tabular-nums ${d.amount < 0 ? "text-red-400" : "text-gray-100"}`}>
+                      {fmtNum(d.amount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="mt-4 pt-3 border-t border-gray-700 flex justify-between text-sm font-semibold">
               <span className="text-gray-200">Total</span>
               <span className="text-gray-100 tabular-nums">

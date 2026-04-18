@@ -862,3 +862,172 @@ describe("techniques integration", () => {
     expect(year2026.expenses.liabilities).toBeLessThan(29000);
   });
 });
+
+describe("runProjection — liability amortization alignment", () => {
+  it("BoY liability balance matches monthly amortization schedule for a retroactive loan", async () => {
+    // Loan originated in 2021. User entered the original balance as of loan
+    // origination (balanceAsOfYear = startYear), so the engine must back-
+    // calculate / forward-amortize to arrive at the BoY balance for each
+    // projection year — the answer must match what the balance-sheet /
+    // amortization-tab already show via lib/loan-math.
+    const { calcPayment, calcOriginalBalance, computeAmortizationSchedule } =
+      await import("../../lib/loan-math");
+
+    const origBalance = 300000;
+    const rate = 0.065;
+    const termMonths = 360;
+    const monthlyPayment = calcPayment(origBalance, rate, termMonths);
+
+    const house = {
+      id: "acct-house",
+      name: "House",
+      category: "real_estate" as const,
+      subType: "primary_residence",
+      owner: "client" as const,
+      value: 600000,
+      basis: 400000,
+      growthRate: 0,
+      rmdEnabled: false,
+    };
+    const mortgage = {
+      id: "liab-retro",
+      name: "Retroactive Mortgage",
+      balance: origBalance,
+      interestRate: rate,
+      monthlyPayment,
+      startYear: 2021,
+      startMonth: 1,
+      termMonths,
+      balanceAsOfYear: 2021,
+      balanceAsOfMonth: 1,
+      linkedPropertyId: "acct-house",
+      isInterestDeductible: true,
+      extraPayments: [],
+    };
+
+    const data = buildClientData({
+      accounts: [house],
+      incomes: [],
+      expenses: [],
+      liabilities: [mortgage],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2031 },
+    });
+    const result = runProjection(data);
+
+    const year2030 = result.find((py) => py.year === 2030)!;
+    expect(year2030).toBeDefined();
+    const engineBoY2030 = year2030.liabilityBalancesBoY["liab-retro"];
+
+    // Authoritative schedule, from loan origination forward.
+    const origFromBackCalc = calcOriginalBalance(
+      origBalance,
+      rate,
+      monthlyPayment,
+      0, // balanceAsOfYear == startYear, zero elapsed months
+    );
+    const schedule = computeAmortizationSchedule(
+      origFromBackCalc,
+      rate,
+      monthlyPayment,
+      2021,
+      termMonths,
+    );
+    const row2030 = schedule.find((r) => r.year === 2030)!;
+    expect(row2030).toBeDefined();
+
+    // Engine BoY 2030 must match the schedule's beginningBalance for 2030 to
+    // the dollar — not the 2025 row (the pattern the old annual amortization
+    // produced for a sale 4 years from plan start).
+    expect(engineBoY2030).toBeCloseTo(row2030.beginningBalance, 0);
+  });
+
+  it("mortgagePaidOff on a future sale equals the schedule's BoY balance for the sale year", async () => {
+    const { calcPayment, computeAmortizationSchedule } = await import(
+      "../../lib/loan-math"
+    );
+
+    const origBalance = 300000;
+    const rate = 0.065;
+    const termMonths = 360;
+    const monthlyPayment = calcPayment(origBalance, rate, termMonths);
+
+    const house = {
+      id: "acct-house",
+      name: "House",
+      category: "real_estate" as const,
+      subType: "primary_residence",
+      owner: "client" as const,
+      value: 600000,
+      basis: 400000,
+      growthRate: 0,
+      rmdEnabled: false,
+    };
+    const checking = {
+      id: "acct-checking",
+      name: "Checking",
+      category: "cash" as const,
+      subType: "checking",
+      owner: "client" as const,
+      value: 10000,
+      basis: 10000,
+      growthRate: 0,
+      rmdEnabled: false,
+      isDefaultChecking: true,
+    };
+    const mortgage = {
+      id: "liab-retro",
+      name: "Retroactive Mortgage",
+      balance: origBalance,
+      interestRate: rate,
+      monthlyPayment,
+      startYear: 2021,
+      startMonth: 1,
+      termMonths,
+      balanceAsOfYear: 2021,
+      balanceAsOfMonth: 1,
+      linkedPropertyId: "acct-house",
+      isInterestDeductible: true,
+      extraPayments: [],
+    };
+
+    const data = buildClientData({
+      accounts: [house, checking],
+      incomes: [],
+      expenses: [],
+      liabilities: [mortgage],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      assetTransactions: [
+        {
+          id: "sale-house",
+          name: "Sell House",
+          type: "sell" as const,
+          year: 2030,
+          accountId: "acct-house",
+          overrideSaleValue: 700000,
+          overrideBasis: 400000,
+        },
+      ],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2031 },
+    });
+    const result = runProjection(data);
+
+    const year2030 = result.find((py) => py.year === 2030)!;
+    const sale = year2030.techniqueBreakdown?.sales.find(
+      (s) => s.transactionId === "sale-house",
+    );
+    expect(sale).toBeDefined();
+
+    const schedule = computeAmortizationSchedule(
+      origBalance, // balanceAsOfYear == startYear, so this IS the origBal
+      rate,
+      monthlyPayment,
+      2021,
+      termMonths,
+    );
+    const row2030 = schedule.find((r) => r.year === 2030)!;
+    expect(sale!.mortgagePaidOff).toBeCloseTo(row2030.beginningBalance, 0);
+  });
+});

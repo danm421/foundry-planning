@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import AddTransferForm from "./forms/add-transfer-form";
 import AddAssetTransactionForm from "./forms/add-asset-transaction-form";
+import { runProjection } from "@/engine";
+import type { ClientData, ProjectionYear } from "@/engine/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -279,22 +281,72 @@ function describeTransaction(
   return transaction.type === "buy" ? "Buy" : "Sell";
 }
 
+interface SaleBreakdown {
+  saleValue: number;
+  transactionCosts: number;
+  mortgagePayoff: number;
+  netProceeds: number;
+  saleValueIsProjected: boolean;
+  mortgagePayoffIsProjected: boolean;
+}
+
+function computeSaleBreakdown(
+  transaction: AssetTransactionRow,
+  liabilities: LiabilityOption[],
+  projectedSaleValue: number | null,
+  projectedMortgagePayoff: number | null,
+): SaleBreakdown | null {
+  if (!transaction.accountId) return null;
+
+  const overrideSaleValue = transaction.overrideSaleValue
+    ? parseFloat(transaction.overrideSaleValue)
+    : null;
+  const saleValue = overrideSaleValue ?? projectedSaleValue ?? 0;
+  const saleValueIsProjected = overrideSaleValue == null && projectedSaleValue != null;
+
+  const costPct = transaction.transactionCostPct ? parseFloat(transaction.transactionCostPct) : 0;
+  const costFlat = transaction.transactionCostFlat ? parseFloat(transaction.transactionCostFlat) : 0;
+  const transactionCosts = saleValue * costPct + costFlat;
+
+  const linkedMortgage = liabilities.find(
+    (l) => l.linkedPropertyId === transaction.accountId,
+  );
+  const staticBalance = linkedMortgage ? parseFloat(linkedMortgage.balance) : 0;
+  const mortgagePayoff = linkedMortgage
+    ? projectedMortgagePayoff ?? staticBalance
+    : 0;
+  const mortgagePayoffIsProjected =
+    !!linkedMortgage && projectedMortgagePayoff != null;
+
+  const netProceeds = saleValue - transactionCosts - mortgagePayoff;
+
+  return {
+    saleValue,
+    transactionCosts,
+    mortgagePayoff,
+    netProceeds,
+    saleValueIsProjected,
+    mortgagePayoffIsProjected,
+  };
+}
+
 function computeTransactionNet(
   transaction: AssetTransactionRow,
   liabilities: LiabilityOption[],
+  projectedSaleValue: number | null,
+  projectedMortgagePayoff: number | null,
 ): number | null {
   const hasSell = !!transaction.accountId;
   const hasBuy = !!(transaction.assetName || (transaction.purchasePrice && parseFloat(transaction.purchasePrice) > 0));
   if (!hasSell || !hasBuy) return null;
 
-  const saleValue = transaction.overrideSaleValue ? parseFloat(transaction.overrideSaleValue) : 0;
-  const costPct = transaction.transactionCostPct ? parseFloat(transaction.transactionCostPct) : 0;
-  const costFlat = transaction.transactionCostFlat ? parseFloat(transaction.transactionCostFlat) : 0;
-  const linkedMortgage = transaction.accountId
-    ? liabilities.find((l) => l.linkedPropertyId === transaction.accountId)
-    : null;
-  const mortgagePayoff = linkedMortgage ? parseFloat(linkedMortgage.balance) : 0;
-  const saleProceeds = saleValue - (saleValue * costPct) - costFlat - mortgagePayoff;
+  const sale = computeSaleBreakdown(
+    transaction,
+    liabilities,
+    projectedSaleValue,
+    projectedMortgagePayoff,
+  );
+  const saleProceeds = sale ? sale.netProceeds : 0;
 
   const price = transaction.purchasePrice ? parseFloat(transaction.purchasePrice) : 0;
   const buyMortgage = transaction.mortgageAmount ? parseFloat(transaction.mortgageAmount) : 0;
@@ -307,12 +359,16 @@ function AssetTransactionCard({
   transaction,
   accounts,
   liabilities,
+  projectedSaleValue,
+  projectedMortgagePayoff,
   onEdit,
   onDelete,
 }: {
   transaction: AssetTransactionRow;
   accounts: AccountOption[];
   liabilities: LiabilityOption[];
+  projectedSaleValue: number | null;
+  projectedMortgagePayoff: number | null;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -328,7 +384,10 @@ function AssetTransactionCard({
   const hasSell = !!transaction.accountId;
   const hasBuy = !!(transaction.assetName || (transaction.purchasePrice && parseFloat(transaction.purchasePrice) > 0));
   const description = describeTransaction(transaction, accounts);
-  const net = computeTransactionNet(transaction, liabilities);
+  const saleBreakdown = hasSell
+    ? computeSaleBreakdown(transaction, liabilities, projectedSaleValue, projectedMortgagePayoff)
+    : null;
+  const net = computeTransactionNet(transaction, liabilities, projectedSaleValue, projectedMortgagePayoff);
 
   // Determine badge style based on what sides are filled
   let badgeLabel: string;
@@ -357,16 +416,46 @@ function AssetTransactionCard({
 
         <div className="space-y-0.5 text-xs text-gray-400">
           {/* Sell details */}
-          {hasSell && linkedAccount && (
+          {hasSell && linkedAccount && saleBreakdown && (
             <>
-              {transaction.overrideSaleValue && (
+              <div>
+                Sale value:{" "}
+                <span className="text-gray-300">
+                  {formatCurrency(saleBreakdown.saleValue)}
+                </span>
+                {saleBreakdown.saleValueIsProjected && (
+                  <span className="ml-1 text-gray-500">(projected)</span>
+                )}
+              </div>
+              {saleBreakdown.transactionCosts > 0 && (
                 <div>
-                  Sale value:{" "}
+                  Transaction costs:{" "}
                   <span className="text-gray-300">
-                    {formatCurrency(transaction.overrideSaleValue)}
+                    −{formatCurrency(saleBreakdown.transactionCosts)}
                   </span>
                 </div>
               )}
+              {saleBreakdown.mortgagePayoff > 0 && (
+                <div>
+                  Mortgage payoff:{" "}
+                  <span className="text-gray-300">
+                    −{formatCurrency(saleBreakdown.mortgagePayoff)}
+                  </span>
+                  {saleBreakdown.mortgagePayoffIsProjected && (
+                    <span className="ml-1 text-gray-500">(projected)</span>
+                  )}
+                </div>
+              )}
+              <div>
+                Net proceeds:{" "}
+                <span
+                  className={
+                    saleBreakdown.netProceeds >= 0 ? "text-gray-200" : "text-red-400"
+                  }
+                >
+                  {formatCurrency(saleBreakdown.netProceeds)}
+                </span>
+              </div>
               {proceedsAccount && (
                 <div>
                   Proceeds to: <span className="text-gray-300">{proceedsAccount.name}</span>
@@ -434,6 +523,47 @@ export default function TechniquesView({
   const [editingTransfer, setEditingTransfer] = useState<TransferRow | null>(null);
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<AssetTransactionRow | null>(null);
+  const [projectionYears, setProjectionYears] = useState<ProjectionYear[] | null>(null);
+
+  // Load projection once so transaction cards can display the projected BoY
+  // mortgage payoff for the sale year (matches what the engine will pay off).
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProjection() {
+      try {
+        const res = await fetch(`/api/clients/${clientId}/projection-data`);
+        if (!res.ok) return;
+        const data: ClientData = await res.json();
+        const projection = runProjection(data);
+        if (!cancelled) setProjectionYears(projection);
+      } catch {
+        // Net preview falls back to the static DB balance silently.
+      }
+    }
+    loadProjection();
+    return () => { cancelled = true; };
+  }, [clientId]);
+
+  // Fast lookup: projected mortgage payoff for a given (liabilityId, year).
+  const projectedMortgagePayoffFor = useMemo(() => {
+    return (liabilityId: string, year: number): number | null => {
+      if (!projectionYears) return null;
+      const py = projectionYears.find((p) => p.year === year);
+      const bal = py?.liabilityBalancesBoY?.[liabilityId];
+      return bal != null ? bal : null;
+    };
+  }, [projectionYears]);
+
+  // Fast lookup: projected BoY sale value for a given (accountId, year). This
+  // is the value the engine will credit as gross sale proceeds for a sell.
+  const projectedSaleValueFor = useMemo(() => {
+    return (accountId: string, year: number): number | null => {
+      if (!projectionYears) return null;
+      const py = projectionYears.find((p) => p.year === year);
+      const ledger = py?.accountLedgers?.[accountId];
+      return ledger ? ledger.beginningValue : null;
+    };
+  }, [projectionYears]);
 
   async function handleDeleteTransfer(transferId: string) {
     await fetch(`/api/clients/${clientId}/transfers?transferId=${transferId}`, {
@@ -501,16 +631,29 @@ export default function TechniquesView({
           <EmptyState message="No asset transactions yet. Click Add Transaction to get started." />
         ) : (
           <div>
-            {assetTransactions.map((tx) => (
-              <AssetTransactionCard
-                key={tx.id}
-                transaction={tx}
-                accounts={accounts}
-                liabilities={liabilities}
-                onEdit={() => setEditingTransaction(tx)}
-                onDelete={() => handleDeleteTransaction(tx.id)}
-              />
-            ))}
+            {assetTransactions.map((tx) => {
+              const linkedMortgage = tx.accountId
+                ? liabilities.find((l) => l.linkedPropertyId === tx.accountId)
+                : null;
+              const projectedMortgagePayoff = linkedMortgage
+                ? projectedMortgagePayoffFor(linkedMortgage.id, tx.year)
+                : null;
+              const projectedSaleValue = tx.accountId
+                ? projectedSaleValueFor(tx.accountId, tx.year)
+                : null;
+              return (
+                <AssetTransactionCard
+                  key={tx.id}
+                  transaction={tx}
+                  accounts={accounts}
+                  liabilities={liabilities}
+                  projectedSaleValue={projectedSaleValue}
+                  projectedMortgagePayoff={projectedMortgagePayoff}
+                  onEdit={() => setEditingTransaction(tx)}
+                  onDelete={() => handleDeleteTransaction(tx.id)}
+                />
+              );
+            })}
           </div>
         )}
       </div>

@@ -1,4 +1,8 @@
 import type { Liability } from "./types";
+import {
+  buildLiabilitySchedule,
+  type LiabilityScheduleMap,
+} from "./liability-schedules";
 
 export interface AmortizationResult {
   annualPayment: number;
@@ -14,18 +18,20 @@ interface LiabilitiesResult {
   interestByLiability: Record<string, number>;
 }
 
+/**
+ * One-shot annual amortization for a single liability. Delegates to the
+ * monthly amortization schedule from lib/loan-math so the answer matches the
+ * balance sheet and amortization tab. Used directly by a few UI pages that
+ * don't run a full projection (e.g. the deductions page's current-year
+ * interest estimate); the main projection uses the pre-built schedule map.
+ */
 export function amortizeLiability(
   liability: Liability,
-  year: number
+  year: number,
 ): AmortizationResult {
-  const endYear =
-    liability.startYear + Math.ceil(liability.termMonths / 12) - 1;
-
-  if (
-    year < liability.startYear ||
-    year > endYear ||
-    liability.balance <= 0
-  ) {
+  const schedule = buildLiabilitySchedule(liability);
+  const row = schedule.find((r) => r.year === year);
+  if (!row) {
     return {
       annualPayment: 0,
       interestPortion: 0,
@@ -33,44 +39,19 @@ export function amortizeLiability(
       endingBalance: 0,
     };
   }
-
-  const interest = liability.balance * liability.interestRate;
-  const scheduledPayment = liability.monthlyPayment * 12;
-  const totalOwed = liability.balance + interest;
-  const annualPayment = Math.min(scheduledPayment, totalOwed);
-  const interestPortion = Math.min(interest, annualPayment);
-  const principalFromPayment = annualPayment - interestPortion;
-
-  // Extra payments for this year
-  const extras = (liability.extraPayments ?? []).filter(
-    (ep) => ep.year === year
-  );
-  const perPaymentExtra = extras
-    .filter((ep) => ep.type === "per_payment")
-    .reduce((sum, ep) => sum + ep.amount * 12, 0);
-  const lumpSumExtra = extras
-    .filter((ep) => ep.type === "lump_sum")
-    .reduce((sum, ep) => sum + ep.amount, 0);
-
-  const totalExtra = perPaymentExtra + lumpSumExtra;
-  const totalPrincipal = Math.min(
-    principalFromPayment + totalExtra,
-    liability.balance
-  );
-  const endingBalance = Math.max(0, liability.balance - totalPrincipal);
-
   return {
-    annualPayment: annualPayment + Math.min(totalExtra, liability.balance - principalFromPayment),
-    interestPortion,
-    principalPortion: totalPrincipal,
-    endingBalance,
+    annualPayment: row.payment + row.extraPayment,
+    interestPortion: row.interest,
+    principalPortion: row.principal + row.extraPayment,
+    endingBalance: row.endingBalance,
   };
 }
 
 export function computeLiabilities(
   liabilities: Liability[],
   year: number,
-  filter?: (liab: Liability) => boolean
+  filter?: (liab: Liability) => boolean,
+  schedules?: LiabilityScheduleMap,
 ): LiabilitiesResult {
   let totalPayment = 0;
   const updatedLiabilities: Liability[] = [];
@@ -78,14 +59,19 @@ export function computeLiabilities(
   const interestByLiability: Record<string, number> = {};
 
   for (const liab of liabilities) {
-    const result = amortizeLiability(liab, year);
-    // Preserve the balance roll-forward even when the liability is filtered out
-    // (e.g. entity-owned) so the stored state stays consistent across years.
-    updatedLiabilities.push({ ...liab, balance: result.endingBalance });
-    byLiability[liab.id] = result.annualPayment;
-    interestByLiability[liab.id] = result.interestPortion;
+    const schedule = schedules?.get(liab.id) ?? buildLiabilitySchedule(liab);
+    const row = schedule.find((r) => r.year === year);
+    const annualPayment = row ? row.payment + row.extraPayment : 0;
+    const interestPortion = row ? row.interest : 0;
+    // After payoff the schedule ends; preserve a zero balance and keep the
+    // roll-forward consistent across years.
+    const endingBalance = row ? row.endingBalance : 0;
+
+    updatedLiabilities.push({ ...liab, balance: endingBalance });
+    byLiability[liab.id] = annualPayment;
+    interestByLiability[liab.id] = interestPortion;
     if (filter && !filter(liab)) continue;
-    totalPayment += result.annualPayment;
+    totalPayment += annualPayment;
   }
 
   return { totalPayment, updatedLiabilities, byLiability, interestByLiability };
