@@ -49,7 +49,17 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { name, entityType, notes, includeInPortfolio, isGrantor } = body;
+    const {
+      name,
+      entityType,
+      notes,
+      includeInPortfolio,
+      isGrantor,
+      value,
+      owner,
+      grantors,
+      beneficiaries,
+    } = body;
     if (!name) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
@@ -63,6 +73,10 @@ export async function POST(
         notes: notes ?? null,
         includeInPortfolio: includeInPortfolio ?? false,
         isGrantor: isGrantor ?? false,
+        value: value != null ? String(value) : "0",
+        owner: owner ?? null,
+        grantors: grantors ?? null,
+        beneficiaries: beneficiaries ?? null,
       })
       .returning();
 

@@ -43,6 +43,9 @@ export interface ModelPortfolioOption {
 export interface EntityOption {
   id: string;
   name: string;
+  /** Extra fields consumed by the balance sheet OOE section; forms ignore them. */
+  entityType?: string;
+  value?: string;
 }
 
 export interface CategoryDefaults {

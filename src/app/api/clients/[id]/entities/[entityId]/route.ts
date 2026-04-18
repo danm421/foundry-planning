@@ -24,7 +24,17 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { name, entityType, notes, includeInPortfolio, isGrantor } = body;
+    const {
+      name,
+      entityType,
+      notes,
+      includeInPortfolio,
+      isGrantor,
+      value,
+      owner,
+      grantors,
+      beneficiaries,
+    } = body;
 
     const [updated] = await db
       .update(entities)
@@ -34,6 +44,10 @@ export async function PUT(
         ...(notes !== undefined && { notes }),
         ...(includeInPortfolio !== undefined && { includeInPortfolio: Boolean(includeInPortfolio) }),
         ...(isGrantor !== undefined && { isGrantor: Boolean(isGrantor) }),
+        ...(value !== undefined && { value: String(value) }),
+        ...(owner !== undefined && { owner: owner ?? null }),
+        ...(grantors !== undefined && { grantors }),
+        ...(beneficiaries !== undefined && { beneficiaries }),
         updatedAt: new Date(),
       })
       .where(and(eq(entities.id, entityId), eq(entities.clientId, id)))

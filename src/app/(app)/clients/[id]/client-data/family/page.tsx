@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { clients, familyMembers, entities } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
-import FamilyView, { FamilyMember, Entity, PrimaryInfo } from "@/components/family-view";
+import FamilyView, { FamilyMember, Entity, NamePctRow, PrimaryInfo } from "@/components/family-view";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -45,6 +45,10 @@ export default async function FamilyPage({ params }: PageProps) {
     notes: e.notes ?? null,
     includeInPortfolio: e.includeInPortfolio,
     isGrantor: e.isGrantor,
+    value: String(e.value ?? "0"),
+    owner: (e.owner as "client" | "spouse" | "joint" | null) ?? null,
+    grantors: (e.grantors as NamePctRow[] | null) ?? null,
+    beneficiaries: (e.beneficiaries as NamePctRow[] | null) ?? null,
   }));
 
   const primary: PrimaryInfo = {

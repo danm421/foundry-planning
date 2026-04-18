@@ -134,7 +134,12 @@ export default async function BalanceSheetPage({ params }: PageProps) {
     isInterestDeductible: l.isInterestDeductible,
   }));
 
-  const entityOptions = entityRows.map((e) => ({ id: e.id, name: e.name }));
+  const entityOptions = entityRows.map((e) => ({
+    id: e.id,
+    name: e.name,
+    entityType: e.entityType as string,
+    value: String(e.value ?? "0"),
+  }));
 
   // Build category default source info so the account form knows which portfolio
   // backs the "Use category default" option for investable categories

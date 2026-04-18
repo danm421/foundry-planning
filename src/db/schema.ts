@@ -242,6 +242,16 @@ export const entities = pgTable("entities", {
   includeInPortfolio: boolean("include_in_portfolio").notNull().default(false),
   // When true, taxes on the entity's income / RMDs are paid at the household (grantor trust).
   isGrantor: boolean("is_grantor").notNull().default(false),
+  // For business-interest entities (LLC/S-Corp/C-Corp/Partnership/Other): flat
+  // valuation that surfaces on the balance sheet's Out of Estate section.
+  // Null/zero for trust/foundation rows that hold value through child accounts.
+  value: decimal("value", { precision: 15, scale: 2 }).notNull().default("0"),
+  // Ownership for business entities (client/spouse/joint). Null for trusts.
+  owner: ownerEnum("owner"),
+  // Trust-only: list of grantors with percent ownership. Shape: { name, pct }[].
+  grantors: jsonb("grantors"),
+  // Trust-only: list of beneficiaries with percent distribution. Shape: { name, pct }[].
+  beneficiaries: jsonb("beneficiaries"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

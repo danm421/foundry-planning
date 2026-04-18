@@ -83,6 +83,16 @@ const CATEGORY_ORDER: AccountCategory[] = [
   "life_insurance",
 ];
 
+const ENTITY_TYPE_LABELS: Record<string, string> = {
+  trust: "Trust",
+  llc: "LLC",
+  s_corp: "S Corp",
+  c_corp: "C Corp",
+  partnership: "Partnership",
+  foundation: "Foundation",
+  other: "Other",
+};
+
 const fmt = (value: string | number) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -264,8 +274,18 @@ export default function BalanceSheetView({
     outByEntity.set(key, arr);
   }
 
+  const BUSINESS_ENTITY_TYPES = new Set(["llc", "s_corp", "c_corp", "partnership", "other"]);
+  const businessEntityRows = entities.filter(
+    (e) => e.entityType && BUSINESS_ENTITY_TYPES.has(e.entityType) && Number(e.value ?? "0") > 0,
+  );
+  const businessEntityTotal = businessEntityRows.reduce(
+    (s, e) => s + Number(e.value ?? "0"),
+    0,
+  );
+
   const totalInEstate = inEstate.reduce((s, a) => s + Number(a.value), 0);
-  const totalOutOfEstate = outOfEstate.reduce((s, a) => s + Number(a.value), 0);
+  const totalOutOfEstate =
+    outOfEstate.reduce((s, a) => s + Number(a.value), 0) + businessEntityTotal;
   const totalAssets = totalInEstate + totalOutOfEstate;
   const totalLiabilities = liabilities.reduce((s, l) => s + currentYearBalance(l), 0);
   const netWorth = totalInEstate - totalLiabilities;
@@ -406,7 +426,7 @@ export default function BalanceSheetView({
       </div>
 
       {/* Out of Estate */}
-      {outOfEstate.length > 0 && (
+      {(outOfEstate.length > 0 || businessEntityRows.length > 0) && (
         <div className="rounded-lg border border-amber-900/40 bg-amber-950/10 p-4">
           <div className="mb-3 flex items-baseline justify-between">
             <div>
@@ -448,6 +468,32 @@ export default function BalanceSheetView({
                 </div>
               );
             })}
+
+            {businessEntityRows.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between bg-amber-900/10 px-4 py-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-amber-200/80">
+                    Business interests
+                  </span>
+                  <span className="text-xs text-amber-200/70">{fmt(businessEntityTotal)}</span>
+                </div>
+                {businessEntityRows.map((e) => (
+                  <a
+                    key={e.id}
+                    href={`/clients/${clientId}/client-data/family`}
+                    className="flex items-center justify-between px-4 py-2 hover:bg-gray-800/60"
+                  >
+                    <div>
+                      <div className="text-sm font-medium text-gray-100">{e.name}</div>
+                      <div className="text-xs text-gray-500">
+                        {ENTITY_TYPE_LABELS[e.entityType ?? "other"] ?? "Entity"} · edit in Family
+                      </div>
+                    </div>
+                    <span className="text-sm font-medium text-gray-100">{fmt(Number(e.value ?? "0"))}</span>
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
