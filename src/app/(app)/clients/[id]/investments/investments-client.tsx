@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import CommentDialog from "./comment-dialog";
 import BenchmarkSelector from "./benchmark-selector";
 import AllocationDonut from "./allocation-donut";
 import AllocationTable from "./allocation-table";
@@ -15,6 +17,7 @@ interface Props {
   modelPortfolios: { id: string; name: string }[];
   selectedBenchmarkPortfolioId: string | null;
   benchmarkWeights: AssetClassWeight[];
+  existingCommentBody: string;
 }
 
 function formatDollars(n: number) {
@@ -29,7 +32,10 @@ export default function InvestmentsClient({
   modelPortfolios,
   selectedBenchmarkPortfolioId,
   benchmarkWeights,
+  existingCommentBody,
 }: Props) {
+  const [commentOpen, setCommentOpen] = useState(false);
+  const hasComment = existingCommentBody.trim().length > 0;
   const disclosureParts: string[] = [];
   if (household.excludedNonInvestableValue > 0) {
     disclosureParts.push(`$${formatDollars(household.excludedNonInvestableValue)} in business / real estate`);
@@ -83,11 +89,24 @@ export default function InvestmentsClient({
           <button className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700" disabled>
             Download PDF
           </button>
-          <button className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700" disabled>
+          <button
+            onClick={() => setCommentOpen(true)}
+            className="relative rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
+          >
             Advisor Comment
+            {hasComment && (
+              <span className="absolute -right-1 -top-1 inline-block h-2 w-2 rounded-full bg-blue-400" />
+            )}
           </button>
         </div>
       </div>
+      <CommentDialog
+        open={commentOpen}
+        onClose={() => setCommentOpen(false)}
+        clientId={clientId}
+        reportKey="investments_asset_allocation"
+        initialBody={existingCommentBody}
+      />
     </div>
   );
 }

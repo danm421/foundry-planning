@@ -9,6 +9,7 @@ import {
   assetClasses as assetClassesTable,
   modelPortfolios,
   modelPortfolioAllocations,
+  reportComments,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -54,13 +55,20 @@ export default async function InvestmentsPage({ params }: PageProps) {
   // have no firm_id columns of their own. We firm-scope transitively by filtering
   // accounts by (clientId + scenarioId) and model_portfolios by firmId, then
   // intersecting allocations with those id sets when we build the indexes below.
-  const [acctRows, mixRows, classRows, portfolioRows, portfolioAllocRows] = await Promise.all([
+  const [acctRows, mixRows, classRows, portfolioRows, portfolioAllocRows, commentRows] = await Promise.all([
     db.select().from(accountsTable).where(and(eq(accountsTable.clientId, clientId), eq(accountsTable.scenarioId, scenario.id))),
     db.select().from(accountAssetAllocations),
     db.select().from(assetClassesTable).where(eq(assetClassesTable.firmId, firmId)),
     db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
     db.select().from(modelPortfolioAllocations),
+    db.select().from(reportComments).where(and(
+      eq(reportComments.clientId, clientId),
+      eq(reportComments.scenarioId, scenario.id),
+      eq(reportComments.reportKey, "investments_asset_allocation"),
+    )),
   ]);
+
+  const existingCommentBody = commentRows[0]?.body ?? "";
 
   // Index asset allocations by account id (filter to this client's accounts).
   const accountIds = new Set(acctRows.map((a) => a.id));
@@ -133,6 +141,7 @@ export default async function InvestmentsPage({ params }: PageProps) {
       modelPortfolios={portfolioLites}
       selectedBenchmarkPortfolioId={settings.selectedBenchmarkPortfolioId ?? null}
       benchmarkWeights={benchmark ?? []}
+      existingCommentBody={existingCommentBody}
     />
   );
 }
