@@ -115,10 +115,12 @@ export default async function InvestmentsPage({ params }: PageProps) {
     sortOrder: c.sortOrder,
   }));
 
+  const cashAssetClassId = classRows.find((c) => c.slug === "cash")?.id ?? null;
+
   const household = computeHouseholdAllocation(
     investableAccounts,
     (acct: AccountLite) =>
-      resolveAccountAllocation(acct, accountMixByAccountId, modelPortfolioAllocationsByPortfolioId, planLite),
+      resolveAccountAllocation(acct, accountMixByAccountId, modelPortfolioAllocationsByPortfolioId, planLite, cashAssetClassId),
     assetClassLites,
   );
 

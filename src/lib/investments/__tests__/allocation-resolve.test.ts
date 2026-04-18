@@ -41,6 +41,7 @@ describe("resolveAccountAllocation", () => {
       ACCOUNT_MIX,
       MP_ALLOCATIONS,
       PLAN,
+      null,
     );
     expect(out).toEqual({
       classified: [
@@ -56,6 +57,7 @@ describe("resolveAccountAllocation", () => {
       ACCOUNT_MIX,
       MP_ALLOCATIONS,
       PLAN,
+      null,
     );
     expect(out).toEqual({ unallocated: true });
   });
@@ -66,6 +68,7 @@ describe("resolveAccountAllocation", () => {
       ACCOUNT_MIX,
       MP_ALLOCATIONS,
       PLAN,
+      null,
     );
     expect(out).toEqual({ classified: P1_ALLOCATIONS });
   });
@@ -76,6 +79,7 @@ describe("resolveAccountAllocation", () => {
       ACCOUNT_MIX,
       MP_ALLOCATIONS,
       PLAN,
+      null,
     );
     expect(out).toEqual({ unallocated: true });
   });
@@ -86,6 +90,7 @@ describe("resolveAccountAllocation", () => {
       ACCOUNT_MIX,
       MP_ALLOCATIONS,
       PLAN,
+      null,
     );
     expect(out).toEqual({ unallocated: true });
   });
@@ -96,6 +101,7 @@ describe("resolveAccountAllocation", () => {
       ACCOUNT_MIX,
       MP_ALLOCATIONS,
       { ...PLAN, growthSourceRetirement: "model_portfolio", modelPortfolioIdRetirement: "p1" },
+      null,
     );
     expect(out).toEqual({ classified: P1_ALLOCATIONS });
   });
@@ -106,6 +112,33 @@ describe("resolveAccountAllocation", () => {
       ACCOUNT_MIX,
       MP_ALLOCATIONS,
       PLAN,
+      null,
+    );
+    expect(out).toEqual({ unallocated: true });
+  });
+
+  it("short-circuits cash accounts to 100% Cash when cashAssetClassId is set, regardless of growth_source", () => {
+    for (const growthSource of ["custom", "default", "model_portfolio", "asset_mix"] as const) {
+      const out = resolveAccountAllocation(
+        mkAccount({ category: "cash", growthSource, modelPortfolioId: "p1", id: "acct-mix" }),
+        ACCOUNT_MIX,
+        MP_ALLOCATIONS,
+        PLAN,
+        "ac-cash",
+      );
+      expect(out).toEqual({
+        classified: [{ assetClassId: "ac-cash", weight: 1 }],
+      });
+    }
+  });
+
+  it("short-circuit applies only to category='cash' (other categories use the normal chain)", () => {
+    const out = resolveAccountAllocation(
+      mkAccount({ category: "taxable", growthSource: "custom" }),
+      ACCOUNT_MIX,
+      MP_ALLOCATIONS,
+      PLAN,
+      "ac-cash",
     );
     expect(out).toEqual({ unallocated: true });
   });

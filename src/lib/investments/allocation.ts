@@ -54,7 +54,16 @@ export function resolveAccountAllocation(
   accountMixByAccountId: Record<string, AssetClassWeight[]>,
   modelPortfolioAllocationsByPortfolioId: Record<string, AssetClassWeight[]>,
   plan: PlanSettingsLite,
+  cashAssetClassId: string | null,
 ): AccountAllocationResult {
+  // Cash accounts always resolve to 100% of the Cash asset class for the
+  // investments report, regardless of their configured growth_source. The
+  // short-circuit is skipped when cashAssetClassId is null (e.g., firm hasn't
+  // been migrated to set slug='cash' on its Cash / Money Market row).
+  if (account.category === "cash" && cashAssetClassId) {
+    return { classified: [{ assetClassId: cashAssetClassId, weight: 1 }] };
+  }
+
   if (account.growthSource === "asset_mix") {
     const rows = accountMixByAccountId[account.id];
     if (rows && rows.length > 0) return { classified: rows };
