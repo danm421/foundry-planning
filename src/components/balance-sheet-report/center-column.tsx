@@ -153,6 +153,73 @@ export default function CenterColumn({
         </div>
       </div>
 
+      {(viewModel.outOfEstateRows.length > 0 ||
+        viewModel.outOfEstateLiabilityRows.length > 0) && (
+        <div className={SCREEN_THEME.surface.panel}>
+          <div className={`${SCREEN_THEME.surface.panelHeader} flex items-center justify-between`}>
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Out of Estate
+            </span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-[10px] uppercase tracking-wide text-gray-500">
+                Net
+              </span>
+              <span className="text-sm font-semibold text-gray-100">
+                {formatCurrency(viewModel.outOfEstateNetWorth)}
+              </span>
+            </div>
+          </div>
+          {viewModel.outOfEstateRows.length > 0 && (
+            <div className="px-4 pb-2 pt-2">
+              <div className="flex items-center justify-between pb-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                  Assets
+                </span>
+                <span className="text-xs font-semibold text-emerald-400">
+                  {formatCurrency(
+                    viewModel.outOfEstateRows.reduce((s, r) => s + r.value, 0),
+                  )}
+                </span>
+              </div>
+              {viewModel.outOfEstateRows.map((row) => (
+                <div
+                  key={row.accountId}
+                  className="flex items-center justify-between border-b border-gray-800/60 py-1 last:border-b-0"
+                >
+                  <span className="text-sm text-gray-300">{row.accountName}</span>
+                  <span className="text-sm text-gray-200">{formatCurrency(row.value)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {viewModel.outOfEstateLiabilityRows.length > 0 && (
+            <div className="border-t border-gray-800 px-4 pb-3 pt-2">
+              <div className="flex items-center justify-between pb-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                  Liabilities
+                </span>
+                <span className="text-xs font-semibold text-rose-400">
+                  −{formatCurrency(
+                    viewModel.outOfEstateLiabilityRows.reduce((s, r) => s + r.balance, 0),
+                  )}
+                </span>
+              </div>
+              {viewModel.outOfEstateLiabilityRows.map((row) => (
+                <div
+                  key={row.liabilityId}
+                  className="flex items-center justify-between border-b border-gray-800/60 py-1 last:border-b-0"
+                >
+                  <span className="text-sm text-gray-300">{row.liabilityName}</span>
+                  <span className="text-sm text-gray-200">
+                    −{formatCurrency(row.balance)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }

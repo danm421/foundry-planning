@@ -1,7 +1,6 @@
 "use client";
 
 import type { BalanceSheetViewModel, AssetRow, AssetCategoryGroup } from "./view-model";
-import type { OwnershipView } from "./ownership-filter";
 import { SCREEN_THEME, CATEGORY_HEX } from "./tokens";
 import type { OwnerNames } from "@/lib/owner-labels";
 import { individualOwnerLabel } from "@/lib/owner-labels";
@@ -9,7 +8,6 @@ import type { YoyResult } from "./yoy";
 
 interface AssetsPanelProps {
   viewModel: BalanceSheetViewModel;
-  view: OwnershipView;
   ownerNames: OwnerNames;
   showOwnerChips: boolean;
   entityLabelById: Map<string, string>;
@@ -141,7 +139,6 @@ function CategoryCard({
 
 export default function AssetsPanel({
   viewModel,
-  view,
   ownerNames,
   showOwnerChips,
   entityLabelById,
@@ -150,7 +147,7 @@ export default function AssetsPanel({
     <div className="flex flex-col gap-3">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Assets</h2>
 
-      {viewModel.assetCategories.length === 0 && viewModel.outOfEstateRows.length === 0 && (
+      {viewModel.assetCategories.length === 0 && (
         <div className={`${SCREEN_THEME.surface.panel} p-6 text-center text-sm text-gray-500`}>
           No assets in this view.
         </div>
@@ -165,30 +162,6 @@ export default function AssetsPanel({
           entityLabelById={entityLabelById}
         />
       ))}
-
-      {view === "consolidated" && viewModel.outOfEstateRows.length > 0 && (
-        <div className={SCREEN_THEME.surface.panel}>
-          <div className={`${SCREEN_THEME.surface.panelHeader} flex items-center justify-between`}>
-            <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-              Out of Estate (Entity-owned)
-            </span>
-            <span className="text-sm font-semibold text-gray-100">
-              {formatCurrency(viewModel.outOfEstateRows.reduce((s, r) => s + r.value, 0))}
-            </span>
-          </div>
-          <div className="px-4 pb-3 pt-1">
-            {viewModel.outOfEstateRows.map((row) => (
-              <AccountRow
-                key={row.accountId}
-                row={row}
-                showOwnerChip
-                names={ownerNames}
-                entityLabelById={entityLabelById}
-              />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

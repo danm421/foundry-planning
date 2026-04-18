@@ -83,27 +83,36 @@ const baseInput: BuildViewModelInput = {
 describe("buildViewModel (consolidated)", () => {
   const vm = buildViewModel(baseInput);
 
-  it("computes total assets across all categories including entity-owned", () => {
-    expect(vm.totalAssets).toBe(1_850_000);
+  // In-estate only: cash 50k + 401k 500k + roth 200k + home 800k = 1,550,000.
+  // The Family Trust Brokerage (a-trust) is entity-owned and surfaces in the
+  // separate Out of Estate section — it does NOT count toward totals.
+
+  it("computes total assets from in-estate accounts only", () => {
+    expect(vm.totalAssets).toBe(1_550_000);
   });
 
-  it("computes total liabilities across all owners", () => {
+  it("computes total liabilities from in-estate liabilities only", () => {
     expect(vm.totalLiabilities).toBe(408_000);
   });
 
-  it("computes net worth = assets - liabilities", () => {
-    expect(vm.netWorth).toBe(1_442_000);
+  it("computes net worth = in-estate assets - in-estate liabilities", () => {
+    expect(vm.netWorth).toBe(1_142_000);
   });
 
-  it("returns categories in canonical order, zero-total categories excluded", () => {
+  it("omits categories whose only rows are entity-owned (taxable here)", () => {
     expect(vm.assetCategories.map((c) => c.key)).toEqual([
-      "cash", "taxable", "retirement", "realEstate",
+      "cash", "retirement", "realEstate",
     ]);
   });
 
-  it("includes an out-of-estate group with entity-owned accounts", () => {
+  it("surfaces entity-owned assets in outOfEstateRows separately", () => {
     expect(vm.outOfEstateRows.map((r) => r.accountId)).toEqual(["a-trust"]);
     expect(vm.outOfEstateRows[0].value).toBe(300_000);
+  });
+
+  it("reports outOfEstateNetWorth = out-of-estate assets - out-of-estate liabilities", () => {
+    expect(vm.outOfEstateLiabilityRows).toEqual([]);
+    expect(vm.outOfEstateNetWorth).toBe(300_000);
   });
 
   it("flags real estate rows that have a linked mortgage", () => {
@@ -112,25 +121,25 @@ describe("buildViewModel (consolidated)", () => {
     expect(home.hasLinkedMortgage).toBe(true);
   });
 
-  it("computes real estate equity = market value - linked mortgages", () => {
+  it("computes real estate equity from in-estate real estate only", () => {
     expect(vm.realEstateEquity).toBe(400_000); // 800k home - 400k mortgage
   });
 
   it("computes YoY for total assets against the prior projection year", () => {
-    expect(vm.yoy.totalAssets?.value).toBeCloseTo(((1_850_000 - 1_700_000) / 1_700_000) * 100, 2);
+    // prior in-estate total: 45k + 455k + 180k + 745k = 1,425,000
+    expect(vm.yoy.totalAssets?.value).toBeCloseTo(((1_550_000 - 1_425_000) / 1_425_000) * 100, 2);
     expect(vm.yoy.totalAssets?.badge).toBe("up");
   });
 
-  it("returns a donut slice per non-zero category with correct totals", () => {
+  it("returns a donut slice per non-zero in-estate category", () => {
     expect(vm.donut).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: "cash", value: 50_000 }),
-        expect.objectContaining({ key: "taxable", value: 300_000 }),
         expect.objectContaining({ key: "retirement", value: 700_000 }),
         expect.objectContaining({ key: "realEstate", value: 800_000 }),
       ]),
     );
-    expect(vm.donut).toHaveLength(4);
+    expect(vm.donut).toHaveLength(3);
   });
 });
 

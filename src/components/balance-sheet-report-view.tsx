@@ -169,7 +169,6 @@ export default function BalanceSheetReportView({
         <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr_1fr]">
           <AssetsPanel
             viewModel={viewModel}
-            view={view}
             ownerNames={ownerNames}
             showOwnerChips={isMarried || hasEntityAccounts}
             entityLabelById={entityLabelById}

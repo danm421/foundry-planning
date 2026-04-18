@@ -119,7 +119,15 @@ export interface EntityGroup {
 export interface BalanceSheetViewModel {
   selectedYear: number;
   assetCategories: AssetCategoryGroup[];
+  /** Entity-owned assets displayed separately in consolidated view. Empty in
+   * other views. Does NOT contribute to totalAssets / netWorth / donut /
+   * realEstateEquity — out-of-estate is its own standalone section. */
   outOfEstateRows: AssetRow[];
+  /** Entity-owned liabilities alongside out-of-estate assets. Same exclusion
+   * semantics as outOfEstateRows. Empty outside consolidated view. */
+  outOfEstateLiabilityRows: LiabilityRow[];
+  /** Sum of outOfEstateRows − outOfEstateLiabilityRows. 0 when empty. */
+  outOfEstateNetWorth: number;
   liabilityRows: LiabilityRow[];
   /** Present only when view === "entities". Flat `assetCategories` and
    * `liabilityRows` remain populated for fallback and for totals/charts. */
@@ -171,13 +179,25 @@ function accountValueForYear(
   return mode === "today" ? ledger.beginningValue : ledger.endingValue;
 }
 
+/** In consolidated view, entity-owned rows (ownerEntityId != null) are shown
+ * separately and excluded from household totals. Other views already scope by
+ * owner. */
+function inEstateOnly<T extends { ownerEntityId?: string | null }>(
+  rows: T[],
+  view: OwnershipView,
+): T[] {
+  return view === "consolidated"
+    ? rows.filter((r) => r.ownerEntityId == null)
+    : rows;
+}
+
 function filteredAssetTotalForYear(
   yearData: ProjectionYearLike,
   accounts: AccountLike[],
   view: OwnershipView,
   mode: AsOfMode,
 ): number {
-  const filtered = filterAccounts(accounts, view);
+  const filtered = inEstateOnly(filterAccounts(accounts, view), view);
   return filtered.reduce(
     (sum, a) => sum + accountValueForYear(yearData, a.id, mode),
     0,
@@ -189,7 +209,7 @@ function filteredLiabilityTotalForYear(
   liabilities: LiabilityLike[],
   view: OwnershipView,
 ): number {
-  const filtered = filterLiabilities(liabilities, view);
+  const filtered = inEstateOnly(filterLiabilities(liabilities, view), view);
   const filteredIds = new Set(filtered.map((l) => l.id));
   let total = 0;
   for (const [id, balance] of Object.entries(yearData.liabilityBalancesBoY)) {
@@ -288,8 +308,9 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
           .reduce((sum, a) => sum + accountValueForYear(priorYear, a.id, "eoy"), 0)
       : null;
 
-    // Include the category if it has in-estate rows OR (consolidated) out-of-estate rows.
-    if (total > 0 || rows.length > 0 || outRows.length > 0) {
+    // Include the category if it has in-estate rows. Out-of-estate is a
+    // separate section (centerColumn) and does not influence category cards.
+    if (total > 0 || rows.length > 0) {
       assetCategories.push({
         key: categoryKey,
         label: CATEGORY_LABELS[categoryKey],
@@ -302,10 +323,10 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     outOfEstateRows.push(...outRows);
   }
 
-  // ── Liabilities: flat list, filtered ──
+  // ── Liabilities: flat list, filtered; entity-owned split off in consolidated ──
 
   const filteredLiabIds = new Set(filterLiabilities(liabilities, view).map((l) => l.id));
-  const liabilityRows: LiabilityRow[] = liabilities
+  const allLiabRows: LiabilityRow[] = liabilities
     .filter((l) => filteredLiabIds.has(l.id))
     .map((l) => ({
       liabilityId: l.id,
@@ -315,6 +336,15 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       balance: yearData.liabilityBalancesBoY[l.id] ?? 0,
     }))
     .filter((r) => r.balance > 0);
+
+  const liabilityRows: LiabilityRow[] =
+    view === "consolidated"
+      ? allLiabRows.filter((r) => r.ownerEntityId == null)
+      : allLiabRows;
+  const outOfEstateLiabilityRows: LiabilityRow[] =
+    view === "consolidated"
+      ? allLiabRows.filter((r) => r.ownerEntityId != null)
+      : [];
 
   // ── Entity groups: populated only in the "entities" view ──
   //
@@ -335,7 +365,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       assetsByEntity.set(row.ownerEntityId, list);
     }
     const liabsByEntity = new Map<string, LiabilityRow[]>();
-    for (const row of liabilityRows) {
+    for (const row of allLiabRows) {
       if (!row.ownerEntityId) continue;
       const list = liabsByEntity.get(row.ownerEntityId) ?? [];
       list.push(row);
@@ -362,53 +392,42 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       .filter((g) => g.assetRows.length > 0 || g.liabilityRows.length > 0);
   }
 
-  // ── Totals ──
+  // ── Totals (in-estate only; out-of-estate stands apart) ──
 
-  const totalAssets =
-    assetCategories.reduce((sum, c) => sum + c.total, 0) +
-    outOfEstateRows.reduce((sum, r) => sum + r.value, 0);
+  const totalAssets = assetCategories.reduce((sum, c) => sum + c.total, 0);
   const totalLiabilities = liabilityRows.reduce((sum, r) => sum + r.balance, 0);
   const netWorth = totalAssets - totalLiabilities;
 
-  // ── Real estate equity = all filtered real-estate market value − linked mortgage balances ──
+  const outOfEstateAssetTotal = outOfEstateRows.reduce((sum, r) => sum + r.value, 0);
+  const outOfEstateLiabilityTotal = outOfEstateLiabilityRows.reduce(
+    (sum, r) => sum + r.balance,
+    0,
+  );
+  const outOfEstateNetWorth = outOfEstateAssetTotal - outOfEstateLiabilityTotal;
+
+  // ── Real estate equity = in-estate real-estate market value − linked mortgages ──
+  // Out-of-estate real estate is reflected in the Out of Estate section, not here.
 
   const realEstateCategory = assetCategories.find((c) => c.key === "realEstate");
   const realEstateMarketValue =
-    (realEstateCategory?.rows.reduce((sum, r) => sum + r.value, 0) ?? 0) +
-    (view === "consolidated"
-      ? outOfEstateRows
-          .filter((r) => {
-            const acct = accountById.get(r.accountId);
-            return acct && DB_TO_KEY[acct.category] === "realEstate";
-          })
-          .reduce((sum, r) => sum + r.value, 0)
-      : 0);
+    realEstateCategory?.rows.reduce((sum, r) => sum + r.value, 0) ?? 0;
 
   const linkedMortgageBalance = (realEstateCategory?.rows ?? [])
-    .concat(view === "consolidated" ? outOfEstateRows : [])
     .flatMap((row) => mortgagesByPropertyId.get(row.accountId) ?? [])
+    .filter((liab) => liab.ownerEntityId == null)
     .reduce((sum, liab) => sum + (yearData.liabilityBalancesBoY[liab.id] ?? 0), 0);
 
   const realEstateEquity = realEstateMarketValue - linkedMortgageBalance;
 
-  // ── Donut: one slice per non-zero asset category, including out-of-estate if consolidated ──
+  // ── Donut: one slice per non-zero in-estate asset category ──
 
   const donut: DonutSlice[] = [];
   for (const cat of assetCategories) {
-    let value = cat.total;
-    if (view === "consolidated") {
-      value += outOfEstateRows
-        .filter((r) => {
-          const acct = accountById.get(r.accountId);
-          return acct && DB_TO_KEY[acct.category] === cat.key;
-        })
-        .reduce((sum, r) => sum + r.value, 0);
-    }
-    if (value <= 0) continue;
+    if (cat.total <= 0) continue;
     donut.push({
       key: cat.key,
       label: cat.label,
-      value,
+      value: cat.total,
       hex: CATEGORY_HEX[cat.key],
     });
   }
@@ -445,6 +464,8 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     selectedYear,
     assetCategories,
     outOfEstateRows,
+    outOfEstateLiabilityRows,
+    outOfEstateNetWorth,
     liabilityRows,
     entityGroups,
     totalAssets,
