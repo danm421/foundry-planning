@@ -86,7 +86,13 @@ export default function InvestmentsClient({
 
       <div className="flex items-center justify-between border-t border-gray-800 pt-4">
         <div className="flex gap-2">
-          <button className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700" disabled>
+          <button
+            onClick={() => {
+              // TODO: real PDF export — see FUTURE_WORK.md "Plan PDF export".
+              alert("PDF export is coming soon.");
+            }}
+            className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
+          >
             Download PDF
           </button>
           <button
