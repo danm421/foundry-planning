@@ -937,7 +937,7 @@ export default function AddAccountForm({
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-2">
+      <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
         {isEdit && onDelete ? (
           <button
             type="button"

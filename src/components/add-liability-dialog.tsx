@@ -68,7 +68,7 @@ export default function AddLiabilityDialog({
       {actualOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="absolute inset-0 bg-black/40" onClick={close} />
-          <div className="relative z-10 w-full max-w-2xl rounded-lg bg-gray-900 border border-gray-700 p-6 shadow-xl my-auto max-h-[90vh] flex flex-col">
+          <div className="relative z-10 w-full max-w-2xl rounded-lg bg-gray-900 border border-gray-700 p-6 shadow-xl my-auto max-h-[90vh] overflow-y-auto flex flex-col">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-100">
                 {isEdit ? "Edit Liability" : "Add Liability"}
