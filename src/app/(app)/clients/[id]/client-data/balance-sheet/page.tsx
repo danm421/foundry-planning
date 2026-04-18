@@ -14,6 +14,7 @@ import {
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import BalanceSheetView, { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
+import { buildClientMilestones } from "@/lib/milestones";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -90,6 +91,11 @@ export default async function BalanceSheetPage({ params }: PageProps) {
   });
 
   const settings = settingsRows[0];
+
+  // Build milestones for MilestoneYearPicker in the savings sub-form
+  const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
+  const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
+  const milestones = buildClientMilestones(client, planStartYear, planEndYear);
 
   const accountProps: AccountRow[] = accountRows.map((a) => ({
     id: a.id,
@@ -185,6 +191,7 @@ export default async function BalanceSheetPage({ params }: PageProps) {
       assetClasses={assetClassOptions}
       portfolioAllocationsMap={portfolioAllocationsMap}
       categoryDefaultSources={categoryDefaultSources}
+      milestones={milestones}
     />
   );
 }

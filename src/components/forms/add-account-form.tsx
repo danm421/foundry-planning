@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
+import MilestoneYearPicker from "@/components/milestone-year-picker";
+import type { YearRef, ClientMilestones } from "@/lib/milestones";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -64,6 +66,9 @@ interface AddAccountFormProps {
   assetClasses?: AssetClassOption[];
   portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
   categoryDefaultSources?: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }>;
+  milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
   onSuccess?: () => void;
   onDelete?: () => void;
 }
@@ -126,6 +131,9 @@ export default function AddAccountForm({
   assetClasses,
   portfolioAllocationsMap,
   categoryDefaultSources,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
   onSuccess,
   onDelete,
 }: AddAccountFormProps) {
@@ -214,6 +222,13 @@ export default function AddAccountForm({
       : null;
 
   const currentYear = new Date().getFullYear();
+
+  // Savings (create-only) year state — enables MilestoneYearPicker fallback
+  const [savingsStartYear, setSavingsStartYear] = useState<number>(currentYear);
+  const [savingsEndYear, setSavingsEndYear] = useState<number>(currentYear + 20);
+  const [savingsStartYearRef, setSavingsStartYearRef] = useState<YearRef | null>(null);
+  const [savingsEndYearRef, setSavingsEndYearRef] = useState<YearRef | null>(null);
+
   const subTypes = SUB_TYPE_BY_CATEGORY[category];
   const isRetirementAccount = category === "retirement" && RETIREMENT_SUB_TYPES.has(subType);
   const showRmdCheckbox =
@@ -341,8 +356,10 @@ export default function AddAccountForm({
           const savingsBody = {
             accountId: account.id,
             annualAmount: savingsAmount,
-            startYear: data.get("savingsStartYear") as string,
-            endYear: data.get("savingsEndYear") as string,
+            startYear: String(savingsStartYear),
+            endYear: String(savingsEndYear),
+            startYearRef: savingsStartYearRef,
+            endYearRef: savingsEndYearRef,
             employerMatchPct: matchPct ? String(Number(matchPct) / 100) : null,
             employerMatchCap: matchCap ? String(Number(matchCap) / 100) : null,
             annualLimit: limit || null,
@@ -673,31 +690,74 @@ export default function AddAccountForm({
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="savingsStartYear">
-                  Start Year
-                </label>
-                <input
-                  id="savingsStartYear"
+              {milestones ? (
+                <MilestoneYearPicker
                   name="savingsStartYear"
-                  type="number"
-                  defaultValue={currentYear}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  id="savingsStartYear"
+                  value={savingsStartYear}
+                  yearRef={savingsStartYearRef}
+                  milestones={milestones}
+                  onChange={(yr, ref) => {
+                    setSavingsStartYear(yr);
+                    setSavingsStartYearRef(ref);
+                  }}
+                  label="Start Year"
+                  clientFirstName={clientFirstName}
+                  spouseFirstName={spouseFirstName}
                 />
-              </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="savingsStartYear">
+                    Start Year
+                  </label>
+                  <input
+                    id="savingsStartYear"
+                    name="savingsStartYear"
+                    type="number"
+                    value={savingsStartYear}
+                    onChange={(e) => {
+                      setSavingsStartYear(Number(e.target.value));
+                      setSavingsStartYearRef(null);
+                    }}
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="savingsEndYear">
-                  End Year
-                </label>
-                <input
-                  id="savingsEndYear"
+              {milestones ? (
+                <MilestoneYearPicker
                   name="savingsEndYear"
-                  type="number"
-                  defaultValue={currentYear + 20}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  id="savingsEndYear"
+                  value={savingsEndYear}
+                  yearRef={savingsEndYearRef}
+                  milestones={milestones}
+                  onChange={(yr, ref) => {
+                    setSavingsEndYear(yr);
+                    setSavingsEndYearRef(ref);
+                  }}
+                  label="End Year"
+                  clientFirstName={clientFirstName}
+                  spouseFirstName={spouseFirstName}
+                  startYearForDuration={savingsStartYear}
                 />
-              </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="savingsEndYear">
+                    End Year
+                  </label>
+                  <input
+                    id="savingsEndYear"
+                    name="savingsEndYear"
+                    type="number"
+                    value={savingsEndYear}
+                    onChange={(e) => {
+                      setSavingsEndYear(Number(e.target.value));
+                      setSavingsEndYearRef(null);
+                    }}
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              )}
             </div>
 
             {isRetirementAccount && (

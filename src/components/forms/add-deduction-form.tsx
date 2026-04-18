@@ -2,6 +2,8 @@
 
 import { useState, FormEvent } from "react";
 import { PercentInput } from "@/components/percent-input";
+import MilestoneYearPicker from "@/components/milestone-year-picker";
+import type { YearRef, ClientMilestones } from "@/lib/milestones";
 
 interface DeductionRow {
   id: string;
@@ -21,6 +23,9 @@ interface AddDeductionFormProps {
   existing?: DeductionRow | null;
   onClose: () => void;
   onSaved: () => void;
+  milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
 }
 
 const TYPE_OPTIONS: Array<{ value: DeductionRow["type"]; label: string }> = [
@@ -35,7 +40,15 @@ const INPUT_CLASS =
 const SELECT_CLASS =
   "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none";
 
-export function AddDeductionForm({ clientId, existing, onClose, onSaved }: AddDeductionFormProps) {
+export function AddDeductionForm({
+  clientId,
+  existing,
+  onClose,
+  onSaved,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
+}: AddDeductionFormProps) {
   const [type, setType] = useState<DeductionRow["type"]>(existing?.type ?? "charitable");
   const [name, setName] = useState(existing?.name ?? "");
   const [owner, setOwner] = useState<DeductionRow["owner"]>(existing?.owner ?? "joint");
@@ -43,6 +56,12 @@ export function AddDeductionForm({ clientId, existing, onClose, onSaved }: AddDe
   const [growthRate, setGrowthRate] = useState(existing ? (existing.growthRate * 100).toString() : "0");
   const [startYear, setStartYear] = useState(existing?.startYear ?? new Date().getFullYear());
   const [endYear, setEndYear] = useState(existing?.endYear ?? new Date().getFullYear() + 50);
+  const [startYearRef, setStartYearRef] = useState<YearRef | null>(
+    (existing?.startYearRef as YearRef | null) ?? null
+  );
+  const [endYearRef, setEndYearRef] = useState<YearRef | null>(
+    (existing?.endYearRef as YearRef | null) ?? null
+  );
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -57,8 +76,8 @@ export function AddDeductionForm({ clientId, existing, onClose, onSaved }: AddDe
         growthRate: parseFloat(growthRate) / 100 || 0,
         startYear,
         endYear,
-        startYearRef: null,
-        endYearRef: null,
+        startYearRef,
+        endYearRef,
       };
 
       const url = existing
@@ -165,30 +184,71 @@ export function AddDeductionForm({ clientId, existing, onClose, onSaved }: AddDe
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-400">Start year</label>
-            <input
-              type="number"
-              min={2000}
-              max={2100}
+          {milestones ? (
+            <MilestoneYearPicker
+              name="startYear"
+              id="startYear"
               value={startYear}
-              onChange={(e) => setStartYear(Number(e.target.value))}
-              required
-              className={INPUT_CLASS}
+              yearRef={startYearRef}
+              milestones={milestones}
+              onChange={(yr, ref) => {
+                setStartYear(yr);
+                setStartYearRef(ref);
+              }}
+              label="Start year"
+              clientFirstName={clientFirstName}
+              spouseFirstName={spouseFirstName}
             />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-400">End year</label>
-            <input
-              type="number"
-              min={2000}
-              max={2100}
+          ) : (
+            <div>
+              <label className="block text-xs font-medium text-gray-400">Start year</label>
+              <input
+                type="number"
+                min={2000}
+                max={2100}
+                value={startYear}
+                onChange={(e) => {
+                  setStartYear(Number(e.target.value));
+                  setStartYearRef(null);
+                }}
+                required
+                className={INPUT_CLASS}
+              />
+            </div>
+          )}
+          {milestones ? (
+            <MilestoneYearPicker
+              name="endYear"
+              id="endYear"
               value={endYear}
-              onChange={(e) => setEndYear(Number(e.target.value))}
-              required
-              className={INPUT_CLASS}
+              yearRef={endYearRef}
+              milestones={milestones}
+              onChange={(yr, ref) => {
+                setEndYear(yr);
+                setEndYearRef(ref);
+              }}
+              label="End year"
+              clientFirstName={clientFirstName}
+              spouseFirstName={spouseFirstName}
+              startYearForDuration={startYear}
             />
-          </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-medium text-gray-400">End year</label>
+              <input
+                type="number"
+                min={2000}
+                max={2100}
+                value={endYear}
+                onChange={(e) => {
+                  setEndYear(Number(e.target.value));
+                  setEndYearRef(null);
+                }}
+                required
+                className={INPUT_CLASS}
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 pt-2">

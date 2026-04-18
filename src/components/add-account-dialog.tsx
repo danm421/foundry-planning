@@ -3,6 +3,7 @@
 import { useState } from "react";
 import AddAccountForm, { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
 import { type AssetClassOption } from "./forms/asset-mix-tab";
+import type { ClientMilestones } from "@/lib/milestones";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -22,6 +23,9 @@ interface AddAccountDialogProps {
   assetClasses?: AssetClassOption[];
   portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
   categoryDefaultSources?: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }>;
+  milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
 }
 
 export default function AddAccountDialog({
@@ -39,6 +43,9 @@ export default function AddAccountDialog({
   assetClasses,
   portfolioAllocationsMap,
   categoryDefaultSources,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
 }: AddAccountDialogProps) {
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
@@ -91,6 +98,9 @@ export default function AddAccountDialog({
               assetClasses={assetClasses}
               portfolioAllocationsMap={portfolioAllocationsMap}
               categoryDefaultSources={categoryDefaultSources}
+              milestones={milestones}
+              clientFirstName={clientFirstName}
+              spouseFirstName={spouseFirstName}
               onSuccess={close}
               onDelete={onRequestDelete}
             />

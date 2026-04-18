@@ -85,6 +85,8 @@ interface SavingsRule {
   employerMatchCap: string | null;
   employerMatchAmount: string | null;
   annualLimit: string | null;
+  startYearRef?: string | null;
+  endYearRef?: string | null;
 }
 
 interface Account {
@@ -1144,6 +1146,8 @@ interface SavingsRuleDialogProps {
   onSaved: (rule: SavingsRule, mode: "create" | "edit") => void;
   onRequestDelete?: () => void;
   schedule?: { year: number; amount: number }[];
+  clientInfo?: ClientInfo;
+  ownerNames?: OwnerNames;
 }
 
 function SavingsRuleDialog({
@@ -1155,6 +1159,8 @@ function SavingsRuleDialog({
   onSaved,
   onRequestDelete,
   schedule,
+  clientInfo,
+  ownerNames,
 }: SavingsRuleDialogProps) {
   type SavTabId = "details" | "schedule";
   const [activeTab, setActiveTab] = useState<SavTabId>("details");
@@ -1166,6 +1172,14 @@ function SavingsRuleDialog({
   const isEdit = Boolean(editing);
   const [startYear, setStartYear] = useState<number>(editing?.startYear ?? currentYear);
   const [endYear, setEndYear] = useState<number>(editing?.endYear ?? currentYear + 20);
+  const [startYearRef, setStartYearRef] = useState<YearRef | null>(
+    (editing?.startYearRef as YearRef) ?? null
+  );
+  const [endYearRef, setEndYearRef] = useState<YearRef | null>(
+    (editing?.endYearRef as YearRef) ?? null
+  );
+  const srClientFirstName = ownerNames?.clientName?.split(" ")[0];
+  const srSpouseFirstName = ownerNames?.spouseName?.split(" ")[0];
 
   // Match mode: "none" | "percent" | "flat". Inferred from what's populated on the
   // rule being edited; defaults to "none" for new rules.
@@ -1192,8 +1206,10 @@ function SavingsRuleDialog({
     const body = {
       accountId: data.get("accountId") as string,
       annualAmount: data.get("annualAmount") as string,
-      startYear: data.get("startYear") as string,
-      endYear: data.get("endYear") as string,
+      startYear: String(startYear),
+      endYear: String(endYear),
+      startYearRef,
+      endYearRef,
       employerMatchPct:
         matchMode === "percent" && matchPct ? String(Number(matchPct) / 100) : null,
       employerMatchCap:
@@ -1379,34 +1395,75 @@ function SavingsRuleDialog({
                 </div>
               )}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="sr-start">
-                Start Year <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="sr-start"
+            {clientInfo?.milestones ? (
+              <MilestoneYearPicker
                 name="startYear"
-                type="number"
-                required
+                id="sr-start"
                 value={startYear}
-                onChange={(e) => setStartYear(Number(e.target.value))}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                yearRef={startYearRef}
+                milestones={clientInfo.milestones}
+                onChange={(yr, ref) => {
+                  setStartYear(yr);
+                  setStartYearRef(ref);
+                }}
+                label="Start Year"
+                clientFirstName={srClientFirstName}
+                spouseFirstName={srSpouseFirstName}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="sr-end">
-                End Year <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="sr-end"
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="sr-start">
+                  Start Year <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="sr-start"
+                  name="startYear"
+                  type="number"
+                  required
+                  value={startYear}
+                  onChange={(e) => {
+                    setStartYear(Number(e.target.value));
+                    setStartYearRef(null);
+                  }}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            )}
+            {clientInfo?.milestones ? (
+              <MilestoneYearPicker
                 name="endYear"
-                type="number"
-                required
+                id="sr-end"
                 value={endYear}
-                onChange={(e) => setEndYear(Number(e.target.value))}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                yearRef={endYearRef}
+                milestones={clientInfo.milestones}
+                onChange={(yr, ref) => {
+                  setEndYear(yr);
+                  setEndYearRef(ref);
+                }}
+                label="End Year"
+                clientFirstName={srClientFirstName}
+                spouseFirstName={srSpouseFirstName}
+                startYearForDuration={startYear}
               />
-            </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="sr-end">
+                  End Year <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="sr-end"
+                  name="endYear"
+                  type="number"
+                  required
+                  value={endYear}
+                  onChange={(e) => {
+                    setEndYear(Number(e.target.value));
+                    setEndYearRef(null);
+                  }}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between pt-2">
@@ -1790,6 +1847,8 @@ export default function IncomeExpensesView({
           if (savingsDialog.editing) setDeletingSavings(savingsDialog.editing);
         }}
         schedule={savingsDialog.editing ? savingsSchedules[savingsDialog.editing.id] : undefined}
+        clientInfo={clientInfo}
+        ownerNames={ownerNames}
       />
 
       {/* Delete confirms */}

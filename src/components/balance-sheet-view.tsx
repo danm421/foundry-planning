@@ -10,6 +10,7 @@ import { type AssetClassOption } from "./forms/asset-mix-tab";
 import { LiabilityFormInitial } from "./forms/add-liability-form";
 import { computeAmortizationSchedule, calcOriginalBalance } from "@/lib/loan-math";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
+import type { ClientMilestones } from "@/lib/milestones";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -61,6 +62,7 @@ interface BalanceSheetViewProps {
   assetClasses?: AssetClassOption[];
   portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
   categoryDefaultSources?: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }>;
+  milestones?: ClientMilestones;
 }
 
 const CATEGORY_LABELS: Record<AccountCategory, string> = {
@@ -224,6 +226,7 @@ export default function BalanceSheetView({
   assetClasses,
   portfolioAllocationsMap,
   categoryDefaultSources,
+  milestones,
 }: BalanceSheetViewProps) {
   const router = useRouter();
 
@@ -455,6 +458,9 @@ export default function BalanceSheetView({
         assetClasses={assetClasses}
         portfolioAllocationsMap={portfolioAllocationsMap}
         categoryDefaultSources={categoryDefaultSources}
+        milestones={milestones}
+        clientFirstName={ownerNames.clientName.split(" ")[0]}
+        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
         open={addCategory !== null}
         onOpenChange={(o) => !o && setAddCategory(null)}
       />
@@ -469,6 +475,9 @@ export default function BalanceSheetView({
         assetClasses={assetClasses}
         categoryDefaultSources={categoryDefaultSources}
         portfolioAllocationsMap={portfolioAllocationsMap}
+        milestones={milestones}
+        clientFirstName={ownerNames.clientName.split(" ")[0]}
+        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
         open={!!editingAccount}
         onOpenChange={(o) => !o && setEditingAccount(null)}
         editing={editingAccount ? accountToInitial(editingAccount) : undefined}

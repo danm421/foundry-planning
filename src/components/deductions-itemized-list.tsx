@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AddDeductionForm } from "@/components/forms/add-deduction-form";
+import type { ClientMilestones } from "@/lib/milestones";
 
 interface ItemizedRow {
   id: string;
@@ -37,11 +38,17 @@ export function DeductionsItemizedList({
   rows,
   currentYear,
   onChange,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
 }: {
   clientId: string;
   rows: ItemizedRow[];
   currentYear: number;
   onChange?: () => void;
+  milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState<ItemizedRow | null>(null);
@@ -147,6 +154,9 @@ export function DeductionsItemizedList({
             router.refresh();
             onChange?.();
           }}
+          milestones={milestones}
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
         />
       )}
     </section>

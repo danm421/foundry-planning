@@ -1,9 +1,10 @@
 import { db } from "@/db";
-import { clients, scenarios, clientDeductions, savingsRules, accounts, expenses, liabilities } from "@/db/schema";
+import { clients, scenarios, clientDeductions, savingsRules, accounts, expenses, liabilities, planSettings } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { redirect } from "next/navigation";
 import { amortizeLiability } from "@/engine/liabilities";
+import { buildClientMilestones } from "@/lib/milestones";
 import { DeductionsClient } from "./deductions-client";
 
 interface PageProps {
@@ -30,13 +31,22 @@ export default async function DeductionsPage({ params }: PageProps) {
     return <div className="p-6 text-sm text-gray-400">No base case scenario found.</div>;
   }
 
-  const [deductionRows, savingsRows, accountRows, expenseRows, liabilityRows] = await Promise.all([
+  const [deductionRows, savingsRows, accountRows, expenseRows, liabilityRows, planSettingsRows] = await Promise.all([
     db.select().from(clientDeductions).where(and(eq(clientDeductions.clientId, id), eq(clientDeductions.scenarioId, scenario.id))),
     db.select().from(savingsRules).where(and(eq(savingsRules.clientId, id), eq(savingsRules.scenarioId, scenario.id))),
     db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
     db.select().from(expenses).where(and(eq(expenses.clientId, id), eq(expenses.scenarioId, scenario.id))),
     db.select().from(liabilities).where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id))),
+    db.select().from(planSettings).where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
   ]);
+
+  // Build milestones so the itemized deduction form can use MilestoneYearPicker
+  const settings = planSettingsRows[0];
+  const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
+  const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
+  const milestones = buildClientMilestones(client, planStartYear, planEndYear);
+  const clientFirstName = client.firstName;
+  const spouseFirstName = client.spouseName ?? undefined;
 
   // ── Current year + SALT cap ─────────────────────────────────────────────
   const currentYear = new Date().getFullYear();
@@ -143,6 +153,9 @@ export default async function DeductionsPage({ params }: PageProps) {
       itemizedRows={itemizedRows}
       currentYear={currentYear}
       saltCap={saltCap}
+      milestones={milestones}
+      clientFirstName={clientFirstName}
+      spouseFirstName={spouseFirstName}
     />
   );
 }

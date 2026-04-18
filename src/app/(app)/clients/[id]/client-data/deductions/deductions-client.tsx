@@ -8,6 +8,7 @@ import {
   type PropertyTaxRow,
 } from "@/components/deductions-derived-summary";
 import { DeductionsItemizedList } from "@/components/deductions-itemized-list";
+import type { ClientMilestones } from "@/lib/milestones";
 
 interface ItemizedRow {
   id: string;
@@ -31,6 +32,9 @@ interface DeductionsClientProps {
   itemizedRows: ItemizedRow[];
   currentYear: number;
   saltCap: number;
+  milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
 }
 
 export function DeductionsClient({
@@ -42,6 +46,9 @@ export function DeductionsClient({
   itemizedRows,
   currentYear,
   saltCap,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
 }: DeductionsClientProps) {
   return (
     <div className="space-y-6 p-6">
@@ -60,6 +67,9 @@ export function DeductionsClient({
         clientId={clientId}
         rows={itemizedRows}
         currentYear={currentYear}
+        milestones={milestones}
+        clientFirstName={clientFirstName}
+        spouseFirstName={spouseFirstName}
       />
 
       <p className="text-xs text-gray-500">
