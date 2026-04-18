@@ -116,7 +116,7 @@ function fmtNum(v: number) {
  */
 function groupBorderClass(colId: string): string {
   if (colId === "totalIncome" || colId === "totalExpenses" || colId === "netCashFlow") {
-    return "border-r-2 border-gray-700";
+    return "border-r-2 border-gray-500";
   }
   return "";
 }
@@ -1619,7 +1619,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   return (
                     <th
                       key={header.id}
-                      className={`whitespace-nowrap border-b-2 border-gray-700 bg-gray-800 px-3 py-3.5 text-left text-[13px] font-semibold uppercase tracking-wider text-gray-200 first:pl-4 last:pr-4 ${sticky} ${groupBorder}`}
+                      className={`max-w-[9rem] whitespace-normal border-b-2 border-gray-700 bg-gray-800 px-3 py-3.5 text-left text-[13px] font-semibold uppercase leading-tight tracking-wider text-gray-200 first:pl-4 last:pr-4 ${sticky} ${groupBorder}`}
                     >
                       {header.isPlaceholder
                         ? null
