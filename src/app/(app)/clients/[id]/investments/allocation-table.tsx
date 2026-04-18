@@ -76,9 +76,7 @@ export default function AllocationTable({ household, benchmarkWeights, assetClas
                 <span className="mr-2 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: UNALLOCATED_COLOR }} />
                 Unallocated
               </td>
-              <td className="px-2 py-2 tabular-nums">
-                ${household.unallocatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </td>
+              <td className="px-2 py-2">—</td>
               <td className="px-2 py-2">—</td>
             </tr>
           )}

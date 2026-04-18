@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, scenarios, planSettings } from "@/db/schema";
+import { clients, modelPortfolios, scenarios, planSettings } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
@@ -91,6 +91,22 @@ export async function PUT(
       modelPortfolioIdRetirement,
       selectedBenchmarkPortfolioId,
     } = body;
+
+    if (selectedBenchmarkPortfolioId) {
+      const [portfolio] = await db
+        .select()
+        .from(modelPortfolios)
+        .where(and(
+          eq(modelPortfolios.id, selectedBenchmarkPortfolioId),
+          eq(modelPortfolios.firmId, firmId),
+        ));
+      if (!portfolio) {
+        return NextResponse.json(
+          { error: "Benchmark portfolio not found" },
+          { status: 404 },
+        );
+      }
+    }
 
     if (typeof planStartYear === "number") {
       const currentYear = new Date().getFullYear();
