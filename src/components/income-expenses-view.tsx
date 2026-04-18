@@ -355,6 +355,7 @@ function IncomeDialog({
   type TabId = "details" | "schedule";
   const [activeTab, setActiveTab] = useState<TabId>("details");
   const [hasSchedule, setHasSchedule] = useState((schedule ?? []).length > 0);
+  const [stagedSchedule, setStagedSchedule] = useState<{ year: number; amount: number }[]>(schedule ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [type, setType] = useState<IncomeType>(editing?.type ?? defaultType);
@@ -446,6 +447,16 @@ function IncomeDialog({
       }
 
       const saved = (await res.json()) as Income;
+
+      // On create: if a schedule was staged, persist it now that we have the ID.
+      if (!isEdit && stagedSchedule.length > 0) {
+        await fetch(`/api/clients/${clientId}/incomes/${saved.id}/schedule`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ overrides: stagedSchedule }),
+        });
+      }
+
       onSaved(saved, isEdit ? "edit" : "create");
       onOpenChange(false);
     } catch (err) {
@@ -472,9 +483,7 @@ function IncomeDialog({
 
         <div className="mb-4 flex border-b border-gray-700">
           <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Details</button>
-          {editing && (
-            <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Schedule</button>
-          )}
+          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Schedule</button>
         </div>
 
         {activeTab === "details" && (<form onSubmit={handleSubmit} className="space-y-4">
@@ -736,21 +745,27 @@ function IncomeDialog({
           </div>
         </form>)}
 
-        {activeTab === "schedule" && editing && (
+        {activeTab === "schedule" && (
           <ScheduleTab
             startYear={startYear}
             endYear={endYear}
-            initialOverrides={schedule ?? []}
+            initialOverrides={stagedSchedule}
             onSave={async (overrides) => {
-              await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ overrides }),
-              });
+              if (editing) {
+                await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ overrides }),
+                });
+              }
+              setStagedSchedule(overrides);
               setHasSchedule(overrides.length > 0);
             }}
             onClear={async () => {
-              await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, { method: "DELETE" });
+              if (editing) {
+                await fetch(`/api/clients/${clientId}/incomes/${editing.id}/schedule`, { method: "DELETE" });
+              }
+              setStagedSchedule([]);
               setHasSchedule(false);
             }}
           />
@@ -792,6 +807,7 @@ function ExpenseDialog({
   type ExpTabId = "details" | "schedule";
   const [activeTab, setActiveTab] = useState<ExpTabId>("details");
   const [hasSchedule, setHasSchedule] = useState((schedule ?? []).length > 0);
+  const [stagedSchedule, setStagedSchedule] = useState<{ year: number; amount: number }[]>(schedule ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ownerEntityId, setOwnerEntityId] = useState<string>(editing?.ownerEntityId ?? "");
@@ -857,6 +873,16 @@ function ExpenseDialog({
       }
 
       const saved = (await res.json()) as Expense;
+
+      // On create: if a schedule was staged, persist it now that we have the ID.
+      if (!isEdit && stagedSchedule.length > 0) {
+        await fetch(`/api/clients/${clientId}/expenses/${saved.id}/schedule`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ overrides: stagedSchedule }),
+        });
+      }
+
       onSaved(saved, isEdit ? "edit" : "create");
       onOpenChange(false);
     } catch (err) {
@@ -881,9 +907,7 @@ function ExpenseDialog({
 
         <div className="mb-4 flex border-b border-gray-700">
           <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Details</button>
-          {editing && (
-            <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Schedule</button>
-          )}
+          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Schedule</button>
         </div>
 
         {activeTab === "details" && (<form onSubmit={handleSubmit} className="space-y-4">
@@ -1091,21 +1115,27 @@ function ExpenseDialog({
           </div>
         </form>)}
 
-        {activeTab === "schedule" && editing && (
+        {activeTab === "schedule" && (
           <ScheduleTab
             startYear={startYear}
             endYear={endYear}
-            initialOverrides={schedule ?? []}
+            initialOverrides={stagedSchedule}
             onSave={async (overrides) => {
-              await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ overrides }),
-              });
+              if (editing) {
+                await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ overrides }),
+                });
+              }
+              setStagedSchedule(overrides);
               setHasSchedule(overrides.length > 0);
             }}
             onClear={async () => {
-              await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, { method: "DELETE" });
+              if (editing) {
+                await fetch(`/api/clients/${clientId}/expenses/${editing.id}/schedule`, { method: "DELETE" });
+              }
+              setStagedSchedule([]);
               setHasSchedule(false);
             }}
           />
@@ -1141,10 +1171,13 @@ function SavingsRuleDialog({
   type SavTabId = "details" | "schedule";
   const [activeTab, setActiveTab] = useState<SavTabId>("details");
   const [hasSchedule, setHasSchedule] = useState((schedule ?? []).length > 0);
+  const [stagedSchedule, setStagedSchedule] = useState<{ year: number; amount: number }[]>(schedule ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
+  const [startYear, setStartYear] = useState<number>(editing?.startYear ?? currentYear);
+  const [endYear, setEndYear] = useState<number>(editing?.endYear ?? currentYear + 20);
 
   // Match mode: "none" | "percent" | "flat". Inferred from what's populated on the
   // rule being edited; defaults to "none" for new rules.
@@ -1197,6 +1230,16 @@ function SavingsRuleDialog({
       }
 
       const saved = (await res.json()) as SavingsRule;
+
+      // On create: if a schedule was staged, persist it now that we have the ID.
+      if (!isEdit && stagedSchedule.length > 0) {
+        await fetch(`/api/clients/${clientId}/savings-rules/${saved.id}/schedule`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ overrides: stagedSchedule }),
+        });
+      }
+
       onSaved(saved, isEdit ? "edit" : "create");
       onOpenChange(false);
     } catch (err) {
@@ -1221,9 +1264,7 @@ function SavingsRuleDialog({
 
         <div className="mb-4 flex border-b border-gray-700">
           <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Details</button>
-          {editing && (
-            <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Schedule</button>
-          )}
+          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Schedule</button>
         </div>
 
         {activeTab === "details" && (<form onSubmit={handleSubmit} className="space-y-4">
@@ -1376,7 +1417,8 @@ function SavingsRuleDialog({
                 name="startYear"
                 type="number"
                 required
-                defaultValue={editing?.startYear ?? currentYear}
+                value={startYear}
+                onChange={(e) => setStartYear(Number(e.target.value))}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -1389,7 +1431,8 @@ function SavingsRuleDialog({
                 name="endYear"
                 type="number"
                 required
-                defaultValue={editing?.endYear ?? currentYear + 20}
+                value={endYear}
+                onChange={(e) => setEndYear(Number(e.target.value))}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -1417,21 +1460,27 @@ function SavingsRuleDialog({
           </div>
         </form>)}
 
-        {activeTab === "schedule" && editing && (
+        {activeTab === "schedule" && (
           <ScheduleTab
-            startYear={editing.startYear}
-            endYear={editing.endYear}
-            initialOverrides={schedule ?? []}
+            startYear={startYear}
+            endYear={endYear}
+            initialOverrides={stagedSchedule}
             onSave={async (overrides) => {
-              await fetch(`/api/clients/${clientId}/savings-rules/${editing.id}/schedule`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ overrides }),
-              });
+              if (editing) {
+                await fetch(`/api/clients/${clientId}/savings-rules/${editing.id}/schedule`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ overrides }),
+                });
+              }
+              setStagedSchedule(overrides);
               setHasSchedule(overrides.length > 0);
             }}
             onClear={async () => {
-              await fetch(`/api/clients/${clientId}/savings-rules/${editing.id}/schedule`, { method: "DELETE" });
+              if (editing) {
+                await fetch(`/api/clients/${clientId}/savings-rules/${editing.id}/schedule`, { method: "DELETE" });
+              }
+              setStagedSchedule([]);
               setHasSchedule(false);
             }}
           />
