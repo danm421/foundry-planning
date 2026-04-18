@@ -37,7 +37,7 @@ export default function BalanceSheetReportView({
   const [error, setError] = useState<string | null>(null);
   const [apiData, setApiData] = useState<ProjectionApiResponse | null>(null);
   const [projectionYears, setProjectionYears] = useState<ProjectionYear[]>([]);
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [selectedAsOf, setSelectedAsOf] = useState<"today" | number | null>(null);
   const [view, setView] = useState<OwnershipView>("consolidated");
   const [exporting, setExporting] = useState(false);
 
@@ -56,7 +56,7 @@ export default function BalanceSheetReportView({
         const projection = runProjection(data);
         setApiData(data);
         setProjectionYears(projection);
-        if (projection.length > 0) setSelectedYear(projection[0].year);
+        if (projection.length > 0) setSelectedAsOf("today");
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load projection data");
       } finally {
@@ -75,7 +75,10 @@ export default function BalanceSheetReportView({
   }, [entities]);
 
   const viewModel = useMemo(() => {
-    if (!apiData || selectedYear == null || projectionYears.length === 0) return null;
+    if (!apiData || selectedAsOf == null || projectionYears.length === 0) return null;
+    const asOfMode = selectedAsOf === "today" ? "today" : "eoy";
+    const selectedYear =
+      selectedAsOf === "today" ? projectionYears[0].year : selectedAsOf;
     return buildViewModel({
       accounts: apiData.accounts,
       liabilities: apiData.liabilities,
@@ -83,18 +86,23 @@ export default function BalanceSheetReportView({
       projectionYears,
       selectedYear,
       view,
+      asOfMode,
     });
-  }, [apiData, entities, projectionYears, selectedYear, view]);
+  }, [apiData, entities, projectionYears, selectedAsOf, view]);
 
   async function handleExportPdf() {
-    if (!viewModel || !apiData || selectedYear == null) return;
+    if (!viewModel || !apiData || selectedAsOf == null) return;
     setExporting(true);
     try {
       const donutPng = donutCanvasRef.current?.toDataURL("image/png") ?? null;
       const barPng = barCanvasRef.current?.toDataURL("image/png") ?? null;
 
+      const pdfYear =
+        selectedAsOf === "today" ? projectionYears[0].year : selectedAsOf;
+      const asOfMode = selectedAsOf === "today" ? "today" : "eoy";
+
       const res = await fetch(
-        `/api/clients/${clientId}/balance-sheet-report/export-pdf?year=${selectedYear}&view=${view}`,
+        `/api/clients/${clientId}/balance-sheet-report/export-pdf?year=${pdfYear}&view=${view}&asOf=${asOfMode}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -106,7 +114,7 @@ export default function BalanceSheetReportView({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `balance-sheet-${selectedYear}.pdf`;
+      a.download = `balance-sheet-${selectedAsOf === "today" ? "today" : selectedAsOf}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -126,7 +134,7 @@ export default function BalanceSheetReportView({
       </div>
     );
   }
-  if (!viewModel || projectionYears.length === 0 || selectedYear == null) {
+  if (!viewModel || projectionYears.length === 0 || selectedAsOf == null) {
     return (
       <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
         No projection data available. Ensure plan settings and base case scenario are configured.
@@ -138,8 +146,8 @@ export default function BalanceSheetReportView({
     <div className="flex flex-col gap-6">
       <HeaderControls
         years={projectionYears.map((y) => y.year)}
-        selectedYear={selectedYear}
-        onYearChange={setSelectedYear}
+        selectedAsOf={selectedAsOf}
+        onAsOfChange={setSelectedAsOf}
         view={view}
         onViewChange={setView}
         showViewSelector={isMarried || hasEntityAccounts}

@@ -47,6 +47,8 @@ export interface EntityInfo {
   entityType: string;
 }
 
+export type AsOfMode = "today" | "eoy";
+
 export interface BuildViewModelInput {
   accounts: AccountLike[];
   liabilities: LiabilityLike[];
@@ -54,6 +56,10 @@ export interface BuildViewModelInput {
   projectionYears: ProjectionYearLike[];
   selectedYear: number;
   view: OwnershipView;
+  /** "today" = beginning-of-year balances for the first projection year
+   * (the advisor-entered current balances). "eoy" = end-of-year balances
+   * for the selected year. Default: "eoy". */
+  asOfMode?: AsOfMode;
 }
 
 // ── Output shape ─────────────────────────────────────────────────────────────
@@ -151,29 +157,29 @@ function findPriorYear(
   return projectionYears[idx - 1];
 }
 
-/** Pulls per-account EOY balance from accountLedgers so out-of-estate
- * entity-owned accounts (excluded from portfolioAssets) still show up. */
+/** Pulls the per-account balance from accountLedgers: beginning-of-year in
+ * "today" mode (matches the advisor-entered current balance) or end-of-year
+ * in "eoy" mode (matches the projected balance at the end of the selected
+ * year). Includes out-of-estate entity-owned accounts either way. */
 function accountValueForYear(
   yearData: ProjectionYearLike,
   accountId: string,
+  mode: AsOfMode,
 ): number {
-  return yearData.accountLedgers[accountId]?.endingValue ?? 0;
+  const ledger = yearData.accountLedgers[accountId];
+  if (!ledger) return 0;
+  return mode === "today" ? ledger.beginningValue : ledger.endingValue;
 }
 
-/**
- * Compute the filtered total for a single year by iterating the account list
- * filtered by view and summing each account's ledger-sourced EOY balance.
- * Includes out-of-estate entity-owned accounts in the consolidated and
- * entities views.
- */
 function filteredAssetTotalForYear(
   yearData: ProjectionYearLike,
   accounts: AccountLike[],
   view: OwnershipView,
+  mode: AsOfMode,
 ): number {
   const filtered = filterAccounts(accounts, view);
   return filtered.reduce(
-    (sum, a) => sum + accountValueForYear(yearData, a.id),
+    (sum, a) => sum + accountValueForYear(yearData, a.id, mode),
     0,
   );
 }
@@ -196,11 +202,19 @@ function filteredLiabilityTotalForYear(
 
 export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewModel {
   const { accounts, liabilities, entities, projectionYears, selectedYear, view } = input;
+  const asOfMode: AsOfMode = input.asOfMode ?? "eoy";
 
-  const yearData = projectionYears.find((y) => y.year === selectedYear);
+  // "Today" mode snapshots the first projection year's beginning-of-year
+  // balances — i.e., the balances the advisor entered. No prior year to
+  // compute YoY against in that mode.
+  const yearData =
+    asOfMode === "today"
+      ? projectionYears[0]
+      : projectionYears.find((y) => y.year === selectedYear);
   if (!yearData) throw new Error(`Projection year ${selectedYear} not found`);
 
-  const priorYear = findPriorYear(projectionYears, selectedYear);
+  const priorYear =
+    asOfMode === "today" ? null : findPriorYear(projectionYears, selectedYear);
 
   // Account lookup by id (projection engine keys portfolioAssets by acct.id).
   const accountById = new Map(accounts.map((a) => [a.id, a]));
@@ -242,7 +256,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
 
     for (const acct of categoryAccounts) {
       if (!filteredAccountIds.has(acct.id)) continue;
-      const value = accountValueForYear(yearData, acct.id);
+      const value = accountValueForYear(yearData, acct.id, asOfMode);
       if (value <= 0) continue;
 
       const row: AssetRow = {
@@ -271,7 +285,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
               filteredAccountIds.has(a.id) &&
               (view !== "consolidated" || a.ownerEntityId == null),
           )
-          .reduce((sum, a) => sum + accountValueForYear(priorYear, a.id), 0)
+          .reduce((sum, a) => sum + accountValueForYear(priorYear, a.id, "eoy"), 0)
       : null;
 
     // Include the category if it has in-estate rows OR (consolidated) out-of-estate rows.
@@ -400,14 +414,16 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   }
 
   // ── Bar chart: 2 back / selected / 2 forward, values respecting the filter ──
+  // In "today" mode the window centers on the first projection year.
 
   const allYears = projectionYears.map((y) => y.year);
-  const windowYears = sliceBarWindow(allYears, selectedYear);
+  const windowAnchor = asOfMode === "today" ? projectionYears[0].year : selectedYear;
+  const windowYears = sliceBarWindow(allYears, windowAnchor);
   const barChartSeries: BarChartPoint[] = windowYears.map((yr) => {
     const yData = projectionYears.find((y) => y.year === yr)!;
     return {
       year: yr,
-      assets: filteredAssetTotalForYear(yData, accounts, view),
+      assets: filteredAssetTotalForYear(yData, accounts, view, "eoy"),
       liabilities: filteredLiabilityTotalForYear(yData, liabilities, view),
     };
   });
@@ -415,7 +431,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   // ── YoY ──
 
   const priorTotalAssets = priorYear
-    ? filteredAssetTotalForYear(priorYear, accounts, view)
+    ? filteredAssetTotalForYear(priorYear, accounts, view, "eoy")
     : null;
   const priorTotalLiabilities = priorYear
     ? filteredLiabilityTotalForYear(priorYear, liabilities, view)

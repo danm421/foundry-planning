@@ -6,7 +6,7 @@ import type { YoyResult } from "../balance-sheet-report/yoy";
 
 interface PdfProps {
   clientName: string;
-  asOfYear: number;
+  asOfLabel: string;
   viewLabel: string;
   generatedAt: string;
   viewModel: BalanceSheetViewModel;
@@ -110,7 +110,7 @@ function Badge({ yoy }: { yoy: YoyResult | null }) {
 
 export function BalanceSheetPdfDocument({
   clientName,
-  asOfYear,
+  asOfLabel,
   viewLabel,
   generatedAt,
   viewModel,
@@ -123,7 +123,7 @@ export function BalanceSheetPdfDocument({
         <View style={styles.header}>
           <Text style={styles.title}>Balance Sheet — {clientName}</Text>
           <Text style={styles.subtitle}>
-            As of {asOfYear} · {viewLabel} · Generated {generatedAt}
+            As of {asOfLabel} · {viewLabel} · Generated {generatedAt}
           </Text>
         </View>
 

@@ -2,10 +2,12 @@
 
 import type { OwnershipView } from "./ownership-filter";
 
+export type AsOfSelection = "today" | number;
+
 interface HeaderControlsProps {
   years: number[];
-  selectedYear: number;
-  onYearChange: (year: number) => void;
+  selectedAsOf: AsOfSelection;
+  onAsOfChange: (value: AsOfSelection) => void;
   view: OwnershipView;
   onViewChange: (view: OwnershipView) => void;
   /** Married clients with a spouse name. Hides the View selector entirely when false. */
@@ -26,8 +28,8 @@ const VIEW_LABELS: Record<OwnershipView, string> = {
 
 export default function HeaderControls({
   years,
-  selectedYear,
-  onYearChange,
+  selectedAsOf,
+  onAsOfChange,
   view,
   onViewChange,
   showViewSelector,
@@ -39,6 +41,8 @@ export default function HeaderControls({
     ? ["consolidated", "client", "spouse", "joint", "entities"]
     : ["consolidated", "client", "spouse", "joint"];
 
+  const asOfValue = selectedAsOf === "today" ? "today" : String(selectedAsOf);
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h1 className="text-2xl font-bold tracking-tight text-gray-100">Balance Sheet</h1>
@@ -46,12 +50,16 @@ export default function HeaderControls({
         <label className="flex items-center gap-2 text-sm text-gray-400">
           AS OF
           <select
-            value={selectedYear}
-            onChange={(e) => onYearChange(Number(e.target.value))}
+            value={asOfValue}
+            onChange={(e) => {
+              const v = e.target.value;
+              onAsOfChange(v === "today" ? "today" : Number(v));
+            }}
             className="rounded border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
           >
+            <option value="today">Today</option>
             {years.map((y) => (
-              <option key={y} value={y}>{y}</option>
+              <option key={y} value={y}>End of {y}</option>
             ))}
           </select>
         </label>

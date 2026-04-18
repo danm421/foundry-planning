@@ -41,6 +41,8 @@ export async function POST(
     const url = new URL(request.url);
     const year = Number(url.searchParams.get("year"));
     const viewParam = url.searchParams.get("view") ?? "consolidated";
+    const asOfParam = url.searchParams.get("asOf") ?? "eoy";
+    const asOfMode: "today" | "eoy" = asOfParam === "today" ? "today" : "eoy";
     if (!Number.isFinite(year)) return NextResponse.json({ error: "Invalid year" }, { status: 400 });
     if (!isOwnershipView(viewParam)) return NextResponse.json({ error: "Invalid view" }, { status: 400 });
 
@@ -73,6 +75,7 @@ export async function POST(
       projectionYears,
       selectedYear: year,
       view: viewParam,
+      asOfMode,
     });
 
     const clientName = [client.firstName, client.lastName].filter(Boolean).join(" ") || "Client";
@@ -84,9 +87,11 @@ export async function POST(
       minute: "2-digit",
     });
 
+    const asOfLabel = asOfMode === "today" ? "Today" : `End of ${year}`;
+
     const doc = React.createElement(BalanceSheetPdfDocument, {
       clientName,
-      asOfYear: year,
+      asOfLabel,
       viewLabel: VIEW_LABELS[viewParam],
       generatedAt,
       viewModel,
