@@ -50,6 +50,10 @@ export default async function InvestmentsPage({ params }: PageProps) {
     .where(and(eq(planSettings.clientId, clientId), eq(planSettings.scenarioId, scenario.id)));
   if (!settings) notFound();
 
+  // Firm scoping note: account_asset_allocations and model_portfolio_allocations
+  // have no firm_id columns of their own. We firm-scope transitively by filtering
+  // accounts by (clientId + scenarioId) and model_portfolios by firmId, then
+  // intersecting allocations with those id sets when we build the indexes below.
   const [acctRows, mixRows, classRows, portfolioRows, portfolioAllocRows] = await Promise.all([
     db.select().from(accountsTable).where(and(eq(accountsTable.clientId, clientId), eq(accountsTable.scenarioId, scenario.id))),
     db.select().from(accountAssetAllocations),

@@ -54,7 +54,7 @@ export default function AllocationTable({ household, benchmarkWeights, assetClas
                 <td className="px-2 py-2 text-gray-200">
                   <div className="flex items-center gap-2">
                     <div className="h-1.5 w-16 overflow-hidden rounded bg-gray-800">
-                      <div className="h-full" style={{ width: `${r.current * 100}%`, backgroundColor: color }} />
+                      <div className="h-full" style={{ width: `${Math.min(r.current * 100, 100)}%`, backgroundColor: color }} />
                     </div>
                     <span className="tabular-nums">{pct(r.current)}</span>
                   </div>
@@ -62,7 +62,7 @@ export default function AllocationTable({ household, benchmarkWeights, assetClas
                 <td className="px-2 py-2 text-gray-200">
                   <div className="flex items-center gap-2">
                     <div className="h-1.5 w-16 overflow-hidden rounded bg-gray-800">
-                      <div className="h-full" style={{ width: `${r.target * 100}%`, backgroundColor: color }} />
+                      <div className="h-full" style={{ width: `${Math.min(r.target * 100, 100)}%`, backgroundColor: color }} />
                     </div>
                     <span className="tabular-nums">{pct(r.target)}</span>
                   </div>
