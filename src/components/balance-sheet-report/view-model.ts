@@ -131,7 +131,7 @@ function findPriorYear(
 
 /**
  * Compute the filtered total for a single year by joining the projection's
- * per-account-name map against the account list filtered by view.
+ * per-account-id map against the account list filtered by view.
  * For the consolidated view, use portfolioAssets.total directly since it
  * represents the full unfiltered total that the engine computed.
  */
@@ -142,12 +142,12 @@ function filteredAssetTotalForYear(
 ): number {
   if (view === "consolidated") return yearData.portfolioAssets.total;
   const filtered = filterAccounts(accounts, view);
-  const filteredNames = new Set(filtered.map((a) => a.name));
+  const filteredIds = new Set(filtered.map((a) => a.id));
   let total = 0;
   for (const categoryKey of CATEGORY_ORDER) {
     const values = categoryMap(yearData, categoryKey);
-    for (const [accountName, value] of Object.entries(values)) {
-      if (filteredNames.has(accountName)) total += value;
+    for (const [accountId, value] of Object.entries(values)) {
+      if (filteredIds.has(accountId)) total += value;
     }
   }
   return total;
@@ -177,8 +177,8 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
 
   const priorYear = findPriorYear(projectionYears, selectedYear);
 
-  // Account lookup by name (projection keys by name).
-  const accountByName = new Map(accounts.map((a) => [a.name, a]));
+  // Account lookup by id (projection engine keys portfolioAssets by acct.id).
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
 
   // Liabilities linked to real-estate accounts → used for mortgage indicators
   // and real-estate equity.
@@ -204,14 +204,14 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     const rows: AssetRow[] = [];
     const outRows: AssetRow[] = [];
 
-    for (const [accountName, value] of Object.entries(perAccountValues)) {
-      const acct = accountByName.get(accountName);
+    for (const [accountId, value] of Object.entries(perAccountValues)) {
+      const acct = accountById.get(accountId);
       if (!acct) continue; // projection output for an account not in our list (shouldn't happen)
       if (!filteredAccountIds.has(acct.id)) continue;
 
       const row: AssetRow = {
         accountId: acct.id,
-        accountName,
+        accountName: acct.name,
         owner: acct.owner,
         ownerEntityId: acct.ownerEntityId ?? null,
         value,
@@ -230,8 +230,8 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     const total = rows.reduce((sum, r) => sum + r.value, 0);
     const priorTotal = priorYear
       ? Object.entries(categoryMap(priorYear, categoryKey))
-          .filter(([name]) => {
-            const acct = accountByName.get(name);
+          .filter(([id]) => {
+            const acct = accountById.get(id);
             return acct && filteredAccountIds.has(acct.id) && (view !== "consolidated" || acct.ownerEntityId == null);
           })
           .reduce((sum, [, v]) => sum + v, 0)
@@ -281,7 +281,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     (view === "consolidated"
       ? outOfEstateRows
           .filter((r) => {
-            const acct = accountByName.get(r.accountName);
+            const acct = accountById.get(r.accountId);
             return acct && DB_TO_KEY[acct.category] === "realEstate";
           })
           .reduce((sum, r) => sum + r.value, 0)
@@ -302,7 +302,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     if (view === "consolidated") {
       value += outOfEstateRows
         .filter((r) => {
-          const acct = accountByName.get(r.accountName);
+          const acct = accountById.get(r.accountId);
           return acct && DB_TO_KEY[acct.category] === cat.key;
         })
         .reduce((sum, r) => sum + r.value, 0);

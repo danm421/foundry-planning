@@ -18,10 +18,10 @@ const liabilities = [
 const projectionYear = {
   year: 2026,
   portfolioAssets: {
-    cash: { "Joint Checking": 50_000 },
-    taxable: { "Family Trust Brokerage": 300_000 },
-    retirement: { "John 401k": 500_000, "Jane Roth": 200_000 },
-    realEstate: { "Primary Home": 800_000 },
+    cash: { "a-cash": 50_000 },
+    taxable: { "a-trust": 300_000 },
+    retirement: { "a-401k": 500_000, "a-roth": 200_000 },
+    realEstate: { "a-home": 800_000 },
     business: {},
     lifeInsurance: {},
     cashTotal: 50_000,
@@ -40,7 +40,7 @@ const priorYear = {
   portfolioAssets: {
     ...projectionYear.portfolioAssets,
     total: 1_700_000,
-    cash: { "Joint Checking": 45_000 },
+    cash: { "a-cash": 45_000 },
     cashTotal: 45_000,
   },
   liabilityBalancesBoY: { "l-mort": 410_000, "l-card": 10_000 },
