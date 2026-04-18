@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { CurrencyInput } from "@/components/currency-input";
+import { PercentInput } from "@/components/percent-input";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 
@@ -564,14 +565,10 @@ export default function AddAssetTransactionForm({
                   <label className={LABEL_CLASS} htmlFor="transactionCostPct">
                     Transaction Cost (%)
                   </label>
-                  <input
+                  <PercentInput
                     id="transactionCostPct"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    max={100}
                     value={transactionCostPct}
-                    onChange={(e) => setTransactionCostPct(e.target.value)}
+                    onChange={(raw) => setTransactionCostPct(raw)}
                     placeholder="Optional"
                     className={INPUT_CLASS}
                   />
@@ -693,14 +690,10 @@ export default function AddAssetTransactionForm({
                   <label className={LABEL_CLASS} htmlFor="buyGrowthRate">
                     Growth Rate (%)
                   </label>
-                  <input
+                  <PercentInput
                     id="buyGrowthRate"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    max={30}
                     value={buyGrowthRate}
-                    onChange={(e) => setBuyGrowthRate(e.target.value)}
+                    onChange={(raw) => setBuyGrowthRate(raw)}
                     placeholder="e.g., 3.5"
                     className={INPUT_CLASS}
                   />
@@ -777,14 +770,10 @@ export default function AddAssetTransactionForm({
                       <label className={LABEL_CLASS} htmlFor="mortgageRate">
                         Rate (%)
                       </label>
-                      <input
+                      <PercentInput
                         id="mortgageRate"
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        max={30}
                         value={mortgageRate}
-                        onChange={(e) => setMortgageRate(e.target.value)}
+                        onChange={(raw) => setMortgageRate(raw)}
                         placeholder="e.g., 6.75"
                         className={INPUT_CLASS}
                       />

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { PercentInput } from "@/components/percent-input";
 
 interface TaxRatesFormProps {
   clientId: string;
@@ -93,18 +94,12 @@ export default function TaxRatesForm({ clientId, flatFederalRate, flatStateRate,
         {mode === "flat" && (
           <div>
             <label className="block text-xs font-medium text-gray-400" htmlFor="flatFederalRate">Federal rate</label>
-            <div className="relative mt-1">
-              <input id="flatFederalRate" name="flatFederalRate" type="number" step="0.01" min={0} max={50} defaultValue={pct(flatFederalRate)} className="block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 pr-8 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-              <span className="absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
-            </div>
+            <PercentInput id="flatFederalRate" name="flatFederalRate" defaultValue={pct(flatFederalRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
           </div>
         )}
         <div>
           <label className="block text-xs font-medium text-gray-400" htmlFor="flatStateRate">State rate</label>
-          <div className="relative mt-1">
-            <input id="flatStateRate" name="flatStateRate" type="number" step="0.01" min={0} max={20} defaultValue={pct(flatStateRate)} className="block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 pr-8 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-            <span className="absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
-          </div>
+          <PercentInput id="flatStateRate" name="flatStateRate" defaultValue={pct(flatStateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
       </div>
 

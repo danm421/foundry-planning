@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { PercentInput } from "@/components/percent-input";
 
 interface ModelPortfolioOption {
   id: string;
@@ -169,10 +170,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-medium text-gray-400" htmlFor="inflationRate">Inflation rate</label>
-            <div className="relative mt-1">
-              <input id="inflationRate" name="inflationRate" type="number" step="0.01" min={0} max={20} defaultValue={pct(rates.inflationRate)} className="block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 pr-8 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-              <span className="absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
-            </div>
+            <PercentInput id="inflationRate" name="inflationRate" defaultValue={pct(rates.inflationRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
           </div>
         </div>
       </section>
@@ -212,17 +210,12 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                       )}
                     </select>
                     {s.source === "custom" && (
-                      <div className="relative w-28 flex-shrink-0">
-                        <input
+                      <div className="w-28 flex-shrink-0">
+                        <PercentInput
                           name={cat.rateKey}
-                          type="number"
-                          step="0.01"
-                          min={0}
-                          max={30}
                           defaultValue={pct((rates as Record<string, string>)[cat.rateKey])}
-                          className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 pr-8 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                         />
-                        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
                       </div>
                     )}
                     {/* Hidden input so the rate key is always submitted even when dropdown is shown */}
@@ -247,18 +240,13 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                 <p className="text-sm font-medium text-gray-100">{field.label}</p>
                 <p className="text-xs text-gray-500">{field.description}</p>
               </div>
-              <div className="relative w-28 flex-shrink-0">
-                <input
+              <div className="w-28 flex-shrink-0">
+                <PercentInput
                   id={field.key}
                   name={field.key}
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  max={30}
                   defaultValue={pct((rates as Record<string, string>)[field.key])}
-                  className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 pr-8 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
               </div>
             </div>
           ))}
@@ -277,11 +265,9 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
             <label className="block text-xs font-medium text-gray-400" htmlFor="taxInflationRate">
               Tax bracket inflation rate (% per year)
             </label>
-            <input
+            <PercentInput
               id="taxInflationRate"
               name="taxInflationRate"
-              type="number"
-              step="0.01"
               defaultValue={taxInflationRate ? pct(taxInflationRate) : ""}
               placeholder={`Defaults to ${pct(rates.inflationRate)} (general)`}
               className="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100"
@@ -295,11 +281,9 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
             <label className="block text-xs font-medium text-gray-400" htmlFor="ssWageGrowthRate">
               SS wage base growth rate (% per year)
             </label>
-            <input
+            <PercentInput
               id="ssWageGrowthRate"
               name="ssWageGrowthRate"
-              type="number"
-              step="0.01"
               defaultValue={ssWageGrowthRate ? pct(ssWageGrowthRate) : ""}
               placeholder={`Defaults to ${pct(rates.inflationRate)} + 0.5% (wages typically outpace CPI)`}
               className="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100"

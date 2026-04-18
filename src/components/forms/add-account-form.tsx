@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
 import { CurrencyInput } from "@/components/currency-input";
+import { PercentInput } from "@/components/percent-input";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -547,18 +548,13 @@ export default function AddAccountForm({
                   <option value="custom">Custom %</option>
                 </select>
                 {growthSource === "custom" && (
-                  <div className="relative mt-2">
-                    <input
+                  <div className="mt-2">
+                    <PercentInput
                       id="growthRate"
                       name="growthRate"
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      max={30}
                       defaultValue={hasExplicitGrowth ? initialGrowthPct : 7}
-                      className="block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 pr-8 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
-                    <span className="absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
                   </div>
                 )}
               </div>
@@ -567,13 +563,9 @@ export default function AddAccountForm({
                 <label className="block text-sm font-medium text-gray-300" htmlFor="growthRate">
                   Growth Rate (%)
                 </label>
-                <input
+                <PercentInput
                   id="growthRate"
                   name="growthRate"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  max={30}
                   defaultValue={initialGrowthPct}
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
@@ -623,13 +615,10 @@ export default function AddAccountForm({
                 <label className="block text-sm font-medium text-gray-300" htmlFor="propertyTaxGrowthRate">
                   Property Tax Growth Rate (%)
                 </label>
-                <input
+                <PercentInput
                   id="propertyTaxGrowthRate"
-                  type="number"
-                  step="0.1"
-                  min={0}
                   value={propertyTaxGrowthRate}
-                  onChange={(e) => setPropertyTaxGrowthRate(e.target.value)}
+                  onChange={(raw) => setPropertyTaxGrowthRate(raw)}
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -718,13 +707,9 @@ export default function AddAccountForm({
                   <label className="block text-sm font-medium text-gray-300" htmlFor="employerMatchPct">
                     Match Rate (%)
                   </label>
-                  <input
+                  <PercentInput
                     id="employerMatchPct"
                     name="employerMatchPct"
-                    type="number"
-                    step="1"
-                    min={0}
-                    max={100}
                     placeholder="e.g., 50"
                     className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
@@ -734,13 +719,9 @@ export default function AddAccountForm({
                   <label className="block text-sm font-medium text-gray-300" htmlFor="employerMatchCap">
                     Match Cap (% of salary)
                   </label>
-                  <input
+                  <PercentInput
                     id="employerMatchCap"
                     name="employerMatchCap"
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    max={100}
                     placeholder="e.g., 6"
                     className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
@@ -761,35 +742,35 @@ export default function AddAccountForm({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300">Ordinary Income %</label>
-                <input name="overridePctOi" type="number" step="0.01" min={0} max={100}
+                <PercentInput name="overridePctOi"
                   defaultValue={initial?.overridePctOi ? (Number(initial.overridePctOi) * 100).toFixed(2) : ""}
                   placeholder="From portfolio"
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-300">LT Capital Gains %</label>
-                <input name="overridePctLtCg" type="number" step="0.01" min={0} max={100}
+                <PercentInput name="overridePctLtCg"
                   defaultValue={initial?.overridePctLtCg ? (Number(initial.overridePctLtCg) * 100).toFixed(2) : ""}
                   placeholder="From portfolio"
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-300">Qualified Dividends %</label>
-                <input name="overridePctQdiv" type="number" step="0.01" min={0} max={100}
+                <PercentInput name="overridePctQdiv"
                   defaultValue={initial?.overridePctQdiv ? (Number(initial.overridePctQdiv) * 100).toFixed(2) : ""}
                   placeholder="From portfolio"
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-300">Tax-Exempt %</label>
-                <input name="overridePctTaxExempt" type="number" step="0.01" min={0} max={100}
+                <PercentInput name="overridePctTaxExempt"
                   defaultValue={initial?.overridePctTaxExempt ? (Number(initial.overridePctTaxExempt) * 100).toFixed(2) : ""}
                   placeholder="From portfolio"
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-300">Turnover %</label>
-                <input name="turnoverPct" type="number" step="0.01" min={0} max={100}
+                <PercentInput name="turnoverPct"
                   defaultValue={initial?.turnoverPct ? (Number(initial.turnoverPct) * 100).toFixed(2) : "0"}
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
                 <p className="mt-1 text-xs text-gray-500">Portion of LT CG realized as short-term each year.</p>

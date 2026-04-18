@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from "react";
 import { CurrencyInput } from "@/components/currency-input";
+import { PercentInput } from "@/components/percent-input";
 
 interface ScheduleRow {
   id: string;
@@ -327,12 +328,9 @@ export default function AddTransferForm({
             <label className="block text-xs font-medium text-gray-400">
               Growth rate (% / yr)
             </label>
-            <input
-              type="number"
-              step="0.1"
-              min="0"
+            <PercentInput
               value={growthRate}
-              onChange={(e) => setGrowthRate(e.target.value)}
+              onChange={(raw) => setGrowthRate(raw)}
               className={INPUT_CLASS}
             />
           </div>

@@ -5,6 +5,7 @@ import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import MilestoneYearPicker from "./milestone-year-picker";
 import ScheduleTab from "./schedule-tab";
 import { CurrencyInput } from "./currency-input";
+import { PercentInput } from "./percent-input";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
@@ -576,13 +577,9 @@ function IncomeDialog({
             ) : (
               <div>
                 <label className="block text-sm font-medium text-gray-300" htmlFor="inc-growth">Growth Rate (%)</label>
-                <input
+                <PercentInput
                   id="inc-growth"
                   name="growthRate"
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={30}
                   defaultValue={pctFromDecimal(editing?.growthRate, isSocialSecurity ? 2 : 3)}
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
@@ -962,13 +959,9 @@ function ExpenseDialog({
             ) : (
               <div>
                 <label className="block text-sm font-medium text-gray-300" htmlFor="exp-growth">Growth Rate (%)</label>
-                <input
+                <PercentInput
                   id="exp-growth"
                   name="growthRate"
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={30}
                   defaultValue={pctFromDecimal(editing?.growthRate, 3)}
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
@@ -1337,13 +1330,9 @@ function SavingsRuleDialog({
                     <label className="block text-xs font-medium text-gray-400" htmlFor="sr-match-pct">
                       Match rate (%)
                     </label>
-                    <input
+                    <PercentInput
                       id="sr-match-pct"
                       name="employerMatchPct"
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      max={100}
                       placeholder="e.g., 50 or 3"
                       defaultValue={
                         editing?.employerMatchPct ? pctFromDecimal(editing.employerMatchPct, 0) : ""
@@ -1355,13 +1344,9 @@ function SavingsRuleDialog({
                     <label className="block text-xs font-medium text-gray-400" htmlFor="sr-match-cap">
                       Cap (% of salary) — optional
                     </label>
-                    <input
+                    <PercentInput
                       id="sr-match-cap"
                       name="employerMatchCap"
-                      type="number"
-                      step="0.1"
-                      min={0}
-                      max={100}
                       placeholder="e.g., 6"
                       defaultValue={
                         editing?.employerMatchCap ? pctFromDecimal(editing.employerMatchCap, 0) : ""

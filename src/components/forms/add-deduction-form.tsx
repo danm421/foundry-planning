@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, FormEvent } from "react";
+import { PercentInput } from "@/components/percent-input";
 
 interface DeductionRow {
   id: string;
@@ -155,12 +156,9 @@ export function AddDeductionForm({ clientId, existing, onClose, onSaved }: AddDe
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-400">Growth rate (% / yr)</label>
-            <input
-              type="number"
-              step="0.1"
-              min="0"
+            <PercentInput
               value={growthRate}
-              onChange={(e) => setGrowthRate(e.target.value)}
+              onChange={(raw) => setGrowthRate(raw)}
               className={INPUT_CLASS}
             />
           </div>

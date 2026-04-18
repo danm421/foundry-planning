@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { PercentInput } from "@/components/percent-input";
 
 export interface AssumptionsInitial {
   flatFederalRate: string;
@@ -103,57 +104,36 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
             <label className="block text-xs font-medium text-gray-400" htmlFor="flatFederalRate">
               Federal rate
             </label>
-            <div className="relative mt-1">
-              <input
-                id="flatFederalRate"
-                name="flatFederalRate"
-                type="number"
-                step="0.01"
-                min={0}
-                max={50}
-                defaultValue={pct(initial.flatFederalRate)}
-                className="block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 pr-8 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <span className="absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
-            </div>
+            <PercentInput
+              id="flatFederalRate"
+              name="flatFederalRate"
+              defaultValue={pct(initial.flatFederalRate)}
+              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
           </div>
 
           <div>
             <label className="block text-xs font-medium text-gray-400" htmlFor="flatStateRate">
               State rate
             </label>
-            <div className="relative mt-1">
-              <input
-                id="flatStateRate"
-                name="flatStateRate"
-                type="number"
-                step="0.01"
-                min={0}
-                max={20}
-                defaultValue={pct(initial.flatStateRate)}
-                className="block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 pr-8 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <span className="absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
-            </div>
+            <PercentInput
+              id="flatStateRate"
+              name="flatStateRate"
+              defaultValue={pct(initial.flatStateRate)}
+              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
           </div>
 
           <div>
             <label className="block text-xs font-medium text-gray-400" htmlFor="inflationRate">
               Inflation
             </label>
-            <div className="relative mt-1">
-              <input
-                id="inflationRate"
-                name="inflationRate"
-                type="number"
-                step="0.01"
-                min={0}
-                max={20}
-                defaultValue={pct(initial.inflationRate)}
-                className="block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 pr-8 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <span className="absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
-            </div>
+            <PercentInput
+              id="inflationRate"
+              name="inflationRate"
+              defaultValue={pct(initial.inflationRate)}
+              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
           </div>
         </div>
       </section>
@@ -211,18 +191,13 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
                 <p className="text-sm font-medium text-gray-100">{field.label}</p>
                 <p className="text-xs text-gray-500">{field.description}</p>
               </div>
-              <div className="relative w-28 flex-shrink-0">
-                <input
+              <div className="w-28 flex-shrink-0">
+                <PercentInput
                   id={field.key}
                   name={field.key}
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  max={30}
                   defaultValue={pct(initial[field.key] as string)}
-                  className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 pr-8 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">%</span>
               </div>
             </div>
           ))}
