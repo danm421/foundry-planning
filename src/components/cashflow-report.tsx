@@ -108,6 +108,19 @@ function fmtNum(v: number) {
  * right. Header cells need a higher z-index than body cells so they win when
  * vertical + horizontal sticky layers overlap.
  */
+/**
+ * Right-border accent that separates the top-level column groups on the
+ * main cashflow table. Income → Expenses, Expenses → Net Cash Flow, and
+ * Net Cash Flow → Portfolio. Helps the reader re-orient after scrolling
+ * past the sticky header.
+ */
+function groupBorderClass(colId: string): string {
+  if (colId === "totalIncome" || colId === "totalExpenses" || colId === "netCashFlow") {
+    return "border-r-2 border-gray-700";
+  }
+  return "";
+}
+
 function stickyCellClasses(
   idx: number,
   total: number,
@@ -1602,10 +1615,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header, idx, arr) => {
                   const sticky = stickyCellClasses(idx, arr.length, "header");
+                  const groupBorder = groupBorderClass(header.column.id);
                   return (
                     <th
                       key={header.id}
-                      className={`whitespace-nowrap border-b border-gray-700 bg-gray-800 px-3 py-2 text-left text-xs font-medium text-gray-400 first:pl-4 last:pr-4 ${sticky}`}
+                      className={`whitespace-nowrap border-b-2 border-gray-700 bg-gray-800 px-3 py-3.5 text-left text-[13px] font-semibold uppercase tracking-wider text-gray-200 first:pl-4 last:pr-4 ${sticky} ${groupBorder}`}
                     >
                       {header.isPlaceholder
                         ? null
@@ -1635,10 +1649,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 >
                   {row.getVisibleCells().map((cell, idx, arr) => {
                     const sticky = stickyCellClasses(idx, arr.length, "cell");
+                    const groupBorder = groupBorderClass(cell.column.id);
                     return (
                       <td
                         key={cell.id}
-                        className={`whitespace-nowrap border-b border-gray-800 px-3 py-2 first:pl-4 last:pr-4 tabular-nums text-gray-100 ${baseBg} ${hoverBg} ${sticky}`}
+                        className={`whitespace-nowrap border-b border-gray-800 px-3 py-2 first:pl-4 last:pr-4 tabular-nums text-gray-100 ${baseBg} ${hoverBg} ${sticky} ${groupBorder}`}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
