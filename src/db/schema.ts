@@ -230,6 +230,7 @@ export const planSettings = pgTable("plan_settings", {
   modelPortfolioIdCash: uuid("model_portfolio_id_cash").references(() => modelPortfolios.id, { onDelete: "set null" }),
   growthSourceRetirement: growthSourceEnum("growth_source_retirement").notNull().default("custom"),
   modelPortfolioIdRetirement: uuid("model_portfolio_id_retirement").references(() => modelPortfolios.id, { onDelete: "set null" }),
+  selectedBenchmarkPortfolioId: uuid("selected_benchmark_portfolio_id").references(() => modelPortfolios.id, { onDelete: "set null" }),
   useCustomCma: boolean("use_custom_cma").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -910,3 +911,21 @@ export const assetTransactions = pgTable("asset_transactions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const reportComments = pgTable(
+  "report_comments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    scenarioId: uuid("scenario_id")
+      .notNull()
+      .references(() => scenarios.id, { onDelete: "cascade" }),
+    reportKey: text("report_key").notNull(),
+    body: text("body").notNull().default(""),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("report_comments_client_scenario_key_unique").on(t.clientId, t.scenarioId, t.reportKey)],
+);
