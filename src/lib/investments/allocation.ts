@@ -234,9 +234,13 @@ export interface DriftRow {
 }
 
 /**
- * Compute Current − Target drift per asset class over the union of classes
+ * Compute Target − Current drift per asset class over the union of classes
  * present in either side. Missing side is treated as 0. Sorts by |diff| desc.
  * Returns [] when target is empty (no benchmark selected).
+ *
+ * Sign convention (advisor-friendly "gap to target"):
+ *   diffPct > 0 → under-weight, need to buy more to reach target.
+ *   diffPct < 0 → over-weight, need to reduce to reach target.
  */
 export function computeDrift(
   current: AssetClassRollup[],
@@ -261,7 +265,7 @@ export function computeDrift(
       name: names[id] ?? id,
       currentPct,
       targetPct,
-      diffPct: currentPct - targetPct,
+      diffPct: targetPct - currentPct,
     });
   }
 

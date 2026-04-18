@@ -18,7 +18,7 @@ function mkCurrent(entries: { id: string; pct: number }[]): AssetClassRollup[] {
 }
 
 describe("computeDrift", () => {
-  it("computes Current - Target for every asset class in either set", () => {
+  it("computes Target - Current for every asset class in either set", () => {
     const current = mkCurrent([
       { id: "ac-eq", pct: 0.7 },
       { id: "ac-bond", pct: 0.3 },
@@ -29,22 +29,24 @@ describe("computeDrift", () => {
     ];
     const out = computeDrift(current, target, NAMES);
     expect(out).toHaveLength(2);
+    // eq: target 0.6 - current 0.7 = -0.1 (over-weight, reduce).
     expect(out).toContainEqual(
       expect.objectContaining({
         assetClassId: "ac-eq",
         name: "US Equity",
         currentPct: 0.7,
         targetPct: 0.6,
-        diffPct: expect.closeTo(0.1),
+        diffPct: expect.closeTo(-0.1),
       })
     );
+    // bond: target 0.4 - current 0.3 = +0.1 (under-weight, buy more).
     expect(out).toContainEqual(
       expect.objectContaining({
         assetClassId: "ac-bond",
         name: "US Bonds",
         currentPct: 0.3,
         targetPct: 0.4,
-        diffPct: expect.closeTo(-0.1),
+        diffPct: expect.closeTo(0.1),
       })
     );
   });
@@ -59,7 +61,8 @@ describe("computeDrift", () => {
     const bond = out.find((r) => r.assetClassId === "ac-bond")!;
     expect(bond.currentPct).toBe(0);
     expect(bond.targetPct).toBe(0.4);
-    expect(bond.diffPct).toBeCloseTo(-0.4);
+    // target 0.4 - current 0 = +0.4 (under-weight, buy).
+    expect(bond.diffPct).toBeCloseTo(0.4);
   });
 
   it("treats missing side as zero (classes only in target)", () => {
@@ -72,7 +75,8 @@ describe("computeDrift", () => {
     const intl = out.find((r) => r.assetClassId === "ac-intl")!;
     expect(intl.currentPct).toBe(0.5);
     expect(intl.targetPct).toBe(0);
-    expect(intl.diffPct).toBeCloseTo(0.5);
+    // target 0 - current 0.5 = -0.5 (over-weight vs target, reduce).
+    expect(intl.diffPct).toBeCloseTo(-0.5);
   });
 
   it("sorts results by absolute drift descending", () => {

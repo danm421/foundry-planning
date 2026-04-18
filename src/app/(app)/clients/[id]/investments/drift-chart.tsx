@@ -26,7 +26,7 @@ export default function DriftChart({ drift, assetClasses }: Props) {
       <div className="flex flex-col gap-1.5">
         {drift.map((r) => {
           const widthPct = (Math.abs(r.diffPct) / max) * 50; // max bar = 50% of track width
-          const isOver = r.diffPct >= 0;
+          const isUnderweight = r.diffPct >= 0;
           return (
             <div key={r.assetClassId} className="grid grid-cols-[120px_1fr_60px] items-center gap-2 text-xs">
               <span className="truncate text-gray-300">{r.name}</span>
@@ -35,13 +35,13 @@ export default function DriftChart({ drift, assetClasses }: Props) {
                 <div
                   className="absolute inset-y-0 rounded"
                   style={{
-                    left: isOver ? "50%" : `${50 - widthPct}%`,
+                    left: isUnderweight ? "50%" : `${50 - widthPct}%`,
                     width: `${widthPct}%`,
-                    backgroundColor: isOver ? "#14b8a6" : "#f59e0b", // teal / amber
+                    backgroundColor: isUnderweight ? "#14b8a6" : "#f59e0b", // teal = need to buy, amber = reduce
                   }}
                 />
               </div>
-              <span className={`tabular-nums text-right ${isOver ? "text-teal-400" : "text-amber-400"}`}>{pct(r.diffPct)}</span>
+              <span className={`tabular-nums text-right ${isUnderweight ? "text-teal-400" : "text-amber-400"}`}>{pct(r.diffPct)}</span>
             </div>
           );
         })}
