@@ -3,6 +3,7 @@
 import BenchmarkSelector from "./benchmark-selector";
 import AllocationDonut from "./allocation-donut";
 import AllocationTable from "./allocation-table";
+import DriftChart from "./drift-chart";
 import type { HouseholdAllocation, DriftRow, AssetClassLite } from "@/lib/investments/allocation";
 import type { AssetClassWeight } from "@/lib/investments/benchmarks";
 
@@ -23,7 +24,7 @@ function formatDollars(n: number) {
 export default function InvestmentsClient({
   clientId,
   household,
-  drift: _drift,
+  drift,
   assetClasses,
   modelPortfolios,
   selectedBenchmarkPortfolioId,
@@ -73,9 +74,7 @@ export default function InvestmentsClient({
 
         <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
           <h3 className="mb-3 text-sm font-semibold text-gray-300">Drift vs Target</h3>
-          <div className="text-xs text-gray-500">
-            {selectedBenchmarkPortfolioId ? "Coming in Phase 1d" : "Select a target portfolio to see drift."}
-          </div>
+          <DriftChart drift={drift} assetClasses={assetClasses} />
         </section>
       </div>
 
