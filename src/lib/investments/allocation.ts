@@ -174,3 +174,47 @@ export function computeHouseholdAllocation(
     excludedNonInvestableValue,
   };
 }
+
+export interface DriftRow {
+  assetClassId: string;
+  name: string;
+  currentPct: number;
+  targetPct: number;
+  diffPct: number;
+}
+
+/**
+ * Compute Current − Target drift per asset class over the union of classes
+ * present in either side. Missing side is treated as 0. Sorts by |diff| desc.
+ * Returns [] when target is empty (no benchmark selected).
+ */
+export function computeDrift(
+  current: AssetClassRollup[],
+  target: AssetClassWeight[],
+  names: Record<string, string>,
+): DriftRow[] {
+  if (target.length === 0) return [];
+
+  const ids = new Set<string>();
+  for (const c of current) ids.add(c.id);
+  for (const t of target) ids.add(t.assetClassId);
+
+  const currentMap = new Map(current.map((c) => [c.id, c.pctOfClassified]));
+  const targetMap = new Map(target.map((t) => [t.assetClassId, t.weight]));
+
+  const rows: DriftRow[] = [];
+  for (const id of ids) {
+    const currentPct = currentMap.get(id) ?? 0;
+    const targetPct = targetMap.get(id) ?? 0;
+    rows.push({
+      assetClassId: id,
+      name: names[id] ?? id,
+      currentPct,
+      targetPct,
+      diffPct: currentPct - targetPct,
+    });
+  }
+
+  rows.sort((a, b) => Math.abs(b.diffPct) - Math.abs(a.diffPct));
+  return rows;
+}
