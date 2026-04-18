@@ -15,6 +15,7 @@ const tabs = [
   { label: "Details", href: "client-data" },
   { label: "Balance Sheet", href: "balance-sheet-report" },
   { label: "Cash Flow", href: "cashflow" },
+  { label: "Investments", href: "investments" },
 ];
 
 export default async function ClientLayout({ children, params }: ClientLayoutProps) {
