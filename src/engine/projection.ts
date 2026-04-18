@@ -233,6 +233,17 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       };
     }
 
+    // Snapshot BoY state for UI previews (sale-form autofill). Captured before
+    // sales/purchases so a UI reading year N sees the pre-transaction values.
+    const accountBasisBoY: Record<string, number> = {};
+    for (const acct of workingAccounts) {
+      accountBasisBoY[acct.id] = basisMap[acct.id] ?? acct.basis;
+    }
+    const liabilityBalancesBoY: Record<string, number> = {};
+    for (const liab of currentLiabilities) {
+      liabilityBalancesBoY[liab.id] = liab.balance;
+    }
+
     // ── BoY: Asset Sales ─────────────────────────────────────────────────────
     // Sales happen on the first day of the year: the sold asset doesn't earn
     // growth this year, and sale proceeds land in the cash account in time to
@@ -1211,6 +1222,8 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       netCashFlow,
       portfolioAssets,
       accountLedgers,
+      accountBasisBoY,
+      liabilityBalancesBoY,
       ...(hasTechniques
         ? {
             techniqueBreakdown: {

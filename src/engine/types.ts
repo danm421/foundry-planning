@@ -298,6 +298,15 @@ export interface ProjectionYear {
 
   accountLedgers: Record<string, AccountLedger>;
 
+  /** Per-account basis at beginning of year, before any activity. Used by UI
+   * previews (e.g. sale-form autofill) to show projected cost basis. */
+  accountBasisBoY: Record<string, number>;
+
+  /** Per-liability balance at beginning of year, before that year's amortization
+   * runs. Used by UI previews to show the projected mortgage payoff amount for
+   * a given sale year. */
+  liabilityBalancesBoY: Record<string, number>;
+
   /** Technique breakdown for drill-down UI — only present in years where techniques execute. */
   techniqueBreakdown?: {
     sales: {

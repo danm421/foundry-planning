@@ -261,48 +261,36 @@ export default function AddAssetTransactionForm({
     return () => { cancelled = true; };
   }, [clientId]);
 
-  // Look up projected value and basis for the sell account in the selected year
+  // Look up projected value and basis for the sell account in the selected year.
+  // Sales run BoY in the engine, so the BoY snapshots (beginningValue on the
+  // account ledger, accountBasisBoY on the projection year) are exactly what
+  // the engine will use to price the sale.
   const projectedSellInfo = useMemo(() => {
     if (!projectionYears || !sellAccountId || !year) return null;
-    // Find the projection year that matches (year - 1 gives us the ending value going into sale year)
-    // Actually, we want the ending value of the year prior, since the sale happens during `year`.
-    // But the projection runs year-by-year, so the `year` entry's accountLedger shows the state
-    // during that year. The beginningValue of that year is the projected value at start of year.
     const projYear = projectionYears.find((py) => py.year === year);
     if (!projYear) return null;
     const ledger = projYear.accountLedgers[sellAccountId];
     if (!ledger) return null;
-    // For basis, accumulate from the account's initial basis through growth detail
-    // We'll use beginningValue as the projected value (pre-growth in sale year)
-    // and compute basis by looking at the prior year's accumulated basis
-    let projectedBasis: number | null = null;
-    // Walk projection years to accumulate basis
-    const account = accounts.find((a) => a.id === sellAccountId);
-    if (account) {
-      // Start with original basis — we need to find it from projection data
-      // The projection-data API returns accounts with basis, but we don't have that here.
-      // We can approximate: basis grows by basisIncrease each year
-      // For now, just show the projected value; basis tracking requires more data.
-      projectedBasis = null;
-    }
+    const projectedBasis = projYear.accountBasisBoY?.[sellAccountId] ?? null;
     return {
       projectedValue: ledger.beginningValue,
       projectedBasis,
     };
-  }, [projectionYears, sellAccountId, year, accounts]);
+  }, [projectionYears, sellAccountId, year]);
 
   // Linked mortgage for sell side
   const linkedMortgage = sellAccountId
     ? liabilities.find((l) => l.linkedPropertyId === sellAccountId)
     : null;
 
-  // Projected mortgage balance from projection data
+  // Projected mortgage balance from the projection at BoY of the sale year —
+  // this is the amount the engine will actually pay off when the sale executes.
   const projectedMortgageBalance = useMemo(() => {
     if (!projectionYears || !linkedMortgage || !year) return null;
-    // Liabilities don't have direct ledger entries in the projection output,
-    // so we use the static balance as a fallback. The projection expenses.byLiability
-    // tracks payments but not remaining balance directly.
-    return null;
+    const projYear = projectionYears.find((py) => py.year === year);
+    if (!projYear) return null;
+    const bal = projYear.liabilityBalancesBoY?.[linkedMortgage.id];
+    return bal != null ? bal : null;
   }, [projectionYears, linkedMortgage, year]);
 
   // ── Net Summary calculations ──────────────────────────────────────────────
@@ -315,7 +303,11 @@ export default function AddAssetTransactionForm({
     const costPct = parseNum(transactionCostPct) / 100;
     const costFlat = parseNum(transactionCostFlat as string);
     const totalTransactionCosts = saleValue * costPct + costFlat;
-    const mortgagePayoff = linkedMortgage ? parseNum(linkedMortgage.balance) : 0;
+    // Prefer the projected BoY balance for the sale year; fall back to the
+    // static liability balance only if projection data hasn't loaded yet.
+    const mortgagePayoff = linkedMortgage
+      ? (projectedMortgageBalance ?? parseNum(linkedMortgage.balance))
+      : 0;
     const saleProceeds = sellHasData ? saleValue - totalTransactionCosts - mortgagePayoff : 0;
 
     const price = parseNum(purchasePrice as string);
@@ -338,7 +330,8 @@ export default function AddAssetTransactionForm({
     };
   }, [
     overrideSaleValue, projectedSellInfo, transactionCostPct, transactionCostFlat,
-    linkedMortgage, sellHasData, purchasePrice, showMortgage, mortgageAmount, buyHasData,
+    linkedMortgage, projectedMortgageBalance, sellHasData, purchasePrice,
+    showMortgage, mortgageAmount, buyHasData,
   ]);
 
   // ── Derive transaction type from filled sides ─────────────────────────────
@@ -613,11 +606,9 @@ export default function AddAssetTransactionForm({
                     {linkedMortgage.name}
                   </div>
                   <div className="mt-0.5">
-                    Remaining Balance: {formatCurrency(linkedMortgage.balance)}
-                    {projectedMortgageBalance != null && (
-                      <span className="ml-1 text-amber-400/70">
-                        (projected: {formatCurrency(projectedMortgageBalance)})
-                      </span>
+                    Projected balance in {year}:{" "}
+                    {formatCurrency(
+                      projectedMortgageBalance ?? parseNum(linkedMortgage.balance)
                     )}
                   </div>
                   <div className="mt-0.5 text-amber-400/70">
