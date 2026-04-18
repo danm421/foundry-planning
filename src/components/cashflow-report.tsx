@@ -499,7 +499,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       },
       {
         type: "bar" as const,
-        label: "Other Income",
+        label: "Other Inflows",
         data: visibleYears.map(otherIncomeForYear),
         backgroundColor: "#99f6e4",
         stack: "inflows",
@@ -900,7 +900,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ),
         numCol(
           "other_income_l0",
-          () => <DrillBtn segment="other_income_detail" label="Other Income" />,
+          () => <DrillBtn segment="other_income_detail" label="Other Inflows" />,
           (r) => r.income.other
         ),
         numCol("totalIncome", "Total Income", (r) => r.totalIncome, true),
@@ -992,7 +992,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ),
         numCol(
           "oi_total",
-          "Other Income Total",
+          "Other Inflows Total",
           (r) => sourceIds.reduce((sum, id) => sum + (r.income.bySource[id] ?? 0), 0),
           true,
         ),
