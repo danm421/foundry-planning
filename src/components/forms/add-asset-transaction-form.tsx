@@ -5,6 +5,8 @@ import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine/types";
+import MilestoneYearPicker from "@/components/milestone-year-picker";
+import type { YearRef, ClientMilestones } from "@/lib/milestones";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,6 +22,9 @@ interface AddAssetTransactionFormProps {
   clientId: string;
   accounts: { id: string; name: string; category: string; subType: string }[];
   liabilities: { id: string; name: string; linkedPropertyId: string | null; balance: string }[];
+  milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
   initialData?: {
     id: string;
     name: string;
@@ -168,6 +173,9 @@ export default function AddAssetTransactionForm({
   clientId,
   accounts,
   liabilities,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
   initialData,
   onClose,
   onSaved,
@@ -185,6 +193,7 @@ export default function AddAssetTransactionForm({
   // ── Common fields ─────────────────────────────────────────────────────────
   const [name, setName] = useState(initialData?.name ?? "");
   const [year, setYear] = useState(initialData?.year ?? currentYear);
+  const [yearRef, setYearRef] = useState<YearRef | null>(null);
 
   // ── Section visibility ────────────────────────────────────────────────────
   const [sellExpanded, setSellExpanded] = useState(initialHasSell);
@@ -469,17 +478,33 @@ export default function AddAssetTransactionForm({
           </div>
 
           <div className="w-1/2">
-            <label className={LABEL_CLASS} htmlFor="txn-year">
-              Year <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="txn-year"
-              type="number"
-              required
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-              className={INPUT_CLASS}
-            />
+            {milestones ? (
+              <MilestoneYearPicker
+                name="txn-year"
+                id="txn-year"
+                value={year}
+                yearRef={yearRef}
+                milestones={milestones}
+                onChange={(y, r) => { setYear(y); setYearRef(r); }}
+                label="Year *"
+                clientFirstName={clientFirstName}
+                spouseFirstName={spouseFirstName}
+              />
+            ) : (
+              <>
+                <label className={LABEL_CLASS} htmlFor="txn-year">
+                  Year <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="txn-year"
+                  type="number"
+                  required
+                  value={year}
+                  onChange={(e) => { setYear(Number(e.target.value)); setYearRef(null); }}
+                  className={INPUT_CLASS}
+                />
+              </>
+            )}
           </div>
         </div>
 

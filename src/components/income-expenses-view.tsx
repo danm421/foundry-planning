@@ -624,6 +624,8 @@ function IncomeDialog({
                   showSSRefs={false}
                   onChange={(yr, ref) => { setStartYear(yr); setStartYearRef(ref); }}
                   label="Start Year"
+                  clientFirstName={ownerNames.clientName.split(" ")[0]}
+                  spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
                 />
                 <MilestoneYearPicker
                   name="endYear"
@@ -634,6 +636,9 @@ function IncomeDialog({
                   showSSRefs={false}
                   onChange={(yr, ref) => { setEndYear(yr); setEndYearRef(ref); }}
                   label="End Year"
+                  clientFirstName={ownerNames.clientName.split(" ")[0]}
+                  spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+                  startYearForDuration={startYear}
                 />
               </>
             ) : (
@@ -780,6 +785,7 @@ interface ExpenseDialogProps {
   accounts: Account[];
   entities?: Entity[];
   clientInfo?: ClientInfo;
+  ownerNames: OwnerNames;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editing?: Expense;
@@ -794,6 +800,7 @@ function ExpenseDialog({
   accounts,
   entities,
   clientInfo,
+  ownerNames,
   open,
   onOpenChange,
   editing,
@@ -990,6 +997,8 @@ function ExpenseDialog({
                   showSSRefs={false}
                   onChange={(yr, ref) => { setStartYear(yr); setStartYearRef(ref); }}
                   label="Start Year"
+                  clientFirstName={ownerNames.clientName.split(" ")[0]}
+                  spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
                 />
                 <MilestoneYearPicker
                   name="endYear"
@@ -1000,6 +1009,9 @@ function ExpenseDialog({
                   showSSRefs={false}
                   onChange={(yr, ref) => { setEndYear(yr); setEndYearRef(ref); }}
                   label="End Year"
+                  clientFirstName={ownerNames.clientName.split(" ")[0]}
+                  spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+                  startYearForDuration={startYear}
                 />
               </>
             ) : (
@@ -1819,6 +1831,7 @@ export default function IncomeExpensesView({
         accounts={accounts}
         entities={entities}
         clientInfo={clientInfo}
+        ownerNames={ownerNames}
         open={expenseDialog.open}
         onOpenChange={(o) => setExpenseDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
         defaultType={expenseDialog.defaultType}

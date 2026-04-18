@@ -8,10 +8,12 @@ import {
   transferSchedules,
   assetTransactions,
   liabilities,
+  planSettings,
 } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import TechniquesView from "@/components/techniques-view";
+import { buildClientMilestones } from "@/lib/milestones";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -41,7 +43,7 @@ export default async function TechniquesPage({ params }: PageProps) {
     );
   }
 
-  const [accountRows, transferRows, scheduleRows, transactionRows, liabilityRows] =
+  const [accountRows, transferRows, scheduleRows, transactionRows, liabilityRows, planSettingsRows] =
     await Promise.all([
       db
         .select()
@@ -67,7 +69,16 @@ export default async function TechniquesPage({ params }: PageProps) {
         .from(liabilities)
         .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id)))
         .orderBy(asc(liabilities.name)),
+      db
+        .select()
+        .from(planSettings)
+        .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
     ]);
+
+  const settings = planSettingsRows[0];
+  const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
+  const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
+  const milestones = buildClientMilestones(client, planStartYear, planEndYear);
 
   // Attach schedules to their parent transfers
   const schedulesByTransfer = new Map<string, { id: string; year: number; amount: string }[]>();
@@ -136,6 +147,9 @@ export default async function TechniquesPage({ params }: PageProps) {
       assetTransactions={transactionProps}
       accounts={accountOptions}
       liabilities={liabilityOptions}
+      milestones={milestones}
+      clientFirstName={client.firstName}
+      spouseFirstName={client.spouseName ?? undefined}
     />
   );
 }

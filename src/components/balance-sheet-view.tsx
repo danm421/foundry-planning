@@ -374,7 +374,13 @@ export default function BalanceSheetView({
               {liabilities.length > 0 && (
                 <EditToggle on={liabilitiesEdit} onToggle={() => setLiabilitiesEdit((v) => !v)} />
               )}
-              <AddLiabilityDialog clientId={clientId} realEstateAccounts={realEstateAccounts} entities={entities} />
+              <AddLiabilityDialog
+                clientId={clientId}
+                realEstateAccounts={realEstateAccounts}
+                entities={entities}
+                clientFirstName={ownerNames.clientName.split(" ")[0]}
+                spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+              />
             </div>
           }
         >
@@ -490,6 +496,8 @@ export default function BalanceSheetView({
         clientId={clientId}
         realEstateAccounts={realEstateAccounts}
         entities={entities}
+        clientFirstName={ownerNames.clientName.split(" ")[0]}
+        spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
         open={!!editingLiability}
         onOpenChange={(o) => !o && setEditingLiability(null)}
         editing={editingLiability ? liabilityToInitial(editingLiability) : undefined}

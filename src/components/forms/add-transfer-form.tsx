@@ -3,6 +3,8 @@
 import { useState, FormEvent } from "react";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
+import MilestoneYearPicker from "@/components/milestone-year-picker";
+import type { YearRef, ClientMilestones } from "@/lib/milestones";
 
 interface ScheduleRow {
   id: string;
@@ -13,6 +15,9 @@ interface ScheduleRow {
 interface AddTransferFormProps {
   clientId: string;
   accounts: { id: string; name: string; category: string; subType: string }[];
+  milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
   initialData?: {
     id: string;
     name: string;
@@ -67,6 +72,9 @@ function makeId(): string {
 export default function AddTransferForm({
   clientId,
   accounts,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
   initialData,
   onClose,
   onSaved,
@@ -90,8 +98,14 @@ export default function AddTransferForm({
   const [startYear, setStartYear] = useState(
     initialData?.startYear ?? new Date().getFullYear(),
   );
+  const [startYearRef, setStartYearRef] = useState<YearRef | null>(
+    (initialData?.startYearRef as YearRef | null) ?? null,
+  );
   const [endYear, setEndYear] = useState<number>(
     initialData?.endYear ?? new Date().getFullYear() + 1,
+  );
+  const [endYearRef, setEndYearRef] = useState<YearRef | null>(
+    (initialData?.endYearRef as YearRef | null) ?? null,
   );
   const [growthRate, setGrowthRate] = useState(
     initialData ? (parseFloat(initialData.growthRate) * 100).toString() : "0",
@@ -151,8 +165,8 @@ export default function AddTransferForm({
         mode,
         startYear,
         endYear: mode !== "one_time" ? endYear : null,
-        startYearRef: null,
-        endYearRef: null,
+        startYearRef,
+        endYearRef: mode !== "one_time" ? endYearRef : null,
         growthRate: mode === "recurring" ? parseFloat(growthRate) / 100 || 0 : 0,
         schedules:
           mode === "scheduled"
@@ -293,31 +307,64 @@ export default function AddTransferForm({
         {/* Start year (always shown) */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-400">Start year</label>
-            <input
-              type="number"
-              min={2000}
-              max={2100}
-              value={startYear}
-              onChange={(e) => setStartYear(Number(e.target.value))}
-              required
-              className={INPUT_CLASS}
-            />
+            {milestones ? (
+              <MilestoneYearPicker
+                name="startYear"
+                id="transfer-startYear"
+                value={startYear}
+                yearRef={startYearRef}
+                milestones={milestones}
+                onChange={(y, r) => { setStartYear(y); setStartYearRef(r); }}
+                label="Start Year"
+                clientFirstName={clientFirstName}
+                spouseFirstName={spouseFirstName}
+              />
+            ) : (
+              <>
+                <label className="block text-xs font-medium text-gray-400">Start year</label>
+                <input
+                  type="number"
+                  min={2000}
+                  max={2100}
+                  value={startYear}
+                  onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
+                  required
+                  className={INPUT_CLASS}
+                />
+              </>
+            )}
           </div>
 
           {/* End year — recurring and scheduled only */}
           {(mode === "recurring" || mode === "scheduled") && (
             <div>
-              <label className="block text-xs font-medium text-gray-400">End year</label>
-              <input
-                type="number"
-                min={2000}
-                max={2100}
-                value={endYear}
-                onChange={(e) => setEndYear(Number(e.target.value))}
-                required
-                className={INPUT_CLASS}
-              />
+              {milestones ? (
+                <MilestoneYearPicker
+                  name="endYear"
+                  id="transfer-endYear"
+                  value={endYear}
+                  yearRef={endYearRef}
+                  milestones={milestones}
+                  onChange={(y, r) => { setEndYear(y); setEndYearRef(r); }}
+                  label="End Year"
+                  clientFirstName={clientFirstName}
+                  spouseFirstName={spouseFirstName}
+                  startYearForDuration={startYear}
+                />
+              ) : (
+                <>
+                  <label className="block text-xs font-medium text-gray-400">End year</label>
+                  <input
+                    type="number"
+                    min={2000}
+                    max={2100}
+                    value={endYear}
+                    onChange={(e) => { setEndYear(Number(e.target.value)); setEndYearRef(null); }}
+                    required
+                    className={INPUT_CLASS}
+                  />
+                </>
+              )}
             </div>
           )}
         </div>

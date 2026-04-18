@@ -48,6 +48,8 @@ interface AddLiabilityFormProps {
   realEstateAccounts?: { id: string; name: string }[];
   entities?: { id: string; name: string }[];
   milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
   mode?: "create" | "edit";
   initial?: LiabilityFormInitial;
   onSuccess?: () => void;
@@ -60,6 +62,8 @@ export default function AddLiabilityForm({
   realEstateAccounts,
   entities,
   milestones,
+  clientFirstName,
+  spouseFirstName,
   mode = "create",
   initial,
   onSuccess,
@@ -336,6 +340,8 @@ export default function AddLiabilityForm({
                   showSSRefs={false}
                   onChange={(yr, ref) => { setStartYear(yr); setStartYearRef(ref); }}
                   label=""
+                  clientFirstName={clientFirstName}
+                  spouseFirstName={spouseFirstName}
                 />
               </div>
             ) : (

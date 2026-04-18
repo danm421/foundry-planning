@@ -151,6 +151,8 @@ export default async function AssumptionsPage({ params }: PageProps) {
         }))}
         withdrawalStrategies={withdrawalRows}
         milestones={milestones}
+        clientFirstName={client.firstName}
+        spouseFirstName={client.spouseName?.split(" ")[0]}
       />
     </div>
   );

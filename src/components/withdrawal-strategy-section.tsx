@@ -32,6 +32,8 @@ interface WithdrawalStrategySectionProps {
   accounts: WithdrawalAccount[];
   initialStrategies: WithdrawalStrategy[];
   milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -59,6 +61,8 @@ interface DialogProps {
   accounts: WithdrawalAccount[];
   nextPriority: number;
   milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editing?: WithdrawalStrategy;
@@ -71,6 +75,8 @@ function WithdrawalDialog({
   accounts,
   nextPriority,
   milestones,
+  clientFirstName,
+  spouseFirstName,
   open,
   onOpenChange,
   editing,
@@ -210,6 +216,8 @@ function WithdrawalDialog({
                   showSSRefs={false}
                   onChange={(yr, ref) => { setStartYear(yr); setStartYearRef(ref); }}
                   label="Start Year"
+                  clientFirstName={clientFirstName}
+                  spouseFirstName={spouseFirstName}
                 />
                 <MilestoneYearPicker
                   name="endYear"
@@ -220,6 +228,9 @@ function WithdrawalDialog({
                   showSSRefs={false}
                   onChange={(yr, ref) => { setEndYear(yr); setEndYearRef(ref); }}
                   label="End Year"
+                  clientFirstName={clientFirstName}
+                  spouseFirstName={spouseFirstName}
+                  startYearForDuration={startYear}
                 />
               </>
             ) : (
@@ -289,6 +300,8 @@ export default function WithdrawalStrategySection({
   accounts,
   initialStrategies,
   milestones,
+  clientFirstName,
+  spouseFirstName,
 }: WithdrawalStrategySectionProps) {
   const [list, setList] = useState<WithdrawalStrategy[]>(initialStrategies);
   const [editMode, setEditMode] = useState(false);
@@ -399,6 +412,8 @@ export default function WithdrawalStrategySection({
         accounts={accounts}
         nextPriority={nextPriority}
         milestones={milestones}
+        clientFirstName={clientFirstName}
+        spouseFirstName={spouseFirstName}
         open={dialog.open}
         onOpenChange={(o) => setDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
         editing={dialog.editing}

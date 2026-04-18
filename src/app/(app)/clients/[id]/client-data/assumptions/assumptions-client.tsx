@@ -45,6 +45,8 @@ interface AssumptionsClientProps {
   withdrawalStrategies: WithdrawalStrategy[];
   milestones?: ClientMilestones;
   modelPortfolios?: ModelPortfolioOption[];
+  clientFirstName?: string;
+  spouseFirstName?: string;
 }
 
 const TABS = [
@@ -61,6 +63,8 @@ export default function AssumptionsClient({
   withdrawalStrategies,
   milestones,
   modelPortfolios,
+  clientFirstName,
+  spouseFirstName,
 }: AssumptionsClientProps) {
   const [activeTab, setActiveTab] = useState("plan-horizon");
 
@@ -111,6 +115,8 @@ export default function AssumptionsClient({
             accounts={accounts}
             initialStrategies={withdrawalStrategies}
             milestones={milestones}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
           />
         )}
       </div>

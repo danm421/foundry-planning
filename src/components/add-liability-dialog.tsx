@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import AddLiabilityForm, { LiabilityFormInitial, LiabilityFormValues } from "./forms/add-liability-form";
 import LiabilityAmortizationTab from "./liability-amortization-tab";
+import type { ClientMilestones } from "@/lib/milestones";
 
 type TabId = "details" | "amortization";
 
@@ -10,6 +11,9 @@ interface AddLiabilityDialogProps {
   clientId: string;
   realEstateAccounts?: { id: string; name: string }[];
   entities?: { id: string; name: string }[];
+  milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
   // Controlled edit mode
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -21,6 +25,9 @@ export default function AddLiabilityDialog({
   clientId,
   realEstateAccounts,
   entities,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
   open,
   onOpenChange,
   editing,
@@ -104,6 +111,9 @@ export default function AddLiabilityDialog({
                   clientId={clientId}
                   realEstateAccounts={realEstateAccounts}
                   entities={entities}
+                  milestones={milestones}
+                  clientFirstName={clientFirstName}
+                  spouseFirstName={spouseFirstName}
                   mode={isEdit ? "edit" : "create"}
                   initial={editing}
                   onSuccess={close}

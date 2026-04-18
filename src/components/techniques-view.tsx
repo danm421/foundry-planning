@@ -6,6 +6,7 @@ import AddTransferForm from "./forms/add-transfer-form";
 import AddAssetTransactionForm from "./forms/add-asset-transaction-form";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine/types";
+import type { ClientMilestones } from "@/lib/milestones";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,9 @@ interface TechniquesViewProps {
   assetTransactions: AssetTransactionRow[];
   accounts: AccountOption[];
   liabilities: LiabilityOption[];
+  milestones?: ClientMilestones;
+  clientFirstName?: string;
+  spouseFirstName?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -516,6 +520,9 @@ export default function TechniquesView({
   assetTransactions,
   accounts,
   liabilities,
+  milestones,
+  clientFirstName,
+  spouseFirstName,
 }: TechniquesViewProps) {
   const router = useRouter();
 
@@ -663,6 +670,9 @@ export default function TechniquesView({
         <AddTransferForm
           clientId={clientId}
           accounts={accounts}
+          milestones={milestones}
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
           initialData={editingTransfer ?? undefined}
           onClose={() => { setShowAddTransfer(false); setEditingTransfer(null); }}
           onSaved={() => { setShowAddTransfer(false); setEditingTransfer(null); router.refresh(); }}
@@ -675,6 +685,9 @@ export default function TechniquesView({
           clientId={clientId}
           accounts={accounts}
           liabilities={liabilities}
+          milestones={milestones}
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
           initialData={editingTransaction ?? undefined}
           onClose={() => { setShowAddTransaction(false); setEditingTransaction(null); }}
           onSaved={() => { setShowAddTransaction(false); setEditingTransaction(null); router.refresh(); }}
