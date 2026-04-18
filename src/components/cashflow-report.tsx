@@ -179,6 +179,7 @@ const DRILL_LABELS: Record<string, string> = {
   additions: "Additions",
   distributions: "Distributions",
   portfolio: "Portfolio Assets",
+  other_income_detail: "Other Inflows",
   // Income sub-types
   salaries: "Salaries",
   socialSecurity: "Social Security",
