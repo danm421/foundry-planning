@@ -8,6 +8,7 @@ import HeaderControls from "./balance-sheet-report/header-controls";
 import AssetsPanel from "./balance-sheet-report/assets-panel";
 import LiabilitiesPanel from "./balance-sheet-report/liabilities-panel";
 import CenterColumn from "./balance-sheet-report/center-column";
+import EntityBreakdownPanel from "./balance-sheet-report/entity-breakdown-panel";
 import { buildViewModel } from "./balance-sheet-report/view-model";
 import type { OwnershipView } from "./balance-sheet-report/ownership-filter";
 
@@ -147,27 +148,37 @@ export default function BalanceSheetReportView({
         exportInProgress={exporting}
       />
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr_1fr]">
-        <AssetsPanel
-          viewModel={viewModel}
-          view={view}
-          ownerNames={ownerNames}
-          showOwnerChips={isMarried || hasEntityAccounts}
-          entityLabelById={entityLabelById}
-        />
-        <CenterColumn
-          viewModel={viewModel}
-          donutCanvasRef={donutCanvasRef}
-          barCanvasRef={barCanvasRef}
-        />
-        <LiabilitiesPanel
-          viewModel={viewModel}
-          view={view}
-          ownerNames={ownerNames}
-          showOwnerChips={isMarried || hasEntityAccounts}
-          entityLabelById={entityLabelById}
-        />
-      </div>
+      {view === "entities" ? (
+        <div className="grid gap-5 lg:grid-cols-[2fr_1.1fr]">
+          <EntityBreakdownPanel viewModel={viewModel} />
+          <CenterColumn
+            viewModel={viewModel}
+            donutCanvasRef={donutCanvasRef}
+            barCanvasRef={barCanvasRef}
+          />
+        </div>
+      ) : (
+        <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr_1fr]">
+          <AssetsPanel
+            viewModel={viewModel}
+            view={view}
+            ownerNames={ownerNames}
+            showOwnerChips={isMarried || hasEntityAccounts}
+            entityLabelById={entityLabelById}
+          />
+          <CenterColumn
+            viewModel={viewModel}
+            donutCanvasRef={donutCanvasRef}
+            barCanvasRef={barCanvasRef}
+          />
+          <LiabilitiesPanel
+            viewModel={viewModel}
+            ownerNames={ownerNames}
+            showOwnerChips={isMarried || hasEntityAccounts}
+            entityLabelById={entityLabelById}
+          />
+        </div>
+      )}
     </div>
   );
 }
