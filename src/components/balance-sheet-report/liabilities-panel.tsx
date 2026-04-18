@@ -103,6 +103,29 @@ export default function LiabilitiesPanel({
           )}
         </div>
       </div>
+
+      {viewModel.realEstateEquity > 0 && (
+        <div className={`${SCREEN_THEME.surface.panel} p-4`}>
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Real Estate Equity
+          </div>
+          <div className="mt-1 text-xl font-bold text-gray-100">
+            {formatCurrency(viewModel.realEstateEquity)}
+          </div>
+        </div>
+      )}
+
+      <div className={`${SCREEN_THEME.surface.netWorthAccent} rounded-lg p-5`}>
+        <div className="text-xs font-semibold uppercase tracking-wide text-blue-300">
+          Net Worth
+        </div>
+        <div className="mt-2 flex items-center gap-3">
+          <div className="text-3xl font-bold text-gray-100">
+            {formatCurrency(viewModel.netWorth)}
+          </div>
+          <YoyBadge yoy={viewModel.yoy.netWorth} />
+        </div>
+      </div>
     </div>
   );
 }
