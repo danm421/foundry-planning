@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, entities } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { getOrgId } from "@/lib/db-helpers";
@@ -20,5 +20,29 @@ export default async function BalanceSheetReportPage({ params }: PageProps) {
 
   if (!client) notFound();
 
-  return <BalanceSheetReportView clientId={id} />;
+  const entityRows = await db.select().from(entities).where(eq(entities.clientId, id));
+
+  const isMarried =
+    client.filingStatus === "married_joint" ||
+    client.filingStatus === "married_separate";
+
+  const ownerNames = {
+    clientName: client.firstName ?? "Client",
+    spouseName: client.spouseName ?? null,
+  };
+
+  const entityInfos = entityRows.map((e) => ({
+    id: e.id,
+    name: e.name,
+    entityType: e.entityType,
+  }));
+
+  return (
+    <BalanceSheetReportView
+      clientId={id}
+      isMarried={isMarried}
+      ownerNames={ownerNames}
+      entities={entityInfos}
+    />
+  );
 }

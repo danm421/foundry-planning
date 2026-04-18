@@ -1,26 +1,48 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { runProjection } from "@/engine/projection";
 import type { ProjectionYear } from "@/engine/types";
+import type { OwnerNames } from "@/lib/owner-labels";
+import HeaderControls from "./balance-sheet-report/header-controls";
+import AssetsPanel from "./balance-sheet-report/assets-panel";
+import LiabilitiesPanel from "./balance-sheet-report/liabilities-panel";
+import CenterColumn from "./balance-sheet-report/center-column";
+import EntityBreakdownPanel from "./balance-sheet-report/entity-breakdown-panel";
+import { buildViewModel } from "./balance-sheet-report/view-model";
+import type { OwnershipView } from "./balance-sheet-report/ownership-filter";
+
+interface EntityInfo { id: string; name: string; entityType: string }
 
 interface BalanceSheetReportViewProps {
   clientId: string;
+  isMarried: boolean;
+  ownerNames: OwnerNames;
+  entities: EntityInfo[];
 }
 
-function fmt(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
+interface ProjectionApiResponse {
+  accounts: Array<{ id: string; name: string; category: string; owner: "client" | "spouse" | "joint"; ownerEntityId?: string | null }>;
+  liabilities: Array<{ id: string; name: string; owner?: "client" | "spouse" | "joint" | null; ownerEntityId?: string | null; linkedPropertyId?: string | null }>;
+  [key: string]: unknown;
 }
 
-export default function BalanceSheetReportView({ clientId }: BalanceSheetReportViewProps) {
+export default function BalanceSheetReportView({
+  clientId,
+  isMarried,
+  ownerNames,
+  entities,
+}: BalanceSheetReportViewProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [apiData, setApiData] = useState<ProjectionApiResponse | null>(null);
   const [projectionYears, setProjectionYears] = useState<ProjectionYear[]>([]);
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [selectedAsOf, setSelectedAsOf] = useState<"today" | number | null>(null);
+  const [view, setView] = useState<OwnershipView>("consolidated");
+  const [exporting, setExporting] = useState(false);
+
+  const donutCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const barCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -32,10 +54,9 @@ export default function BalanceSheetReportView({ clientId }: BalanceSheetReportV
         }
         const data = await res.json();
         const projection = runProjection(data);
+        setApiData(data);
         setProjectionYears(projection);
-        if (projection.length > 0) {
-          setSelectedYear(projection[0].year);
-        }
+        if (projection.length > 0) setSelectedAsOf("today");
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load projection data");
       } finally {
@@ -45,10 +66,67 @@ export default function BalanceSheetReportView({ clientId }: BalanceSheetReportV
     load();
   }, [clientId]);
 
-  if (loading) {
-    return <div className="text-gray-400">Loading projection...</div>;
+  const hasEntityAccounts = useMemo(() => {
+    return apiData?.accounts?.some((a) => a.ownerEntityId != null) ?? false;
+  }, [apiData]);
+
+  const entityLabelById = useMemo(() => {
+    return new Map(entities.map((e) => [e.id, e.name]));
+  }, [entities]);
+
+  const viewModel = useMemo(() => {
+    if (!apiData || selectedAsOf == null || projectionYears.length === 0) return null;
+    const asOfMode = selectedAsOf === "today" ? "today" : "eoy";
+    const selectedYear =
+      selectedAsOf === "today" ? projectionYears[0].year : selectedAsOf;
+    return buildViewModel({
+      accounts: apiData.accounts,
+      liabilities: apiData.liabilities,
+      entities,
+      projectionYears,
+      selectedYear,
+      view,
+      asOfMode,
+    });
+  }, [apiData, entities, projectionYears, selectedAsOf, view]);
+
+  async function handleExportPdf() {
+    if (!viewModel || !apiData || selectedAsOf == null) return;
+    setExporting(true);
+    try {
+      const donutPng = donutCanvasRef.current?.toDataURL("image/png") ?? null;
+      const barPng = barCanvasRef.current?.toDataURL("image/png") ?? null;
+
+      const pdfYear =
+        selectedAsOf === "today" ? projectionYears[0].year : selectedAsOf;
+      const asOfMode = selectedAsOf === "today" ? "today" : "eoy";
+
+      const res = await fetch(
+        `/api/clients/${clientId}/balance-sheet-report/export-pdf?year=${pdfYear}&view=${view}&asOf=${asOfMode}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ donutPng, barPng }),
+        },
+      );
+      if (!res.ok) throw new Error(`Export failed: HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `balance-sheet-${selectedAsOf === "today" ? "today" : selectedAsOf}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "PDF export failed");
+    } finally {
+      setExporting(false);
+    }
   }
 
+  if (loading) return <div className="text-gray-400">Loading projection...</div>;
   if (error) {
     return (
       <div className="rounded-lg border border-red-800 bg-red-900/50 p-6 text-red-400">
@@ -56,8 +134,7 @@ export default function BalanceSheetReportView({ clientId }: BalanceSheetReportV
       </div>
     );
   }
-
-  if (projectionYears.length === 0) {
+  if (!viewModel || projectionYears.length === 0 || selectedAsOf == null) {
     return (
       <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
         No projection data available. Ensure plan settings and base case scenario are configured.
@@ -65,89 +142,50 @@ export default function BalanceSheetReportView({ clientId }: BalanceSheetReportV
     );
   }
 
-  const yearData = projectionYears.find((y) => y.year === selectedYear) ?? projectionYears[0];
-
-  const categories: {
-    label: string;
-    key: keyof Pick<
-      ProjectionYear["portfolioAssets"],
-      "cash" | "taxable" | "retirement" | "realEstate" | "business" | "lifeInsurance"
-    >;
-    total: number;
-  }[] = [
-    { label: "Cash", key: "cash", total: yearData.portfolioAssets.cashTotal },
-    { label: "Taxable", key: "taxable", total: yearData.portfolioAssets.taxableTotal },
-    { label: "Retirement", key: "retirement", total: yearData.portfolioAssets.retirementTotal },
-    { label: "Real Estate", key: "realEstate", total: yearData.portfolioAssets.realEstateTotal },
-    { label: "Business", key: "business", total: yearData.portfolioAssets.businessTotal },
-    { label: "Life Insurance", key: "lifeInsurance", total: yearData.portfolioAssets.lifeInsuranceTotal },
-  ];
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-100">Balance Sheet</h1>
-        <select
-          value={selectedYear ?? ""}
-          onChange={(e) => setSelectedYear(Number(e.target.value))}
-          className="rounded border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
-        >
-          {projectionYears.map((y) => (
-            <option key={y.year} value={y.year}>
-              {y.year}
-            </option>
-          ))}
-        </select>
-      </div>
+    <div className="flex flex-col gap-6">
+      <HeaderControls
+        years={projectionYears.map((y) => y.year)}
+        selectedAsOf={selectedAsOf}
+        onAsOfChange={setSelectedAsOf}
+        view={view}
+        onViewChange={setView}
+        showViewSelector={isMarried || hasEntityAccounts}
+        hasEntityAccounts={hasEntityAccounts}
+        onExportPdf={handleExportPdf}
+        exportInProgress={exporting}
+      />
 
-      {/* Assets section */}
-      <div>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-400">
-          Assets
-        </h2>
-        <div className="space-y-3">
-          {categories
-            .filter((c) => c.total > 0)
-            .map((cat) => (
-              <div
-                key={cat.key}
-                className="rounded-lg border border-gray-700 bg-gray-900 p-4"
-              >
-                <div className="flex items-center justify-between border-b border-gray-700 pb-2 mb-2">
-                  <span className="text-sm font-medium text-gray-300">{cat.label}</span>
-                  <span className="text-sm font-semibold text-gray-100">{fmt(cat.total)}</span>
-                </div>
-                {Object.entries(yearData.portfolioAssets[cat.key]).map(([name, value]) => (
-                  <div key={name} className="flex items-center justify-between py-1">
-                    <span className="text-sm text-gray-400">{name}</span>
-                    <span className="text-sm text-gray-200">{fmt(value as number)}</span>
-                  </div>
-                ))}
-              </div>
-            ))}
+      {view === "entities" ? (
+        <div className="grid gap-5 lg:grid-cols-[2fr_1.1fr]">
+          <EntityBreakdownPanel viewModel={viewModel} />
+          <CenterColumn
+            viewModel={viewModel}
+            donutCanvasRef={donutCanvasRef}
+            barCanvasRef={barCanvasRef}
+          />
         </div>
-      </div>
-
-      {/* Total Assets */}
-      <div className="rounded-lg border border-gray-600 bg-gray-800 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-gray-200">Total Assets</span>
-          <span className="text-sm font-bold text-gray-100">
-            {fmt(yearData.portfolioAssets.total)}
-          </span>
+      ) : (
+        <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr_1fr]">
+          <AssetsPanel
+            viewModel={viewModel}
+            ownerNames={ownerNames}
+            showOwnerChips={isMarried || hasEntityAccounts}
+            entityLabelById={entityLabelById}
+          />
+          <CenterColumn
+            viewModel={viewModel}
+            donutCanvasRef={donutCanvasRef}
+            barCanvasRef={barCanvasRef}
+          />
+          <LiabilitiesPanel
+            viewModel={viewModel}
+            ownerNames={ownerNames}
+            showOwnerChips={isMarried || hasEntityAccounts}
+            entityLabelById={entityLabelById}
+          />
         </div>
-      </div>
-
-      {/* Net Worth */}
-      <div className="rounded-lg border border-blue-800 bg-blue-900/30 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-blue-300">Net Worth</span>
-          <span className="text-sm font-bold text-blue-300">
-            {fmt(yearData.portfolioAssets.total)}
-          </span>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
