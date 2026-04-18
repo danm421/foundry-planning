@@ -453,7 +453,7 @@ export default function AddAccountForm({
         >
           Account Details
         </button>
-        {!isEdit && (
+        {!isEdit && category !== "real_estate" && category !== "business" && (
           <button
             type="button"
             onClick={() => setActiveTab("savings")}
@@ -534,6 +534,11 @@ export default function AddAccountForm({
                   setRmdEnabled(RMD_ELIGIBLE_SUB_TYPES.has(firstSub));
                   if (!userEditedName) {
                     setName(uniqueAccountName(DEFAULT_NAME_BY_CATEGORY[newCat], existingNamesList));
+                  }
+                  // Savings tab is not available for real-estate or business
+                  // categories — snap back to Details if it was active.
+                  if ((newCat === "real_estate" || newCat === "business") && activeTab === "savings") {
+                    setActiveTab("details");
                   }
                 }}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
