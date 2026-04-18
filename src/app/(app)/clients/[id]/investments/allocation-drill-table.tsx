@@ -84,12 +84,19 @@ export default function AllocationDrillTable({
                   </tr>
                 );
               })}
-              <tr className="border-t border-gray-700 font-semibold text-gray-200">
-                <td className="px-2 py-2">Total</td>
-                <td className="px-2 py-2 text-right tabular-nums">{dollars(totalInClass)}</td>
-                <td className="px-2 py-2 text-right tabular-nums">100.0%</td>
-                <td className="px-2 py-2 text-right text-gray-500">—</td>
-              </tr>
+              {(() => {
+                const summedPctOfClass = totalInClass > 0
+                  ? contributions.reduce((acc, c) => acc + c.valueInClass / totalInClass, 0)
+                  : 0;
+                return (
+                  <tr className="border-t border-gray-700 font-semibold text-gray-200">
+                    <td className="px-2 py-2">Total</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{dollars(totalInClass)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{pct(summedPctOfClass)}</td>
+                    <td className="px-2 py-2 text-right text-gray-500">—</td>
+                  </tr>
+                );
+              })()}
             </tbody>
           </table>
         </div>

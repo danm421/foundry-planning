@@ -51,6 +51,7 @@ export default function AllocationTable({ household, benchmarkWeights, assetClas
                 key={r.id}
                 role="button"
                 tabIndex={0}
+                aria-label={`Drill into ${r.name}`}
                 onClick={() => onRowClick(r.id)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -87,6 +88,7 @@ export default function AllocationTable({ household, benchmarkWeights, assetClas
             <tr
               role="button"
               tabIndex={0}
+              aria-label="Drill into Unallocated"
               onClick={() => onRowClick("__unallocated__")}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
