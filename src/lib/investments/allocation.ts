@@ -89,6 +89,7 @@ export interface AssetClassLite {
 }
 
 export interface InvestableAccount extends AccountLite {
+  name: string;
   value: number;
   ownerEntityId: string | null;
 }
@@ -101,12 +102,22 @@ export interface AssetClassRollup {
   pctOfClassified: number;
 }
 
+export interface AccountContribution {
+  accountId: string;
+  accountName: string;
+  accountValue: number;
+  valueInClass: number;
+  weightInClass: number;
+}
+
 export interface HouseholdAllocation {
   byAssetClass: AssetClassRollup[];
   unallocatedValue: number;
   totalClassifiedValue: number;
   totalInvestableValue: number;
   excludedNonInvestableValue: number;
+  contributionsByAssetClass: Record<string, AccountContribution[]>;
+  unallocatedContributions: AccountContribution[];
 }
 
 const INVESTABLE_CATEGORIES: ReadonlySet<AccountCategory> = new Set([
@@ -130,6 +141,8 @@ export function computeHouseholdAllocation(
   let unallocatedValue = 0;
   let excludedNonInvestableValue = 0;
   const byId = new Map<string, number>();
+  const contribById = new Map<string, AccountContribution[]>();
+  const unallocatedContributions: AccountContribution[] = [];
 
   for (const acct of accounts) {
     const isInvestable = INVESTABLE_CATEGORIES.has(acct.category) && acct.ownerEntityId === null;
@@ -142,11 +155,28 @@ export function computeHouseholdAllocation(
     const result = resolver(acct);
     if ("unallocated" in result) {
       unallocatedValue += acct.value;
+      unallocatedContributions.push({
+        accountId: acct.id,
+        accountName: acct.name,
+        accountValue: acct.value,
+        valueInClass: acct.value,
+        weightInClass: 1,
+      });
       continue;
     }
     for (const row of result.classified) {
       const dollars = acct.value * row.weight;
       byId.set(row.assetClassId, (byId.get(row.assetClassId) ?? 0) + dollars);
+
+      const list = contribById.get(row.assetClassId) ?? [];
+      list.push({
+        accountId: acct.id,
+        accountName: acct.name,
+        accountValue: acct.value,
+        valueInClass: dollars,
+        weightInClass: row.weight,
+      });
+      contribById.set(row.assetClassId, list);
     }
   }
 
@@ -166,12 +196,23 @@ export function computeHouseholdAllocation(
     .filter((b) => b.value > 0)
     .sort((a, b) => b.value - a.value);
 
+  const contributionsByAssetClass: Record<string, AccountContribution[]> = {};
+  for (const [classId, list] of contribById) {
+    contributionsByAssetClass[classId] = list
+      .slice()
+      .sort((a, b) => b.valueInClass - a.valueInClass);
+  }
+
+  unallocatedContributions.sort((a, b) => b.valueInClass - a.valueInClass);
+
   return {
     byAssetClass,
     unallocatedValue,
     totalClassifiedValue,
     totalInvestableValue,
     excludedNonInvestableValue,
+    contributionsByAssetClass,
+    unallocatedContributions,
   };
 }
 

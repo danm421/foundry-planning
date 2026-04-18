@@ -101,6 +101,7 @@ export default async function InvestmentsPage({ params }: PageProps) {
 
   const investableAccounts: InvestableAccount[] = acctRows.map((a) => ({
     id: a.id,
+    name: a.name,
     category: a.category,
     growthSource: a.growthSource,
     modelPortfolioId: a.modelPortfolioId ?? null,

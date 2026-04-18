@@ -3,6 +3,7 @@ import {
   computeHouseholdAllocation,
   type AccountLite,
   type AccountAllocationResult,
+  type InvestableAccount,
 } from "../allocation";
 
 const ASSET_CLASSES = [
@@ -15,8 +16,8 @@ function mkAccount(
   category: AccountLite["category"],
   value: number,
   ownerEntityId: string | null = null,
-): AccountLite & { value: number; ownerEntityId: string | null } {
-  return { id, category, growthSource: "custom", modelPortfolioId: null, value, ownerEntityId };
+): InvestableAccount {
+  return { id, name: id, category, growthSource: "custom", modelPortfolioId: null, value, ownerEntityId };
 }
 
 describe("computeHouseholdAllocation", () => {
