@@ -15,8 +15,13 @@ function pct(v: number) {
   return `${(v * 100).toFixed(1)}%`;
 }
 
+function dollars(n: number) {
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
 export default function AllocationTable({ household, benchmarkWeights, assetClasses, onRowClick }: Props) {
   const currentById = new Map(household.byAssetClass.map((b) => [b.id, b.pctOfClassified]));
+  const valueById = new Map(household.byAssetClass.map((b) => [b.id, b.value]));
   const targetById = new Map(benchmarkWeights.map((w) => [w.assetClassId, w.weight]));
   const ids = new Set<string>([...currentById.keys(), ...targetById.keys()]);
 
@@ -27,6 +32,7 @@ export default function AllocationTable({ household, benchmarkWeights, assetClas
         id,
         name: ac?.name ?? id,
         sortOrder: ac?.sortOrder ?? 0,
+        value: valueById.get(id) ?? 0,
         current: currentById.get(id) ?? 0,
         target: targetById.get(id) ?? 0,
       };
@@ -39,6 +45,7 @@ export default function AllocationTable({ household, benchmarkWeights, assetClas
         <thead>
           <tr className="border-b border-gray-800 text-gray-500">
             <th className="px-2 py-2 font-medium">Asset Class</th>
+            <th className="px-2 py-2 text-right font-medium">$</th>
             <th className="px-2 py-2 font-medium">Current</th>
             <th className="px-2 py-2 font-medium">Target</th>
           </tr>
@@ -64,6 +71,9 @@ export default function AllocationTable({ household, benchmarkWeights, assetClas
                 <td className="px-2 py-2 text-gray-200">
                   <span className="mr-2 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: color }} />
                   {r.name}
+                </td>
+                <td className="px-2 py-2 text-right tabular-nums text-gray-200">
+                  {r.value > 0 ? dollars(r.value) : "—"}
                 </td>
                 <td className="px-2 py-2 text-gray-200">
                   <div className="flex items-center gap-2">
@@ -102,6 +112,7 @@ export default function AllocationTable({ household, benchmarkWeights, assetClas
                 <span className="mr-2 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: UNALLOCATED_COLOR }} />
                 Unallocated
               </td>
+              <td className="px-2 py-2 text-right tabular-nums">{dollars(household.unallocatedValue)}</td>
               <td className="px-2 py-2">—</td>
               <td className="px-2 py-2">—</td>
             </tr>
