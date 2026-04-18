@@ -127,4 +127,28 @@ describe("computeAmortizationSchedule", () => {
     expect(rows[0].principal).toBe(12000);
     expect(rows[0].endingBalance).toBe(12000);
   });
+
+  it("final year pays off dust balance from under-calibrated payment", () => {
+    // $300k at 6.5% for 360 months has a theoretical payment of ~$1896.203.
+    // Rounding to $1896.20 leaves ~$1 of dust over 30 years. The final
+    // period should absorb that dust so the schedule ends at exactly 0.
+    const underPaid = 1896.2;
+    const rows = computeAmortizationSchedule(300000, 0.065, underPaid, 2026, 360);
+    const last = rows[rows.length - 1];
+    expect(last.endingBalance).toBe(0);
+  });
+
+  it("extra payments never push balance negative", () => {
+    const payment = calcPayment(120000, 0.06, 240);
+    const rows = computeAmortizationSchedule(120000, 0.06, payment, 2026, 240, [
+      // Deliberately huge lump sum — should cap at remaining balance
+      { year: 2030, type: "lump_sum", amount: 10_000_000 },
+    ]);
+    for (const row of rows) {
+      expect(row.endingBalance).toBeGreaterThanOrEqual(0);
+    }
+    // Lump-sum year should zero out the loan
+    const payoffRow = rows.find((r) => r.year === 2030);
+    expect(payoffRow?.endingBalance).toBe(0);
+  });
 });

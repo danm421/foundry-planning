@@ -171,6 +171,16 @@ export function computeAmortizationSchedule(
       }
     }
 
+    // Contractual end: absorb any rounding dust so the final period
+    // always pays the balance to zero rather than leaving a residual
+    // from monthly-payment rounding (e.g. $1896.20 stored for a loan
+    // whose theoretical payment is $1896.203...).
+    if (year === endYear && bal > 0) {
+      yearScheduledPayment += bal;
+      yearPrincipal += bal;
+      bal = 0;
+    }
+
     rows.push({
       year,
       beginningBalance,
