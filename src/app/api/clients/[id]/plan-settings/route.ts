@@ -89,6 +89,7 @@ export async function PUT(
       modelPortfolioIdTaxable,
       modelPortfolioIdCash,
       modelPortfolioIdRetirement,
+      selectedBenchmarkPortfolioId,
     } = body;
 
     if (typeof planStartYear === "number") {
@@ -128,6 +129,9 @@ export async function PUT(
         modelPortfolioIdTaxable: modelPortfolioIdTaxable !== undefined ? modelPortfolioIdTaxable : undefined,
         modelPortfolioIdCash: modelPortfolioIdCash !== undefined ? modelPortfolioIdCash : undefined,
         modelPortfolioIdRetirement: modelPortfolioIdRetirement !== undefined ? modelPortfolioIdRetirement : undefined,
+        selectedBenchmarkPortfolioId: "selectedBenchmarkPortfolioId" in body
+          ? (selectedBenchmarkPortfolioId === null ? null : selectedBenchmarkPortfolioId)
+          : undefined,
         updatedAt: new Date(),
       })
       .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenarioId)))
