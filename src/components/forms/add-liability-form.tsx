@@ -185,6 +185,14 @@ export default function AddLiabilityForm({
     const data = new FormData(form);
     const linkedPropertyId = data.get("linkedPropertyId") as string;
 
+    // Mortgages (interest-deductible liabilities) must link to a real-estate
+    // account so the engine can attribute the interest to the correct property.
+    if (isInterestDeductible && !linkedPropertyId) {
+      setError("Mortgage liabilities must link to a real estate property.");
+      setLoading(false);
+      return;
+    }
+
     const termMonths = termUnit === "annual"
       ? parseInt(termValue) * 12
       : parseInt(termValue);
