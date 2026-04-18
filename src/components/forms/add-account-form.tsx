@@ -7,6 +7,7 @@ import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
+import { defaultSavingsRuleRefs, resolveMilestone } from "@/lib/milestones";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -223,11 +224,25 @@ export default function AddAccountForm({
 
   const currentYear = new Date().getFullYear();
 
-  // Savings (create-only) year state — enables MilestoneYearPicker fallback
-  const [savingsStartYear, setSavingsStartYear] = useState<number>(currentYear);
-  const [savingsEndYear, setSavingsEndYear] = useState<number>(currentYear + 20);
-  const [savingsStartYearRef, setSavingsStartYearRef] = useState<YearRef | null>(null);
-  const [savingsEndYearRef, setSavingsEndYearRef] = useState<YearRef | null>(null);
+  // Savings (create-only) year state — enables MilestoneYearPicker fallback.
+  // Defaults to plan_start → client_retirement when milestones are available.
+  const defaultSavingsRefs = defaultSavingsRuleRefs();
+  const initialSavingsStartYear =
+    milestones && defaultSavingsRefs.startYearRef
+      ? resolveMilestone(defaultSavingsRefs.startYearRef, milestones) ?? currentYear
+      : currentYear;
+  const initialSavingsEndYear =
+    milestones && defaultSavingsRefs.endYearRef
+      ? resolveMilestone(defaultSavingsRefs.endYearRef, milestones) ?? currentYear + 20
+      : currentYear + 20;
+  const [savingsStartYear, setSavingsStartYear] = useState<number>(initialSavingsStartYear);
+  const [savingsEndYear, setSavingsEndYear] = useState<number>(initialSavingsEndYear);
+  const [savingsStartYearRef, setSavingsStartYearRef] = useState<YearRef | null>(
+    milestones ? defaultSavingsRefs.startYearRef : null,
+  );
+  const [savingsEndYearRef, setSavingsEndYearRef] = useState<YearRef | null>(
+    milestones ? defaultSavingsRefs.endYearRef : null,
+  );
 
   const subTypes = SUB_TYPE_BY_CATEGORY[category];
   const isRetirementAccount = category === "retirement" && RETIREMENT_SUB_TYPES.has(subType);
