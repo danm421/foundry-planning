@@ -58,6 +58,23 @@ Dependency notes that override raw score:
 
 ## Client Data
 
+- **Account history tracking (balance sheet Phase 2)** _(P5 E4 L4)_ — add
+  `account_history` and `liability_history` tables keyed by
+  `(account_id / liability_id, as_of_date)` and a History tab on each
+  account/liability in Client Data → Balance Sheet. Three capture
+  mechanisms: (a) auto-capture on edit (previous balance stamped with
+  today's date when the advisor saves a new value), (b) auto-capture on
+  `as_of_date` bump, and (c) manual entry for backfilling past year-ends.
+  Once shipped, swap the balance-sheet-report view-model's past-year data
+  source from projection to history where history rows exist. Unlocks
+  meaningful "AS OF 31 Dec 2022" snapshots and honest YoY deltas instead
+  of projection-to-projection. Full design in
+  `docs/superpowers/specs/2026-04-18-balance-sheet-redesign-design.md`
+  (Phase 2 section). _Why deferred: Phase 1 redesign shipped without it —
+  report still works using projection data for all years. History is a
+  meaningful schema + UI + capture project that should have its own
+  brainstorm cycle._
+
 - **Year-by-year schedule for variable incomes & expenses** _(P7 E5 L4)_ —
   today income and expense rows have a flat `annualAmount` plus a growth rate.
   Real plans have items that vary year-to-year (college tuition 2030-2034,
