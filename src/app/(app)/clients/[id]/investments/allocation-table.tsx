@@ -8,13 +8,14 @@ interface Props {
   household: HouseholdAllocation;
   benchmarkWeights: AssetClassWeight[];
   assetClasses: { id: string; name: string; sortOrder: number }[];
+  onRowClick: (rowId: string) => void;
 }
 
 function pct(v: number) {
   return `${(v * 100).toFixed(1)}%`;
 }
 
-export default function AllocationTable({ household, benchmarkWeights, assetClasses }: Props) {
+export default function AllocationTable({ household, benchmarkWeights, assetClasses, onRowClick }: Props) {
   const currentById = new Map(household.byAssetClass.map((b) => [b.id, b.pctOfClassified]));
   const targetById = new Map(benchmarkWeights.map((w) => [w.assetClassId, w.weight]));
   const ids = new Set<string>([...currentById.keys(), ...targetById.keys()]);
@@ -46,7 +47,19 @@ export default function AllocationTable({ household, benchmarkWeights, assetClas
           {rows.map((r) => {
             const color = colorForAssetClass({ sortOrder: r.sortOrder });
             return (
-              <tr key={r.id} className="border-b border-gray-900">
+              <tr
+                key={r.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onRowClick(r.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onRowClick(r.id);
+                  }
+                }}
+                className="cursor-pointer border-b border-gray-900 hover:bg-gray-800/60"
+              >
                 <td className="px-2 py-2 text-gray-200">
                   <span className="mr-2 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: color }} />
                   {r.name}
@@ -71,7 +84,18 @@ export default function AllocationTable({ household, benchmarkWeights, assetClas
             );
           })}
           {household.unallocatedValue > 0 && (
-            <tr className="italic text-gray-500">
+            <tr
+              role="button"
+              tabIndex={0}
+              onClick={() => onRowClick("__unallocated__")}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onRowClick("__unallocated__");
+                }
+              }}
+              className="cursor-pointer italic text-gray-500 hover:bg-gray-800/60"
+            >
               <td className="px-2 py-2">
                 <span className="mr-2 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: UNALLOCATED_COLOR }} />
                 Unallocated

@@ -5,9 +5,11 @@ import CommentDialog from "./comment-dialog";
 import BenchmarkSelector from "./benchmark-selector";
 import AllocationDonut from "./allocation-donut";
 import AllocationTable from "./allocation-table";
+import AllocationDrillTable from "./allocation-drill-table";
 import DriftChart from "./drift-chart";
 import type { HouseholdAllocation, DriftRow, AssetClassLite } from "@/lib/investments/allocation";
 import type { AssetClassWeight } from "@/lib/investments/benchmarks";
+import { colorForAssetClass, UNALLOCATED_COLOR } from "@/lib/investments/palette";
 
 interface Props {
   clientId: string;
@@ -35,6 +37,7 @@ export default function InvestmentsClient({
   existingCommentBody,
 }: Props) {
   const [commentOpen, setCommentOpen] = useState(false);
+  const [drilledRowId, setDrilledRowId] = useState<string | null>(null);
   const hasComment = existingCommentBody.trim().length > 0;
   const disclosureParts: string[] = [];
   if (household.excludedNonInvestableValue > 0) {
@@ -44,6 +47,14 @@ export default function InvestmentsClient({
     disclosureParts.push(`$${formatDollars(household.unallocatedValue)} in accounts without an asset mix`);
   }
   const disclosure = disclosureParts.length > 0 ? `Investable assets only. Excludes ${disclosureParts.join("; ")}.` : "Investable assets only.";
+
+  const isUnallocatedDrill = drilledRowId === "__unallocated__";
+  const drilledAssetClass = drilledRowId && !isUnallocatedDrill
+    ? household.byAssetClass.find((b) => b.id === drilledRowId)
+    : null;
+  const benchmarkWeightForDrilled = drilledRowId && !isUnallocatedDrill
+    ? benchmarkWeights.find((w) => w.assetClassId === drilledRowId)
+    : undefined;
 
   return (
     <div className="flex flex-col gap-6">
@@ -66,11 +77,42 @@ export default function InvestmentsClient({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1.1fr_1fr]">
         <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
           <h3 className="mb-3 text-sm font-semibold text-gray-300">Allocation Details</h3>
-          <AllocationTable
-            household={household}
-            benchmarkWeights={benchmarkWeights}
-            assetClasses={assetClasses}
-          />
+          {drilledRowId === null ? (
+            <AllocationTable
+              household={household}
+              benchmarkWeights={benchmarkWeights}
+              assetClasses={assetClasses}
+              onRowClick={setDrilledRowId}
+            />
+          ) : isUnallocatedDrill ? (
+            <AllocationDrillTable
+              assetClassName="Unallocated"
+              assetClassColor={UNALLOCATED_COLOR}
+              currentPct={0}
+              targetPct={null}
+              contributions={household.unallocatedContributions}
+              totalInClass={household.unallocatedValue}
+              onBack={() => setDrilledRowId(null)}
+              isUnallocated
+            />
+          ) : drilledAssetClass ? (
+            <AllocationDrillTable
+              assetClassName={drilledAssetClass.name}
+              assetClassColor={colorForAssetClass({ sortOrder: drilledAssetClass.sortOrder })}
+              currentPct={drilledAssetClass.pctOfClassified}
+              targetPct={benchmarkWeightForDrilled ? benchmarkWeightForDrilled.weight : null}
+              contributions={household.contributionsByAssetClass[drilledAssetClass.id] ?? []}
+              totalInClass={drilledAssetClass.value}
+              onBack={() => setDrilledRowId(null)}
+            />
+          ) : (
+            <AllocationTable
+              household={household}
+              benchmarkWeights={benchmarkWeights}
+              assetClasses={assetClasses}
+              onRowClick={setDrilledRowId}
+            />
+          )}
         </section>
 
         <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
