@@ -159,10 +159,14 @@ export const clients = pgTable("clients", {
   dateOfBirth: date("date_of_birth").notNull(),
   retirementAge: integer("retirement_age").notNull(),
   planEndAge: integer("plan_end_age").notNull(),
+  // Life expectancies are the source of truth for the plan horizon; plan_end_age
+  // is derived (= max(death year across client + spouse) - clientBirthYear).
+  lifeExpectancy: integer("life_expectancy").notNull().default(95),
   spouseName: text("spouse_name"),
   spouseLastName: text("spouse_last_name"),
   spouseDob: date("spouse_dob"),
   spouseRetirementAge: integer("spouse_retirement_age"),
+  spouseLifeExpectancy: integer("spouse_life_expectancy"),
   filingStatus: filingStatusEnum("filing_status").notNull().default("single"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

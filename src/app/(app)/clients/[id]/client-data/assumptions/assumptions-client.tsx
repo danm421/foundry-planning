@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import AssumptionsSubtabs from "@/components/assumptions-subtabs";
-import PlanHorizonForm from "@/components/forms/plan-horizon-form";
 import TaxRatesForm from "@/components/forms/tax-rates-form";
 import GrowthInflationForm from "@/components/forms/growth-inflation-form";
 import WithdrawalStrategySection from "@/components/withdrawal-strategy-section";
@@ -50,7 +49,6 @@ interface AssumptionsClientProps {
 }
 
 const TABS = [
-  { id: "plan-horizon", label: "Plan Horizon" },
   { id: "tax-rates", label: "Tax Rates" },
   { id: "growth-inflation", label: "Growth & Inflation" },
   { id: "withdrawal", label: "Withdrawal Strategy" },
@@ -66,20 +64,13 @@ export default function AssumptionsClient({
   clientFirstName,
   spouseFirstName,
 }: AssumptionsClientProps) {
-  const [activeTab, setActiveTab] = useState("plan-horizon");
+  const [activeTab, setActiveTab] = useState("tax-rates");
 
   return (
     <div className="space-y-6">
       <AssumptionsSubtabs tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
 
       <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-6">
-        {activeTab === "plan-horizon" && (
-          <PlanHorizonForm
-            clientId={clientId}
-            planStartYear={settings.planStartYear}
-            planEndYear={settings.planEndYear}
-          />
-        )}
         {activeTab === "tax-rates" && (
           <TaxRatesForm
             clientId={clientId}

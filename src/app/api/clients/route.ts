@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { clients, scenarios, planSettings, accounts, expenses, incomes } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { computePlanEndAge } from "@/lib/plan-horizon";
 
 // GET /api/clients — list all clients for the firm
 export async function GET() {
@@ -41,17 +42,27 @@ export async function POST(request: NextRequest) {
       lastName,
       dateOfBirth,
       retirementAge,
-      planEndAge,
+      lifeExpectancy,
       filingStatus,
       spouseName,
       spouseLastName,
       spouseDob,
       spouseRetirementAge,
+      spouseLifeExpectancy,
     } = body;
 
-    if (!firstName || !lastName || !dateOfBirth || !retirementAge || !planEndAge || !filingStatus) {
+    if (!firstName || !lastName || !dateOfBirth || !retirementAge || !lifeExpectancy || !filingStatus) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
+
+    // Plan horizon is the year the last spouse dies; plan_end_age is derived
+    // from client + spouse life expectancies.
+    const planEndAge = computePlanEndAge({
+      clientDob: dateOfBirth,
+      clientLifeExpectancy: Number(lifeExpectancy),
+      spouseDob: spouseDob ?? null,
+      spouseLifeExpectancy: spouseLifeExpectancy != null ? Number(spouseLifeExpectancy) : null,
+    });
 
     const currentYear = new Date().getFullYear();
 
@@ -65,12 +76,14 @@ export async function POST(request: NextRequest) {
         lastName,
         dateOfBirth,
         retirementAge: Number(retirementAge),
-        planEndAge: Number(planEndAge),
+        planEndAge,
+        lifeExpectancy: Number(lifeExpectancy),
         filingStatus,
         spouseName: spouseName ?? null,
         spouseLastName: spouseLastName ?? null,
         spouseDob: spouseDob ?? null,
         spouseRetirementAge: spouseRetirementAge ? Number(spouseRetirementAge) : null,
+        spouseLifeExpectancy: spouseLifeExpectancy != null ? Number(spouseLifeExpectancy) : null,
       })
       .returning();
 
@@ -89,7 +102,7 @@ export async function POST(request: NextRequest) {
       clientId: client.id,
       scenarioId: scenario.id,
       planStartYear: currentYear,
-      planEndYear: currentYear + (Number(planEndAge) - new Date(dateOfBirth).getFullYear() - currentYear + new Date().getFullYear()),
+      planEndYear: new Date(dateOfBirth).getFullYear() + planEndAge,
     });
 
     // Insert default household cash account. Household income lands here and expenses

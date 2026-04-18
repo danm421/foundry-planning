@@ -56,12 +56,13 @@ export default async function FamilyPage({ params }: PageProps) {
     lastName: client.lastName,
     dateOfBirth: client.dateOfBirth,
     retirementAge: client.retirementAge,
-    planEndAge: client.planEndAge,
+    lifeExpectancy: client.lifeExpectancy,
     filingStatus: client.filingStatus,
     spouseName: client.spouseName ?? null,
     spouseLastName: client.spouseLastName ?? null,
     spouseDob: client.spouseDob ?? null,
     spouseRetirementAge: client.spouseRetirementAge ?? null,
+    spouseLifeExpectancy: client.spouseLifeExpectancy ?? null,
   };
 
   return <FamilyView clientId={id} primary={primary} initialMembers={members} initialEntities={ents} />;

@@ -14,11 +14,13 @@ interface ClientRow {
   dateOfBirth: string;
   retirementAge: number;
   planEndAge: number;
+  lifeExpectancy?: number;
   filingStatus: string;
   spouseName?: string | null;
   spouseLastName?: string | null;
   spouseDob?: string | null;
   spouseRetirementAge?: number | null;
+  spouseLifeExpectancy?: number | null;
   createdAt: string | Date;
 }
 
@@ -40,12 +42,13 @@ function toInitial(c: ClientRow): ClientFormInitial {
     lastName: c.lastName,
     dateOfBirth: typeof c.dateOfBirth === "string" ? c.dateOfBirth : new Date(c.dateOfBirth).toISOString(),
     retirementAge: c.retirementAge,
-    planEndAge: c.planEndAge,
+    lifeExpectancy: c.lifeExpectancy ?? 95,
     filingStatus: c.filingStatus,
     spouseName: c.spouseName ?? null,
     spouseLastName: c.spouseLastName ?? null,
     spouseDob: c.spouseDob ? (typeof c.spouseDob === "string" ? c.spouseDob : new Date(c.spouseDob).toISOString()) : null,
     spouseRetirementAge: c.spouseRetirementAge ?? null,
+    spouseLifeExpectancy: c.spouseLifeExpectancy ?? null,
   };
 }
 

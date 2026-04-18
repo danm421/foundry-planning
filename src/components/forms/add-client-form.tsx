@@ -9,13 +9,14 @@ export interface ClientFormInitial {
   lastName: string;
   dateOfBirth: string;
   retirementAge: number;
-  planEndAge: number;
+  lifeExpectancy: number;
   filingStatus: string;
   /** Spouse first name. Stored in the legacy `spouseName` DB column. */
   spouseName?: string | null;
   spouseLastName?: string | null;
   spouseDob?: string | null;
   spouseRetirementAge?: number | null;
+  spouseLifeExpectancy?: number | null;
 }
 
 interface AddClientFormProps {
@@ -52,7 +53,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
       lastName: data.get("lastName") as string,
       dateOfBirth: data.get("dateOfBirth") as string,
       retirementAge: Number(data.get("retirementAge")),
-      planEndAge: Number(data.get("planEndAge")),
+      lifeExpectancy: Number(data.get("lifeExpectancy")),
       filingStatus: data.get("filingStatus") as string,
     };
 
@@ -61,16 +62,19 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
       const spouseLastName = data.get("spouseLastName") as string;
       const spouseDob = data.get("spouseDob") as string;
       const spouseRetirementAge = data.get("spouseRetirementAge") as string;
+      const spouseLifeExpectancy = data.get("spouseLifeExpectancy") as string;
 
       body.spouseName = spouseName || null;
       body.spouseLastName = spouseLastName || null;
       body.spouseDob = spouseDob || null;
       body.spouseRetirementAge = spouseRetirementAge ? Number(spouseRetirementAge) : null;
+      body.spouseLifeExpectancy = spouseLifeExpectancy ? Number(spouseLifeExpectancy) : null;
     } else if (isEdit) {
       body.spouseName = null;
       body.spouseLastName = null;
       body.spouseDob = null;
       body.spouseRetirementAge = null;
+      body.spouseLifeExpectancy = null;
     }
 
     try {
@@ -180,19 +184,22 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="planEndAge">
-            Plan End Age <span className="text-red-500">*</span>
+          <label className="block text-sm font-medium text-gray-300" htmlFor="lifeExpectancy">
+            Life Expectancy <span className="text-red-500">*</span>
           </label>
           <input
-            id="planEndAge"
-            name="planEndAge"
+            id="lifeExpectancy"
+            name="lifeExpectancy"
             type="number"
             min={70}
             max={120}
-            defaultValue={initial?.planEndAge ?? 90}
+            defaultValue={initial?.lifeExpectancy ?? 95}
             required
             className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
+          <p className="mt-1 text-[11px] text-gray-500">
+            Plan horizon ends the year of the last spouse to die.
+          </p>
         </div>
       </div>
 
@@ -260,6 +267,21 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
                 min={50}
                 max={85}
                 defaultValue={initial?.spouseRetirementAge ?? ""}
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300" htmlFor="spouseLifeExpectancy">
+                Spouse Life Expectancy
+              </label>
+              <input
+                id="spouseLifeExpectancy"
+                name="spouseLifeExpectancy"
+                type="number"
+                min={70}
+                max={120}
+                defaultValue={initial?.spouseLifeExpectancy ?? 95}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>

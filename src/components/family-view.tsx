@@ -45,12 +45,13 @@ export interface PrimaryInfo {
   lastName: string;
   dateOfBirth: string;
   retirementAge: number;
-  planEndAge: number;
+  lifeExpectancy: number;
   filingStatus: string;
   spouseName: string | null;
   spouseLastName: string | null;
   spouseDob: string | null;
   spouseRetirementAge: number | null;
+  spouseLifeExpectancy: number | null;
 }
 
 interface FamilyViewProps {
@@ -607,12 +608,13 @@ export default function FamilyView({ clientId, primary, initialMembers, initialE
     lastName: primary.lastName,
     dateOfBirth: primary.dateOfBirth,
     retirementAge: primary.retirementAge,
-    planEndAge: primary.planEndAge,
+    lifeExpectancy: primary.lifeExpectancy,
     filingStatus: primary.filingStatus,
     spouseName: primary.spouseName,
     spouseLastName: primary.spouseLastName,
     spouseDob: primary.spouseDob,
     spouseRetirementAge: primary.spouseRetirementAge,
+    spouseLifeExpectancy: primary.spouseLifeExpectancy,
   };
 
   // Group members by relationship
@@ -649,7 +651,7 @@ export default function FamilyView({ clientId, primary, initialMembers, initialE
             fields={[
               ["Date of Birth", primary.dateOfBirth ? `${new Date(primary.dateOfBirth).toLocaleDateString()} (age ${primaryAge})` : "—"],
               ["Retirement Age", String(primary.retirementAge)],
-              ["Plan End Age", String(primary.planEndAge)],
+              ["Life Expectancy", String(primary.lifeExpectancy)],
             ]}
           />
           {primary.spouseName ? (
@@ -659,7 +661,7 @@ export default function FamilyView({ clientId, primary, initialMembers, initialE
               fields={[
                 ["Date of Birth", primary.spouseDob ? `${new Date(primary.spouseDob).toLocaleDateString()} (age ${spouseAge})` : "—"],
                 ["Retirement Age", primary.spouseRetirementAge ? String(primary.spouseRetirementAge) : "—"],
-                ["Plan End Age", String(primary.planEndAge)],
+                ["Life Expectancy", primary.spouseLifeExpectancy != null ? String(primary.spouseLifeExpectancy) : "—"],
               ]}
             />
           ) : (
