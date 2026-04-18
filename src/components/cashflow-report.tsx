@@ -998,6 +998,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       // BoY purchases so they show as their own column.
       if (subLevel === "liabilities") {
         const liabIds = Array.from(allLiabilityIds);
+        // Diagnostic for Bug 3: if you see "Home Mortgage" but not a new-mortgage
+        // column after buying a home, open devtools and look for this log.
+        if (typeof window !== "undefined") {
+          console.log("[liabilities drill] ids:", liabIds, "names:", liabilityNames);
+        }
         return [
           ...baseColumns,
           ...liabIds.map((id) =>
