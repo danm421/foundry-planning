@@ -102,6 +102,31 @@ function fmtNum(v: number) {
   return fmt.format(v);
 }
 
+/**
+ * Tailwind classes for the sticky columns on the main cashflow table:
+ * Year + Age stick to the left, the final column (drill total) sticks to the
+ * right. Header cells need a higher z-index than body cells so they win when
+ * vertical + horizontal sticky layers overlap.
+ */
+function stickyCellClasses(
+  idx: number,
+  total: number,
+  kind: "header" | "cell",
+): string {
+  const zLeft = kind === "header" ? "z-30" : "z-10";
+  const zRight = kind === "header" ? "z-30" : "z-10";
+  if (idx === 0) {
+    return `sticky left-0 ${zLeft} w-20 min-w-[5rem]`;
+  }
+  if (idx === 1) {
+    return `sticky left-20 ${zLeft} w-28 min-w-[7rem] border-r border-gray-800`;
+  }
+  if (idx === total - 1) {
+    return `sticky right-0 ${zRight} border-l border-gray-800`;
+  }
+  return "";
+}
+
 function col(
   id: string,
   header: ColumnDef<ProjectionYear>["header"],
@@ -1571,42 +1596,54 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ref={tableRef}
         className="overflow-x-auto rounded-lg border border-gray-700 bg-gray-900"
       >
-        <table className="min-w-full text-sm">
-          <thead className="sticky top-0 z-10 bg-gray-800">
+        <table className="min-w-full border-separate border-spacing-0 text-sm">
+          <thead className="sticky top-0 z-20 bg-gray-800">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th
-                    key={header.id}
-                    className="whitespace-nowrap border-b border-gray-700 px-3 py-2 text-left text-xs font-medium text-gray-400 first:pl-4 last:pr-4"
-                  >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
-                  </th>
-                ))}
+                {headerGroup.headers.map((header, idx, arr) => {
+                  const sticky = stickyCellClasses(idx, arr.length, "header");
+                  return (
+                    <th
+                      key={header.id}
+                      className={`whitespace-nowrap border-b border-gray-700 bg-gray-800 px-3 py-2 text-left text-xs font-medium text-gray-400 first:pl-4 last:pr-4 ${sticky}`}
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  );
+                })}
               </tr>
             ))}
           </thead>
-          <tbody className="divide-y divide-gray-800">
+          <tbody>
             {table.getRowModel().rows.map((row) => {
               const isNegative = row.original.netCashFlow < 0;
+              // Per-cell bg is required because position:sticky cells create
+              // their own stacking context and won't inherit the row bg.
+              const baseBg = isNegative ? "bg-red-950/40" : "bg-gray-900";
+              const hoverBg = isNegative
+                ? "group-hover:bg-red-950/60"
+                : "group-hover:bg-gray-800";
               return (
                 <tr
                   key={row.id}
                   ref={(el) => {
                     if (el) rowRefs.current.set(row.original.year, el);
                   }}
-                  className={isNegative ? "bg-red-950/40 hover:bg-red-950/60" : "hover:bg-gray-800"}
+                  className="group"
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <td
-                      key={cell.id}
-                      className="whitespace-nowrap px-3 py-2 first:pl-4 last:pr-4 tabular-nums text-gray-100"
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
+                  {row.getVisibleCells().map((cell, idx, arr) => {
+                    const sticky = stickyCellClasses(idx, arr.length, "cell");
+                    return (
+                      <td
+                        key={cell.id}
+                        className={`whitespace-nowrap border-b border-gray-800 px-3 py-2 first:pl-4 last:pr-4 tabular-nums text-gray-100 ${baseBg} ${hoverBg} ${sticky}`}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}

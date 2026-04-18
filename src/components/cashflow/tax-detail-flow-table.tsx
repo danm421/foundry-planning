@@ -338,24 +338,26 @@ function DrillCell({
   formatter,
   sources,
   isBold,
+  extraClassName,
 }: {
   value: number;
   formatter: (n: number) => string;
   sources: Array<{ label: string; amount: number }> | null;
   isBold: boolean;
+  extraClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const hasDetail = sources && sources.length > 0;
 
   return (
     <td
-      className={`relative px-3 py-2 text-right tabular-nums ${
+      className={`relative border-b border-gray-800 bg-gray-900 px-3 py-2 text-right tabular-nums group-hover:bg-gray-800/40 ${
         isBold
           ? "font-semibold"
           : value === 0
             ? "text-gray-600"
             : ""
-      } ${hasDetail ? "cursor-pointer hover:text-blue-400" : ""}`}
+      } ${hasDetail ? "cursor-pointer hover:text-blue-400" : ""} ${extraClassName ?? ""}`}
       onClick={hasDetail ? () => setOpen(!open) : undefined}
     >
       {formatter(value)}
@@ -427,22 +429,29 @@ export function TaxDetailFlowTable({ years, onYearClick }: TaxDetailFlowTablePro
         </nav>
       )}
       <div className="overflow-x-auto rounded-lg border border-gray-800 bg-gray-900/60">
-        <table className="min-w-full border-collapse text-sm">
+        <table className="min-w-full border-separate border-spacing-0 text-sm">
           <thead className="bg-gray-900 text-xs uppercase text-gray-400">
             <tr>
-              <th className="sticky left-0 z-10 bg-gray-900 px-3 py-2 text-left">Year</th>
-              <th className="px-3 py-2 text-left">Age</th>
-              {activeColumns.map((col) => (
-                <th
-                  key={col.key}
-                  className={`px-3 py-2 text-right font-medium ${boldKeys.has(col.key) ? "text-gray-200" : ""}`}
-                >
-                  {renderHeader(col)}
-                </th>
-              ))}
+              <th className="sticky left-0 z-20 w-20 min-w-[5rem] border-b border-gray-800 bg-gray-900 px-3 py-2 text-left">
+                Year
+              </th>
+              <th className="sticky left-20 z-20 w-24 min-w-[6rem] border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left">
+                Age
+              </th>
+              {activeColumns.map((col, idx) => {
+                const isLast = idx === activeColumns.length - 1;
+                return (
+                  <th
+                    key={col.key}
+                    className={`border-b border-gray-800 bg-gray-900 px-3 py-2 text-right font-medium ${boldKeys.has(col.key) ? "text-gray-200" : ""} ${isLast ? "sticky right-0 z-20 border-l" : ""}`}
+                  >
+                    {renderHeader(col)}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-800 text-gray-200">
+          <tbody className="text-gray-200">
             {years.map((y) => {
               const yearTransitions = transitions[y.year];
               const borderClass = yearTransitions
@@ -453,18 +462,22 @@ export function TaxDetailFlowTable({ years, onYearClick }: TaxDetailFlowTablePro
                 .join("\n");
 
               return (
-                <tr key={y.year} className="hover:bg-gray-800/40">
+                <tr key={y.year} className="group">
                   <td
-                    className={`sticky left-0 z-10 cursor-pointer bg-gray-900/80 px-3 py-2 text-left hover:text-blue-400 ${borderClass}`}
+                    className={`sticky left-0 z-10 cursor-pointer border-b border-gray-800 bg-gray-900 px-3 py-2 text-left hover:text-blue-400 group-hover:bg-gray-800/40 ${borderClass}`}
                     onClick={() => onYearClick(y)}
                     title={tooltip ?? `View per-source breakdown for ${y.year}`}
                   >
                     {y.year}
                   </td>
-                  <td className="px-3 py-2 text-left text-gray-400">{formatAge(y.ages)}</td>
-                  {activeColumns.map((col) => {
+                  <td className="sticky left-20 z-10 border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left text-gray-400 group-hover:bg-gray-800/40">
+                    {formatAge(y.ages)}
+                  </td>
+                  {activeColumns.map((col, idx) => {
                     const v = col.value(y);
                     const formatter = col.formatter ?? formatCell;
+                    const isLast = idx === activeColumns.length - 1;
+                    const stickyRight = isLast ? "sticky right-0 z-10 border-l" : "";
                     if (drillLevel !== "top") {
                       return (
                         <DrillCell
@@ -473,19 +486,20 @@ export function TaxDetailFlowTable({ years, onYearClick }: TaxDetailFlowTablePro
                           formatter={formatter}
                           sources={getSourcesForColumn(y, col.key)}
                           isBold={boldKeys.has(col.key)}
+                          extraClassName={stickyRight}
                         />
                       );
                     }
                     return (
                       <td
                         key={col.key}
-                        className={`px-3 py-2 text-right tabular-nums ${
+                        className={`border-b border-gray-800 bg-gray-900 px-3 py-2 text-right tabular-nums group-hover:bg-gray-800/40 ${
                           boldKeys.has(col.key)
                             ? "font-semibold"
                             : v === 0
                               ? "text-gray-600"
                               : ""
-                        }`}
+                        } ${stickyRight}`}
                       >
                         {formatter(v)}
                       </td>

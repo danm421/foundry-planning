@@ -102,23 +102,33 @@ export function TaxDetailIncomeTable({ years, onYearClick }: TaxDetailIncomeTabl
 
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-800 bg-gray-900/60">
-      <table className="min-w-full border-collapse text-sm">
+      <table className="min-w-full border-separate border-spacing-0 text-sm">
         <thead className="bg-gray-900 text-xs uppercase text-gray-400">
           <tr>
-            <th className="sticky left-0 z-10 bg-gray-900 px-3 py-2 text-left">Year</th>
-            <th className="px-3 py-2 text-left">Age</th>
-            {COLUMNS.map((col) => (
-              <th key={col.key} className="px-3 py-2 text-right font-medium">
-                {col.tooltip ? (
-                  <TaxDetailTooltip label={col.label} text={col.tooltip} />
-                ) : (
-                  col.label
-                )}
-              </th>
-            ))}
+            <th className="sticky left-0 z-20 w-20 min-w-[5rem] border-b border-gray-800 bg-gray-900 px-3 py-2 text-left">
+              Year
+            </th>
+            <th className="sticky left-20 z-20 w-24 min-w-[6rem] border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left">
+              Age
+            </th>
+            {COLUMNS.map((col, idx) => {
+              const isLast = idx === COLUMNS.length - 1;
+              return (
+                <th
+                  key={col.key}
+                  className={`border-b border-gray-800 bg-gray-900 px-3 py-2 text-right font-medium ${isLast ? "sticky right-0 z-20 border-l" : ""}`}
+                >
+                  {col.tooltip ? (
+                    <TaxDetailTooltip label={col.label} text={col.tooltip} />
+                  ) : (
+                    col.label
+                  )}
+                </th>
+              );
+            })}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-800 text-gray-200">
+        <tbody className="text-gray-200">
           {years.map((y) => {
             const yearTransitions = transitions[y.year];
             const borderClass = yearTransitions
@@ -129,21 +139,24 @@ export function TaxDetailIncomeTable({ years, onYearClick }: TaxDetailIncomeTabl
               .join("\n");
 
             return (
-              <tr key={y.year} className="hover:bg-gray-800/40">
+              <tr key={y.year} className="group">
                 <td
-                  className={`sticky left-0 z-10 cursor-pointer bg-gray-900/80 px-3 py-2 text-left hover:text-blue-400 ${borderClass}`}
+                  className={`sticky left-0 z-10 cursor-pointer border-b border-gray-800 bg-gray-900 px-3 py-2 text-left hover:text-blue-400 group-hover:bg-gray-800/40 ${borderClass}`}
                   onClick={() => onYearClick(y)}
                   title={tooltip ?? `View per-source breakdown for ${y.year}`}
                 >
                   {y.year}
                 </td>
-                <td className="px-3 py-2 text-left text-gray-400">{formatAge(y.ages)}</td>
-                {COLUMNS.map((col) => {
+                <td className="sticky left-20 z-10 border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left text-gray-400 group-hover:bg-gray-800/40">
+                  {formatAge(y.ages)}
+                </td>
+                {COLUMNS.map((col, idx) => {
                   const v = col.value(y);
+                  const isLast = idx === COLUMNS.length - 1;
                   return (
                     <td
                       key={col.key}
-                      className={`px-3 py-2 text-right tabular-nums ${v === 0 ? "text-gray-600" : ""}`}
+                      className={`border-b border-gray-800 bg-gray-900 px-3 py-2 text-right tabular-nums group-hover:bg-gray-800/40 ${v === 0 ? "text-gray-600" : ""} ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
                     >
                       {formatCell(v)}
                     </td>
