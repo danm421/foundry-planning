@@ -33,6 +33,11 @@ export interface ProjectionYearLike {
     total: number;
   };
   liabilityBalancesBoY: Record<string, number>;
+  /** Per-account EOY balance for every account (including out-of-estate
+   * entity-owned accounts that are excluded from portfolioAssets). The balance
+   * sheet sources row values from here so irrevocable trust accounts surface
+   * in the consolidated and entities-only views. */
+  accountLedgers: Record<string, { endingValue: number; beginningValue: number }>;
 }
 
 export interface BuildViewModelInput {
@@ -113,13 +118,6 @@ const DB_TO_KEY: Record<string, AssetCategoryKey> = {
   life_insurance: "lifeInsurance",
 };
 
-function categoryMap(
-  yearData: ProjectionYearLike,
-  key: AssetCategoryKey,
-): Record<string, number> {
-  return yearData.portfolioAssets[key];
-}
-
 function findPriorYear(
   projectionYears: ProjectionYearLike[],
   selectedYear: number,
@@ -129,28 +127,31 @@ function findPriorYear(
   return projectionYears[idx - 1];
 }
 
+/** Pulls per-account EOY balance from accountLedgers so out-of-estate
+ * entity-owned accounts (excluded from portfolioAssets) still show up. */
+function accountValueForYear(
+  yearData: ProjectionYearLike,
+  accountId: string,
+): number {
+  return yearData.accountLedgers[accountId]?.endingValue ?? 0;
+}
+
 /**
- * Compute the filtered total for a single year by joining the projection's
- * per-account-id map against the account list filtered by view.
- * For the consolidated view, use portfolioAssets.total directly since it
- * represents the full unfiltered total that the engine computed.
+ * Compute the filtered total for a single year by iterating the account list
+ * filtered by view and summing each account's ledger-sourced EOY balance.
+ * Includes out-of-estate entity-owned accounts in the consolidated and
+ * entities views.
  */
 function filteredAssetTotalForYear(
   yearData: ProjectionYearLike,
   accounts: AccountLike[],
   view: OwnershipView,
 ): number {
-  if (view === "consolidated") return yearData.portfolioAssets.total;
   const filtered = filterAccounts(accounts, view);
-  const filteredIds = new Set(filtered.map((a) => a.id));
-  let total = 0;
-  for (const categoryKey of CATEGORY_ORDER) {
-    const values = categoryMap(yearData, categoryKey);
-    for (const [accountId, value] of Object.entries(values)) {
-      if (filteredIds.has(accountId)) total += value;
-    }
-  }
-  return total;
+  return filtered.reduce(
+    (sum, a) => sum + accountValueForYear(yearData, a.id),
+    0,
+  );
 }
 
 function filteredLiabilityTotalForYear(
@@ -199,15 +200,26 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   const assetCategories: AssetCategoryGroup[] = [];
   const outOfEstateRows: AssetRow[] = [];
 
+  // Pre-group accounts by category key so each category loop iteration only
+  // scans its own accounts.
+  const accountsByCategory = new Map<AssetCategoryKey, AccountLike[]>();
+  for (const acct of accounts) {
+    const catKey = DB_TO_KEY[acct.category];
+    if (!catKey) continue;
+    const list = accountsByCategory.get(catKey) ?? [];
+    list.push(acct);
+    accountsByCategory.set(catKey, list);
+  }
+
   for (const categoryKey of CATEGORY_ORDER) {
-    const perAccountValues = categoryMap(yearData, categoryKey);
+    const categoryAccounts = accountsByCategory.get(categoryKey) ?? [];
     const rows: AssetRow[] = [];
     const outRows: AssetRow[] = [];
 
-    for (const [accountId, value] of Object.entries(perAccountValues)) {
-      const acct = accountById.get(accountId);
-      if (!acct) continue; // projection output for an account not in our list (shouldn't happen)
+    for (const acct of categoryAccounts) {
       if (!filteredAccountIds.has(acct.id)) continue;
+      const value = accountValueForYear(yearData, acct.id);
+      if (value <= 0) continue;
 
       const row: AssetRow = {
         accountId: acct.id,
@@ -229,12 +241,13 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
 
     const total = rows.reduce((sum, r) => sum + r.value, 0);
     const priorTotal = priorYear
-      ? Object.entries(categoryMap(priorYear, categoryKey))
-          .filter(([id]) => {
-            const acct = accountById.get(id);
-            return acct && filteredAccountIds.has(acct.id) && (view !== "consolidated" || acct.ownerEntityId == null);
-          })
-          .reduce((sum, [, v]) => sum + v, 0)
+      ? categoryAccounts
+          .filter(
+            (a) =>
+              filteredAccountIds.has(a.id) &&
+              (view !== "consolidated" || a.ownerEntityId == null),
+          )
+          .reduce((sum, a) => sum + accountValueForYear(priorYear, a.id), 0)
       : null;
 
     // Include the category if it has in-estate rows OR (consolidated) out-of-estate rows.

@@ -18,32 +18,53 @@ const liabilities = [
 const projectionYear = {
   year: 2026,
   portfolioAssets: {
+    // NOTE: portfolioAssets is still engine-provided but no longer consulted
+    // by the view-model. Kept here to satisfy the type. Values mirror the
+    // accountLedgers below for sanity.
     cash: { "a-cash": 50_000 },
-    taxable: { "a-trust": 300_000 },
+    taxable: {},
     retirement: { "a-401k": 500_000, "a-roth": 200_000 },
     realEstate: { "a-home": 800_000 },
     business: {},
     lifeInsurance: {},
     cashTotal: 50_000,
-    taxableTotal: 300_000,
+    taxableTotal: 0,
     retirementTotal: 700_000,
     realEstateTotal: 800_000,
     businessTotal: 0,
     lifeInsuranceTotal: 0,
-    total: 1_850_000,
+    total: 1_550_000, // in-estate only — engine excludes entity-owned
   },
   liabilityBalancesBoY: { "l-mort": 400_000, "l-card": 8_000 },
+  accountLedgers: {
+    "a-cash": { beginningValue: 45_000, endingValue: 50_000 },
+    "a-trust": { beginningValue: 275_000, endingValue: 300_000 },
+    "a-401k": { beginningValue: 455_000, endingValue: 500_000 },
+    "a-roth": { beginningValue: 180_000, endingValue: 200_000 },
+    "a-home": { beginningValue: 745_000, endingValue: 800_000 },
+  },
 };
 
 const priorYear = {
   year: 2025,
   portfolioAssets: {
     ...projectionYear.portfolioAssets,
-    total: 1_700_000,
     cash: { "a-cash": 45_000 },
     cashTotal: 45_000,
+    retirement: { "a-401k": 455_000, "a-roth": 180_000 },
+    retirementTotal: 635_000,
+    realEstate: { "a-home": 745_000 },
+    realEstateTotal: 745_000,
+    total: 1_425_000,
   },
   liabilityBalancesBoY: { "l-mort": 410_000, "l-card": 10_000 },
+  accountLedgers: {
+    "a-cash": { beginningValue: 40_000, endingValue: 45_000 },
+    "a-trust": { beginningValue: 250_000, endingValue: 275_000 },
+    "a-401k": { beginningValue: 410_000, endingValue: 455_000 },
+    "a-roth": { beginningValue: 165_000, endingValue: 180_000 },
+    "a-home": { beginningValue: 700_000, endingValue: 745_000 },
+  },
 };
 
 const baseInput: BuildViewModelInput = {
