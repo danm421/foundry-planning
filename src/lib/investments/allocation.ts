@@ -81,3 +81,96 @@ export function resolveAccountAllocation(
   // "custom" → no asset-class breakdown.
   return { unallocated: true };
 }
+
+export interface AssetClassLite {
+  id: string;
+  name: string;
+  sortOrder: number;
+}
+
+export interface InvestableAccount extends AccountLite {
+  value: number;
+  ownerEntityId: string | null;
+}
+
+export interface AssetClassRollup {
+  id: string;
+  name: string;
+  sortOrder: number;
+  value: number;
+  pctOfClassified: number;
+}
+
+export interface HouseholdAllocation {
+  byAssetClass: AssetClassRollup[];
+  unallocatedValue: number;
+  totalClassifiedValue: number;
+  totalInvestableValue: number;
+  excludedNonInvestableValue: number;
+}
+
+const INVESTABLE_CATEGORIES: ReadonlySet<AccountCategory> = new Set([
+  "taxable",
+  "cash",
+  "retirement",
+]);
+
+/**
+ * Roll up dollar-weighted resolved allocations across investable accounts.
+ * "Investable" = category ∈ {taxable, cash, retirement} AND ownerEntityId is null.
+ * Non-investable dollar totals are surfaced in excludedNonInvestableValue for
+ * the disclosure line; unresolvable account dollars go into unallocatedValue.
+ */
+export function computeHouseholdAllocation(
+  accounts: InvestableAccount[],
+  resolver: (acct: AccountLite) => AccountAllocationResult,
+  assetClasses: AssetClassLite[],
+): HouseholdAllocation {
+  let totalInvestableValue = 0;
+  let unallocatedValue = 0;
+  let excludedNonInvestableValue = 0;
+  const byId = new Map<string, number>();
+
+  for (const acct of accounts) {
+    const isInvestable = INVESTABLE_CATEGORIES.has(acct.category) && acct.ownerEntityId === null;
+    if (!isInvestable) {
+      excludedNonInvestableValue += acct.value;
+      continue;
+    }
+    totalInvestableValue += acct.value;
+
+    const result = resolver(acct);
+    if ("unallocated" in result) {
+      unallocatedValue += acct.value;
+      continue;
+    }
+    for (const row of result.classified) {
+      const dollars = acct.value * row.weight;
+      byId.set(row.assetClassId, (byId.get(row.assetClassId) ?? 0) + dollars);
+    }
+  }
+
+  const totalClassifiedValue = totalInvestableValue - unallocatedValue;
+
+  const byAssetClass: AssetClassRollup[] = assetClasses
+    .map((ac) => {
+      const value = byId.get(ac.id) ?? 0;
+      return {
+        id: ac.id,
+        name: ac.name,
+        sortOrder: ac.sortOrder,
+        value,
+        pctOfClassified: totalClassifiedValue > 0 ? value / totalClassifiedValue : 0,
+      };
+    })
+    .filter((b) => b.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  return {
+    byAssetClass,
+    unallocatedValue,
+    totalClassifiedValue,
+    totalInvestableValue,
+    excludedNonInvestableValue,
+  };
+}
