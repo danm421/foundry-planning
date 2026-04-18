@@ -22,7 +22,7 @@ enablers and should ship folded into their parent feature.
 | ~~2~~ | ~~Asset mix tab on investment accounts~~ | — | — | — | SHIPPED |
 | 3 | Roth conversion optimizer (now unblocked) | 7 | 5 | 5 | 17 |
 | 4 | Year-by-year schedule for incomes & expenses | 7 | 5 | 4 | 16 |
-| 5 | Investments report (asset allocation) | 7 | 4 | 5 | 16 |
+| ~~5~~ | ~~Investments report (asset allocation)~~ | — | — | — | SHIPPED |
 | 6 | Assumption library | 4 | 6 | 6 | 16 |
 | 7 | Monte Carlo / probability of success | 8 | 4 | 3 | 15 |
 | 8 | UI/UX refresh for Income/Expenses/Savings tabs | 6 | 5 | 4 | 15 |
@@ -300,17 +300,6 @@ Dependency notes that override raw score:
   estate data model, (b) estate-tax calc, (c) visualization layer. Ties
   into "Family members as owners". _Why deferred: large; depends on
   data-model work._
-
-- **Investments report (asset allocation)** _(P7 E4 L5)_ — new top-level
-  report tab alongside Client Data and Cash Flow called "Investments."
-  Shows all accounts and their asset allocation in a unified view: a
-  summary pie chart for the household-level allocation, per-account
-  allocation breakdowns, and a table listing every account with its
-  asset class weights. Data sourced from per-account asset mix (see
-  Client Data section). Enables advisors to quickly assess overall
-  portfolio positioning and identify drift from target allocations.
-  _Why deferred: depends on per-account asset mix tab shipping first
-  to provide the underlying data._
 
 - **Plan PDF export** _(P5 E6 L4)_ — server-rendered PDF summary of the
   plan (balance sheet, cash flow, assumptions, tax detail). Reportlab
