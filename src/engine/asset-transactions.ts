@@ -151,6 +151,10 @@ export interface AssetPurchaseBreakdown {
   purchasePrice: number;
   mortgageAmount: number;
   fundingAccountId: string;
+  /** Synthetic liability id when this purchase created a new mortgage. */
+  liabilityId?: string;
+  /** Display name for the synthetic liability. */
+  liabilityName?: string;
 }
 
 export interface AssetPurchasesResult {
@@ -202,14 +206,10 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
     // Determine funding source
     const fundingAccountId = purchase.fundingAccountId ?? defaultCheckingId;
 
-    breakdown.push({
-      transactionId: purchase.id,
-      name: purchase.name,
-      equity,
-      purchasePrice,
-      mortgageAmount,
-      fundingAccountId,
-    });
+    // Breakdown is pushed at the end of this iteration so it can reference the
+    // synthetic liability id/name when a mortgage is created below.
+    let syntheticLiabilityId: string | undefined;
+    let syntheticLiabilityName: string | undefined;
 
     // Debit equity from funding account
     accountBalances[fundingAccountId] = (accountBalances[fundingAccountId] ?? 0) - equity;
@@ -271,9 +271,10 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
       const newLiabilityId = `technique-liab-${++_syntheticIdCounter}`;
       const termMonths = purchase.mortgageTermMonths;
       const monthlyPayment = _calcMonthlyPayment(mortgageAmount, purchase.mortgageRate, termMonths);
+      const liabilityName = `Mortgage: ${newAccount.name}`;
       const newLiability: Liability = {
         id: newLiabilityId,
-        name: `Mortgage: ${newAccount.name}`,
+        name: liabilityName,
         balance: mortgageAmount,
         interestRate: purchase.mortgageRate,
         monthlyPayment,
@@ -285,7 +286,20 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
         extraPayments: [],
       };
       newLiabilities.push(newLiability);
+      syntheticLiabilityId = newLiabilityId;
+      syntheticLiabilityName = liabilityName;
     }
+
+    breakdown.push({
+      transactionId: purchase.id,
+      name: purchase.name,
+      equity,
+      purchasePrice,
+      mortgageAmount,
+      fundingAccountId,
+      liabilityId: syntheticLiabilityId,
+      liabilityName: syntheticLiabilityName,
+    });
   }
 
   return { newAccounts, newLiabilities, breakdown };

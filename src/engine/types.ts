@@ -315,6 +315,11 @@ export interface ProjectionYear {
       purchasePrice: number;
       mortgageAmount: number;
       equity: number;
+      /** Synthetic liability id created for the mortgage, if any. Used by the
+       * liabilities drill to label the new-mortgage column. */
+      liabilityId?: string;
+      /** Display name for the synthetic liability. */
+      liabilityName?: string;
     }[];
   };
 }

@@ -812,4 +812,53 @@ describe("techniques integration", () => {
     // Newly-bought real estate should be worth ~110k (100k * 1.10) by EoY
     expect(year2026.portfolioAssets.taxableTotal).toBeCloseTo(110000, 0);
   });
+
+  it("BoY: a new mortgage from a BoY purchase pays a full year of amortization in its first year", () => {
+    // $500k salary covers everything easily. Buy $500k home BoY 2026 with a
+    // $400k 30-year mortgage at 6%. Expect 12 months of payments that year
+    // (~$2,398 * 12 ≈ $28,775) flowing through expenses.liabilities.
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Cash",
+          category: "cash",
+          subType: "checking",
+          owner: "joint",
+          value: 200000, basis: 200000, growthRate: 0, rmdEnabled: false,
+          isDefaultChecking: true,
+        },
+      ],
+      incomes: [
+        {
+          id: "salary", type: "salary", name: "Salary",
+          annualAmount: 500000,
+          startYear: 2026, endYear: 2030,
+          growthRate: 0, owner: "client",
+        },
+      ],
+      expenses: [], liabilities: [], savingsRules: [],
+      withdrawalStrategy: [],
+      assetTransactions: [
+        {
+          id: "buy-home", name: "Buy Home", type: "buy" as const,
+          year: 2026,
+          assetName: "Primary Residence",
+          assetCategory: "real_estate" as const,
+          assetSubType: "primary_residence",
+          purchasePrice: 500000,
+          growthRate: 0.03,
+          mortgageAmount: 400000,
+          mortgageRate: 0.06,
+          mortgageTermMonths: 360,
+        },
+      ],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const result = runProjection(data);
+    const year2026 = result[0];
+    // Full-year mortgage payment should be ~$28,775 (12 × $2,398.20)
+    expect(year2026.expenses.liabilities).toBeGreaterThan(28000);
+    expect(year2026.expenses.liabilities).toBeLessThan(29000);
+  });
 });

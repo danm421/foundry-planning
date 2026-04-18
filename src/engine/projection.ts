@@ -206,45 +206,14 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       (inc) => inc.ownerEntityId != null && isGrantorEntity(inc.ownerEntityId)
     );
 
-    // Inject synthetic property-tax expenses for real estate accounts.
-    // These are not persisted — they exist only at projection time.
-    const syntheticExpenses: typeof data.expenses = [];
-    for (const acct of workingAccounts) {
-      if (acct.category !== "real_estate") continue;
-      const propTax = acct.annualPropertyTax ?? 0;
-      if (propTax <= 0) continue;
-      const elapsed = year - planSettings.planStartYear;
-      const inflated = propTax * Math.pow(1 + (acct.propertyTaxGrowthRate ?? 0.03), Math.max(0, elapsed));
-      syntheticExpenses.push({
-        id: `synth-proptax-${acct.id}`,
-        type: "other",
-        name: `Property Tax – ${acct.name}`,
-        annualAmount: inflated,
-        startYear: planSettings.planStartYear,
-        endYear: planSettings.planEndYear,
-        growthRate: 0, // already inflated
-      });
-    }
-    const allExpenses = [...data.expenses, ...syntheticExpenses];
-
     // 2. Household expenses (entity-owned expenses are paid by the entity).
-    // Pass only real expenses — synthetic property-tax expenses are tracked
-    // separately in the realEstate bucket to avoid double-counting in "Other".
+    // Pass only real expenses — synthetic property-tax expenses (built later,
+    // post-BoY transactions) are tracked separately in the realEstate bucket.
     const expenseBreakdown = computeExpenses(
       data.expenses,
       year,
       (exp) => exp.ownerEntityId == null
     );
-
-    // 3. Liability payments — amortize all liabilities (so balances roll forward),
-    // capture the household total for reporting, and keep the per-liability map
-    // so entity liability payments can be routed to entity checking below.
-    const liabResult = computeLiabilities(
-      currentLiabilities,
-      year,
-      (liab) => liab.ownerEntityId == null
-    );
-    currentLiabilities = liabResult.updatedLiabilities;
 
     // Initialize per-account ledgers with the year-start balances. Ledgers are
     // populated first so that BoY sales/purchases (next) can append their entries
@@ -305,7 +274,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     // account immediately, and the newly-bought asset earns a full year of
     // growth. If a paired sale funded the purchase, its proceeds are already in
     // the cash account from the sale step above.
-    let purchaseBreakdown: { transactionId: string; name: string; equity: number; purchasePrice: number; mortgageAmount: number; fundingAccountId: string }[] = [];
+    let purchaseBreakdown: { transactionId: string; name: string; equity: number; purchasePrice: number; mortgageAmount: number; fundingAccountId: string; liabilityId?: string; liabilityName?: string }[] = [];
     if (data.assetTransactions && data.assetTransactions.length > 0) {
       const purchases = data.assetTransactions.filter((t) => t.type === "buy");
       if (purchases.length > 0) {
@@ -329,6 +298,40 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         }
       }
     }
+
+    // Inject synthetic property-tax expenses for real estate accounts. Built
+    // after BoY sales/purchases so a sold property is excluded and a newly-
+    // bought property contributes a full year of property tax.
+    const syntheticExpenses: typeof data.expenses = [];
+    for (const acct of workingAccounts) {
+      if (acct.category !== "real_estate") continue;
+      const propTax = acct.annualPropertyTax ?? 0;
+      if (propTax <= 0) continue;
+      const elapsed = year - planSettings.planStartYear;
+      const inflated = propTax * Math.pow(1 + (acct.propertyTaxGrowthRate ?? 0.03), Math.max(0, elapsed));
+      syntheticExpenses.push({
+        id: `synth-proptax-${acct.id}`,
+        type: "other",
+        name: `Property Tax – ${acct.name}`,
+        annualAmount: inflated,
+        startYear: planSettings.planStartYear,
+        endYear: planSettings.planEndYear,
+        growthRate: 0, // already inflated
+      });
+    }
+    const allExpenses = [...data.expenses, ...syntheticExpenses];
+
+    // 3. Liability payments — amortize all liabilities (so balances roll forward),
+    // capture the household total for reporting, and keep the per-liability map
+    // so entity liability payments can be routed to entity checking below. Runs
+    // after BoY sales/purchases so sold-asset mortgages are already removed and
+    // new mortgages from purchases are included for a full year of payments.
+    const liabResult = computeLiabilities(
+      currentLiabilities,
+      year,
+      (liab) => liab.ownerEntityId == null
+    );
+    currentLiabilities = liabResult.updatedLiabilities;
 
     // 4. Grow every account (post-BoY: sold accounts are gone, newly-bought
     // accounts are included). When the account has a realization model, split
@@ -1226,6 +1229,8 @@ export function runProjection(data: ClientData): ProjectionYear[] {
                 purchasePrice: p.purchasePrice,
                 mortgageAmount: p.mortgageAmount,
                 equity: p.equity,
+                liabilityId: p.liabilityId,
+                liabilityName: p.liabilityName,
               })),
             },
           }

@@ -517,11 +517,31 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     }
   }
 
-  // liabilityNames: liability id → display name
+  // liabilityNames: liability id → display name. Seeded from clientData for
+  // original liabilities; synthetic mortgages from asset purchases get their
+  // names from the projection's techniqueBreakdown.
   const liabilityNames: Record<string, string> = {};
   if (clientData) {
     for (const liab of clientData.liabilities) {
       liabilityNames[liab.id] = liab.name;
+    }
+  }
+  // Collect all liability IDs that ever appear in any year — this captures
+  // synthetic mortgages from BoY purchases that aren't in clientData.liabilities.
+  const allLiabilityIds = new Set<string>();
+  for (const y of years) {
+    if (clientData) {
+      for (const liab of clientData.liabilities) allLiabilityIds.add(liab.id);
+    }
+    for (const p of y.techniqueBreakdown?.purchases ?? []) {
+      if (p.liabilityId) {
+        allLiabilityIds.add(p.liabilityId);
+        if (p.liabilityName) liabilityNames[p.liabilityId] = p.liabilityName;
+      }
+    }
+    // Also pick up any liability id that shows up in expense byLiability
+    for (const id of Object.keys(y.expenses.byLiability ?? {})) {
+      allLiabilityIds.add(id);
     }
   }
 
@@ -974,9 +994,10 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // ── Expenses drill-down ────────────────────────────────────────────────
 
     if (level === "expenses") {
-      // Level 2: individual liabilities
+      // Level 2: individual liabilities — includes synthetic mortgages from
+      // BoY purchases so they show as their own column.
       if (subLevel === "liabilities") {
-        const liabIds = clientData?.liabilities.map((l) => l.id) ?? [];
+        const liabIds = Array.from(allLiabilityIds);
         return [
           ...baseColumns,
           ...liabIds.map((id) =>
