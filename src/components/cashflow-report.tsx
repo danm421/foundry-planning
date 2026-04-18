@@ -781,11 +781,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     return (
       <button
         onClick={() => drillInto(segment)}
-        className="flex items-center gap-1 font-medium text-blue-500 hover:text-blue-400 focus:outline-none whitespace-nowrap"
+        className="inline text-left font-medium text-blue-500 hover:text-blue-400 focus:outline-none"
         title={`Drill into ${label}`}
       >
         {label}
-        <span className="text-xs">&#9654;</span>
+        <span className="ml-1 text-xs">&#9654;</span>
       </button>
     );
   }
