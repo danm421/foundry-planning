@@ -377,7 +377,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     const clientBirthYear = parseInt(c.dateOfBirth.slice(0, 4), 10);
     const clientColor = "#60a5fa";
     pushEvent(clientBirthYear + c.retirementAge, `${clientFirst} retires`, clientColor);
-    pushEvent(clientBirthYear + c.planEndAge, `${clientFirst} end`, clientColor);
+    const clientLE = c.lifeExpectancy ?? 95;
+    pushEvent(clientBirthYear + clientLE, `${clientFirst} passes`, clientColor);
 
     if (c.spouseDob) {
       const spouseFirst = c.spouseName ?? "Spouse";
@@ -390,7 +391,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           spouseColor
         );
       }
-      pushEvent(spouseBirthYear + c.planEndAge, `${spouseFirst} end`, spouseColor);
+      const spouseLE = c.spouseLifeExpectancy ?? 95;
+      pushEvent(spouseBirthYear + spouseLE, `${spouseFirst} passes`, spouseColor);
     }
   }
 
