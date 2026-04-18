@@ -6,6 +6,7 @@ import MilestoneYearPicker from "../milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { resolveMilestone } from "@/lib/milestones";
 import { calcPayment, calcTerm, calcRate } from "@/lib/loan-math";
+import { CurrencyInput } from "@/components/currency-input";
 
 const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -276,15 +277,12 @@ export default function AddLiabilityForm({
           <label className="block text-sm font-medium text-gray-300" htmlFor="balance">
             Outstanding Balance ($)
           </label>
-          <input
+          <CurrencyInput
             id="balance"
             name="balance"
-            type="number"
-            step="0.01"
-            min={0}
             value={balance}
-            onChange={(e) => setBalance(e.target.value)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            onChange={(raw) => setBalance(raw)}
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
@@ -411,15 +409,12 @@ export default function AddLiabilityForm({
             </label>
             <CalcButton onClick={handleCalcPayment} title="Calculate from balance, rate, and term" />
           </div>
-          <input
+          <CurrencyInput
             id="monthlyPayment"
             name="monthlyPayment"
-            type="number"
-            step="0.01"
-            min={0}
             value={monthlyPayment}
-            onChange={(e) => setMonthlyPayment(e.target.value)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            onChange={(raw) => setMonthlyPayment(raw)}
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
       </div>

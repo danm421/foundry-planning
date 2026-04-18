@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { CurrencyInput } from "@/components/currency-input";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 
@@ -518,15 +519,12 @@ export default function AddAssetTransactionForm({
                   <label className={LABEL_CLASS} htmlFor="overrideSaleValue">
                     Override Sale Value ($)
                   </label>
-                  <input
+                  <CurrencyInput
                     id="overrideSaleValue"
-                    type="number"
-                    step="0.01"
-                    min={0}
                     value={overrideSaleValue}
-                    onChange={(e) => setOverrideSaleValue(e.target.value)}
+                    onChange={(raw) => setOverrideSaleValue(raw)}
                     placeholder="Leave blank for projected"
-                    className={INPUT_CLASS}
+                    className={INPUT_CLASS.replace("px-3", "pr-3")}
                   />
                   {projectedSellInfo && projectedSellInfo.projectedValue > 0 && (
                     <p className="mt-1 text-xs text-gray-500">
@@ -542,15 +540,12 @@ export default function AddAssetTransactionForm({
                   <label className={LABEL_CLASS} htmlFor="overrideBasis">
                     Override Basis ($)
                   </label>
-                  <input
+                  <CurrencyInput
                     id="overrideBasis"
-                    type="number"
-                    step="0.01"
-                    min={0}
                     value={overrideBasis}
-                    onChange={(e) => setOverrideBasis(e.target.value)}
+                    onChange={(raw) => setOverrideBasis(raw)}
                     placeholder="Leave blank for projected"
-                    className={INPUT_CLASS}
+                    className={INPUT_CLASS.replace("px-3", "pr-3")}
                   />
                   {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
                     <p className="mt-1 text-xs text-gray-500">
@@ -585,15 +580,12 @@ export default function AddAssetTransactionForm({
                   <label className={LABEL_CLASS} htmlFor="transactionCostFlat">
                     Transaction Cost ($)
                   </label>
-                  <input
+                  <CurrencyInput
                     id="transactionCostFlat"
-                    type="number"
-                    step="0.01"
-                    min={0}
                     value={transactionCostFlat}
-                    onChange={(e) => setTransactionCostFlat(e.target.value)}
+                    onChange={(raw) => setTransactionCostFlat(raw)}
                     placeholder="Optional"
-                    className={INPUT_CLASS}
+                    className={INPUT_CLASS.replace("px-3", "pr-3")}
                   />
                 </div>
               </div>
@@ -690,14 +682,11 @@ export default function AddAssetTransactionForm({
                   <label className={LABEL_CLASS} htmlFor="purchasePrice">
                     Purchase Price ($)
                   </label>
-                  <input
+                  <CurrencyInput
                     id="purchasePrice"
-                    type="number"
-                    step="0.01"
-                    min={0}
                     value={purchasePrice}
-                    onChange={(e) => setPurchasePrice(e.target.value)}
-                    className={INPUT_CLASS}
+                    onChange={(raw) => setPurchasePrice(raw)}
+                    className={INPUT_CLASS.replace("px-3", "pr-3")}
                   />
                 </div>
                 <div>
@@ -724,15 +713,12 @@ export default function AddAssetTransactionForm({
                   <label className={LABEL_CLASS} htmlFor="buyBasis">
                     Basis ($)
                   </label>
-                  <input
+                  <CurrencyInput
                     id="buyBasis"
-                    type="number"
-                    step="0.01"
-                    min={0}
                     value={buyBasis}
-                    onChange={(e) => setBuyBasis(e.target.value)}
+                    onChange={(raw) => setBuyBasis(raw)}
                     placeholder="Optional"
-                    className={INPUT_CLASS}
+                    className={INPUT_CLASS.replace("px-3", "pr-3")}
                   />
                 </div>
                 <div>
@@ -780,14 +766,11 @@ export default function AddAssetTransactionForm({
                       <label className={LABEL_CLASS} htmlFor="mortgageAmount">
                         Amount ($)
                       </label>
-                      <input
+                      <CurrencyInput
                         id="mortgageAmount"
-                        type="number"
-                        step="0.01"
-                        min={0}
                         value={mortgageAmount}
-                        onChange={(e) => setMortgageAmount(e.target.value)}
-                        className={INPUT_CLASS}
+                        onChange={(raw) => setMortgageAmount(raw)}
+                        className={INPUT_CLASS.replace("px-3", "pr-3")}
                       />
                     </div>
                     <div>

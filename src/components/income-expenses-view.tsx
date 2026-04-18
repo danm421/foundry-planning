@@ -4,6 +4,7 @@ import { useState } from "react";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import MilestoneYearPicker from "./milestone-year-picker";
 import ScheduleTab from "./schedule-tab";
+import { CurrencyInput } from "./currency-input";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
@@ -559,15 +560,12 @@ function IncomeDialog({
               <label className="block text-sm font-medium text-gray-300" htmlFor="inc-amount">
                 Annual Amount ($) <span className="text-red-500">*</span>
               </label>
-              <input
+              <CurrencyInput
                 id="inc-amount"
                 name="annualAmount"
-                type="number"
-                step="1"
-                min={0}
                 required
                 defaultValue={editing?.annualAmount ?? 0}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
@@ -948,15 +946,12 @@ function ExpenseDialog({
               <label className="block text-sm font-medium text-gray-300" htmlFor="exp-amount">
                 Annual Amount ($) <span className="text-red-500">*</span>
               </label>
-              <input
+              <CurrencyInput
                 id="exp-amount"
                 name="annualAmount"
-                type="number"
-                step="1"
-                min={0}
                 required
                 defaultValue={editing?.annualAmount ?? 0}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
@@ -1292,15 +1287,12 @@ function SavingsRuleDialog({
               <label className="block text-sm font-medium text-gray-300" htmlFor="sr-amount">
                 Annual Amount ($) <span className="text-red-500">*</span>
               </label>
-              <input
+              <CurrencyInput
                 id="sr-amount"
                 name="annualAmount"
-                type="number"
-                step="1"
-                min={0}
                 required
                 defaultValue={editing?.annualAmount ?? 0}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               {hasSchedule && (
                 <p className="mt-1 text-xs text-blue-400 cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
@@ -1308,15 +1300,12 @@ function SavingsRuleDialog({
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-300" htmlFor="sr-limit">Annual Limit ($)</label>
-              <input
+              <CurrencyInput
                 id="sr-limit"
                 name="annualLimit"
-                type="number"
-                step="1"
-                min={0}
                 placeholder="Optional"
                 defaultValue={editing?.annualLimit ?? ""}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
             <div className="col-span-2 rounded-md border border-gray-800 bg-gray-900/60 p-3">
@@ -1392,15 +1381,12 @@ function SavingsRuleDialog({
                   <label className="block text-xs font-medium text-gray-400" htmlFor="sr-match-amt">
                     Flat annual amount ($)
                   </label>
-                  <input
+                  <CurrencyInput
                     id="sr-match-amt"
                     name="employerMatchAmount"
-                    type="number"
-                    step="1"
-                    min={0}
-                    placeholder="e.g., 5000"
+                    placeholder="5000"
                     defaultValue={editing?.employerMatchAmount ?? ""}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                   <p className="mt-1 text-[11px] text-gray-500">
                     The employer deposits this flat amount each year, regardless of salary.

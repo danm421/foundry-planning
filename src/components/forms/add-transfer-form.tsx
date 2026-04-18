@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, FormEvent } from "react";
+import { CurrencyInput } from "@/components/currency-input";
 
 interface ScheduleRow {
   id: string;
@@ -266,14 +267,11 @@ export default function AddTransferForm({
         {/* Amount */}
         <div>
           <label className="block text-xs font-medium text-gray-400">Amount ($)</label>
-          <input
-            type="number"
-            step="1"
-            min="0"
+          <CurrencyInput
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(raw) => setAmount(raw)}
             required
-            className={INPUT_CLASS}
+            className={INPUT_CLASS.replace("px-2", "pr-2")}
           />
         </div>
 
@@ -378,13 +376,10 @@ export default function AddTransferForm({
                         />
                       </td>
                       <td className="pr-2 pb-1">
-                        <input
-                          type="number"
-                          step="1"
-                          min="0"
+                        <CurrencyInput
                           value={row.amount}
-                          onChange={(e) => updateScheduleRow(row.id, "amount", e.target.value)}
-                          className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-gray-100 focus:border-blue-500 focus:outline-none"
+                          onChange={(raw) => updateScheduleRow(row.id, "amount", raw)}
+                          className="w-full rounded border border-gray-700 bg-gray-800 pr-2 py-1 text-xs text-gray-100 focus:border-blue-500 focus:outline-none"
                         />
                       </td>
                       <td className="pb-1">

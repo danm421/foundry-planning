@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
+import { CurrencyInput } from "@/components/currency-input";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -583,14 +584,11 @@ export default function AddAccountForm({
               <label className="block text-sm font-medium text-gray-300" htmlFor="value">
                 Current Value ($)
               </label>
-              <input
+              <CurrencyInput
                 id="value"
                 name="value"
-                type="number"
-                step="0.01"
-                min={0}
                 defaultValue={initial?.value ?? 0}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
@@ -598,14 +596,11 @@ export default function AddAccountForm({
               <label className="block text-sm font-medium text-gray-300" htmlFor="basis">
                 Cost Basis ($)
               </label>
-              <input
+              <CurrencyInput
                 id="basis"
                 name="basis"
-                type="number"
-                step="0.01"
-                min={0}
                 defaultValue={initial?.basis ?? 0}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
           </div>
@@ -617,14 +612,11 @@ export default function AddAccountForm({
                 <label className="block text-sm font-medium text-gray-300" htmlFor="annualPropertyTax">
                   Annual Property Tax ($)
                 </label>
-                <input
+                <CurrencyInput
                   id="annualPropertyTax"
-                  type="number"
-                  step="100"
-                  min={0}
                   value={annualPropertyTax}
-                  onChange={(e) => setAnnualPropertyTax(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  onChange={(raw) => setAnnualPropertyTax(raw)}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
               <div>
@@ -672,14 +664,11 @@ export default function AddAccountForm({
                 <label className="block text-sm font-medium text-gray-300" htmlFor="savingsAmount">
                   Annual Contribution ($)
                 </label>
-                <input
+                <CurrencyInput
                   id="savingsAmount"
                   name="savingsAmount"
-                  type="number"
-                  step="1"
-                  min={0}
                   defaultValue={0}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
@@ -687,14 +676,11 @@ export default function AddAccountForm({
                 <label className="block text-sm font-medium text-gray-300" htmlFor="annualLimit">
                   Annual Limit ($)
                 </label>
-                <input
+                <CurrencyInput
                   id="annualLimit"
                   name="annualLimit"
-                  type="number"
-                  step="1"
-                  min={0}
                   placeholder="Optional"
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
