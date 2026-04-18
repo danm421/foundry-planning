@@ -1,6 +1,6 @@
 // src/components/balance-sheet-report/view-model.ts
 import { filterAccounts, filterLiabilities, type OwnershipView } from "./ownership-filter";
-import { yoyPct, sliceBarWindow, type YoyResult } from "./yoy";
+import { yoyPct, sliceBarAnchors, type YoyResult } from "./yoy";
 import { CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_HEX, type AssetCategoryKey } from "./tokens";
 
 // ── Input shapes (loose — accept what /api/projection-data returns) ──────────
@@ -413,12 +413,12 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     });
   }
 
-  // ── Bar chart: 2 back / selected / 2 forward, values respecting the filter ──
-  // In "today" mode the window centers on the first projection year.
+  // ── Bar chart: current / +10yr / +20yr / last-if-past-+20 ──
+  // Anchor is the current year (first projection year in Today mode, else selectedYear).
 
   const allYears = projectionYears.map((y) => y.year);
   const windowAnchor = asOfMode === "today" ? projectionYears[0].year : selectedYear;
-  const windowYears = sliceBarWindow(allYears, windowAnchor);
+  const windowYears = sliceBarAnchors(allYears, windowAnchor);
   const barChartSeries: BarChartPoint[] = windowYears.map((yr) => {
     const yData = projectionYears.find((y) => y.year === yr)!;
     return {

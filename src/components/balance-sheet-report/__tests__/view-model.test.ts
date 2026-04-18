@@ -194,9 +194,10 @@ describe("buildViewModel (edge cases)", () => {
     expect(vm.yoy.netWorth).toBeNull();
   });
 
-  it("barChartSeries contains up to 5 entries centered on selected year", () => {
+  it("barChartSeries returns the selected year when +10/+20/last are not reachable", () => {
+    // baseInput only covers 2025-2026 → only the selected year is reachable.
     const vm = buildViewModel(baseInput);
-    expect(vm.barChartSeries.map((p) => p.year)).toEqual([2025, 2026]);
+    expect(vm.barChartSeries.map((p) => p.year)).toEqual([2026]);
   });
 
   it("returns empty liabilityRows when client has no liabilities", () => {

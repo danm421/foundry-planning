@@ -24,14 +24,28 @@ export function yoyPct(
 }
 
 /**
- * Return the list of years for the bar chart — 2 before / selected / 2 after,
- * clamped to the available projection years. If the selected year is not in
- * the list, returns an empty array.
+ * Return the bar-chart anchor years: current, current+10, current+20, and
+ * the last projection year (only if the projection extends more than 20
+ * years past current — otherwise "last" would duplicate +20). Each anchor is
+ * included only if that year is in `years`. Result is sorted ascending and
+ * deduplicated.
+ *
+ * Examples:
+ *   sliceBarAnchors([2026..2055], 2026) → [2026, 2036, 2046, 2055]
+ *   sliceBarAnchors([2026..2046], 2026) → [2026, 2036, 2046]  (last = +20, no extra)
+ *   sliceBarAnchors([2026..2035], 2026) → [2026]              (no +10 available)
+ *   sliceBarAnchors([2040..2055], 2050) → [2050]              (projection ends at 2055)
  */
-export function sliceBarWindow(years: number[], selected: number): number[] {
-  const idx = years.indexOf(selected);
-  if (idx < 0) return [];
-  const start = Math.max(0, idx - 2);
-  const end = Math.min(years.length, idx + 3); // inclusive of idx+2
-  return years.slice(start, end);
+export function sliceBarAnchors(years: number[], current: number): number[] {
+  if (years.length === 0) return [];
+  const yearsSet = new Set(years);
+  const lastY = years[years.length - 1];
+  const anchors = new Set<number>();
+
+  if (yearsSet.has(current)) anchors.add(current);
+  if (yearsSet.has(current + 10)) anchors.add(current + 10);
+  if (yearsSet.has(current + 20)) anchors.add(current + 20);
+  if (lastY > current + 20 && yearsSet.has(lastY)) anchors.add(lastY);
+
+  return [...anchors].sort((a, b) => a - b);
 }

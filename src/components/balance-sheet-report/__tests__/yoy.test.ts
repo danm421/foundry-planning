@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { yoyPct, sliceBarWindow } from "../yoy";
+import { yoyPct, sliceBarAnchors } from "../yoy";
 
 describe("yoyPct", () => {
   it("returns up badge for positive delta", () => {
@@ -24,29 +24,41 @@ describe("yoyPct", () => {
   });
 });
 
-describe("sliceBarWindow", () => {
-  const years = [2024, 2025, 2026, 2027, 2028, 2029, 2030];
+describe("sliceBarAnchors", () => {
+  const range = (start: number, end: number) =>
+    Array.from({ length: end - start + 1 }, (_, i) => start + i);
 
-  it("returns 2 before, selected, 2 after when fully inside", () => {
-    expect(sliceBarWindow(years, 2027)).toEqual([2025, 2026, 2027, 2028, 2029]);
+  it("returns current, +10, +20, and last when projection runs past +20", () => {
+    expect(sliceBarAnchors(range(2026, 2055), 2026)).toEqual([2026, 2036, 2046, 2055]);
   });
 
-  it("clamps at the start of the range", () => {
-    expect(sliceBarWindow(years, 2024)).toEqual([2024, 2025, 2026]);
-    expect(sliceBarWindow(years, 2025)).toEqual([2024, 2025, 2026, 2027]);
+  it("omits 'last' when last year is exactly +20 (no duplicate)", () => {
+    expect(sliceBarAnchors(range(2026, 2046), 2026)).toEqual([2026, 2036, 2046]);
   });
 
-  it("clamps at the end of the range", () => {
-    expect(sliceBarWindow(years, 2030)).toEqual([2028, 2029, 2030]);
-    expect(sliceBarWindow(years, 2029)).toEqual([2027, 2028, 2029, 2030]);
+  it("omits 'last' when last year is shorter than +20", () => {
+    expect(sliceBarAnchors(range(2026, 2040), 2026)).toEqual([2026, 2036]);
   });
 
-  it("handles projections shorter than 5 years (no padding)", () => {
-    expect(sliceBarWindow([2024, 2025, 2026], 2025)).toEqual([2024, 2025, 2026]);
-    expect(sliceBarWindow([2024], 2024)).toEqual([2024]);
+  it("omits +10 and +20 when not in the year range", () => {
+    expect(sliceBarAnchors(range(2026, 2030), 2026)).toEqual([2026]);
   });
 
-  it("returns empty when selected year is not in the list", () => {
-    expect(sliceBarWindow(years, 2099)).toEqual([]);
+  it("works when current is mid-projection", () => {
+    // current=2040, +10=2050, +20=2060 (not reachable). Last year is 2055,
+    // which is not > current+20, so 'last' is not appended.
+    expect(sliceBarAnchors(range(2026, 2055), 2040)).toEqual([2040, 2050]);
+  });
+
+  it("handles single-year projection", () => {
+    expect(sliceBarAnchors([2026], 2026)).toEqual([2026]);
+  });
+
+  it("returns empty when years is empty", () => {
+    expect(sliceBarAnchors([], 2026)).toEqual([]);
+  });
+
+  it("returns empty when current is not in the year list", () => {
+    expect(sliceBarAnchors(range(2026, 2055), 2099)).toEqual([]);
   });
 });
