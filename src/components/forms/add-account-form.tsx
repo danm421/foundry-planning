@@ -182,6 +182,16 @@ export default function AddAccountForm({
       uniqueAccountName(DEFAULT_NAME_BY_CATEGORY[initialCategoryForName], existingNamesList),
   );
   const [userEditedName, setUserEditedName] = useState<boolean>(mode === "edit");
+
+  // Controlled value + basis so basis can mirror value until the user edits it
+  // manually (defaulting tax basis to the full current value on create).
+  const [accountValue, setAccountValue] = useState<string>(
+    initial?.value != null ? String(initial.value) : "",
+  );
+  const [accountBasis, setAccountBasis] = useState<string>(
+    initial?.basis != null ? String(initial.basis) : "",
+  );
+  const [userEditedBasis, setUserEditedBasis] = useState<boolean>(mode === "edit");
   const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix">("details");
   const [subType, setSubType] = useState(
     initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
@@ -657,7 +667,11 @@ export default function AddAccountForm({
               <CurrencyInput
                 id="value"
                 name="value"
-                defaultValue={initial?.value ?? 0}
+                value={accountValue}
+                onChange={(raw) => {
+                  setAccountValue(raw);
+                  if (!userEditedBasis) setAccountBasis(raw);
+                }}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
@@ -669,7 +683,11 @@ export default function AddAccountForm({
               <CurrencyInput
                 id="basis"
                 name="basis"
-                defaultValue={initial?.basis ?? 0}
+                value={accountBasis}
+                onChange={(raw) => {
+                  setAccountBasis(raw);
+                  setUserEditedBasis(true);
+                }}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
