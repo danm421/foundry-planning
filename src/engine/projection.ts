@@ -1167,17 +1167,14 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     // - If paired with a purchase (same transaction), income = netProceeds - purchaseEquity
     //   (surplus goes to income; deficit goes to expense)
     // - If sale-only, income = netProceeds
-    // Transaction costs are always a separate expense line.
+    // Transaction costs are NOT a separate expense line — they are already
+    // deducted from netProceeds (in applyAssetSales) and surface in the sale
+    // drill-down breakdown.
     const purchaseByTxnId = new Map(
       purchaseBreakdown.map((p) => [p.transactionId, p])
     );
 
     for (const item of saleResult.breakdown) {
-      if (item.transactionCosts > 0) {
-        techniqueExpenses += item.transactionCosts;
-        techniqueExpenseBySource[`technique-cost:${item.transactionId}`] = item.transactionCosts;
-      }
-
       const pairedPurchase = purchaseByTxnId.get(item.transactionId);
       const purchaseEquity = pairedPurchase?.equity ?? 0;
       const netImpact = item.netProceeds - purchaseEquity;

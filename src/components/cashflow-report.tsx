@@ -584,31 +584,27 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
     for (const txn of clientData.assetTransactions ?? []) {
       if (txn.type === "sell") {
-        // Net surplus as income (may not exist if deficit)
+        // Surplus as income (may not exist if deficit)
         const proceedsKey = `technique-proceeds:${txn.id}`;
         incomeNames[proceedsKey] = `Net Proceeds: ${txn.name}`;
         techniqueIncomeIds.push(proceedsKey);
 
-        // Deficit as expense (may not exist if surplus)
+        // Deficit as expense (may not exist if surplus) — feeds the
+        // consolidated "Net Cost from Asset Transactions" column.
         const deficitKey = `technique-deficit:${txn.id}`;
         expenseNames[deficitKey] = `Net Deficit: ${txn.name}`;
         techniqueExpenseIds.push(deficitKey);
 
-        // Transaction costs as expense (only if costs are configured)
-        const hasCosts = (txn.transactionCostPct ?? 0) > 0 || (txn.transactionCostFlat ?? 0) > 0;
-        if (hasCosts) {
-          const costKey = `technique-cost:${txn.id}`;
-          expenseNames[costKey] = `Transaction Costs: ${txn.name}`;
-          if (!expensesByType["other_expense"]) expensesByType["other_expense"] = [];
-          expensesByType["other_expense"].push(costKey);
-        }
+        // Transaction costs are already baked into netProceeds/deficit via
+        // the engine's applyAssetSales — no separate expense line.
       }
       if (txn.type === "buy") {
-        // Buy-only transactions: purchase equity is a real cash outflow
+        // Buy-only transactions: purchase equity is a real cash outflow.
+        // Routed to the consolidated column instead of its own "Other"
+        // expense column so multiple buys in a year stay readable.
         const purchaseKey = `technique-purchase:${txn.id}`;
         expenseNames[purchaseKey] = `Purchase: ${txn.name}`;
-        if (!expensesByType["other_expense"]) expensesByType["other_expense"] = [];
-        expensesByType["other_expense"].push(purchaseKey);
+        techniqueExpenseIds.push(purchaseKey);
       }
     }
   }
@@ -780,26 +776,45 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       }
       return [{ label: "Net Proceeds", amount: netAmount }];
     }
-    if (sourceId.startsWith("technique-cost:")) {
-      const txnId = sourceId.replace("technique-cost:", "");
-      const sale = tb?.sales.find((s) => s.transactionId === txnId);
-      if (sale && sale.transactionCosts > 0) {
-        return [{ label: "Transaction Costs", amount: sale.transactionCosts }];
-      }
-      return [{ label: "Transaction Costs", amount: netAmount }];
-    }
     if (sourceId.startsWith("technique-purchase:")) {
       const txnId = sourceId.replace("technique-purchase:", "");
       const purchase = tb?.purchases.find((p) => p.transactionId === txnId);
       if (purchase) {
+        // Sign convention for expense breakdowns: positive = cash out. The
+        // line items sum to the equity cash needed (== the column value).
         const details: { label: string; amount: number }[] = [
           { label: "Purchase Price", amount: purchase.purchasePrice },
         ];
-        if (purchase.mortgageAmount > 0) details.push({ label: "Mortgage", amount: -purchase.mortgageAmount });
-        details.push({ label: "Cash Needed", amount: purchase.equity });
+        if (purchase.mortgageAmount > 0) {
+          details.push({ label: "New Mortgage (financed)", amount: -purchase.mortgageAmount });
+        }
         return details;
       }
       return [{ label: "Purchase Equity", amount: netAmount }];
+    }
+    if (sourceId.startsWith("technique-deficit:")) {
+      const txnId = sourceId.replace("technique-deficit:", "");
+      const sale = tb?.sales.find((s) => s.transactionId === txnId);
+      const purchase = tb?.purchases.find((p) => p.transactionId === txnId);
+      if (sale && purchase) {
+        // Same sign convention: positive = cash out, negative = cash in.
+        // Line items sum to the net shortfall (== the column value).
+        const details: { label: string; amount: number }[] = [
+          { label: "Purchase Price", amount: purchase.purchasePrice },
+        ];
+        if (purchase.mortgageAmount > 0) {
+          details.push({ label: "New Mortgage (financed)", amount: -purchase.mortgageAmount });
+        }
+        details.push({ label: "Sale Value", amount: -sale.saleValue });
+        if (sale.transactionCosts > 0) {
+          details.push({ label: "Transaction Costs", amount: sale.transactionCosts });
+        }
+        if (sale.mortgagePaidOff > 0) {
+          details.push({ label: "Mortgage Payoff", amount: sale.mortgagePaidOff });
+        }
+        return details;
+      }
+      return [{ label: "Net Deficit", amount: netAmount }];
     }
     return [{ label: "Amount", amount: netAmount }];
   }
@@ -1047,50 +1062,72 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       // Level 2: individual sources for a specific expense type
       if (subLevel && EXPENSE_SEGMENT_TO_TYPE[subLevel] != null) {
         const sourceIds = expensesByType[subLevel] ?? [];
+        // "Other" rolls up all technique-based expenses (buy-only purchases
+        // and sell+buy deficits) into a single consolidated column with a
+        // grouped-modal breakdown. Other subtypes have no technique sources
+        // so this extra column only appears under "other_expense".
+        const showConsolidatedTechnique =
+          subLevel === "other_expense" && techniqueExpenseIds.length > 0;
+        const techniqueYearTotal = (r: ProjectionYear) =>
+          techniqueExpenseIds.reduce((sum, id) => sum + (r.expenses.bySource[id] ?? 0), 0);
         return [
           ...baseColumns,
-          ...sourceIds.map((id) => {
-            const isTechnique = id.startsWith("technique-");
-            if (isTechnique) {
-              return col(
-                `exp_src_${id}`,
-                expenseNames[id] ?? id,
-                (r) => r.expenses.bySource[id] ?? 0,
-                (info) => {
-                  const v = info.getValue() as number;
-                  if (v === 0) return <span className="tabular-nums text-gray-500">&mdash;</span>;
-                  const row = info.row.original;
-                  return (
-                    <button
-                      onClick={() => {
-                        const details = buildTechniqueDetails(id, row.year, v);
-                        setSourceDetailModal({
-                          name: expenseNames[id] ?? id,
-                          year: row.year,
-                          amount: v,
-                          details,
-                        });
-                      }}
-                      className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
-                      title="View source details"
-                    >
-                      {fmtNum(v)}
-                    </button>
-                  );
-                }
-              );
-            }
-            return numCol(
+          ...sourceIds.map((id) =>
+            numCol(
               `exp_src_${id}`,
               expenseNames[id] ?? id,
-              (r) => r.expenses.bySource[id] ?? 0
-            );
-          }),
+              (r) => r.expenses.bySource[id] ?? 0,
+            ),
+          ),
+          ...(showConsolidatedTechnique
+            ? [
+                col(
+                  "exp_asset_transactions",
+                  "Net Cost from Asset Transactions",
+                  techniqueYearTotal,
+                  (info) => {
+                    const v = info.getValue() as number;
+                    if (v === 0) return <span className="tabular-nums text-gray-500">&mdash;</span>;
+                    const row = info.row.original;
+                    return (
+                      <button
+                        onClick={() => {
+                          const groups = techniqueExpenseIds
+                            .map((id) => {
+                              const amt = row.expenses.bySource[id] ?? 0;
+                              if (amt === 0) return null;
+                              return {
+                                name: expenseNames[id] ?? id,
+                                amount: amt,
+                                details: buildTechniqueDetails(id, row.year, amt),
+                              };
+                            })
+                            .filter((g): g is NonNullable<typeof g> => g !== null);
+                          setSourceDetailModal({
+                            name: "Net Cost from Asset Transactions",
+                            year: row.year,
+                            amount: v,
+                            details: [],
+                            groups,
+                          });
+                        }}
+                        className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                        title="View transaction breakdown"
+                      >
+                        {fmtNum(v)}
+                      </button>
+                    );
+                  },
+                ),
+              ]
+            : []),
           numCol(
             "exp_subtype_total",
             `${DRILL_LABELS[subLevel] ?? subLevel} Total`,
-            (r) => sourceIds.reduce((sum, id) => sum + (r.expenses.bySource[id] ?? 0), 0),
-            true
+            (r) =>
+              sourceIds.reduce((sum, id) => sum + (r.expenses.bySource[id] ?? 0), 0) +
+              (showConsolidatedTechnique ? techniqueYearTotal(r) : 0),
+            true,
           ),
         ];
       }
