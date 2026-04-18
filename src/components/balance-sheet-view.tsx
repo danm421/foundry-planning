@@ -467,6 +467,7 @@ export default function BalanceSheetView({
         milestones={milestones}
         clientFirstName={ownerNames.clientName.split(" ")[0]}
         spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+        existingAccountNames={accounts.map((a) => a.name)}
         open={addCategory !== null}
         onOpenChange={(o) => !o && setAddCategory(null)}
       />

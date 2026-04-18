@@ -26,6 +26,7 @@ interface AddAccountDialogProps {
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
+  existingAccountNames?: string[];
 }
 
 export default function AddAccountDialog({
@@ -46,6 +47,7 @@ export default function AddAccountDialog({
   milestones,
   clientFirstName,
   spouseFirstName,
+  existingAccountNames,
 }: AddAccountDialogProps) {
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
@@ -101,6 +103,7 @@ export default function AddAccountDialog({
               milestones={milestones}
               clientFirstName={clientFirstName}
               spouseFirstName={spouseFirstName}
+              existingAccountNames={existingAccountNames}
               onSuccess={close}
               onDelete={onRequestDelete}
             />

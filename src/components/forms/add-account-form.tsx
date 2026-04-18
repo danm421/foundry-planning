@@ -70,6 +70,8 @@ interface AddAccountFormProps {
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
+  /** Existing account names for auto-increment default naming on create. */
+  existingAccountNames?: string[];
   onSuccess?: () => void;
   onDelete?: () => void;
 }
@@ -120,6 +122,25 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
 const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "roth_401k", "529"]);
 const RMD_ELIGIBLE_SUB_TYPES = new Set(["traditional_ira", "401k"]);
 
+const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
+  taxable: "Taxable Account",
+  cash: "Cash Account",
+  retirement: "Retirement Account",
+  real_estate: "Real Estate",
+  business: "Business Interest",
+  life_insurance: "Life Insurance Policy",
+};
+
+function uniqueAccountName(base: string, existing: string[]): string {
+  const taken = new Set(existing.map((n) => n.trim().toLowerCase()));
+  if (!taken.has(base.trim().toLowerCase())) return base;
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${base} ${i}`;
+    if (!taken.has(candidate.trim().toLowerCase())) return candidate;
+  }
+  return base;
+}
+
 export default function AddAccountForm({
   clientId,
   category: defaultCategory,
@@ -135,6 +156,7 @@ export default function AddAccountForm({
   milestones,
   clientFirstName,
   spouseFirstName,
+  existingAccountNames,
   onSuccess,
   onDelete,
 }: AddAccountFormProps) {
@@ -148,6 +170,18 @@ export default function AddAccountForm({
   const [category, setCategory] = useState<AccountCategory>(
     initial?.category ?? defaultCategory ?? "taxable"
   );
+
+  // Controlled account name. On create, defaults to an auto-incremented
+  // category label (e.g., "Taxable Account 2"). Tracks whether the user has
+  // typed anything so category changes only auto-rename while the name is
+  // still the auto-generated default.
+  const existingNamesList = existingAccountNames ?? [];
+  const initialCategoryForName = initial?.category ?? defaultCategory ?? "taxable";
+  const [name, setName] = useState<string>(
+    initial?.name ??
+      uniqueAccountName(DEFAULT_NAME_BY_CATEGORY[initialCategoryForName], existingNamesList),
+  );
+  const [userEditedName, setUserEditedName] = useState<boolean>(mode === "edit");
   const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix">("details");
   const [subType, setSubType] = useState(
     initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
@@ -472,7 +506,11 @@ export default function AddAccountForm({
               name="name"
               type="text"
               required
-              defaultValue={initial?.name ?? ""}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setUserEditedName(true);
+              }}
               placeholder="e.g., Fidelity Brokerage"
               className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
@@ -494,6 +532,9 @@ export default function AddAccountForm({
                   const firstSub = SUB_TYPE_BY_CATEGORY[newCat][0];
                   setSubType(firstSub);
                   setRmdEnabled(RMD_ELIGIBLE_SUB_TYPES.has(firstSub));
+                  if (!userEditedName) {
+                    setName(uniqueAccountName(DEFAULT_NAME_BY_CATEGORY[newCat], existingNamesList));
+                  }
                 }}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
