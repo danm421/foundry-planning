@@ -40,9 +40,17 @@ export interface ProjectionYearLike {
   accountLedgers: Record<string, { endingValue: number; beginningValue: number }>;
 }
 
+export interface EntityInfo {
+  id: string;
+  name: string;
+  /** "trust" | "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other" */
+  entityType: string;
+}
+
 export interface BuildViewModelInput {
   accounts: AccountLike[];
   liabilities: LiabilityLike[];
+  entities: EntityInfo[];
   projectionYears: ProjectionYearLike[];
   selectedYear: number;
   view: OwnershipView;
@@ -89,11 +97,27 @@ export interface BarChartPoint {
   liabilities: number;
 }
 
+/** One group per entity, populated only in the "entities" view. Each entity
+ * gets a card listing its assets and liabilities with per-entity subtotals. */
+export interface EntityGroup {
+  entityId: string;
+  entityName: string;
+  entityType: string;
+  assetRows: AssetRow[];
+  assetTotal: number;
+  liabilityRows: LiabilityRow[];
+  liabilityTotal: number;
+  netWorth: number;
+}
+
 export interface BalanceSheetViewModel {
   selectedYear: number;
   assetCategories: AssetCategoryGroup[];
   outOfEstateRows: AssetRow[];
   liabilityRows: LiabilityRow[];
+  /** Present only when view === "entities". Flat `assetCategories` and
+   * `liabilityRows` remain populated for fallback and for totals/charts. */
+  entityGroups?: EntityGroup[];
   totalAssets: number;
   totalLiabilities: number;
   netWorth: number;
@@ -171,7 +195,7 @@ function filteredLiabilityTotalForYear(
 // ── Main builder ─────────────────────────────────────────────────────────────
 
 export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewModel {
-  const { accounts, liabilities, projectionYears, selectedYear, view } = input;
+  const { accounts, liabilities, entities, projectionYears, selectedYear, view } = input;
 
   const yearData = projectionYears.find((y) => y.year === selectedYear);
   if (!yearData) throw new Error(`Projection year ${selectedYear} not found`);
@@ -278,6 +302,52 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     }))
     .filter((r) => r.balance > 0);
 
+  // ── Entity groups: populated only in the "entities" view ──
+  //
+  // Each entity gets a card listing its owned assets (across all categories)
+  // and liabilities, with per-entity subtotals. Entities with no rows are
+  // omitted so the panel doesn't render empty cards.
+
+  let entityGroups: EntityGroup[] | undefined;
+  if (view === "entities") {
+    // Gather all entity-owned asset rows across categories (in "entities"
+    // view these all land in `rows`, not `outRows`).
+    const allAssetRows = assetCategories.flatMap((c) => c.rows);
+    const assetsByEntity = new Map<string, AssetRow[]>();
+    for (const row of allAssetRows) {
+      if (!row.ownerEntityId) continue;
+      const list = assetsByEntity.get(row.ownerEntityId) ?? [];
+      list.push(row);
+      assetsByEntity.set(row.ownerEntityId, list);
+    }
+    const liabsByEntity = new Map<string, LiabilityRow[]>();
+    for (const row of liabilityRows) {
+      if (!row.ownerEntityId) continue;
+      const list = liabsByEntity.get(row.ownerEntityId) ?? [];
+      list.push(row);
+      liabsByEntity.set(row.ownerEntityId, list);
+    }
+
+    entityGroups = entities
+      .map((e) => {
+        const assetRows = assetsByEntity.get(e.id) ?? [];
+        const liabRows = liabsByEntity.get(e.id) ?? [];
+        const assetTotal = assetRows.reduce((s, r) => s + r.value, 0);
+        const liabilityTotal = liabRows.reduce((s, r) => s + r.balance, 0);
+        return {
+          entityId: e.id,
+          entityName: e.name,
+          entityType: e.entityType,
+          assetRows,
+          assetTotal,
+          liabilityRows: liabRows,
+          liabilityTotal,
+          netWorth: assetTotal - liabilityTotal,
+        };
+      })
+      .filter((g) => g.assetRows.length > 0 || g.liabilityRows.length > 0);
+  }
+
   // ── Totals ──
 
   const totalAssets =
@@ -360,6 +430,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     assetCategories,
     outOfEstateRows,
     liabilityRows,
+    entityGroups,
     totalAssets,
     totalLiabilities,
     netWorth,

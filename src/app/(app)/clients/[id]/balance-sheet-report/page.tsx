@@ -31,14 +31,18 @@ export default async function BalanceSheetReportPage({ params }: PageProps) {
     spouseName: client.spouseName ?? null,
   };
 
-  const entityLabels = entityRows.map((e) => ({ id: e.id, name: e.name }));
+  const entityInfos = entityRows.map((e) => ({
+    id: e.id,
+    name: e.name,
+    entityType: e.entityType,
+  }));
 
   return (
     <BalanceSheetReportView
       clientId={id}
       isMarried={isMarried}
       ownerNames={ownerNames}
-      entityLabels={entityLabels}
+      entities={entityInfos}
     />
   );
 }

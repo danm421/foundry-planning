@@ -1,6 +1,7 @@
 "use client";
 
 import type { BalanceSheetViewModel, LiabilityRow } from "./view-model";
+import type { OwnershipView } from "./ownership-filter";
 import { SCREEN_THEME } from "./tokens";
 import type { OwnerNames } from "@/lib/owner-labels";
 import { individualOwnerLabel } from "@/lib/owner-labels";
@@ -8,10 +9,21 @@ import type { YoyResult } from "./yoy";
 
 interface LiabilitiesPanelProps {
   viewModel: BalanceSheetViewModel;
+  view: OwnershipView;
   ownerNames: OwnerNames;
   showOwnerChips: boolean;
   entityLabelById: Map<string, string>;
 }
+
+const ENTITY_TYPE_LABEL: Record<string, string> = {
+  trust: "Trust",
+  llc: "LLC",
+  s_corp: "S-Corp",
+  c_corp: "C-Corp",
+  partnership: "Partnership",
+  foundation: "Foundation",
+  other: "Entity",
+};
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -66,10 +78,68 @@ function LiabilityRowView({
 
 export default function LiabilitiesPanel({
   viewModel,
+  view,
   ownerNames,
   showOwnerChips,
   entityLabelById,
 }: LiabilitiesPanelProps) {
+  // Entities-only view: one card per entity with that entity's liabilities
+  // plus a per-entity net-worth line.
+  if (view === "entities" && viewModel.entityGroups) {
+    return (
+      <div className="flex flex-col gap-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Liabilities &amp; Net Worth by Entity</h2>
+
+        {viewModel.entityGroups.length === 0 && (
+          <div className={`${SCREEN_THEME.surface.panel} p-6 text-center text-sm text-gray-500`}>
+            No entity-owned positions.
+          </div>
+        )}
+
+        {viewModel.entityGroups.map((group) => (
+          <div key={group.entityId} className={SCREEN_THEME.surface.panel}>
+            <div className={`${SCREEN_THEME.surface.panelHeader} flex items-center justify-between`}>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-semibold uppercase tracking-wide ${SCREEN_THEME.text.secondary}`}>
+                  {group.entityName}
+                </span>
+                <span className="rounded bg-gray-800 px-1.5 py-0.5 text-[10px] uppercase text-gray-400">
+                  {ENTITY_TYPE_LABEL[group.entityType] ?? group.entityType}
+                </span>
+              </div>
+              <span className="text-sm font-semibold text-gray-100">
+                {formatCurrency(group.liabilityTotal)}
+              </span>
+            </div>
+            <div className="px-4 pb-2 pt-1">
+              {group.liabilityRows.length === 0 ? (
+                <div className="py-2 text-center text-xs text-gray-500">No liabilities.</div>
+              ) : (
+                group.liabilityRows.map((row) => (
+                  <LiabilityRowView
+                    key={row.liabilityId}
+                    row={row}
+                    showOwnerChip={false}
+                    names={ownerNames}
+                    entityLabelById={entityLabelById}
+                  />
+                ))
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t border-gray-800 bg-gray-950/40 px-4 py-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-300">
+                Net Worth
+              </span>
+              <span className="text-sm font-semibold text-gray-100">
+                {formatCurrency(group.netWorth)}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   const hasRows = viewModel.liabilityRows.length > 0;
   return (
     <div className="flex flex-col gap-3">

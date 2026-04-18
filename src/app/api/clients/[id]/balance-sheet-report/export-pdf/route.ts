@@ -1,7 +1,7 @@
 // src/app/api/clients/[id]/balance-sheet-report/export-pdf/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, entities as entitiesTable } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { runProjection } from "@/engine/projection";
@@ -59,9 +59,17 @@ export async function POST(
     const apiData = await apiRes.json();
     const projectionYears = runProjection(apiData);
 
+    const entityRows = await db.select().from(entitiesTable).where(eq(entitiesTable.clientId, id));
+    const entityInfos = entityRows.map((e) => ({
+      id: e.id,
+      name: e.name,
+      entityType: e.entityType,
+    }));
+
     const viewModel = buildViewModel({
       accounts: apiData.accounts,
       liabilities: apiData.liabilities,
+      entities: entityInfos,
       projectionYears,
       selectedYear: year,
       view: viewParam,

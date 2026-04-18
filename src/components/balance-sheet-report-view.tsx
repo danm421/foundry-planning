@@ -11,13 +11,13 @@ import CenterColumn from "./balance-sheet-report/center-column";
 import { buildViewModel } from "./balance-sheet-report/view-model";
 import type { OwnershipView } from "./balance-sheet-report/ownership-filter";
 
-interface EntityLabel { id: string; name: string }
+interface EntityInfo { id: string; name: string; entityType: string }
 
 interface BalanceSheetReportViewProps {
   clientId: string;
   isMarried: boolean;
   ownerNames: OwnerNames;
-  entityLabels: EntityLabel[];
+  entities: EntityInfo[];
 }
 
 interface ProjectionApiResponse {
@@ -30,7 +30,7 @@ export default function BalanceSheetReportView({
   clientId,
   isMarried,
   ownerNames,
-  entityLabels,
+  entities,
 }: BalanceSheetReportViewProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,19 +70,20 @@ export default function BalanceSheetReportView({
   }, [apiData]);
 
   const entityLabelById = useMemo(() => {
-    return new Map(entityLabels.map((e) => [e.id, e.name]));
-  }, [entityLabels]);
+    return new Map(entities.map((e) => [e.id, e.name]));
+  }, [entities]);
 
   const viewModel = useMemo(() => {
     if (!apiData || selectedYear == null || projectionYears.length === 0) return null;
     return buildViewModel({
       accounts: apiData.accounts,
       liabilities: apiData.liabilities,
+      entities,
       projectionYears,
       selectedYear,
       view,
     });
-  }, [apiData, projectionYears, selectedYear, view]);
+  }, [apiData, entities, projectionYears, selectedYear, view]);
 
   async function handleExportPdf() {
     if (!viewModel || !apiData || selectedYear == null) return;
@@ -161,6 +162,7 @@ export default function BalanceSheetReportView({
         />
         <LiabilitiesPanel
           viewModel={viewModel}
+          view={view}
           ownerNames={ownerNames}
           showOwnerChips={isMarried || hasEntityAccounts}
           entityLabelById={entityLabelById}

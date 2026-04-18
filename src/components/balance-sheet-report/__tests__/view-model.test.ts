@@ -15,6 +15,10 @@ const liabilities = [
   { id: "l-card", name: "Credit Card", owner: "client" as const, ownerEntityId: null, linkedPropertyId: null },
 ];
 
+const entities = [
+  { id: "trust-1", name: "Smith Family IDGT", entityType: "trust" },
+];
+
 const projectionYear = {
   year: 2026,
   portfolioAssets: {
@@ -70,6 +74,7 @@ const priorYear = {
 const baseInput: BuildViewModelInput = {
   accounts,
   liabilities,
+  entities,
   projectionYears: [priorYear, projectionYear],
   selectedYear: 2026,
   view: "consolidated",
@@ -144,6 +149,34 @@ describe("buildViewModel (filtered views)", () => {
     expect(allRowAccountIds).toEqual(["a-trust"]);
     expect(vm.totalAssets).toBe(300_000);
     expect(vm.outOfEstateRows).toEqual([]); // entities view has no separate group
+  });
+
+  it("entities-only groups assets and liabilities by entity", () => {
+    const vm = buildViewModel({ ...baseInput, view: "entities" });
+    expect(vm.entityGroups).toBeDefined();
+    expect(vm.entityGroups).toHaveLength(1);
+    const g = vm.entityGroups![0];
+    expect(g.entityId).toBe("trust-1");
+    expect(g.entityName).toBe("Smith Family IDGT");
+    expect(g.entityType).toBe("trust");
+    expect(g.assetRows.map((r) => r.accountId)).toEqual(["a-trust"]);
+    expect(g.assetTotal).toBe(300_000);
+    expect(g.liabilityRows).toEqual([]);
+    expect(g.netWorth).toBe(300_000);
+  });
+
+  it("entityGroups is undefined when view !== entities", () => {
+    const vm = buildViewModel({ ...baseInput, view: "consolidated" });
+    expect(vm.entityGroups).toBeUndefined();
+  });
+
+  it("entityGroups omits entities with no rows", () => {
+    const extraEntities = [
+      ...entities,
+      { id: "entity-empty", name: "Unused LLC", entityType: "llc" },
+    ];
+    const vm = buildViewModel({ ...baseInput, entities: extraEntities, view: "entities" });
+    expect(vm.entityGroups?.map((g) => g.entityId)).toEqual(["trust-1"]);
   });
 
   it("joint view includes the joint mortgage in liabilities", () => {

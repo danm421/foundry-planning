@@ -139,6 +139,16 @@ function CategoryCard({
   );
 }
 
+const ENTITY_TYPE_LABEL: Record<string, string> = {
+  trust: "Trust",
+  llc: "LLC",
+  s_corp: "S-Corp",
+  c_corp: "C-Corp",
+  partnership: "Partnership",
+  foundation: "Foundation",
+  other: "Entity",
+};
+
 export default function AssetsPanel({
   viewModel,
   view,
@@ -146,6 +156,54 @@ export default function AssetsPanel({
   showOwnerChips,
   entityLabelById,
 }: AssetsPanelProps) {
+  // Entities-only view: one card per entity with that entity's asset rows.
+  if (view === "entities" && viewModel.entityGroups) {
+    return (
+      <div className="flex flex-col gap-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Assets by Entity</h2>
+
+        {viewModel.entityGroups.length === 0 && (
+          <div className={`${SCREEN_THEME.surface.panel} p-6 text-center text-sm text-gray-500`}>
+            No entity-owned assets.
+          </div>
+        )}
+
+        {viewModel.entityGroups.map((group) => (
+          <div key={group.entityId} className={SCREEN_THEME.surface.panel}>
+            <div className={`${SCREEN_THEME.surface.panelHeader} flex items-center justify-between`}>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-semibold uppercase tracking-wide ${SCREEN_THEME.text.secondary}`}>
+                  {group.entityName}
+                </span>
+                <span className="rounded bg-gray-800 px-1.5 py-0.5 text-[10px] uppercase text-gray-400">
+                  {ENTITY_TYPE_LABEL[group.entityType] ?? group.entityType}
+                </span>
+              </div>
+              <span className={`text-sm font-semibold ${SCREEN_THEME.text.primary}`}>
+                {formatCurrency(group.assetTotal)}
+              </span>
+            </div>
+            <div className="px-4 pb-3 pt-1">
+              {group.assetRows.length === 0 ? (
+                <div className="py-2 text-center text-xs text-gray-500">No assets.</div>
+              ) : (
+                group.assetRows.map((row) => (
+                  <AccountRow
+                    key={row.accountId}
+                    row={row}
+                    showOwnerChip={false}
+                    names={ownerNames}
+                    entityLabelById={entityLabelById}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Assets</h2>
