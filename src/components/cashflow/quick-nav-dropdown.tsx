@@ -34,13 +34,12 @@ export function QuickNavDropdown({
   }
 
   return (
-    <label className="inline-flex items-center gap-2 text-sm text-slate-300">
-      <span className="text-slate-400">Jump to</span>
+    <label className="inline-flex items-center gap-2 text-sm text-gray-300">
+      <span className="text-gray-400">Jump to</span>
       <select
-        aria-label="Jump to view"
         value={activeView}
         onChange={handleChange}
-        className="bg-slate-800 border border-slate-600 text-slate-100 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+        className="bg-gray-800 border border-gray-600 text-gray-100 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
       >
         {OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>
