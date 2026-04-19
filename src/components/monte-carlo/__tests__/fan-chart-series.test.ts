@@ -48,14 +48,22 @@ describe("buildFanChartSeries", () => {
     expect(datasets.find((d) => d.label === "Cash-flow projection")).toBeUndefined();
   });
 
-  it("clamps zero / negative values to 1 so log-scale can plot them", () => {
+  it("passes through zero and negative values untouched (linear scale renders them fine)", () => {
     const byYear: MonteCarloSummary["byYear"] = [
       { year: 2026, age: { client: 60 }, balance: { p5: -500, p20: -100, p50: 0, p80: 100, p95: 200, min: -1000, max: 300 }, cagrFromStart: null },
     ];
     const { datasets } = buildFanChartSeries(byYear, [0]);
-    expect(datasets[0].data).toEqual([100]);      // p80 already positive, unchanged
-    expect(datasets[1].data).toEqual([1]);        // p50 was 0, clamped to 1
-    expect(datasets[2].data).toEqual([1]);        // p20 was -100, clamped to 1
-    expect(datasets[3].data).toEqual([1]);        // deterministic was 0, clamped
+    expect(datasets[0].data).toEqual([100]);  // p80
+    expect(datasets[1].data).toEqual([0]);    // p50
+    expect(datasets[2].data).toEqual([-100]); // p20
+    expect(datasets[3].data).toEqual([0]);    // deterministic
+  });
+
+  it("fills the three percentile datasets to origin and leaves the cash-flow line unfilled", () => {
+    const { datasets } = buildFanChartSeries(mkByYear(3), [100, 200, 300]);
+    expect(datasets[0].fill).toBe("origin");  // above average
+    expect(datasets[1].fill).toBe("origin");  // median
+    expect(datasets[2].fill).toBe("origin");  // below average
+    expect(datasets[3].fill).toBe(false);     // cash-flow
   });
 });
