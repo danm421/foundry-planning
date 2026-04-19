@@ -10,6 +10,7 @@ import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultSavingsRuleRefs, resolveMilestone } from "@/lib/milestones";
 import SavingsRuleDialog, { type SavingsRuleRow } from "./savings-rule-dialog";
 import SavingsRulesList from "./savings-rules-list";
+import GrowthSourceRadio from "./growth-source-radio";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -317,6 +318,8 @@ export default function AddAccountForm({
   const [savingsEndYearRef, setSavingsEndYearRef] = useState<YearRef | null>(
     milestones ? defaultSavingsRefs.endYearRef : null,
   );
+  const [savingsGrowthSource, setSavingsGrowthSource] = useState<"custom" | "inflation">("custom");
+  const [savingsGrowthRateDisplay, setSavingsGrowthRateDisplay] = useState<string>("0");
 
   const subTypes = SUB_TYPE_BY_CATEGORY[category];
   const isRetirementAccount = category === "retirement" && RETIREMENT_SUB_TYPES.has(subType);
@@ -446,6 +449,10 @@ export default function AddAccountForm({
         if (savingsAmount && Number(savingsAmount) > 0) {
           const matchPct = data.get("employerMatchPct") as string;
           const matchCap = data.get("employerMatchCap") as string;
+          const savingsGrowthRateDecimal =
+            savingsGrowthSource === "custom"
+              ? String(Number(savingsGrowthRateDisplay ?? "0") / 100)
+              : String(resolvedInflationRate);
           const savingsBody = {
             accountId: account.id,
             annualAmount: savingsAmount,
@@ -453,6 +460,8 @@ export default function AddAccountForm({
             endYear: String(savingsEndYear),
             startYearRef: savingsStartYearRef,
             endYearRef: savingsEndYearRef,
+            growthRate: savingsGrowthRateDecimal,
+            growthSource: savingsGrowthSource,
             employerMatchPct: showEmployerMatch && matchPct ? String(Number(matchPct) / 100) : null,
             employerMatchCap: showEmployerMatch && matchCap ? String(Number(matchCap) / 100) : null,
           };
@@ -880,6 +889,21 @@ export default function AddAccountForm({
                   />
                 </div>
               )}
+
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-300">Growth</label>
+                <div className="mt-1">
+                  <GrowthSourceRadio
+                    value={savingsGrowthSource}
+                    customRate={savingsGrowthRateDisplay}
+                    resolvedInflationRate={resolvedInflationRate}
+                    onChange={(next) => {
+                      setSavingsGrowthSource(next.value);
+                      setSavingsGrowthRateDisplay(next.customRate);
+                    }}
+                  />
+                </div>
+              </div>
             </div>
 
             {showEmployerMatch && (
