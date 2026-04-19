@@ -11,6 +11,16 @@ describe("activeViewFromDrillPath", () => {
     expect(activeViewFromDrillPath([])).toBe("base");
   });
 
+  it("returns 'income' when drillPath[0] is 'income'", () => {
+    expect(activeViewFromDrillPath(["income"])).toBe("income");
+    expect(activeViewFromDrillPath(["income", "detail"])).toBe("income");
+  });
+
+  it("returns 'expenses' when drillPath[0] is 'expenses'", () => {
+    expect(activeViewFromDrillPath(["expenses"])).toBe("expenses");
+    expect(activeViewFromDrillPath(["expenses", "detail"])).toBe("expenses");
+  });
+
   it("returns 'withdrawals' when drillPath[0] is 'cashflow'", () => {
     expect(activeViewFromDrillPath(["cashflow"])).toBe("withdrawals");
     expect(activeViewFromDrillPath(["cashflow", "detail"])).toBe("withdrawals");
@@ -21,9 +31,7 @@ describe("activeViewFromDrillPath", () => {
     expect(activeViewFromDrillPath(["portfolio", "growth"])).toBe("assets");
   });
 
-  it("returns 'base' for sub-drills of base (income, expenses, savings, growth, activity, other_income_detail)", () => {
-    expect(activeViewFromDrillPath(["income"])).toBe("base");
-    expect(activeViewFromDrillPath(["expenses"])).toBe("base");
+  it("returns 'base' for sub-drills of base (savings, growth, activity, other_income_detail)", () => {
     expect(activeViewFromDrillPath(["savings"])).toBe("base");
     expect(activeViewFromDrillPath(["growth"])).toBe("base");
     expect(activeViewFromDrillPath(["activity"])).toBe("base");
@@ -40,6 +48,14 @@ describe("drillPathForView", () => {
     expect(drillPathForView("base")).toEqual([]);
   });
 
+  it("maps 'income' to ['income']", () => {
+    expect(drillPathForView("income")).toEqual(["income"]);
+  });
+
+  it("maps 'expenses' to ['expenses']", () => {
+    expect(drillPathForView("expenses")).toEqual(["expenses"]);
+  });
+
   it("maps 'withdrawals' to ['cashflow']", () => {
     expect(drillPathForView("withdrawals")).toEqual(["cashflow"]);
   });
@@ -52,6 +68,14 @@ describe("drillPathForView", () => {
 describe("viewFromSearchParam", () => {
   it("returns 'base' for null", () => {
     expect(viewFromSearchParam(null)).toBe("base");
+  });
+
+  it("returns 'income' for 'income'", () => {
+    expect(viewFromSearchParam("income")).toBe("income");
+  });
+
+  it("returns 'expenses' for 'expenses'", () => {
+    expect(viewFromSearchParam("expenses")).toBe("expenses");
   });
 
   it("returns 'withdrawals' for 'withdrawals'", () => {
@@ -73,6 +97,14 @@ describe("viewFromSearchParam", () => {
 describe("searchParamForView", () => {
   it("returns null for 'base' (no param in URL)", () => {
     expect(searchParamForView("base")).toBeNull();
+  });
+
+  it("returns 'income' for 'income'", () => {
+    expect(searchParamForView("income")).toBe("income");
+  });
+
+  it("returns 'expenses' for 'expenses'", () => {
+    expect(searchParamForView("expenses")).toBe("expenses");
   });
 
   it("returns 'withdrawals' for 'withdrawals'", () => {

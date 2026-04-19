@@ -12,6 +12,8 @@ type DropdownValue = QuickNavView | "taxes";
 
 const OPTIONS: { value: DropdownValue; label: string }[] = [
   { value: "base", label: "Base Cash Flow" },
+  { value: "income", label: "Income" },
+  { value: "expenses", label: "Expenses" },
   { value: "withdrawals", label: "Withdrawals" },
   { value: "assets", label: "Assets" },
   { value: "taxes", label: "Taxes" },
