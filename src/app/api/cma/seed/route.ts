@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { assetClasses, modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
+import { assetClasses, modelPortfolios, modelPortfolioAllocations, assetClassCorrelations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
-import { DEFAULT_ASSET_CLASSES, DEFAULT_MODEL_PORTFOLIOS } from "@/lib/cma-seed";
+import { DEFAULT_ASSET_CLASSES, DEFAULT_MODEL_PORTFOLIOS, DEFAULT_CORRELATIONS } from "@/lib/cma-seed";
+import { canonicalPair } from "@/engine/monteCarlo/correlation-matrix";
 
 // POST /api/cma/seed — seed default asset classes and model portfolios for this firm.
 // Only runs if the firm has zero asset classes (first visit).
@@ -90,8 +91,43 @@ export async function POST() {
       }
     }
 
+    // Seed pairwise correlations. Rows are written in canonical (a < b) order
+    // so the unique index guarantees one row per pair. Skipped entirely if the
+    // firm already has any correlations — an advisor may have customized them.
+    const existingCorrelations = await db
+      .select({ id: assetClassCorrelations.id })
+      .from(assetClassCorrelations)
+      .innerJoin(assetClasses, eq(assetClassCorrelations.assetClassIdA, assetClasses.id))
+      .where(eq(assetClasses.firmId, firmId))
+      .limit(1);
+
+    let correlationsSeeded = 0;
+    if (existingCorrelations.length === 0) {
+      const correlationRows = DEFAULT_CORRELATIONS.flatMap((c) => {
+        const idA = nameToId.get(c.classA);
+        const idB = nameToId.get(c.classB);
+        if (!idA || !idB || idA === idB) return [];
+        const [a, b] = canonicalPair(idA, idB);
+        return [{ assetClassIdA: a, assetClassIdB: b, correlation: String(c.correlation) }];
+      });
+      if (correlationRows.length > 0) {
+        await db
+          .insert(assetClassCorrelations)
+          .values(correlationRows)
+          .onConflictDoNothing({
+            target: [assetClassCorrelations.assetClassIdA, assetClassCorrelations.assetClassIdB],
+          });
+        correlationsSeeded = correlationRows.length;
+      }
+    }
+
     return NextResponse.json(
-      { seeded: true, assetClasses: allClasses.length, portfolios: allPortfolios.length },
+      {
+        seeded: true,
+        assetClasses: allClasses.length,
+        portfolios: allPortfolios.length,
+        correlations: correlationsSeeded,
+      },
       { status: 201 }
     );
   } catch (err) {

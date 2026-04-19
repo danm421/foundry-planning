@@ -97,7 +97,21 @@ function buildDefaultWithdrawalStrategy(
   return strategy;
 }
 
-export function runProjection(data: ClientData): ProjectionYear[] {
+export interface ProjectionOptions {
+  /**
+   * Monte Carlo return injection. When provided and the override returns a
+   * finite number, that rate is used instead of `acct.growthRate` for the
+   * account's growth pass in that year. When the override returns `undefined`,
+   * the account falls back to its fixed `growthRate` (per the eMoney
+   * whitepaper's "custom growth rates remain fixed for Monte Carlo" rule).
+   *
+   * Left unset, `runProjection` behaves exactly as before — deterministic
+   * path is byte-identical.
+   */
+  returnsOverride?: (year: number, accountId: string) => number | undefined;
+}
+
+export function runProjection(data: ClientData, options?: ProjectionOptions): ProjectionYear[] {
   const { client, planSettings } = data;
   const years: ProjectionYear[] = [];
 
@@ -396,7 +410,12 @@ export function runProjection(data: ClientData): ProjectionYear[] {
 
     for (const acct of workingAccounts) {
       const currentBalance = accountBalances[acct.id] ?? 0;
-      const growth = currentBalance * acct.growthRate;
+      const overriddenRate = options?.returnsOverride?.(year, acct.id);
+      const effectiveGrowthRate =
+        overriddenRate != null && Number.isFinite(overriddenRate)
+          ? overriddenRate
+          : acct.growthRate;
+      const growth = currentBalance * effectiveGrowthRate;
 
       // Defensive: ensure a ledger exists (applyAssetPurchases initializes one
       // for new accounts; this covers any edge case where it didn't).
@@ -447,7 +466,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       accountLedgers[acct.id].endingValue += growth;
       accountLedgers[acct.id].entries.push({
         category: "growth",
-        label: `Growth (${(acct.growthRate * 100).toFixed(2)}%)`,
+        label: `Growth (${(effectiveGrowthRate * 100).toFixed(2)}%)`,
         amount: growth,
       });
       if (growthDetail) accountLedgers[acct.id].growthDetail = growthDetail;
