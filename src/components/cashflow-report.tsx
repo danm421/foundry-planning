@@ -26,6 +26,15 @@ import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear, AccountLedger } from "@/engine";
 import { TaxDetailModal } from "@/components/cashflow/tax-detail-modal";
 import { YearRangeSlider } from "@/components/cashflow/year-range-slider";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import {
+  activeViewFromDrillPath,
+  drillPathForView,
+  viewFromSearchParam,
+  searchParamForView,
+  type QuickNavView,
+} from "@/components/cashflow/quick-nav-utils";
+import { QuickNavDropdown } from "@/components/cashflow/quick-nav-dropdown";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
 
@@ -246,7 +255,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const [years, setYears] = useState<ProjectionYear[]>([]);
   const [accountNames, setAccountNames] = useState<Record<string, string>>({});
   const [clientData, setClientData] = useState<ClientData | null>(null);
-  const [drillPath, setDrillPath] = useState<string[]>([]);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [drillPath, setDrillPath] = useState<string[]>(() =>
+    drillPathForView(viewFromSearchParam(searchParams?.get("view") ?? null))
+  );
   const [chartView, setChartView] = useState<"portfolio" | "cashflow">("portfolio");
   const [ledgerModal, setLedgerModal] = useState<LedgerModal | null>(null);
   const [sourceDetailModal, setSourceDetailModal] = useState<{
@@ -338,6 +352,19 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   function drillTo(index: number) {
     setDrillPath((prev) => prev.slice(0, index));
+  }
+
+  const activeView: QuickNavView = activeViewFromDrillPath(drillPath);
+
+  function handleSelectView(view: QuickNavView) {
+    setDrillPath(drillPathForView(view));
+    const param = searchParamForView(view);
+    const queryString = param ? `?view=${param}` : "";
+    router.replace(`${pathname}${queryString}`, { scroll: false });
+  }
+
+  function handleOpenTaxes() {
+    setShowTaxDetailModal(true);
   }
 
   // ── Chart helpers ──────────────────────────────────────────────────────────
@@ -1583,34 +1610,41 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         </div>
       </div>
 
-      {/* Breadcrumb navigation */}
-      {drillPath.length > 0 && (
-        <div className="mb-3 flex items-center gap-1 text-sm">
-          <button
-            onClick={() => drillTo(0)}
-            className="text-blue-500 hover:text-blue-400 font-medium"
-          >
-            Cash Flow
-          </button>
-          {drillPath.map((segment, i) => (
-            <span key={i} className="flex items-center gap-1">
-              <span className="text-gray-500">/</span>
-              {i < drillPath.length - 1 ? (
-                <button
-                  onClick={() => drillTo(i + 1)}
-                  className="text-blue-500 hover:text-blue-400 font-medium"
-                >
-                  {DRILL_LABELS[segment] ?? segment}
-                </button>
-              ) : (
-                <span className="text-gray-100 font-medium">
-                  {DRILL_LABELS[segment] ?? segment}
-                </span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
+      <div className="flex items-center gap-4 flex-wrap">
+        <QuickNavDropdown
+          activeView={activeView}
+          onSelectView={handleSelectView}
+          onOpenTaxes={handleOpenTaxes}
+        />
+        {/* Breadcrumb navigation */}
+        {drillPath.length > 0 && (
+          <div className="mb-3 flex items-center gap-1 text-sm">
+            <button
+              onClick={() => drillTo(0)}
+              className="text-blue-500 hover:text-blue-400 font-medium"
+            >
+              Cash Flow
+            </button>
+            {drillPath.map((segment, i) => (
+              <span key={i} className="flex items-center gap-1">
+                <span className="text-gray-500">/</span>
+                {i < drillPath.length - 1 ? (
+                  <button
+                    onClick={() => drillTo(i + 1)}
+                    className="text-blue-500 hover:text-blue-400 font-medium"
+                  >
+                    {DRILL_LABELS[segment] ?? segment}
+                  </button>
+                ) : (
+                  <span className="text-gray-100 font-medium">
+                    {DRILL_LABELS[segment] ?? segment}
+                  </span>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Table */}
       <div
