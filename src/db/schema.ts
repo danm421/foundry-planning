@@ -41,6 +41,8 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
   "roth_ira",
   "401k",
   "roth_401k",
+  "403b",
+  "roth_403b",
   "529",
   "trust",
   "other",

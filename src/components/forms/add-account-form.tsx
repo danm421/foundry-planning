@@ -84,7 +84,7 @@ interface AddAccountFormProps {
 const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
   taxable: ["brokerage", "trust", "other"],
   cash: ["savings", "checking", "other"],
-  retirement: ["traditional_ira", "roth_ira", "401k", "roth_401k", "529", "other"],
+  retirement: ["traditional_ira", "roth_ira", "401k", "roth_401k", "403b", "roth_403b", "529", "other"],
   real_estate: ["primary_residence", "rental_property", "commercial_property"],
   business: ["sole_proprietorship", "partnership", "s_corp", "c_corp", "llc"],
   life_insurance: ["term", "whole_life", "universal_life", "variable_life"],
@@ -98,6 +98,8 @@ const SUB_TYPE_LABELS: Record<string, string> = {
   roth_ira: "Roth IRA",
   "401k": "401(k)",
   roth_401k: "Roth 401(k)",
+  "403b": "403(b)",
+  roth_403b: "Roth 403(b)",
   "529": "529 Plan",
   trust: "Trust",
   other: "Other",
@@ -124,8 +126,9 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
   life_insurance: "Life Insurance",
 };
 
-const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "roth_401k", "529"]);
-const RMD_ELIGIBLE_SUB_TYPES = new Set(["traditional_ira", "401k"]);
+const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "roth_401k", "403b", "roth_403b", "529"]);
+const RMD_ELIGIBLE_SUB_TYPES = new Set(["traditional_ira", "401k", "403b"]);
+const EMPLOYER_MATCH_SUB_TYPES = new Set(["401k", "roth_401k", "403b", "roth_403b", "other"]);
 
 const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   taxable: "Taxable Account",
@@ -316,10 +319,13 @@ export default function AddAccountForm({
 
   const subTypes = SUB_TYPE_BY_CATEGORY[category];
   const isRetirementAccount = category === "retirement" && RETIREMENT_SUB_TYPES.has(subType);
+  const showEmployerMatch =
+    category === "retirement" && EMPLOYER_MATCH_SUB_TYPES.has(subType);
   const showRmdCheckbox =
     category === "retirement" &&
     (subType === "traditional_ira" ||
       subType === "401k" ||
+      subType === "403b" ||
       subType === "roth_ira" ||
       subType === "roth_401k" ||
       subType === "529");
@@ -448,8 +454,8 @@ export default function AddAccountForm({
             endYear: String(savingsEndYear),
             startYearRef: savingsStartYearRef,
             endYearRef: savingsEndYearRef,
-            employerMatchPct: matchPct ? String(Number(matchPct) / 100) : null,
-            employerMatchCap: matchCap ? String(Number(matchCap) / 100) : null,
+            employerMatchPct: showEmployerMatch && matchPct ? String(Number(matchPct) / 100) : null,
+            employerMatchCap: showEmployerMatch && matchCap ? String(Number(matchCap) / 100) : null,
             annualLimit: limit || null,
           };
 
@@ -923,7 +929,7 @@ export default function AddAccountForm({
               )}
             </div>
 
-            {isRetirementAccount && (
+            {showEmployerMatch && (
               <div className="grid grid-cols-2 gap-4 border-t border-gray-700 pt-4">
                 <p className="col-span-2 text-xs font-medium uppercase tracking-wider text-gray-400">Employer Match</p>
                 <div>
@@ -1048,7 +1054,7 @@ export default function AddAccountForm({
     {isEdit && srDialogOpen && (
       <SavingsRuleDialog
         clientId={clientId}
-        accounts={[{ id: initial!.id, name: initial!.name }]}
+        accounts={[{ id: initial!.id, name: initial!.name, category: initial!.category, subType: initial!.subType }]}
         open={srDialogOpen}
         onOpenChange={(o) => { setSrDialogOpen(o); if (!o) setSrDialogEditing(undefined); }}
         editing={srDialogEditing}

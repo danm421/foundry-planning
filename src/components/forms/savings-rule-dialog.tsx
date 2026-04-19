@@ -13,7 +13,11 @@ import type { YearRef, ClientMilestones } from "@/lib/milestones";
 export interface SavingsRuleAccount {
   id: string;
   name: string;
+  category: string;
+  subType: string;
 }
+
+const EMPLOYER_MATCH_SUB_TYPES = new Set(["401k", "roth_401k", "403b", "roth_403b", "other"]);
 
 export interface SavingsRuleRow {
   id: string;
@@ -105,6 +109,14 @@ export default function SavingsRuleDialog({
   const srClientFirstName = ownerNames?.clientName?.split(" ")[0];
   const srSpouseFirstName = ownerNames?.spouseName?.split(" ")[0];
 
+  const [accountId, setAccountId] = useState<string>(
+    editing?.accountId ?? (accounts[0]?.id ?? "")
+  );
+  const selectedAccount = accounts.find((a) => a.id === accountId);
+  const showEmployerMatch =
+    selectedAccount?.category === "retirement" &&
+    EMPLOYER_MATCH_SUB_TYPES.has(selectedAccount?.subType ?? "");
+
   // Match mode: "none" | "percent" | "flat". Inferred from what's populated on the
   // rule being edited; defaults to "none" for new rules.
   type MatchMode = "none" | "percent" | "flat";
@@ -137,10 +149,10 @@ export default function SavingsRuleDialog({
       growthRate: String(Number(growthRateDisplay) / 100),
       growthSource,
       employerMatchPct:
-        matchMode === "percent" && matchPct ? String(Number(matchPct) / 100) : null,
+        showEmployerMatch && matchMode === "percent" && matchPct ? String(Number(matchPct) / 100) : null,
       employerMatchCap:
-        matchMode === "percent" && matchCap ? String(Number(matchCap) / 100) : null,
-      employerMatchAmount: matchMode === "flat" && matchAmount ? matchAmount : null,
+        showEmployerMatch && matchMode === "percent" && matchCap ? String(Number(matchCap) / 100) : null,
+      employerMatchAmount: showEmployerMatch && matchMode === "flat" && matchAmount ? matchAmount : null,
       annualLimit: limit || null,
     };
 
@@ -208,7 +220,8 @@ export default function SavingsRuleDialog({
               id="sr-account"
               name="accountId"
               required
-              defaultValue={editing?.accountId ?? (accounts[0]?.id ?? "")}
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
               className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               {accounts.map((a) => (
@@ -254,7 +267,7 @@ export default function SavingsRuleDialog({
                 />
               </div>
             </div>
-            <div className="col-span-2 rounded-md border border-gray-800 bg-gray-900/60 p-3">
+            {showEmployerMatch && <div className="col-span-2 rounded-md border border-gray-800 bg-gray-900/60 p-3">
               <div className="mb-2 flex items-center gap-4">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
                   Employer Match
@@ -331,7 +344,7 @@ export default function SavingsRuleDialog({
                   </p>
                 </div>
               )}
-            </div>
+            </div>}
             {clientInfo?.milestones ? (
               <MilestoneYearPicker
                 name="startYear"
