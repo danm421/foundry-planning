@@ -40,6 +40,27 @@ export default function TimelineReportView({ clientId }: Props) {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
+  const visibleYearsRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const year = Number((entry.target as HTMLElement).dataset.timelineYear);
+          if (!Number.isFinite(year)) continue;
+          if (entry.isIntersecting) visibleYearsRef.current.add(year);
+          else visibleYearsRef.current.delete(year);
+        }
+        const years = [...visibleYearsRef.current].sort((a, b) => a - b);
+        if (years.length === 0) setVisibleRange(null);
+        else setVisibleRange({ start: years[0], end: years[years.length - 1] });
+      },
+      { threshold: 0.1 },
+    );
+    for (const el of segmentRefs.current.values()) observer.observe(el);
+    return () => observer.disconnect();
+  }, [projection]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
