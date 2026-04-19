@@ -6,6 +6,15 @@ function currency(n: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 }
 
+function transferModeLabel(mode: string): string {
+  switch (mode) {
+    case "one_time": return "one-time";
+    case "recurring": return "recurring";
+    case "scheduled": return "scheduled";
+    default: return mode.replace(/_/g, " ");
+  }
+}
+
 function inRange(year: number, projection: ProjectionYear[]): boolean {
   if (projection.length === 0) return false;
   return year >= projection[0].year && year <= projection[projection.length - 1].year;
@@ -78,11 +87,11 @@ export function detectTransactionEvents(
       category: "transaction",
       subject: "joint",
       title: `${t.name} begins`,
-      supportingFigure: `${currency(t.amount)} (${t.mode})`,
+      supportingFigure: `${currency(t.amount)} · ${transferModeLabel(t.mode)}`,
       details: [
         { label: "From", value: t.sourceAccountId },
         { label: "To", value: t.targetAccountId },
-        { label: "Mode", value: t.mode },
+        { label: "Mode", value: transferModeLabel(t.mode) },
         { label: "Amount", value: currency(t.amount) },
       ],
     });
