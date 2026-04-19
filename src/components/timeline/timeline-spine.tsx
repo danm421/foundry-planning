@@ -76,6 +76,8 @@ export default function TimelineSpine({
   };
 
   // Precompute per-year offsets before render (avoid mutation inside .map).
+  // When coupled: only joint events alternate (primary/spouse are side-fixed), so we count joint only.
+  // When uncoupled: every event alternates by index, so we count all prior events.
   const yearPlan = useMemo(
     () =>
       projection.reduce<
@@ -83,18 +85,30 @@ export default function TimelineSpine({
       >((acc, py) => {
         const events = eventsByYear.get(py.year) ?? [];
         const prev = acc[acc.length - 1];
+        const countFn = (e: TimelineEvent) =>
+          isCoupled ? e.subject === "joint" : true;
         const alternateOffset = prev
-          ? prev.alternateOffset +
-            prev.events.filter((e) => e.subject !== "joint").length
+          ? prev.alternateOffset + prev.events.filter(countFn).length
           : 0;
         acc.push({ py, events, alternateOffset });
         return acc;
       }, []),
-    [projection, eventsByYear],
+    [projection, eventsByYear, isCoupled],
   );
 
   return (
     <div ref={containerRef} className="relative mt-6 flex flex-col">
+      {/* Thin gradient spine line behind the year segments */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-0 h-full w-[2px] -translate-x-1/2"
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(56,189,248,0.6) 0%, rgba(96,165,250,0.4) 50%, rgba(232,121,249,0.3) 100%)",
+          filter: "drop-shadow(0 0 6px rgba(96,165,250,0.25))",
+        }}
+      />
+
       <div
         className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2"
         style={{ width: 80, height: dims.height }}
@@ -106,7 +120,7 @@ export default function TimelineSpine({
             orientation="vertical"
             width={80}
             height={dims.height}
-            strokeClass="stroke-blue-500/40"
+            strokeClass="stroke-blue-400/60"
           />
         )}
         {dims.height > 0 &&
@@ -122,18 +136,20 @@ export default function TimelineSpine({
                 className="absolute left-1/2 -translate-x-1/2 rounded-full transition-all"
                 style={{
                   top,
-                  width: isHover ? 10 : 5,
-                  height: isHover ? 10 : 5,
-                  marginTop: isHover ? -5 : -2.5,
+                  width: isHover ? 12 : 6,
+                  height: isHover ? 12 : 6,
+                  marginTop: isHover ? -6 : -3,
                   backgroundColor: color,
-                  boxShadow: isHover ? `0 0 0 3px ${color}33` : undefined,
+                  boxShadow: isHover
+                    ? `0 0 0 4px ${color}33, 0 0 12px ${color}88`
+                    : `0 0 6px ${color}66`,
                 }}
               />
             );
           })}
       </div>
 
-      {yearPlan.map(({ py, events, alternateOffset }) => {
+      {yearPlan.map(({ py, events, alternateOffset }, rowIndex) => {
         const ageLabel = py.ages.spouse != null
           ? `Ages ${py.ages.client} / ${py.ages.spouse}`
           : `Age ${py.ages.client}`;
@@ -150,8 +166,9 @@ export default function TimelineSpine({
             subjectLabelFor={subjectLabelFor}
             isCoupled={isCoupled}
             registerSegmentRef={registerSegmentRef}
-            alternate={!isCoupled}
+            alternate={true}
             alternateOffset={alternateOffset}
+            rowIndex={rowIndex}
           />
         );
       })}

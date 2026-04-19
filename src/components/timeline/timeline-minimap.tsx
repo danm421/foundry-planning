@@ -55,7 +55,7 @@ export default function TimelineMinimap({
     <div
       ref={ref}
       onClick={handleClick}
-      className="sticky top-[64px] z-20 w-full cursor-pointer rounded-md border border-gray-800 bg-gray-900/80 p-2 backdrop-blur"
+      className="sticky top-[64px] z-20 w-full cursor-pointer rounded-lg border border-slate-800 bg-slate-900/70 p-2 backdrop-blur-md font-[family-name:var(--font-body)]"
     >
       <div className="relative" style={{ height }}>
         <div className="absolute inset-0">
@@ -71,7 +71,7 @@ export default function TimelineMinimap({
 
         {visibleYearRange && (
           <div
-            className="absolute top-0 h-full rounded bg-blue-500/10 ring-1 ring-blue-400/50"
+            className="absolute top-0 h-full rounded-lg bg-white/5 ring-1 ring-sky-400/50 shadow-[0_0_14px_rgba(56,189,248,0.3)]"
             style={{
               left: `${(xFor(visibleYearRange.start) / width) * 100}%`,
               width: `${((xFor(visibleYearRange.end) - xFor(visibleYearRange.start)) / width) * 100}%`,
@@ -79,20 +79,26 @@ export default function TimelineMinimap({
           />
         )}
 
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-1.5">
-          {events.map((e) => (
-            <span
-              key={e.id}
-              className="absolute bottom-0 h-1.5 w-[2px] rounded"
-              style={{
-                left: `${(xFor(e.year) / width) * 100}%`,
-                backgroundColor: CATEGORY_HEX[e.category],
-              }}
-            />
-          ))}
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-2.5">
+          {events.map((e) => {
+            const color = CATEGORY_HEX[e.category];
+            return (
+              <span
+                key={e.id}
+                className="absolute bottom-0 rounded-full"
+                style={{
+                  left: `${(xFor(e.year) / width) * 100}%`,
+                  width: "1.5px",
+                  height: "10px",
+                  backgroundColor: color,
+                  boxShadow: `0 0 6px ${color}`,
+                }}
+              />
+            );
+          })}
         </div>
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-gray-500">
+      <div className="mt-1 flex justify-between text-[10px] tabular-nums text-gray-500">
         <span>{firstYear}</span>
         <span>{lastYear}</span>
       </div>

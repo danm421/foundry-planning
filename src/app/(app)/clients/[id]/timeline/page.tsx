@@ -2,8 +2,24 @@ import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
+import { Fraunces, Outfit } from "next/font/google";
 import { getOrgId } from "@/lib/db-helpers";
 import TimelineReportView from "@/components/timeline-report-view";
+
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  axes: ["opsz"],
+  variable: "--font-display",
+  display: "swap",
+});
+
+const outfit = Outfit({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600"],
+  variable: "--font-body",
+  display: "swap",
+});
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -20,5 +36,9 @@ export default async function TimelineReportPage({ params }: PageProps) {
 
   if (!client) notFound();
 
-  return <TimelineReportView clientId={id} />;
+  return (
+    <div className={`${fraunces.variable} ${outfit.variable}`}>
+      <TimelineReportView clientId={id} />
+    </div>
+  );
 }
