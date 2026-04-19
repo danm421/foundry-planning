@@ -7,6 +7,34 @@ import GrowthInflationForm from "@/components/forms/growth-inflation-form";
 import WithdrawalStrategySection from "@/components/withdrawal-strategy-section";
 import type { WithdrawalAccount, WithdrawalStrategy } from "@/components/withdrawal-strategy-section";
 import type { ClientMilestones } from "@/lib/milestones";
+import { DeductionsClient } from "./deductions-client";
+import type {
+  DerivedRow,
+  ExpenseDeductionRow,
+  MortgageInterestRow,
+  PropertyTaxRow,
+} from "@/components/deductions-derived-summary";
+
+export interface DeductionsTabData {
+  derivedRows: DerivedRow[];
+  expenseDeductionRows: ExpenseDeductionRow[];
+  mortgageRows: MortgageInterestRow[];
+  propertyTaxRows: PropertyTaxRow[];
+  itemizedRows: {
+    id: string;
+    type: "charitable" | "above_line" | "below_line" | "property_tax";
+    name: string | null;
+    owner: "client" | "spouse" | "joint";
+    annualAmount: number;
+    growthRate: number;
+    startYear: number;
+    endYear: number;
+    startYearRef: string | null;
+    endYearRef: string | null;
+  }[];
+  currentYear: number;
+  saltCap: number;
+}
 
 export interface AssumptionsSettings {
   flatFederalRate: string;
@@ -49,12 +77,14 @@ interface AssumptionsClientProps {
   spouseFirstName?: string;
   resolvedInflationRate: number;
   hasInflationAssetClass: boolean;
+  deductionsData: DeductionsTabData;
 }
 
 const TABS = [
   { id: "tax-rates", label: "Tax Rates" },
   { id: "growth-inflation", label: "Growth & Inflation" },
   { id: "withdrawal", label: "Withdrawal Strategy" },
+  { id: "deductions", label: "Deductions" },
 ];
 
 export default function AssumptionsClient({
@@ -68,6 +98,7 @@ export default function AssumptionsClient({
   spouseFirstName,
   resolvedInflationRate,
   hasInflationAssetClass,
+  deductionsData,
 }: AssumptionsClientProps) {
   const [activeTab, setActiveTab] = useState("tax-rates");
 
@@ -113,6 +144,21 @@ export default function AssumptionsClient({
             clientId={clientId}
             accounts={accounts}
             initialStrategies={withdrawalStrategies}
+            milestones={milestones}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
+          />
+        )}
+        {activeTab === "deductions" && (
+          <DeductionsClient
+            clientId={clientId}
+            derivedRows={deductionsData.derivedRows}
+            expenseDeductionRows={deductionsData.expenseDeductionRows}
+            mortgageRows={deductionsData.mortgageRows}
+            propertyTaxRows={deductionsData.propertyTaxRows}
+            itemizedRows={deductionsData.itemizedRows}
+            currentYear={deductionsData.currentYear}
+            saltCap={deductionsData.saltCap}
             milestones={milestones}
             clientFirstName={clientFirstName}
             spouseFirstName={spouseFirstName}

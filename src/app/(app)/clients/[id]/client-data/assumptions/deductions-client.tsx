@@ -51,9 +51,7 @@ export function DeductionsClient({
   spouseFirstName,
 }: DeductionsClientProps) {
   return (
-    <div className="space-y-6 p-6">
-      <h1 className="text-2xl font-bold text-gray-100">Deductions</h1>
-
+    <div className="space-y-6">
       <DeductionsDerivedSummary
         savingsRows={derivedRows}
         expenseRows={expenseDeductionRows}

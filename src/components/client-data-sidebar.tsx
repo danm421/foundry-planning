@@ -73,23 +73,12 @@ function TechniquesIcon() {
   );
 }
 
-function DeductionsIcon() {
-  return (
-    <svg className={ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3v18" />
-      <path d="M5 8c2.5 0 4-1 4-3 0 2 1.5 3 4 3" />
-      <path d="M5 16c2.5 0 4 1 4 3 0-2 1.5-3 4-3" />
-      <path d="M19 12h-7" />
-    </svg>
-  );
-}
 
 const TABS: SidebarTab[] = [
   { label: "Family", href: "family", icon: <FamilyIcon /> },
   { label: "Net Worth", href: "balance-sheet", icon: <BalanceSheetIcon /> },
   { label: "Inflows & Outflows", href: "income-expenses", icon: <CashflowIcon /> },
   { label: "Techniques", href: "techniques", icon: <TechniquesIcon /> },
-  { label: "Deductions", href: "deductions", icon: <DeductionsIcon /> },
   { label: "Assumptions", href: "assumptions", icon: <AssumptionsIcon /> },
   { label: "Import", href: "import", icon: <ImportIcon /> },
 ];
