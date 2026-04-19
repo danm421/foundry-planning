@@ -1,6 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  ASSET_TYPE_IDS,
+  ASSET_TYPE_LABELS,
+  type AssetTypeId,
+} from "@/lib/investments/asset-types";
 
 interface AssetClass {
   id: string;
@@ -13,6 +18,7 @@ interface AssetClass {
   pctQualifiedDividends: string;
   pctTaxExempt: string;
   sortOrder: number;
+  assetType: AssetTypeId;
 }
 
 interface Allocation {
@@ -84,6 +90,7 @@ export default function CmaClient() {
           pctQualifiedDividends: ac.pctQualifiedDividends,
           pctTaxExempt: ac.pctTaxExempt,
           sortOrder: ac.sortOrder,
+          assetType: ac.assetType,
         }),
       });
       if (!res.ok) throw new Error("Save failed");
@@ -99,7 +106,11 @@ export default function CmaClient() {
       const res = await fetch("/api/cma/asset-classes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "New Asset Class", sortOrder: assetClasses.length }),
+        body: JSON.stringify({
+          name: "New Asset Class",
+          sortOrder: assetClasses.length,
+          assetType: "other",
+        }),
       });
       if (res.ok) {
         const created = await res.json();
@@ -194,6 +205,7 @@ function AssetClassesTab({ assetClasses, onUpdate, onSave, onAdd, onDelete, savi
           <thead>
             <tr className="border-b border-gray-700 bg-gray-800/60 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
               <th className="px-3 py-2">Name</th>
+              <th className="px-3 py-2">Type</th>
               <th className="px-3 py-2 text-right">Geo Return %</th>
               <th className="px-3 py-2 text-right">Arith Mean %</th>
               <th className="px-3 py-2 text-right">Volatility %</th>
@@ -254,6 +266,22 @@ function AssetClassRow({
           onBlur={() => onSave(ac)}
           className="w-full rounded border border-gray-700 bg-transparent px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
         />
+      </td>
+      <td className="px-3 py-2">
+        <select
+          value={ac.assetType}
+          onChange={(e) => {
+            onUpdate(ac.id, "assetType", e.target.value);
+            // Use the freshly-chosen value — the state update above is async
+            // and the immediate onSave would read the stale row.
+            onSave({ ...ac, assetType: e.target.value as AssetTypeId });
+          }}
+          className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+        >
+          {ASSET_TYPE_IDS.map((id) => (
+            <option key={id} value={id}>{ASSET_TYPE_LABELS[id]}</option>
+          ))}
+        </select>
       </td>
       {pctFields.map((field) => (
         <td key={field} className="px-3 py-2">
