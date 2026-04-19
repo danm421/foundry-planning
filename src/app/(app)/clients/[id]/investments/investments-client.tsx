@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import CommentDialog from "./comment-dialog";
 import BenchmarkSelector from "./benchmark-selector";
 import AllocationDonut from "./allocation-donut";
@@ -72,17 +72,10 @@ export default function InvestmentsClient({
     ? household.byAssetType.find((t) => t.id === drilledTypeId) ?? null
     : null;
 
-  // If the drill id doesn't resolve (e.g., user changed view, type now has zero
-  // value), clear it. Runs after render so we don't set state mid-render.
-  useEffect(() => {
-    if (drilledRowId === null) return;
-    if (drilledRowId === "__unallocated__") return;
-    if (drilledRowId.startsWith(TYPE_DRILL_PREFIX)) {
-      if (!drilledTypeRollup) setDrilledRowId(null);
-      return;
-    }
-    if (!drilledAssetClass) setDrilledRowId(null);
-  }, [drilledRowId, drilledTypeRollup, drilledAssetClass]);
+  // If drilledRowId points to something that no longer resolves (e.g., user
+  // switched view, or the underlying class/type dropped out of the rollup),
+  // the fallback branch in the Allocation Details ternary below renders the
+  // main AllocationTable — no explicit reset needed.
 
   return (
     <div className="flex flex-col gap-6">
