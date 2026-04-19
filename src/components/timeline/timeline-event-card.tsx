@@ -25,6 +25,7 @@ export default function TimelineEventCard({
     <div
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
+      // side = which side of the spine we're on; ml-auto aligns to the spine-adjacent edge.
       className={`group w-full max-w-sm rounded-md border border-gray-800 bg-gray-900/60 shadow-sm transition-shadow hover:shadow-md ${
         side === "left" ? "ml-auto" : "mr-auto"
       }`}
@@ -33,10 +34,9 @@ export default function TimelineEventCard({
         type="button"
         onClick={onToggle}
         onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onToggle();
-          } else if (e.key === "Escape" && expanded) {
+          // <button> natively fires onClick on Enter/Space — do not duplicate.
+          // Escape collapses an expanded card (native buttons don't do this).
+          if (e.key === "Escape" && expanded) {
             onToggle();
           }
         }}
