@@ -432,3 +432,6 @@ Dependency notes that override raw score:
   applied manually via `drizzle-kit migrate` against the Neon URL in
   `.env.local`. _Why deferred: single dev, single environment for now._
 - **Timeline pension detection.** Why deferred: engine `Income.type` union does not include `"pension"` — would need an engine type addition or a convention (e.g., treating certain `"other"` incomes as pensions). Revisit when pensions become first-class in the engine.
+- **Timeline keyboard: focus-follows-selection.** Arrow navigation scrolls and expands the next card but DOM focus stays put. A ref map from event id to card element would let the handler call `.focus()` on the new card.
+- **Timeline keyboard: scope to timeline container.** Handler is `window`-level; consider scoping to events where `activeElement` is within the timeline root.
+- **Timeline keyboard: Home/End/PageUp/PageDown.** Not implemented in v1.

@@ -100,6 +100,11 @@ export default function TimelineReportView({ clientId }: Props) {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Don't intercept keys when focus is inside a text entry or a native control.
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) {
+        return;
+      }
       if (e.key === "Escape") {
         if (expandedId) setExpandedId(null);
         return;
