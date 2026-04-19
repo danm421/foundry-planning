@@ -190,6 +190,13 @@
       "when": 1776549802914,
       "tag": "0026_investments_report_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1776559683929,
+      "tag": "0028_inflation_growth_option",
+      "breakpoints": true
     }
   ]
 }

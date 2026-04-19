@@ -1,6 +1,6 @@
 import type { AssetClassWeight } from "./benchmarks";
 
-export type GrowthSource = "default" | "model_portfolio" | "custom" | "asset_mix";
+export type GrowthSource = "default" | "model_portfolio" | "custom" | "asset_mix" | "inflation";
 
 export type AccountCategory =
   | "taxable"

@@ -119,6 +119,7 @@ export const growthSourceEnum = pgEnum("growth_source", [
   "model_portfolio",
   "custom",
   "asset_mix",
+  "inflation",
 ]);
 
 export const incomeTaxTypeEnum = pgEnum("income_tax_type", [
@@ -146,6 +147,16 @@ export const deductionTypeEnum = pgEnum("deduction_type", [
 export const extraPaymentTypeEnum = pgEnum("extra_payment_type", [
   "per_payment",
   "lump_sum",
+]);
+
+export const inflationRateSourceEnum = pgEnum("inflation_rate_source", [
+  "asset_class",
+  "custom",
+]);
+
+export const itemGrowthSourceEnum = pgEnum("item_growth_source", [
+  "custom",
+  "inflation",
 ]);
 
 // ── Tables ───────────────────────────────────────────────────────────────────
@@ -231,6 +242,7 @@ export const planSettings = pgTable("plan_settings", {
   growthSourceRetirement: growthSourceEnum("growth_source_retirement").notNull().default("custom"),
   modelPortfolioIdRetirement: uuid("model_portfolio_id_retirement").references(() => modelPortfolios.id, { onDelete: "set null" }),
   selectedBenchmarkPortfolioId: uuid("selected_benchmark_portfolio_id").references(() => modelPortfolios.id, { onDelete: "set null" }),
+  inflationRateSource: inflationRateSourceEnum("inflation_rate_source").notNull().default("asset_class"),
   useCustomCma: boolean("use_custom_cma").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -412,6 +424,7 @@ export const incomes = pgTable("incomes", {
   growthRate: decimal("growth_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.03"),
+  growthSource: itemGrowthSourceEnum("growth_source").notNull().default("custom"),
   // When set, inflation compounds from this year instead of from start_year.
   // Null = inflate from entry start (current-dollar amount).
   inflationStartYear: integer("inflation_start_year"),
@@ -454,6 +467,7 @@ export const expenses = pgTable("expenses", {
   growthRate: decimal("growth_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.03"),
+  growthSource: itemGrowthSourceEnum("growth_source").notNull().default("custom"),
   // When set, inflation compounds from this year instead of from start_year.
   // Null = inflate from entry start (current-dollar amount).
   inflationStartYear: integer("inflation_start_year"),
@@ -532,6 +546,10 @@ export const savingsRules = pgTable("savings_rules", {
   annualAmount: decimal("annual_amount", { precision: 15, scale: 2 })
     .notNull()
     .default("0"),
+  growthRate: decimal("growth_rate", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0"),
+  growthSource: itemGrowthSourceEnum("growth_source").notNull().default("custom"),
   startYear: integer("start_year").notNull(),
   endYear: integer("end_year").notNull(),
   startYearRef: yearRefEnum("start_year_ref"),
