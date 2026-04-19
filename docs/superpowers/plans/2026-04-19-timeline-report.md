@@ -708,7 +708,7 @@ describe("detectTransactionEvents", () => {
         sourceAccountId: "acct-brokerage",
         targetAccountId: "acct-savings",
         amount: 20_000,
-        mode: "flat",
+        mode: "recurring",
         startYear: 2028,
         endYear: 2032,
         growthRate: 0,
