@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { calculateTaxYear } from "../calculate";
+import { calcTaxableSocialSecurity } from "../ssTaxability";
 import type { CalcInput, TaxYearParameters } from "../types";
 
 // Reuse 2026 MFJ params from resolver test, adapted as a complete row.
@@ -254,5 +255,18 @@ describe("calculateTaxYear — Scenario 6: MFJ day trader with STCG (NIIT regres
     //             + (267800-211950)×0.24
     // = 2480 + 9120 + 24453 + 13404 = 49457
     expect(Math.round(result.flow.regularTaxCalc)).toBe(49457);
+  });
+});
+
+describe("calcTaxableSocialSecurity — pia_at_fra-derived gross integration", () => {
+  it("treats pia_at_fra-derived gross identically to manual gross", () => {
+    // Use an SS gross that corresponds to Client PIA 2000/mo × 12 × 0.70 (claim-62/FRA-67)
+    // = $16,800/yr. Other income $50,000. Filing MFJ.
+    const input = { ssGross: 16800, otherIncome: 50000, taxExemptInterest: 0, filingStatus: "married_joint" as const };
+    const taxable = calcTaxableSocialSecurity(input);
+    // Combined = 50000 + 8400 + 0 = 58400. Above 44000, so tier2 math.
+    // tier1 = min(6000, 8400) = 6000, tier2 = 0.85 × (58400 − 44000) = 12240
+    // total = 18240, cap = 0.85 × 16800 = 14280 → 14280
+    expect(taxable).toBeCloseTo(14280, 2);
   });
 });

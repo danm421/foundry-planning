@@ -204,11 +204,31 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
         planStartYear,
         planEndYear,
         milestones,
+        clientDob: client.dateOfBirth,
+        spouseDob: client.spouseDob ?? null,
       }}
       incomeSchedules={incomeScheduleMap}
       expenseSchedules={expenseScheduleMap}
       savingsSchedules={savingsScheduleMap}
       resolvedInflationRate={resolvedInflationRate}
+      ssClientInfo={{
+        firstName: client.firstName,
+        lastName: client.lastName,
+        dateOfBirth: client.dateOfBirth,
+        retirementAge: client.retirementAge,
+        planEndAge: client.planEndAge,
+        spouseName: client.spouseName ?? undefined,
+        spouseDob: client.spouseDob ?? undefined,
+        spouseRetirementAge: client.spouseRetirementAge ?? undefined,
+        filingStatus: (client.filingStatus ?? "single") as "single" | "married_joint" | "married_separate" | "head_of_household",
+      }}
+      ssPlanSettings={settings ? {
+        flatFederalRate: Number(settings.flatFederalRate),
+        flatStateRate: Number(settings.flatStateRate),
+        inflationRate: resolvedInflationRate,
+        planStartYear,
+        planEndYear,
+      } : undefined}
     />
   );
 }

@@ -82,6 +82,10 @@ export async function POST(
     const startYearRef = body.startYearRef ?? null;
     const endYearRef = body.endYearRef ?? null;
     const taxType = body.taxType ?? null;
+    const ssBenefitMode = body.ssBenefitMode ?? null;
+    const piaMonthly = body.piaMonthly != null ? String(body.piaMonthly) : null;
+    const claimingAgeMonths = body.claimingAgeMonths != null ? Number(body.claimingAgeMonths) : 0;
+    const claimingAgeMode = body.claimingAgeMode ?? null;
 
     if (!type || !name || !startYear || !endYear) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -108,6 +112,10 @@ export async function POST(
         startYearRef,
         endYearRef,
         taxType,
+        ssBenefitMode,
+        piaMonthly,
+        claimingAgeMonths,
+        claimingAgeMode,
       })
       .returning();
 

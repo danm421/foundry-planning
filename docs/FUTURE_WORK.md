@@ -31,7 +31,7 @@ enablers and should ship folded into their parent feature.
 | 11 | Plan PDF export | 5 | 6 | 4 | 15 |
 | 12 | CSV export for reports (cross-cutting) | 5 | 7 | 3 | 15 |
 | 13 | Per-year ledger drill-in for tax tables | 6 | 5 | 3 | 14 |
-| 14 | SS claiming optimizer | 5 | 6 | 2 | 13 |
+| 14 | SS claiming optimizer (Tier 3 — depends on Tier 1+2 shipping) | 5 | 6 | 2 | 13 |
 | 15 | Client-facing read-only view | 4 | 6 | 3 | 13 |
 | 16 | Trust/estate brackets (data ready) | 4 | 7 | 2 | 13 |
 | 17 | Trust taxes for non-grantor entities | 5 | 4 | 3 | 12 |
@@ -205,6 +205,93 @@ Dependency notes that override raw score:
   workplace plan, HSA support (needs HSA account subtype), per-year
   override schedule for deductions.
 
+- **SS: Estimated-from-income / PIA from wage history (Tier 4)** _(P4 E3 L3)_ —
+  the Tier 1+2 work (spec at
+  `docs/superpowers/specs/2026-04-19-social-security-design.md`) requires
+  advisors to hand-enter each spouse's PIA from their SSA statement. Tier 4
+  derives PIA automatically from a wage history, matching eMoney's
+  "Estimated From Income" mode (§6 of the eMoney spec in `docs/private/`).
+  **What's required:**
+  (a) a new `ss_year_parameters` table (same pattern as the existing
+  `tax_year_parameters`): per-year OASDI wage base, SSA Average Wage Index
+  (historical + projected), PIA bend points;
+  (b) annual data update process (SSA Trustees Report, November each year)
+  mirroring the existing tax-table update flow;
+  (c) a wage-history input UI on the client (or auto-derived from salary
+  incomes plus a "highest salary earned" / "last year employed" override);
+  (d) AIME calculator (cap wages, index to worker's Index Year = eligibility
+  year − 2, select 35 highest years, divide by 420);
+  (e) PIA calculator (90% × bend-point-1 + 32% × segment-2 + 14% ×
+  segment-3);
+  (f) a new `ssBenefitMode: "estimated_from_income"` enum value threading
+  through the existing mode switch.
+  **Where it plugs in:** the orchestrator in `src/engine/socialSecurity/`
+  is ready to consume a PIA value regardless of source. Tier 4 is purely
+  "compute PIA before handing it to the orchestrator."
+  _Why deferred: biggest SS feature; unblocked by Tier 1+2 landing but
+  substantial data + UI work. Advisors can work with PIA-from-statement
+  in the meantime._
+
+- **SS: Exempt Pension / Windfall Elimination Provision (Tier 5)** _(P3 E4 L2)_
+  — adds a per-spouse "Exempt Pension" mode (§2.2.4 + §5.9 of the eMoney
+  spec). Two coupled effects: (a) the worker receives no SS retirement
+  benefit, and (b) they pay no Social Security portion of FICA (Medicare
+  still applies). Their spouse also loses spousal benefits on their
+  record. Needs a new `ssBenefitMode: "exempt_pension"` enum value and a
+  plumbed flag on the `fica.ts` calculator to skip the SS portion when
+  that mode is set. Phase-out WEP scenarios are explicitly not supported
+  (eMoney also punts these). _Why deferred: edge case; primary use case
+  is government employees with pensions. Advisor base doesn't currently
+  include them. Spec builds naturally on Tier 1+2 data model._
+
+- **SS: Max Family Benefit cap** _(P2 E6 L1)_ — caps total survivor +
+  surviving-child benefits at 175% of the deceased's PIA (simplified
+  version per eMoney §5.6.7; full MFB formula ranges 150–180% across
+  three PIA tiers). Only matters when surviving-child benefits or
+  multiple-beneficiary scenarios land (currently neither is modeled).
+  _Why deferred: no downstream consumer yet — wait for surviving-child
+  benefits (also Tier 5) to create demand._
+
+- **SS: Surviving-child / child-of-retiree benefits** _(P2 E5 L1)_ — minor
+  children of a deceased or retired worker are eligible for benefits
+  (75% of PIA for disabled workers; see eMoney §8.1-8.2). Requires a
+  model of household minors with DOBs. Full rules include school-age
+  extensions (to 19 if still in school). Interacts with the Max Family
+  Benefit cap. _Why deferred: no household-minors data model and no
+  advisor asks._
+
+- **SS: Divorced-spouse benefits** _(P2 E5 L1)_ — a divorced individual
+  with a 10+-year marriage and no remarriage can claim spousal benefits
+  on the ex-spouse's record (§8.3 of the eMoney spec). Requires data
+  about ex-spouses (their PIA, or their wage history). _Why deferred: no
+  ex-spouse data model and no advisor asks._
+
+- **SS: Split-claim timing** _(P2 E5 L1)_ — lets a survivor take the
+  survivor benefit at one age while delaying their own retirement to a
+  different age (§5.7.3 of the eMoney spec — eMoney itself also punts
+  this). Would require splitting the single `claimingAge` into separate
+  `survivorClaimAge` and `ownClaimAge` fields per spouse. Tier 1+2 pays
+  `max(own-at-claim, survivor)` per year, which handles the common case
+  but misses the "delay own while taking survivor" optimization. _Why
+  deferred: lower-frequency scenario; real benefit but needs a new data
+  model wrinkle._
+
+- **SS: Per-scenario death-year overrides** _(P4 E5 L3)_ — currently
+  `lifeExpectancy` and `spouseLifeExpectancy` are single values on `ClientInfo`
+  that apply to all scenarios. A scenario switcher (see item #1 in Suggested
+  Order) should allow per-scenario overrides so advisors can model "what if
+  spouse lives to 80 vs 90" without duplicating the whole plan. _Why deferred:
+  depends on scenario switcher landing first; current single-LE model is
+  correct and sufficient for Tier 1+2 SS feature._
+
+- **SS: Mixed pia_at_fra + manual_amount in same household** _(P2 E6 L1)_ —
+  when one spouse uses `pia_at_fra` mode and the other uses `manual_amount`,
+  survivor math silently returns 0 because `deceasedPia = otherRow.piaMonthly ?? 0`
+  and a `manual_amount` row has no `piaMonthly`. Unusual configuration
+  (advisors using the SS feature are expected to use `pia_at_fra` for both
+  spouses), but could confuse if a plan is partially migrated. _Why deferred:
+  low-frequency edge case; no advisor has hit it yet._
+
 - **Align `plan_settings.inflation_rate` consumers with the resolver** _(P2 E4 L2)_ —
   The engine still reads `plan_settings.inflation_rate` directly in two places
   unrelated to item growth: tax bracket indexing and SS wage-growth fallback
@@ -304,9 +391,20 @@ Dependency notes that override raw score:
   just landed; deduction types should ship first so the optimizer can honestly
   compute bracket headroom._
 
-- **Social Security claiming optimizer** _(P5 E6 L2)_ — compare claim ages
-  with breakeven analysis and survivor impact. _Why deferred: small but not
-  requested yet._
+- **Social Security claiming optimizer (Tier 3)** _(P5 E6 L2)_ — "Help Me
+  Compare" style UI showing cumulative lifetime benefit at 62 / FRA / 70
+  for each spouse, with break-even-age annotations against the
+  spouse's life expectancy. Matches eMoney's "Help Me Compared" dialog
+  (§3 of `docs/private/Social Security in eMoney (1).docx`).
+  _Why deferred: unblocked by Tier 1+2 (spec at
+  `docs/superpowers/specs/2026-04-19-social-security-design.md`). Once
+  that ships, the math exists — this is pure UI work to surface it.
+  **Implementation notes for future session:** take the PIAs from each
+  spouse's `pia_at_fra` income row, call `orchestrator.resolveAnnualBenefit`
+  for each year of each candidate claim age (62/FRA/70/current), sum
+  through each spouse's life expectancy, and render as a small-multiples
+  chart plus a table of break-even years. No new data model is required;
+  the existing `Income` row plus the Tier 1+2 math module is sufficient._
 
 ## Reports
 

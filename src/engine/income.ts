@@ -1,4 +1,6 @@
 import type { Income, ClientInfo } from "./types";
+import { resolveAnnualBenefit } from "./socialSecurity/orchestrator";
+import { resolveClaimAgeMonths } from "./socialSecurity/claimAge";
 
 interface IncomeBreakdown {
   salaries: number;
@@ -10,9 +12,14 @@ interface IncomeBreakdown {
   other: number;
   total: number;
   bySource: Record<string, number>;
+  /** SS detail aggregated across all pia_at_fra rows this year. */
+  socialSecurityDetail?: {
+    client:  { retirement: number; spousal: number; survivor: number };
+    spouse?: { retirement: number; spousal: number; survivor: number };
+  };
 }
 
-const incomeTypeToKey: Record<Income["type"], keyof Omit<IncomeBreakdown, "total" | "bySource">> = {
+const incomeTypeToKey: Record<Income["type"], keyof Omit<IncomeBreakdown, "total" | "bySource" | "socialSecurityDetail">> = {
   salary: "salaries",
   social_security: "socialSecurity",
   business: "business",
@@ -46,11 +53,57 @@ export function computeIncome(
 
     // Social Security: delay until claiming age
     if (inc.type === "social_security" && inc.claimingAge != null) {
+      if (inc.ssBenefitMode === "no_benefit") continue;
       const ownerDob = inc.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
       if (!ownerDob) continue;
+      const claimAgeMonths = resolveClaimAgeMonths(inc, client);
+      if (claimAgeMonths == null) continue; // unresolvable mode (e.g., fra without DOB)
       const birthYear = parseInt(ownerDob.slice(0, 4), 10);
-      const claimingYear = birthYear + inc.claimingAge;
-      if (year < claimingYear) continue;
+      if (year * 12 < birthYear * 12 + claimAgeMonths) continue;
+
+      // Suppress the spouse's SS row when the spouse has died.
+      // spouseLifeExpectancy on ClientInfo controls this: deathYear = spouseBirthYear + spouseLifeExpectancy.
+      // The orchestrator handles the survivor top-up from the CLIENT's row; the spouse row must
+      // stop contributing to avoid double-counting.
+      // Use ?? 95 to match the orchestrator's default when spouseLifeExpectancy is null — without
+      // this fallback, a null spouseLifeExpectancy would leave the spouse row live while the
+      // orchestrator triggers survivor math at birthYear+95, causing double-counting.
+      if (inc.owner === "spouse" && client.spouseDob) {
+        const spouseBy = parseInt(client.spouseDob.slice(0, 4), 10);
+        const effectiveSpouseLE = client.spouseLifeExpectancy ?? 95;
+        if (year >= spouseBy + effectiveSpouseLE) continue;
+      }
+
+      // Suppress the client's SS row when the client has died.
+      // lifeExpectancy on ClientInfo controls this: deathYear = clientBirthYear + lifeExpectancy.
+      if (inc.owner === "client" && client.lifeExpectancy != null && client.dateOfBirth) {
+        const clientBy = parseInt(client.dateOfBirth.slice(0, 4), 10);
+        if (year >= clientBy + client.lifeExpectancy) continue;
+      }
+
+      // pia_at_fra mode → delegate to orchestrator (handles own, spousal, survivor)
+      if (inc.ssBenefitMode === "pia_at_fra" && inc.piaMonthly != null) {
+        // Locate the other spouse's SS row, if any, for spousal/survivor math
+        const otherOwner = inc.owner === "spouse" ? "client" : "spouse";
+        const spouseRow = incomes.find(
+          (other) => other.id !== inc.id && other.type === "social_security" && other.owner === otherOwner,
+        ) ?? null;
+
+        const resolved = resolveAnnualBenefit({ row: inc, spouseRow, client, year });
+        result.socialSecurity += resolved.total;
+        result.bySource[inc.id] = resolved.total;
+
+        // Accumulate per-spouse breakdown
+        result.socialSecurityDetail ??= { client: { retirement: 0, spousal: 0, survivor: 0 } };
+        const bucket = inc.owner === "spouse"
+          ? (result.socialSecurityDetail.spouse ??= { retirement: 0, spousal: 0, survivor: 0 })
+          : result.socialSecurityDetail.client;
+        bucket.retirement += resolved.retirement;
+        bucket.spousal    += resolved.spousal;
+        bucket.survivor   += resolved.survivor;
+
+        continue;
+      }
     }
 
     let amount: number;

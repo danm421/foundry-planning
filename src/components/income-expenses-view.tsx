@@ -12,6 +12,8 @@ import { PercentInput } from "./percent-input";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
+import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
+import { SocialSecurityCard } from "./social-security-card";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -28,6 +30,7 @@ interface Income {
   endYear: number;
   owner: Owner;
   claimingAge: number | null;
+  claimingAgeMonths?: number | null;
   linkedEntityId: string | null;
   growthRate: string;
   growthSource?: string | null;
@@ -37,6 +40,8 @@ interface Income {
   startYearRef?: string | null;
   endYearRef?: string | null;
   taxType?: string | null;
+  ssBenefitMode?: string | null;
+  piaMonthly?: string | null;
 }
 
 type IncomeTaxType = "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg";
@@ -117,6 +122,8 @@ interface ClientInfo {
   planStartYear: number;
   planEndYear: number;
   milestones?: ClientMilestones;
+  clientDob?: string | null;
+  spouseDob?: string | null;
 }
 
 type ScheduleMap = Record<string, { year: number; amount: number }[]>;
@@ -134,6 +141,8 @@ interface IncomeExpensesViewProps {
   expenseSchedules: ScheduleMap;
   savingsSchedules: ScheduleMap;
   resolvedInflationRate: number;
+  ssClientInfo?: EngineClientInfo;
+  ssPlanSettings?: PlanSettings;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -150,7 +159,6 @@ const pctFromDecimal = (v: string | null | undefined, fallback: number): number 
 
 const INCOME_GROUPS: { label: string; types: IncomeType[] }[] = [
   { label: "Salaries", types: ["salary"] },
-  { label: "Social Security", types: ["social_security"] },
   { label: "Business", types: ["business"] },
   { label: "Deferred", types: ["deferred"] },
   { label: "Capital Gains", types: ["capital_gains"] },
@@ -164,9 +172,8 @@ const EXPENSE_GROUPS: { label: string; types: ExpenseType[] }[] = [
   { label: "Other Expenses", types: ["other"] },
 ];
 
-const INCOME_TYPE_LABELS: Record<IncomeType, string> = {
+const INCOME_TYPE_LABELS: Partial<Record<IncomeType, string>> = {
   salary: "Salary",
-  social_security: "Social Security",
   business: "Business",
   deferred: "Deferred",
   capital_gains: "Capital Gains",
@@ -381,12 +388,11 @@ function IncomeDialog({
       ? editing.inflationStartYear != null && editing.inflationStartYear < editing.startYear
       : true
   );
-  const isSocialSecurity = type === "social_security";
   const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
     editing?.growthSource === "inflation" ? "inflation" : "custom"
   );
   const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
-    String(pctFromDecimal(editing?.growthRate, isSocialSecurity ? 2 : 3))
+    String(pctFromDecimal(editing?.growthRate, 3))
   );
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
@@ -419,17 +425,8 @@ function IncomeDialog({
 
     let submitStartYear: string;
     let submitEndYear: string;
-    let claimingAge: string | null = null;
-
-    if (isSocialSecurity) {
-      claimingAge = data.get("claimingAge") as string;
-      submitStartYear = String(clientInfo?.planStartYear ?? currentYear);
-      submitEndYear = String(clientInfo?.planEndYear ?? currentYear + 30);
-    } else {
-      submitStartYear = String(startYear);
-      submitEndYear = String(endYear);
-      claimingAge = data.get("claimingAge") ? (data.get("claimingAge") as string) : null;
-    }
+    submitStartYear = String(startYear);
+    submitEndYear = String(endYear);
 
     const body = {
       type: data.get("type") as string,
@@ -440,7 +437,6 @@ function IncomeDialog({
       growthRate: String(Number(growthRateDisplay) / 100),
       growthSource,
       owner: data.get("owner") as string,
-      claimingAge,
       linkedEntityId: data.get("linkedEntityId") || null,
       ownerEntityId: ownerEntityId || null,
       cashAccountId: cashAccountId || null,
@@ -448,8 +444,8 @@ function IncomeDialog({
       // entry's startYear so retirement-era amounts can be entered in current
       // purchasing power. Null means inflate only from startYear onward.
       inflationStartYear: todaysDollars ? planStartYear : null,
-      startYearRef: isSocialSecurity ? null : startYearRef,
-      endYearRef: isSocialSecurity ? null : endYearRef,
+      startYearRef,
+      endYearRef,
       taxType,
     };
 
@@ -617,23 +613,7 @@ function IncomeDialog({
               </div>
             )}
 
-            {isSocialSecurity ? (
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-300" htmlFor="inc-claiming">Claiming Age</label>
-                <input
-                  id="inc-claiming"
-                  name="claimingAge"
-                  type="number"
-                  min={62}
-                  max={70}
-                  defaultValue={editing?.claimingAge ?? 67}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <p className="mt-1 text-xs text-gray-400">
-                  Start/end years are auto-set to plan range. Benefits begin at claiming age.
-                </p>
-              </div>
-            ) : clientInfo?.milestones ? (
+            {clientInfo?.milestones ? (
               <>
                 <MilestoneYearPicker
                   name="startYear"
@@ -1197,6 +1177,8 @@ export default function IncomeExpensesView({
   expenseSchedules,
   savingsSchedules,
   resolvedInflationRate,
+  ssClientInfo,
+  ssPlanSettings,
 }: IncomeExpensesViewProps) {
   const [incomeList, setIncomeList] = useState<Income[]>(initialIncomes);
   const [expenseList, setExpenseList] = useState<Expense[]>(initialExpenses);
@@ -1227,8 +1209,23 @@ export default function IncomeExpensesView({
   const accountMap = Object.fromEntries(accounts.map((a) => [a.id, a]));
   const entityMap = Object.fromEntries((entities ?? []).map((e) => [e.id, e]));
 
+  async function refreshIncomes() {
+    try {
+      const res = await fetch(`/api/clients/${clientId}/incomes`);
+      if (res.ok) {
+        const rows = (await res.json()) as Income[];
+        setIncomeList(rows);
+      }
+    } catch {
+      // ignore — stale data is preferable to crashing
+    }
+  }
+
   const planStart = clientInfo?.planStartYear;
   const planEnd = clientInfo?.planEndYear;
+
+  // Exclude SS rows from the visible income list (SS is shown in its own card)
+  const nonSsIncomeList = incomeList.filter((i) => i.type !== "social_security");
 
   // Totals (household only = exclude out-of-estate)
   const householdIncome = incomeList.filter((i) => !i.ownerEntityId).reduce((s, i) => s + Number(i.annualAmount), 0);
@@ -1279,10 +1276,10 @@ export default function IncomeExpensesView({
         <Panel>
           <SectionHeader
             title="Income"
-            subtitle={fmt(householdIncome) + " household · " + incomeList.length + " entries"}
+            subtitle={fmt(householdIncome) + " household · " + nonSsIncomeList.length + " entries"}
             actions={
               <>
-                {incomeList.length > 0 && <EditToggle on={incomeEdit} onToggle={() => setIncomeEdit((v) => !v)} />}
+                {nonSsIncomeList.length > 0 && <EditToggle on={incomeEdit} onToggle={() => setIncomeEdit((v) => !v)} />}
                 <button
                   onClick={() => setIncomeDialog({ open: true, defaultType: "salary" })}
                   className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
@@ -1293,7 +1290,7 @@ export default function IncomeExpensesView({
             }
           />
 
-          {incomeList.length === 0 ? (
+          {nonSsIncomeList.length === 0 ? (
             <EmptyRow message="No income entries yet." />
           ) : (
             INCOME_GROUPS.map((group) => {
@@ -1332,6 +1329,18 @@ export default function IncomeExpensesView({
                 </Group>
               );
             })
+          )}
+
+          {ssClientInfo && ssPlanSettings && (
+            <div className="px-4 pb-4">
+              <SocialSecurityCard
+                clientId={clientId}
+                clientInfo={ssClientInfo}
+                planSettings={ssPlanSettings}
+                incomes={incomeList as unknown as EngineIncome[]}
+                onSaved={refreshIncomes}
+              />
+            </div>
           )}
         </Panel>
 
