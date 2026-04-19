@@ -40,11 +40,12 @@ export function KpiBand({ summary, clientData, planSettings }: KpiBandProps) {
   const trialsRun = summary.trialsRun;
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
       <KpiCard
         label="Success Probability"
         value={<span className="sr-only">{Math.round(successPct * 100)}%</span>}
         visual={<SuccessGauge value={successPct} />}
+        className="lg:col-span-2"
       />
       <KpiCard
         label="Median Portfolio Value"

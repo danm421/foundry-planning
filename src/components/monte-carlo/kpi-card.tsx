@@ -5,11 +5,12 @@ interface KpiCardProps {
   value: ReactNode;
   visual?: ReactNode;
   footnote?: ReactNode;
+  className?: string;
 }
 
-export function KpiCard({ label, value, visual, footnote }: KpiCardProps) {
+export function KpiCard({ label, value, visual, footnote, className = "" }: KpiCardProps) {
   return (
-    <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4 flex items-start justify-between gap-3 min-h-[96px]">
+    <div className={`rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4 flex items-start justify-between gap-3 min-h-[96px] ${className}`}>
       <div className="flex flex-col gap-1">
         <div className="text-[11px] uppercase tracking-wider text-slate-400">{label}</div>
         <div className="text-3xl font-semibold text-slate-100 tabular-nums leading-tight">

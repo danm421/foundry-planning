@@ -245,11 +245,11 @@ export default function MonteCarloReport({ clientId }: Props) {
               planSettings={clientData.planSettings}
             />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
               {Array.from({ length: 5 }).map((_, i) => (
                 <div
                   key={i}
-                  className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4 min-h-[96px] animate-pulse"
+                  className={`rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4 min-h-[96px] animate-pulse${i === 0 ? " lg:col-span-2" : ""}`}
                 />
               ))}
             </div>
