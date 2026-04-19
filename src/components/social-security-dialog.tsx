@@ -63,7 +63,7 @@ export function SocialSecurityDialog({
 
   const [growthRate, setGrowthRate] = useState<string>(() => {
     if (existingRow?.growthRate != null) return String(existingRow.growthRate * 100);
-    return String(planSettings.inflationRate * 100);
+    return "2";
   });
 
   // ── Derived display ──────────────────────────────────────
@@ -281,7 +281,7 @@ export function SocialSecurityDialog({
             <label className="block text-sm font-medium mb-1">Annual COLA %</label>
             <input
               type="number"
-              step="0.1"
+              step="0.5"
               value={growthRate}
               onChange={(e) => setGrowthRate(e.target.value)}
               className="w-32 border rounded px-2 py-1"

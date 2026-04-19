@@ -1054,48 +1054,52 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         );
         const fmtSS = (v: number) =>
           v === 0 ? <span className="tabular-nums text-gray-500">&mdash;</span> : fmtNum(v);
+        const ssDetailColsActive = {
+          clientRetirement: visibleYears.some((y) => (y.socialSecurityDetail?.client.retirement ?? 0) > 0),
+          clientSpousal:    visibleYears.some((y) => (y.socialSecurityDetail?.client.spousal    ?? 0) > 0),
+          clientSurvivor:   visibleYears.some((y) => (y.socialSecurityDetail?.client.survivor   ?? 0) > 0),
+          spouseRetirement: visibleYears.some((y) => (y.socialSecurityDetail?.spouse?.retirement ?? 0) > 0),
+          spouseSpousal:    visibleYears.some((y) => (y.socialSecurityDetail?.spouse?.spousal    ?? 0) > 0),
+          spouseSurvivor:   visibleYears.some((y) => (y.socialSecurityDetail?.spouse?.survivor   ?? 0) > 0),
+        };
         return [
           ...baseColumns,
-          col(
+          ...(ssDetailColsActive.clientRetirement ? [col(
             "ss_client_retirement",
             `${clientName} Retirement`,
             (r) => r.socialSecurityDetail?.client.retirement ?? 0,
             (info) => fmtSS(info.getValue() as number)
-          ),
-          col(
+          )] : []),
+          ...(ssDetailColsActive.clientSpousal ? [col(
             "ss_client_spousal",
             `${clientName} Spousal`,
             (r) => r.socialSecurityDetail?.client.spousal ?? 0,
             (info) => fmtSS(info.getValue() as number)
-          ),
-          col(
+          )] : []),
+          ...(ssDetailColsActive.clientSurvivor ? [col(
             "ss_client_survivor",
             `${clientName} Survivor`,
             (r) => r.socialSecurityDetail?.client.survivor ?? 0,
             (info) => fmtSS(info.getValue() as number)
-          ),
-          ...(hasSpouseDetail
-            ? [
-                col(
-                  "ss_spouse_retirement",
-                  `${spouseName} Retirement`,
-                  (r) => r.socialSecurityDetail?.spouse?.retirement ?? 0,
-                  (info) => fmtSS(info.getValue() as number)
-                ),
-                col(
-                  "ss_spouse_spousal",
-                  `${spouseName} Spousal`,
-                  (r) => r.socialSecurityDetail?.spouse?.spousal ?? 0,
-                  (info) => fmtSS(info.getValue() as number)
-                ),
-                col(
-                  "ss_spouse_survivor",
-                  `${spouseName} Survivor`,
-                  (r) => r.socialSecurityDetail?.spouse?.survivor ?? 0,
-                  (info) => fmtSS(info.getValue() as number)
-                ),
-              ]
-            : []),
+          )] : []),
+          ...(hasSpouseDetail && ssDetailColsActive.spouseRetirement ? [col(
+            "ss_spouse_retirement",
+            `${spouseName} Retirement`,
+            (r) => r.socialSecurityDetail?.spouse?.retirement ?? 0,
+            (info) => fmtSS(info.getValue() as number)
+          )] : []),
+          ...(hasSpouseDetail && ssDetailColsActive.spouseSpousal ? [col(
+            "ss_spouse_spousal",
+            `${spouseName} Spousal`,
+            (r) => r.socialSecurityDetail?.spouse?.spousal ?? 0,
+            (info) => fmtSS(info.getValue() as number)
+          )] : []),
+          ...(hasSpouseDetail && ssDetailColsActive.spouseSurvivor ? [col(
+            "ss_spouse_survivor",
+            `${spouseName} Survivor`,
+            (r) => r.socialSecurityDetail?.spouse?.survivor ?? 0,
+            (info) => fmtSS(info.getValue() as number)
+          )] : []),
           numCol("ss_total", "Total", (r) => r.income.socialSecurity, true),
         ];
       }
