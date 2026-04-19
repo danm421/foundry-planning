@@ -98,6 +98,29 @@ export default function TimelineReportView({ clientId }: Props) {
     [events, activeCategories],
   );
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        if (expandedId) setExpandedId(null);
+        return;
+      }
+      if (visibleEvents.length === 0) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        const delta = e.key === "ArrowDown" ? 1 : -1;
+        const focusedIndex = expandedId
+          ? visibleEvents.findIndex((ev) => ev.id === expandedId)
+          : -1;
+        const nextIndex = Math.max(0, Math.min(visibleEvents.length - 1, focusedIndex + delta));
+        const next = visibleEvents[nextIndex];
+        setExpandedId(next.id);
+        scrollToYear(next.year);
+        e.preventDefault();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [visibleEvents, expandedId, scrollToYear]);
+
   const primaryLabel = clientData ? clientData.client.firstName : "";
   const spouseLabel = clientData?.client.spouseName ?? null;
   const isCoupled = !!spouseLabel;
