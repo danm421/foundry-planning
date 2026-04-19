@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { ReportHeader } from "./monte-carlo/report-header";
+import { KpiBand } from "./monte-carlo/kpi-band";
 import {
   createReturnEngine,
   runMonteCarlo,
@@ -185,14 +187,31 @@ export default function MonteCarloReport({ clientId }: Props) {
 
   return (
     <div className="p-8 space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Monte Carlo Simulation</h1>
-        <p className="text-sm text-gray-500">
-          {usedCount} asset class{usedCount === 1 ? "" : "es"} used ·{" "}
-          {mixCount} account{mixCount === 1 ? "" : "s"} randomized · seed{" "}
-          <code className="font-mono text-xs">{currentSeed}</code>
-        </p>
-      </header>
+      <ReportHeader
+        clientDisplayName={
+          clientData.client.spouseName
+            ? `${clientData.client.firstName} & ${clientData.client.spouseName} ${clientData.client.lastName}`
+            : `${clientData.client.firstName} ${clientData.client.lastName}`
+        }
+        onRestart={handleRestart}
+        running={running}
+      />
+      {summary ? (
+        <KpiBand
+          summary={summary}
+          clientData={clientData}
+          planSettings={clientData.planSettings}
+        />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div
+              key={i}
+              className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4 min-h-[96px] animate-pulse"
+            />
+          ))}
+        </div>
+      )}
 
       {usedCount === 0 && (
         <div className="rounded border border-gray-300 bg-gray-50 p-3 text-sm text-gray-700">
@@ -242,13 +261,6 @@ export default function MonteCarloReport({ clientId }: Props) {
 
       {summary && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Kpi label="Success Probability" value={formatPercent(summary.successRate, 1)} />
-            <Kpi label="Probability of Failure" value={formatPercent(summary.failureRate, 1)} />
-            <Kpi label="Median Portfolio Value" value={formatCurrency(summary.ending.p50)} />
-            <Kpi label="Simulations" value={summary.trialsRun.toLocaleString()} />
-          </div>
-
           <section className="space-y-3">
             <h2 className="text-lg font-semibold">Monte Carlo Asset Spread</h2>
             <div className="overflow-x-auto">
@@ -298,11 +310,3 @@ export default function MonteCarloReport({ clientId }: Props) {
   );
 }
 
-function Kpi({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded border border-gray-200 p-4">
-      <div className="text-xs uppercase tracking-wide text-gray-500">{label}</div>
-      <div className="text-2xl font-semibold mt-1">{value}</div>
-    </div>
-  );
-}
