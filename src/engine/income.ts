@@ -1,4 +1,5 @@
 import type { Income, ClientInfo } from "./types";
+import { computeOwnMonthlyBenefit } from "./socialSecurity/ownRetirement";
 
 interface IncomeBreakdown {
   salaries: number;
@@ -51,6 +52,23 @@ export function computeIncome(
       const birthYear = parseInt(ownerDob.slice(0, 4), 10);
       const claimingYear = birthYear + inc.claimingAge;
       if (year < claimingYear) continue;
+
+      // NEW: pia_at_fra mode → compute benefit from PIA via FRA math
+      if (inc.ssBenefitMode === "pia_at_fra" && inc.piaMonthly != null) {
+        const claimAgeMonths = inc.claimingAge * 12 + (inc.claimingAgeMonths ?? 0);
+        const monthly = computeOwnMonthlyBenefit({
+          piaMonthly: inc.piaMonthly,
+          claimAgeMonths,
+          dob: ownerDob,
+        });
+        const annualAtToday = monthly * 12;
+        const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+        const yearsElapsed = year - inflateFrom;
+        const amount = annualAtToday * Math.pow(1 + inc.growthRate, yearsElapsed);
+        result.socialSecurity += amount;
+        result.bySource[inc.id] = amount;
+        continue;
+      }
     }
 
     let amount: number;
