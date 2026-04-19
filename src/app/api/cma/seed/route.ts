@@ -38,6 +38,7 @@ export async function POST() {
           pctQualifiedDividends: String(ac.pctQualifiedDividends),
           pctTaxExempt: String(ac.pctTaxExempt),
           sortOrder: i,
+          assetType: ac.assetType,
         }))
       )
       .onConflictDoNothing({ target: [assetClasses.firmId, assetClasses.name] });

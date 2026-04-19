@@ -344,6 +344,23 @@ Dependency notes that override raw score:
   of the asset-type-groups feature to keep it focused on the donut +
   table + drill._
 
+- **Combined-mode donut inner-ring tooltip labels** _(P2 E3 L2)_ — the
+  nested donut shares a single `labels` array across both datasets (set to
+  outer-ring class names). When the user hovers an inner-ring type arc,
+  Chart.js 4.x resolves `labels[i]` from the outer array, so tooltips on
+  the inner ring show the wrong name once the number of classes exceeds
+  the number of types. The legend below the donut is always correct.
+  _Why deferred: a proper fix requires per-dataset label callbacks or a
+  different chart-library approach; scope out of asset-type-groups._
+
+- **DB `CHECK` constraint on `asset_classes.asset_type`** _(P2 E3 L2)_ —
+  the column is `varchar(32)` with app-level validation only (`isAssetTypeId`
+  on POST/PUT). Direct SQL or future ad-hoc migrations could introduce
+  values outside the five-member union, which would then render as blank
+  color swatches in the UI. A one-line `CHECK` would guarantee the domain
+  at the DB layer. _Why deferred: defense-in-depth, not correctness —
+  app-level validation covers all supported write paths._
+
 - **Allowlist mutable fields on `PUT /api/cma/asset-classes/[id]`**
   _(P3 E4 L3)_ — the current handler spreads the raw request body into
   Drizzle's `.set()`, which means any schema column (including `firmId`,

@@ -169,7 +169,9 @@ export default function InvestmentsClient({
               onBack={() => setDrilledRowId(null)}
             />
           ) : (
-            // Fallback while the reset effect runs.
+            // Fallback: drilledRowId is set but doesn't match any known class,
+            // type, or sentinel in the current rollup — render the top-level
+            // table so the user has a way back.
             <AllocationTable
               household={household}
               benchmarkWeights={benchmarkWeights}
