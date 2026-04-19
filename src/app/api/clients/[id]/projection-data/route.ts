@@ -305,6 +305,13 @@ export async function GET(
       if (override) clientInflationOverride = override;
     }
 
+    // Resolve the household's effective inflation rate for per-row "grow at inflation"
+    // consumers (accounts, income, expenses, savings rules). NOTE: the projection
+    // engine's tax-bracket indexing and SS-wage-growth fallback paths still read the
+    // raw planSettings.inflationRate decimal directly, which can diverge from this
+    // resolved value when source = "asset_class". Aligning those is tracked in
+    // docs/FUTURE_WORK.md ("Align plan_settings.inflation_rate consumers with the
+    // resolver").
     const resolvedInflationRate = resolveInflationRate(
       {
         inflationRateSource: settings.inflationRateSource,
