@@ -87,7 +87,6 @@ describe("detectLifeEvents", () => {
     // If retirementAge is 90 but plan ends at age 85, no retirement event should be emitted.
     const data = buildClientData({
       client: { ...baseClient, retirementAge: 90, planEndAge: 85 },
-      planSettings: { ...baseClient as never, planStartYear: 2026, planEndYear: 2055 } as never,
     });
     const projection = runProjection(data);
     const events = detectLifeEvents(data, projection);
