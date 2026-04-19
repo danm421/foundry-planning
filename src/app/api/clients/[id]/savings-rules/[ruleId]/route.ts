@@ -37,7 +37,6 @@ export async function PUT(
       employerMatchPct,
       employerMatchCap,
       employerMatchAmount,
-      annualLimit,
     } = body;
 
     const [updated] = await db
@@ -54,7 +53,6 @@ export async function PUT(
         ...(employerMatchAmount !== undefined && {
           employerMatchAmount: employerMatchAmount ?? null,
         }),
-        ...(annualLimit !== undefined && { annualLimit: annualLimit ?? null }),
         ...(body.startYearRef !== undefined && { startYearRef: body.startYearRef }),
         ...(body.endYearRef !== undefined && { endYearRef: body.endYearRef }),
         updatedAt: new Date(),

@@ -7,6 +7,7 @@ import ScheduleTab from "@/components/schedule-tab";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
+import { defaultSavingsRuleRefs, resolveMilestone } from "@/lib/milestones";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -30,7 +31,6 @@ export interface SavingsRuleRow {
   employerMatchPct: string | null;
   employerMatchCap: string | null;
   employerMatchAmount: string | null;
-  annualLimit: string | null;
   startYearRef?: string | null;
   endYearRef?: string | null;
 }
@@ -98,14 +98,20 @@ export default function SavingsRuleDialog({
   const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
     String(pctFromDecimal(editing?.growthRate ?? "0", 2))
   );
-  const [startYear, setStartYear] = useState<number>(editing?.startYear ?? currentYear);
-  const [endYear, setEndYear] = useState<number>(editing?.endYear ?? currentYear + 20);
-  const [startYearRef, setStartYearRef] = useState<YearRef | null>(
-    (editing?.startYearRef as YearRef) ?? null
-  );
-  const [endYearRef, setEndYearRef] = useState<YearRef | null>(
-    (editing?.endYearRef as YearRef) ?? null
-  );
+  const defaultRefs = defaultSavingsRuleRefs();
+  const initialStartRef = (editing?.startYearRef as YearRef | null) ?? defaultRefs.startYearRef ?? null;
+  const initialEndRef = (editing?.endYearRef as YearRef | null) ?? defaultRefs.endYearRef ?? null;
+  const initialStartYear = editing?.startYear
+    ?? (initialStartRef && clientInfo?.milestones ? resolveMilestone(initialStartRef, clientInfo.milestones) : null)
+    ?? currentYear;
+  const initialEndYear = editing?.endYear
+    ?? (initialEndRef && clientInfo?.milestones ? resolveMilestone(initialEndRef, clientInfo.milestones) : null)
+    ?? currentYear + 20;
+
+  const [startYear, setStartYear] = useState<number>(initialStartYear);
+  const [endYear, setEndYear] = useState<number>(initialEndYear);
+  const [startYearRef, setStartYearRef] = useState<YearRef | null>(initialStartRef);
+  const [endYearRef, setEndYearRef] = useState<YearRef | null>(initialEndRef);
   const srClientFirstName = ownerNames?.clientName?.split(" ")[0];
   const srSpouseFirstName = ownerNames?.spouseName?.split(" ")[0];
 
@@ -137,8 +143,6 @@ export default function SavingsRuleDialog({
     const matchPct = data.get("employerMatchPct") as string;
     const matchCap = data.get("employerMatchCap") as string;
     const matchAmount = data.get("employerMatchAmount") as string;
-    const limit = data.get("annualLimit") as string;
-
     const body = {
       accountId: data.get("accountId") as string,
       annualAmount: data.get("annualAmount") as string,
@@ -153,7 +157,6 @@ export default function SavingsRuleDialog({
       employerMatchCap:
         showEmployerMatch && matchMode === "percent" && matchCap ? String(Number(matchCap) / 100) : null,
       employerMatchAmount: showEmployerMatch && matchMode === "flat" && matchAmount ? matchAmount : null,
-      annualLimit: limit || null,
     };
 
     try {
@@ -245,16 +248,6 @@ export default function SavingsRuleDialog({
               {hasSchedule && (
                 <p className="mt-1 text-xs text-blue-400 cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
               )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="sr-limit">Annual Limit ($)</label>
-              <CurrencyInput
-                id="sr-limit"
-                name="annualLimit"
-                placeholder="Optional"
-                defaultValue={editing?.annualLimit ?? ""}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-300">Growth Rate</label>

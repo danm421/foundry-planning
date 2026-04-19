@@ -3,6 +3,7 @@
 import { useState } from "react";
 import GrowthSourceRadio from "./forms/growth-source-radio";
 import SavingsRuleDialog from "./forms/savings-rule-dialog";
+import SavingsRulesList from "./forms/savings-rules-list";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import MilestoneYearPicker from "./milestone-year-picker";
 import ScheduleTab from "./schedule-tab";
@@ -90,7 +91,6 @@ interface SavingsRule {
   employerMatchPct: string | null;
   employerMatchCap: string | null;
   employerMatchAmount: string | null;
-  annualLimit: string | null;
   startYearRef?: string | null;
   endYearRef?: string | null;
 }
@@ -1205,7 +1205,6 @@ export default function IncomeExpensesView({
   // Edit mode per section
   const [incomeEdit, setIncomeEdit] = useState(false);
   const [expenseEdit, setExpenseEdit] = useState(false);
-  const [savingsEdit, setSavingsEdit] = useState(false);
 
   // Dialog state — a single dialog per entity type, controlled by (open, editing, defaultType)
   const [incomeDialog, setIncomeDialog] = useState<{
@@ -1396,66 +1395,18 @@ export default function IncomeExpensesView({
         <SectionHeader
           title="Savings & Contributions"
           subtitle={`${savingsRuleList.length} rule${savingsRuleList.length === 1 ? "" : "s"}`}
-          actions={
-            <>
-              {savingsRuleList.length > 0 && (
-                <EditToggle on={savingsEdit} onToggle={() => setSavingsEdit((v) => !v)} />
-              )}
-              <button
-                onClick={() => setSavingsDialog({ open: true })}
-                disabled={accounts.length === 0}
-                className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:opacity-40"
-              >
-                + Add
-              </button>
-            </>
-          }
         />
-
-        {savingsRuleList.length === 0 ? (
-          <EmptyRow
-            message={accounts.length === 0 ? "Add accounts first, then set up contribution rules." : "No savings rules yet."}
+        <div className="px-4 py-3">
+          <SavingsRulesList
+            rules={savingsRuleList}
+            accountsById={accountMap}
+            showAccountColumn
+            onEdit={(rule) => setSavingsDialog({ open: true, editing: rule })}
+            onDelete={(rule) => setDeletingSavings(rule)}
+            onAdd={() => setSavingsDialog({ open: true })}
+            emptyMessage={accounts.length === 0 ? "Add accounts first, then set up contribution rules." : "No savings rules yet."}
           />
-        ) : (
-          <div>
-            {/* One sub-group per account */}
-            {accounts
-              .filter((a) => savingsRuleList.some((r) => r.accountId === a.id))
-              .map((a) => {
-                const rules = savingsRuleList.filter((r) => r.accountId === a.id);
-                return (
-                  <div key={a.id} className="border-b border-gray-800 last:border-0">
-                    <div className="bg-gray-900/70 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-300">
-                      {a.name}
-                    </div>
-                    <div className="divide-y divide-gray-800">
-                      {rules.map((rule) => (
-                        <Row
-                          key={rule.id}
-                          onClick={() => !savingsEdit && setSavingsDialog({ open: true, editing: rule })}
-                          editMode={savingsEdit}
-                          onDelete={() => setDeletingSavings(rule)}
-                          label={
-                            rule.employerMatchAmount
-                              ? `Contribution + ${fmt(rule.employerMatchAmount)} match/yr`
-                              : rule.employerMatchPct
-                              ? `Contribution + ${(Number(rule.employerMatchPct) * 100).toFixed(0)}% match`
-                              : "Contribution"
-                          }
-                          meta={[
-                            rule.employerMatchCap ? `Cap ${(Number(rule.employerMatchCap) * 100).toFixed(1)}%` : null,
-                            rule.annualLimit ? `Limit ${fmt(rule.annualLimit)}` : null,
-                          ]}
-                          starts={yearsDescriptor(rule.startYear, rule.endYear, planStart, planEnd)}
-                          value={`${fmt(rule.annualAmount)}/yr`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        )}
+        </div>
       </Panel>
 
       {/* Dialogs */}

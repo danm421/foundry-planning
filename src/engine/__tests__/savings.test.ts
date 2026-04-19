@@ -19,12 +19,6 @@ describe("applySavingsRules", () => {
     expect(result.total).toBe(5000);
   });
 
-  it("caps contribution at annual limit", () => {
-    const rules = [{ ...sampleSavingsRules[0], annualAmount: 50000, annualLimit: 23500 }];
-    const result = applySavingsRules(rules, 2026, 150000, 100000);
-    expect(result.byAccount["acct-401k"]).toBe(23500);
-  });
-
   it("skips rules outside their year range", () => {
     const result = applySavingsRules(sampleSavingsRules, 2036, 150000, 50000);
     expect(result.total).toBe(0);

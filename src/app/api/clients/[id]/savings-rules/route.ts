@@ -74,7 +74,6 @@ export async function POST(
       employerMatchPct,
       employerMatchCap,
       employerMatchAmount,
-      annualLimit,
     } = body;
     const startYearRef = body.startYearRef ?? null;
     const endYearRef = body.endYearRef ?? null;
@@ -97,7 +96,6 @@ export async function POST(
         employerMatchPct: employerMatchPct ?? null,
         employerMatchCap: employerMatchCap ?? null,
         employerMatchAmount: employerMatchAmount ?? null,
-        annualLimit: annualLimit ?? null,
         startYearRef,
         endYearRef,
       })

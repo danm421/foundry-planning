@@ -46,7 +46,6 @@ describe("savings rule schedule overrides", () => {
     endYear: 2035,
     employerMatchPct: 0.5,
     employerMatchCap: 0.06,
-    annualLimit: 23500,
     scheduleOverrides: new Map([
       [2026, 23500],
       [2027, 23500],
@@ -71,12 +70,4 @@ describe("savings rule schedule overrides", () => {
     expect(result.employerTotal).toBe(4500);
   });
 
-  it("respects annualLimit even with overrides", () => {
-    const overLimit: SavingsRule = {
-      ...rule,
-      scheduleOverrides: new Map([[2026, 50000]]),
-    };
-    const result = applySavingsRules([overLimit], 2026, 150000);
-    expect(result.byAccount["acct-401k"]).toBe(23500);
-  });
 });

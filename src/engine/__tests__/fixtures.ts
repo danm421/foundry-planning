@@ -169,7 +169,6 @@ export const sampleSavingsRules: SavingsRule[] = [
     endYear: 2035,
     employerMatchPct: 0.5,
     employerMatchCap: 0.06,
-    annualLimit: 23500,
   },
 ];
 

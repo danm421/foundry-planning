@@ -9,6 +9,7 @@ import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultSavingsRuleRefs, resolveMilestone } from "@/lib/milestones";
 import SavingsRuleDialog, { type SavingsRuleRow } from "./savings-rule-dialog";
+import SavingsRulesList from "./savings-rules-list";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -445,8 +446,6 @@ export default function AddAccountForm({
         if (savingsAmount && Number(savingsAmount) > 0) {
           const matchPct = data.get("employerMatchPct") as string;
           const matchCap = data.get("employerMatchCap") as string;
-          const limit = data.get("annualLimit") as string;
-
           const savingsBody = {
             accountId: account.id,
             annualAmount: savingsAmount,
@@ -456,7 +455,6 @@ export default function AddAccountForm({
             endYearRef: savingsEndYearRef,
             employerMatchPct: showEmployerMatch && matchPct ? String(Number(matchPct) / 100) : null,
             employerMatchCap: showEmployerMatch && matchCap ? String(Number(matchCap) / 100) : null,
-            annualLimit: limit || null,
           };
 
           const savingsRes = await fetch(`/api/clients/${clientId}/savings-rules`, {
@@ -790,46 +788,13 @@ export default function AddAccountForm({
       <div className={activeTab === "savings" ? "" : "hidden"}>
       {isEdit ? (
         <div className="space-y-3">
-          {accountSavingsRules.length === 0 ? (
-            <p className="py-6 text-center text-sm text-gray-500">No savings rules yet.</p>
-          ) : (
-            <div className="divide-y divide-gray-800 rounded-md border border-gray-800">
-              {accountSavingsRules.map((rule) => {
-                const fmtAmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(rule.annualAmount));
-                return (
-                  <div key={rule.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium text-gray-100">{fmtAmt}/yr</div>
-                      <div className="text-[11px] text-gray-500">{rule.startYear}–{rule.endYear}</div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => { setSrDialogEditing(rule); setSrDialogOpen(true); }}
-                        className="rounded border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300 hover:bg-gray-700"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeletingSr(rule)}
-                        className="rounded border border-red-800 bg-red-900/30 px-2.5 py-1 text-xs font-medium text-red-400 hover:bg-red-900/60"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => { setSrDialogEditing(undefined); setSrDialogOpen(true); }}
-            className="mt-2 w-full rounded-md border border-dashed border-gray-700 py-2 text-sm text-gray-400 hover:border-gray-500 hover:text-gray-200"
-          >
-            + Add savings rule
-          </button>
+          <SavingsRulesList
+            rules={accountSavingsRules}
+            showAccountColumn={false}
+            onEdit={(rule) => { setSrDialogEditing(rule); setSrDialogOpen(true); }}
+            onDelete={(rule) => setDeletingSr(rule)}
+            onAdd={() => { setSrDialogEditing(undefined); setSrDialogOpen(true); }}
+          />
         </div>
       ) : (
       <div className="">
@@ -843,18 +808,6 @@ export default function AddAccountForm({
                   id="savingsAmount"
                   name="savingsAmount"
                   defaultValue={0}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="annualLimit">
-                  Annual Limit ($)
-                </label>
-                <CurrencyInput
-                  id="annualLimit"
-                  name="annualLimit"
-                  placeholder="Optional"
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>

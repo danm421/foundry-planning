@@ -490,7 +490,6 @@ export async function GET(
         employerMatchCap: s.employerMatchCap != null ? parseFloat(s.employerMatchCap) : undefined,
         employerMatchAmount:
           s.employerMatchAmount != null ? parseFloat(s.employerMatchAmount) : undefined,
-        annualLimit: s.annualLimit != null ? parseFloat(s.annualLimit) : undefined,
         scheduleOverrides: savingsOverrideMap.get(s.id),
       })),
       withdrawalStrategy: withdrawalRows.map((w) => ({

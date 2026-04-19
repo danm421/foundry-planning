@@ -150,7 +150,6 @@ export interface SavingsRule {
   employerMatchCap?: number;
   /** Flat annual dollar amount. When set, overrides the percentage/cap style. */
   employerMatchAmount?: number;
-  annualLimit?: number;
   /** Year-by-year amount overrides. When present, bypasses growth-rate calc. */
   scheduleOverrides?: Map<number, number>;
 }

@@ -27,7 +27,7 @@ export function computeEmployerMatch(rule: SavingsRule, salaryBase: number): num
   return salaryBase * rule.employerMatchPct;
 }
 
-// Apply savings rules at their full annual amount (respecting the optional annualLimit).
+// Apply savings rules at their full annual amount.
 // The projection engine funds these contributions from the household checking account,
 // which may require pulling from the withdrawal strategy if the balance would go negative.
 export function applySavingsRules(
@@ -51,10 +51,7 @@ export function applySavingsRules(
       ? (rule.scheduleOverrides.get(year) ?? 0)
       : rule.annualAmount;
     if (baseAmount === 0) continue;
-    let contribution = Math.min(baseAmount, remaining);
-    if (rule.annualLimit != null) {
-      contribution = Math.min(contribution, rule.annualLimit);
-    }
+    const contribution = Math.min(baseAmount, remaining);
 
     byAccount[rule.accountId] = (byAccount[rule.accountId] ?? 0) + contribution;
     total += contribution;
