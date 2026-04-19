@@ -204,7 +204,7 @@ function AssetClassesTab({ assetClasses, onUpdate, onSave, onAdd, onDelete, savi
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-700 bg-gray-800/60 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-              <th className="px-3 py-2">Name</th>
+              <th className="min-w-[14rem] px-3 py-2">Name</th>
               <th className="px-3 py-2">Type</th>
               <th className="px-3 py-2 text-right">Geo Return %</th>
               <th className="px-3 py-2 text-right">Arith Mean %</th>
@@ -291,7 +291,7 @@ function AssetClassRow({
             value={pct(ac[field] as string)}
             onChange={(e) => onUpdate(ac.id, field, toDec(e.target.value))}
             onBlur={() => onSave(ac)}
-            className="w-20 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+            className="w-16 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
           />
         </td>
       ))}
