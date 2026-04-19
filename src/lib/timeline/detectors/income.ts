@@ -16,6 +16,12 @@ function inRange(year: number, projection: ProjectionYear[]): boolean {
   return year >= projection[0].year && year <= projection[projection.length - 1].year;
 }
 
+function ageAtYear(dob: string | undefined, year: number): number | undefined {
+  if (!dob) return undefined;
+  const birthYear = new Date(dob).getUTCFullYear();
+  return year - birthYear;
+}
+
 export function detectIncomeEvents(
   data: ClientData,
   projection: ProjectionYear[],
@@ -24,12 +30,14 @@ export function detectIncomeEvents(
 
   for (const inc of data.incomes) {
     const subject = subjectFor(inc.owner);
+    const dob = subject === "primary" ? data.client.dateOfBirth : subject === "spouse" ? data.client.spouseDob : undefined;
 
     if (inc.type === "salary") {
       if (inRange(inc.startYear, projection)) {
         out.push({
           id: `income:salary_start:${subject}:${inc.id}`,
           year: inc.startYear,
+          age: ageAtYear(dob, inc.startYear),
           category: "income",
           subject,
           title: `${inc.name} begins`,
@@ -41,6 +49,7 @@ export function detectIncomeEvents(
         out.push({
           id: `income:salary_stop:${subject}:${inc.id}`,
           year: inc.endYear,
+          age: ageAtYear(dob, inc.endYear),
           category: "income",
           subject,
           title: `${inc.name} ends`,
@@ -51,10 +60,15 @@ export function detectIncomeEvents(
     }
 
     if (inc.type === "social_security") {
+      // Note: when the Life detector fires `life:ss_claim:<subject>` for the same
+      // year+subject, the orchestrator (build-timeline.ts) drops this event in
+      // favor of the Life one. Keep emission here unconditional so the income
+      // detector remains independent of ordering.
       if (inRange(inc.startYear, projection)) {
         out.push({
           id: `income:ss_begin:${subject}:${inc.id}`,
           year: inc.startYear,
+          age: ageAtYear(dob, inc.startYear),
           category: "income",
           subject,
           title: `${inc.name} begins`,

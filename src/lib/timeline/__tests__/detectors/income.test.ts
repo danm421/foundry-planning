@@ -27,6 +27,7 @@ describe("detectIncomeEvents", () => {
     const ss = events.find((e) => e.id === "income:ss_begin:primary:inc-ss-john");
     expect(ss).toBeDefined();
     expect(ss!.year).toBe(2026);
+    expect(ss!.supportingFigure).toBe("$36,000/yr SS");
   });
 
   it("skips income start/stop outside the projection window", () => {
