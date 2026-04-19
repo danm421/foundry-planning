@@ -12,8 +12,8 @@ import { PercentInput } from "./percent-input";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
-import { fraForBirthDate } from "@/engine/socialSecurity/fra";
-import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
+import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
+import { SocialSecurityCard } from "./social-security-card";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -141,6 +141,8 @@ interface IncomeExpensesViewProps {
   expenseSchedules: ScheduleMap;
   savingsSchedules: ScheduleMap;
   resolvedInflationRate: number;
+  ssClientInfo?: EngineClientInfo;
+  ssPlanSettings?: PlanSettings;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -157,7 +159,6 @@ const pctFromDecimal = (v: string | null | undefined, fallback: number): number 
 
 const INCOME_GROUPS: { label: string; types: IncomeType[] }[] = [
   { label: "Salaries", types: ["salary"] },
-  { label: "Social Security", types: ["social_security"] },
   { label: "Business", types: ["business"] },
   { label: "Deferred", types: ["deferred"] },
   { label: "Capital Gains", types: ["capital_gains"] },
@@ -171,9 +172,8 @@ const EXPENSE_GROUPS: { label: string; types: ExpenseType[] }[] = [
   { label: "Other Expenses", types: ["other"] },
 ];
 
-const INCOME_TYPE_LABELS: Record<IncomeType, string> = {
+const INCOME_TYPE_LABELS: Partial<Record<IncomeType, string>> = {
   salary: "Salary",
-  social_security: "Social Security",
   business: "Business",
   deferred: "Deferred",
   capital_gains: "Capital Gains",
@@ -388,33 +388,11 @@ function IncomeDialog({
       ? editing.inflationStartYear != null && editing.inflationStartYear < editing.startYear
       : true
   );
-  const isSocialSecurity = type === "social_security";
-
-  // Social Security-specific state
-  type SsBenefitMode = "pia_at_fra" | "manual_amount";
-  const defaultSsMode: SsBenefitMode = editing
-    ? (editing.ssBenefitMode === "pia_at_fra" ? "pia_at_fra" : "manual_amount")
-    : "pia_at_fra";
-  const [ssBenefitMode, setSsBenefitMode] = useState<SsBenefitMode>(defaultSsMode);
-  const [piaMonthly, setPiaMonthly] = useState<string>(
-    editing?.piaMonthly ? String(editing.piaMonthly) : ""
-  );
-  const [claimingAge, setClaimingAge] = useState<number>(
-    editing?.claimingAge ?? 67
-  );
-  const [claimingAgeMonths, setClaimingAgeMonths] = useState<number>(
-    editing?.claimingAgeMonths ?? 0
-  );
-
-  // Derive DOB for the current owner (used for FRA display and preview)
-  const ownerDob: string | null =
-    owner === "spouse" ? (clientInfo?.spouseDob ?? null) : (clientInfo?.clientDob ?? null);
-
   const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
     editing?.growthSource === "inflation" ? "inflation" : "custom"
   );
   const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
-    String(pctFromDecimal(editing?.growthRate, isSocialSecurity ? 2 : 3))
+    String(pctFromDecimal(editing?.growthRate, 3))
   );
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
@@ -447,36 +425,18 @@ function IncomeDialog({
 
     let submitStartYear: string;
     let submitEndYear: string;
-    let submitClaimingAge: string | null = null;
-
-    if (isSocialSecurity) {
-      submitClaimingAge = String(claimingAge);
-      submitStartYear = String(clientInfo?.planStartYear ?? currentYear);
-      submitEndYear = String(clientInfo?.planEndYear ?? currentYear + 30);
-    } else {
-      submitStartYear = String(startYear);
-      submitEndYear = String(endYear);
-      submitClaimingAge = data.get("claimingAge") ? (data.get("claimingAge") as string) : null;
-    }
-
-    // For pia_at_fra mode, annualAmount is derived server-side from PIA + claim age.
-    // We still send "0" so the DB constraint is satisfied; the engine reads piaMonthly.
-    const submitAnnualAmount =
-      isSocialSecurity && ssBenefitMode === "pia_at_fra"
-        ? String(editing?.annualAmount ?? 0)  // preserve stored value; engine reads piaMonthly, not annualAmount
-        : (data.get("annualAmount") as string);
+    submitStartYear = String(startYear);
+    submitEndYear = String(endYear);
 
     const body = {
       type: data.get("type") as string,
       name: data.get("name") as string,
-      annualAmount: submitAnnualAmount,
+      annualAmount: data.get("annualAmount") as string,
       startYear: submitStartYear,
       endYear: submitEndYear,
       growthRate: String(Number(growthRateDisplay) / 100),
       growthSource,
       owner: data.get("owner") as string,
-      claimingAge: submitClaimingAge,
-      claimingAgeMonths: isSocialSecurity ? claimingAgeMonths : 0,
       linkedEntityId: data.get("linkedEntityId") || null,
       ownerEntityId: ownerEntityId || null,
       cashAccountId: cashAccountId || null,
@@ -484,11 +444,9 @@ function IncomeDialog({
       // entry's startYear so retirement-era amounts can be entered in current
       // purchasing power. Null means inflate only from startYear onward.
       inflationStartYear: todaysDollars ? planStartYear : null,
-      startYearRef: isSocialSecurity ? null : startYearRef,
-      endYearRef: isSocialSecurity ? null : endYearRef,
+      startYearRef,
+      endYearRef,
       taxType,
-      ssBenefitMode: isSocialSecurity ? ssBenefitMode : null,
-      piaMonthly: isSocialSecurity && ssBenefitMode === "pia_at_fra" && piaMonthly ? Number(piaMonthly) : null,
     };
 
     try {
@@ -615,7 +573,6 @@ function IncomeDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            {!isSocialSecurity && (
             <div>
               <label className="block text-sm font-medium text-gray-300" htmlFor="inc-amount">
                 Annual Amount ($) <span className="text-red-500">*</span>
@@ -628,7 +585,6 @@ function IncomeDialog({
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
-            )}
 
             {hasSchedule ? (
               <div className="flex items-end">
@@ -657,133 +613,7 @@ function IncomeDialog({
               </div>
             )}
 
-            {isSocialSecurity ? (
-              <div className="col-span-2 space-y-4">
-                {/* FRA display */}
-                {ownerDob && (() => {
-                  const fra = fraForBirthDate(ownerDob);
-                  const birthYear = ownerDob.slice(0, 4);
-                  return (
-                    <p className="text-xs text-slate-400">
-                      Full Retirement Age: {fra.years}y {fra.months}mo (born {birthYear})
-                    </p>
-                  );
-                })()}
-
-                {/* Mode selector */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-300">Benefit Mode</label>
-                  <select
-                    value={ssBenefitMode}
-                    onChange={(e) => setSsBenefitMode(e.target.value as SsBenefitMode)}
-                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  >
-                    <option value="pia_at_fra">Primary Insurance Amount (PIA)</option>
-                    <option value="manual_amount">Annual benefit amount</option>
-                  </select>
-                </div>
-
-                {ssBenefitMode === "pia_at_fra" ? (
-                  <>
-                    {/* PIA input */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300" htmlFor="inc-pia">
-                        Monthly PIA ($) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        id="inc-pia"
-                        type="number"
-                        min={0}
-                        step={1}
-                        placeholder="e.g. 2800"
-                        value={piaMonthly}
-                        onChange={(e) => setPiaMonthly(e.target.value)}
-                        className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
-                      <p className="mt-1 text-xs text-gray-400">
-                        From your SSA statement — monthly benefit at your Full Retirement Age
-                      </p>
-                    </div>
-
-                    {/* Claim age: year + months */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300">Claiming Age</label>
-                      <div className="mt-1 flex gap-2">
-                        <div className="flex-1">
-                          <select
-                            value={claimingAge}
-                            onChange={(e) => setClaimingAge(Number(e.target.value))}
-                            className="block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          >
-                            {Array.from({ length: 9 }, (_, i) => 62 + i).map((yr) => (
-                              <option key={yr} value={yr}>{yr} years</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="flex-1">
-                          <select
-                            value={claimingAgeMonths}
-                            onChange={(e) => setClaimingAgeMonths(Number(e.target.value))}
-                            className="block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          >
-                            {Array.from({ length: 12 }, (_, i) => i).map((mo) => (
-                              <option key={mo} value={mo}>{mo} months</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Live preview */}
-                    {piaMonthly && ownerDob && (() => {
-                      const totalMonths = claimingAge * 12 + claimingAgeMonths;
-                      const monthly = computeOwnMonthlyBenefit({
-                        piaMonthly: Number(piaMonthly),
-                        claimAgeMonths: totalMonths,
-                        dob: ownerDob,
-                      });
-                      return (
-                        <p className="text-xs text-slate-400">
-                          Estimated first-year benefit: ${Math.round(monthly * 12).toLocaleString()}
-                        </p>
-                      );
-                    })()}
-                  </>
-                ) : (
-                  /* manual_amount mode: show annualAmount + integer claimingAge */
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300" htmlFor="inc-amount-ss">
-                        Annual Amount ($) <span className="text-red-500">*</span>
-                      </label>
-                      <CurrencyInput
-                        id="inc-amount-ss"
-                        name="annualAmount"
-                        required
-                        defaultValue={editing?.annualAmount ?? 0}
-                        className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300" htmlFor="inc-claiming">Claiming Age</label>
-                      <input
-                        id="inc-claiming"
-                        type="number"
-                        min={62}
-                        max={70}
-                        value={claimingAge}
-                        onChange={(e) => setClaimingAge(Number(e.target.value))}
-                        className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
-                    </div>
-                  </>
-                )}
-
-                <p className="text-xs text-gray-400">
-                  Start/end years are auto-set to plan range. Benefits begin at claiming age.
-                </p>
-              </div>
-            ) : clientInfo?.milestones ? (
+            {clientInfo?.milestones ? (
               <>
                 <MilestoneYearPicker
                   name="startYear"
@@ -1347,6 +1177,8 @@ export default function IncomeExpensesView({
   expenseSchedules,
   savingsSchedules,
   resolvedInflationRate,
+  ssClientInfo,
+  ssPlanSettings,
 }: IncomeExpensesViewProps) {
   const [incomeList, setIncomeList] = useState<Income[]>(initialIncomes);
   const [expenseList, setExpenseList] = useState<Expense[]>(initialExpenses);
@@ -1377,8 +1209,23 @@ export default function IncomeExpensesView({
   const accountMap = Object.fromEntries(accounts.map((a) => [a.id, a]));
   const entityMap = Object.fromEntries((entities ?? []).map((e) => [e.id, e]));
 
+  async function refreshIncomes() {
+    try {
+      const res = await fetch(`/api/clients/${clientId}/incomes`);
+      if (res.ok) {
+        const rows = (await res.json()) as Income[];
+        setIncomeList(rows);
+      }
+    } catch {
+      // ignore — stale data is preferable to crashing
+    }
+  }
+
   const planStart = clientInfo?.planStartYear;
   const planEnd = clientInfo?.planEndYear;
+
+  // Exclude SS rows from the visible income list (SS is shown in its own card)
+  const nonSsIncomeList = incomeList.filter((i) => i.type !== "social_security");
 
   // Totals (household only = exclude out-of-estate)
   const householdIncome = incomeList.filter((i) => !i.ownerEntityId).reduce((s, i) => s + Number(i.annualAmount), 0);
@@ -1429,10 +1276,10 @@ export default function IncomeExpensesView({
         <Panel>
           <SectionHeader
             title="Income"
-            subtitle={fmt(householdIncome) + " household · " + incomeList.length + " entries"}
+            subtitle={fmt(householdIncome) + " household · " + nonSsIncomeList.length + " entries"}
             actions={
               <>
-                {incomeList.length > 0 && <EditToggle on={incomeEdit} onToggle={() => setIncomeEdit((v) => !v)} />}
+                {nonSsIncomeList.length > 0 && <EditToggle on={incomeEdit} onToggle={() => setIncomeEdit((v) => !v)} />}
                 <button
                   onClick={() => setIncomeDialog({ open: true, defaultType: "salary" })}
                   className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
@@ -1443,7 +1290,7 @@ export default function IncomeExpensesView({
             }
           />
 
-          {incomeList.length === 0 ? (
+          {nonSsIncomeList.length === 0 ? (
             <EmptyRow message="No income entries yet." />
           ) : (
             INCOME_GROUPS.map((group) => {
@@ -1482,6 +1329,18 @@ export default function IncomeExpensesView({
                 </Group>
               );
             })
+          )}
+
+          {ssClientInfo && ssPlanSettings && (
+            <div className="px-4 pb-4">
+              <SocialSecurityCard
+                clientId={clientId}
+                clientInfo={ssClientInfo}
+                planSettings={ssPlanSettings}
+                incomes={incomeList as unknown as EngineIncome[]}
+                onSaved={refreshIncomes}
+              />
+            </div>
           )}
         </Panel>
 
