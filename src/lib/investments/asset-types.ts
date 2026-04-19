@@ -16,13 +16,9 @@ export const ASSET_TYPE_LABELS: Record<AssetTypeId, string> = {
   other:            "Other",
 };
 
-export const ASSET_TYPE_SORT_ORDER: Record<AssetTypeId, number> = {
-  equities: 0,
-  taxable_bonds: 1,
-  tax_exempt_bonds: 2,
-  cash: 3,
-  other: 4,
-};
+export const ASSET_TYPE_SORT_ORDER = Object.fromEntries(
+  ASSET_TYPE_IDS.map((id, i) => [id, i]),
+) as Record<AssetTypeId, number>;
 
 export function isAssetTypeId(v: unknown): v is AssetTypeId {
   return typeof v === "string" && (ASSET_TYPE_IDS as readonly string[]).includes(v);
