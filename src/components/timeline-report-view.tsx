@@ -8,6 +8,7 @@ import { buildSeries } from "@/lib/timeline/build-series";
 import type { TimelineCategory, TimelineEvent, SeriesPoint } from "@/lib/timeline/timeline-types";
 import TimelineControls from "@/components/timeline/timeline-controls";
 import TimelineSpine from "@/components/timeline/timeline-spine";
+import TimelineMinimap from "@/components/timeline/timeline-minimap";
 import { CATEGORY_HEX, CATEGORY_LEGEND_LABEL } from "@/components/timeline/timeline-category-pill";
 
 interface Props {
@@ -26,11 +27,17 @@ export default function TimelineReportView({ clientId }: Props) {
     new Set(["life", "income", "transaction", "portfolio", "insurance", "tax"]),
   );
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [visibleRange, setVisibleRange] = useState<{ start: number; end: number } | null>(null);
 
   const segmentRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const registerSegmentRef = useCallback((year: number, el: HTMLDivElement | null) => {
     if (el) segmentRefs.current.set(year, el);
     else segmentRefs.current.delete(year);
+  }, []);
+
+  const scrollToYear = useCallback((year: number) => {
+    const el = segmentRefs.current.get(year);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
   useEffect(() => {
@@ -99,6 +106,16 @@ export default function TimelineReportView({ clientId }: Props) {
               return next;
             });
           }}
+        />
+      </div>
+
+      <div className="mt-3">
+        <TimelineMinimap
+          series={series}
+          sparklineMode={sparklineMode}
+          events={visibleEvents}
+          visibleYearRange={visibleRange}
+          onScrollToYear={scrollToYear}
         />
       </div>
 
