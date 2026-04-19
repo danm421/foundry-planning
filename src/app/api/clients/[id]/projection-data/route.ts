@@ -483,6 +483,8 @@ export async function GET(
         id: s.id,
         accountId: s.accountId,
         annualAmount: parseFloat(s.annualAmount),
+        annualPercent: s.annualPercent != null ? parseFloat(s.annualPercent) : null,
+        isDeductible: s.isDeductible,
         startYear: s.startYear,
         endYear: s.endYear,
         growthRate: s.growthSource === "inflation" ? resolvedInflationRate : Number(s.growthRate ?? 0),

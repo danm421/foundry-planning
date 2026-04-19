@@ -11,6 +11,18 @@ import { defaultSavingsRuleRefs, resolveMilestone } from "@/lib/milestones";
 import SavingsRuleDialog, { type SavingsRuleRow } from "./savings-rule-dialog";
 import SavingsRulesList from "./savings-rules-list";
 import GrowthSourceRadio from "./growth-source-radio";
+import EmployerMatchFields, {
+  type MatchMode,
+  supportsEmployerMatch,
+} from "./employer-match-fields";
+import ContributionAmountFields, {
+  type ContributionMode,
+  supportsPercentContribution,
+} from "./contribution-amount-fields";
+import DeductibleContributionCheckbox, {
+  supportsDeductibility,
+  defaultDeductibleForSubtype,
+} from "./deductible-contribution-checkbox";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -130,7 +142,6 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
 
 const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "roth_401k", "403b", "roth_403b", "529"]);
 const RMD_ELIGIBLE_SUB_TYPES = new Set(["traditional_ira", "401k", "403b"]);
-const EMPLOYER_MATCH_SUB_TYPES = new Set(["401k", "roth_401k", "403b", "roth_403b", "other"]);
 
 const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
   taxable: "Taxable Account",
@@ -320,11 +331,19 @@ export default function AddAccountForm({
   );
   const [savingsGrowthSource, setSavingsGrowthSource] = useState<"custom" | "inflation">("custom");
   const [savingsGrowthRateDisplay, setSavingsGrowthRateDisplay] = useState<string>("0");
+  const [matchMode, setMatchMode] = useState<MatchMode>("none");
+  const [contribMode, setContribMode] = useState<ContributionMode>("amount");
+  const [isDeductible, setIsDeductible] = useState<boolean>(defaultDeductibleForSubtype(subType));
+  // Reset the deductibility default whenever the subtype changes in create mode.
+  useEffect(() => {
+    setIsDeductible(defaultDeductibleForSubtype(subType));
+  }, [subType]);
 
   const subTypes = SUB_TYPE_BY_CATEGORY[category];
   const isRetirementAccount = category === "retirement" && RETIREMENT_SUB_TYPES.has(subType);
-  const showEmployerMatch =
-    category === "retirement" && EMPLOYER_MATCH_SUB_TYPES.has(subType);
+  const showEmployerMatch = supportsEmployerMatch(category, subType);
+  const showContributionModeToggle = supportsPercentContribution(category, subType);
+  const showDeductibleCheckbox = supportsDeductibility(category, subType);
   const showRmdCheckbox =
     category === "retirement" &&
     (subType === "traditional_ira" ||
@@ -445,25 +464,39 @@ export default function AddAccountForm({
         }
 
         // Create savings rule if savings tab filled (create-only)
-        const savingsAmount = data.get("savingsAmount") as string;
-        if (savingsAmount && Number(savingsAmount) > 0) {
+        const savingsAmount = data.get("annualAmount") as string;
+        const savingsPercent = data.get("annualPercent") as string;
+        const hasAmount = contribMode === "amount" && savingsAmount && Number(savingsAmount) > 0;
+        const hasPercent = contribMode === "percent" && savingsPercent && Number(savingsPercent) > 0;
+        if (hasAmount || hasPercent) {
           const matchPct = data.get("employerMatchPct") as string;
           const matchCap = data.get("employerMatchCap") as string;
+          const matchAmount = data.get("employerMatchAmount") as string;
           const savingsGrowthRateDecimal =
             savingsGrowthSource === "custom"
               ? String(Number(savingsGrowthRateDisplay ?? "0") / 100)
               : String(resolvedInflationRate);
           const savingsBody = {
             accountId: account.id,
-            annualAmount: savingsAmount,
+            annualAmount: hasAmount ? savingsAmount : "0",
+            annualPercent: hasPercent ? String(Number(savingsPercent) / 100) : null,
+            isDeductible: showDeductibleCheckbox ? isDeductible : true,
             startYear: String(savingsStartYear),
             endYear: String(savingsEndYear),
             startYearRef: savingsStartYearRef,
             endYearRef: savingsEndYearRef,
             growthRate: savingsGrowthRateDecimal,
             growthSource: savingsGrowthSource,
-            employerMatchPct: showEmployerMatch && matchPct ? String(Number(matchPct) / 100) : null,
-            employerMatchCap: showEmployerMatch && matchCap ? String(Number(matchCap) / 100) : null,
+            employerMatchPct:
+              showEmployerMatch && matchMode === "percent" && matchPct
+                ? String(Number(matchPct) / 100)
+                : null,
+            employerMatchCap:
+              showEmployerMatch && matchMode === "percent" && matchCap
+                ? String(Number(matchCap) / 100)
+                : null,
+            employerMatchAmount:
+              showEmployerMatch && matchMode === "flat" && matchAmount ? matchAmount : null,
           };
 
           const savingsRes = await fetch(`/api/clients/${clientId}/savings-rules`, {
@@ -810,14 +843,12 @@ export default function AddAccountForm({
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="savingsAmount">
-                  Annual Contribution ($)
-                </label>
-                <CurrencyInput
-                  id="savingsAmount"
-                  name="savingsAmount"
-                  defaultValue={0}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                <ContributionAmountFields
+                  mode={contribMode}
+                  onModeChange={setContribMode}
+                  showModeToggle={showContributionModeToggle}
+                  initialAmount={0}
+                  idPrefix="acct-sr"
                 />
               </div>
 
@@ -906,33 +937,20 @@ export default function AddAccountForm({
               </div>
             </div>
 
-            {showEmployerMatch && (
-              <div className="grid grid-cols-2 gap-4 border-t border-gray-700 pt-4">
-                <p className="col-span-2 text-xs font-medium uppercase tracking-wider text-gray-400">Employer Match</p>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="employerMatchPct">
-                    Match Rate (%)
-                  </label>
-                  <PercentInput
-                    id="employerMatchPct"
-                    name="employerMatchPct"
-                    placeholder="e.g., 50"
-                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
+            {showDeductibleCheckbox && (
+              <DeductibleContributionCheckbox
+                checked={isDeductible}
+                onChange={setIsDeductible}
+                idPrefix="acct-sr"
+              />
+            )}
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="employerMatchCap">
-                    Match Cap (% of salary)
-                  </label>
-                  <PercentInput
-                    id="employerMatchCap"
-                    name="employerMatchCap"
-                    placeholder="e.g., 6"
-                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
+            {showEmployerMatch && (
+              <EmployerMatchFields
+                mode={matchMode}
+                onModeChange={setMatchMode}
+                idPrefix="acct-sr"
+              />
             )}
           </div>
         </div>

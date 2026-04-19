@@ -31,23 +31,52 @@ export default function SavingsRulesList({
       Number(v)
     );
 
+  const formatPercent = (decimal: string | number): string => {
+    const pct = Number(decimal) * 100;
+    return Number.isInteger(pct) ? `${pct}%` : `${pct.toFixed(1)}%`;
+  };
+
+  const formatContribution = (rule: SavingsRuleRow): string => {
+    if (rule.annualPercent != null && Number(rule.annualPercent) > 0) {
+      return `${formatPercent(rule.annualPercent)} of salary/yr`;
+    }
+    return `${fmt(rule.annualAmount)}/yr`;
+  };
+
+  const formatMatch = (rule: SavingsRuleRow): string | null => {
+    if (rule.employerMatchAmount && Number(rule.employerMatchAmount) > 0) {
+      return `+${fmt(rule.employerMatchAmount)} match`;
+    }
+    if (rule.employerMatchPct && Number(rule.employerMatchPct) > 0) {
+      const rate = formatPercent(rule.employerMatchPct);
+      if (rule.employerMatchCap && Number(rule.employerMatchCap) > 0) {
+        return `+${rate} match up to ${formatPercent(rule.employerMatchCap)}`;
+      }
+      return `+${rate} match`;
+    }
+    return null;
+  };
+
   return (
     <div className="flex flex-col gap-2">
       {rules.length === 0 ? (
         <p className="text-sm text-gray-500">{emptyMessage}</p>
       ) : (
         <div className="divide-y divide-gray-800 rounded-md border border-gray-800">
-          {rules.map((rule) => (
+          {rules.map((rule) => {
+            const matchSummary = formatMatch(rule);
+            return (
             <div key={rule.id} className="flex items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-gray-100">
-                  {fmt(rule.annualAmount)}/yr
+                  {formatContribution(rule)}
                   {showAccountColumn && accountsById[rule.accountId] && (
                     <span className="ml-2 text-gray-500">→ {accountsById[rule.accountId].name}</span>
                   )}
                 </div>
                 <div className="text-[11px] text-gray-500">
                   {rule.startYear}–{rule.endYear}
+                  {matchSummary && <span> · {matchSummary}</span>}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
@@ -67,7 +96,8 @@ export default function SavingsRulesList({
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
       <div className="mt-1">

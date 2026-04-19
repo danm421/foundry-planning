@@ -7,6 +7,20 @@ interface SavingsResult {
 }
 
 /**
+ * Resolve a savings rule's employee contribution to a dollar amount for a given year.
+ *   - If `annualPercent` is set (percent-of-salary mode), returns `salary × annualPercent`.
+ *     When there's no salary (`salary <= 0`), returns 0.
+ *   - Otherwise returns `annualAmount` (flat-dollar mode).
+ * The caller supplies the salary base (typically the account owner's salary slice).
+ */
+export function resolveContributionAmount(rule: SavingsRule, salary: number): number {
+  if (rule.annualPercent != null && rule.annualPercent > 0) {
+    return salary > 0 ? salary * rule.annualPercent : 0;
+  }
+  return rule.annualAmount;
+}
+
+/**
  * Annual employer match for a rule, given the salary the match is based on.
  * Priority order:
  *   1. Flat dollar amount (employerMatchAmount) — absolute $, wins if set.
@@ -35,7 +49,11 @@ export function applySavingsRules(
   year: number,
   totalSalaryIncome: number,
   // Optional cap used only by the legacy path (no default checking account defined).
-  availableSurplus?: number
+  availableSurplus?: number,
+  // Optional per-rule salary base for percent-mode contributions. Keyed by rule id.
+  // When a rule has annualPercent set, the resolver uses this salary. Falls back
+  // to totalSalaryIncome if the rule isn't in the map.
+  salaryByRuleId?: Record<string, number>
 ): SavingsResult {
   const byAccount: Record<string, number> = {};
   let total = 0;
@@ -47,9 +65,10 @@ export function applySavingsRules(
     if (year < rule.startYear || year > rule.endYear) continue;
     if (remaining <= 0) break;
 
+    const ruleSalary = salaryByRuleId?.[rule.id] ?? totalSalaryIncome;
     const baseAmount = rule.scheduleOverrides
       ? (rule.scheduleOverrides.get(year) ?? 0)
-      : rule.annualAmount;
+      : resolveContributionAmount(rule, ruleSalary);
     if (baseAmount === 0) continue;
     const contribution = Math.min(baseAmount, remaining);
 

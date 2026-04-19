@@ -561,6 +561,12 @@ export const savingsRules = pgTable("savings_rules", {
   // Flat annual dollar amount alternative to the pct/cap style. When set, the
   // engine uses this and ignores employerMatchPct/Cap.
   employerMatchAmount: decimal("employer_match_amount", { precision: 15, scale: 2 }),
+  // When non-null, the engine resolves this rule's contribution as
+  // ownerSalary * annualPercent per year. When null, annualAmount is used.
+  annualPercent: decimal("annual_percent", { precision: 6, scale: 4 }),
+  // Whether this contribution counts as an above-the-line deduction.
+  // Engine gates deduction on subtype eligibility AND this flag.
+  isDeductible: boolean("is_deductible").notNull().default(true),
   annualLimit: decimal("annual_limit", { precision: 15, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

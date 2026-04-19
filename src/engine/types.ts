@@ -144,6 +144,12 @@ export interface SavingsRule {
   id: string;
   accountId: string;
   annualAmount: number;
+  /** When non-null, contribution resolves as ownerSalary × annualPercent per year.
+   *  When null, annualAmount is used. Stored as a decimal ratio (0.10 = 10%). */
+  annualPercent?: number | null;
+  /** Whether this contribution counts as an above-the-line deduction.
+   *  The derive-deductions logic gates on both subtype eligibility AND this flag. */
+  isDeductible: boolean;
   startYear: number;
   endYear: number;
   employerMatchPct?: number;

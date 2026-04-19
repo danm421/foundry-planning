@@ -67,6 +67,8 @@ export async function POST(
     const {
       accountId,
       annualAmount,
+      annualPercent,
+      isDeductible,
       startYear,
       endYear,
       growthRate,
@@ -89,6 +91,8 @@ export async function POST(
         scenarioId,
         accountId,
         annualAmount: annualAmount ?? "0",
+        annualPercent: annualPercent ?? null,
+        isDeductible: isDeductible ?? true,
         startYear: Number(startYear),
         endYear: Number(endYear),
         growthRate: growthRate != null ? String(growthRate) : undefined,

@@ -165,6 +165,7 @@ export const sampleSavingsRules: SavingsRule[] = [
     id: "sav-401k",
     accountId: "acct-401k",
     annualAmount: 23500,
+    isDeductible: true,
     startYear: 2026,
     endYear: 2035,
     employerMatchPct: 0.5,

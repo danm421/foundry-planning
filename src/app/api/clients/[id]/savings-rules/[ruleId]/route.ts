@@ -30,6 +30,8 @@ export async function PUT(
     const {
       accountId,
       annualAmount,
+      annualPercent,
+      isDeductible,
       startYear,
       endYear,
       growthRate,
@@ -44,6 +46,8 @@ export async function PUT(
       .set({
         ...(accountId !== undefined && { accountId }),
         ...(annualAmount !== undefined && { annualAmount }),
+        ...(annualPercent !== undefined && { annualPercent: annualPercent ?? null }),
+        ...(isDeductible !== undefined && { isDeductible }),
         ...(startYear !== undefined && { startYear: Number(startYear) }),
         ...(endYear !== undefined && { endYear: Number(endYear) }),
         ...(growthRate != null && { growthRate: String(growthRate) }),

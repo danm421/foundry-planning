@@ -48,11 +48,27 @@ export function aggregateDeductions(
 
 // ── Source 1: Savings rules → above-line ────────────────────────────────────
 
-const DEDUCTIBLE_SUBTYPES = new Set(["traditional_ira", "401k"]);
+/** Account subtypes whose contributions CAN be above-the-line deductible.
+ *  Used by both the tax engine (to gate the deduction) and by the UI
+ *  (to decide whether to render the deductibility checkbox). Eligibility
+ *  additionally requires `account.category === "retirement"` and the rule's
+ *  own `isDeductible` flag. */
+export const DEDUCTIBLE_ELIGIBLE_SUBTYPES = new Set([
+  "traditional_ira",
+  "401k",
+  "403b",
+  "other",
+]);
 
 export interface SavingsRuleForDeduction {
+  id: string;
   accountId: string;
   annualAmount: number;
+  /** When non-null, contribution resolves as salary × annualPercent. */
+  annualPercent?: number | null;
+  /** Per-rule deductibility flag. The derive function gates on this AND on
+   *  subtype eligibility AND on retirement category. */
+  isDeductible: boolean;
   startYear: number;
   endYear: number;
 }
@@ -60,6 +76,10 @@ export interface SavingsRuleForDeduction {
 export interface AccountForDeduction {
   id: string;
   subType: string;
+  /** Required so we can gate deductions on retirement accounts only —
+   *  "other" is in DEDUCTIBLE_ELIGIBLE_SUBTYPES but only the retirement flavor
+   *  of "other" counts. */
+  category: string;
   ownerEntityId?: string | null;
 }
 
@@ -67,17 +87,28 @@ export function deriveAboveLineFromSavings(
   year: number,
   savingsRules: SavingsRuleForDeduction[],
   accounts: AccountForDeduction[],
-  isGrantorEntity: (entityId: string) => boolean
+  isGrantorEntity: (entityId: string) => boolean,
+  // Optional per-rule salary base used to resolve percent-mode contributions
+  // into a dollar amount. Keyed by rule id. Falls back to rule.annualAmount
+  // when the rule is not in the map or has no percent set.
+  salaryByRuleId?: Record<string, number>
 ): DeductionContribution {
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   let total = 0;
   for (const rule of savingsRules) {
     if (year < rule.startYear || year > rule.endYear) continue;
+    if (!rule.isDeductible) continue;
     const acct = accountById.get(rule.accountId);
     if (!acct) continue;
-    if (!DEDUCTIBLE_SUBTYPES.has(acct.subType)) continue;
+    if (acct.category !== "retirement") continue;
+    if (!DEDUCTIBLE_ELIGIBLE_SUBTYPES.has(acct.subType)) continue;
     if (acct.ownerEntityId != null && !isGrantorEntity(acct.ownerEntityId)) continue;
-    total += rule.annualAmount;
+    const salary = salaryByRuleId?.[rule.id] ?? 0;
+    const amount =
+      rule.annualPercent != null && rule.annualPercent > 0 && salary > 0
+        ? salary * rule.annualPercent
+        : rule.annualAmount;
+    total += amount;
   }
   return { aboveLine: total, itemized: 0, saltPool: 0 };
 }

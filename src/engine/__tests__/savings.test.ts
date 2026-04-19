@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { applySavingsRules } from "../savings";
+import { applySavingsRules, resolveContributionAmount } from "../savings";
 import { sampleSavingsRules } from "./fixtures";
+import type { SavingsRule } from "../types";
 
 describe("applySavingsRules", () => {
   it("applies employee contribution to the target account", () => {
@@ -34,5 +35,65 @@ describe("applySavingsRules", () => {
     const result = applySavingsRules(sampleSavingsRules, 2026, 150000);
     expect(result.byAccount["acct-401k"]).toBe(23500);
     expect(result.total).toBe(23500);
+  });
+
+  it("resolves percent-mode contribution using per-rule salary map", () => {
+    const percentRule: SavingsRule = {
+      id: "sav-percent",
+      accountId: "acct-401k",
+      annualAmount: 0,
+      annualPercent: 0.1,
+      isDeductible: true,
+      startYear: 2026,
+      endYear: 2035,
+    };
+    const salaryByRuleId = { "sav-percent": 150000 };
+    const result = applySavingsRules([percentRule], 2026, 0, undefined, salaryByRuleId);
+    expect(result.byAccount["acct-401k"]).toBeCloseTo(15000, 0);
+  });
+
+  it("percent-mode contribution with zero salary resolves to zero", () => {
+    const percentRule: SavingsRule = {
+      id: "sav-percent-no-salary",
+      accountId: "acct-401k",
+      annualAmount: 0,
+      annualPercent: 0.1,
+      isDeductible: true,
+      startYear: 2026,
+      endYear: 2035,
+    };
+    const salaryByRuleId = { "sav-percent-no-salary": 0 };
+    const result = applySavingsRules([percentRule], 2026, 0, undefined, salaryByRuleId);
+    expect(result.total).toBe(0);
+  });
+});
+
+describe("resolveContributionAmount", () => {
+  const base: SavingsRule = {
+    id: "sav-1",
+    accountId: "acct-401k",
+    annualAmount: 23500,
+    isDeductible: true,
+    startYear: 2026,
+    endYear: 2035,
+  };
+
+  it("returns annualAmount when annualPercent is null", () => {
+    expect(resolveContributionAmount(base, 150000)).toBe(23500);
+  });
+
+  it("returns salary × annualPercent when percent is set", () => {
+    const rule: SavingsRule = { ...base, annualAmount: 0, annualPercent: 0.1 };
+    expect(resolveContributionAmount(rule, 150000)).toBeCloseTo(15000, 0);
+  });
+
+  it("returns 0 when percent-mode and salary is 0", () => {
+    const rule: SavingsRule = { ...base, annualAmount: 0, annualPercent: 0.1 };
+    expect(resolveContributionAmount(rule, 0)).toBe(0);
+  });
+
+  it("returns annualAmount when annualPercent is 0 (treat as unset)", () => {
+    const rule: SavingsRule = { ...base, annualPercent: 0 };
+    expect(resolveContributionAmount(rule, 150000)).toBe(23500);
   });
 });

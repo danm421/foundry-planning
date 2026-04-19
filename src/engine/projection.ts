@@ -624,6 +624,34 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     const filingStatus = (client.filingStatus ?? "single") as FilingStatus;
     const useBracket = planSettings.taxEngineMode === "bracket" && resolved != null;
 
+    // Pre-compute salary-by-owner and salary-by-rule-id so both the deduction
+    // derivation and the employer-match + percent-mode employee contribution
+    // paths resolve against the same per-owner salary. Filters to personal
+    // (non-entity) salary income within the year range.
+    const salaryByOwner: Record<"client" | "spouse" | "joint", number> = {
+      client: 0,
+      spouse: 0,
+      joint: 0,
+    };
+    for (const inc of data.incomes) {
+      if (inc.type !== "salary") continue;
+      if (inc.ownerEntityId != null) continue;
+      if (year < inc.startYear || year > inc.endYear) continue;
+      const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
+      salaryByOwner[inc.owner] += amount;
+    }
+    const totalHouseholdSalary =
+      salaryByOwner.client + salaryByOwner.spouse + salaryByOwner.joint;
+    const salaryByRuleId: Record<string, number> = {};
+    for (const rule of data.savingsRules) {
+      const acct = data.accounts.find((a) => a.id === rule.accountId);
+      salaryByRuleId[rule.id] =
+        acct && (acct.owner === "client" || acct.owner === "spouse")
+          ? salaryByOwner[acct.owner]
+          : totalHouseholdSalary;
+    }
+
     let aboveLineDeductions = 0;
     let itemizedDeductions = 0;
     let deductionBreakdownResult: DeductionBreakdown | undefined;
@@ -632,17 +660,22 @@ export function runProjection(data: ClientData): ProjectionYear[] {
         deriveAboveLineFromSavings(
           year,
           data.savingsRules.map((r) => ({
+            id: r.id,
             accountId: r.accountId,
             annualAmount: r.annualAmount,
+            annualPercent: r.annualPercent ?? null,
+            isDeductible: r.isDeductible,
             startYear: r.startYear,
             endYear: r.endYear,
           })),
           data.accounts.map((a) => ({
             id: a.id,
             subType: a.subType ?? "",
+            category: a.category,
             ownerEntityId: a.ownerEntityId,
           })),
-          isGrantorEntity
+          isGrantorEntity,
+          salaryByRuleId
         ),
         deriveAboveLineFromExpenses(year, allExpenses.map((e) => ({
           deductionType: e.deductionType ?? null,
@@ -876,12 +909,13 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     const surplusBeforeSavings = householdInflows - householdNonSavingsOutflows;
 
     const savings = hasChecking
-      ? applySavingsRules(data.savingsRules, year, income.salaries)
+      ? applySavingsRules(data.savingsRules, year, income.salaries, undefined, salaryByRuleId)
       : applySavingsRules(
           data.savingsRules,
           year,
           income.salaries,
-          Math.max(0, surplusBeforeSavings)
+          Math.max(0, surplusBeforeSavings),
+          salaryByRuleId
         );
 
     // Credit employee contributions to destination accounts and debit household checking.
@@ -906,30 +940,11 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     });
 
     // Employer match — direct credit to the destination account, free cash from the
-    // employer. Does not touch household checking. For percentage-based matches the
-    // base salary is the salary belonging to the account's owner, not total household
-    // salary. For joint-owned accounts and flat-$ matches, total salary is used.
-    const salaryByOwner: Record<"client" | "spouse" | "joint", number> = {
-      client: 0,
-      spouse: 0,
-      joint: 0,
-    };
-    for (const inc of data.incomes) {
-      if (inc.type !== "salary") continue;
-      if (inc.ownerEntityId != null) continue;
-      if (year < inc.startYear || year > inc.endYear) continue;
-      const inflateFrom = inc.inflationStartYear ?? inc.startYear;
-      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
-      salaryByOwner[inc.owner] += amount;
-    }
-
+    // employer. Does not touch household checking. Uses salaryByRuleId computed
+    // earlier in the year-loop (keyed to each rule's account owner).
     for (const rule of data.savingsRules) {
       if (year < rule.startYear || year > rule.endYear) continue;
-      const acct = data.accounts.find((a) => a.id === rule.accountId);
-      const ownerSalary =
-        acct && (acct.owner === "client" || acct.owner === "spouse")
-          ? salaryByOwner[acct.owner]
-          : income.salaries;
+      const ownerSalary = salaryByRuleId[rule.id] ?? income.salaries;
       const match = computeEmployerMatch(rule, ownerSalary);
       if (match === 0) continue;
       accountBalances[rule.accountId] = (accountBalances[rule.accountId] ?? 0) + match;

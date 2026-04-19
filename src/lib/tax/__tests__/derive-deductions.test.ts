@@ -23,26 +23,63 @@ const isGrantorNever = () => false;
 const ACCT_TRADITIONAL_IRA: AccountForDeduction = {
   id: "acct-ira",
   subType: "traditional_ira",
+  category: "retirement",
   ownerEntityId: null,
 };
 const ACCT_401K: AccountForDeduction = {
   id: "acct-401k",
   subType: "401k",
+  category: "retirement",
+  ownerEntityId: null,
+};
+const ACCT_403B: AccountForDeduction = {
+  id: "acct-403b",
+  subType: "403b",
+  category: "retirement",
+  ownerEntityId: null,
+};
+const ACCT_OTHER_RETIREMENT: AccountForDeduction = {
+  id: "acct-other-ret",
+  subType: "other",
+  category: "retirement",
+  ownerEntityId: null,
+};
+const ACCT_OTHER_TAXABLE: AccountForDeduction = {
+  id: "acct-other-tax",
+  subType: "other",
+  category: "taxable",
   ownerEntityId: null,
 };
 const ACCT_ROTH_IRA: AccountForDeduction = {
   id: "acct-roth",
   subType: "roth_ira",
+  category: "retirement",
   ownerEntityId: null,
 };
 const ACCT_BROKERAGE: AccountForDeduction = {
   id: "acct-brk",
   subType: "brokerage",
+  category: "taxable",
   ownerEntityId: null,
 };
 
-function makeRule(accountId: string, amount: number, startYear = 2026, endYear = 2076): SavingsRuleForDeduction {
-  return { accountId, annualAmount: amount, startYear, endYear };
+let ruleSeq = 0;
+function makeRule(
+  accountId: string,
+  amount: number,
+  startYear = 2026,
+  endYear = 2076,
+  opts: { isDeductible?: boolean; annualPercent?: number | null } = {}
+): SavingsRuleForDeduction {
+  return {
+    id: `rule-${++ruleSeq}`,
+    accountId,
+    annualAmount: amount,
+    annualPercent: opts.annualPercent ?? null,
+    isDeductible: opts.isDeductible ?? true,
+    startYear,
+    endYear,
+  };
 }
 
 describe("deriveAboveLineFromSavings", () => {
@@ -86,13 +123,13 @@ describe("deriveAboveLineFromSavings", () => {
   });
 
   it("excludes contributions to non-grantor entity accounts", () => {
-    const acctEntity: AccountForDeduction = { id: "acct-trust", subType: "traditional_ira", ownerEntityId: "entity-1" };
+    const acctEntity: AccountForDeduction = { id: "acct-trust", subType: "traditional_ira", category: "retirement", ownerEntityId: "entity-1" };
     const result = deriveAboveLineFromSavings(2026, [makeRule("acct-trust", 7500)], [acctEntity], isGrantorNever);
     expect(result.aboveLine).toBe(0);
   });
 
   it("includes contributions to grantor entity accounts", () => {
-    const acctEntity: AccountForDeduction = { id: "acct-grantor", subType: "traditional_ira", ownerEntityId: "entity-1" };
+    const acctEntity: AccountForDeduction = { id: "acct-grantor", subType: "traditional_ira", category: "retirement", ownerEntityId: "entity-1" };
     const result = deriveAboveLineFromSavings(2026, [makeRule("acct-grantor", 7500)], [acctEntity], isGrantorAlways);
     expect(result.aboveLine).toBe(7500);
   });
@@ -105,6 +142,63 @@ describe("deriveAboveLineFromSavings", () => {
   it("skips rule whose account is not in accounts list", () => {
     const result = deriveAboveLineFromSavings(2026, [makeRule("acct-missing", 7500)], [], isGrantorAlways);
     expect(result.aboveLine).toBe(0);
+  });
+
+  it("includes 403b contributions (bug fix — was previously excluded)", () => {
+    const result = deriveAboveLineFromSavings(2026, [makeRule("acct-403b", 22500)], [ACCT_403B], isGrantorAlways);
+    expect(result.aboveLine).toBe(22500);
+  });
+
+  it("includes 'other' retirement contributions when isDeductible is true", () => {
+    const rule = makeRule("acct-other-ret", 10000, 2026, 2076, { isDeductible: true });
+    const result = deriveAboveLineFromSavings(2026, [rule], [ACCT_OTHER_RETIREMENT], isGrantorAlways);
+    expect(result.aboveLine).toBe(10000);
+  });
+
+  it("excludes 'other' retirement contributions when isDeductible is false", () => {
+    const rule = makeRule("acct-other-ret", 10000, 2026, 2076, { isDeductible: false });
+    const result = deriveAboveLineFromSavings(2026, [rule], [ACCT_OTHER_RETIREMENT], isGrantorAlways);
+    expect(result.aboveLine).toBe(0);
+  });
+
+  it("excludes contributions on non-retirement 'other' accounts even when isDeductible is true", () => {
+    // UI should never set isDeductible=true on a non-retirement account, but the
+    // engine gates on category too as a safety net.
+    const rule = makeRule("acct-other-tax", 10000, 2026, 2076, { isDeductible: true });
+    const result = deriveAboveLineFromSavings(2026, [rule], [ACCT_OTHER_TAXABLE], isGrantorAlways);
+    expect(result.aboveLine).toBe(0);
+  });
+
+  it("excludes 401k contributions when isDeductible is false (post-tax 401k / after-tax contributions)", () => {
+    const rule = makeRule("acct-401k", 10000, 2026, 2076, { isDeductible: false });
+    const result = deriveAboveLineFromSavings(2026, [rule], [ACCT_401K], isGrantorAlways);
+    expect(result.aboveLine).toBe(0);
+  });
+
+  it("excludes traditional IRA contributions when isDeductible is false (non-deductible IRA / backdoor Roth)", () => {
+    const rule = makeRule("acct-ira", 7500, 2026, 2076, { isDeductible: false });
+    const result = deriveAboveLineFromSavings(2026, [rule], [ACCT_TRADITIONAL_IRA], isGrantorAlways);
+    expect(result.aboveLine).toBe(0);
+  });
+
+  it("resolves percent-mode contribution against salaryByRuleId", () => {
+    const rule = makeRule("acct-401k", 0, 2026, 2076, { annualPercent: 0.1 });
+    const salaryByRuleId: Record<string, number> = { [rule.id]: 150000 };
+    const result = deriveAboveLineFromSavings(2026, [rule], [ACCT_401K], isGrantorAlways, salaryByRuleId);
+    expect(result.aboveLine).toBeCloseTo(15000, 0);
+  });
+
+  it("percent-mode contribution with zero salary resolves to zero", () => {
+    const rule = makeRule("acct-401k", 0, 2026, 2076, { annualPercent: 0.1 });
+    const salaryByRuleId: Record<string, number> = { [rule.id]: 0 };
+    const result = deriveAboveLineFromSavings(2026, [rule], [ACCT_401K], isGrantorAlways, salaryByRuleId);
+    expect(result.aboveLine).toBe(0);
+  });
+
+  it("falls back to annualAmount when salaryByRuleId is not provided", () => {
+    const rule = makeRule("acct-401k", 23500);
+    const result = deriveAboveLineFromSavings(2026, [rule], [ACCT_401K], isGrantorAlways);
+    expect(result.aboveLine).toBe(23500);
   });
 });
 

@@ -4,10 +4,22 @@ import { useState } from "react";
 import GrowthSourceRadio from "./growth-source-radio";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import ScheduleTab from "@/components/schedule-tab";
-import { CurrencyInput } from "@/components/currency-input";
-import { PercentInput } from "@/components/percent-input";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultSavingsRuleRefs, resolveMilestone } from "@/lib/milestones";
+import EmployerMatchFields, {
+  type MatchMode,
+  supportsEmployerMatch,
+  inferMatchMode,
+} from "./employer-match-fields";
+import ContributionAmountFields, {
+  type ContributionMode,
+  supportsPercentContribution,
+  inferContributionMode,
+} from "./contribution-amount-fields";
+import DeductibleContributionCheckbox, {
+  supportsDeductibility,
+  defaultDeductibleForSubtype,
+} from "./deductible-contribution-checkbox";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -18,12 +30,12 @@ export interface SavingsRuleAccount {
   subType: string;
 }
 
-const EMPLOYER_MATCH_SUB_TYPES = new Set(["401k", "roth_401k", "403b", "roth_403b", "other"]);
-
 export interface SavingsRuleRow {
   id: string;
   accountId: string;
   annualAmount: string;
+  annualPercent?: string | null;
+  isDeductible?: boolean;
   startYear: number;
   endYear: number;
   growthRate?: string | null;
@@ -119,19 +131,31 @@ export default function SavingsRuleDialog({
     editing?.accountId ?? (accounts[0]?.id ?? "")
   );
   const selectedAccount = accounts.find((a) => a.id === accountId);
-  const showEmployerMatch =
-    selectedAccount?.category === "retirement" &&
-    EMPLOYER_MATCH_SUB_TYPES.has(selectedAccount?.subType ?? "");
+  const showEmployerMatch = supportsEmployerMatch(
+    selectedAccount?.category,
+    selectedAccount?.subType
+  );
+  const showContributionModeToggle = supportsPercentContribution(
+    selectedAccount?.category,
+    selectedAccount?.subType
+  );
+  const showDeductibleCheckbox = supportsDeductibility(
+    selectedAccount?.category,
+    selectedAccount?.subType
+  );
 
-  // Match mode: "none" | "percent" | "flat". Inferred from what's populated on the
-  // rule being edited; defaults to "none" for new rules.
-  type MatchMode = "none" | "percent" | "flat";
-  const initialMatchMode: MatchMode = editing?.employerMatchAmount
-    ? "flat"
-    : editing?.employerMatchPct
-    ? "percent"
-    : "none";
+  const initialMatchMode: MatchMode = inferMatchMode(
+    editing?.employerMatchAmount,
+    editing?.employerMatchPct
+  );
   const [matchMode, setMatchMode] = useState<MatchMode>(initialMatchMode);
+
+  const initialContribMode: ContributionMode = inferContributionMode(editing?.annualPercent ?? null);
+  const [contribMode, setContribMode] = useState<ContributionMode>(initialContribMode);
+
+  const [isDeductible, setIsDeductible] = useState<boolean>(
+    editing?.isDeductible ?? defaultDeductibleForSubtype(selectedAccount?.subType)
+  );
 
   if (!open) return null;
 
@@ -143,9 +167,16 @@ export default function SavingsRuleDialog({
     const matchPct = data.get("employerMatchPct") as string;
     const matchCap = data.get("employerMatchCap") as string;
     const matchAmount = data.get("employerMatchAmount") as string;
+    const annualAmountInput = data.get("annualAmount") as string;
+    const annualPercentInput = data.get("annualPercent") as string;
     const body = {
       accountId: data.get("accountId") as string,
-      annualAmount: data.get("annualAmount") as string,
+      annualAmount: contribMode === "amount" ? annualAmountInput : (editing?.annualAmount ?? "0"),
+      annualPercent:
+        contribMode === "percent" && annualPercentInput
+          ? String(Number(annualPercentInput) / 100)
+          : null,
+      isDeductible: showDeductibleCheckbox ? isDeductible : true,
       startYear: String(startYear),
       endYear: String(endYear),
       startYearRef,
@@ -234,21 +265,29 @@ export default function SavingsRuleDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="sr-amount">
-                Annual Amount ($) <span className="text-red-500">*</span>
-              </label>
-              <CurrencyInput
-                id="sr-amount"
-                name="annualAmount"
+            <div className="col-span-2">
+              <ContributionAmountFields
+                mode={contribMode}
+                onModeChange={setContribMode}
+                showModeToggle={showContributionModeToggle}
+                initialAmount={editing?.annualAmount}
+                initialPercent={editing?.annualPercent ?? null}
+                idPrefix="sr"
                 required
-                defaultValue={editing?.annualAmount ?? 0}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               {hasSchedule && (
                 <p className="mt-1 text-xs text-blue-400 cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
               )}
             </div>
+            {showDeductibleCheckbox && (
+              <div className="col-span-2">
+                <DeductibleContributionCheckbox
+                  checked={isDeductible}
+                  onChange={setIsDeductible}
+                  idPrefix="sr"
+                />
+              </div>
+            )}
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
               <div className="mt-1">
@@ -260,84 +299,18 @@ export default function SavingsRuleDialog({
                 />
               </div>
             </div>
-            {showEmployerMatch && <div className="col-span-2 rounded-md border border-gray-800 bg-gray-900/60 p-3">
-              <div className="mb-2 flex items-center gap-4">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                  Employer Match
-                </span>
-                <div className="flex gap-1 text-xs">
-                  {(["none", "percent", "flat"] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setMatchMode(m)}
-                      className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${
-                        matchMode === m
-                          ? "border-blue-600 bg-blue-900/40 text-blue-300"
-                          : "border-gray-700 bg-gray-900 text-gray-400 hover:bg-gray-800"
-                      }`}
-                    >
-                      {m === "none" ? "None" : m === "percent" ? "% of salary" : "Flat $"}
-                    </button>
-                  ))}
-                </div>
+            {showEmployerMatch && (
+              <div className="col-span-2">
+                <EmployerMatchFields
+                  mode={matchMode}
+                  onModeChange={setMatchMode}
+                  initialPct={editing?.employerMatchPct ?? null}
+                  initialCap={editing?.employerMatchCap ?? null}
+                  initialAmount={editing?.employerMatchAmount ?? null}
+                  idPrefix="sr"
+                />
               </div>
-
-              {matchMode === "percent" && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-400" htmlFor="sr-match-pct">
-                      Match rate (%)
-                    </label>
-                    <PercentInput
-                      id="sr-match-pct"
-                      name="employerMatchPct"
-                      placeholder="e.g., 50 or 3"
-                      defaultValue={
-                        editing?.employerMatchPct ? pctFromDecimal(editing.employerMatchPct, 0) : ""
-                      }
-                      className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-400" htmlFor="sr-match-cap">
-                      Cap (% of salary) — optional
-                    </label>
-                    <PercentInput
-                      id="sr-match-cap"
-                      name="employerMatchCap"
-                      placeholder="e.g., 6"
-                      defaultValue={
-                        editing?.employerMatchCap ? pctFromDecimal(editing.employerMatchCap, 0) : ""
-                      }
-                      className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-                  <p className="col-span-2 text-[11px] text-gray-500">
-                    No cap → <code>rate × account-owner salary</code>. With cap →{" "}
-                    <code>rate × cap × salary</code> (e.g. 50% match up to 6% of salary).
-                  </p>
-                </div>
-              )}
-
-              {matchMode === "flat" && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-400" htmlFor="sr-match-amt">
-                    Flat annual amount ($)
-                  </label>
-                  <CurrencyInput
-                    id="sr-match-amt"
-                    name="employerMatchAmount"
-                    placeholder="5000"
-                    defaultValue={editing?.employerMatchAmount ?? ""}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                  <p className="mt-1 text-[11px] text-gray-500">
-                    The employer deposits this flat amount each year, regardless of salary.
-                  </p>
-                </div>
-              )}
-            </div>}
+            )}
             {clientInfo?.milestones ? (
               <MilestoneYearPicker
                 name="startYear"
