@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import CommentDialog from "./comment-dialog";
 import BenchmarkSelector from "./benchmark-selector";
 import AllocationDonut from "./allocation-donut";
 import AllocationTable from "./allocation-table";
+import AllocationTypeDrill from "./allocation-type-drill";
 import AllocationDrillTable from "./allocation-drill-table";
+import { TYPE_DRILL_PREFIX } from "./allocation-table";
+import { isAssetTypeId, type AssetTypeId } from "@/lib/investments/asset-types";
 import DriftChart from "./drift-chart";
 import type { HouseholdAllocation, DriftRow, AssetClassLite } from "@/lib/investments/allocation";
 import type { AssetClassWeight } from "@/lib/investments/benchmarks";
@@ -58,6 +61,28 @@ export default function InvestmentsClient({
   const benchmarkWeightForDrilled = drilledRowId && !isUnallocatedDrill
     ? benchmarkWeights.find((w) => w.assetClassId === drilledRowId)
     : undefined;
+
+  // Parse the current drill id into one of: null | type | unallocated | class.
+  const parsedTypeDrillId = drilledRowId?.startsWith(TYPE_DRILL_PREFIX)
+    ? drilledRowId.slice(TYPE_DRILL_PREFIX.length)
+    : null;
+  const drilledTypeId: AssetTypeId | null =
+    parsedTypeDrillId && isAssetTypeId(parsedTypeDrillId) ? parsedTypeDrillId : null;
+  const drilledTypeRollup = drilledTypeId
+    ? household.byAssetType.find((t) => t.id === drilledTypeId) ?? null
+    : null;
+
+  // If the drill id doesn't resolve (e.g., user changed view, type now has zero
+  // value), clear it. Runs after render so we don't set state mid-render.
+  useEffect(() => {
+    if (drilledRowId === null) return;
+    if (drilledRowId === "__unallocated__") return;
+    if (drilledRowId.startsWith(TYPE_DRILL_PREFIX)) {
+      if (!drilledTypeRollup) setDrilledRowId(null);
+      return;
+    }
+    if (!drilledAssetClass) setDrilledRowId(null);
+  }, [drilledRowId, drilledTypeRollup, drilledAssetClass]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -118,6 +143,16 @@ export default function InvestmentsClient({
               benchmarkWeights={benchmarkWeights}
               assetClasses={assetClasses}
               onRowClick={setDrilledRowId}
+              mode={view}
+            />
+          ) : drilledTypeRollup ? (
+            <AllocationTypeDrill
+              typeId={drilledTypeRollup.id}
+              typeLabel={drilledTypeRollup.label}
+              typeValue={drilledTypeRollup.value}
+              typePctOfClassified={drilledTypeRollup.pctOfClassified}
+              classes={household.contributionsByAssetType[drilledTypeRollup.id] ?? []}
+              onBack={() => setDrilledRowId(null)}
             />
           ) : isUnallocatedDrill ? (
             <AllocationDrillTable
@@ -141,11 +176,13 @@ export default function InvestmentsClient({
               onBack={() => setDrilledRowId(null)}
             />
           ) : (
+            // Fallback while the reset effect runs.
             <AllocationTable
               household={household}
               benchmarkWeights={benchmarkWeights}
               assetClasses={assetClasses}
               onRowClick={setDrilledRowId}
+              mode={view}
             />
           )}
         </section>
