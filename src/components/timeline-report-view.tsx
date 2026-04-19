@@ -6,6 +6,7 @@ import type { ClientData, ProjectionYear } from "@/engine";
 import { buildTimeline } from "@/lib/timeline/build-timeline";
 import { buildSeries } from "@/lib/timeline/build-series";
 import type { TimelineCategory, TimelineEvent, SeriesPoint } from "@/lib/timeline/timeline-types";
+import TimelineControls from "@/components/timeline/timeline-controls";
 
 interface Props {
   clientId: string;
@@ -72,6 +73,22 @@ export default function TimelineReportView({ clientId }: Props) {
       <p className="mt-2 text-sm text-gray-400">
         {projection.length} years · {events.length} events
       </p>
+
+      <div className="mt-6">
+        <TimelineControls
+          sparklineMode={sparklineMode}
+          onSparklineModeChange={setSparklineMode}
+          activeCategories={activeCategories}
+          onToggleCategory={(cat) => {
+            setActiveCategories((prev) => {
+              const next = new Set(prev);
+              if (next.has(cat)) next.delete(cat);
+              else next.add(cat);
+              return next;
+            });
+          }}
+        />
+      </div>
 
       {/* Placeholder debug dump — replaced by real components in later tasks. */}
       <details className="mt-4 text-xs text-gray-500">
