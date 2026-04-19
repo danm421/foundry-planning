@@ -1216,7 +1216,7 @@ function SavingsRuleDialog({
     editing?.growthSource === "inflation" ? "inflation" : "custom"
   );
   const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
-    String(pctFromDecimal(editing?.growthRate ?? "0", 0))
+    String(pctFromDecimal(editing?.growthRate ?? "0", 2))
   );
   const [startYear, setStartYear] = useState<number>(editing?.startYear ?? currentYear);
   const [endYear, setEndYear] = useState<number>(editing?.endYear ?? currentYear + 20);
