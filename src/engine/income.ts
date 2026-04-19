@@ -18,7 +18,7 @@ interface IncomeBreakdown {
   };
 }
 
-const incomeTypeToKey: Record<Income["type"], keyof Omit<IncomeBreakdown, "total" | "bySource">> = {
+const incomeTypeToKey: Record<Income["type"], keyof Omit<IncomeBreakdown, "total" | "bySource" | "socialSecurityDetail">> = {
   salary: "salaries",
   social_security: "socialSecurity",
   business: "business",
@@ -57,6 +57,15 @@ export function computeIncome(
       const birthYear = parseInt(ownerDob.slice(0, 4), 10);
       const claimingYear = birthYear + inc.claimingAge;
       if (year < claimingYear) continue;
+
+      // Suppress the spouse's SS row when the spouse has died.
+      // spouseLifeExpectancy on ClientInfo controls this: deathYear = spouseBirthYear + spouseLifeExpectancy.
+      // The orchestrator handles the survivor top-up from the CLIENT's row; the spouse row must
+      // stop contributing to avoid double-counting.
+      if (inc.owner === "spouse" && client.spouseLifeExpectancy != null && client.spouseDob) {
+        const spouseBy = parseInt(client.spouseDob.slice(0, 4), 10);
+        if (year >= spouseBy + client.spouseLifeExpectancy) continue;
+      }
 
       // pia_at_fra mode → delegate to orchestrator (handles own, spousal, survivor)
       if (inc.ssBenefitMode === "pia_at_fra" && inc.piaMonthly != null) {

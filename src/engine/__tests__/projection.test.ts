@@ -1119,3 +1119,215 @@ describe("projection — socialSecurityDetail", () => {
     expect(year2029.income.socialSecurity).toBeCloseTo(24000 + 12000, 0); // 36000
   });
 });
+
+describe("projection — spousal multi-year verification", () => {
+  it("verifies SS totals across all years as each spouse claims at FRA", () => {
+    // Client born 1960-06-01 (FRA 67), PIA $2000/mo → claims year 2027
+    // Spouse born 1962-06-01 (FRA 67), PIA $300/mo → claims year 2029
+    // Spouse receives top-up: own $300/mo < 50% of $2000 = $1000/mo → total $1000/mo
+    // Household SS by year:
+    //   2026: $0 (neither has claimed)
+    //   2027: $24,000 (client only)
+    //   2028: $24,000 (client only, spouse still not at 67)
+    //   2029: $36,000 (both claimed: 2000 + 1000 = 3000/mo)
+    //   2030: $36,000 (both continue)
+    // This tests multi-year stability — complementary coverage to the single-year Task 11 test.
+    const data = buildClientData({
+      client: {
+        ...baseClient,
+        dateOfBirth: "1960-06-01",
+        retirementAge: 67,
+        spouseDob: "1962-06-01",
+        spouseRetirementAge: 67,
+        filingStatus: "married_joint",
+      },
+      incomes: [
+        {
+          id: "ss-client",
+          type: "social_security",
+          name: "Client SS",
+          annualAmount: 0,
+          startYear: 2025,
+          endYear: 2055,
+          growthRate: 0,
+          owner: "client",
+          claimingAge: 67,
+          ssBenefitMode: "pia_at_fra",
+          piaMonthly: 2000,
+        },
+        {
+          id: "ss-spouse",
+          type: "social_security",
+          name: "Spouse SS",
+          annualAmount: 0,
+          startYear: 2025,
+          endYear: 2055,
+          growthRate: 0,
+          owner: "spouse",
+          claimingAge: 67,
+          ssBenefitMode: "pia_at_fra",
+          piaMonthly: 300,
+        },
+      ],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        ...basePlanSettings,
+        planStartYear: 2020,
+        planEndYear: 2040,
+        flatFederalRate: 0,
+        flatStateRate: 0,
+      },
+    });
+
+    const result = runProjection(data);
+
+    // 2026: neither claimed → $0
+    const year2026 = result.find((py) => py.year === 2026)!;
+    expect(year2026).toBeDefined();
+    expect(year2026.income.socialSecurity).toBe(0);
+
+    // 2027: client turns 67 and claims → $24,000; spouse age 65, not yet claimed
+    const year2027 = result.find((py) => py.year === 2027)!;
+    expect(year2027).toBeDefined();
+    expect(year2027.income.socialSecurity).toBeCloseTo(24000, 0);
+    expect(year2027.socialSecurityDetail!.client.retirement).toBeCloseTo(24000, 0);
+    expect(year2027.socialSecurityDetail!.client.spousal).toBe(0);
+    expect(year2027.socialSecurityDetail!.client.survivor).toBe(0);
+    expect(year2027.socialSecurityDetail!.spouse).toBeUndefined();
+
+    // 2028: only client claimed → $24,000 (spouse still age 66)
+    const year2028 = result.find((py) => py.year === 2028)!;
+    expect(year2028).toBeDefined();
+    expect(year2028.income.socialSecurity).toBeCloseTo(24000, 0);
+
+    // 2029: spouse turns 67 and claims → $36,000
+    //   client: 2000/mo × 12 = $24,000
+    //   spouse: 300/mo own + 700/mo top-up = 1000/mo × 12 = $12,000
+    const year2029 = result.find((py) => py.year === 2029)!;
+    expect(year2029).toBeDefined();
+    expect(year2029.income.socialSecurity).toBeCloseTo(36000, 0);
+    expect(year2029.socialSecurityDetail!.client.retirement).toBeCloseTo(24000, 0);
+    expect(year2029.socialSecurityDetail!.spouse!.retirement).toBeCloseTo(3600, 0);
+    expect(year2029.socialSecurityDetail!.spouse!.spousal).toBeCloseTo(8400, 0);
+
+    // 2030: both continue at same rates → $36,000
+    const year2030 = result.find((py) => py.year === 2030)!;
+    expect(year2030).toBeDefined();
+    expect(year2030.income.socialSecurity).toBeCloseTo(36000, 0);
+
+    // Detail total must equal income.socialSecurity in 2029
+    const cd = year2029.socialSecurityDetail!.client;
+    const sd = year2029.socialSecurityDetail!.spouse!;
+    const detailTotal =
+      cd.retirement + cd.spousal + cd.survivor +
+      sd.retirement + sd.spousal + sd.survivor;
+    expect(year2029.income.socialSecurity).toBeCloseTo(detailTotal, 0);
+  });
+});
+
+describe("projection — survivor transition", () => {
+  it("switches to survivor benefit after spouse death", () => {
+    // Client born 1960-01-01 (FRA 67), PIA $2000/mo → claims year 2027
+    // Spouse born 1960-01-01 (FRA 67), PIA $2000/mo → claims year 2027
+    // Spouse lifeExpectancy = 75 → death year = 1960 + 75 = 2035
+    // otherIsDead = year >= 2035, so from 2035 onward spouse is dead
+    //
+    // Years 2027-2034 (both alive, both claimed):
+    //   Each gets own $2000/mo = $24,000/yr → household = $48,000/yr
+    //
+    // Year 2035+ (spouse dead):
+    //   Deceased filed at FRA (claimingAge 67 == FRA 67) → Case B: survivor max = deceased PIA = $2000/mo
+    //   Client's own $2000/mo == survivor $2000/mo → no net top-up; all in retirement bucket
+    //   Household SS = $24,000/yr (client's own only)
+    const data = buildClientData({
+      client: {
+        ...baseClient,
+        dateOfBirth: "1960-01-01",
+        retirementAge: 67,
+        spouseDob: "1960-01-01",
+        spouseRetirementAge: 67,
+        filingStatus: "married_joint",
+        spouseLifeExpectancy: 75,
+      },
+      incomes: [
+        {
+          id: "ss-client",
+          type: "social_security",
+          name: "Client SS",
+          annualAmount: 0,
+          startYear: 2025,
+          endYear: 2060,
+          growthRate: 0,
+          owner: "client",
+          claimingAge: 67,
+          ssBenefitMode: "pia_at_fra",
+          piaMonthly: 2000,
+        },
+        {
+          id: "ss-spouse",
+          type: "social_security",
+          name: "Spouse SS",
+          annualAmount: 0,
+          startYear: 2025,
+          endYear: 2060,
+          growthRate: 0,
+          owner: "spouse",
+          claimingAge: 67,
+          ssBenefitMode: "pia_at_fra",
+          piaMonthly: 2000,
+        },
+      ],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        ...basePlanSettings,
+        planStartYear: 2025,
+        planEndYear: 2055,
+        flatFederalRate: 0,
+        flatStateRate: 0,
+      },
+    });
+
+    const result = runProjection(data);
+
+    // NOTE: Both spouses born 1960-01-01 → Jan-1 rule applies → FRA lookup uses birth year 1959
+    // → FRA = 66y 10m = 802 months. Claiming at 67y 0m = 804 months → +2 DRC months.
+    // DRC = 2 × (2/300) = 1.333% → own = $2000 × 1.01333 = $2,026.67/mo → $24,320/yr per person.
+
+    // 2027: both alive, both claimed → $48,640 (24,320 × 2)
+    const year2027 = result.find((py) => py.year === 2027)!;
+    expect(year2027).toBeDefined();
+    expect(year2027.income.socialSecurity).toBeCloseTo(48640, 0);
+    expect(year2027.socialSecurityDetail!.client.retirement).toBeCloseTo(24320, 0);
+    expect(year2027.socialSecurityDetail!.client.survivor).toBe(0);
+    expect(year2027.socialSecurityDetail!.spouse!.retirement).toBeCloseTo(24320, 0);
+    expect(year2027.socialSecurityDetail!.spouse!.survivor).toBe(0);
+
+    // 2034: still both alive → $48,640
+    const year2034 = result.find((py) => py.year === 2034)!;
+    expect(year2034).toBeDefined();
+    expect(year2034.income.socialSecurity).toBeCloseTo(48640, 0);
+
+    // 2035: spouse dies (year >= 1960 + 75 = 2035) → only client's benefit
+    // Client own = $2,026.67/mo (with DRC), survivor ceiling = $2,026.67/mo (own ≥ survivor)
+    // → net top-up = 0; all in retirement bucket; household SS = $24,320/yr
+    const year2035 = result.find((py) => py.year === 2035)!;
+    expect(year2035).toBeDefined();
+    expect(year2035.income.socialSecurity).toBeCloseTo(24320, 0);
+    // Spouse row stops contributing (suppressed by income.ts dead-spouse check)
+    expect(year2035.socialSecurityDetail!.spouse).toBeUndefined();
+    // Client gets own retirement only (no survivor top-up needed; own ≥ survivor)
+    expect(year2035.socialSecurityDetail!.client.retirement).toBeCloseTo(24320, 0);
+    expect(year2035.socialSecurityDetail!.client.survivor).toBe(0);
+
+    // 2036: same pattern continues → $24,320
+    const year2036 = result.find((py) => py.year === 2036)!;
+    expect(year2036).toBeDefined();
+    expect(year2036.income.socialSecurity).toBeCloseTo(24320, 0);
+  });
+});
