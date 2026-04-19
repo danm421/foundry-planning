@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { assetClasses } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { isAssetTypeId } from "@/lib/investments/asset-types";
 
 export async function GET() {
   try {
@@ -26,10 +27,17 @@ export async function POST(request: NextRequest) {
   try {
     const firmId = await getOrgId();
     const body = await request.json();
-    const { name, geometricReturn, arithmeticMean, volatility, pctOrdinaryIncome, pctLtCapitalGains, pctQualifiedDividends, pctTaxExempt, sortOrder } = body;
+    const {
+      name, geometricReturn, arithmeticMean, volatility,
+      pctOrdinaryIncome, pctLtCapitalGains, pctQualifiedDividends, pctTaxExempt,
+      sortOrder, assetType,
+    } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    }
+    if (assetType !== undefined && !isAssetTypeId(assetType)) {
+      return NextResponse.json({ error: "Invalid assetType" }, { status: 400 });
     }
 
     const [created] = await db
@@ -45,6 +53,7 @@ export async function POST(request: NextRequest) {
         pctQualifiedDividends: pctQualifiedDividends ?? "0.15",
         pctTaxExempt: pctTaxExempt ?? "0",
         sortOrder: sortOrder ?? 0,
+        assetType: assetType ?? "other",
       })
       .returning();
 

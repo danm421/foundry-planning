@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { assetClasses } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { isAssetTypeId } from "@/lib/investments/asset-types";
 
 export async function PUT(
   request: NextRequest,
@@ -12,6 +13,10 @@ export async function PUT(
     const firmId = await getOrgId();
     const { id } = await params;
     const body = await request.json();
+
+    if (body.assetType !== undefined && !isAssetTypeId(body.assetType)) {
+      return NextResponse.json({ error: "Invalid assetType" }, { status: 400 });
+    }
 
     const [updated] = await db
       .update(assetClasses)
