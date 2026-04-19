@@ -225,6 +225,13 @@
       "when": 1776600174980,
       "tag": "0032_contribution_limit_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1776607097734,
+      "tag": "0033_asset_type_on_asset_classes",
+      "breakpoints": true
     }
   ]
 }

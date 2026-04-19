@@ -303,6 +303,7 @@ export const assetClasses = pgTable("asset_classes", {
   pctQualifiedDividends: decimal("pct_qualified_dividends", { precision: 5, scale: 4 }).notNull().default("0.15"),
   pctTaxExempt: decimal("pct_tax_exempt", { precision: 5, scale: 4 }).notNull().default("0"),
   sortOrder: integer("sort_order").notNull().default(0),
+  assetType: varchar("asset_type", { length: 32 }).notNull().default("other"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [unique("asset_classes_firm_id_name_unique").on(t.firmId, t.name)]);
