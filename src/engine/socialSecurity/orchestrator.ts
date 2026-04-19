@@ -40,7 +40,7 @@ function claimAgeMonthsOf(row: Income): number {
  *
  * Three high-level cases are resolved in priority order:
  *
- * **Case 1 — Other spouse is dead** (`year > otherBy + otherLifeExpectancy`):
+ * **Case 1 — Other spouse is dead** (`year >= otherBy + otherLifeExpectancy`):
  *   - If survivor is below age 60: zero benefit.
  *   - Otherwise compute `computeSurvivorMonthlyBenefit` using the deceased's
  *     filing state (never filed / filed before FRA / filed at or after FRA).
@@ -86,7 +86,7 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
     otherBy = birthYear(otherDob);
     otherLifeExpectancy = input.row.owner === "client"
       ? input.client.spouseLifeExpectancy ?? 95
-      : input.client.lifeExpectancy;
+      : input.client.lifeExpectancy; // client.lifeExpectancy is NOT NULL in DB schema — no fallback needed
     // Death year = otherBy + otherLifeExpectancy. Survivor benefits begin in the death year.
     otherIsDead = otherLifeExpectancy != null && input.year >= otherBy + otherLifeExpectancy;
     const otherClaimAgeMonths = claimAgeMonthsOf(otherRow);
@@ -110,7 +110,8 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
     const deceasedNeverFiled = deathYear < otherClaimYear;
     const deceasedFra = fraForBirthDate(otherDob!);
     const deceasedAgeAtDeathMonths = (deathYear - otherBy) * 12;
-    const deceasedFiledBeforeFra = !deceasedNeverFiled && (otherRow.claimingAge ?? 0) * 12 < deceasedFra.totalMonths;
+    const deceasedClaimAgeMonths = (otherRow.claimingAge ?? 0) * 12 + (otherRow.claimingAgeMonths ?? 0);
+    const deceasedFiledBeforeFra = !deceasedNeverFiled && deceasedClaimAgeMonths < deceasedFra.totalMonths;
 
     // DRC months: only for Case D (died after FRA, never filed)
     let deceasedDrcMonths = 0;

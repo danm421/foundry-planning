@@ -276,6 +276,22 @@ Dependency notes that override raw score:
   deferred: lower-frequency scenario; real benefit but needs a new data
   model wrinkle._
 
+- **SS: Per-scenario death-year overrides** _(P4 E5 L3)_ — currently
+  `lifeExpectancy` and `spouseLifeExpectancy` are single values on `ClientInfo`
+  that apply to all scenarios. A scenario switcher (see item #1 in Suggested
+  Order) should allow per-scenario overrides so advisors can model "what if
+  spouse lives to 80 vs 90" without duplicating the whole plan. _Why deferred:
+  depends on scenario switcher landing first; current single-LE model is
+  correct and sufficient for Tier 1+2 SS feature._
+
+- **SS: Mixed pia_at_fra + manual_amount in same household** _(P2 E6 L1)_ —
+  when one spouse uses `pia_at_fra` mode and the other uses `manual_amount`,
+  survivor math silently returns 0 because `deceasedPia = otherRow.piaMonthly ?? 0`
+  and a `manual_amount` row has no `piaMonthly`. Unusual configuration
+  (advisors using the SS feature are expected to use `pia_at_fra` for both
+  spouses), but could confuse if a plan is partially migrated. _Why deferred:
+  low-frequency edge case; no advisor has hit it yet._
+
 - **Align `plan_settings.inflation_rate` consumers with the resolver** _(P2 E4 L2)_ —
   The engine still reads `plan_settings.inflation_rate` directly in two places
   unrelated to item growth: tax bracket indexing and SS wage-growth fallback

@@ -62,9 +62,20 @@ export function computeIncome(
       // spouseLifeExpectancy on ClientInfo controls this: deathYear = spouseBirthYear + spouseLifeExpectancy.
       // The orchestrator handles the survivor top-up from the CLIENT's row; the spouse row must
       // stop contributing to avoid double-counting.
-      if (inc.owner === "spouse" && client.spouseLifeExpectancy != null && client.spouseDob) {
+      // Use ?? 95 to match the orchestrator's default when spouseLifeExpectancy is null — without
+      // this fallback, a null spouseLifeExpectancy would leave the spouse row live while the
+      // orchestrator triggers survivor math at birthYear+95, causing double-counting.
+      if (inc.owner === "spouse" && client.spouseDob) {
         const spouseBy = parseInt(client.spouseDob.slice(0, 4), 10);
-        if (year >= spouseBy + client.spouseLifeExpectancy) continue;
+        const effectiveSpouseLE = client.spouseLifeExpectancy ?? 95;
+        if (year >= spouseBy + effectiveSpouseLE) continue;
+      }
+
+      // Suppress the client's SS row when the client has died.
+      // lifeExpectancy on ClientInfo controls this: deathYear = clientBirthYear + lifeExpectancy.
+      if (inc.owner === "client" && client.lifeExpectancy != null && client.dateOfBirth) {
+        const clientBy = parseInt(client.dateOfBirth.slice(0, 4), 10);
+        if (year >= clientBy + client.lifeExpectancy) continue;
       }
 
       // pia_at_fra mode → delegate to orchestrator (handles own, spousal, survivor)

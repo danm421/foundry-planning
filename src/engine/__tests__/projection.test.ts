@@ -1330,4 +1330,92 @@ describe("projection — survivor transition", () => {
     expect(year2036).toBeDefined();
     expect(year2036.income.socialSecurity).toBeCloseTo(24320, 0);
   });
+
+  it("no double-count when spouseLifeExpectancy is null (defaults to 95)", () => {
+    // Regression for: orchestrator defaults null spouseLifeExpectancy to 95 but income.ts
+    // previously required != null, leaving the spouse row alive → double-count from year 2055+.
+    //
+    // Setup: client born 1960-01-01, PIA $2000, claims at 67.
+    //        spouse born 1960-01-01, PIA $2000, claims at 67, spouseLifeExpectancy: null.
+    // Effective spouse LE = 95 → spouse dies in 1960+95 = 2055.
+    // Year 2056: income.ts must suppress the spouse row (year >= 2055).
+    // Orchestrator triggers survivor math from the client row.
+    // Client own = $2,026.67/mo (DRC: born Jan-1 → FRA lookup uses 1959 → 66y10m = 802mo;
+    //   claiming 67y0m = 804mo → +2 DRC mo → $2000 × (1 + 2×2/300) = ~$2026.67/mo = ~$24,320/yr).
+    // Survivor ceiling = deceased PIA $2000/mo = $24,000/yr < client own → no top-up.
+    // Household SS 2056 = ~$24,320/yr (NOT $48,640).
+    const data = buildClientData({
+      client: {
+        ...baseClient,
+        dateOfBirth: "1960-01-01",
+        retirementAge: 67,
+        spouseDob: "1960-01-01",
+        spouseRetirementAge: 67,
+        filingStatus: "married_joint",
+        spouseLifeExpectancy: null,
+      },
+      incomes: [
+        {
+          id: "ss-client-null-le",
+          type: "social_security",
+          name: "Client SS",
+          annualAmount: 0,
+          startYear: 2025,
+          endYear: 2099,
+          growthRate: 0,
+          owner: "client",
+          claimingAge: 67,
+          ssBenefitMode: "pia_at_fra",
+          piaMonthly: 2000,
+        },
+        {
+          id: "ss-spouse-null-le",
+          type: "social_security",
+          name: "Spouse SS",
+          annualAmount: 0,
+          startYear: 2025,
+          endYear: 2099,
+          growthRate: 0,
+          owner: "spouse",
+          claimingAge: 67,
+          ssBenefitMode: "pia_at_fra",
+          piaMonthly: 2000,
+        },
+      ],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        ...basePlanSettings,
+        planStartYear: 2025,
+        planEndYear: 2060,
+        flatFederalRate: 0,
+        flatStateRate: 0,
+      },
+    });
+
+    const result = runProjection(data);
+
+    // Both alive and claimed → $48,640/yr (DRC applies as noted above)
+    const year2054 = result.find((py) => py.year === 2054)!;
+    expect(year2054).toBeDefined();
+    expect(year2054.income.socialSecurity).toBeCloseTo(48640, 0);
+
+    // 2055: spouse death year (1960 + 95 = 2055) → spouse row suppressed from this year on.
+    // Client row triggers survivor math; own >= survivor → no top-up.
+    const year2055 = result.find((py) => py.year === 2055)!;
+    expect(year2055).toBeDefined();
+    expect(year2055.income.socialSecurity).toBeCloseTo(24320, 0);
+
+    // 2056: must NOT be double-counted ($48,640 would indicate the bug is present)
+    const year2056 = result.find((py) => py.year === 2056)!;
+    expect(year2056).toBeDefined();
+    expect(year2056.income.socialSecurity).toBeCloseTo(24320, 0);
+    // Spouse row is gone
+    expect(year2056.socialSecurityDetail?.spouse).toBeUndefined();
+    // Client gets own retirement only
+    expect(year2056.socialSecurityDetail!.client.retirement).toBeCloseTo(24320, 0);
+    expect(year2056.socialSecurityDetail!.client.survivor).toBe(0);
+  });
 });
