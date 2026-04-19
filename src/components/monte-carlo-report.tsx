@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ReportHeader } from "./monte-carlo/report-header";
 import { KpiBand } from "./monte-carlo/kpi-band";
 import { FanChart } from "./monte-carlo/fan-chart";
+import { FindingsCard } from "./monte-carlo/findings-card";
+import { TopRisksCard } from "./monte-carlo/top-risks-card";
+import { RecommendationsCard } from "./monte-carlo/recommendations-card";
+import { computeTopRisks } from "./monte-carlo/lib/top-risks";
 import {
   createReturnEngine,
   runMonteCarlo,
@@ -195,6 +199,13 @@ export default function MonteCarloReport({ clientId }: Props) {
     return markers;
   }, [clientData]);
 
+  const topRisks = useMemo(() => {
+    if (!summary || !clientData) return [];
+    return computeTopRisks(summary, clientData, clientData.planSettings);
+  }, [summary, clientData]);
+
+  const deterministicEnding = deterministic?.[deterministic.length - 1];
+
   if (loadError) {
     return (
       <div className="p-8">
@@ -218,128 +229,146 @@ export default function MonteCarloReport({ clientId }: Props) {
 
   return (
     <div className="p-8 space-y-6">
-      <ReportHeader
-        clientDisplayName={
-          clientData.client.spouseName
-            ? `${clientData.client.firstName} & ${clientData.client.spouseName} ${clientData.client.lastName}`
-            : `${clientData.client.firstName} ${clientData.client.lastName}`
-        }
-      />
-      {summary ? (
-        <KpiBand
-          summary={summary}
-          clientData={clientData}
-          planSettings={clientData.planSettings}
-        />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div
-              key={i}
-              className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4 min-h-[96px] animate-pulse"
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
+        <div className="flex flex-col gap-6 min-w-0">
+          <ReportHeader
+            clientDisplayName={
+              clientData.client.spouseName
+                ? `${clientData.client.firstName} & ${clientData.client.spouseName} ${clientData.client.lastName}`
+                : `${clientData.client.firstName} ${clientData.client.lastName}`
+            }
+          />
+          {summary ? (
+            <KpiBand
+              summary={summary}
+              clientData={clientData}
+              planSettings={clientData.planSettings}
             />
-          ))}
-        </div>
-      )}
-
-      {summary ? (
-        <FanChart
-          summary={summary}
-          deterministic={deterministic}
-          ageMarkers={ageMarkers}
-        />
-      ) : (
-        <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[440px] animate-pulse" />
-      )}
-
-      {usedCount === 0 && (
-        <div className="rounded border border-gray-300 bg-gray-50 p-3 text-sm text-gray-700">
-          All accounts in this plan use fixed growth rates (custom, default, or inflation).
-          Monte Carlo will run, but every trial produces the same result and the output
-          matches the deterministic Cash Flow projection.
-        </div>
-      )}
-
-
-      {running && (
-        <div className="w-full max-w-md">
-          <div className="h-2 bg-gray-200 rounded overflow-hidden">
-            <div
-              className="h-full bg-blue-600 transition-all"
-              style={{ width: `${progressTotal > 0 ? (progress / progressTotal) * 100 : 0}%` }}
-            />
-          </div>
-          <div className="text-xs text-gray-500 mt-1">
-            {progress} / {progressTotal} trials
-          </div>
-        </div>
-      )}
-
-      {runError && (
-        <div className="rounded border border-red-300 bg-red-50 p-4 text-sm text-red-900">
-          Run failed: {runError}
-        </div>
-      )}
-
-      {summary && (
-        <>
-          <section className="space-y-3">
-            <h2 className="text-lg font-semibold">Monte Carlo Asset Spread</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-xs uppercase tracking-wide text-gray-500">
-                    <th className="py-2 pr-4">Year</th>
-                    <th className="py-2 pr-4">Age</th>
-                    <th className="py-2 pr-4 text-right">Above Avg. Market (80%)</th>
-                    <th className="py-2 pr-4 text-right">CAGR</th>
-                    <th className="py-2 pr-4 text-right">Average Market (50%)</th>
-                    <th className="py-2 pr-4 text-right">CAGR</th>
-                    <th className="py-2 pr-4 text-right">Below Avg. Market (20%)</th>
-                    <th className="py-2 pr-4 text-right">CAGR</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.byYear.map((row) => (
-                    <tr key={row.year} className="border-b">
-                      <td className="py-2 pr-4">{row.year}</td>
-                      <td className="py-2 pr-4">
-                        {row.age.spouse != null
-                          ? `${row.age.client}/${row.age.spouse}`
-                          : row.age.client}
-                      </td>
-                      <td className="py-2 pr-4 text-right font-mono">{formatCurrency(row.balance.p80)}</td>
-                      <td className="py-2 pr-4 text-right font-mono text-gray-500">
-                        {row.cagrFromStart ? formatPercent(row.cagrFromStart.p80) : "—"}
-                      </td>
-                      <td className="py-2 pr-4 text-right font-mono">{formatCurrency(row.balance.p50)}</td>
-                      <td className="py-2 pr-4 text-right font-mono text-gray-500">
-                        {row.cagrFromStart ? formatPercent(row.cagrFromStart.p50) : "—"}
-                      </td>
-                      <td className="py-2 pr-4 text-right font-mono">{formatCurrency(row.balance.p20)}</td>
-                      <td className="py-2 pr-4 text-right font-mono text-gray-500">
-                        {row.cagrFromStart ? formatPercent(row.cagrFromStart.p20) : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4 min-h-[96px] animate-pulse"
+                />
+              ))}
             </div>
-          </section>
-        </>
-      )}
+          )}
 
-      {summary ? (
-        <div className="flex justify-center pt-2">
-          <button
-            onClick={handleRestart}
-            disabled={running}
-            className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm text-slate-200 hover:border-emerald-400/60 hover:text-emerald-300 disabled:opacity-50"
-          >
-            {running ? "Running…" : "Generate New Seed"}
-          </button>
+          {summary ? (
+            <FanChart
+              summary={summary}
+              deterministic={deterministic}
+              ageMarkers={ageMarkers}
+            />
+          ) : (
+            <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[440px] animate-pulse" />
+          )}
+
+          {usedCount === 0 && (
+            <div className="rounded border border-gray-300 bg-gray-50 p-3 text-sm text-gray-700">
+              All accounts in this plan use fixed growth rates (custom, default, or inflation).
+              Monte Carlo will run, but every trial produces the same result and the output
+              matches the deterministic Cash Flow projection.
+            </div>
+          )}
+
+          {running && (
+            <div className="w-full max-w-md">
+              <div className="h-2 bg-gray-200 rounded overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 transition-all"
+                  style={{ width: `${progressTotal > 0 ? (progress / progressTotal) * 100 : 0}%` }}
+                />
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                {progress} / {progressTotal} trials
+              </div>
+            </div>
+          )}
+
+          {runError && (
+            <div className="rounded border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+              Run failed: {runError}
+            </div>
+          )}
+
+          {summary && (
+            <>
+              <section className="space-y-3">
+                <h2 className="text-lg font-semibold">Monte Carlo Asset Spread</h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-xs uppercase tracking-wide text-gray-500">
+                        <th className="py-2 pr-4">Year</th>
+                        <th className="py-2 pr-4">Age</th>
+                        <th className="py-2 pr-4 text-right">Above Avg. Market (80%)</th>
+                        <th className="py-2 pr-4 text-right">CAGR</th>
+                        <th className="py-2 pr-4 text-right">Average Market (50%)</th>
+                        <th className="py-2 pr-4 text-right">CAGR</th>
+                        <th className="py-2 pr-4 text-right">Below Avg. Market (20%)</th>
+                        <th className="py-2 pr-4 text-right">CAGR</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary.byYear.map((row) => (
+                        <tr key={row.year} className="border-b">
+                          <td className="py-2 pr-4">{row.year}</td>
+                          <td className="py-2 pr-4">
+                            {row.age.spouse != null
+                              ? `${row.age.client}/${row.age.spouse}`
+                              : row.age.client}
+                          </td>
+                          <td className="py-2 pr-4 text-right font-mono">{formatCurrency(row.balance.p80)}</td>
+                          <td className="py-2 pr-4 text-right font-mono text-gray-500">
+                            {row.cagrFromStart ? formatPercent(row.cagrFromStart.p80) : "—"}
+                          </td>
+                          <td className="py-2 pr-4 text-right font-mono">{formatCurrency(row.balance.p50)}</td>
+                          <td className="py-2 pr-4 text-right font-mono text-gray-500">
+                            {row.cagrFromStart ? formatPercent(row.cagrFromStart.p50) : "—"}
+                          </td>
+                          <td className="py-2 pr-4 text-right font-mono">{formatCurrency(row.balance.p20)}</td>
+                          <td className="py-2 pr-4 text-right font-mono text-gray-500">
+                            {row.cagrFromStart ? formatPercent(row.cagrFromStart.p20) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </>
+          )}
+
+          {summary ? (
+            <div className="flex justify-center pt-2">
+              <button
+                onClick={handleRestart}
+                disabled={running}
+                className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm text-slate-200 hover:border-emerald-400/60 hover:text-emerald-300 disabled:opacity-50"
+              >
+                {running ? "Running…" : "Generate New Seed"}
+              </button>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+        <aside className="flex flex-col gap-4">
+          {summary ? (
+            <>
+              <FindingsCard summary={summary} deterministicEnding={deterministicEnding} />
+              <TopRisksCard risks={topRisks} />
+              <RecommendationsCard />
+            </>
+          ) : (
+            <>
+              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[140px] animate-pulse" />
+              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[100px] animate-pulse" />
+              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[140px] animate-pulse" />
+            </>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }
