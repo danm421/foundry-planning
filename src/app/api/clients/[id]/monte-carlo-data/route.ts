@@ -83,8 +83,9 @@ export async function GET(
 
     // ── Resolve per-account mixes ───────────────────────────────────────────
     // Per PDF p.6/p.7: custom rates, inflation-linked rates, and non-investable
-    // categories don't randomize. For v1 we only randomize accounts whose
-    // growth_source is explicitly asset_mix or model_portfolio.
+    // categories don't randomize. We randomize accounts whose effective growth
+    // source resolves to asset_mix or model_portfolio — including accounts on
+    // "default" that inherit a category default that points to one of those.
     const allocsByAccount = new Map<string, typeof accountAllocationRows>();
     for (const a of accountAllocationRows) {
       const list = allocsByAccount.get(a.accountId) ?? [];
@@ -104,6 +105,15 @@ export async function GET(
     const accountInEstate = (a: typeof accountRows[number]): boolean =>
       a.ownerEntityId == null || entityInPortfolio.get(a.ownerEntityId) === true;
 
+    // Per-category default growth source + model portfolio from plan_settings.
+    // Only the three investable categories have category-level defaults.
+    const categoryDefault = (category: string): { source: string; portfolioId: string | null } => {
+      if (category === "taxable") return { source: settings.growthSourceTaxable, portfolioId: settings.modelPortfolioIdTaxable };
+      if (category === "cash") return { source: settings.growthSourceCash, portfolioId: settings.modelPortfolioIdCash };
+      if (category === "retirement") return { source: settings.growthSourceRetirement, portfolioId: settings.modelPortfolioIdRetirement };
+      return { source: "custom", portfolioId: null };
+    };
+
     const accountMixes: Array<{ accountId: string; mix: AccountAssetMix[] }> = [];
     for (const acct of accountRows) {
       // Skip non-investable categories (per PDF: real estate/business/life insurance
@@ -111,12 +121,26 @@ export async function GET(
       if (acct.category === "real_estate" || acct.category === "business" || acct.category === "life_insurance") continue;
       if (!accountInEstate(acct)) continue;
 
+      // Mirror the deterministic resolver in projection-data/route.ts:
+      //   - "asset_mix" or "model_portfolio" on the account → use as-is.
+      //   - "default" → look up the category-level default in plan_settings;
+      //     if that default is asset_mix/model_portfolio, use the same path.
+      //   - Anything else (custom, inflation, or default→custom/inflation) →
+      //     no mix → MC falls back to the fixed deterministic growth rate.
+      let effectiveSource: string = acct.growthSource ?? "default";
+      let effectivePortfolioId: string | null = acct.modelPortfolioId ?? null;
+      if (effectiveSource === "default") {
+        const def = categoryDefault(acct.category);
+        effectiveSource = def.source;
+        if (effectiveSource === "model_portfolio") effectivePortfolioId = def.portfolioId;
+      }
+
       let mix: AccountAssetMix[] = [];
-      if (acct.growthSource === "asset_mix") {
+      if (effectiveSource === "asset_mix") {
         const allocs = allocsByAccount.get(acct.id) ?? [];
         mix = allocs.map((a) => ({ assetClassId: a.assetClassId, weight: parseFloat(a.weight) }));
-      } else if (acct.growthSource === "model_portfolio" && acct.modelPortfolioId) {
-        const allocs = allocsByPortfolio.get(acct.modelPortfolioId) ?? [];
+      } else if (effectiveSource === "model_portfolio" && effectivePortfolioId) {
+        const allocs = allocsByPortfolio.get(effectivePortfolioId) ?? [];
         mix = allocs.map((a) => ({ assetClassId: a.assetClassId, weight: parseFloat(a.weight) }));
       }
       if (mix.length > 0) accountMixes.push({ accountId: acct.id, mix });

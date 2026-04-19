@@ -53,7 +53,24 @@ export default function MonteCarloReport({ clientId }: Props) {
 
   // Load data in parallel. This is the same pattern as the CashFlow report;
   // MC just needs an additional payload (correlations, mixes, seed).
+  //
+  // The Next.js App Router keeps this page component mounted across
+  // /clients/[id]/... param changes, so changing clientId doesn't unmount us.
+  // Reset every piece of per-client state synchronously when clientId changes
+  // — otherwise the previous client's summary, KPIs, table, error, and seed
+  // linger in the UI until the new fetch resolves (and `summary` would never
+  // clear at all without an explicit re-run).
   useEffect(() => {
+    setClientData(null);
+    setMcPayload(null);
+    setLoadError(null);
+    setSummary(null);
+    setRunError(null);
+    setCurrentSeed(null);
+    setProgress(0);
+    setProgressTotal(0);
+    setRunning(false);
+
     let cancelled = false;
     (async () => {
       try {
@@ -123,13 +140,27 @@ export default function MonteCarloReport({ clientId }: Props) {
       const res = await fetch(`/api/clients/${clientId}/monte-carlo-data`, { method: "POST" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as { seed: number };
+      // Update mcPayload with a new object reference so the auto-run effect
+      // below picks up the change and kicks off a fresh run with the new seed.
       setMcPayload((prev) => (prev ? { ...prev, seed: body.seed } : prev));
       setCurrentSeed(body.seed);
       setSummary(null);
+      setRunError(null);
     } catch (e) {
       setRunError(e instanceof Error ? e.message : String(e));
     }
   }, [clientId]);
+
+  // Auto-run MC as soon as data is loaded (or reloaded after a reseed).
+  // Guarded on `summary` and `running` so it fires exactly once per
+  // (clientData, mcPayload) pair — not on every re-render.
+  useEffect(() => {
+    if (!clientData || !mcPayload) return;
+    if (summary !== null) return;
+    if (running) return;
+    if (runError !== null) return;
+    handleRun();
+  }, [clientData, mcPayload, summary, running, runError, handleRun]);
 
   if (loadError) {
     return (
@@ -164,21 +195,20 @@ export default function MonteCarloReport({ clientId }: Props) {
       </header>
 
       {usedCount === 0 && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-          This plan has no accounts with an asset-class allocation or model portfolio,
-          so there&apos;s nothing to randomize. Configure at least one investable account
-          with a growth source of &quot;Asset Mix&quot; or &quot;Model Portfolio&quot; to
-          see Monte Carlo results.
+        <div className="rounded border border-gray-300 bg-gray-50 p-3 text-sm text-gray-700">
+          All accounts in this plan use fixed growth rates (custom, default, or inflation).
+          Monte Carlo will run, but every trial produces the same result and the output
+          matches the deterministic Cash Flow projection.
         </div>
       )}
 
       <div className="flex gap-3">
         <button
           onClick={handleRun}
-          disabled={running || usedCount === 0}
+          disabled={running}
           className="px-4 py-2 rounded bg-blue-600 text-white disabled:bg-gray-300"
         >
-          {running ? "Running…" : summary ? "Re-run" : "Run 1,000 Simulations"}
+          {running ? "Running…" : "Re-run (same seed)"}
         </button>
         <button
           onClick={handleRestart}
