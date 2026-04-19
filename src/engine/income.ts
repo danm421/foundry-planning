@@ -1,5 +1,6 @@
 import type { Income, ClientInfo } from "./types";
 import { resolveAnnualBenefit } from "./socialSecurity/orchestrator";
+import { resolveClaimAgeMonths } from "./socialSecurity/claimAge";
 
 interface IncomeBreakdown {
   salaries: number;
@@ -52,11 +53,13 @@ export function computeIncome(
 
     // Social Security: delay until claiming age
     if (inc.type === "social_security" && inc.claimingAge != null) {
+      if (inc.ssBenefitMode === "no_benefit") continue;
       const ownerDob = inc.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
       if (!ownerDob) continue;
+      const claimAgeMonths = resolveClaimAgeMonths(inc, client);
+      if (claimAgeMonths == null) continue; // unresolvable mode (e.g., fra without DOB)
       const birthYear = parseInt(ownerDob.slice(0, 4), 10);
-      const claimingYear = birthYear + inc.claimingAge;
-      if (year < claimingYear) continue;
+      if (year * 12 < birthYear * 12 + claimAgeMonths) continue;
 
       // Suppress the spouse's SS row when the spouse has died.
       // spouseLifeExpectancy on ClientInfo controls this: deathYear = spouseBirthYear + spouseLifeExpectancy.

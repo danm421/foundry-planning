@@ -173,3 +173,70 @@ describe("computeIncome — SS manual_amount mode (regression)", () => {
     expect(result.socialSecurity).toBeCloseTo(30000 * Math.pow(1.02, 5), 2);
   });
 });
+
+describe("computeIncome — SS no_benefit mode", () => {
+  it("returns 0 for a no_benefit row regardless of PIA or annualAmount", () => {
+    const ss: Income = {
+      id: "ss1",
+      type: "social_security",
+      name: "Client SS",
+      annualAmount: 30000,              // ignored
+      startYear: 2022,
+      endYear: 2099,
+      growthRate: 0,
+      owner: "client",
+      claimingAge: 67,
+      ssBenefitMode: "no_benefit",
+      piaMonthly: 2000,                  // ignored
+      inflationStartYear: 2022,
+    };
+    const result = computeIncome([ss], 2027, client); // age 67, claim met
+    expect(result.socialSecurity).toBe(0);
+    expect(result.bySource[ss.id]).toBeUndefined();
+  });
+});
+
+describe("computeIncome — SS pia_at_fra with claimingAgeMode='fra'", () => {
+  it("resolves claim age to FRA dynamically (67y for DOB 1960)", () => {
+    const ss: Income = {
+      id: "ss1",
+      type: "social_security",
+      name: "Client SS",
+      annualAmount: 0,
+      startYear: 2022,
+      endYear: 2099,
+      growthRate: 0,
+      owner: "client",
+      claimingAge: 62,                   // should be ignored; mode is "fra"
+      claimingAgeMonths: 0,
+      ssBenefitMode: "pia_at_fra",
+      piaMonthly: 2000,
+      claimingAgeMode: "fra",
+      inflationStartYear: 2022,
+    };
+    // Client born 1960-06-01 → FRA 67y 0m. Year 2027 = age 67, just claimed.
+    // At FRA, benefit = PIA unchanged = 24000/yr.
+    const result = computeIncome([ss], 2027, client);
+    expect(result.socialSecurity).toBeCloseTo(24000, 2);
+  });
+
+  it("returns 0 before FRA even if claimingAge year would have already fired", () => {
+    const ss: Income = {
+      id: "ss1",
+      type: "social_security",
+      name: "Client SS",
+      annualAmount: 0,
+      startYear: 2022,
+      endYear: 2099,
+      growthRate: 0,
+      owner: "client",
+      claimingAge: 62,                   // ignored
+      ssBenefitMode: "pia_at_fra",
+      piaMonthly: 2000,
+      claimingAgeMode: "fra",
+      inflationStartYear: 2022,
+    };
+    // 2025: age 65 < FRA 67 → 0.
+    expect(computeIncome([ss], 2025, client).socialSecurity).toBe(0);
+  });
+});

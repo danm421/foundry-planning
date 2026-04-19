@@ -140,3 +140,32 @@ describe("resolveAnnualBenefit — growth indexing", () => {
     expect(out.total).toBeCloseTo(expected, 2);
   });
 });
+
+describe("resolveAnnualBenefit — claimingAgeMode integration", () => {
+  it("honors claimingAgeMode='fra' for this-spouse own benefit", () => {
+    const client = ssIncome({
+      id: "c",
+      owner: "client",
+      piaMonthly: 2000,
+      claimingAge: 62,          // ignored when mode='fra'
+      claimingAgeMode: "fra",
+    });
+    // baseClient DOB 1960-06-01 → FRA 67y = 804 months → first claim year 2027
+    // In 2027, benefit should be FULL PIA (no early reduction), annualized
+    const out = resolveAnnualBenefit({ row: client, spouseRow: null, client: { ...baseClient, spouseDob: undefined }, year: 2027 });
+    expect(out.total).toBeCloseTo(2000 * 12, 2);
+  });
+
+  it("honors claimingAgeMode='at_retirement' for this-spouse own benefit", () => {
+    const client = ssIncome({
+      id: "c",
+      owner: "client",
+      piaMonthly: 2000,
+      claimingAgeMode: "at_retirement",
+    });
+    // baseClient.retirementAge = 65 → 780 months → early reduction vs FRA 804 = 24 months
+    // Reduction = 24 × 5/9% = 0.1333 → benefit = 2000 × 0.8667 = 1733.33/mo → 20800/yr
+    const out = resolveAnnualBenefit({ row: client, spouseRow: null, client: { ...baseClient, spouseDob: undefined }, year: 2025 });
+    expect(out.total).toBeCloseTo(2000 * (1 - 24 * (5 / 900)) * 12, 2);
+  });
+});

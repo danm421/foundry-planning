@@ -5,6 +5,7 @@ import { computeOwnMonthlyBenefit } from "./ownRetirement";
 import { computeSpousalMonthlyBenefit, topUp } from "./spousal";
 import { computeSurvivorMonthlyBenefit } from "./survivor";
 import { AGE_60_MONTHS, AGE_70_MONTHS } from "./constants";
+import { resolveClaimAgeMonths } from "./claimAge";
 
 export interface ResolveAnnualBenefitInput {
   row: Income;                 // This spouse's SS income row (pia_at_fra mode)
@@ -71,7 +72,8 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
   const thisBy = birthYear(thisDob);
   const ageThisYear = input.year - thisBy;
   const ageMonthsThisYear = ageThisYear * 12;
-  const thisClaimAgeMonths = claimAgeMonthsOf(input.row);
+  const thisClaimAgeMonths = resolveClaimAgeMonths(input.row, input.client);
+  if (thisClaimAgeMonths == null) return zero;
   const hasClaimed = ageMonthsThisYear >= thisClaimAgeMonths;
 
   // Determine other spouse state
@@ -89,9 +91,9 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
       : input.client.lifeExpectancy; // client.lifeExpectancy is NOT NULL in DB schema — no fallback needed
     // Death year = otherBy + otherLifeExpectancy. Survivor benefits begin in the death year.
     otherIsDead = otherLifeExpectancy != null && input.year >= otherBy + otherLifeExpectancy;
-    const otherClaimAgeMonths = claimAgeMonthsOf(otherRow);
+    const otherClaimAgeMonths = resolveClaimAgeMonths(otherRow, input.client);
     const otherAgeMonthsThisYear = (input.year - otherBy) * 12;
-    otherHasClaimed = otherAgeMonthsThisYear >= otherClaimAgeMonths;
+    otherHasClaimed = otherClaimAgeMonths != null && otherAgeMonthsThisYear >= otherClaimAgeMonths;
   }
 
   const growthFactor = Math.pow(1 + input.row.growthRate, input.year - (input.row.inflationStartYear ?? input.row.startYear));
@@ -106,11 +108,11 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
 
     // Determine deceased's filing state at time of death
     const deathYear = otherBy + otherLifeExpectancy;
-    const otherClaimYear = otherBy + (otherRow.claimingAge ?? 0);
-    const deceasedNeverFiled = deathYear < otherClaimYear;
+    const deceasedClaimAgeMonths = resolveClaimAgeMonths(otherRow, input.client) ?? 0;
+    const deceasedClaimYear = otherBy + deceasedClaimAgeMonths / 12;
+    const deceasedNeverFiled = deathYear < deceasedClaimYear;
     const deceasedFra = fraForBirthDate(otherDob!);
     const deceasedAgeAtDeathMonths = (deathYear - otherBy) * 12;
-    const deceasedClaimAgeMonths = (otherRow.claimingAge ?? 0) * 12 + (otherRow.claimingAgeMonths ?? 0);
     const deceasedFiledBeforeFra = !deceasedNeverFiled && deceasedClaimAgeMonths < deceasedFra.totalMonths;
 
     // DRC months: only for Case D (died after FRA, never filed)
@@ -124,7 +126,7 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
     if (otherRow.ssBenefitMode === "pia_at_fra" && otherRow.piaMonthly != null) {
       deceasedReducedBenefit = computeOwnMonthlyBenefit({
         piaMonthly: otherRow.piaMonthly,
-        claimAgeMonths: (otherRow.claimingAge ?? 0) * 12 + (otherRow.claimingAgeMonths ?? 0),
+        claimAgeMonths: deceasedClaimAgeMonths,
         dob: otherDob!,
       });
     }
