@@ -5,6 +5,7 @@ import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
+  LogarithmicScale,
   LineElement,
   PointElement,
   Tooltip,
@@ -17,7 +18,7 @@ import type { MonteCarloSummary } from "@/engine";
 import { buildFanChartSeries } from "./lib/fan-chart-series";
 import { formatShortCurrency } from "./lib/format";
 
-ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend, Filler);
+ChartJS.register(CategoryScale, LinearScale, LogarithmicScale, LineElement, PointElement, Tooltip, Legend, Filler);
 
 
 interface TerminalCalloutOptions {
