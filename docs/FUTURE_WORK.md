@@ -431,3 +431,4 @@ Dependency notes that override raw score:
 - **Scheduled / automated migrations in CI** _(P2 E7 L5)_ — migrations are
   applied manually via `drizzle-kit migrate` against the Neon URL in
   `.env.local`. _Why deferred: single dev, single environment for now._
+- **Timeline pension detection.** Why deferred: engine `Income.type` union does not include `"pension"` — would need an engine type addition or a convention (e.g., treating certain `"other"` incomes as pensions). Revisit when pensions become first-class in the engine.
