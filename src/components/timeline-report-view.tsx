@@ -27,6 +27,7 @@ export default function TimelineReportView({ clientId }: Props) {
     new Set(["life", "income", "transaction", "portfolio", "insurance", "tax"]),
   );
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
   const [visibleRange, setVisibleRange] = useState<{ start: number; end: number } | null>(null);
 
   const segmentRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -148,7 +149,8 @@ export default function TimelineReportView({ clientId }: Props) {
         sparklineMode={sparklineMode}
         expandedId={expandedId}
         onToggleExpand={(id) => setExpandedId((cur) => (cur === id ? null : id))}
-        onHover={(_id) => { /* wired in Task 17 */ }}
+        onHover={setHoveredEventId}
+        hoveredEventId={hoveredEventId}
         primaryLabel={primaryLabel}
         spouseLabel={spouseLabel}
         isCoupled={isCoupled}

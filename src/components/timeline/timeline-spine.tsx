@@ -6,6 +6,7 @@ import type { ProjectionYear } from "@/engine";
 import type { TimelineEvent, SeriesPoint } from "@/lib/timeline/timeline-types";
 import TimelineYearSegment from "./timeline-year-segment";
 import TimelineSparkline from "./timeline-sparkline";
+import { CATEGORY_HEX } from "./timeline-category-pill";
 
 type SparklineMode = "netWorth" | "portfolio" | "netCashFlow";
 
@@ -17,6 +18,7 @@ interface Props {
   expandedId: string | null;
   onToggleExpand: (id: string) => void;
   onHover: (eventId: string | null) => void;
+  hoveredEventId: string | null;
   primaryLabel: string;
   spouseLabel: string | null;
   isCoupled: boolean;
@@ -31,6 +33,7 @@ export default function TimelineSpine({
   expandedId,
   onToggleExpand,
   onHover,
+  hoveredEventId,
   primaryLabel,
   spouseLabel,
   isCoupled,
@@ -90,6 +93,28 @@ export default function TimelineSpine({
             strokeClass="stroke-blue-500/40"
           />
         )}
+        {dims.height > 0 &&
+          visibleEvents.map((e) => {
+            const idx = projection.findIndex((py) => py.year === e.year);
+            if (idx < 0) return null;
+            const top = (idx / Math.max(1, projection.length - 1)) * dims.height;
+            const isHover = hoveredEventId === e.id;
+            const color = CATEGORY_HEX[e.category];
+            return (
+              <span
+                key={e.id}
+                className="absolute left-1/2 -translate-x-1/2 rounded-full transition-all"
+                style={{
+                  top,
+                  width: isHover ? 10 : 5,
+                  height: isHover ? 10 : 5,
+                  marginTop: isHover ? -5 : -2.5,
+                  backgroundColor: color,
+                  boxShadow: isHover ? `0 0 0 3px ${color}33` : undefined,
+                }}
+              />
+            );
+          })}
       </div>
 
       {projection.map((py) => {
