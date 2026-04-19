@@ -63,6 +63,9 @@ export async function PUT(
         }),
         ...(body.startYearRef !== undefined && { startYearRef: body.startYearRef }),
         ...(body.endYearRef !== undefined && { endYearRef: body.endYearRef }),
+        ...(body.ssBenefitMode !== undefined && { ssBenefitMode: body.ssBenefitMode ?? null }),
+        ...(body.piaMonthly !== undefined && { piaMonthly: body.piaMonthly != null ? String(body.piaMonthly) : null }),
+        ...(body.claimingAgeMonths !== undefined && { claimingAgeMonths: body.claimingAgeMonths != null ? Number(body.claimingAgeMonths) : 0 }),
         updatedAt: new Date(),
       })
       .where(and(eq(incomes.id, incomeId), eq(incomes.clientId, id)))

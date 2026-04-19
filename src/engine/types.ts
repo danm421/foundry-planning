@@ -95,6 +95,12 @@ export interface Income {
   taxType?: "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg";
   /** Year-by-year amount overrides. When present, bypasses growth-rate calc. */
   scheduleOverrides?: Map<number, number>;
+  /** SS-specific. When unset, engine treats as "manual_amount" (legacy). */
+  ssBenefitMode?: "manual_amount" | "pia_at_fra";
+  /** SS-specific. Monthly PIA in today's dollars. Required when ssBenefitMode=pia_at_fra. */
+  piaMonthly?: number;
+  /** Additional months beyond `claimingAge` (0-11). Absent = 0. */
+  claimingAgeMonths?: number;
 }
 
 export interface Expense {

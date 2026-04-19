@@ -439,6 +439,9 @@ export async function GET(
         cashAccountId: i.cashAccountId ?? undefined,
         inflationStartYear: i.inflationStartYear ?? undefined,
         taxType: i.taxType ?? undefined,
+        ssBenefitMode: i.ssBenefitMode ?? undefined,
+        piaMonthly: i.piaMonthly != null ? parseFloat(i.piaMonthly) : undefined,
+        claimingAgeMonths: i.claimingAgeMonths ?? 0,
         scheduleOverrides: incomeOverrideMap.get(i.id),
       })),
       expenses: expenseRows.map((e) => ({
