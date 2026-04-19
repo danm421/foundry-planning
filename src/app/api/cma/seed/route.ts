@@ -12,16 +12,12 @@ export async function POST() {
   try {
     const firmId = await getOrgId();
 
-    // Check if firm already has asset classes
-    const existing = await db
-      .select({ id: assetClasses.id })
-      .from(assetClasses)
-      .where(eq(assetClasses.firmId, firmId))
-      .limit(1);
-
-    if (existing.length > 0) {
-      return NextResponse.json({ seeded: false, message: "Asset classes already exist" });
-    }
+    // No early-return here: every downstream insert is idempotent (ON CONFLICT
+    // DO NOTHING on asset classes and portfolios; per-portfolio allocation
+    // guard; correlation block gated on "firm has zero correlations"). Running
+    // this endpoint against an already-seeded firm is a near-no-op AND lets
+    // us backfill correlations for firms that were seeded before the
+    // asset_class_correlations table existed.
 
     // Insert asset classes — ON CONFLICT DO NOTHING protects against the React
     // strict-mode double-fire where two concurrent POSTs both see zero rows.

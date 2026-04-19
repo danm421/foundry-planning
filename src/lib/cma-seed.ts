@@ -115,73 +115,110 @@ export interface SeedCorrelation {
 // Canonical storage is (classA, classB) with classA < classB alphabetically,
 // but the matrix-builder tolerates either ordering, so this list is written
 // in the order that reads most naturally.
+// Default correlations are sourced from a real-data 13-asset-class correlation
+// matrix derived from monthly returns Jan 2007 – Mar 2026. Mapping from matrix
+// classes to seed classes:
+//   US Aggregate Bond  → "Total US Bond Market" (broad IG aggregate)
+//   US Municipal Bond  → "Short-Term Tax-Exempt" (closest available — note that
+//                        duration is shorter than a generic muni; correlations
+//                        with rates-sensitive assets like TIPS are accordingly
+//                        lower than they would be for long-duration munis).
+// Cash / Money Market has no row in the matrix and stays at the implicit 0
+// (independent) for every pair — industry-standard treatment for cash.
 export const DEFAULT_CORRELATIONS: SeedCorrelation[] = [
   // ── Intra-equity (US) ─────────────────────────────────────────────────
-  { classA: "US Large Cap", classB: "US Mid Cap", correlation: 0.92 },
-  { classA: "US Large Cap", classB: "US Small Cap", correlation: 0.85 },
-  { classA: "US Mid Cap",   classB: "US Small Cap", correlation: 0.93 },
+  { classA: "US Large Cap", classB: "US Mid Cap", correlation: 0.95 },
+  { classA: "US Large Cap", classB: "US Small Cap", correlation: 0.92 },
+  { classA: "US Mid Cap",   classB: "US Small Cap", correlation: 0.97 },
 
   // ── US vs International / EM ──────────────────────────────────────────
-  { classA: "US Large Cap",  classB: "Int'l Developed",    correlation: 0.80 },
-  { classA: "US Mid Cap",    classB: "Int'l Developed",    correlation: 0.78 },
-  { classA: "US Small Cap",  classB: "Int'l Developed",    correlation: 0.73 },
-  { classA: "US Large Cap",  classB: "Emerging Markets",   correlation: 0.70 },
-  { classA: "US Mid Cap",    classB: "Emerging Markets",   correlation: 0.68 },
-  { classA: "US Small Cap",  classB: "Emerging Markets",   correlation: 0.65 },
-  { classA: "Int'l Developed", classB: "Emerging Markets", correlation: 0.82 },
+  { classA: "US Large Cap",  classB: "Int'l Developed",    correlation: 0.87 },
+  { classA: "US Mid Cap",    classB: "Int'l Developed",    correlation: 0.87 },
+  { classA: "US Small Cap",  classB: "Int'l Developed",    correlation: 0.83 },
+  { classA: "US Large Cap",  classB: "Emerging Markets",   correlation: 0.74 },
+  { classA: "US Mid Cap",    classB: "Emerging Markets",   correlation: 0.76 },
+  { classA: "US Small Cap",  classB: "Emerging Markets",   correlation: 0.72 },
+  { classA: "Int'l Developed", classB: "Emerging Markets", correlation: 0.85 },
 
   // ── REITs (equity-like, with real-estate flavor) ──────────────────────
-  { classA: "US Large Cap",  classB: "REITs", correlation: 0.70 },
-  { classA: "US Mid Cap",    classB: "REITs", correlation: 0.72 },
-  { classA: "US Small Cap",  classB: "REITs", correlation: 0.72 },
-  { classA: "Int'l Developed", classB: "REITs", correlation: 0.60 },
-  { classA: "Emerging Markets", classB: "REITs", correlation: 0.55 },
+  { classA: "US Large Cap",  classB: "REITs", correlation: 0.74 },
+  { classA: "US Mid Cap",    classB: "REITs", correlation: 0.79 },
+  { classA: "US Small Cap",  classB: "REITs", correlation: 0.78 },
+  { classA: "Int'l Developed", classB: "REITs", correlation: 0.72 },
+  { classA: "Emerging Markets", classB: "REITs", correlation: 0.60 },
 
   // ── Intra-bond (investment grade) ─────────────────────────────────────
-  { classA: "US Aggregate Bond", classB: "US Corporate Bond", correlation: 0.85 },
-  { classA: "US Aggregate Bond", classB: "US Municipal Bond", correlation: 0.65 },
-  { classA: "US Aggregate Bond", classB: "TIPS",              correlation: 0.70 },
-  { classA: "US Corporate Bond", classB: "US Municipal Bond", correlation: 0.55 },
-  { classA: "US Corporate Bond", classB: "TIPS",              correlation: 0.60 },
-  { classA: "US Municipal Bond", classB: "TIPS",              correlation: 0.55 },
+  { classA: "US Aggregate Bond", classB: "US Corporate Bond", correlation: 0.84 },
+  { classA: "US Aggregate Bond", classB: "US Municipal Bond", correlation: 0.67 },
+  { classA: "US Aggregate Bond", classB: "TIPS",              correlation: 0.77 },
+  { classA: "US Corporate Bond", classB: "US Municipal Bond", correlation: 0.62 },
+  { classA: "US Corporate Bond", classB: "TIPS",              correlation: 0.68 },
+  { classA: "US Municipal Bond", classB: "TIPS",              correlation: 0.48 },
 
   // ── High Yield (bond/equity hybrid) ───────────────────────────────────
-  { classA: "High Yield Bond", classB: "US Large Cap",   correlation: 0.60 },
-  { classA: "High Yield Bond", classB: "US Mid Cap",     correlation: 0.62 },
-  { classA: "High Yield Bond", classB: "US Small Cap",   correlation: 0.60 },
-  { classA: "High Yield Bond", classB: "Int'l Developed",correlation: 0.55 },
-  { classA: "High Yield Bond", classB: "Emerging Markets", correlation: 0.55 },
-  { classA: "High Yield Bond", classB: "REITs",          correlation: 0.55 },
-  { classA: "High Yield Bond", classB: "US Aggregate Bond", correlation: 0.30 },
-  { classA: "High Yield Bond", classB: "US Corporate Bond", correlation: 0.55 },
-  { classA: "High Yield Bond", classB: "US Municipal Bond", correlation: 0.20 },
-  { classA: "High Yield Bond", classB: "TIPS",           correlation: 0.25 },
+  { classA: "High Yield Bond", classB: "US Large Cap",   correlation: 0.73 },
+  { classA: "High Yield Bond", classB: "US Mid Cap",     correlation: 0.78 },
+  { classA: "High Yield Bond", classB: "US Small Cap",   correlation: 0.74 },
+  { classA: "High Yield Bond", classB: "Int'l Developed",correlation: 0.75 },
+  { classA: "High Yield Bond", classB: "Emerging Markets", correlation: 0.70 },
+  { classA: "High Yield Bond", classB: "REITs",          correlation: 0.73 },
+  { classA: "High Yield Bond", classB: "US Aggregate Bond", correlation: 0.41 },
+  { classA: "High Yield Bond", classB: "US Corporate Bond", correlation: 0.64 },
+  { classA: "High Yield Bond", classB: "US Municipal Bond", correlation: 0.36 },
+  { classA: "High Yield Bond", classB: "TIPS",           correlation: 0.53 },
 
-  // ── IG bonds vs equities (weak positive / near-zero) ──────────────────
-  { classA: "US Aggregate Bond", classB: "US Large Cap",  correlation: 0.05 },
-  { classA: "US Aggregate Bond", classB: "US Mid Cap",    correlation: 0.05 },
-  { classA: "US Aggregate Bond", classB: "US Small Cap",  correlation: 0.00 },
-  { classA: "US Corporate Bond", classB: "US Large Cap",  correlation: 0.20 },
-  { classA: "US Corporate Bond", classB: "US Mid Cap",    correlation: 0.20 },
-  { classA: "US Corporate Bond", classB: "US Small Cap",  correlation: 0.15 },
-  { classA: "US Aggregate Bond", classB: "REITs",         correlation: 0.20 },
-  { classA: "US Corporate Bond", classB: "REITs",         correlation: 0.30 },
+  // ── IG bonds vs equities + REITs ─────────────────────────────────────
+  { classA: "US Aggregate Bond", classB: "US Large Cap",     correlation: 0.23 },
+  { classA: "US Aggregate Bond", classB: "US Mid Cap",       correlation: 0.24 },
+  { classA: "US Aggregate Bond", classB: "US Small Cap",     correlation: 0.19 },
+  { classA: "US Aggregate Bond", classB: "Int'l Developed",  correlation: 0.31 },
+  { classA: "US Aggregate Bond", classB: "Emerging Markets", correlation: 0.26 },
+  { classA: "US Aggregate Bond", classB: "REITs",            correlation: 0.38 },
+  { classA: "US Corporate Bond", classB: "US Large Cap",     correlation: 0.45 },
+  { classA: "US Corporate Bond", classB: "US Mid Cap",       correlation: 0.47 },
+  { classA: "US Corporate Bond", classB: "US Small Cap",     correlation: 0.42 },
+  { classA: "US Corporate Bond", classB: "Int'l Developed",  correlation: 0.53 },
+  { classA: "US Corporate Bond", classB: "Emerging Markets", correlation: 0.45 },
+  { classA: "US Corporate Bond", classB: "REITs",            correlation: 0.54 },
+  { classA: "US Municipal Bond", classB: "US Large Cap",     correlation: 0.22 },
+  { classA: "US Municipal Bond", classB: "US Mid Cap",       correlation: 0.23 },
+  { classA: "US Municipal Bond", classB: "US Small Cap",     correlation: 0.20 },
+  { classA: "US Municipal Bond", classB: "Int'l Developed",  correlation: 0.26 },
+  { classA: "US Municipal Bond", classB: "Emerging Markets", correlation: 0.22 },
+  { classA: "US Municipal Bond", classB: "REITs",            correlation: 0.23 },
+  { classA: "TIPS", classB: "US Large Cap",     correlation: 0.32 },
+  { classA: "TIPS", classB: "US Mid Cap",       correlation: 0.33 },
+  { classA: "TIPS", classB: "US Small Cap",     correlation: 0.27 },
+  { classA: "TIPS", classB: "Int'l Developed",  correlation: 0.38 },
+  { classA: "TIPS", classB: "Emerging Markets", correlation: 0.38 },
+  { classA: "TIPS", classB: "REITs",            correlation: 0.42 },
 
-  // ── Alternatives: Commodities + Precious Metals ──────────────────────
-  { classA: "Commodities", classB: "US Large Cap",    correlation: 0.30 },
-  { classA: "Commodities", classB: "US Mid Cap",      correlation: 0.32 },
-  { classA: "Commodities", classB: "US Small Cap",    correlation: 0.30 },
-  { classA: "Commodities", classB: "Int'l Developed", correlation: 0.35 },
-  { classA: "Commodities", classB: "Emerging Markets",correlation: 0.45 },
-  { classA: "Commodities", classB: "TIPS",            correlation: 0.30 },
-  { classA: "Commodities", classB: "Precious Metals", correlation: 0.50 },
+  // ── Commodities ──────────────────────────────────────────────────────
+  { classA: "Commodities", classB: "US Large Cap",        correlation: 0.43 },
+  { classA: "Commodities", classB: "US Mid Cap",          correlation: 0.45 },
+  { classA: "Commodities", classB: "US Small Cap",        correlation: 0.45 },
+  { classA: "Commodities", classB: "Int'l Developed",     correlation: 0.49 },
+  { classA: "Commodities", classB: "Emerging Markets",    correlation: 0.51 },
+  { classA: "Commodities", classB: "REITs",               correlation: 0.26 },
+  { classA: "Commodities", classB: "US Aggregate Bond",   correlation: -0.14 },
+  { classA: "Commodities", classB: "US Corporate Bond",   correlation: 0.03 },
+  { classA: "Commodities", classB: "US Municipal Bond",   correlation: -0.05 },
+  { classA: "Commodities", classB: "TIPS",                correlation: 0.15 },
+  { classA: "Commodities", classB: "High Yield Bond",     correlation: 0.41 },
+  { classA: "Commodities", classB: "Precious Metals",     correlation: 0.33 },
 
-  { classA: "Precious Metals", classB: "US Large Cap",   correlation: 0.10 },
-  { classA: "Precious Metals", classB: "US Mid Cap",     correlation: 0.10 },
-  { classA: "Precious Metals", classB: "US Small Cap",   correlation: 0.08 },
-  { classA: "Precious Metals", classB: "Int'l Developed",correlation: 0.15 },
-  { classA: "Precious Metals", classB: "Emerging Markets", correlation: 0.25 },
-  { classA: "Precious Metals", classB: "TIPS",           correlation: 0.25 },
+  // ── Precious Metals ──────────────────────────────────────────────────
+  { classA: "Precious Metals", classB: "US Large Cap",        correlation: 0.45 },
+  { classA: "Precious Metals", classB: "US Mid Cap",          correlation: 0.49 },
+  { classA: "Precious Metals", classB: "US Small Cap",        correlation: 0.43 },
+  { classA: "Precious Metals", classB: "Int'l Developed",     correlation: 0.58 },
+  { classA: "Precious Metals", classB: "Emerging Markets",    correlation: 0.63 },
+  { classA: "Precious Metals", classB: "REITs",               correlation: 0.42 },
+  { classA: "Precious Metals", classB: "US Aggregate Bond",   correlation: 0.34 },
+  { classA: "Precious Metals", classB: "US Corporate Bond",   correlation: 0.42 },
+  { classA: "Precious Metals", classB: "US Municipal Bond",   correlation: 0.25 },
+  { classA: "Precious Metals", classB: "TIPS",                correlation: 0.45 },
+  { classA: "Precious Metals", classB: "High Yield Bond",     correlation: 0.50 },
 
-  // Cash / Money Market is uncorrelated with everything by default (≈ 0).
+  // Cash / Money Market is uncorrelated with everything by user direction (= 0).
 ];
