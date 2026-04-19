@@ -1,4 +1,5 @@
 import type { AssetClassWeight } from "./benchmarks";
+import { ASSET_TYPE_SORT_ORDER, ASSET_TYPE_LABELS, type AssetTypeId } from "./asset-types";
 
 export type GrowthSource = "default" | "model_portfolio" | "custom" | "asset_mix" | "inflation";
 
@@ -95,6 +96,7 @@ export interface AssetClassLite {
   id: string;
   name: string;
   sortOrder: number;
+  assetType: AssetTypeId;
 }
 
 export interface InvestableAccount extends AccountLite {
@@ -109,6 +111,7 @@ export interface AssetClassRollup {
   sortOrder: number;
   value: number;
   pctOfClassified: number;
+  assetType: AssetTypeId;
 }
 
 export interface AccountContribution {
@@ -119,13 +122,31 @@ export interface AccountContribution {
   weightInClass: number;
 }
 
+export interface AssetTypeRollup {
+  id: AssetTypeId;
+  label: string;
+  sortOrder: number;
+  value: number;
+  pctOfClassified: number;
+}
+
+export interface TypeContribution {
+  assetClassId: string;
+  assetClassName: string;
+  assetClassSortOrder: number;
+  subtotal: number;
+  contributions: AccountContribution[];
+}
+
 export interface HouseholdAllocation {
   byAssetClass: AssetClassRollup[];
+  byAssetType: AssetTypeRollup[];
   unallocatedValue: number;
   totalClassifiedValue: number;
   totalInvestableValue: number;
   excludedNonInvestableValue: number;
   contributionsByAssetClass: Record<string, AccountContribution[]>;
+  contributionsByAssetType: Partial<Record<AssetTypeId, TypeContribution[]>>;
   unallocatedContributions: AccountContribution[];
 }
 
@@ -200,6 +221,7 @@ export function computeHouseholdAllocation(
         sortOrder: ac.sortOrder,
         value,
         pctOfClassified: totalClassifiedValue > 0 ? value / totalClassifiedValue : 0,
+        assetType: ac.assetType,
       };
     })
     .filter((b) => b.value > 0)
@@ -214,13 +236,49 @@ export function computeHouseholdAllocation(
 
   unallocatedContributions.sort((a, b) => b.valueInClass - a.valueInClass);
 
+  // Roll byAssetClass up by its assetType. Drop zero-value types.
+  const typeTotals = new Map<AssetTypeId, number>();
+  for (const cls of byAssetClass) {
+    typeTotals.set(cls.assetType, (typeTotals.get(cls.assetType) ?? 0) + cls.value);
+  }
+  const byAssetType: AssetTypeRollup[] = Array.from(typeTotals.entries())
+    .filter(([, value]) => value > 0)
+    .map(([id, value]) => ({
+      id,
+      label: ASSET_TYPE_LABELS[id],
+      sortOrder: ASSET_TYPE_SORT_ORDER[id],
+      value,
+      pctOfClassified: totalClassifiedValue > 0 ? value / totalClassifiedValue : 0,
+    }))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  // Group contributionsByAssetClass by each class's assetType. Each type maps to
+  // the list of TypeContribution (one per class), classes ordered by value desc.
+  const contributionsByAssetType: Partial<Record<AssetTypeId, TypeContribution[]>> = {};
+  for (const cls of byAssetClass) {
+    const list = contributionsByAssetType[cls.assetType] ?? [];
+    list.push({
+      assetClassId: cls.id,
+      assetClassName: cls.name,
+      assetClassSortOrder: cls.sortOrder,
+      subtotal: cls.value,
+      contributions: contributionsByAssetClass[cls.id] ?? [],
+    });
+    contributionsByAssetType[cls.assetType] = list;
+  }
+  for (const typeId of Object.keys(contributionsByAssetType) as AssetTypeId[]) {
+    contributionsByAssetType[typeId]!.sort((a, b) => b.subtotal - a.subtotal);
+  }
+
   return {
     byAssetClass,
+    byAssetType,
     unallocatedValue,
     totalClassifiedValue,
     totalInvestableValue,
     excludedNonInvestableValue,
     contributionsByAssetClass,
+    contributionsByAssetType,
     unallocatedContributions,
   };
 }

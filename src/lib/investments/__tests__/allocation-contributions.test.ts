@@ -7,8 +7,8 @@ import {
 } from "../allocation";
 
 const ASSET_CLASSES = [
-  { id: "ac-eq", name: "US Equity", sortOrder: 0 },
-  { id: "ac-bond", name: "US Bonds", sortOrder: 1 },
+  { id: "ac-eq",   name: "US Equity", sortOrder: 0, assetType: "equities" as const },
+  { id: "ac-bond", name: "US Bonds",  sortOrder: 1, assetType: "taxable_bonds" as const },
 ];
 
 function mkAccount(

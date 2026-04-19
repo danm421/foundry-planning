@@ -14,6 +14,7 @@ function mkCurrent(entries: { id: string; pct: number }[]): AssetClassRollup[] {
     sortOrder: i,
     value: e.pct * 100_000, // arbitrary, only pctOfClassified is used
     pctOfClassified: e.pct,
+    assetType: "equities" as const,
   }));
 }
 
