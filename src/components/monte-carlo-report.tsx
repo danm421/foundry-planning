@@ -5,11 +5,9 @@ import { ReportHeader } from "./monte-carlo/report-header";
 import { KpiBand } from "./monte-carlo/kpi-band";
 import { FanChart } from "./monte-carlo/fan-chart";
 import { FindingsCard } from "./monte-carlo/findings-card";
-import { TopRisksCard } from "./monte-carlo/top-risks-card";
 import { RecommendationsCard } from "./monte-carlo/recommendations-card";
 import { TerminalHistogram } from "./monte-carlo/terminal-histogram";
 import { YearlyBreakdown } from "./monte-carlo/yearly-breakdown";
-import { computeTopRisks } from "./monte-carlo/lib/top-risks";
 import {
   createReturnEngine,
   runMonteCarlo,
@@ -192,19 +190,12 @@ export default function MonteCarloReport({ clientId }: Props) {
     return markers;
   }, [clientData]);
 
-  const topRisks = useMemo(() => {
-    if (!summary || !clientData) return [];
-    return computeTopRisks(summary, clientData, clientData.planSettings);
-  }, [summary, clientData]);
-
   // byYearLiquidAssetsPerTrial is trial-major ([trial][year]), so map each
   // trial to its last year's value to get the per-trial terminal balance array.
   const endingValues = useMemo(() => {
     if (!lastResult) return [];
     return lastResult.byYearLiquidAssetsPerTrial.map((trial) => trial.at(-1) ?? 0);
   }, [lastResult]);
-
-  const deterministicEnding = deterministic?.[deterministic.length - 1];
 
   if (loadError) {
     return (
@@ -269,15 +260,9 @@ export default function MonteCarloReport({ clientId }: Props) {
           )}
 
           {summary ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <YearlyBreakdown summary={summary} />
-              <TerminalHistogram endingValues={endingValues} trialsRun={summary.trialsRun} />
-            </div>
+            <YearlyBreakdown summary={summary} />
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[320px] animate-pulse" />
-              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[320px] animate-pulse" />
-            </div>
+            <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[320px] animate-pulse" />
           )}
 
           {summary ? (
@@ -295,14 +280,14 @@ export default function MonteCarloReport({ clientId }: Props) {
         <aside className="flex flex-col gap-4">
           {summary ? (
             <>
-              <FindingsCard summary={summary} deterministicEnding={deterministicEnding} />
-              <TopRisksCard risks={topRisks} />
+              <FindingsCard summary={summary} />
+              <TerminalHistogram endingValues={endingValues} trialsRun={summary.trialsRun} />
               <RecommendationsCard />
             </>
           ) : (
             <>
-              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[140px] animate-pulse" />
-              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[100px] animate-pulse" />
+              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[120px] animate-pulse" />
+              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[260px] animate-pulse" />
               <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[140px] animate-pulse" />
             </>
           )}
