@@ -43,6 +43,7 @@ export default function TimelineReportView({ clientId }: Props) {
   const visibleYearsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
+    visibleYearsRef.current = new Set();
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
