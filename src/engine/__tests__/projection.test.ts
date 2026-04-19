@@ -1031,3 +1031,91 @@ describe("runProjection — liability amortization alignment", () => {
     expect(sale!.mortgagePaidOff).toBeCloseTo(row2030.beginningBalance, 0);
   });
 });
+
+describe("projection — socialSecurityDetail", () => {
+  it("populates per-spouse retirement/spousal/survivor in pia_at_fra mode", () => {
+    // Client born 1960-06-01 (FRA 67), PIA $2000/mo, claims at 67 → starts 2027
+    // Spouse born 1962-06-01 (FRA 67), PIA $300/mo, claims at 67 → starts 2029
+    const data = buildClientData({
+      client: {
+        ...baseClient,
+        dateOfBirth: "1960-06-01",
+        retirementAge: 67,
+        spouseDob: "1962-06-01",
+        spouseRetirementAge: 67,
+        filingStatus: "married_joint",
+      },
+      incomes: [
+        {
+          id: "ss-client",
+          type: "social_security",
+          name: "Client SS",
+          annualAmount: 0,
+          startYear: 2025,
+          endYear: 2055,
+          growthRate: 0,
+          owner: "client",
+          claimingAge: 67,
+          ssBenefitMode: "pia_at_fra",
+          piaMonthly: 2000,
+        },
+        {
+          id: "ss-spouse",
+          type: "social_security",
+          name: "Spouse SS",
+          annualAmount: 0,
+          startYear: 2025,
+          endYear: 2055,
+          growthRate: 0,
+          owner: "spouse",
+          claimingAge: 67,
+          ssBenefitMode: "pia_at_fra",
+          piaMonthly: 300,
+        },
+      ],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2025, planEndYear: 2035, flatFederalRate: 0, flatStateRate: 0 },
+    });
+
+    const result = runProjection(data);
+
+    // 2027: client (age 67) has claimed; spouse (age 65) has NOT yet claimed
+    const year2027 = result.find((py) => py.year === 2027)!;
+    expect(year2027).toBeDefined();
+    expect(year2027.socialSecurityDetail).toBeDefined();
+    // Client: own retirement at FRA = 2000/mo × 12 = 24000
+    expect(year2027.socialSecurityDetail!.client.retirement).toBeCloseTo(24000, 0);
+    expect(year2027.socialSecurityDetail!.client.spousal).toBe(0);
+    expect(year2027.socialSecurityDetail!.client.survivor).toBe(0);
+    // Spouse hasn't claimed yet in 2027
+    expect(year2027.socialSecurityDetail!.spouse).toBeUndefined();
+
+    // 2029: both have claimed
+    // Client: own retirement = 24000, no spousal/survivor
+    // Spouse: own=300/mo, spousal top-up to 50% of 2000=1000/mo → retirement=3600, spousal=8400
+    const year2029 = result.find((py) => py.year === 2029)!;
+    expect(year2029).toBeDefined();
+    expect(year2029.socialSecurityDetail).toBeDefined();
+
+    const clientDetail = year2029.socialSecurityDetail!.client;
+    expect(clientDetail.retirement).toBeCloseTo(24000, 0);
+    expect(clientDetail.spousal).toBe(0);
+    expect(clientDetail.survivor).toBe(0);
+
+    const spouseDetail = year2029.socialSecurityDetail!.spouse!;
+    expect(spouseDetail).toBeDefined();
+    expect(spouseDetail.retirement).toBeCloseTo(3600, 0);   // 300/mo × 12
+    expect(spouseDetail.spousal).toBeCloseTo(8400, 0);      // (1000-300)/mo × 12
+    expect(spouseDetail.survivor).toBe(0);
+
+    // Total SS income should equal sum of all detail amounts
+    const detailTotal =
+      clientDetail.retirement + clientDetail.spousal + clientDetail.survivor +
+      spouseDetail.retirement + spouseDetail.spousal + spouseDetail.survivor;
+    expect(year2029.income.socialSecurity).toBeCloseTo(detailTotal, 0);
+    expect(year2029.income.socialSecurity).toBeCloseTo(24000 + 12000, 0); // 36000
+  });
+});

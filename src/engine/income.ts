@@ -11,6 +11,11 @@ interface IncomeBreakdown {
   other: number;
   total: number;
   bySource: Record<string, number>;
+  /** SS detail aggregated across all pia_at_fra rows this year. */
+  socialSecurityDetail?: {
+    client:  { retirement: number; spousal: number; survivor: number };
+    spouse?: { retirement: number; spousal: number; survivor: number };
+  };
 }
 
 const incomeTypeToKey: Record<Income["type"], keyof Omit<IncomeBreakdown, "total" | "bySource">> = {
@@ -64,6 +69,16 @@ export function computeIncome(
         const resolved = resolveAnnualBenefit({ row: inc, spouseRow, client, year });
         result.socialSecurity += resolved.total;
         result.bySource[inc.id] = resolved.total;
+
+        // Accumulate per-spouse breakdown
+        result.socialSecurityDetail ??= { client: { retirement: 0, spousal: 0, survivor: 0 } };
+        const bucket = inc.owner === "spouse"
+          ? (result.socialSecurityDetail.spouse ??= { retirement: 0, spousal: 0, survivor: 0 })
+          : result.socialSecurityDetail.client;
+        bucket.retirement += resolved.retirement;
+        bucket.spousal    += resolved.spousal;
+        bucket.survivor   += resolved.survivor;
+
         continue;
       }
     }

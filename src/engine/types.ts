@@ -257,6 +257,12 @@ export interface ProjectionYear {
     bySource: Record<string, number>;
   };
 
+  /** Per-spouse retirement/spousal/survivor breakdown for SS rows in pia_at_fra mode. */
+  socialSecurityDetail?: {
+    client:  { retirement: number; spousal: number; survivor: number };
+    spouse?: { retirement: number; spousal: number; survivor: number };
+  };
+
   taxDetail?: {
     earnedIncome: number;
     ordinaryIncome: number;

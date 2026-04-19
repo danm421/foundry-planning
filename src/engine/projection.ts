@@ -1302,6 +1302,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
       year,
       ages,
       income,
+      ...(income.socialSecurityDetail ? { socialSecurityDetail: income.socialSecurityDetail } : {}),
       taxDetail,
       taxResult,
       deductionBreakdown: deductionBreakdownResult,
