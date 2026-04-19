@@ -24,10 +24,12 @@ import {
   transfers,
   transferSchedules,
   assetTransactions,
+  clientCmaOverrides,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
+import { resolveInflationRate } from "@/lib/inflation";
 
 // GET /api/clients/[id]/projection-data — fetch all data needed for the projection engine
 export async function GET(
@@ -290,6 +292,28 @@ export async function GET(
       return sourceLookup[category] ?? "custom";
     }
 
+    // Resolve the effective inflation rate for this plan
+    let clientInflationOverride: { geometricReturn: string } | null = null;
+    if (settings.useCustomCma && inflationClass) {
+      const [override] = await db
+        .select({ geometricReturn: clientCmaOverrides.geometricReturn })
+        .from(clientCmaOverrides)
+        .where(and(
+          eq(clientCmaOverrides.clientId, id),
+          eq(clientCmaOverrides.sourceAssetClassId, inflationClass.id),
+        ));
+      if (override) clientInflationOverride = override;
+    }
+
+    const resolvedInflationRate = resolveInflationRate(
+      {
+        inflationRateSource: settings.inflationRateSource,
+        inflationRate: settings.inflationRate,
+      },
+      inflationClass ? { geometricReturn: inflationClass.geometricReturn } : null,
+      clientInflationOverride,
+    );
+
     // ── Build response ──────────────────────────────────────────────────────
 
     // Convert Drizzle decimal strings to numbers for the engine
@@ -322,7 +346,9 @@ export async function GET(
           }
         }
 
-        if (effectiveSource === "model_portfolio" && a.modelPortfolioId) {
+        if (effectiveSource === "inflation") {
+          growthRate = resolvedInflationRate;
+        } else if (effectiveSource === "model_portfolio" && a.modelPortfolioId) {
           const p = resolvePortfolio(a.modelPortfolioId);
           growthRate = p.geoReturn;
           realization = {
@@ -398,7 +424,7 @@ export async function GET(
         annualAmount: parseFloat(i.annualAmount),
         startYear: i.startYear,
         endYear: i.endYear,
-        growthRate: parseFloat(i.growthRate),
+        growthRate: i.growthSource === "inflation" ? resolvedInflationRate : parseFloat(i.growthRate),
         owner: i.owner,
         claimingAge: i.claimingAge ?? undefined,
         linkedEntityId: i.linkedEntityId ?? undefined,
@@ -415,7 +441,7 @@ export async function GET(
         annualAmount: parseFloat(e.annualAmount),
         startYear: e.startYear,
         endYear: e.endYear,
-        growthRate: parseFloat(e.growthRate),
+        growthRate: e.growthSource === "inflation" ? resolvedInflationRate : parseFloat(e.growthRate),
         ownerEntityId: e.ownerEntityId ?? undefined,
         cashAccountId: e.cashAccountId ?? undefined,
         inflationStartYear: e.inflationStartYear ?? undefined,
@@ -452,6 +478,7 @@ export async function GET(
         annualAmount: parseFloat(s.annualAmount),
         startYear: s.startYear,
         endYear: s.endYear,
+        growthRate: s.growthSource === "inflation" ? resolvedInflationRate : Number(s.growthRate ?? 0),
         employerMatchPct: s.employerMatchPct != null ? parseFloat(s.employerMatchPct) : undefined,
         employerMatchCap: s.employerMatchCap != null ? parseFloat(s.employerMatchCap) : undefined,
         employerMatchAmount:
