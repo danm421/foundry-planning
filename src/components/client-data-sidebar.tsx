@@ -87,7 +87,7 @@ function DeductionsIcon() {
 const TABS: SidebarTab[] = [
   { label: "Family", href: "family", icon: <FamilyIcon /> },
   { label: "Net Worth", href: "balance-sheet", icon: <BalanceSheetIcon /> },
-  { label: "Income, Expenses & Savings", href: "income-expenses", icon: <CashflowIcon /> },
+  { label: "Inflows & Outflows", href: "income-expenses", icon: <CashflowIcon /> },
   { label: "Techniques", href: "techniques", icon: <TechniquesIcon /> },
   { label: "Deductions", href: "deductions", icon: <DeductionsIcon /> },
   { label: "Assumptions", href: "assumptions", icon: <AssumptionsIcon /> },
