@@ -151,7 +151,7 @@ export default function InvestmentsClient({
         </section>
 
         <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
-          <AllocationDonut household={household} />
+          <AllocationDonut household={household} mode={view} />
           <p className="mt-3 text-center text-xs text-gray-500">{disclosure}</p>
         </section>
 
