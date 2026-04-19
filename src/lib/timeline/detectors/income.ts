@@ -50,20 +50,6 @@ export function detectIncomeEvents(
       }
     }
 
-    if (inc.type === "pension") {
-      if (inRange(inc.startYear, projection)) {
-        out.push({
-          id: `income:pension_start:${subject}:${inc.id}`,
-          year: inc.startYear,
-          category: "income",
-          subject,
-          title: `${inc.name} begins`,
-          supportingFigure: `${currency(inc.annualAmount)}/yr pension`,
-          details: [{ label: "Annual", value: currency(inc.annualAmount) }],
-        });
-      }
-    }
-
     if (inc.type === "social_security") {
       if (inRange(inc.startYear, projection)) {
         out.push({

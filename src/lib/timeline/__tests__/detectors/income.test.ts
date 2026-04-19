@@ -47,26 +47,4 @@ describe("detectIncomeEvents", () => {
     const events = detectIncomeEvents(data, projection);
     expect(events.find((e) => e.id.startsWith("income:salary_start:primary:inc-late"))).toBeUndefined();
   });
-
-  it("emits pension start for income type=pension", () => {
-    const data = buildClientData();
-    data.incomes = [
-      ...data.incomes,
-      {
-        id: "inc-pension-john",
-        type: "pension",
-        name: "John Pension",
-        annualAmount: 18_000,
-        startYear: 2040,
-        endYear: 2055,
-        growthRate: 0.02,
-        owner: "client",
-      },
-    ];
-    const projection = runProjection(data);
-    const events = detectIncomeEvents(data, projection);
-    const pen = events.find((e) => e.id === "income:pension_start:primary:inc-pension-john");
-    expect(pen).toBeDefined();
-    expect(pen!.year).toBe(2040);
-  });
 });
