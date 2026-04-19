@@ -1,5 +1,5 @@
 import type { Income, ClientInfo } from "./types";
-import { computeOwnMonthlyBenefit } from "./socialSecurity/ownRetirement";
+import { resolveAnnualBenefit } from "./socialSecurity/orchestrator";
 
 interface IncomeBreakdown {
   salaries: number;
@@ -53,20 +53,17 @@ export function computeIncome(
       const claimingYear = birthYear + inc.claimingAge;
       if (year < claimingYear) continue;
 
-      // NEW: pia_at_fra mode → compute benefit from PIA via FRA math
+      // pia_at_fra mode → delegate to orchestrator (handles own, spousal, survivor)
       if (inc.ssBenefitMode === "pia_at_fra" && inc.piaMonthly != null) {
-        const claimAgeMonths = inc.claimingAge * 12 + (inc.claimingAgeMonths ?? 0);
-        const monthly = computeOwnMonthlyBenefit({
-          piaMonthly: inc.piaMonthly,
-          claimAgeMonths,
-          dob: ownerDob,
-        });
-        const annualAtToday = monthly * 12;
-        const inflateFrom = inc.inflationStartYear ?? inc.startYear;
-        const yearsElapsed = year - inflateFrom;
-        const amount = annualAtToday * Math.pow(1 + inc.growthRate, yearsElapsed);
-        result.socialSecurity += amount;
-        result.bySource[inc.id] = amount;
+        // Locate the other spouse's SS row, if any, for spousal/survivor math
+        const otherOwner = inc.owner === "spouse" ? "client" : "spouse";
+        const spouseRow = incomes.find(
+          (other) => other.id !== inc.id && other.type === "social_security" && other.owner === otherOwner,
+        ) ?? null;
+
+        const resolved = resolveAnnualBenefit({ row: inc, spouseRow, client, year });
+        result.socialSecurity += resolved.total;
+        result.bySource[inc.id] = resolved.total;
         continue;
       }
     }
