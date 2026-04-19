@@ -4,11 +4,10 @@ export interface FanChartDataset {
   label: string;
   data: number[];
   borderColor?: string;
-  backgroundColor?: string;
   borderWidth?: number;
   borderDash?: number[];
   pointRadius?: number;
-  fill: false | "-1";
+  fill: false;
   tension?: number;
   order?: number;
 }
@@ -18,10 +17,14 @@ export interface FanChartSeries {
   datasets: FanChartDataset[];
 }
 
-const COLOR_OUTER_BAND = "rgba(148, 163, 184, 0.18)"; // slate-400 @ 18%
-const COLOR_INNER_BAND = "rgba(52, 211, 153, 0.35)";  // emerald-400 @ 35%
-const COLOR_MEDIAN = "rgb(110, 231, 183)";            // emerald-300
-const COLOR_DETERMINISTIC = "rgb(148, 163, 184)";     // slate-400
+const COLOR_P80 = "rgb(52, 211, 153)";            // emerald-400 — above-average outcome
+const COLOR_P50 = "rgb(110, 231, 183)";           // emerald-300 — median
+const COLOR_P20 = "rgb(251, 113, 133)";           // rose-400 — below-average outcome
+const COLOR_DETERMINISTIC = "rgb(148, 163, 184)"; // slate-400 — fixed-rate cash-flow projection
+
+// Log-scale safety: clamp to $1 so chart.js's logarithmic y-axis can plot
+// failed-trial balances that would otherwise hit 0 or go negative.
+const clampPositive = (v: number) => Math.max(1, v);
 
 export function buildFanChartSeries(
   byYear: MonteCarloSummary["byYear"],
@@ -31,59 +34,41 @@ export function buildFanChartSeries(
 
   const datasets: FanChartDataset[] = [
     {
-      label: "p5-baseline",
-      data: byYear.map((y) => y.balance.p5),
-      borderColor: "transparent",
+      label: "Above average (80th)",
+      data: byYear.map((y) => clampPositive(y.balance.p80)),
+      borderColor: COLOR_P80,
+      borderWidth: 1.5,
       pointRadius: 0,
       fill: false,
-      tension: 0.25,
-      order: 6,
-    },
-    {
-      label: "5th–95th percentile",
-      data: byYear.map((y) => y.balance.p95),
-      borderColor: "transparent",
-      backgroundColor: COLOR_OUTER_BAND,
-      pointRadius: 0,
-      fill: "-1",
-      tension: 0.25,
-      order: 5,
-    },
-    {
-      label: "p20-baseline",
-      data: byYear.map((y) => y.balance.p20),
-      borderColor: "transparent",
-      pointRadius: 0,
-      fill: false,
-      tension: 0.25,
-      order: 4,
-    },
-    {
-      label: "20th–80th percentile",
-      data: byYear.map((y) => y.balance.p80),
-      borderColor: "transparent",
-      backgroundColor: COLOR_INNER_BAND,
-      pointRadius: 0,
-      fill: "-1",
       tension: 0.25,
       order: 3,
     },
     {
       label: "Median",
-      data: byYear.map((y) => y.balance.p50),
-      borderColor: COLOR_MEDIAN,
-      borderWidth: 2,
+      data: byYear.map((y) => clampPositive(y.balance.p50)),
+      borderColor: COLOR_P50,
+      borderWidth: 2.5,
       pointRadius: 0,
       fill: false,
       tension: 0.25,
       order: 1,
+    },
+    {
+      label: "Below average (20th)",
+      data: byYear.map((y) => clampPositive(y.balance.p20)),
+      borderColor: COLOR_P20,
+      borderWidth: 1.5,
+      pointRadius: 0,
+      fill: false,
+      tension: 0.25,
+      order: 3,
     },
   ];
 
   if (deterministic && deterministic.length === byYear.length) {
     datasets.push({
       label: "Cash-flow projection",
-      data: deterministic,
+      data: deterministic.map(clampPositive),
       borderColor: COLOR_DETERMINISTIC,
       borderWidth: 2,
       borderDash: [6, 4],

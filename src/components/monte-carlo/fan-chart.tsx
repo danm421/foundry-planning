@@ -19,10 +19,11 @@ import { formatShortCurrency } from "./lib/format";
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend, Filler);
 
+
 interface TerminalCalloutOptions {
-  p5: number;
+  p80: number;
   p50: number;
-  p95: number;
+  p20: number;
 }
 
 // Renders p5 / p50 / p95 dollar labels just inside the right edge of the
@@ -44,9 +45,9 @@ const terminalCalloutsPlugin = {
     const lastIdx = data.labels.length - 1;
     const x = scales.x.getPixelForValue(lastIdx);
     const entries: Array<{ y: number; label: string; color: string }> = [
-      { y: scales.y.getPixelForValue(options.p95), label: formatShortCurrency(options.p95), color: "rgb(148, 163, 184)" },
+      { y: scales.y.getPixelForValue(options.p80), label: formatShortCurrency(options.p80), color: "rgb(52, 211, 153)" },
       { y: scales.y.getPixelForValue(options.p50), label: formatShortCurrency(options.p50), color: "rgb(110, 231, 183)" },
-      { y: scales.y.getPixelForValue(options.p5),  label: formatShortCurrency(options.p5),  color: "rgb(251, 113, 133)" },
+      { y: scales.y.getPixelForValue(options.p20), label: formatShortCurrency(options.p20), color: "rgb(251, 113, 133)" },
     ];
     ctx.save();
     ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
@@ -147,7 +148,6 @@ export function FanChart({ summary, deterministic, ageMarkers }: FanChartProps) 
           title: (items: Array<{ label: string }>) => `Age ${items[0]?.label ?? ""}`,
           label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }): string | void => {
             const name = ctx.dataset.label ?? "";
-            if (name === "p5-baseline" || name === "p20-baseline") return;
             const y = ctx.parsed.y;
             return `${name}: ${formatShortCurrency(y ?? 0)}`;
           },
@@ -161,6 +161,7 @@ export function FanChart({ summary, deterministic, ageMarkers }: FanChartProps) 
         ticks: { color: "rgb(148, 163, 184)" },
       },
       y: {
+        type: "logarithmic" as const,
         title: { display: true, text: "Portfolio Value", color: "rgb(148, 163, 184)" },
         grid: { color: "rgba(30, 41, 59, 0.6)" },
         ticks: {
@@ -179,7 +180,7 @@ export function FanChart({ summary, deterministic, ageMarkers }: FanChartProps) 
     plugins: {
       ...baseOptions.plugins,
       terminalCallouts: ending
-        ? { p5: ending.p5, p50: ending.p50, p95: ending.p95 }
+        ? { p80: ending.p80, p50: ending.p50, p20: ending.p20 }
         : undefined,
       ageMarkers: { markers: ageMarkers },
     },
@@ -191,13 +192,13 @@ export function FanChart({ summary, deterministic, ageMarkers }: FanChartProps) 
         <h2 className="text-base font-semibold text-slate-100">Retirement Success Probability</h2>
         <div className="flex items-center gap-3 text-[11px] text-slate-400">
           <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-slate-400/60" /> 5th–95th percentile
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-400/70" /> 20th–80th percentile
+            <span className="h-[2px] w-4 bg-emerald-400" /> Above average (80th)
           </span>
           <span className="flex items-center gap-1.5">
             <span className="h-[2px] w-4 bg-emerald-300" /> Median
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-[2px] w-4 bg-rose-400" /> Below average (20th)
           </span>
           <span className="flex items-center gap-1.5">
             <span className="h-[2px] w-4 bg-slate-400" style={{ borderTop: "2px dashed" }} /> Cash-flow projection
@@ -205,10 +206,6 @@ export function FanChart({ summary, deterministic, ageMarkers }: FanChartProps) 
         </div>
       </div>
       <div className="relative h-[400px]">
-        <div className="pointer-events-none absolute left-1/2 top-1/3 -translate-x-1/2 rounded-md bg-slate-950/80 ring-1 ring-slate-700 px-3 py-1.5 text-center">
-          <div className="text-[11px] font-semibold text-slate-100">Current Projection</div>
-          <div className="text-[10px] text-slate-400">90% Confidence Interval</div>
-        </div>
         <Line data={data} options={options} />
       </div>
     </div>
