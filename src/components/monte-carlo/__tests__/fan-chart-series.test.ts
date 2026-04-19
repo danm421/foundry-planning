@@ -28,11 +28,11 @@ describe("buildFanChartSeries", () => {
     expect(ages).toEqual([60, 61, 62, 63, 64]);
     expect(datasets).toHaveLength(6);
     expect(datasets[0].label).toBe("p5-baseline");
-    expect(datasets[1].label).toBe("Lower Bounds");
+    expect(datasets[1].label).toBe("5th–95th percentile");
     expect(datasets[2].label).toBe("p20-baseline");
-    expect(datasets[3].label).toBe("Higher Outcomes");
+    expect(datasets[3].label).toBe("20th–80th percentile");
     expect(datasets[4].label).toBe("Median");
-    expect(datasets[5].label).toBe("Cash Flow Projection");
+    expect(datasets[5].label).toBe("Cash-flow projection");
   });
 
   it("wires fill:'-1' on band datasets so they stack off their baselines", () => {
@@ -59,6 +59,6 @@ describe("buildFanChartSeries", () => {
   it("omits the deterministic overlay dataset when deterministic is undefined", () => {
     const { datasets } = buildFanChartSeries(mkByYear(3), undefined);
     expect(datasets).toHaveLength(5);
-    expect(datasets.find((d) => d.label === "Cash Flow Projection")).toBeUndefined();
+    expect(datasets.find((d) => d.label === "Cash-flow projection")).toBeUndefined();
   });
 });

@@ -191,16 +191,16 @@ export function FanChart({ summary, deterministic, ageMarkers }: FanChartProps) 
         <h2 className="text-base font-semibold text-slate-100">Retirement Success Probability</h2>
         <div className="flex items-center gap-3 text-[11px] text-slate-400">
           <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-slate-400/60" /> Lower Bounds
+            <span className="h-2 w-2 rounded-full bg-slate-400/60" /> 5th–95th percentile
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-400/70" /> Higher Outcomes
+            <span className="h-2 w-2 rounded-full bg-emerald-400/70" /> 20th–80th percentile
           </span>
           <span className="flex items-center gap-1.5">
             <span className="h-[2px] w-4 bg-emerald-300" /> Median
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-[2px] w-4 bg-slate-400" style={{ borderTop: "2px dashed" }} /> Cash Flow
+            <span className="h-[2px] w-4 bg-slate-400" style={{ borderTop: "2px dashed" }} /> Cash-flow projection
           </span>
         </div>
       </div>

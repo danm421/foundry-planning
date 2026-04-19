@@ -40,7 +40,7 @@ export function buildFanChartSeries(
       order: 6,
     },
     {
-      label: "Lower Bounds",
+      label: "5th–95th percentile",
       data: byYear.map((y) => y.balance.p95),
       borderColor: "transparent",
       backgroundColor: COLOR_OUTER_BAND,
@@ -59,7 +59,7 @@ export function buildFanChartSeries(
       order: 4,
     },
     {
-      label: "Higher Outcomes",
+      label: "20th–80th percentile",
       data: byYear.map((y) => y.balance.p80),
       borderColor: "transparent",
       backgroundColor: COLOR_INNER_BAND,
@@ -82,7 +82,7 @@ export function buildFanChartSeries(
 
   if (deterministic && deterministic.length === byYear.length) {
     datasets.push({
-      label: "Cash Flow Projection",
+      label: "Cash-flow projection",
       data: deterministic,
       borderColor: COLOR_DETERMINISTIC,
       borderWidth: 2,
