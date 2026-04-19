@@ -53,7 +53,7 @@ export function detectLifeEvents(
   const c = data.client;
 
   const primaryName = `${c.firstName} ${c.lastName}`.trim();
-  pushAgeEvent(out, "retire", "primary", primaryName, c.dateOfBirth, c.retirementAge, "Retirement", `${primaryName} retires`, projection);
+  pushAgeEvent(out, "retire", "primary", primaryName, c.dateOfBirth, c.retirementAge, "Retirement", `Age ${c.retirementAge}`, projection);
   pushAgeEvent(out, "medicare", "primary", primaryName, c.dateOfBirth, MEDICARE_AGE, "Medicare eligibility", "Age 65", projection);
   pushAgeEvent(out, "ss_fra", "primary", primaryName, c.dateOfBirth, SS_FRA_AGE, "Social Security FRA", "Full Retirement Age", projection);
   if (c.lifeExpectancy != null) {
@@ -69,7 +69,7 @@ export function detectLifeEvents(
   if (c.spouseName && c.spouseDob) {
     const spouseFullName = c.spouseName;
     if (c.spouseRetirementAge != null) {
-      pushAgeEvent(out, "retire", "spouse", spouseFullName, c.spouseDob, c.spouseRetirementAge, "Retirement", `${spouseFullName} retires`, projection);
+      pushAgeEvent(out, "retire", "spouse", spouseFullName, c.spouseDob, c.spouseRetirementAge, "Retirement", `Age ${c.spouseRetirementAge}`, projection);
     }
     pushAgeEvent(out, "medicare", "spouse", spouseFullName, c.spouseDob, MEDICARE_AGE, "Medicare eligibility", "Age 65", projection);
     pushAgeEvent(out, "ss_fra", "spouse", spouseFullName, c.spouseDob, SS_FRA_AGE, "Social Security FRA", "Full Retirement Age", projection);

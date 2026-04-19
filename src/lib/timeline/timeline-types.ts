@@ -21,7 +21,7 @@ export interface TimelineEventLink {
 }
 
 export interface TimelineEvent {
-  /** Stable id, e.g. `life:retire:primary:2044`. Deterministic given the same input. */
+  /** Stable id, e.g. `life:retire:primary` or `income:salary_start:primary:inc-salary-john`. Deterministic given the same input — year is only included when an event type can legitimately recur. */
   id: string;
   year: number;
   age?: number;
