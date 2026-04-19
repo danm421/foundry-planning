@@ -23,6 +23,7 @@ import {
   type AssetClassLite,
 } from "@/lib/investments/allocation";
 import { resolveBenchmark, type AssetClassWeight } from "@/lib/investments/benchmarks";
+import type { AssetTypeId } from "@/lib/investments/asset-types";
 import InvestmentsClient from "./investments-client";
 
 interface PageProps {
@@ -113,6 +114,7 @@ export default async function InvestmentsPage({ params }: PageProps) {
     id: c.id,
     name: c.name,
     sortOrder: c.sortOrder,
+    assetType: c.assetType as AssetTypeId,
   }));
 
   const cashAssetClassId = classRows.find((c) => c.slug === "cash")?.id ?? null;
