@@ -75,6 +75,7 @@ interface AddAccountFormProps {
   spouseFirstName?: string;
   /** Existing account names for auto-increment default naming on create. */
   existingAccountNames?: string[];
+  resolvedInflationRate?: number;
   onSuccess?: () => void;
   onDelete?: () => void;
 }
@@ -160,6 +161,7 @@ export default function AddAccountForm({
   clientFirstName,
   spouseFirstName,
   existingAccountNames,
+  resolvedInflationRate = 0,
   onSuccess,
   onDelete,
 }: AddAccountFormProps) {
@@ -218,8 +220,8 @@ export default function AddAccountForm({
 
   // Growth source: "default" (category default), "model_portfolio", or "custom"
   const isInvestable = ["taxable", "cash", "retirement"].includes(category);
-  const [growthSource, setGrowthSource] = useState<"default" | "model_portfolio" | "custom" | "asset_mix">(
-    (initial?.growthSource as "default" | "model_portfolio" | "custom" | "asset_mix") ?? "default"
+  const [growthSource, setGrowthSource] = useState<"default" | "model_portfolio" | "custom" | "asset_mix" | "inflation">(
+    (initial?.growthSource as "default" | "model_portfolio" | "custom" | "asset_mix" | "inflation") ?? "default"
   );
   const [modelPortfolioId, setModelPortfolioId] = useState<string>(
     initial?.modelPortfolioId ?? ""
@@ -317,6 +319,9 @@ export default function AddAccountForm({
       if (portfolioAllocs.length > 0) setCustomAllocations(portfolioAllocs);
     } else if (v === "asset_mix") {
       setGrowthSource("asset_mix");
+      setModelPortfolioId("");
+    } else if (v === "inflation") {
+      setGrowthSource("inflation");
       setModelPortfolioId("");
     } else if (v === "custom") {
       setGrowthSource("custom");
@@ -636,8 +641,18 @@ export default function AddAccountForm({
                   {ASSET_MIX_CATEGORIES.includes(category) && (
                     <option value="asset_mix">Asset mix (custom)</option>
                   )}
+                  {(category === "cash" || category === "taxable" || category === "retirement") && (
+                    <option value="inflation">
+                      Inflation rate ({(resolvedInflationRate * 100).toFixed(2)}%)
+                    </option>
+                  )}
                   <option value="custom">Custom %</option>
                 </select>
+                {growthSource === "inflation" && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Growth tracks plan inflation rate: {(resolvedInflationRate * 100).toFixed(2)}%
+                  </p>
+                )}
                 {growthSource === "custom" && (
                   <div className="mt-2">
                     <PercentInput

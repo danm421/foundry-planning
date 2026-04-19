@@ -10,11 +10,13 @@ import {
   modelPortfolios,
   modelPortfolioAllocations,
   assetClasses,
+  clientCmaOverrides,
 } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import BalanceSheetView, { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
 import { buildClientMilestones } from "@/lib/milestones";
+import { resolveInflationRate } from "@/lib/inflation";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -91,6 +93,28 @@ export default async function BalanceSheetPage({ params }: PageProps) {
   });
 
   const settings = settingsRows[0];
+
+  // Resolve inflation rate for the account growth-source dropdown
+  const firmInflationAc = assetClassRows.find((ac) => ac.slug === "inflation") ?? null;
+  let clientInflationOverride: { geometricReturn: string } | null = null;
+  if (settings?.useCustomCma && firmInflationAc) {
+    const [override] = await db
+      .select({ geometricReturn: clientCmaOverrides.geometricReturn })
+      .from(clientCmaOverrides)
+      .where(and(
+        eq(clientCmaOverrides.clientId, id),
+        eq(clientCmaOverrides.sourceAssetClassId, firmInflationAc.id),
+      ));
+    if (override) clientInflationOverride = override;
+  }
+  const resolvedInflationRate = resolveInflationRate(
+    {
+      inflationRateSource: settings?.inflationRateSource ?? "custom",
+      inflationRate: settings?.inflationRate ?? "0",
+    },
+    firmInflationAc ? { geometricReturn: firmInflationAc.geometricReturn } : null,
+    clientInflationOverride,
+  );
 
   // Build milestones for MilestoneYearPicker in the savings sub-form
   const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
@@ -197,6 +221,7 @@ export default async function BalanceSheetPage({ params }: PageProps) {
       portfolioAllocationsMap={portfolioAllocationsMap}
       categoryDefaultSources={categoryDefaultSources}
       milestones={milestones}
+      resolvedInflationRate={resolvedInflationRate}
     />
   );
 }

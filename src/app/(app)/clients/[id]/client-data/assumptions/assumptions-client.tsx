@@ -12,6 +12,7 @@ export interface AssumptionsSettings {
   flatFederalRate: string;
   flatStateRate: string;
   inflationRate: string;
+  inflationRateSource: "asset_class" | "custom";
   planStartYear: number;
   planEndYear: number;
   defaultGrowthTaxable: string;
@@ -46,6 +47,8 @@ interface AssumptionsClientProps {
   modelPortfolios?: ModelPortfolioOption[];
   clientFirstName?: string;
   spouseFirstName?: string;
+  resolvedInflationRate: number;
+  hasInflationAssetClass: boolean;
 }
 
 const TABS = [
@@ -63,6 +66,8 @@ export default function AssumptionsClient({
   modelPortfolios,
   clientFirstName,
   spouseFirstName,
+  resolvedInflationRate,
+  hasInflationAssetClass,
 }: AssumptionsClientProps) {
   const [activeTab, setActiveTab] = useState("tax-rates");
 
@@ -83,6 +88,9 @@ export default function AssumptionsClient({
           <GrowthInflationForm
             clientId={clientId}
             inflationRate={settings.inflationRate}
+            inflationRateSource={settings.inflationRateSource}
+            resolvedInflationRate={resolvedInflationRate}
+            hasInflationAssetClass={hasInflationAssetClass}
             defaultGrowthTaxable={settings.defaultGrowthTaxable}
             defaultGrowthCash={settings.defaultGrowthCash}
             defaultGrowthRetirement={settings.defaultGrowthRetirement}

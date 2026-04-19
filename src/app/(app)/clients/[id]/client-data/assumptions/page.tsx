@@ -9,11 +9,13 @@ import {
   modelPortfolios,
   modelPortfolioAllocations,
   assetClasses,
+  clientCmaOverrides,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import AssumptionsClient from "./assumptions-client";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
+import { resolveInflationRate } from "@/lib/inflation";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -75,6 +77,29 @@ export default async function AssumptionsPage({ params }: PageProps) {
     );
   }
 
+  const [firmInflationAc] = await db
+    .select({ id: assetClasses.id, geometricReturn: assetClasses.geometricReturn })
+    .from(assetClasses)
+    .where(and(eq(assetClasses.firmId, firmId), eq(assetClasses.slug, "inflation")));
+
+  let clientInflationOverride: { geometricReturn: string } | null = null;
+  if (settings.useCustomCma && firmInflationAc) {
+    const [override] = await db
+      .select({ geometricReturn: clientCmaOverrides.geometricReturn })
+      .from(clientCmaOverrides)
+      .where(and(
+        eq(clientCmaOverrides.clientId, id),
+        eq(clientCmaOverrides.sourceAssetClassId, firmInflationAc.id),
+      ));
+    if (override) clientInflationOverride = override;
+  }
+
+  const resolvedInflationRate = resolveInflationRate(
+    { inflationRateSource: settings.inflationRateSource, inflationRate: settings.inflationRate },
+    firmInflationAc ?? null,
+    clientInflationOverride,
+  );
+
   // Compute blended returns for each model portfolio
   const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
   const modelPortfolioOptions = portfolioRows.map((p) => {
@@ -122,6 +147,7 @@ export default async function AssumptionsPage({ params }: PageProps) {
           flatFederalRate: String(settings.flatFederalRate),
           flatStateRate: String(settings.flatStateRate),
           inflationRate: String(settings.inflationRate),
+          inflationRateSource: settings.inflationRateSource,
           planStartYear: settings.planStartYear,
           planEndYear: settings.planEndYear,
           defaultGrowthTaxable: String(settings.defaultGrowthTaxable),
@@ -140,6 +166,8 @@ export default async function AssumptionsPage({ params }: PageProps) {
           taxInflationRate: settings.taxInflationRate != null ? String(settings.taxInflationRate) : "",
           ssWageGrowthRate: settings.ssWageGrowthRate != null ? String(settings.ssWageGrowthRate) : "",
         }}
+        resolvedInflationRate={resolvedInflationRate}
+        hasInflationAssetClass={firmInflationAc != null}
         modelPortfolios={modelPortfolioOptions}
         accounts={accountRows.map((a) => ({
           id: a.id,

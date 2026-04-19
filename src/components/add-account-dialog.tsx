@@ -27,6 +27,7 @@ interface AddAccountDialogProps {
   clientFirstName?: string;
   spouseFirstName?: string;
   existingAccountNames?: string[];
+  resolvedInflationRate?: number;
 }
 
 export default function AddAccountDialog({
@@ -48,6 +49,7 @@ export default function AddAccountDialog({
   clientFirstName,
   spouseFirstName,
   existingAccountNames,
+  resolvedInflationRate,
 }: AddAccountDialogProps) {
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
@@ -104,6 +106,7 @@ export default function AddAccountDialog({
               clientFirstName={clientFirstName}
               spouseFirstName={spouseFirstName}
               existingAccountNames={existingAccountNames}
+              resolvedInflationRate={resolvedInflationRate}
               onSuccess={close}
               onDelete={onRequestDelete}
             />

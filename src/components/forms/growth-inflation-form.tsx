@@ -13,6 +13,9 @@ interface ModelPortfolioOption {
 interface GrowthInflationFormProps {
   clientId: string;
   inflationRate: string;
+  inflationRateSource: "asset_class" | "custom";
+  resolvedInflationRate: number;
+  hasInflationAssetClass: boolean;
   defaultGrowthTaxable: string;
   defaultGrowthCash: string;
   defaultGrowthRetirement: string;
@@ -48,7 +51,7 @@ const CMA_CATEGORIES: { category: string; label: string; description: string; ra
 
 const pct = (v: string) => (Number(v) * 100).toFixed(2);
 
-export default function GrowthInflationForm({ clientId, modelPortfolios, taxInflationRate, ssWageGrowthRate, ...rates }: GrowthInflationFormProps) {
+export default function GrowthInflationForm({ clientId, modelPortfolios, taxInflationRate, ssWageGrowthRate, inflationRateSource: initialInflationRateSource, resolvedInflationRate, hasInflationAssetClass, ...rates }: GrowthInflationFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +60,9 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(
     Boolean(taxInflationRate || ssWageGrowthRate)
+  );
+  const [inflationRateSource, setInflationRateSource] = useState<"asset_class" | "custom">(
+    initialInflationRateSource
   );
 
   async function handleResetAccounts() {
@@ -119,6 +125,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
 
     const body: Record<string, unknown> = {
       inflationRate: toDec("inflationRate"),
+      inflationRateSource,
       defaultGrowthRealEstate: toDec("defaultGrowthRealEstate"),
       defaultGrowthBusiness: toDec("defaultGrowthBusiness"),
       defaultGrowthLifeInsurance: toDec("defaultGrowthLifeInsurance"),
@@ -167,10 +174,39 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
           <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Inflation</h3>
           <p className="mt-1 text-xs text-gray-500">Annual inflation rate applied to expenses and incomes.</p>
         </header>
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-400" htmlFor="inflationRate">Inflation rate</label>
-            <PercentInput id="inflationRate" name="inflationRate" defaultValue={pct(rates.inflationRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+        <div>
+          <label className="block text-xs font-medium text-gray-400">Inflation rate</label>
+          <div className="mt-1 flex flex-col gap-2 rounded border border-gray-700 bg-gray-900 p-3">
+            <label className={`flex items-center gap-2 text-sm ${hasInflationAssetClass ? "text-gray-200" : "text-gray-500"}`}>
+              <input
+                type="radio"
+                name="inflationRateSource"
+                value="asset_class"
+                checked={inflationRateSource === "asset_class"}
+                disabled={!hasInflationAssetClass}
+                onChange={() => setInflationRateSource("asset_class")}
+              />
+              Asset class — {(resolvedInflationRate * 100).toFixed(2)}%
+            </label>
+            {!hasInflationAssetClass && (
+              <p className="pl-6 text-xs text-gray-500">No Inflation asset class configured for this firm.</p>
+            )}
+            <label className="flex items-center gap-2 text-sm text-gray-200">
+              <input
+                type="radio"
+                name="inflationRateSource"
+                value="custom"
+                checked={inflationRateSource === "custom"}
+                onChange={() => setInflationRateSource("custom")}
+              />
+              Custom
+              <PercentInput
+                id="inflationRate"
+                name="inflationRate"
+                defaultValue={pct(rates.inflationRate)}
+                className={`ml-2 w-28 rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500${inflationRateSource !== "custom" ? " opacity-50 pointer-events-none" : ""}`}
+              />
+            </label>
           </div>
         </div>
       </section>

@@ -90,6 +90,7 @@ export async function PUT(
       modelPortfolioIdCash,
       modelPortfolioIdRetirement,
       selectedBenchmarkPortfolioId,
+      inflationRateSource,
     } = body;
 
     if (selectedBenchmarkPortfolioId) {
@@ -147,6 +148,9 @@ export async function PUT(
         modelPortfolioIdRetirement: modelPortfolioIdRetirement !== undefined ? modelPortfolioIdRetirement : undefined,
         selectedBenchmarkPortfolioId: "selectedBenchmarkPortfolioId" in body
           ? (selectedBenchmarkPortfolioId === null ? null : selectedBenchmarkPortfolioId)
+          : undefined,
+        inflationRateSource: inflationRateSource === "custom" || inflationRateSource === "asset_class"
+          ? inflationRateSource
           : undefined,
         updatedAt: new Date(),
       })

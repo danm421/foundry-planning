@@ -63,6 +63,7 @@ interface BalanceSheetViewProps {
   portfolioAllocationsMap?: Record<string, { assetClassId: string; weight: number }[]>;
   categoryDefaultSources?: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }>;
   milestones?: ClientMilestones;
+  resolvedInflationRate?: number;
 }
 
 const CATEGORY_LABELS: Record<AccountCategory, string> = {
@@ -237,6 +238,7 @@ export default function BalanceSheetView({
   portfolioAllocationsMap,
   categoryDefaultSources,
   milestones,
+  resolvedInflationRate,
 }: BalanceSheetViewProps) {
   const router = useRouter();
 
@@ -520,6 +522,7 @@ export default function BalanceSheetView({
         clientFirstName={ownerNames.clientName.split(" ")[0]}
         spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
         existingAccountNames={accounts.map((a) => a.name)}
+        resolvedInflationRate={resolvedInflationRate}
         open={addCategory !== null}
         onOpenChange={(o) => !o && setAddCategory(null)}
       />
@@ -537,6 +540,7 @@ export default function BalanceSheetView({
         milestones={milestones}
         clientFirstName={ownerNames.clientName.split(" ")[0]}
         spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+        resolvedInflationRate={resolvedInflationRate}
         open={!!editingAccount}
         onOpenChange={(o) => !o && setEditingAccount(null)}
         editing={editingAccount ? accountToInitial(editingAccount) : undefined}
