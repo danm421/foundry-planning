@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import GrowthSourceRadio from "./forms/growth-source-radio";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import MilestoneYearPicker from "./milestone-year-picker";
 import ScheduleTab from "./schedule-tab";
@@ -27,6 +28,7 @@ interface Income {
   claimingAge: number | null;
   linkedEntityId: string | null;
   growthRate: string;
+  growthSource?: string | null;
   ownerEntityId?: string | null;
   cashAccountId?: string | null;
   inflationStartYear?: number | null;
@@ -67,6 +69,7 @@ interface Expense {
   startYear: number;
   endYear: number;
   growthRate: string;
+  growthSource?: string | null;
   ownerEntityId?: string | null;
   cashAccountId?: string | null;
   inflationStartYear?: number | null;
@@ -81,6 +84,8 @@ interface SavingsRule {
   annualAmount: string;
   startYear: number;
   endYear: number;
+  growthRate?: string | null;
+  growthSource?: string | null;
   employerMatchPct: string | null;
   employerMatchCap: string | null;
   employerMatchAmount: string | null;
@@ -127,6 +132,7 @@ interface IncomeExpensesViewProps {
   incomeSchedules: ScheduleMap;
   expenseSchedules: ScheduleMap;
   savingsSchedules: ScheduleMap;
+  resolvedInflationRate: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -340,6 +346,7 @@ interface IncomeDialogProps {
   onSaved: (income: Income, mode: "create" | "edit") => void;
   onRequestDelete?: () => void;
   schedule?: { year: number; amount: number }[];
+  resolvedInflationRate: number;
 }
 
 function IncomeDialog({
@@ -355,6 +362,7 @@ function IncomeDialog({
   onSaved,
   onRequestDelete,
   schedule,
+  resolvedInflationRate,
 }: IncomeDialogProps) {
   type TabId = "details" | "schedule";
   const [activeTab, setActiveTab] = useState<TabId>("details");
@@ -370,9 +378,15 @@ function IncomeDialog({
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
     editing?.inflationStartYear != null && editing.inflationStartYear < editing.startYear
   );
+  const isSocialSecurity = type === "social_security";
+  const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
+    editing?.growthSource === "inflation" ? "inflation" : "custom"
+  );
+  const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
+    String(pctFromDecimal(editing?.growthRate, isSocialSecurity ? 2 : 3))
+  );
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
-  const isSocialSecurity = type === "social_security";
   const [taxType, setTaxType] = useState<IncomeTaxType>(
     (editing?.taxType as IncomeTaxType) ?? defaultTaxTypeFor(type)
   );
@@ -420,7 +434,8 @@ function IncomeDialog({
       annualAmount: data.get("annualAmount") as string,
       startYear: submitStartYear,
       endYear: submitEndYear,
-      growthRate: String(Number(data.get("growthRate") as string) / 100),
+      growthRate: String(Number(growthRateDisplay) / 100),
+      growthSource,
       owner: data.get("owner") as string,
       claimingAge,
       linkedEntityId: data.get("linkedEntityId") || null,
@@ -577,15 +592,17 @@ function IncomeDialog({
                 <p className="text-xs text-blue-400 cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
               </div>
             ) : (
-              <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="inc-growth">Growth Rate (%)</label>
-                <PercentInput
-                  id="inc-growth"
-                  name="growthRate"
-                  defaultValue={pctFromDecimal(editing?.growthRate, isSocialSecurity ? 2 : 3)}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <label className="mt-1 flex items-center gap-1.5 text-[11px] text-gray-400">
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
+                <div className="mt-1">
+                  <GrowthSourceRadio
+                    value={growthSource}
+                    customRate={growthRateDisplay}
+                    resolvedInflationRate={resolvedInflationRate}
+                    onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
+                  />
+                </div>
+                <label className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-400">
                   <input
                     type="checkbox"
                     checked={todaysDollars}
@@ -792,6 +809,7 @@ interface ExpenseDialogProps {
   onSaved: (expense: Expense, mode: "create" | "edit") => void;
   onRequestDelete?: () => void;
   schedule?: { year: number; amount: number }[];
+  resolvedInflationRate: number;
 }
 
 function ExpenseDialog({
@@ -807,6 +825,7 @@ function ExpenseDialog({
   onSaved,
   onRequestDelete,
   schedule,
+  resolvedInflationRate,
 }: ExpenseDialogProps) {
   type ExpTabId = "details" | "schedule";
   const [activeTab, setActiveTab] = useState<ExpTabId>("details");
@@ -820,6 +839,12 @@ function ExpenseDialog({
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
     editing?.inflationStartYear != null && editing.inflationStartYear < editing.startYear
+  );
+  const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
+    editing?.growthSource === "inflation" ? "inflation" : "custom"
+  );
+  const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
+    String(pctFromDecimal(editing?.growthRate, 3))
   );
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
@@ -852,7 +877,8 @@ function ExpenseDialog({
       annualAmount: data.get("annualAmount") as string,
       startYear: String(startYear),
       endYear: String(endYear),
-      growthRate: String(Number(data.get("growthRate") as string) / 100),
+      growthRate: String(Number(growthRateDisplay) / 100),
+      growthSource,
       ownerEntityId: ownerEntityId || null,
       cashAccountId: cashAccountId || null,
       inflationStartYear: todaysDollars ? planStartYear : null,
@@ -966,15 +992,17 @@ function ExpenseDialog({
                 <p className="text-xs text-blue-400 cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
               </div>
             ) : (
-              <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="exp-growth">Growth Rate (%)</label>
-                <PercentInput
-                  id="exp-growth"
-                  name="growthRate"
-                  defaultValue={pctFromDecimal(editing?.growthRate, 3)}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <label className="mt-1 flex items-center gap-1.5 text-[11px] text-gray-400">
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
+                <div className="mt-1">
+                  <GrowthSourceRadio
+                    value={growthSource}
+                    customRate={growthRateDisplay}
+                    resolvedInflationRate={resolvedInflationRate}
+                    onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
+                  />
+                </div>
+                <label className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-400">
                   <input
                     type="checkbox"
                     checked={todaysDollars}
@@ -1160,6 +1188,7 @@ interface SavingsRuleDialogProps {
   schedule?: { year: number; amount: number }[];
   clientInfo?: ClientInfo;
   ownerNames?: OwnerNames;
+  resolvedInflationRate: number;
 }
 
 function SavingsRuleDialog({
@@ -1173,6 +1202,7 @@ function SavingsRuleDialog({
   schedule,
   clientInfo,
   ownerNames,
+  resolvedInflationRate,
 }: SavingsRuleDialogProps) {
   type SavTabId = "details" | "schedule";
   const [activeTab, setActiveTab] = useState<SavTabId>("details");
@@ -1182,6 +1212,12 @@ function SavingsRuleDialog({
   const [error, setError] = useState<string | null>(null);
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
+  const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
+    editing?.growthSource === "inflation" ? "inflation" : "custom"
+  );
+  const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
+    String(pctFromDecimal(editing?.growthRate ?? "0", 0))
+  );
   const [startYear, setStartYear] = useState<number>(editing?.startYear ?? currentYear);
   const [endYear, setEndYear] = useState<number>(editing?.endYear ?? currentYear + 20);
   const [startYearRef, setStartYearRef] = useState<YearRef | null>(
@@ -1222,6 +1258,8 @@ function SavingsRuleDialog({
       endYear: String(endYear),
       startYearRef,
       endYearRef,
+      growthRate: String(Number(growthRateDisplay) / 100),
+      growthSource,
       employerMatchPct:
         matchMode === "percent" && matchPct ? String(Number(matchPct) / 100) : null,
       employerMatchCap:
@@ -1328,6 +1366,17 @@ function SavingsRuleDialog({
                 defaultValue={editing?.annualLimit ?? ""}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
+              <div className="mt-1">
+                <GrowthSourceRadio
+                  value={growthSource}
+                  customRate={growthRateDisplay}
+                  resolvedInflationRate={resolvedInflationRate}
+                  onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
+                />
+              </div>
             </div>
             <div className="col-span-2 rounded-md border border-gray-800 bg-gray-900/60 p-3">
               <div className="mb-2 flex items-center gap-4">
@@ -1544,6 +1593,7 @@ export default function IncomeExpensesView({
   incomeSchedules,
   expenseSchedules,
   savingsSchedules,
+  resolvedInflationRate,
 }: IncomeExpensesViewProps) {
   const [incomeList, setIncomeList] = useState<Income[]>(initialIncomes);
   const [expenseList, setExpenseList] = useState<Expense[]>(initialExpenses);
@@ -1824,6 +1874,7 @@ export default function IncomeExpensesView({
           if (incomeDialog.editing) setDeletingIncome(incomeDialog.editing);
         }}
         schedule={incomeDialog.editing ? incomeSchedules[incomeDialog.editing.id] : undefined}
+        resolvedInflationRate={resolvedInflationRate}
       />
 
       <ExpenseDialog
@@ -1844,6 +1895,7 @@ export default function IncomeExpensesView({
           if (expenseDialog.editing) setDeletingExpense(expenseDialog.editing);
         }}
         schedule={expenseDialog.editing ? expenseSchedules[expenseDialog.editing.id] : undefined}
+        resolvedInflationRate={resolvedInflationRate}
       />
 
       <SavingsRuleDialog
@@ -1862,6 +1914,7 @@ export default function IncomeExpensesView({
         schedule={savingsDialog.editing ? savingsSchedules[savingsDialog.editing.id] : undefined}
         clientInfo={clientInfo}
         ownerNames={ownerNames}
+        resolvedInflationRate={resolvedInflationRate}
       />
 
       {/* Delete confirms */}

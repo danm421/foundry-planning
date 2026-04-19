@@ -34,6 +34,7 @@ export async function PUT(
       startYear,
       endYear,
       growthRate,
+      growthSource,
       ownerEntityId,
       cashAccountId,
       inflationStartYear,
@@ -48,6 +49,7 @@ export async function PUT(
         ...(startYear !== undefined && { startYear: Number(startYear) }),
         ...(endYear !== undefined && { endYear: Number(endYear) }),
         ...(growthRate !== undefined && { growthRate }),
+        ...(growthSource !== undefined && { growthSource: growthSource === "inflation" ? "inflation" : "custom" }),
         ...(ownerEntityId !== undefined && { ownerEntityId: ownerEntityId ?? null }),
         ...(cashAccountId !== undefined && { cashAccountId: cashAccountId ?? null }),
         ...(inflationStartYear !== undefined && {

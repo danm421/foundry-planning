@@ -32,6 +32,8 @@ export async function PUT(
       annualAmount,
       startYear,
       endYear,
+      growthRate,
+      growthSource,
       employerMatchPct,
       employerMatchCap,
       employerMatchAmount,
@@ -45,6 +47,8 @@ export async function PUT(
         ...(annualAmount !== undefined && { annualAmount }),
         ...(startYear !== undefined && { startYear: Number(startYear) }),
         ...(endYear !== undefined && { endYear: Number(endYear) }),
+        ...(growthRate != null && { growthRate: String(growthRate) }),
+        ...(growthSource !== undefined && { growthSource: growthSource === "inflation" ? "inflation" : "custom" }),
         ...(employerMatchPct !== undefined && { employerMatchPct: employerMatchPct ?? null }),
         ...(employerMatchCap !== undefined && { employerMatchCap: employerMatchCap ?? null }),
         ...(employerMatchAmount !== undefined && {

@@ -12,11 +12,14 @@ import {
   incomeScheduleOverrides,
   expenseScheduleOverrides,
   savingsScheduleOverrides,
+  assetClasses,
+  clientCmaOverrides,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import IncomeExpensesView from "@/components/income-expenses-view";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
+import { resolveInflationRate } from "@/lib/inflation";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -87,6 +90,31 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
   }
 
   const settings = planSettingsRows[0];
+
+  const [firmInflationAc] = await db
+    .select({ id: assetClasses.id, geometricReturn: assetClasses.geometricReturn })
+    .from(assetClasses)
+    .where(and(eq(assetClasses.firmId, firmId), eq(assetClasses.slug, "inflation")));
+
+  let clientInflationOverride: { geometricReturn: string } | null = null;
+  if (settings?.useCustomCma && firmInflationAc) {
+    const [override] = await db
+      .select({ geometricReturn: clientCmaOverrides.geometricReturn })
+      .from(clientCmaOverrides)
+      .where(and(
+        eq(clientCmaOverrides.clientId, id),
+        eq(clientCmaOverrides.sourceAssetClassId, firmInflationAc.id),
+      ));
+    if (override) clientInflationOverride = override;
+  }
+
+  const resolvedInflationRate = resolveInflationRate(
+    settings
+      ? { inflationRateSource: settings.inflationRateSource, inflationRate: settings.inflationRate }
+      : { inflationRateSource: "custom", inflationRate: 0.03 },
+    firmInflationAc ?? null,
+    clientInflationOverride,
+  );
 
   const clientBirthYear = new Date(client.dateOfBirth).getFullYear();
   const clientRetirementYear = clientBirthYear + client.retirementAge;
@@ -180,6 +208,7 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
       incomeSchedules={incomeScheduleMap}
       expenseSchedules={expenseScheduleMap}
       savingsSchedules={savingsScheduleMap}
+      resolvedInflationRate={resolvedInflationRate}
     />
   );
 }
