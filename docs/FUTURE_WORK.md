@@ -331,6 +331,29 @@ Dependency notes that override raw score:
   deferred from the tax drill-down work since it applies to all reports;
   better shipped as one coherent project._
 
+- **Holdings-level detail in allocation type-drill** _(P4 E4 L3)_ — the
+  type-drill view in the allocation report currently stops at
+  account-level contributions under each class. A future revision could
+  nest per-holding rows (ticker, CUSIP, units, price, market value) under
+  each account. _Why deferred: holdings data model isn't in place yet._
+
+- **Asset-type dimension on drift chart** _(P4 E3 L2)_ — `DriftChart`
+  compares current vs target at the asset-class level only. Now that the
+  allocation donut + table support an asset-type dimension, rolling drift
+  up to the type level is a natural follow-up. _Why deferred: scoped out
+  of the asset-type-groups feature to keep it focused on the donut +
+  table + drill._
+
+- **Allowlist mutable fields on `PUT /api/cma/asset-classes/[id]`**
+  _(P3 E4 L3)_ — the current handler spreads the raw request body into
+  Drizzle's `.set()`, which means any schema column (including `firmId`,
+  `id`, `createdAt`) could be overwritten by a crafted request. The
+  `WHERE firmId = ...` clause prevents cross-firm reads, but a caller
+  could corrupt ownership of a record it already has access to. Harden
+  by explicitly allowlisting mutable fields. _Why deferred: existing
+  behavior predates the asset-type-groups branch and the exploitability
+  is low; worth a defense-in-depth fix in a follow-up task._
+
 ## Integrations
 
 - ~~**AI statement import in Client Data**~~ — **SHIPPED.** Import tab in
