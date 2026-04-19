@@ -75,7 +75,23 @@ export default function TimelineSpine({
     return undefined;
   };
 
-  let alternateIndex = 0;
+  // Precompute per-year offsets before render (avoid mutation inside .map).
+  const yearPlan = useMemo(
+    () =>
+      projection.reduce<
+        { py: ProjectionYear; events: TimelineEvent[]; alternateOffset: number }[]
+      >((acc, py) => {
+        const events = eventsByYear.get(py.year) ?? [];
+        const prev = acc[acc.length - 1];
+        const alternateOffset = prev
+          ? prev.alternateOffset +
+            prev.events.filter((e) => e.subject !== "joint").length
+          : 0;
+        acc.push({ py, events, alternateOffset });
+        return acc;
+      }, []),
+    [projection, eventsByYear],
+  );
 
   return (
     <div ref={containerRef} className="relative mt-6 flex flex-col">
@@ -117,12 +133,11 @@ export default function TimelineSpine({
           })}
       </div>
 
-      {projection.map((py) => {
-        const events = eventsByYear.get(py.year) ?? [];
+      {yearPlan.map(({ py, events, alternateOffset }) => {
         const ageLabel = py.ages.spouse != null
           ? `Ages ${py.ages.client} / ${py.ages.spouse}`
           : `Age ${py.ages.client}`;
-        const segment = (
+        return (
           <TimelineYearSegment
             key={py.year}
             year={py.year}
@@ -136,11 +151,9 @@ export default function TimelineSpine({
             isCoupled={isCoupled}
             registerSegmentRef={registerSegmentRef}
             alternate={!isCoupled}
-            alternateOffset={alternateIndex}
+            alternateOffset={alternateOffset}
           />
         );
-        alternateIndex += events.filter((e) => e.subject !== "joint").length;
-        return segment;
       })}
     </div>
   );
