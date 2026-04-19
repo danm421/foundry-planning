@@ -72,7 +72,7 @@ assetType: varchar("asset_type", { length: 32 }).notNull().default("other"),
 
 ### Migration
 
-`src/db/migrations/0032_asset_type_on_asset_classes.sql`:
+`src/db/migrations/0030_asset_type_on_asset_classes.sql` (number chosen from current `main`; renumber at merge time if another in-flight branch lands first):
 
 1. `ALTER TABLE asset_classes ADD COLUMN asset_type varchar(32) NOT NULL DEFAULT 'other';`
 2. Targeted `UPDATE` statements, one per non-"other" type, matching a small explicit list of known slugs and name patterns. Unmatched rows remain `'other'`.
