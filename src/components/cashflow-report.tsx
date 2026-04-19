@@ -1610,7 +1610,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         </div>
       </div>
 
-      <div className="flex items-center gap-4 flex-wrap">
+      <div className="mb-3 flex items-center gap-4 flex-wrap">
         <QuickNavDropdown
           activeView={activeView}
           onSelectView={handleSelectView}
@@ -1618,7 +1618,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         />
         {/* Breadcrumb navigation */}
         {drillPath.length > 0 && (
-          <div className="mb-3 flex items-center gap-1 text-sm">
+          <div className="flex items-center gap-1 text-sm">
             <button
               onClick={() => drillTo(0)}
               className="text-blue-500 hover:text-blue-400 font-medium"
