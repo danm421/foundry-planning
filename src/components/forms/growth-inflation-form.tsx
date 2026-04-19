@@ -124,7 +124,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
     const toDec = (name: string) => String(Number(data.get(name) as string) / 100);
 
     const body: Record<string, unknown> = {
-      inflationRate: toDec("inflationRate"),
+      inflationRate: inflationRateSource === "custom" ? toDec("inflationRate") : undefined,
       inflationRateSource,
       defaultGrowthRealEstate: toDec("defaultGrowthRealEstate"),
       defaultGrowthBusiness: toDec("defaultGrowthBusiness"),
@@ -204,7 +204,8 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                 id="inflationRate"
                 name="inflationRate"
                 defaultValue={pct(rates.inflationRate)}
-                className={`ml-2 w-28 rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500${inflationRateSource !== "custom" ? " opacity-50 pointer-events-none" : ""}`}
+                disabled={inflationRateSource !== "custom"}
+                className={`ml-2 w-28 rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500${inflationRateSource !== "custom" ? " opacity-50" : ""}`}
               />
             </label>
           </div>
