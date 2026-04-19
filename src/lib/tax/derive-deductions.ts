@@ -91,7 +91,11 @@ export function deriveAboveLineFromSavings(
   // Optional per-rule salary base used to resolve percent-mode contributions
   // into a dollar amount. Keyed by rule id. Falls back to rule.annualAmount
   // when the rule is not in the map or has no percent set.
-  salaryByRuleId?: Record<string, number>
+  salaryByRuleId?: Record<string, number>,
+  // Optional pre-resolved (and possibly contribution-limit-capped) amount per
+  // rule. When present, overrides the internal percent/annualAmount
+  // resolution so the deduction reflects the capped contribution.
+  overriddenAmountByRuleId?: Record<string, number>
 ): DeductionContribution {
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   let total = 0;
@@ -103,11 +107,17 @@ export function deriveAboveLineFromSavings(
     if (acct.category !== "retirement") continue;
     if (!DEDUCTIBLE_ELIGIBLE_SUBTYPES.has(acct.subType)) continue;
     if (acct.ownerEntityId != null && !isGrantorEntity(acct.ownerEntityId)) continue;
-    const salary = salaryByRuleId?.[rule.id] ?? 0;
-    const amount =
-      rule.annualPercent != null && rule.annualPercent > 0 && salary > 0
-        ? salary * rule.annualPercent
-        : rule.annualAmount;
+    const overridden = overriddenAmountByRuleId?.[rule.id];
+    let amount: number;
+    if (overridden != null) {
+      amount = overridden;
+    } else {
+      const salary = salaryByRuleId?.[rule.id] ?? 0;
+      amount =
+        rule.annualPercent != null && rule.annualPercent > 0 && salary > 0
+          ? salary * rule.annualPercent
+          : rule.annualAmount;
+    }
     total += amount;
   }
   return { aboveLine: total, itemized: 0, saltPool: 0 };

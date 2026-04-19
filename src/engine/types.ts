@@ -150,6 +150,10 @@ export interface SavingsRule {
   /** Whether this contribution counts as an above-the-line deduction.
    *  The derive-deductions logic gates on both subtype eligibility AND this flag. */
   isDeductible: boolean;
+  /** When true (default), the engine caps the resolved contribution at the
+   *  applicable IRS limit (401k/403b deferral or IRA base+catch-up). When
+   *  false, the rule bypasses the cap entirely. */
+  applyContributionLimit?: boolean;
   startYear: number;
   endYear: number;
   employerMatchPct?: number;

@@ -485,6 +485,7 @@ export async function GET(
         annualAmount: parseFloat(s.annualAmount),
         annualPercent: s.annualPercent != null ? parseFloat(s.annualPercent) : null,
         isDeductible: s.isDeductible,
+        applyContributionLimit: s.applyContributionLimit,
         startYear: s.startYear,
         endYear: s.endYear,
         growthRate: s.growthSource === "inflation" ? resolvedInflationRate : Number(s.growthRate ?? 0),

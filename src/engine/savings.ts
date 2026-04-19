@@ -53,7 +53,12 @@ export function applySavingsRules(
   // Optional per-rule salary base for percent-mode contributions. Keyed by rule id.
   // When a rule has annualPercent set, the resolver uses this salary. Falls back
   // to totalSalaryIncome if the rule isn't in the map.
-  salaryByRuleId?: Record<string, number>
+  salaryByRuleId?: Record<string, number>,
+  // Optional pre-resolved (and possibly contribution-limit-capped) amount per
+  // rule. When present, overrides both scheduleOverrides and percent-mode
+  // resolution for this rule. Caller is responsible for already honoring
+  // scheduleOverrides when building this map.
+  overriddenAmountByRuleId?: Record<string, number>
 ): SavingsResult {
   const byAccount: Record<string, number> = {};
   let total = 0;
@@ -66,9 +71,13 @@ export function applySavingsRules(
     if (remaining <= 0) break;
 
     const ruleSalary = salaryByRuleId?.[rule.id] ?? totalSalaryIncome;
-    const baseAmount = rule.scheduleOverrides
-      ? (rule.scheduleOverrides.get(year) ?? 0)
-      : resolveContributionAmount(rule, ruleSalary);
+    const overridden = overriddenAmountByRuleId?.[rule.id];
+    const baseAmount =
+      overridden != null
+        ? overridden
+        : rule.scheduleOverrides
+          ? (rule.scheduleOverrides.get(year) ?? 0)
+          : resolveContributionAmount(rule, ruleSalary);
     if (baseAmount === 0) continue;
     const contribution = Math.min(baseAmount, remaining);
 

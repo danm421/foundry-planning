@@ -1,0 +1,1 @@
+ALTER TABLE "savings_rules" ADD COLUMN "apply_contribution_limit" boolean DEFAULT true NOT NULL;

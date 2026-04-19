@@ -567,6 +567,10 @@ export const savingsRules = pgTable("savings_rules", {
   // Whether this contribution counts as an above-the-line deduction.
   // Engine gates deduction on subtype eligibility AND this flag.
   isDeductible: boolean("is_deductible").notNull().default(true),
+  // When true (default), the engine caps the contribution at the applicable
+  // IRS limit (401k/403b deferral or IRA base+catch-up). When false, the
+  // rule bypasses the cap — advisor models the contribution verbatim.
+  applyContributionLimit: boolean("apply_contribution_limit").notNull().default(true),
   annualLimit: decimal("annual_limit", { precision: 15, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

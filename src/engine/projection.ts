@@ -32,7 +32,8 @@ import {
   aggregateDeductions,
   saltCap,
 } from "../lib/tax/derive-deductions";
-import { applySavingsRules, computeEmployerMatch } from "./savings";
+import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
+import { applyContributionLimits } from "./contribution-limits";
 import { executeWithdrawals } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
@@ -654,6 +655,36 @@ export function runProjection(data: ClientData): ProjectionYear[] {
           : totalHouseholdSalary;
     }
 
+    // Resolve each rule's pre-cap dollar contribution so we can apply IRS
+    // contribution limits in one place. Respects scheduleOverrides first,
+    // then percent-mode vs annualAmount. Rules outside their year range are
+    // left out entirely (keys absent).
+    const resolvedByRuleId: Record<string, number> = {};
+    for (const rule of data.savingsRules) {
+      if (year < rule.startYear || year > rule.endYear) continue;
+      const override = rule.scheduleOverrides?.get(year);
+      if (override != null) {
+        resolvedByRuleId[rule.id] = override;
+        continue;
+      }
+      const salary = salaryByRuleId[rule.id] ?? 0;
+      resolvedByRuleId[rule.id] = resolveContributionAmount(rule, salary);
+    }
+
+    // Apply IRS 401k/403b and IRA contribution limits (aggregated per owner).
+    // Rules with applyContributionLimit === false bypass the cap.
+    const capResult = resolved
+      ? applyContributionLimits({
+          year,
+          rules: data.savingsRules,
+          accounts: data.accounts,
+          client,
+          taxYearParams: resolved.params,
+          resolvedByRuleId,
+        })
+      : { cappedByRuleId: resolvedByRuleId, adjustments: [] };
+    const cappedByRuleId = capResult.cappedByRuleId;
+
     let aboveLineDeductions = 0;
     let itemizedDeductions = 0;
     let deductionBreakdownResult: DeductionBreakdown | undefined;
@@ -677,7 +708,8 @@ export function runProjection(data: ClientData): ProjectionYear[] {
             ownerEntityId: a.ownerEntityId,
           })),
           isGrantorEntity,
-          salaryByRuleId
+          salaryByRuleId,
+          cappedByRuleId
         ),
         deriveAboveLineFromExpenses(year, allExpenses.map((e) => ({
           deductionType: e.deductionType ?? null,
@@ -911,13 +943,21 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     const surplusBeforeSavings = householdInflows - householdNonSavingsOutflows;
 
     const savings = hasChecking
-      ? applySavingsRules(data.savingsRules, year, income.salaries, undefined, salaryByRuleId)
+      ? applySavingsRules(
+          data.savingsRules,
+          year,
+          income.salaries,
+          undefined,
+          salaryByRuleId,
+          cappedByRuleId
+        )
       : applySavingsRules(
           data.savingsRules,
           year,
           income.salaries,
           Math.max(0, surplusBeforeSavings),
-          salaryByRuleId
+          salaryByRuleId,
+          cappedByRuleId
         );
 
     // Credit employee contributions to destination accounts and debit household checking.

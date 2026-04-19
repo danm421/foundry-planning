@@ -20,6 +20,9 @@ import DeductibleContributionCheckbox, {
   supportsDeductibility,
   defaultDeductibleForSubtype,
 } from "./deductible-contribution-checkbox";
+import ContributionCapCheckbox, {
+  supportsContributionCap,
+} from "./contribution-cap-checkbox";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,6 +39,7 @@ export interface SavingsRuleRow {
   annualAmount: string;
   annualPercent?: string | null;
   isDeductible?: boolean;
+  applyContributionLimit?: boolean;
   startYear: number;
   endYear: number;
   growthRate?: string | null;
@@ -157,6 +161,14 @@ export default function SavingsRuleDialog({
     editing?.isDeductible ?? defaultDeductibleForSubtype(selectedAccount?.subType)
   );
 
+  const showContributionCapCheckbox = supportsContributionCap(
+    selectedAccount?.category,
+    selectedAccount?.subType
+  );
+  const [applyContributionLimit, setApplyContributionLimit] = useState<boolean>(
+    editing?.applyContributionLimit ?? true
+  );
+
   if (!open) return null;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -177,6 +189,7 @@ export default function SavingsRuleDialog({
           ? String(Number(annualPercentInput) / 100)
           : null,
       isDeductible: showDeductibleCheckbox ? isDeductible : true,
+      applyContributionLimit: showContributionCapCheckbox ? applyContributionLimit : true,
       startYear: String(startYear),
       endYear: String(endYear),
       startYearRef,
@@ -284,6 +297,15 @@ export default function SavingsRuleDialog({
                 <DeductibleContributionCheckbox
                   checked={isDeductible}
                   onChange={setIsDeductible}
+                  idPrefix="sr"
+                />
+              </div>
+            )}
+            {showContributionCapCheckbox && (
+              <div className="col-span-2">
+                <ContributionCapCheckbox
+                  checked={applyContributionLimit}
+                  onChange={setApplyContributionLimit}
                   idPrefix="sr"
                 />
               </div>

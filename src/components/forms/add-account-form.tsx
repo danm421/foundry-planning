@@ -23,6 +23,9 @@ import DeductibleContributionCheckbox, {
   supportsDeductibility,
   defaultDeductibleForSubtype,
 } from "./deductible-contribution-checkbox";
+import ContributionCapCheckbox, {
+  supportsContributionCap,
+} from "./contribution-cap-checkbox";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -338,12 +341,14 @@ export default function AddAccountForm({
   useEffect(() => {
     setIsDeductible(defaultDeductibleForSubtype(subType));
   }, [subType]);
+  const [applyContributionLimit, setApplyContributionLimit] = useState<boolean>(true);
 
   const subTypes = SUB_TYPE_BY_CATEGORY[category];
   const isRetirementAccount = category === "retirement" && RETIREMENT_SUB_TYPES.has(subType);
   const showEmployerMatch = supportsEmployerMatch(category, subType);
   const showContributionModeToggle = supportsPercentContribution(category, subType);
   const showDeductibleCheckbox = supportsDeductibility(category, subType);
+  const showContributionCapCheckbox = supportsContributionCap(category, subType);
   const showRmdCheckbox =
     category === "retirement" &&
     (subType === "traditional_ira" ||
@@ -481,6 +486,7 @@ export default function AddAccountForm({
             annualAmount: hasAmount ? savingsAmount : "0",
             annualPercent: hasPercent ? String(Number(savingsPercent) / 100) : null,
             isDeductible: showDeductibleCheckbox ? isDeductible : true,
+            applyContributionLimit: showContributionCapCheckbox ? applyContributionLimit : true,
             startYear: String(savingsStartYear),
             endYear: String(savingsEndYear),
             startYearRef: savingsStartYearRef,
@@ -941,6 +947,14 @@ export default function AddAccountForm({
               <DeductibleContributionCheckbox
                 checked={isDeductible}
                 onChange={setIsDeductible}
+                idPrefix="acct-sr"
+              />
+            )}
+
+            {showContributionCapCheckbox && (
+              <ContributionCapCheckbox
+                checked={applyContributionLimit}
+                onChange={setApplyContributionLimit}
                 idPrefix="acct-sr"
               />
             )}
