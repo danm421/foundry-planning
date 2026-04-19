@@ -22,6 +22,8 @@ interface Props {
   existingCommentBody: string;
 }
 
+type AllocationView = "high_level" | "detailed" | "combined";
+
 function formatDollars(n: number) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
@@ -38,6 +40,7 @@ export default function InvestmentsClient({
 }: Props) {
   const [commentOpen, setCommentOpen] = useState(false);
   const [drilledRowId, setDrilledRowId] = useState<string | null>(null);
+  const [view, setView] = useState<AllocationView>("detailed");
   const hasComment = existingCommentBody.trim().length > 0;
   const disclosureParts: string[] = [];
   if (household.excludedNonInvestableValue > 0) {
@@ -58,20 +61,52 @@ export default function InvestmentsClient({
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <nav className="mb-1 text-xs uppercase tracking-wide text-gray-500">
-            Reports / Investments / Asset Allocation
-          </nav>
-          <h2 className="text-xl font-bold uppercase tracking-wide text-gray-100">
-            Asset Allocation Report
-          </h2>
+      <header className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <nav className="mb-1 text-xs uppercase tracking-wide text-gray-500">
+              Reports / Investments / Asset Allocation
+            </nav>
+            <h2 className="text-xl font-bold uppercase tracking-wide text-gray-100">
+              Asset Allocation Report
+            </h2>
+          </div>
+          <BenchmarkSelector
+            clientId={clientId}
+            modelPortfolios={modelPortfolios}
+            selectedBenchmarkPortfolioId={selectedBenchmarkPortfolioId}
+          />
         </div>
-        <BenchmarkSelector
-          clientId={clientId}
-          modelPortfolios={modelPortfolios}
-          selectedBenchmarkPortfolioId={selectedBenchmarkPortfolioId}
-        />
+        <div
+          role="radiogroup"
+          aria-label="Allocation view"
+          className="inline-flex self-start rounded-md border border-gray-700 bg-gray-800/50 p-0.5 text-xs"
+        >
+          {(
+            [
+              { id: "high_level", label: "By Type" },
+              { id: "detailed",   label: "By Class" },
+              { id: "combined",   label: "Combined" },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.id}
+              role="radio"
+              aria-checked={view === opt.id}
+              onClick={() => {
+                setView(opt.id);
+                setDrilledRowId(null); // reset any open drill when switching modes
+              }}
+              className={`rounded px-3 py-1.5 font-medium transition-colors ${
+                view === opt.id
+                  ? "bg-gray-700 text-white"
+                  : "text-gray-400 hover:text-gray-200"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </header>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1.1fr_1fr]">
