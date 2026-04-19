@@ -106,6 +106,15 @@ Dependency notes that override raw score:
   assigned growth model) and "Custom" (manual percentages against CMA asset
   classes). Unblocks the Investments report and asset allocation extraction.
 
+- **Extend `Inflation` growth source to deductions, transfers, asset transactions** _(P3 E6 L2)_ —
+  The inflation growth option now exists for cash/taxable/retirement accounts,
+  income, expenses, and savings rules. Three other tables carry `growth_rate`
+  columns that weren't included in the initial rollout: `client_deductions`,
+  `transfers`, and `asset_transactions`. Same mechanical pattern: add
+  `growth_source` column with `item_growth_source` enum, extend the loader
+  to pre-resolve, add the shared radio widget to those forms.
+  _Why deferred: user scope did not include them in the original ask._
+
 - **UI/UX refresh for Income, Expenses, and Savings tabs** _(P6 E5 L4)_ —
   the current forms are functional but feel like a stack of plain inputs.
   Goals: better grouping (active vs. retired income, fixed vs. variable
@@ -195,6 +204,15 @@ Dependency notes that override raw score:
   529 state deduction, IRA deduction phase-out for high earners with
   workplace plan, HSA support (needs HSA account subtype), per-year
   override schedule for deductions.
+
+- **Align `plan_settings.inflation_rate` consumers with the resolver** _(P2 E4 L2)_ —
+  The engine still reads `plan_settings.inflation_rate` directly in two places
+  unrelated to item growth: tax bracket indexing and SS wage-growth fallback
+  (both in `src/engine/projection.ts`). When the advisor picks `asset_class`
+  mode on Assumptions, the stored decimal may be stale relative to the AC's
+  value. Route those reads through `resolveInflationRate` to eliminate the
+  divergence. _Why deferred: they're non-item-growth consumers and the
+  original feature ask did not mention them._
 
 - **Trust taxes for non-grantor entities** _(P5 E4 L3)_ — when an entity is
   not flagged `is_grantor`, household taxes are correctly skipped, but the
