@@ -8,6 +8,7 @@ import { buildSeries } from "@/lib/timeline/build-series";
 import type { TimelineCategory, TimelineEvent, SeriesPoint } from "@/lib/timeline/timeline-types";
 import TimelineControls from "@/components/timeline/timeline-controls";
 import TimelineSpine from "@/components/timeline/timeline-spine";
+import { CATEGORY_HEX, CATEGORY_LEGEND_LABEL } from "@/components/timeline/timeline-category-pill";
 
 interface Props {
   clientId: string;
@@ -122,12 +123,12 @@ export default function TimelineReportView({ clientId }: Props) {
             {sparklineMode === "netWorth" ? "Net Worth" : sparklineMode === "portfolio" ? "Portfolio (investable)" : "Net Cash Flow"}
           </span>
         </span>
-        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#38bdf8" }} /> Life</span>
-        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#34d399" }} /> Income</span>
-        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#fbbf24" }} /> Transactions</span>
-        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#60a5fa" }} /> Portfolio</span>
-        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#d946ef" }} /> Insurance</span>
-        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#fb7185" }} /> Tax</span>
+        {(["life", "income", "transaction", "portfolio", "insurance", "tax"] as const).map((c) => (
+          <span key={c} className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full" style={{ background: CATEGORY_HEX[c] }} />
+            {CATEGORY_LEGEND_LABEL[c]}
+          </span>
+        ))}
         <span className="ml-auto">Click any card to expand · Esc to close</span>
       </div>
     </div>

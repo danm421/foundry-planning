@@ -1,7 +1,7 @@
 // src/components/timeline/timeline-year-segment.tsx
 "use client";
 
-import type { TimelineEvent, SeriesPoint } from "@/lib/timeline/timeline-types";
+import type { TimelineEvent } from "@/lib/timeline/timeline-types";
 import TimelineEventCard from "./timeline-event-card";
 
 interface Props {

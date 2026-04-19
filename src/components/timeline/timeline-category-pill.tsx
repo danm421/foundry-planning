@@ -11,14 +11,17 @@ const COLORS: Record<TimelineCategory, string> = {
   tax: "bg-rose-500/15 text-rose-300 ring-rose-500/30",
 };
 
-const LABELS: Record<TimelineCategory, string> = {
+/** Plural label for category legends / filters. */
+export const CATEGORY_LEGEND_LABEL: Record<TimelineCategory, string> = {
   life: "Life",
   income: "Income",
-  transaction: "Transaction",
+  transaction: "Transactions",
   portfolio: "Portfolio",
   insurance: "Insurance",
   tax: "Tax",
 };
+
+const LABELS = CATEGORY_LEGEND_LABEL;
 
 interface Props {
   category: TimelineCategory;
@@ -37,3 +40,13 @@ export default function TimelineCategoryPill({ category }: Props) {
 export function categoryAccentClass(category: TimelineCategory): string {
   return COLORS[category];
 }
+
+/** Hex color per category — used by the mini-map tick marks, footer legend, and future spine dots. */
+export const CATEGORY_HEX: Record<TimelineCategory, string> = {
+  life: "#38bdf8",
+  income: "#34d399",
+  transaction: "#fbbf24",
+  portfolio: "#60a5fa",
+  insurance: "#d946ef",
+  tax: "#fb7185",
+};
