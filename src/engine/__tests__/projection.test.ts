@@ -1419,3 +1419,65 @@ describe("projection — survivor transition", () => {
     expect(year2056.socialSecurityDetail!.client.survivor).toBe(0);
   });
 });
+
+describe("projection — SS living-link claim-age modes", () => {
+  it("claim age follows client DOB when using claimingAgeMode='fra'", () => {
+    // Scenario: client born 1960-06-01 (FRA 67y 0m → first claim year 2027)
+    // claimingAge=62 is set on the row but claimingAgeMode='fra' causes the
+    // engine to IGNORE the literal 62 and resolve the effective age to FRA (67).
+    // piaMonthly=2000, ssBenefitMode='pia_at_fra'
+    //   2026 (age 66): has not yet reached FRA → $0
+    //   2027 (age 67): FRA reached → 2000/mo × 12 = $24,000
+    const data = buildClientData({
+      client: {
+        ...baseClient,
+        dateOfBirth: "1960-06-01",
+        retirementAge: 67,
+        filingStatus: "single",
+        spouseDob: undefined,
+        spouseName: undefined,
+        spouseRetirementAge: undefined,
+      },
+      incomes: [
+        {
+          id: "ss-living-link",
+          type: "social_security",
+          name: "Client SS",
+          annualAmount: 0,
+          startYear: 2025,
+          endYear: 2060,
+          growthRate: 0,
+          owner: "client",
+          claimingAge: 62,          // ignored — living-link overrides this
+          claimingAgeMode: "fra",   // living-link: resolve to FRA dynamically
+          ssBenefitMode: "pia_at_fra",
+          piaMonthly: 2000,
+        },
+      ],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        ...basePlanSettings,
+        planStartYear: 2025,
+        planEndYear: 2030,
+        flatFederalRate: 0,
+        flatStateRate: 0,
+      },
+    });
+
+    const result = runProjection(data);
+
+    // 2026: client is 66 — FRA not yet reached → no benefit
+    const year2026 = result.find((py) => py.year === 2026)!;
+    expect(year2026).toBeDefined();
+    expect(year2026.income.socialSecurity).toBe(0);
+
+    // 2027: client turns 67 — FRA reached → full PIA = $2,000/mo × 12 = $24,000
+    const year2027 = result.find((py) => py.year === 2027)!;
+    expect(year2027).toBeDefined();
+    expect(year2027.income.socialSecurity).toBeCloseTo(24000, 0);
+    expect(year2027.socialSecurityDetail!.client.retirement).toBeCloseTo(24000, 0);
+  });
+});
