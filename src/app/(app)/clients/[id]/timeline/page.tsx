@@ -8,7 +8,6 @@ import TimelineReportView from "@/components/timeline-report-view";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
   axes: ["opsz"],
   variable: "--font-display",
   display: "swap",
@@ -16,7 +15,6 @@ const fraunces = Fraunces({
 
 const outfit = Outfit({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
   variable: "--font-body",
   display: "swap",
 });
