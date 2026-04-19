@@ -1,12 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ReportHeader } from "./monte-carlo/report-header";
 import { KpiBand } from "./monte-carlo/kpi-band";
+import { FanChart } from "./monte-carlo/fan-chart";
 import {
   createReturnEngine,
   runMonteCarlo,
   summarizeMonteCarlo,
+  runProjection,
+  liquidPortfolioTotal,
   type ClientData,
   type MonteCarloSummary,
   type AccountAssetMix,
@@ -164,6 +167,34 @@ export default function MonteCarloReport({ clientId }: Props) {
     handleRun();
   }, [clientData, mcPayload, summary, running, runError, handleRun]);
 
+  const deterministic = useMemo(() => {
+    if (!clientData) return undefined;
+    try {
+      // runProjection returns ProjectionYear[] directly (not an object with a
+      // `years` property) — see src/engine/projection.ts:114.
+      const years = runProjection(clientData);
+      return years.map(liquidPortfolioTotal);
+    } catch {
+      return undefined;
+    }
+  }, [clientData]);
+
+  const ageMarkers = useMemo(() => {
+    if (!clientData) return [];
+    const c = clientData.client;
+    const markers: Array<{ age: number; label: string; color: string }> = [
+      { age: c.retirementAge, label: `Retire ${c.retirementAge}`, color: "rgb(110, 231, 183)" },
+    ];
+    if (c.spouseRetirementAge != null && c.spouseRetirementAge !== c.retirementAge) {
+      markers.push({
+        age: c.spouseRetirementAge,
+        label: `Spouse ${c.spouseRetirementAge}`,
+        color: "rgb(125, 211, 252)", // sky-300 — Timeline's "life" color
+      });
+    }
+    return markers;
+  }, [clientData]);
+
   if (loadError) {
     return (
       <div className="p-8">
@@ -209,6 +240,16 @@ export default function MonteCarloReport({ clientId }: Props) {
             />
           ))}
         </div>
+      )}
+
+      {summary ? (
+        <FanChart
+          summary={summary}
+          deterministic={deterministic}
+          ageMarkers={ageMarkers}
+        />
+      ) : (
+        <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[440px] animate-pulse" />
       )}
 
       {usedCount === 0 && (
