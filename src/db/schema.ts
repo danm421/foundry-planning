@@ -448,6 +448,7 @@ export const incomes = pgTable("incomes", {
   ssBenefitMode: text("ss_benefit_mode"),
   piaMonthly: decimal("pia_monthly", { precision: 15, scale: 2 }),
   claimingAgeMonths: integer("claiming_age_months").default(0),
+  claimingAgeMode: text("claiming_age_mode"),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

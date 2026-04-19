@@ -442,6 +442,7 @@ export async function GET(
         ssBenefitMode: i.ssBenefitMode ?? undefined,
         piaMonthly: i.piaMonthly != null ? parseFloat(i.piaMonthly) : undefined,
         claimingAgeMonths: i.claimingAgeMonths ?? 0,
+        claimingAgeMode: (i.claimingAgeMode as "years" | "fra" | "at_retirement" | null) ?? undefined,
         scheduleOverrides: incomeOverrideMap.get(i.id),
       })),
       expenses: expenseRows.map((e) => ({

@@ -1,6 +1,6 @@
 {
-  "id": "e5485c14-7f54-4c30-a955-ea32124528f1",
-  "prevId": "eecd6add-49b9-4d9c-bd5d-ab3aab968bd4",
+  "id": "e00398fd-93a8-4900-961f-815e9537fd1c",
+  "prevId": "e5485c14-7f54-4c30-a955-ea32124528f1",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1839,6 +1839,12 @@
           "primaryKey": false,
           "notNull": false,
           "default": 0
+        },
+        "claiming_age_mode": {
+          "name": "claiming_age_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "source": {
           "name": "source",

@@ -1,0 +1,1 @@
+ALTER TABLE "incomes" ADD COLUMN "claiming_age_mode" text;

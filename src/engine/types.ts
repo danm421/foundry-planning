@@ -96,11 +96,14 @@ export interface Income {
   /** Year-by-year amount overrides. When present, bypasses growth-rate calc. */
   scheduleOverrides?: Map<number, number>;
   /** SS-specific. When unset, engine treats as "manual_amount" (legacy). */
-  ssBenefitMode?: "manual_amount" | "pia_at_fra";
+  ssBenefitMode?: "manual_amount" | "pia_at_fra" | "no_benefit";
   /** SS-specific. Monthly PIA in today's dollars. Required when ssBenefitMode=pia_at_fra. */
   piaMonthly?: number;
   /** Additional months beyond `claimingAge` (0-11). Absent = 0. */
   claimingAgeMonths?: number;
+  /** SS-specific. Resolves effective claim age at projection time.
+   *  When unset, engine treats as "years" (legacy). */
+  claimingAgeMode?: "years" | "fra" | "at_retirement";
 }
 
 export interface Expense {
