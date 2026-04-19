@@ -8,7 +8,7 @@ export interface FanChartDataset {
   borderWidth?: number;
   borderDash?: number[];
   pointRadius?: number;
-  fill: false | "origin";
+  fill: false | "+1" | "-1";
   tension?: number;
   order?: number;
 }
@@ -23,9 +23,9 @@ const LINE_P50 = "rgb(110, 231, 183)";            // emerald-300 — median
 const LINE_P20 = "rgb(251, 113, 133)";            // rose-400 — below-average outcome
 const LINE_DETERMINISTIC = "rgb(148, 163, 184)";  // slate-400 — fixed-rate cash-flow projection
 
-const FILL_P80 = "rgba(52, 211, 153, 0.12)";
-const FILL_P50 = "rgba(110, 231, 183, 0.20)";
-const FILL_P20 = "rgba(251, 113, 133, 0.22)";
+// Band fill covers the area between p80 (upper boundary) and p20 (lower boundary).
+// Emerald @ 15% — subtle enough to let the median line dominate.
+const BAND_FILL = "rgba(52, 211, 153, 0.15)";
 
 export function buildFanChartSeries(
   byYear: MonteCarloSummary["byYear"],
@@ -33,39 +33,41 @@ export function buildFanChartSeries(
 ): FanChartSeries {
   const ages = byYear.map((y) => y.age.client);
 
+  // Dataset array order is load-bearing: the "Above average" dataset uses
+  // fill: "+1", which tells chart.js to fill the area between this dataset's
+  // line and the NEXT dataset's line. Placing "Below average (20th)" right
+  // after it creates the p20↔p80 band.
   const datasets: FanChartDataset[] = [
     {
       label: "Above average (80th)",
       data: byYear.map((y) => y.balance.p80),
       borderColor: LINE_P80,
-      backgroundColor: FILL_P80,
+      backgroundColor: BAND_FILL,
       borderWidth: 1.5,
       pointRadius: 0,
-      fill: "origin",
+      fill: "+1",
       tension: 0.25,
-      order: 5,
-    },
-    {
-      label: "Median",
-      data: byYear.map((y) => y.balance.p50),
-      borderColor: LINE_P50,
-      backgroundColor: FILL_P50,
-      borderWidth: 2.5,
-      pointRadius: 0,
-      fill: "origin",
-      tension: 0.25,
-      order: 4,
+      order: 3,
     },
     {
       label: "Below average (20th)",
       data: byYear.map((y) => y.balance.p20),
       borderColor: LINE_P20,
-      backgroundColor: FILL_P20,
       borderWidth: 1.5,
       pointRadius: 0,
-      fill: "origin",
+      fill: false,
       tension: 0.25,
       order: 3,
+    },
+    {
+      label: "Median",
+      data: byYear.map((y) => y.balance.p50),
+      borderColor: LINE_P50,
+      borderWidth: 2.5,
+      pointRadius: 0,
+      fill: false,
+      tension: 0.25,
+      order: 2,
     },
   ];
 

@@ -144,6 +144,20 @@ export function FanChart({ summary, deterministic, ageMarkers }: FanChartProps) 
         borderColor: "rgb(30, 41, 59)",
         borderWidth: 1,
         padding: 10,
+        itemSort: (
+          a: { dataset: { label?: string } },
+          b: { dataset: { label?: string } },
+        ) => {
+          const orderMap: Record<string, number> = {
+            "Above average (80th)": 0,
+            "Median": 1,
+            "Below average (20th)": 2,
+            "Cash-flow projection": 3,
+          };
+          const ai = orderMap[a.dataset.label ?? ""] ?? 99;
+          const bi = orderMap[b.dataset.label ?? ""] ?? 99;
+          return ai - bi;
+        },
         callbacks: {
           title: (items: Array<{ label: string }>) => `Age ${items[0]?.label ?? ""}`,
           label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }): string | void => {

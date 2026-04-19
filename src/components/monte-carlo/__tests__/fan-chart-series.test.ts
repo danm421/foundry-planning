@@ -28,17 +28,17 @@ describe("buildFanChartSeries", () => {
     expect(ages).toEqual([60, 61, 62, 63, 64]);
     expect(datasets).toHaveLength(4);
     expect(datasets[0].label).toBe("Above average (80th)");
-    expect(datasets[1].label).toBe("Median");
-    expect(datasets[2].label).toBe("Below average (20th)");
+    expect(datasets[1].label).toBe("Below average (20th)");
+    expect(datasets[2].label).toBe("Median");
     expect(datasets[3].label).toBe("Cash-flow projection");
   });
 
-  it("copies p80 / p50 / p20 / deterministic values into the right datasets", () => {
+  it("copies p80 / p20 / p50 / deterministic values into the right datasets", () => {
     const byYear = mkByYear(3);
     const { datasets } = buildFanChartSeries(byYear, [999, 999, 999]);
-    expect(datasets[0].data).toEqual([400, 401, 402]); // p80
-    expect(datasets[1].data).toEqual([300, 301, 302]); // p50
-    expect(datasets[2].data).toEqual([200, 201, 202]); // p20
+    expect(datasets[0].data).toEqual([400, 401, 402]); // p80 — above average
+    expect(datasets[1].data).toEqual([200, 201, 202]); // p20 — below average
+    expect(datasets[2].data).toEqual([300, 301, 302]); // p50 — median
     expect(datasets[3].data).toEqual([999, 999, 999]); // deterministic
   });
 
@@ -48,22 +48,22 @@ describe("buildFanChartSeries", () => {
     expect(datasets.find((d) => d.label === "Cash-flow projection")).toBeUndefined();
   });
 
-  it("passes through zero and negative values untouched (linear scale renders them fine)", () => {
+  it("wires fill: '+1' on the p80 dataset so the band fills between p80 and p20", () => {
+    const { datasets } = buildFanChartSeries(mkByYear(3), [0, 0, 0]);
+    expect(datasets[0].fill).toBe("+1"); // p80 fills down to the next dataset (p20)
+    expect(datasets[1].fill).toBe(false); // p20 line only
+    expect(datasets[2].fill).toBe(false); // median line only
+    expect(datasets[3].fill).toBe(false); // cash-flow line only
+  });
+
+  it("passes through zero and negative values untouched", () => {
     const byYear: MonteCarloSummary["byYear"] = [
       { year: 2026, age: { client: 60 }, balance: { p5: -500, p20: -100, p50: 0, p80: 100, p95: 200, min: -1000, max: 300 }, cagrFromStart: null },
     ];
     const { datasets } = buildFanChartSeries(byYear, [0]);
     expect(datasets[0].data).toEqual([100]);  // p80
-    expect(datasets[1].data).toEqual([0]);    // p50
-    expect(datasets[2].data).toEqual([-100]); // p20
+    expect(datasets[1].data).toEqual([-100]); // p20
+    expect(datasets[2].data).toEqual([0]);    // p50
     expect(datasets[3].data).toEqual([0]);    // deterministic
-  });
-
-  it("fills the three percentile datasets to origin and leaves the cash-flow line unfilled", () => {
-    const { datasets } = buildFanChartSeries(mkByYear(3), [100, 200, 300]);
-    expect(datasets[0].fill).toBe("origin");  // above average
-    expect(datasets[1].fill).toBe("origin");  // median
-    expect(datasets[2].fill).toBe("origin");  // below average
-    expect(datasets[3].fill).toBe(false);     // cash-flow
   });
 });
