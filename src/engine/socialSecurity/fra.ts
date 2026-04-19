@@ -21,6 +21,12 @@ function effectiveBirthYear(dob: string): number {
   return y;
 }
 
+/**
+ * Look up the Full Retirement Age for a worker born on the given date.
+ * Applies the January-1 rule (Jan 1 births use the previous year's FRA).
+ *
+ * @param dob ISO date string in `YYYY-MM-DD` format (validated at entry boundaries).
+ */
 export function fraForBirthDate(dob: string): FraEntry {
   const year = effectiveBirthYear(dob);
   if (year <= 1937) return FRA_PRE_1937;
@@ -28,6 +34,13 @@ export function fraForBirthDate(dob: string): FraEntry {
   return FRA_TABLE[year];
 }
 
+/**
+ * Look up the Survivor FRA for a widow(er) born on the given date.
+ * Survivor FRA uses a separate SSA table; see §5.6.2 of the eMoney spec.
+ * Applies the January-1 rule.
+ *
+ * @param dob ISO date string in `YYYY-MM-DD` format (validated at entry boundaries).
+ */
 export function survivorFraForBirthDate(dob: string): SurvivorFraEntry {
   const year = effectiveBirthYear(dob);
   if (year <= 1939) return SURVIVOR_FRA_PRE_1939;

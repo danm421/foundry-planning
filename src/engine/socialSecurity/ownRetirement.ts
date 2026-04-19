@@ -30,6 +30,8 @@ export interface OwnBenefitInput {
  * @param input.claimAgeMonths  Age at which the worker claims, expressed as
  *   total months (e.g. 67y 0m = 804).
  * @param input.dob  Worker's date of birth in `YYYY-MM-DD` format.
+ *
+ * @remarks Assumes `claimAgeMonths >= 0` (enforced by DB schema and UI form constraints).
  */
 export function computeOwnMonthlyBenefit(input: OwnBenefitInput): number {
   if (input.piaMonthly <= 0) return 0;
