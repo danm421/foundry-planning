@@ -312,6 +312,10 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     [years, yearRange]
   );
 
+  // True when at least one visible year has structured SS detail (pia_at_fra mode).
+  // When false, the SS row renders exactly as before — no expand affordance.
+  const hasSocialSecurityDetail = visibleYears.some((y) => y.socialSecurityDetail != null);
+
   // ── Data loading ───────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -1037,6 +1041,65 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // ── Income drill-down ──────────────────────────────────────────────────
 
     if (level === "income") {
+      // ── Social Security detail drill (pia_at_fra mode) ─────────────────
+      // Only shown when at least one visible year carries structured SS detail.
+      // Legacy clients (manual_amount) fall through to the per-source handler below.
+      if (subLevel === "socialSecurity" && hasSocialSecurityDetail) {
+        const clientName = clientData?.client.firstName ?? "Client";
+        const spouseName = clientData?.client.spouseName ?? "Spouse";
+        // Determine whether any year has a spouse detail block, so we can
+        // decide whether to render the spouse columns at all.
+        const hasSpouseDetail = visibleYears.some(
+          (y) => y.socialSecurityDetail?.spouse != null
+        );
+        const fmtSS = (v: number) =>
+          v === 0 ? <span className="tabular-nums text-gray-500">&mdash;</span> : fmtNum(v);
+        return [
+          ...baseColumns,
+          col(
+            "ss_client_retirement",
+            `${clientName} Retirement`,
+            (r) => r.socialSecurityDetail?.client.retirement ?? 0,
+            (info) => fmtSS(info.getValue() as number)
+          ),
+          col(
+            "ss_client_spousal",
+            `${clientName} Spousal`,
+            (r) => r.socialSecurityDetail?.client.spousal ?? 0,
+            (info) => fmtSS(info.getValue() as number)
+          ),
+          col(
+            "ss_client_survivor",
+            `${clientName} Survivor`,
+            (r) => r.socialSecurityDetail?.client.survivor ?? 0,
+            (info) => fmtSS(info.getValue() as number)
+          ),
+          ...(hasSpouseDetail
+            ? [
+                col(
+                  "ss_spouse_retirement",
+                  `${spouseName} Retirement`,
+                  (r) => r.socialSecurityDetail?.spouse?.retirement ?? 0,
+                  (info) => fmtSS(info.getValue() as number)
+                ),
+                col(
+                  "ss_spouse_spousal",
+                  `${spouseName} Spousal`,
+                  (r) => r.socialSecurityDetail?.spouse?.spousal ?? 0,
+                  (info) => fmtSS(info.getValue() as number)
+                ),
+                col(
+                  "ss_spouse_survivor",
+                  `${spouseName} Survivor`,
+                  (r) => r.socialSecurityDetail?.spouse?.survivor ?? 0,
+                  (info) => fmtSS(info.getValue() as number)
+                ),
+              ]
+            : []),
+          numCol("ss_total", "Total", (r) => r.income.socialSecurity, true),
+        ];
+      }
+
       // Level 2: individual sources for a specific income type
       if (subLevel && INCOME_SEGMENT_TO_TYPE[subLevel] != null) {
         const sourceIds = incomesByType[subLevel] ?? [];
@@ -1092,7 +1155,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       return [
         ...baseColumns,
         numCol("income_salaries", () => <DrillBtn segment="salaries" label="Salaries" />, (r) => r.income.salaries),
-        numCol("income_ss", () => <DrillBtn segment="socialSecurity" label="Social Security" />, (r) => r.income.socialSecurity),
+        numCol("income_ss", () => hasSocialSecurityDetail ? <DrillBtn segment="socialSecurity" label="Social Security" /> : <>Social Security</>, (r) => r.income.socialSecurity),
         numCol("income_business", () => <DrillBtn segment="business_income" label="Business" />, (r) => r.income.business),
         numCol("income_trust", () => <DrillBtn segment="trust_income" label="Trust" />, (r) => r.income.trust),
         numCol("income_deferred", () => <DrillBtn segment="deferred" label="Deferred" />, (r) => r.income.deferred),
