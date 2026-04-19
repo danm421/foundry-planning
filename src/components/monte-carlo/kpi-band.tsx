@@ -1,7 +1,7 @@
 import type { MonteCarloSummary, ClientData, PlanSettings } from "@/engine";
 import { KpiCard } from "./kpi-card";
 import { SuccessGauge } from "./success-gauge";
-import { formatShortCurrency, formatInteger } from "./lib/format";
+import { formatShortCurrency } from "./lib/format";
 
 interface KpiBandProps {
   summary: MonteCarloSummary;
@@ -37,10 +37,8 @@ export function KpiBand({ summary, clientData, planSettings }: KpiBandProps) {
   const medianEnding = summary.ending.p50;
   const annualIncome = annualIncomeAtStart(clientData, planSettings.planStartYear);
   const startAgeVal = startAge(clientData.client.dateOfBirth, planSettings.planStartYear);
-  const trialsRun = summary.trialsRun;
-
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
       <KpiCard
         label="Success Probability"
         value={<span className="sr-only">{Math.round(successPct * 100)}%</span>}
@@ -58,11 +56,6 @@ export function KpiBand({ summary, clientData, planSettings }: KpiBandProps) {
       <KpiCard
         label="Start Age"
         value={startAgeVal}
-      />
-      <KpiCard
-        label="Simulations"
-        value={formatInteger(trialsRun)}
-        footnote={summary.aborted ? <span className="text-amber-300">⚠ partial run</span> : null}
       />
     </div>
   );
