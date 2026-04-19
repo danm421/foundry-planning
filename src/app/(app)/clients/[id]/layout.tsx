@@ -17,6 +17,7 @@ const tabs = [
   { label: "Cash Flow", href: "cashflow" },
   { label: "Investments", href: "investments" },
   { label: "Timeline", href: "timeline" },
+  { label: "Monte Carlo", href: "monte-carlo" },
 ];
 
 export default async function ClientLayout({ children, params }: ClientLayoutProps) {

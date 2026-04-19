@@ -1,0 +1,1 @@
+ALTER TABLE "scenarios" ADD COLUMN "monte_carlo_seed" integer;

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { assetClasses, modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
+import { assetClasses, modelPortfolios, modelPortfolioAllocations, assetClassCorrelations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
-import { DEFAULT_ASSET_CLASSES, DEFAULT_MODEL_PORTFOLIOS } from "@/lib/cma-seed";
+import { DEFAULT_ASSET_CLASSES, DEFAULT_MODEL_PORTFOLIOS, DEFAULT_CORRELATIONS } from "@/lib/cma-seed";
+import { canonicalPair } from "@/engine/monteCarlo/correlation-matrix";
 
 // POST /api/cma/seed — seed default asset classes and model portfolios for this firm.
 // Only runs if the firm has zero asset classes (first visit).
@@ -11,16 +12,12 @@ export async function POST() {
   try {
     const firmId = await getOrgId();
 
-    // Check if firm already has asset classes
-    const existing = await db
-      .select({ id: assetClasses.id })
-      .from(assetClasses)
-      .where(eq(assetClasses.firmId, firmId))
-      .limit(1);
-
-    if (existing.length > 0) {
-      return NextResponse.json({ seeded: false, message: "Asset classes already exist" });
-    }
+    // No early-return here: every downstream insert is idempotent (ON CONFLICT
+    // DO NOTHING on asset classes and portfolios; per-portfolio allocation
+    // guard; correlation block gated on "firm has zero correlations"). Running
+    // this endpoint against an already-seeded firm is a near-no-op AND lets
+    // us backfill correlations for firms that were seeded before the
+    // asset_class_correlations table existed.
 
     // Insert asset classes — ON CONFLICT DO NOTHING protects against the React
     // strict-mode double-fire where two concurrent POSTs both see zero rows.
@@ -90,8 +87,43 @@ export async function POST() {
       }
     }
 
+    // Seed pairwise correlations. Rows are written in canonical (a < b) order
+    // so the unique index guarantees one row per pair. Skipped entirely if the
+    // firm already has any correlations — an advisor may have customized them.
+    const existingCorrelations = await db
+      .select({ id: assetClassCorrelations.id })
+      .from(assetClassCorrelations)
+      .innerJoin(assetClasses, eq(assetClassCorrelations.assetClassIdA, assetClasses.id))
+      .where(eq(assetClasses.firmId, firmId))
+      .limit(1);
+
+    let correlationsSeeded = 0;
+    if (existingCorrelations.length === 0) {
+      const correlationRows = DEFAULT_CORRELATIONS.flatMap((c) => {
+        const idA = nameToId.get(c.classA);
+        const idB = nameToId.get(c.classB);
+        if (!idA || !idB || idA === idB) return [];
+        const [a, b] = canonicalPair(idA, idB);
+        return [{ assetClassIdA: a, assetClassIdB: b, correlation: String(c.correlation) }];
+      });
+      if (correlationRows.length > 0) {
+        await db
+          .insert(assetClassCorrelations)
+          .values(correlationRows)
+          .onConflictDoNothing({
+            target: [assetClassCorrelations.assetClassIdA, assetClassCorrelations.assetClassIdB],
+          });
+        correlationsSeeded = correlationRows.length;
+      }
+    }
+
     return NextResponse.json(
-      { seeded: true, assetClasses: allClasses.length, portfolios: allPortfolios.length },
+      {
+        seeded: true,
+        assetClasses: allClasses.length,
+        portfolios: allPortfolios.length,
+        correlations: correlationsSeeded,
+      },
       { status: 201 }
     );
   } catch (err) {

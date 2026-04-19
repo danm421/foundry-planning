@@ -285,14 +285,37 @@ function AssetClassRow({
       </td>
       {pctFields.map((field) => (
         <td key={field} className="px-3 py-2">
-          <input
-            type="number"
-            step="0.01"
-            value={pct(ac[field] as string)}
-            onChange={(e) => onUpdate(ac.id, field, toDec(e.target.value))}
-            onBlur={() => onSave(ac)}
-            className="w-16 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
-          />
+          <div className="flex items-center justify-end gap-1">
+            <input
+              type="number"
+              step="0.01"
+              value={pct(ac[field] as string)}
+              onChange={(e) => onUpdate(ac.id, field, toDec(e.target.value))}
+              onBlur={() => onSave(ac)}
+              className="w-16 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+            />
+            {field === "arithmeticMean" && (
+              <button
+                type="button"
+                onClick={() => {
+                  // Lognormal approximation (eMoney whitepaper p.4):
+                  //   Arith ≈ Geo + SD² / 2
+                  // All values stored as decimals (0.07 = 7%).
+                  const gm = parseFloat(ac.geometricReturn);
+                  const sd = parseFloat(ac.volatility);
+                  if (!Number.isFinite(gm) || !Number.isFinite(sd)) return;
+                  const estimated = gm + (sd * sd) / 2;
+                  const next = estimated.toFixed(4);
+                  onUpdate(ac.id, "arithmeticMean", next);
+                  onSave({ ...ac, arithmeticMean: next });
+                }}
+                title="Estimate from Geometric Return and Standard Deviation (Arith ≈ Geo + SD²/2)"
+                className="rounded border border-gray-700 px-1.5 py-0.5 text-[10px] text-gray-400 hover:border-blue-500 hover:text-gray-100"
+              >
+                Est
+              </button>
+            )}
+          </div>
         </td>
       ))}
       <td className="px-3 py-2">

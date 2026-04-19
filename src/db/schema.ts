@@ -192,6 +192,11 @@ export const scenarios = pgTable("scenarios", {
     .references(() => clients.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   isBaseCase: boolean("is_base_case").notNull().default(false),
+  // Monte Carlo PRNG seed. Persisted so repeat views of the MC report produce
+  // identical numbers (per eMoney whitepaper p.13 "Result Repeatability").
+  // Null = no seed saved yet; the UI generates one on first run and persists it.
+  // Clicking "Restart" in the MC report overwrites this with a fresh seed.
+  monteCarloSeed: integer("monte_carlo_seed"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -364,6 +369,27 @@ export const clientCmaOverrides = pgTable("client_cma_overrides", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// Pairwise correlations between asset classes, used by the Monte Carlo
+// simulator. Stored canonically (assetClassIdA < assetClassIdB) so each pair
+// has a single row — callers reconstruct the symmetric matrix in memory.
+// Missing pairs are treated as independent (ρ = 0) per the eMoney whitepaper.
+export const assetClassCorrelations = pgTable(
+  "asset_class_correlations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    assetClassIdA: uuid("asset_class_id_a")
+      .notNull()
+      .references(() => assetClasses.id, { onDelete: "cascade" }),
+    assetClassIdB: uuid("asset_class_id_b")
+      .notNull()
+      .references(() => assetClasses.id, { onDelete: "cascade" }),
+    correlation: decimal("correlation", { precision: 6, scale: 5 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("asset_class_correlations_pair_uniq").on(t.assetClassIdA, t.assetClassIdB)]
+);
 
 export const accounts = pgTable("accounts", {
   id: uuid("id").defaultRandom().primaryKey(),
