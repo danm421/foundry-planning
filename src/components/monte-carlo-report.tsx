@@ -7,6 +7,8 @@ import { FanChart } from "./monte-carlo/fan-chart";
 import { FindingsCard } from "./monte-carlo/findings-card";
 import { TopRisksCard } from "./monte-carlo/top-risks-card";
 import { RecommendationsCard } from "./monte-carlo/recommendations-card";
+import { TerminalHistogram } from "./monte-carlo/terminal-histogram";
+import { YearlyBreakdown } from "./monte-carlo/yearly-breakdown";
 import { computeTopRisks } from "./monte-carlo/lib/top-risks";
 import {
   createReturnEngine,
@@ -16,6 +18,7 @@ import {
   liquidPortfolioTotal,
   type ClientData,
   type MonteCarloSummary,
+  type MonteCarloResult,
   type AccountAssetMix,
   type IndexInput,
 } from "@/engine";
@@ -33,19 +36,6 @@ interface MonteCarloPayload {
   requiredMinimumAssetLevel: number;
 }
 
-// Coarse format helpers — the v1 proof-of-life UI uses just these two.
-function formatCurrency(value: number): string {
-  if (!Number.isFinite(value)) return "—";
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `${value < 0 ? "-" : ""}$${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${value < 0 ? "-" : ""}$${(abs / 1_000).toFixed(0)}K`;
-  return `$${value.toFixed(0)}`;
-}
-
-function formatPercent(value: number, digits = 2): string {
-  if (!Number.isFinite(value)) return "—";
-  return `${(value * 100).toFixed(digits)}%`;
-}
 
 export default function MonteCarloReport({ clientId }: Props) {
   const [clientData, setClientData] = useState<ClientData | null>(null);
@@ -59,6 +49,7 @@ export default function MonteCarloReport({ clientId }: Props) {
   const [summary, setSummary] = useState<MonteCarloSummary | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [currentSeed, setCurrentSeed] = useState<number | null>(null);
+  const [lastResult, setLastResult] = useState<MonteCarloResult | null>(null);
 
   // Load data in parallel. This is the same pattern as the CashFlow report;
   // MC just needs an additional payload (correlations, mixes, seed).
@@ -74,6 +65,7 @@ export default function MonteCarloReport({ clientId }: Props) {
     setMcPayload(null);
     setLoadError(null);
     setSummary(null);
+    setLastResult(null);
     setRunError(null);
     setCurrentSeed(null);
     setProgress(0);
@@ -136,6 +128,7 @@ export default function MonteCarloReport({ clientId }: Props) {
         planSettings: clientData.planSettings,
         startingLiquidBalance: mcPayload.startingLiquidBalance,
       });
+      setLastResult(result);
       setSummary(s);
     } catch (e) {
       setRunError(e instanceof Error ? e.message : String(e));
@@ -204,6 +197,13 @@ export default function MonteCarloReport({ clientId }: Props) {
     return computeTopRisks(summary, clientData, clientData.planSettings);
   }, [summary, clientData]);
 
+  // byYearLiquidAssetsPerTrial is trial-major ([trial][year]), so map each
+  // trial to its last year's value to get the per-trial terminal balance array.
+  const endingValues = useMemo(() => {
+    if (!lastResult) return [];
+    return lastResult.byYearLiquidAssetsPerTrial.map((trial) => trial.at(-1) ?? 0);
+  }, [lastResult]);
+
   const deterministicEnding = deterministic?.[deterministic.length - 1];
 
   if (loadError) {
@@ -223,9 +223,6 @@ export default function MonteCarloReport({ clientId }: Props) {
       </div>
     );
   }
-
-  const usedCount = mcPayload.indices.length;
-  const mixCount = mcPayload.accountMixes.length;
 
   return (
     <div className="p-8 space-y-6">
@@ -265,80 +262,22 @@ export default function MonteCarloReport({ clientId }: Props) {
             <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[440px] animate-pulse" />
           )}
 
-          {usedCount === 0 && (
-            <div className="rounded border border-gray-300 bg-gray-50 p-3 text-sm text-gray-700">
-              All accounts in this plan use fixed growth rates (custom, default, or inflation).
-              Monte Carlo will run, but every trial produces the same result and the output
-              matches the deterministic Cash Flow projection.
-            </div>
-          )}
-
-          {running && (
-            <div className="w-full max-w-md">
-              <div className="h-2 bg-gray-200 rounded overflow-hidden">
-                <div
-                  className="h-full bg-blue-600 transition-all"
-                  style={{ width: `${progressTotal > 0 ? (progress / progressTotal) * 100 : 0}%` }}
-                />
-              </div>
-              <div className="text-xs text-gray-500 mt-1">
-                {progress} / {progressTotal} trials
-              </div>
-            </div>
-          )}
-
           {runError && (
             <div className="rounded border border-red-300 bg-red-50 p-4 text-sm text-red-900">
               Run failed: {runError}
             </div>
           )}
 
-          {summary && (
-            <>
-              <section className="space-y-3">
-                <h2 className="text-lg font-semibold">Monte Carlo Asset Spread</h2>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-xs uppercase tracking-wide text-gray-500">
-                        <th className="py-2 pr-4">Year</th>
-                        <th className="py-2 pr-4">Age</th>
-                        <th className="py-2 pr-4 text-right">Above Avg. Market (80%)</th>
-                        <th className="py-2 pr-4 text-right">CAGR</th>
-                        <th className="py-2 pr-4 text-right">Average Market (50%)</th>
-                        <th className="py-2 pr-4 text-right">CAGR</th>
-                        <th className="py-2 pr-4 text-right">Below Avg. Market (20%)</th>
-                        <th className="py-2 pr-4 text-right">CAGR</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {summary.byYear.map((row) => (
-                        <tr key={row.year} className="border-b">
-                          <td className="py-2 pr-4">{row.year}</td>
-                          <td className="py-2 pr-4">
-                            {row.age.spouse != null
-                              ? `${row.age.client}/${row.age.spouse}`
-                              : row.age.client}
-                          </td>
-                          <td className="py-2 pr-4 text-right font-mono">{formatCurrency(row.balance.p80)}</td>
-                          <td className="py-2 pr-4 text-right font-mono text-gray-500">
-                            {row.cagrFromStart ? formatPercent(row.cagrFromStart.p80) : "—"}
-                          </td>
-                          <td className="py-2 pr-4 text-right font-mono">{formatCurrency(row.balance.p50)}</td>
-                          <td className="py-2 pr-4 text-right font-mono text-gray-500">
-                            {row.cagrFromStart ? formatPercent(row.cagrFromStart.p50) : "—"}
-                          </td>
-                          <td className="py-2 pr-4 text-right font-mono">{formatCurrency(row.balance.p20)}</td>
-                          <td className="py-2 pr-4 text-right font-mono text-gray-500">
-                            {row.cagrFromStart ? formatPercent(row.cagrFromStart.p20) : "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            </>
+          {summary ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <YearlyBreakdown summary={summary} />
+              <TerminalHistogram endingValues={endingValues} trialsRun={summary.trialsRun} />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[320px] animate-pulse" />
+              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[320px] animate-pulse" />
+            </div>
           )}
 
           {summary ? (
