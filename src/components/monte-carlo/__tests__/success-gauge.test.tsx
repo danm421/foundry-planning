@@ -22,13 +22,13 @@ describe("SuccessGauge", () => {
 
   it("renders 100% with full-arc fill", () => {
     const { container } = render(<SuccessGauge value={1} />);
-    const total = Math.PI * 70; // radius 70 × PI for a 180° arc
+    const total = Math.PI * 50; // radius 50 × PI for a 180° arc
     expect(parseFillLength(getFillDasharray(container))).toBeCloseTo(total, 0);
   });
 
   it("renders 50% with half-arc fill", () => {
     const { container } = render(<SuccessGauge value={0.5} />);
-    const total = Math.PI * 70;
+    const total = Math.PI * 50;
     expect(parseFillLength(getFillDasharray(container))).toBeCloseTo(total / 2, 0);
   });
 

@@ -193,8 +193,6 @@ export default function MonteCarloReport({ clientId }: Props) {
             ? `${clientData.client.firstName} & ${clientData.client.spouseName} ${clientData.client.lastName}`
             : `${clientData.client.firstName} ${clientData.client.lastName}`
         }
-        onRestart={handleRestart}
-        running={running}
       />
       {summary ? (
         <KpiBand
@@ -221,23 +219,6 @@ export default function MonteCarloReport({ clientId }: Props) {
         </div>
       )}
 
-      <div className="flex gap-3">
-        <button
-          onClick={handleRun}
-          disabled={running}
-          className="px-4 py-2 rounded bg-blue-600 text-white disabled:bg-gray-300"
-        >
-          {running ? "Running…" : "Re-run (same seed)"}
-        </button>
-        <button
-          onClick={handleRestart}
-          disabled={running}
-          className="px-4 py-2 rounded border border-gray-300 disabled:text-gray-400"
-          title="Generate a fresh seed — subsequent runs produce different numbers"
-        >
-          Restart (new seed)
-        </button>
-      </div>
 
       {running && (
         <div className="w-full max-w-md">
@@ -306,6 +287,18 @@ export default function MonteCarloReport({ clientId }: Props) {
           </section>
         </>
       )}
+
+      {summary ? (
+        <div className="flex justify-center pt-2">
+          <button
+            onClick={handleRestart}
+            disabled={running}
+            className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm text-slate-200 hover:border-emerald-400/60 hover:text-emerald-300 disabled:opacity-50"
+          >
+            {running ? "Running…" : "Generate New Seed"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

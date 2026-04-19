@@ -1,5 +1,5 @@
-const RADIUS = 70;
-const STROKE_WIDTH = 10;
+const RADIUS = 50;
+const STROKE_WIDTH = 8;
 const WIDTH = 2 * (RADIUS + STROKE_WIDTH);
 const HEIGHT = RADIUS + STROKE_WIDTH * 2;
 const CX = WIDTH / 2;
@@ -50,8 +50,8 @@ export function SuccessGauge({ value }: SuccessGaugeProps) {
       </svg>
       <div
         data-testid="gauge-label"
-        className="absolute inset-x-0 flex justify-center text-2xl font-semibold text-slate-100 tabular-nums"
-        style={{ top: CY - 16 }}
+        className="absolute inset-x-0 flex justify-center text-lg font-semibold text-slate-100 tabular-nums"
+        style={{ top: CY - 14 }}
       >
         {Math.round(clamped * 100)}%
       </div>
