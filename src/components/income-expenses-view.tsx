@@ -376,7 +376,9 @@ function IncomeDialog({
   const [cashAccountId, setCashAccountId] = useState<string>(editing?.cashAccountId ?? "");
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
-    editing?.inflationStartYear != null && editing.inflationStartYear < editing.startYear
+    editing
+      ? editing.inflationStartYear != null && editing.inflationStartYear < editing.startYear
+      : true
   );
   const isSocialSecurity = type === "social_security";
   const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
@@ -838,7 +840,9 @@ function ExpenseDialog({
   const [deductionType, setDeductionType] = useState<string>(editing?.deductionType ?? "");
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
-    editing?.inflationStartYear != null && editing.inflationStartYear < editing.startYear
+    editing
+      ? editing.inflationStartYear != null && editing.inflationStartYear < editing.startYear
+      : true
   );
   const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
     editing?.growthSource === "inflation" ? "inflation" : "custom"
