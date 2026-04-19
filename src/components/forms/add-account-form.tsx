@@ -8,6 +8,7 @@ import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultSavingsRuleRefs, resolveMilestone } from "@/lib/milestones";
+import SavingsRuleDialog, { type SavingsRuleRow } from "./savings-rule-dialog";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -169,6 +170,26 @@ export default function AddAccountForm({
   const spouseLabel = ownerNames?.spouseName ?? null;
   const router = useRouter();
   const isEdit = mode === "edit" && !!initial;
+  const [accountSavingsRules, setAccountSavingsRules] = useState<SavingsRuleRow[]>([]);
+  const [srDialogOpen, setSrDialogOpen] = useState(false);
+  const [srDialogEditing, setSrDialogEditing] = useState<SavingsRuleRow | undefined>(undefined);
+  const [deletingSr, setDeletingSr] = useState<SavingsRuleRow | null>(null);
+
+  useEffect(() => {
+    if (!isEdit || !initial?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/clients/${clientId}/savings-rules`);
+        if (!res.ok) return;
+        const rows: SavingsRuleRow[] = await res.json();
+        if (!cancelled) setAccountSavingsRules(rows.filter((r) => r.accountId === initial.id));
+      } catch {
+        // silent; the tab just shows an empty list
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [clientId, initial?.id, isEdit]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -453,6 +474,7 @@ export default function AddAccountForm({
   }
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
         <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
@@ -471,7 +493,7 @@ export default function AddAccountForm({
         >
           Account Details
         </button>
-        {!isEdit && category !== "real_estate" && category !== "business" && (
+        {category !== "real_estate" && category !== "business" && category !== "life_insurance" && (
           <button
             type="button"
             onClick={() => setActiveTab("savings")}
@@ -553,9 +575,9 @@ export default function AddAccountForm({
                   if (!userEditedName) {
                     setName(uniqueAccountName(DEFAULT_NAME_BY_CATEGORY[newCat], existingNamesList));
                   }
-                  // Savings tab is not available for real-estate or business
+                  // Savings tab is not available for real-estate, business, or life_insurance
                   // categories — snap back to Details if it was active.
-                  if ((newCat === "real_estate" || newCat === "business") && activeTab === "savings") {
+                  if ((newCat === "real_estate" || newCat === "business" || newCat === "life_insurance") && activeTab === "savings") {
                     setActiveTab("details");
                   }
                 }}
@@ -758,9 +780,53 @@ export default function AddAccountForm({
         </div>
       </div>
 
-      {/* Savings tab — create only */}
-      {!isEdit && (
-        <div className={activeTab === "savings" ? "" : "hidden"}>
+      {/* Savings tab — edit mode shows rule list; create mode shows inline form */}
+      <div className={activeTab === "savings" ? "" : "hidden"}>
+      {isEdit ? (
+        <div className="space-y-3">
+          {accountSavingsRules.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-500">No savings rules yet.</p>
+          ) : (
+            <div className="divide-y divide-gray-800 rounded-md border border-gray-800">
+              {accountSavingsRules.map((rule) => {
+                const fmtAmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(rule.annualAmount));
+                return (
+                  <div key={rule.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-gray-100">{fmtAmt}/yr</div>
+                      <div className="text-[11px] text-gray-500">{rule.startYear}–{rule.endYear}</div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => { setSrDialogEditing(rule); setSrDialogOpen(true); }}
+                        className="rounded border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs font-medium text-gray-300 hover:bg-gray-700"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeletingSr(rule)}
+                        className="rounded border border-red-800 bg-red-900/30 px-2.5 py-1 text-xs font-medium text-red-400 hover:bg-red-900/60"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => { setSrDialogEditing(undefined); setSrDialogOpen(true); }}
+            className="mt-2 w-full rounded-md border border-dashed border-gray-700 py-2 text-sm text-gray-400 hover:border-gray-500 hover:text-gray-200"
+          >
+            + Add savings rule
+          </button>
+        </div>
+      ) : (
+      <div className="">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -888,6 +954,8 @@ export default function AddAccountForm({
           </div>
         </div>
       )}
+      </div>
+
 
       {/* Realization tab — taxable and retirement accounts */}
       {category === "taxable" && (
@@ -976,5 +1044,50 @@ export default function AddAccountForm({
         </button>
       </div>
     </form>
+
+    {isEdit && srDialogOpen && (
+      <SavingsRuleDialog
+        clientId={clientId}
+        accounts={[{ id: initial!.id, name: initial!.name }]}
+        open={srDialogOpen}
+        onOpenChange={(o) => { setSrDialogOpen(o); if (!o) setSrDialogEditing(undefined); }}
+        editing={srDialogEditing}
+        onSaved={(rule, mode) => {
+          if (mode === "create") setAccountSavingsRules((prev) => [...prev, rule]);
+          else setAccountSavingsRules((prev) => prev.map((r) => (r.id === rule.id ? rule : r)));
+        }}
+        onRequestDelete={() => { if (srDialogEditing) setDeletingSr(srDialogEditing); setSrDialogOpen(false); }}
+        clientInfo={milestones ? { milestones } : undefined}
+        ownerNames={ownerNames ? { clientName: ownerNames.clientName, spouseName: ownerNames.spouseName } : undefined}
+        resolvedInflationRate={resolvedInflationRate}
+      />
+    )}
+
+    {deletingSr && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/40" onClick={() => setDeletingSr(null)} />
+        <div className="relative z-10 w-full max-w-sm rounded-lg border border-gray-700 bg-gray-900 p-6 shadow-xl">
+          <h3 className="mb-2 text-base font-semibold text-gray-100">Delete Savings Rule</h3>
+          <p className="mb-4 text-sm text-gray-400">Remove this savings rule? This cannot be undone.</p>
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={() => setDeletingSr(null)} className="rounded-md border border-gray-700 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800">Cancel</button>
+            <button
+              type="button"
+              onClick={async () => {
+                const res = await fetch(`/api/clients/${clientId}/savings-rules/${deletingSr.id}`, { method: "DELETE" });
+                if (res.ok || res.status === 204) {
+                  setAccountSavingsRules((prev) => prev.filter((r) => r.id !== deletingSr.id));
+                }
+                setDeletingSr(null);
+              }}
+              className="rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
