@@ -204,6 +204,8 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
         planStartYear,
         planEndYear,
         milestones,
+        clientDob: client.dateOfBirth,
+        spouseDob: client.spouseDob ?? null,
       }}
       incomeSchedules={incomeScheduleMap}
       expenseSchedules={expenseScheduleMap}
