@@ -211,6 +211,13 @@
       "when": 1776596140765,
       "tag": "0030_savings_rule_deductibility_and_percent",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1776597771664,
+      "tag": "0031_home_sale_exclusion",
+      "breakpoints": true
     }
   ]
 }

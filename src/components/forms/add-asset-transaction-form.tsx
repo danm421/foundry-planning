@@ -36,6 +36,7 @@ interface AddAssetTransactionFormProps {
     transactionCostPct: string | null;
     transactionCostFlat: string | null;
     proceedsAccountId: string | null;
+    qualifiesForHomeSaleExclusion: boolean | null;
     assetName: string | null;
     assetCategory: string | null;
     assetSubType: string | null;
@@ -220,6 +221,9 @@ export default function AddAssetTransactionForm({
   const [proceedsAccountId, setProceedsAccountId] = useState(
     initialData?.proceedsAccountId ?? "",
   );
+  const [qualifiesForHomeSaleExclusion, setQualifiesForHomeSaleExclusion] = useState<boolean>(
+    initialData?.qualifiesForHomeSaleExclusion ?? false,
+  );
 
   // ── Buy-side state ────────────────────────────────────────────────────────
   const [assetName, setAssetName] = useState(initialData?.assetName ?? "");
@@ -384,6 +388,8 @@ export default function AddAssetTransactionForm({
       body.transactionCostPct = toOptionalDecimal(transactionCostPct);
       body.transactionCostFlat = toOptionalString(transactionCostFlat as string);
       body.proceedsAccountId = toOptionalString(proceedsAccountId) || null;
+      // Belt-and-suspenders: never persist true for a non-real-estate sale.
+      body.qualifiesForHomeSaleExclusion = isSellRealEstate && qualifiesForHomeSaleExclusion;
     }
 
     // Buy-side fields (always include if buy side has data)
@@ -629,6 +635,26 @@ export default function AddAssetTransactionForm({
                     Will be paid off at sale
                   </div>
                 </div>
+              )}
+
+              {/* IRC §121 home-sale exclusion — real estate sells only */}
+              {isSellRealEstate && (
+                <label className="flex items-start gap-2 rounded-md border border-gray-800 bg-gray-900/60 p-3 text-sm text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={qualifiesForHomeSaleExclusion}
+                    onChange={(e) => setQualifiesForHomeSaleExclusion(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                  <span>
+                    <span className="font-medium text-gray-200">
+                      Qualifies for home-sale gain exclusion (§121)
+                    </span>
+                    <span className="block text-[11px] text-gray-500">
+                      Excludes up to $250k single / $500k married-joint of capital gain on this sale. Advisor confirms 2-of-5-year eligibility.
+                    </span>
+                  </span>
+                </label>
               )}
             </div>
           </CollapsibleSection>

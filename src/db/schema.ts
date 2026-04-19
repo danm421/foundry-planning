@@ -921,6 +921,12 @@ export const assetTransactions = pgTable("asset_transactions", {
   transactionCostPct: decimal("transaction_cost_pct", { precision: 5, scale: 4 }),
   transactionCostFlat: decimal("transaction_cost_flat", { precision: 15, scale: 2 }),
   proceedsAccountId: uuid("proceeds_account_id").references(() => accounts.id, { onDelete: "set null" }),
+  // IRC §121 primary-residence exclusion. When true AND the sold account's
+  // category is "real_estate", the engine subtracts up to $250k (most filing
+  // statuses) or $500k (married filing jointly) from the raw capital gain.
+  qualifiesForHomeSaleExclusion: boolean("qualifies_for_home_sale_exclusion")
+    .notNull()
+    .default(false),
   // Buy fields
   assetName: text("asset_name"),
   assetCategory: accountCategoryEnum("asset_category"),

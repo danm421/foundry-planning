@@ -1,4 +1,12 @@
 import type { Account, AccountLedger, AssetTransaction, Liability } from "./types";
+import type { FilingStatus } from "../lib/tax/types";
+
+/** IRC §121 home-sale exclusion caps by filing status.
+ *  Married filing jointly gets $500k; all other statuses (single, head of
+ *  household, married filing separately) get $250k. */
+function homeSaleExclusionCap(filingStatus: FilingStatus): number {
+  return filingStatus === "married_joint" ? 500_000 : 250_000;
+}
 
 // ── Synthetic ID counter ──────────────────────────────────────────────────────
 
@@ -17,13 +25,22 @@ export interface AssetSaleBreakdown {
   basis: number;
   transactionCosts: number;
   netProceeds: number;
+  /** Raw capital gain (saleValue - basis, floored at 0), before the home-sale exclusion. */
   capitalGain: number;
+  /** IRC §121 exclusion actually applied to this sale (0 unless the flag was set
+   *  AND the account was real-estate AND there was gain to exclude). */
+  homeSaleExclusionApplied: number;
+  /** Gain that actually flows into taxable capital gains for the year. */
+  taxableCapitalGain: number;
   mortgagePaidOff: number;
   proceedsAccountId: string;
 }
 
 export interface AssetSalesResult {
+  /** Sum of taxable capital gains (already reduced by any home-sale exclusions applied). */
   capitalGains: number;
+  /** Sum of §121 exclusions applied across all sales this year. */
+  homeSaleExclusionTotal: number;
   removedAccountIds: string[];
   removedLiabilityIds: string[];
   breakdown: AssetSaleBreakdown[];
@@ -38,20 +55,24 @@ export interface ApplyAssetSalesInput {
   accountLedgers: Record<string, AccountLedger>;
   year: number;
   defaultCheckingId: string;
+  filingStatus: FilingStatus;
 }
 
 export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
   const {
     sales,
+    accounts,
     liabilities,
     accountBalances,
     basisMap,
     accountLedgers,
     year,
     defaultCheckingId,
+    filingStatus,
   } = input;
 
   let totalCapitalGains = 0;
+  let homeSaleExclusionTotal = 0;
   const removedAccountIds: string[] = [];
   const removedLiabilityIds: string[] = [];
   const breakdown: AssetSaleBreakdown[] = [];
@@ -75,7 +96,22 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
 
     // Capital gain is on full sale value minus basis (not reduced by transaction costs)
     const capitalGain = Math.max(0, saleValue - basis);
-    totalCapitalGains += capitalGain;
+
+    // IRC §121 home-sale exclusion. Applied only when the flag is set AND
+    // the sold account's category is "real_estate" — the category gate is a
+    // safety net against an errant true on a non-real-estate transaction.
+    const soldAccount = accounts.find((a) => a.id === accountId);
+    let homeSaleExclusionApplied = 0;
+    if (
+      sale.qualifiesForHomeSaleExclusion &&
+      soldAccount?.category === "real_estate" &&
+      capitalGain > 0
+    ) {
+      homeSaleExclusionApplied = Math.min(capitalGain, homeSaleExclusionCap(filingStatus));
+      homeSaleExclusionTotal += homeSaleExclusionApplied;
+    }
+    const taxableCapitalGain = capitalGain - homeSaleExclusionApplied;
+    totalCapitalGains += taxableCapitalGain;
 
     // Net proceeds after costs
     let netProceeds = saleValue - transactionCosts;
@@ -134,12 +170,20 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
       transactionCosts,
       netProceeds,
       capitalGain,
+      homeSaleExclusionApplied,
+      taxableCapitalGain,
       mortgagePaidOff,
       proceedsAccountId,
     });
   }
 
-  return { capitalGains: totalCapitalGains, removedAccountIds, removedLiabilityIds, breakdown };
+  return {
+    capitalGains: totalCapitalGains,
+    homeSaleExclusionTotal,
+    removedAccountIds,
+    removedLiabilityIds,
+    breakdown,
+  };
 }
 
 // ── applyAssetPurchases ───────────────────────────────────────────────────────

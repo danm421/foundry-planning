@@ -77,6 +77,7 @@ export async function POST(
       transactionCostPct,
       transactionCostFlat,
       proceedsAccountId,
+      qualifiesForHomeSaleExclusion,
       // Buy fields
       assetName,
       assetCategory,
@@ -111,6 +112,7 @@ export async function POST(
         transactionCostPct: toStr(transactionCostPct),
         transactionCostFlat: toStr(transactionCostFlat),
         proceedsAccountId: proceedsAccountId ?? null,
+        qualifiesForHomeSaleExclusion: qualifiesForHomeSaleExclusion ?? false,
         // Buy fields
         assetName: assetName ?? null,
         assetCategory: assetCategory ?? null,
@@ -180,6 +182,7 @@ export async function PUT(
       transactionCostPct,
       transactionCostFlat,
       proceedsAccountId,
+      qualifiesForHomeSaleExclusion,
       // Buy fields
       assetName,
       assetCategory,
@@ -204,6 +207,8 @@ export async function PUT(
         year: year ?? undefined,
         accountId: accountId !== undefined ? accountId : undefined,
         proceedsAccountId: proceedsAccountId !== undefined ? proceedsAccountId : undefined,
+        qualifiesForHomeSaleExclusion:
+          qualifiesForHomeSaleExclusion !== undefined ? qualifiesForHomeSaleExclusion : undefined,
         assetName: assetName !== undefined ? assetName : undefined,
         assetCategory: assetCategory !== undefined ? assetCategory : undefined,
         assetSubType: assetSubType !== undefined ? assetSubType : undefined,

@@ -197,6 +197,9 @@ export interface AssetTransaction {
   transactionCostPct?: number;
   transactionCostFlat?: number;
   proceedsAccountId?: string;
+  /** IRC §121 primary-residence exclusion. Engine applies only when this is
+   *  true AND the sold account's category is "real_estate". */
+  qualifiesForHomeSaleExclusion?: boolean;
   // Buy fields
   assetName?: string;
   assetCategory?: Account["category"];

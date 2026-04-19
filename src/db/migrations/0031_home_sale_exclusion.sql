@@ -1,0 +1,1 @@
+ALTER TABLE "asset_transactions" ADD COLUMN "qualifies_for_home_sale_exclusion" boolean DEFAULT false NOT NULL;

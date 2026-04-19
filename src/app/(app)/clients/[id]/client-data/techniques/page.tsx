@@ -114,6 +114,7 @@ export default async function TechniquesPage({ params }: PageProps) {
     transactionCostPct: tx.transactionCostPct == null ? null : String(tx.transactionCostPct),
     transactionCostFlat: tx.transactionCostFlat == null ? null : String(tx.transactionCostFlat),
     proceedsAccountId: tx.proceedsAccountId ?? null,
+    qualifiesForHomeSaleExclusion: tx.qualifiesForHomeSaleExclusion ?? false,
     assetName: tx.assetName ?? null,
     assetCategory: tx.assetCategory ?? null,
     assetSubType: tx.assetSubType ?? null,

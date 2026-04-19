@@ -36,6 +36,7 @@ export interface AssetTransactionRow {
   transactionCostPct: string | null;
   transactionCostFlat: string | null;
   proceedsAccountId: string | null;
+  qualifiesForHomeSaleExclusion: boolean | null;
   assetName: string | null;
   assetCategory: string | null;
   assetSubType: string | null;

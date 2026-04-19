@@ -545,6 +545,7 @@ export async function GET(
         transactionCostPct: t.transactionCostPct ? parseFloat(t.transactionCostPct) : undefined,
         transactionCostFlat: t.transactionCostFlat ? parseFloat(t.transactionCostFlat) : undefined,
         proceedsAccountId: t.proceedsAccountId ?? undefined,
+        qualifiesForHomeSaleExclusion: t.qualifiesForHomeSaleExclusion,
         assetName: t.assetName ?? undefined,
         assetCategory: t.assetCategory ?? undefined,
         assetSubType: t.assetSubType ?? undefined,

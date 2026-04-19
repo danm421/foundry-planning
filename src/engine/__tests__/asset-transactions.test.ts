@@ -81,7 +81,7 @@ describe("applyAssetSales", () => {
 
     const result = applyAssetSales({
       sales: [sale], accounts: [brokerageAccount, checkingAccount], liabilities: [],
-      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1",
+      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1", filingStatus: "single",
     });
 
     expect(result.capitalGains).toBe(50000);
@@ -101,7 +101,7 @@ describe("applyAssetSales", () => {
 
     const result = applyAssetSales({
       sales: [sale], accounts: [brokerageAccount, checkingAccount], liabilities: [],
-      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1",
+      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1", filingStatus: "single",
     });
 
     expect(result.capitalGains).toBe(150000);
@@ -119,7 +119,7 @@ describe("applyAssetSales", () => {
 
     const result = applyAssetSales({
       sales: [sale], accounts: [rentalProperty, checkingAccount], liabilities: [],
-      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1",
+      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1", filingStatus: "single",
     });
 
     expect(result.capitalGains).toBe(200000);
@@ -137,7 +137,7 @@ describe("applyAssetSales", () => {
 
     const result = applyAssetSales({
       sales: [sale], accounts: [rentalProperty, checkingAccount], liabilities: [mortgage],
-      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1",
+      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1", filingStatus: "single",
     });
 
     expect(balances["checking-1"]).toBe(350000); // 50k + (500k - 200k mortgage)
@@ -158,11 +158,125 @@ describe("applyAssetSales", () => {
 
     applyAssetSales({
       sales: [sale], accounts: [rentalProperty, brokerageAccount, checkingAccount], liabilities: [],
-      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1",
+      accountBalances: balances, basisMap, accountLedgers: ledgers, year: 2028, defaultCheckingId: "checking-1", filingStatus: "single",
     });
 
     expect(balances["brokerage-1"]).toBe(700000);
     expect(balances["checking-1"]).toBe(50000);
+  });
+});
+
+describe("applyAssetSales — home-sale exclusion (§121)", () => {
+  const homeAccount: Account = {
+    id: "home-1",
+    name: "Primary Residence",
+    category: "real_estate",
+    subType: "primary_residence",
+    owner: "client",
+    value: 900000,
+    basis: 300000,
+    growthRate: 0.03,
+    rmdEnabled: false,
+  };
+
+  function runSale(
+    overrideSaleValue: number,
+    overrideBasis: number,
+    filingStatus: "single" | "married_joint" | "head_of_household" | "married_separate",
+    opts: { qualifies?: boolean; account?: Account } = {}
+  ) {
+    const account = opts.account ?? homeAccount;
+    const sale: AssetTransaction = {
+      id: "sale-home",
+      name: "Sell Home",
+      type: "sell",
+      year: 2028,
+      accountId: account.id,
+      overrideSaleValue,
+      overrideBasis,
+      qualifiesForHomeSaleExclusion: opts.qualifies ?? false,
+    };
+    const balances: Record<string, number> = { [account.id]: overrideSaleValue, "checking-1": 0 };
+    const basisMap: Record<string, number> = { [account.id]: overrideBasis, "checking-1": 0 };
+    const ledgers: Record<string, AccountLedger> = {
+      [account.id]: makeLedger(overrideSaleValue),
+      "checking-1": makeLedger(0),
+    };
+    return applyAssetSales({
+      sales: [sale],
+      accounts: [account, checkingAccount],
+      liabilities: [],
+      accountBalances: balances,
+      basisMap,
+      accountLedgers: ledgers,
+      year: 2028,
+      defaultCheckingId: "checking-1",
+      filingStatus,
+    });
+  }
+
+  it("applies $250k single-filer cap fully absorbing a sub-cap gain", () => {
+    const result = runSale(500_000, 300_000, "single", { qualifies: true });
+    expect(result.capitalGains).toBe(0);
+    expect(result.homeSaleExclusionTotal).toBe(200_000);
+    expect(result.breakdown[0].capitalGain).toBe(200_000);
+    expect(result.breakdown[0].homeSaleExclusionApplied).toBe(200_000);
+    expect(result.breakdown[0].taxableCapitalGain).toBe(0);
+  });
+
+  it("caps exclusion at $250k for single filer on a larger gain", () => {
+    const result = runSale(700_000, 300_000, "single", { qualifies: true });
+    expect(result.capitalGains).toBe(150_000);
+    expect(result.homeSaleExclusionTotal).toBe(250_000);
+    expect(result.breakdown[0].taxableCapitalGain).toBe(150_000);
+  });
+
+  it("caps exclusion at $250k for head-of-household", () => {
+    const result = runSale(700_000, 300_000, "head_of_household", { qualifies: true });
+    expect(result.capitalGains).toBe(150_000);
+    expect(result.homeSaleExclusionTotal).toBe(250_000);
+  });
+
+  it("caps exclusion at $250k for married-filing-separately", () => {
+    const result = runSale(700_000, 300_000, "married_separate", { qualifies: true });
+    expect(result.capitalGains).toBe(150_000);
+    expect(result.homeSaleExclusionTotal).toBe(250_000);
+  });
+
+  it("applies $500k married-joint cap on a $600k gain", () => {
+    const result = runSale(900_000, 300_000, "married_joint", { qualifies: true });
+    expect(result.capitalGains).toBe(100_000);
+    expect(result.homeSaleExclusionTotal).toBe(500_000);
+  });
+
+  it("applies no exclusion when the flag is false", () => {
+    const result = runSale(700_000, 300_000, "married_joint", { qualifies: false });
+    expect(result.capitalGains).toBe(400_000);
+    expect(result.homeSaleExclusionTotal).toBe(0);
+    expect(result.breakdown[0].homeSaleExclusionApplied).toBe(0);
+  });
+
+  it("ignores the flag on a non-real-estate account (engine safety net)", () => {
+    const result = runSale(500_000, 300_000, "single", {
+      qualifies: true,
+      account: brokerageAccount,
+    });
+    expect(result.capitalGains).toBe(200_000);
+    expect(result.homeSaleExclusionTotal).toBe(0);
+  });
+
+  it("applies no exclusion on a zero-gain sale", () => {
+    const result = runSale(300_000, 300_000, "single", { qualifies: true });
+    expect(result.capitalGains).toBe(0);
+    expect(result.homeSaleExclusionTotal).toBe(0);
+    expect(result.breakdown[0].homeSaleExclusionApplied).toBe(0);
+  });
+
+  it("applies no exclusion on a loss sale (gain floored at 0)", () => {
+    const result = runSale(250_000, 300_000, "single", { qualifies: true });
+    expect(result.capitalGains).toBe(0);
+    expect(result.homeSaleExclusionTotal).toBe(0);
+    expect(result.breakdown[0].capitalGain).toBe(0);
   });
 });
 

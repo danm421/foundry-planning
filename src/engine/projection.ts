@@ -283,9 +283,10 @@ export function runProjection(data: ClientData): ProjectionYear[] {
     // earn the year's cash growth.
     let saleResult = {
       capitalGains: 0,
+      homeSaleExclusionTotal: 0,
       removedAccountIds: [] as string[],
       removedLiabilityIds: [] as string[],
-      breakdown: [] as { transactionId: string; accountId: string; saleValue: number; basis: number; transactionCosts: number; netProceeds: number; capitalGain: number; mortgagePaidOff: number; proceedsAccountId: string }[],
+      breakdown: [] as { transactionId: string; accountId: string; saleValue: number; basis: number; transactionCosts: number; netProceeds: number; capitalGain: number; homeSaleExclusionApplied: number; taxableCapitalGain: number; mortgagePaidOff: number; proceedsAccountId: string }[],
     };
     if (data.assetTransactions && data.assetTransactions.length > 0) {
       const sales = data.assetTransactions.filter((t) => t.type === "sell");
@@ -299,6 +300,7 @@ export function runProjection(data: ClientData): ProjectionYear[] {
           accountLedgers,
           year,
           defaultCheckingId: defaultChecking?.id ?? "",
+          filingStatus: (client.filingStatus ?? "single") as FilingStatus,
         });
 
         if (saleResult.removedAccountIds.length > 0) {
