@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine";
 import { buildTimeline } from "@/lib/timeline/build-timeline";
 import { buildSeries } from "@/lib/timeline/build-series";
 import type { TimelineCategory, TimelineEvent, SeriesPoint } from "@/lib/timeline/timeline-types";
 import TimelineControls from "@/components/timeline/timeline-controls";
+import TimelineSpine from "@/components/timeline/timeline-spine";
 
 interface Props {
   clientId: string;
@@ -24,6 +25,12 @@ export default function TimelineReportView({ clientId }: Props) {
     new Set(["life", "income", "transaction", "portfolio", "insurance", "tax"]),
   );
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const segmentRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const registerSegmentRef = useCallback((year: number, el: HTMLDivElement | null) => {
+    if (el) segmentRefs.current.set(year, el);
+    else segmentRefs.current.delete(year);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +67,10 @@ export default function TimelineReportView({ clientId }: Props) {
     [events, activeCategories],
   );
 
+  const primaryLabel = clientData ? clientData.client.firstName : "";
+  const spouseLabel = clientData?.client.spouseName ?? null;
+  const isCoupled = !!spouseLabel;
+
   if (error) {
     return <div className="p-6 text-sm text-red-400">Failed to load timeline: {error}</div>;
   }
@@ -90,13 +101,35 @@ export default function TimelineReportView({ clientId }: Props) {
         />
       </div>
 
-      {/* Placeholder debug dump — replaced by real components in later tasks. */}
-      <details className="mt-4 text-xs text-gray-500">
-        <summary>debug: events + series (temporary)</summary>
-        <pre className="mt-2 max-h-[60vh] overflow-auto rounded bg-gray-900 p-3 text-gray-300">
-          {JSON.stringify({ sparklineMode, activeCategories: [...activeCategories], expandedId, visibleEvents, series }, null, 2)}
-        </pre>
-      </details>
+      <TimelineSpine
+        projection={projection}
+        visibleEvents={visibleEvents}
+        series={series}
+        sparklineMode={sparklineMode}
+        expandedId={expandedId}
+        onToggleExpand={(id) => setExpandedId((cur) => (cur === id ? null : id))}
+        onHover={(_id) => { /* wired in Task 17 */ }}
+        primaryLabel={primaryLabel}
+        spouseLabel={spouseLabel}
+        isCoupled={isCoupled}
+        registerSegmentRef={registerSegmentRef}
+      />
+
+      <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-gray-800 pt-4 text-[11px] text-gray-500">
+        <span>
+          Sparkline:{" "}
+          <span className="text-gray-300">
+            {sparklineMode === "netWorth" ? "Net Worth" : sparklineMode === "portfolio" ? "Portfolio (investable)" : "Net Cash Flow"}
+          </span>
+        </span>
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#38bdf8" }} /> Life</span>
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#34d399" }} /> Income</span>
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#fbbf24" }} /> Transactions</span>
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#60a5fa" }} /> Portfolio</span>
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#d946ef" }} /> Insurance</span>
+        <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: "#fb7185" }} /> Tax</span>
+        <span className="ml-auto">Click any card to expand · Esc to close</span>
+      </div>
     </div>
   );
 }
