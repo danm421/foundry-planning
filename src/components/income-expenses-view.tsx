@@ -1452,24 +1452,26 @@ export default function IncomeExpensesView({
         resolvedInflationRate={resolvedInflationRate}
       />
 
-      <SavingsRuleDialog
-        clientId={clientId}
-        accounts={accounts}
-        open={savingsDialog.open}
-        onOpenChange={(o) => setSavingsDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
-        editing={savingsDialog.editing}
-        onSaved={(rule, mode) => {
-          if (mode === "create") setSavingsRuleList((prev) => [...prev, rule]);
-          else setSavingsRuleList((prev) => prev.map((r) => (r.id === rule.id ? rule : r)));
-        }}
-        onRequestDelete={() => {
-          if (savingsDialog.editing) setDeletingSavings(savingsDialog.editing);
-        }}
-        schedule={savingsDialog.editing ? savingsSchedules[savingsDialog.editing.id] : undefined}
-        clientInfo={clientInfo}
-        ownerNames={ownerNames}
-        resolvedInflationRate={resolvedInflationRate}
-      />
+      {savingsDialog.open && (
+        <SavingsRuleDialog
+          clientId={clientId}
+          accounts={accounts}
+          open={savingsDialog.open}
+          onOpenChange={(o) => setSavingsDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
+          editing={savingsDialog.editing}
+          onSaved={(rule, mode) => {
+            if (mode === "create") setSavingsRuleList((prev) => [...prev, rule]);
+            else setSavingsRuleList((prev) => prev.map((r) => (r.id === rule.id ? rule : r)));
+          }}
+          onRequestDelete={() => {
+            if (savingsDialog.editing) setDeletingSavings(savingsDialog.editing);
+          }}
+          schedule={savingsDialog.editing ? savingsSchedules[savingsDialog.editing.id] : undefined}
+          clientInfo={clientInfo}
+          ownerNames={ownerNames}
+          resolvedInflationRate={resolvedInflationRate}
+        />
+      )}
 
       {/* Delete confirms */}
       <ConfirmDeleteDialog
