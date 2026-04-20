@@ -4,6 +4,7 @@ import { useState } from "react";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AddClientDialog from "./add-client-dialog";
 import type { ClientFormInitial } from "./forms/add-client-form";
+import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,22 @@ export interface Entity {
 
 const BUSINESS_ENTITY_TYPES: EntityType[] = ["llc", "s_corp", "c_corp", "partnership", "other"];
 const TRUST_LIKE_ENTITY_TYPES: EntityType[] = ["trust", "foundation"];
+
+const TRUST_SUB_TYPE_LABELS: Record<
+  "revocable" | "irrevocable" | "ilit" | "slat" | "crt" | "grat" | "qprt" | "clat" | "qtip" | "bypass",
+  string
+> = {
+  revocable: "Revocable",
+  irrevocable: "Irrevocable (generic)",
+  ilit: "ILIT",
+  slat: "SLAT",
+  crt: "CRT",
+  grat: "GRAT",
+  qprt: "QPRT",
+  clat: "CLAT",
+  qtip: "QTIP",
+  bypass: "Bypass / Credit Shelter",
+};
 
 export type ExternalBeneficiary = {
   id: string;
@@ -396,6 +413,13 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
   const [owner, setOwner] = useState<"client" | "spouse" | "joint" | "">(editing?.owner ?? "");
   const [grantors, setGrantors] = useState<NamePctRow[]>(editing?.grantors ?? []);
   const [beneficiaries, setBeneficiaries] = useState<NamePctRow[]>(editing?.beneficiaries ?? []);
+  const [trustSubType, setTrustSubType] = useState<TrustSubType>(
+    (editing?.trustSubType as TrustSubType | null) ?? "revocable",
+  );
+  const [trustee, setTrustee] = useState<string>(editing?.trustee ?? "");
+  const [exemptionConsumed, setExemptionConsumed] = useState<string>(
+    editing?.exemptionConsumed ?? "0",
+  );
   const isEdit = Boolean(editing);
   const showBusinessFields = BUSINESS_ENTITY_TYPES.includes(entityType);
   const showTrustFields = TRUST_LIKE_ENTITY_TYPES.includes(entityType);
@@ -420,6 +444,12 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
       owner: submittedShowBusiness && owner ? owner : null,
       grantors: submittedShowTrust ? grantors.filter((g) => g.name.trim().length > 0) : null,
       beneficiaries: submittedShowTrust ? beneficiaries.filter((b) => b.name.trim().length > 0) : null,
+      trustSubType: submittedType === "trust" ? trustSubType : undefined,
+      isIrrevocable:
+        submittedType === "trust" ? deriveIsIrrevocable(trustSubType) : undefined,
+      trustee: submittedType === "trust" ? (trustee.trim() || null) : undefined,
+      exemptionConsumed:
+        submittedType === "trust" ? Number(exemptionConsumed || "0") : undefined,
     };
     try {
       const url = isEdit
@@ -543,6 +573,66 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
                 rows={beneficiaries}
                 onChange={setBeneficiaries}
               />
+            </div>
+          )}
+
+          {entityType === "trust" && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="ent-subtype">
+                  Sub-type
+                </label>
+                <select
+                  id="ent-subtype"
+                  value={trustSubType}
+                  onChange={(e) => setTrustSubType(e.target.value as TrustSubType)}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  {Object.entries(TRUST_SUB_TYPE_LABELS).map(([v, l]) => (
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  {deriveIsIrrevocable(trustSubType)
+                    ? "Treated as irrevocable (out-of-estate in future engine work)."
+                    : "Treated as revocable (in-estate)."}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="ent-trustee">
+                  Trustee
+                </label>
+                <input
+                  id="ent-trustee"
+                  type="text"
+                  value={trustee}
+                  onChange={(e) => setTrustee(e.target.value)}
+                  placeholder="e.g., Linda, or Fidelity Trust Co."
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Free text. Separate co-trustees with commas.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="ent-exemption">
+                  Lifetime exemption used by this trust ($)
+                </label>
+                <input
+                  id="ent-exemption"
+                  type="number"
+                  step="1000"
+                  min="0"
+                  value={exemptionConsumed}
+                  onChange={(e) => setExemptionConsumed(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Advisor-entered rollup. A per-grantor gift ledger is coming in a later session.
+                </p>
+              </div>
             </div>
           )}
 
