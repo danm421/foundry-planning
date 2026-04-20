@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, incomes } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -55,34 +55,40 @@ export async function PUT(
       if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
     }
 
-    const [updated] = await db
-      .update(incomes)
-      .set({
-        ...(type !== undefined && { type }),
-        ...(name !== undefined && { name }),
-        ...(annualAmount !== undefined && { annualAmount }),
-        ...(startYear !== undefined && { startYear: Number(startYear) }),
-        ...(endYear !== undefined && { endYear: Number(endYear) }),
-        ...(growthRate !== undefined && { growthRate }),
-        ...(growthSource !== undefined && { growthSource: growthSource === "inflation" ? "inflation" : "custom" }),
-        ...(owner !== undefined && { owner }),
-        ...(claimingAge !== undefined && { claimingAge: claimingAge ? Number(claimingAge) : null }),
-        ...(linkedEntityId !== undefined && { linkedEntityId: linkedEntityId ?? null }),
-        ...(ownerEntityId !== undefined && { ownerEntityId: ownerEntityId ?? null }),
-        ...(cashAccountId !== undefined && { cashAccountId: cashAccountId ?? null }),
-        ...(inflationStartYear !== undefined && {
-          inflationStartYear: inflationStartYear == null ? null : Number(inflationStartYear),
-        }),
-        ...(body.startYearRef !== undefined && { startYearRef: body.startYearRef }),
-        ...(body.endYearRef !== undefined && { endYearRef: body.endYearRef }),
-        ...(body.ssBenefitMode !== undefined && { ssBenefitMode: body.ssBenefitMode ?? null }),
-        ...(body.piaMonthly !== undefined && { piaMonthly: body.piaMonthly != null ? String(body.piaMonthly) : null }),
-        ...(body.claimingAgeMonths !== undefined && { claimingAgeMonths: body.claimingAgeMonths != null ? Number(body.claimingAgeMonths) : 0 }),
-        ...(body.claimingAgeMode !== undefined && { claimingAgeMode: body.claimingAgeMode }),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(incomes.id, incomeId), eq(incomes.clientId, id)))
-      .returning();
+    let updated: typeof incomes.$inferSelect | undefined;
+    await auditedMutation(
+      { action: 'income.update', resourceType: 'income', resourceId: incomeId, metadata: { after: body } },
+      async () => {
+        [updated] = await db
+          .update(incomes)
+          .set({
+            ...(type !== undefined && { type }),
+            ...(name !== undefined && { name }),
+            ...(annualAmount !== undefined && { annualAmount }),
+            ...(startYear !== undefined && { startYear: Number(startYear) }),
+            ...(endYear !== undefined && { endYear: Number(endYear) }),
+            ...(growthRate !== undefined && { growthRate }),
+            ...(growthSource !== undefined && { growthSource: growthSource === "inflation" ? "inflation" : "custom" }),
+            ...(owner !== undefined && { owner }),
+            ...(claimingAge !== undefined && { claimingAge: claimingAge ? Number(claimingAge) : null }),
+            ...(linkedEntityId !== undefined && { linkedEntityId: linkedEntityId ?? null }),
+            ...(ownerEntityId !== undefined && { ownerEntityId: ownerEntityId ?? null }),
+            ...(cashAccountId !== undefined && { cashAccountId: cashAccountId ?? null }),
+            ...(inflationStartYear !== undefined && {
+              inflationStartYear: inflationStartYear == null ? null : Number(inflationStartYear),
+            }),
+            ...(body.startYearRef !== undefined && { startYearRef: body.startYearRef }),
+            ...(body.endYearRef !== undefined && { endYearRef: body.endYearRef }),
+            ...(body.ssBenefitMode !== undefined && { ssBenefitMode: body.ssBenefitMode ?? null }),
+            ...(body.piaMonthly !== undefined && { piaMonthly: body.piaMonthly != null ? String(body.piaMonthly) : null }),
+            ...(body.claimingAgeMonths !== undefined && { claimingAgeMonths: body.claimingAgeMonths != null ? Number(body.claimingAgeMonths) : 0 }),
+            ...(body.claimingAgeMode !== undefined && { claimingAgeMode: body.claimingAgeMode }),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(incomes.id, incomeId), eq(incomes.clientId, id)))
+          .returning();
+      }
+    );
 
     if (!updated) {
       return NextResponse.json({ error: "Income not found" }, { status: 404 });
@@ -112,9 +118,14 @@ export async function DELETE(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    await db
-      .delete(incomes)
-      .where(and(eq(incomes.id, incomeId), eq(incomes.clientId, id)));
+    await auditedMutation(
+      { action: 'income.delete', resourceType: 'income', resourceId: incomeId },
+      async () => {
+        await db
+          .delete(incomes)
+          .where(and(eq(incomes.id, incomeId), eq(incomes.clientId, id)));
+      }
+    );
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {

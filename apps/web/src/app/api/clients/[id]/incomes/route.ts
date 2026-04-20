@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, scenarios, incomes } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -103,33 +103,39 @@ export async function POST(
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
 
-    const [income] = await db
-      .insert(incomes)
-      .values({
-        clientId: id,
-        scenarioId,
-        type,
-        name,
-        annualAmount: annualAmount ?? "0",
-        startYear: Number(startYear),
-        endYear: Number(endYear),
-        growthRate: growthRate ?? "0.03",
-        growthSource: growthSource === "inflation" ? "inflation" : "custom",
-        owner: owner ?? "client",
-        claimingAge: claimingAge ? Number(claimingAge) : null,
-        linkedEntityId: linkedEntityId ?? null,
-        ownerEntityId: ownerEntityId ?? null,
-        cashAccountId: cashAccountId ?? null,
-        inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,
-        startYearRef,
-        endYearRef,
-        taxType,
-        ssBenefitMode,
-        piaMonthly,
-        claimingAgeMonths,
-        claimingAgeMode,
-      })
-      .returning();
+    let income!: typeof incomes.$inferSelect;
+    await auditedMutation(
+      { action: 'income.create', resourceType: 'income', resourceId: 'pending', metadata: { after: body } },
+      async () => {
+        [income] = await db
+          .insert(incomes)
+          .values({
+            clientId: id,
+            scenarioId,
+            type,
+            name,
+            annualAmount: annualAmount ?? "0",
+            startYear: Number(startYear),
+            endYear: Number(endYear),
+            growthRate: growthRate ?? "0.03",
+            growthSource: growthSource === "inflation" ? "inflation" : "custom",
+            owner: owner ?? "client",
+            claimingAge: claimingAge ? Number(claimingAge) : null,
+            linkedEntityId: linkedEntityId ?? null,
+            ownerEntityId: ownerEntityId ?? null,
+            cashAccountId: cashAccountId ?? null,
+            inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,
+            startYearRef,
+            endYearRef,
+            taxType,
+            ssBenefitMode,
+            piaMonthly,
+            claimingAgeMonths,
+            claimingAgeMode,
+          })
+          .returning();
+      }
+    );
 
     return NextResponse.json(income, { status: 201 });
   } catch (err) {
