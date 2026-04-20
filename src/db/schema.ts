@@ -102,6 +102,21 @@ export const familyRelationshipEnum = pgEnum("family_relationship", [
   "other",
 ]);
 
+export const externalBeneficiaryKindEnum = pgEnum("external_beneficiary_kind", [
+  "charity",
+  "individual",
+]);
+
+export const beneficiaryTierEnum = pgEnum("beneficiary_tier", [
+  "primary",
+  "contingent",
+]);
+
+export const beneficiaryTargetKindEnum = pgEnum("beneficiary_target_kind", [
+  "account",
+  "trust",
+]);
+
 export const yearRefEnum = pgEnum("year_ref", [
   "plan_start",
   "plan_end",
@@ -276,6 +291,8 @@ export const entities = pgTable("entities", {
   // Trust-only: list of grantors with percent ownership. Shape: { name, pct }[].
   grantors: jsonb("grantors"),
   // Trust-only: list of beneficiaries with percent distribution. Shape: { name, pct }[].
+  // DEPRECATED: superseded by the beneficiary_designations table. Retained for read-back
+  // compatibility; item 2 will migrate and drop.
   beneficiaries: jsonb("beneficiaries"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -295,6 +312,59 @@ export const familyMembers = pgTable("family_members", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const externalBeneficiaries = pgTable("external_beneficiaries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  kind: externalBeneficiaryKindEnum("kind").notNull().default("charity"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const beneficiaryDesignations = pgTable(
+  "beneficiary_designations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    targetKind: beneficiaryTargetKindEnum("target_kind").notNull(),
+    accountId: uuid("account_id").references(() => accounts.id, {
+      onDelete: "cascade",
+    }),
+    entityId: uuid("entity_id").references(() => entities.id, {
+      onDelete: "cascade",
+    }),
+    tier: beneficiaryTierEnum("tier").notNull(),
+    familyMemberId: uuid("family_member_id").references(() => familyMembers.id, {
+      onDelete: "cascade",
+    }),
+    externalBeneficiaryId: uuid("external_beneficiary_id").references(
+      () => externalBeneficiaries.id,
+      { onDelete: "cascade" },
+    ),
+    percentage: decimal("percentage", { precision: 5, scale: 2 }).notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("beneficiary_designations_account_idx").on(
+      t.clientId,
+      t.targetKind,
+      t.accountId,
+    ),
+    index("beneficiary_designations_entity_idx").on(
+      t.clientId,
+      t.targetKind,
+      t.entityId,
+    ),
+  ],
+);
 
 export const assetClasses = pgTable("asset_classes", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -418,6 +488,12 @@ export const accounts = pgTable("accounts", {
   ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
     onDelete: "set null",
   }),
+  // Owner override for individual family members (e.g., UTMA / custodial).
+  // Resolver precedence: ownerEntityId > ownerFamilyMemberId > owner enum.
+  ownerFamilyMemberId: uuid("owner_family_member_id").references(
+    () => familyMembers.id,
+    { onDelete: "set null" },
+  ),
   growthSource: growthSourceEnum("growth_source").notNull().default("default"),
   modelPortfolioId: uuid("model_portfolio_id").references(() => modelPortfolios.id, {
     onDelete: "set null",
@@ -657,6 +733,43 @@ export const familyMembersRelations = relations(familyMembers, ({ one }) => ({
     references: [clients.id],
   }),
 }));
+
+export const externalBeneficiariesRelations = relations(
+  externalBeneficiaries,
+  ({ one, many }) => ({
+    client: one(clients, {
+      fields: [externalBeneficiaries.clientId],
+      references: [clients.id],
+    }),
+    designations: many(beneficiaryDesignations),
+  }),
+);
+
+export const beneficiaryDesignationsRelations = relations(
+  beneficiaryDesignations,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [beneficiaryDesignations.clientId],
+      references: [clients.id],
+    }),
+    account: one(accounts, {
+      fields: [beneficiaryDesignations.accountId],
+      references: [accounts.id],
+    }),
+    entity: one(entities, {
+      fields: [beneficiaryDesignations.entityId],
+      references: [entities.id],
+    }),
+    familyMember: one(familyMembers, {
+      fields: [beneficiaryDesignations.familyMemberId],
+      references: [familyMembers.id],
+    }),
+    externalBeneficiary: one(externalBeneficiaries, {
+      fields: [beneficiaryDesignations.externalBeneficiaryId],
+      references: [externalBeneficiaries.id],
+    }),
+  }),
+);
 
 export const scenariosRelations = relations(scenarios, ({ one, many }) => ({
   client: one(clients, {
