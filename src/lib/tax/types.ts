@@ -66,7 +66,13 @@ export interface CalcInput {
   filingStatus: FilingStatus;
   // From projection engine's existing taxDetail:
   earnedIncome: number;
-  ordinaryIncome: number;     // taxable interest, non-qual div, RMDs, etc.
+  ordinaryIncome: number;     // non-qual div, RMDs, IRA distributions, etc.
+  /** Taxable interest income (savings, CDs, bonds). Split out from
+   *  `ordinaryIncome` so NIIT can include it per IRC §1411(c)(1)(A)(i);
+   *  the generic ordinaryIncome bucket still holds IRA/RMD/SE income which
+   *  do NOT count as net investment income. Optional for back-compat —
+   *  callers that haven't migrated treat interest as buried in ordinary. */
+  interestIncome?: number;
   qualifiedDividends: number;
   longTermCapitalGains: number;
   shortTermCapitalGains: number;

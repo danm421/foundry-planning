@@ -18,6 +18,11 @@ export interface FlatCalcInput {
   flatFederalRate: number;
   flatStateRate: number;
   taxParams: TaxYearParameters;
+  /** Tax-exempt income (muni bond interest, Roth distributions, etc.).
+   *  When provided, rolls into `nonTaxableIncome` and `grossTotalIncome` so
+   *  the tax-detail UI columns reflect the client's actual non-taxable flows
+   *  rather than reading as stub zeros. */
+  nonTaxableIncome?: number;
 }
 
 /**
@@ -29,6 +34,7 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
   const federal = safeTaxable * input.flatFederalRate;
   const state = safeTaxable * input.flatStateRate;
   const total = federal + state;
+  const nonTaxableIncome = Math.max(0, input.nonTaxableIncome ?? 0);
   return {
     income: {
       earnedIncome: 0,
@@ -38,8 +44,8 @@ export function calculateTaxYearFlat(input: FlatCalcInput): TaxResult {
       capitalGains: 0,
       shortCapitalGains: 0,
       totalIncome: safeTaxable,
-      nonTaxableIncome: 0,
-      grossTotalIncome: safeTaxable,
+      nonTaxableIncome,
+      grossTotalIncome: safeTaxable + nonTaxableIncome,
     },
     flow: {
       aboveLineDeductions: 0,

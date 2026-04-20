@@ -38,6 +38,7 @@ import { executeWithdrawals } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
 import { applyAssetSales, applyAssetPurchases, _resetSyntheticIdCounter } from "./asset-transactions";
+import { calcSeca } from "../lib/tax/fica";
 
 // Map legacy income type to the new tax type categories.
 function legacyTaxType(
@@ -526,11 +527,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         ownerBirthYear = clientBirthYear;
       }
       const ownerAge = year - ownerBirthYear;
-      const balance = accountBalances[acct.id] ?? 0;
-      const rmd = calculateRMD(balance, ownerAge, ownerBirthYear);
+      // IRS RMD rule: divisor × prior-year-Dec-31 balance. That's BoY of this
+      // year (before growth/transfers), captured on the ledger as
+      // `beginningValue`. Using the post-growth current balance slightly
+      // overstates the required amount in up markets.
+      const rmdBasis = accountLedgers[acct.id]?.beginningValue ?? accountBalances[acct.id] ?? 0;
+      const currentBalance = accountBalances[acct.id] ?? 0;
+      const rmd = Math.min(currentBalance, calculateRMD(rmdBasis, ownerAge, ownerBirthYear));
       if (rmd <= 0) continue;
 
-      accountBalances[acct.id] = balance - rmd;
+      accountBalances[acct.id] = currentBalance - rmd;
       if (accountLedgers[acct.id]) {
         accountLedgers[acct.id].rmdAmount = rmd;
         accountLedgers[acct.id].distributions += rmd;
@@ -592,16 +598,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxExempt: 0,
       bySource: { ...realizationBySource, ...rmdBySource },
     };
-    // Map income entries to tax categories
+    // Map income entries to tax categories. Social Security is intentionally
+    // excluded from this loop: `socialSecurityGross` is passed separately into
+    // the bracket engine, which runs `calcTaxableSocialSecurity` against it
+    // and adds the taxable portion to `totalIncome`. Adding SS here (as the
+    // legacy mapping did, via legacyTaxType("social_security") → ordinary)
+    // double-counted it for every retiree in bracket mode.
     for (const inc of data.incomes) {
       if (year < inc.startYear || year > inc.endYear) continue;
       if (inc.ownerEntityId != null && !isGrantorEntity(inc.ownerEntityId)) continue;
-      if (inc.type === "social_security" && inc.claimingAge != null) {
-        const ownerDob = inc.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
-        if (!ownerDob) continue;
-        const birthYear = parseInt(ownerDob.slice(0, 4), 10);
-        if (year < birthYear + inc.claimingAge) continue;
-      }
+      if (inc.type === "social_security") continue;
       const inflateFrom = inc.inflationStartYear ?? inc.startYear;
       const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
       const tt = inc.taxType ?? legacyTaxType(inc.type);
@@ -858,19 +864,55 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       };
     }
 
+    // Sum self-employment earnings for SECA. Applies each income's own
+    // growth/schedule treatment (same way computeIncome does), so the SE
+    // number lines up with what the advisor sees as household business
+    // income. Only personal (non-entity) SE flows are taxed at the
+    // household level here.
+    let seEarnings = 0;
+    for (const inc of data.incomes) {
+      if (!inc.isSelfEmployment) continue;
+      if (year < inc.startYear || year > inc.endYear) continue;
+      if (inc.ownerEntityId != null && !isGrantorEntity(inc.ownerEntityId)) continue;
+      let amount: number;
+      if (inc.scheduleOverrides) {
+        amount = inc.scheduleOverrides.get(year) ?? 0;
+      } else {
+        const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+        amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
+      }
+      seEarnings += amount;
+    }
+    const secaResult = useBracket && resolved
+      ? calcSeca({
+          seEarnings,
+          ssTaxRate: resolved.params.ssTaxRate,
+          ssWageBase: resolved.params.ssWageBase,
+          medicareTaxRate: resolved.params.medicareTaxRate,
+          ficaSsWages: taxDetail.earnedIncome,
+        })
+      : { seTax: 0, deductibleHalf: 0 };
+    // Deductible-half-of-SE-tax is an above-the-line adjustment per §164(f).
+    const aboveLineWithSeca = aboveLineDeductions + secaResult.deductibleHalf;
+
+    // Split realization OI out of the generic ordinaryIncome bucket so NIIT
+    // (IRC §1411) can see investment interest while still excluding RMDs,
+    // IRA distributions, and SE earnings which ride in ordinaryIncome.
+    const interestIncomeForTax = realizationOI;
     const taxResult = useBracket
       ? calculateTaxYearBracket({
           year,
           filingStatus,
           earnedIncome: taxDetail.earnedIncome,
-          ordinaryIncome: taxDetail.ordinaryIncome,
+          ordinaryIncome: Math.max(0, taxDetail.ordinaryIncome - interestIncomeForTax),
+          interestIncome: interestIncomeForTax,
           qualifiedDividends: taxDetail.dividends,
           longTermCapitalGains: taxDetail.capitalGains,
           shortTermCapitalGains: taxDetail.stCapitalGains,
           qbiIncome: taxDetail.qbi,
           taxExemptIncome: taxDetail.taxExempt,
           socialSecurityGross: income.socialSecurity,
-          aboveLineDeductions,
+          aboveLineDeductions: aboveLineWithSeca,
           itemizedDeductions,
           flatStateRate: planSettings.flatStateRate,
           taxParams: resolved!.params,
@@ -881,12 +923,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           flatFederalRate: planSettings.flatFederalRate,
           flatStateRate: planSettings.flatStateRate,
           taxParams: resolved?.params ?? makeEmptyTaxParams(year),
+          // Flat mode doesn't model SS taxability, so SS (and anything else
+          // not rolled into `taxableIncome` above) surfaces as non-taxable so
+          // the UI's "Non-Taxable" / "Gross Total Income" columns reflect the
+          // advisor's actual cash picture instead of reading as stub zeros.
+          nonTaxableIncome: Math.max(0, income.total - taxableIncome),
         });
 
     // Early withdrawal penalty from transfers
     if (transferResult.earlyWithdrawalPenalty > 0) {
       taxResult.flow.totalTax += transferResult.earlyWithdrawalPenalty;
       taxResult.flow.totalFederalTax += transferResult.earlyWithdrawalPenalty;
+    }
+
+    // SECA tax rolls up into both totals — it's federal payroll tax.
+    if (secaResult.seTax > 0) {
+      taxResult.flow.totalTax += secaResult.seTax;
+      taxResult.flow.totalFederalTax += secaResult.seTax;
     }
 
     const taxes = taxResult.flow.totalTax;
@@ -903,16 +956,32 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     );
 
     // 6. Route each income to its cash account (override or default for owner).
+    // Prefer the per-source amount already resolved by `computeIncome` — that
+    // handles pia_at_fra (orchestrator), schedule overrides, spousal / survivor
+    // logic, and the no_benefit / deceased-spouse suppressions. Falling back
+    // to `annualAmount × growth^N` here would re-derive SS with legacy rules
+    // and credit a different number than `income.socialSecurity` shows (and
+    // than `socialSecurityGross` fed into the tax calc), producing three
+    // different SS numbers per row.
     for (const inc of data.incomes) {
       if (year < inc.startYear || year > inc.endYear) continue;
-      if (inc.type === "social_security" && inc.claimingAge != null) {
-        const ownerDob = inc.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
-        if (!ownerDob) continue;
-        const birthYear = parseInt(ownerDob.slice(0, 4), 10);
-        if (year < birthYear + inc.claimingAge) continue;
+      const resolved = income.bySource[inc.id] ?? grantorIncome.bySource[inc.id];
+      let amount: number;
+      if (resolved != null) {
+        amount = resolved;
+      } else {
+        // Non-grantor entity incomes (and anything else computeIncome filtered
+        // out): apply the same claimingAge gate and legacy growth compounding
+        // the previous implementation used.
+        if (inc.type === "social_security" && inc.claimingAge != null) {
+          const ownerDob = inc.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
+          if (!ownerDob) continue;
+          const birthYear = parseInt(ownerDob.slice(0, 4), 10);
+          if (year < birthYear + inc.claimingAge) continue;
+        }
+        const inflateFrom = inc.inflationStartYear ?? inc.startYear;
+        amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
       }
-      const inflateFrom = inc.inflationStartYear ?? inc.startYear;
-      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
       creditCash(resolveCashAccount(inc.ownerEntityId, inc.cashAccountId), amount, {
         category: "income",
         label: `Income: ${inc.name}`,

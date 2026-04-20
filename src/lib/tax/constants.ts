@@ -66,7 +66,18 @@ export const STATUTORY_FIXED = {
   addlMedicareThresholdMfs: 125000,
 } as const;
 
-// AMT exemption applies the phase-out at 25% of (AMTI - threshold).
+// AMT exemption phase-out rate.
+// - Pre-2026: 25% of (AMTI - threshold) (TCJA).
+// - 2026+: 50% per OBBBA §70106. This is the big difference: a MFJ client at
+//   AMTI $1.4M above the threshold loses ~2× as much exemption.
+//
+// Kept as a function (rather than a flat constant) so the engine can pick the
+// right rate by plan year. The old `AMT_PHASEOUT_RATE` constant stays exported
+// for any non-year-aware caller; new code should use `amtPhaseoutRate(year)`.
+export function amtPhaseoutRate(year: number): number {
+  return year >= 2026 ? 0.5 : 0.25;
+}
+/** @deprecated Use `amtPhaseoutRate(year)`. Retained for pre-2026 callers. */
 export const AMT_PHASEOUT_RATE = 0.25;
 
 // SS taxability formula constants (per IRS Pub 915).

@@ -58,9 +58,17 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
       return { taxableOrdinaryIncome: 0, capitalGain: 0, earlyWithdrawalPenalty: 0, label: "tax_free_rollover" };
     }
 
-    // Tax-deferred → Roth: Roth conversion (taxable, no penalty)
+    // Tax-deferred → Roth: Roth conversion (taxable, no penalty).
+    // Pro-rata basis calc differs by source:
+    //   - Traditional IRA source → Form 8606 aggregates ALL Trad IRAs
+    //     (allTraditionalIraBalance / allTraditionalIraBasis).
+    //   - 401(k) source → basis is per-plan, NOT aggregated across plans or
+    //     with Trad IRAs. Use this account's own balance and basis.
     if (sourceIsTaxDeferred && targetIsRoth) {
-      const taxableOrdinaryIncome = _calcTaxDeferredToRothIncome(amount, allTraditionalIraBasis, allTraditionalIraBalance);
+      const isIraSource = sourceSubType === "traditional_ira";
+      const basis = isIraSource ? allTraditionalIraBasis : sourceAccountBasis;
+      const balance = isIraSource ? allTraditionalIraBalance : sourceAccountValue;
+      const taxableOrdinaryIncome = _calcTaxDeferredToRothIncome(amount, basis, balance);
       return { taxableOrdinaryIncome, capitalGain: 0, earlyWithdrawalPenalty: 0, label: "roth_conversion" };
     }
 

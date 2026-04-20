@@ -15,14 +15,22 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
 
   // 1. Categorize income
   const earnedIncome = input.earnedIncome;
-  const ordinaryIncome = input.ordinaryIncome + input.shortTermCapitalGains; // ST CG taxed as ordinary
+  const interestIncome = input.interestIncome ?? 0;
+  // Ordinary bucket for bracket tax = non-qual div + RMDs/IRA dists + interest
+  // + STCG (ST gains taxed as ordinary). Interest is tracked separately only
+  // so NIIT can pick it up.
+  const ordinaryIncome = input.ordinaryIncome + interestIncome + input.shortTermCapitalGains;
   const dividends = input.qualifiedDividends;
   const capitalGains = input.longTermCapitalGains;
   const shortCapitalGains = input.shortTermCapitalGains;
 
-  // 2. SS taxability
-  const otherIncomeForSs =
+  // 2. SS taxability. Per IRS Pub 915 the "combined income" test uses AGI —
+  // i.e. gross taxable income minus above-the-line adjustments — not raw
+  // gross. Using gross over-taxes SS for clients making traditional 401(k) /
+  // HSA contributions, because those dollars would have come out before AGI.
+  const grossOther =
     earnedIncome + ordinaryIncome + dividends + capitalGains + input.qbiIncome;
+  const otherIncomeForSs = Math.max(0, grossOther - input.aboveLineDeductions);
   const taxableSocialSecurity = calcTaxableSocialSecurity({
     ssGross: input.socialSecurityGross,
     otherIncome: otherIncomeForSs,
@@ -82,19 +90,29 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
   // 10. AMT
   // Simplified AMTI: taxable income before QBI + nothing else added back in v1.
   // Real AMTI requires preference items. v1 uses taxable income before QBI as proxy.
+  // Form 6251 Part III: LTCG + qualified dividends inside AMTI are taxed at
+  // 0/15/20% (the same preferential rates as regular), not 26/28%. Passing
+  // them through so calcAmtTentative can split the base.
   const amti = taxableIncomeBeforeQbi;
   const amtParams = filingAmtParams(fs, p);
-  const tentativeAmt = calcAmtTentative(amti, amtParams);
+  const tentativeAmt = calcAmtTentative(amti, amtParams, {
+    year: input.year,
+    ltcgPlusQdiv: capitalGains + dividends,
+    capGainsBrackets: p.capGainsBrackets[fs],
+  });
   const amtAdditional = calcAmtAdditional(tentativeAmt, regularTaxCalc + capitalGainsTax);
 
   // 11. NIIT
   // Investment income for NIIT: qualified dividends + long-term cap gains +
-  // short-term cap gains. Per IRC §1411(c)(1)(A)(iii), net gains from
-  // dispositions of property (including STCG) belong in net investment income.
-  // input.ordinaryIncome (IRA distributions, RMDs, etc.) is excluded —
-  // only the pure investment streams are subject to NIIT in v1.
+  // short-term cap gains + taxable interest. Per IRC §1411(c)(1)(A)(i) and
+  // (iii), interest and net gains from dispositions of property are both
+  // part of net investment income. IRA distributions, RMDs, and SE earnings
+  // stay excluded (they're separately excluded by §1411(c)(5)&(6)).
   const niitInvestmentClean =
-    input.qualifiedDividends + input.longTermCapitalGains + input.shortTermCapitalGains;
+    input.qualifiedDividends +
+    input.longTermCapitalGains +
+    input.shortTermCapitalGains +
+    interestIncome;
   const niitThreshold = fs === "married_joint" ? p.niitThreshold.mfj
                        : fs === "married_separate" ? p.niitThreshold.mfs
                        : p.niitThreshold.single;

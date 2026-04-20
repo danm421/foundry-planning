@@ -141,20 +141,27 @@ function _resolveAmount(transfer: Transfer, year: number): number | null {
 }
 
 /**
- * Computes the aggregate balance and after-tax basis across all tax-deferred
- * accounts (traditional IRA and 401k) for the pro-rata rule.
+ * Computes the aggregate balance and after-tax basis across all Traditional
+ * IRAs for the Form 8606 pro-rata rule.
+ *
+ * IRS Form 8606 aggregates ONLY Traditional IRAs (including SEP and SIMPLE
+ * IRAs); 401(k) basis is tracked per-plan and NEVER rolls into the IRA
+ * aggregation pool. Folding 401(k) in here overstated the non-taxable
+ * fraction of a Trad-IRA → Roth conversion whenever the client had any
+ * after-tax 401(k) basis, under-reporting conversion income.
  */
 function _computeTradIraPool(
   accounts: Account[],
   accountBalances: Record<string, number>,
   basisMap: Record<string, number>,
 ): { allTraditionalIraBalance: number; allTraditionalIraBasis: number } {
-  const TRAD_SUBTYPES = new Set(["traditional_ira", "401k"]);
+  // Form 8606 aggregation pool: Trad IRAs only. 401(k) basis stays on the plan.
+  const TRAD_IRA_SUBTYPES = new Set(["traditional_ira", "sep_ira", "simple_ira"]);
   let allTraditionalIraBalance = 0;
   let allTraditionalIraBasis = 0;
 
   for (const account of accounts) {
-    if (account.category === "retirement" && TRAD_SUBTYPES.has(account.subType)) {
+    if (account.category === "retirement" && TRAD_IRA_SUBTYPES.has(account.subType)) {
       allTraditionalIraBalance += accountBalances[account.id] ?? 0;
       allTraditionalIraBasis += basisMap[account.id] ?? 0;
     }

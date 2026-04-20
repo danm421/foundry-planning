@@ -104,6 +104,12 @@ export interface Income {
   /** SS-specific. Resolves effective claim age at projection time.
    *  When unset, engine treats as "years" (legacy). */
   claimingAgeMode?: "years" | "fra" | "at_retirement";
+  /** Self-employment income flag. When true, the year's amount counts as
+   *  net SE earnings for SECA tax (both halves of FICA, plus deductible
+   *  half above-line). Does NOT change the cash-flow routing or how the
+   *  income shows in totals. Applies typically to schedule C / K-1 SE
+   *  streams on `business` type. Absent = treated as W-2-style for tax. */
+  isSelfEmployment?: boolean;
 }
 
 export interface Expense {
