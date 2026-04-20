@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, accounts } from "@/db/schema";
+import { clients, accounts, familyMembers } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
@@ -119,6 +119,43 @@ export async function PATCH(
         { error: "Cannot set both ownerEntityId and ownerFamilyMemberId" },
         { status: 400 },
       );
+    }
+
+    // Tenant-isolation: verify the family_member belongs to this client, and
+    // reject if the account already has an entity owner (owner precedence).
+    if (ownerFamilyMemberId) {
+      const [fm] = await db
+        .select({ id: familyMembers.id })
+        .from(familyMembers)
+        .where(
+          and(
+            eq(familyMembers.id, ownerFamilyMemberId),
+            eq(familyMembers.clientId, id),
+          ),
+        );
+      if (!fm) {
+        return NextResponse.json(
+          { error: "Family member not found for this client" },
+          { status: 400 },
+        );
+      }
+
+      const [account] = await db
+        .select({ ownerEntityId: accounts.ownerEntityId })
+        .from(accounts)
+        .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
+      if (!account) {
+        return NextResponse.json({ error: "Account not found" }, { status: 404 });
+      }
+      if (account.ownerEntityId) {
+        return NextResponse.json(
+          {
+            error:
+              "Cannot set ownerFamilyMemberId while the account has an entity owner. Clear ownerEntityId first.",
+          },
+          { status: 400 },
+        );
+      }
     }
 
     const [updated] = await db

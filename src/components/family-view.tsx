@@ -52,6 +52,7 @@ export type AccountLite = {
   name: string;
   category: string;
   ownerFamilyMemberId: string | null;
+  ownerEntityId: string | null;
 };
 
 export type Tier = "primary" | "contingent";
@@ -934,6 +935,7 @@ export default function FamilyView({
                     <label className="text-sm text-gray-300">Owned by family member:</label>
                     <select
                       value={a.ownerFamilyMemberId ?? ""}
+                      disabled={!!a.ownerEntityId}
                       onChange={async (e) => {
                         const v = e.target.value || null;
                         const res = await fetch(
@@ -952,7 +954,7 @@ export default function FamilyView({
                           );
                         }
                       }}
-                      className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                      className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <option value="">— none —</option>
                       {members.map((m) => (
@@ -961,6 +963,9 @@ export default function FamilyView({
                         </option>
                       ))}
                     </select>
+                    {a.ownerEntityId ? (
+                      <span className="text-xs text-gray-400">Owned by an entity; clear entity owner first.</span>
+                    ) : null}
                   </div>
 
                   <BeneficiaryEditor

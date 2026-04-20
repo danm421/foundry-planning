@@ -209,4 +209,26 @@ d("beneficiaries tenant isolation", () => {
     );
     expect(res.status).toBe(400);
   });
+
+  it("Firm A cannot PATCH its account with Firm B's family member as owner", async () => {
+    const a = await setupFirmWithClient(FIRM_A);
+    const b = await setupFirmWithClient(FIRM_B);
+    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    const { PATCH } = await import(
+      "@/app/api/clients/[id]/accounts/[accountId]/route"
+    );
+    const body = { ownerFamilyMemberId: b.fmId };
+    const res = await PATCH(
+      new Request("http://x", {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      }) as any,
+      {
+        params: Promise.resolve({ id: a.clientId, accountId: a.accountId }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+    );
+    expect(res.status).toBe(400);
+  });
 });

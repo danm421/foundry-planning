@@ -90,6 +90,7 @@ export default async function FamilyPage({ params }: PageProps) {
     name: a.name,
     category: a.category,
     ownerFamilyMemberId: a.ownerFamilyMemberId ?? null,
+    ownerEntityId: a.ownerEntityId ?? null,
   }));
 
   const designations: Designation[] = designationRows.map((d) => ({
