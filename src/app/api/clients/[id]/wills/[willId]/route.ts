@@ -8,68 +8,68 @@ import {
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
-import { willCreateSchema } from "@/lib/schemas/wills";
+import { willUpdateSchema } from "@/lib/schemas/wills";
 import {
   gatherCrossRefs,
   verifyCrossRefs,
   computeSoftWarnings,
-} from "./_helpers";
+} from "../_helpers";
 
 export const dynamic = "force-dynamic";
 
 async function verifyClient(clientId: string, firmId: string) {
   const [row] = await db
-    .select()
+    .select({ id: clients.id })
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
   return !!row;
 }
 
+async function verifyWillBelongsToClient(willId: string, clientId: string) {
+  const [row] = await db
+    .select({ id: wills.id })
+    .from(wills)
+    .where(and(eq(wills.id, willId), eq(wills.clientId, clientId)));
+  return !!row;
+}
+
 export async function GET(
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string; willId: string }> },
 ) {
   try {
     const firmId = await getOrgId();
-    const { id } = await params;
+    const { id, willId } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
-    const willRows = await db
-      .select()
-      .from(wills)
-      .where(eq(wills.clientId, id))
-      .orderBy(asc(wills.grantor));
-    if (willRows.length === 0) return NextResponse.json([]);
-
-    const willIds = willRows.map((w) => w.id);
+    if (!(await verifyWillBelongsToClient(willId, id))) {
+      return NextResponse.json({ error: "Will not found" }, { status: 404 });
+    }
+    const [willRow] = await db.select().from(wills).where(eq(wills.id, willId));
     const bequestRows = await db
       .select()
       .from(willBequests)
-      .where(inArray(willBequests.willId, willIds))
-      .orderBy(asc(willBequests.willId), asc(willBequests.sortOrder));
+      .where(eq(willBequests.willId, willId))
+      .orderBy(asc(willBequests.sortOrder));
     const bequestIds = bequestRows.map((b) => b.id);
     const recipientRows = bequestIds.length
       ? await db
           .select()
           .from(willBequestRecipients)
           .where(inArray(willBequestRecipients.bequestId, bequestIds))
-          .orderBy(
-            asc(willBequestRecipients.bequestId),
-            asc(willBequestRecipients.sortOrder),
-          )
+          .orderBy(asc(willBequestRecipients.sortOrder))
       : [];
-
     const recipientsByBequest = new Map<string, typeof recipientRows>();
     for (const r of recipientRows) {
       const list = recipientsByBequest.get(r.bequestId) ?? [];
       list.push(r);
       recipientsByBequest.set(r.bequestId, list);
     }
-    const bequestsByWill = new Map<string, unknown[]>();
-    for (const b of bequestRows) {
-      const list = bequestsByWill.get(b.willId) ?? [];
-      list.push({
+    return NextResponse.json({
+      id: willRow.id,
+      grantor: willRow.grantor,
+      bequests: bequestRows.map((b) => ({
         id: b.id,
         name: b.name,
         assetMode: b.assetMode,
@@ -84,72 +84,54 @@ export async function GET(
           percentage: parseFloat(r.percentage),
           sortOrder: r.sortOrder,
         })),
-      });
-      bequestsByWill.set(b.willId, list);
-    }
-    return NextResponse.json(
-      willRows.map((w) => ({
-        id: w.id,
-        grantor: w.grantor,
-        bequests: bequestsByWill.get(w.id) ?? [],
       })),
-    );
+    });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.error("GET /api/clients/[id]/wills error:", err);
+    console.error("GET /api/clients/[id]/wills/[willId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
-export async function POST(
+export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string; willId: string }> },
 ) {
   try {
     const firmId = await getOrgId();
-    const { id } = await params;
+    const { id, willId } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
+    if (!(await verifyWillBelongsToClient(willId, id))) {
+      return NextResponse.json({ error: "Will not found" }, { status: 404 });
+    }
     const body = await request.json();
-    const parsed = willCreateSchema.safeParse(body);
+    const parsed = willUpdateSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid body", issues: parsed.error.issues },
         { status: 400 },
       );
     }
-    const data = parsed.data;
+    const { bequests } = parsed.data;
 
-    // Duplicate (client_id, grantor) check
-    const [existing] = await db
-      .select({ id: wills.id })
-      .from(wills)
-      .where(and(eq(wills.clientId, id), eq(wills.grantor, data.grantor)));
-    if (existing) {
-      return NextResponse.json(
-        { error: `A will already exists for grantor='${data.grantor}'` },
-        { status: 409 },
-      );
-    }
-
-    const crossRefError = await verifyCrossRefs(id, gatherCrossRefs(data.bequests));
+    const crossRefError = await verifyCrossRefs(id, gatherCrossRefs(bequests));
     if (crossRefError) {
       return NextResponse.json({ error: crossRefError }, { status: 400 });
     }
 
-    const willId = await db.transaction(async (tx) => {
-      const [willRow] = await tx
-        .insert(wills)
-        .values({ clientId: id, grantor: data.grantor })
-        .returning();
-      for (const b of data.bequests) {
+    // Transactional full-replace: delete existing bequests (cascades to
+    // recipients), then re-insert. Mirrors the gifts/beneficiaries patterns.
+    await db.transaction(async (tx) => {
+      await tx.delete(willBequests).where(eq(willBequests.willId, willId));
+      for (const b of bequests) {
         const [bequestRow] = await tx
           .insert(willBequests)
           .values({
-            willId: willRow.id,
+            willId,
             name: b.name,
             assetMode: b.assetMode,
             accountId: b.accountId ?? null,
@@ -170,18 +152,45 @@ export async function POST(
           );
         }
       }
-      return willRow.id;
+      await tx
+        .update(wills)
+        .set({ updatedAt: new Date() })
+        .where(eq(wills.id, willId));
     });
 
-    return NextResponse.json(
-      { id: willId, warnings: computeSoftWarnings(data.bequests) },
-      { status: 201 },
-    );
+    return NextResponse.json({
+      id: willId,
+      warnings: computeSoftWarnings(bequests),
+    });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.error("POST /api/clients/[id]/wills error:", err);
+    console.error("PATCH /api/clients/[id]/wills/[willId] error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string; willId: string }> },
+) {
+  try {
+    const firmId = await getOrgId();
+    const { id, willId } = await params;
+    if (!(await verifyClient(id, firmId))) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+    if (!(await verifyWillBelongsToClient(willId, id))) {
+      return NextResponse.json({ error: "Will not found" }, { status: 404 });
+    }
+    await db.delete(wills).where(eq(wills.id, willId));
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    if (err instanceof Error && err.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    console.error("DELETE /api/clients/[id]/wills/[willId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
