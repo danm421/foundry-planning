@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, scenarios, assetTransactions } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -116,37 +116,43 @@ export async function POST(
       return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
     }
 
-    const [created] = await db
-      .insert(assetTransactions)
-      .values({
-        clientId: id,
-        scenarioId,
-        name,
-        type,
-        year,
-        // Sale fields
-        accountId: accountId ?? null,
-        overrideSaleValue: toStr(overrideSaleValue),
-        overrideBasis: toStr(overrideBasis),
-        transactionCostPct: toStr(transactionCostPct),
-        transactionCostFlat: toStr(transactionCostFlat),
-        proceedsAccountId: proceedsAccountId ?? null,
-        qualifiesForHomeSaleExclusion: qualifiesForHomeSaleExclusion ?? false,
-        // Buy fields
-        assetName: assetName ?? null,
-        assetCategory: assetCategory ?? null,
-        assetSubType: assetSubType ?? null,
-        purchasePrice: toStr(purchasePrice),
-        growthRate: toStr(growthRate),
-        growthSource: growthSource ?? null,
-        modelPortfolioId: modelPortfolioId ?? null,
-        basis: toStr(basis),
-        fundingAccountId: fundingAccountId ?? null,
-        mortgageAmount: toStr(mortgageAmount),
-        mortgageRate: toStr(mortgageRate),
-        mortgageTermMonths: mortgageTermMonths ?? null,
-      })
-      .returning();
+    let created!: typeof assetTransactions.$inferSelect;
+    await auditedMutation(
+      { action: 'asset_transaction.create', resourceType: 'asset_transaction', resourceId: 'pending', metadata: { after: body } },
+      async () => {
+        [created] = await db
+          .insert(assetTransactions)
+          .values({
+            clientId: id,
+            scenarioId,
+            name,
+            type,
+            year,
+            // Sale fields
+            accountId: accountId ?? null,
+            overrideSaleValue: toStr(overrideSaleValue),
+            overrideBasis: toStr(overrideBasis),
+            transactionCostPct: toStr(transactionCostPct),
+            transactionCostFlat: toStr(transactionCostFlat),
+            proceedsAccountId: proceedsAccountId ?? null,
+            qualifiesForHomeSaleExclusion: qualifiesForHomeSaleExclusion ?? false,
+            // Buy fields
+            assetName: assetName ?? null,
+            assetCategory: assetCategory ?? null,
+            assetSubType: assetSubType ?? null,
+            purchasePrice: toStr(purchasePrice),
+            growthRate: toStr(growthRate),
+            growthSource: growthSource ?? null,
+            modelPortfolioId: modelPortfolioId ?? null,
+            basis: toStr(basis),
+            fundingAccountId: fundingAccountId ?? null,
+            mortgageAmount: toStr(mortgageAmount),
+            mortgageRate: toStr(mortgageRate),
+            mortgageTermMonths: mortgageTermMonths ?? null,
+          })
+          .returning();
+      }
+    );
 
     return NextResponse.json(created, { status: 201 });
   } catch (err) {
@@ -230,38 +236,44 @@ export async function PUT(
       return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
     }
 
-    const [updated] = await db
-      .update(assetTransactions)
-      .set({
-        // Direct fields
-        name: name !== undefined ? name : undefined,
-        type: type ?? undefined,
-        year: year ?? undefined,
-        accountId: accountId !== undefined ? accountId : undefined,
-        proceedsAccountId: proceedsAccountId !== undefined ? proceedsAccountId : undefined,
-        qualifiesForHomeSaleExclusion:
-          qualifiesForHomeSaleExclusion !== undefined ? qualifiesForHomeSaleExclusion : undefined,
-        assetName: assetName !== undefined ? assetName : undefined,
-        assetCategory: assetCategory !== undefined ? assetCategory : undefined,
-        assetSubType: assetSubType !== undefined ? assetSubType : undefined,
-        growthSource: growthSource !== undefined ? growthSource : undefined,
-        modelPortfolioId: modelPortfolioId !== undefined ? modelPortfolioId : undefined,
-        fundingAccountId: fundingAccountId !== undefined ? fundingAccountId : undefined,
-        mortgageTermMonths: mortgageTermMonths !== undefined ? mortgageTermMonths : undefined,
-        // Decimal fields
-        overrideSaleValue: overrideSaleValue !== undefined ? toStr(overrideSaleValue) : undefined,
-        overrideBasis: overrideBasis !== undefined ? toStr(overrideBasis) : undefined,
-        transactionCostPct: transactionCostPct !== undefined ? toStr(transactionCostPct) : undefined,
-        transactionCostFlat: transactionCostFlat !== undefined ? toStr(transactionCostFlat) : undefined,
-        purchasePrice: purchasePrice !== undefined ? toStr(purchasePrice) : undefined,
-        growthRate: growthRate !== undefined ? toStr(growthRate) : undefined,
-        basis: basis !== undefined ? toStr(basis) : undefined,
-        mortgageAmount: mortgageAmount !== undefined ? toStr(mortgageAmount) : undefined,
-        mortgageRate: mortgageRate !== undefined ? toStr(mortgageRate) : undefined,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)))
-      .returning();
+    let updated: typeof assetTransactions.$inferSelect | undefined;
+    await auditedMutation(
+      { action: 'asset_transaction.update', resourceType: 'asset_transaction', resourceId: transactionId, metadata: { before: existing, after: rest } },
+      async () => {
+        [updated] = await db
+          .update(assetTransactions)
+          .set({
+            // Direct fields
+            name: name !== undefined ? name : undefined,
+            type: type ?? undefined,
+            year: year ?? undefined,
+            accountId: accountId !== undefined ? accountId : undefined,
+            proceedsAccountId: proceedsAccountId !== undefined ? proceedsAccountId : undefined,
+            qualifiesForHomeSaleExclusion:
+              qualifiesForHomeSaleExclusion !== undefined ? qualifiesForHomeSaleExclusion : undefined,
+            assetName: assetName !== undefined ? assetName : undefined,
+            assetCategory: assetCategory !== undefined ? assetCategory : undefined,
+            assetSubType: assetSubType !== undefined ? assetSubType : undefined,
+            growthSource: growthSource !== undefined ? growthSource : undefined,
+            modelPortfolioId: modelPortfolioId !== undefined ? modelPortfolioId : undefined,
+            fundingAccountId: fundingAccountId !== undefined ? fundingAccountId : undefined,
+            mortgageTermMonths: mortgageTermMonths !== undefined ? mortgageTermMonths : undefined,
+            // Decimal fields
+            overrideSaleValue: overrideSaleValue !== undefined ? toStr(overrideSaleValue) : undefined,
+            overrideBasis: overrideBasis !== undefined ? toStr(overrideBasis) : undefined,
+            transactionCostPct: transactionCostPct !== undefined ? toStr(transactionCostPct) : undefined,
+            transactionCostFlat: transactionCostFlat !== undefined ? toStr(transactionCostFlat) : undefined,
+            purchasePrice: purchasePrice !== undefined ? toStr(purchasePrice) : undefined,
+            growthRate: growthRate !== undefined ? toStr(growthRate) : undefined,
+            basis: basis !== undefined ? toStr(basis) : undefined,
+            mortgageAmount: mortgageAmount !== undefined ? toStr(mortgageAmount) : undefined,
+            mortgageRate: mortgageRate !== undefined ? toStr(mortgageRate) : undefined,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)))
+          .returning();
+      }
+    );
 
     return NextResponse.json(updated);
   } catch (err) {
@@ -305,9 +317,14 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    await db
-      .delete(assetTransactions)
-      .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)));
+    await auditedMutation(
+      { action: 'asset_transaction.delete', resourceType: 'asset_transaction', resourceId: transactionId, metadata: { before: existing } },
+      async () => {
+        await db
+          .delete(assetTransactions)
+          .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)));
+      }
+    );
 
     return NextResponse.json({ ok: true });
   } catch (err) {
