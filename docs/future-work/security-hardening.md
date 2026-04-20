@@ -2,7 +2,37 @@
 
 Week-1 (C1-C4, C7, H2), week-2 (H1, H4 partial, H5, H9, most Mediums),
 and week-3 (H3, H6, H7, H8, C5, CMA role checks, audit_log table) all
-shipped on `security-hardening`. Still open:
+shipped on `security-hardening`.
+
+## Closed 2026-04-20 (second-look audit session)
+
+The original audit was re-verified against live `main` and these
+remaining items were closed:
+
+- **`requireOrgId()` rollout** — all 41 `/api/clients/**` and
+  `/api/cma/**` handlers swapped from `getOrgId()` → `requireOrgId()`
+  (commit `5adee60`). Orgless users now 401 on PII routes instead of
+  silently getting a `userId`-keyed ghost workspace.
+- **Orgless UX** — new `/select-organization` page + middleware
+  redirect so signed-in-but-orgless users hit the Clerk org picker
+  before they can reach any firm-scoped route (commit `bcf9d81`).
+- **Audit log coverage gap** — `recordAudit()` extended to every
+  mutating handler in the tree: 56 call sites across 38 route files
+  covering all resource families' create / update / delete
+  (commit `bcf9d81`). `AuditAction` enum expanded accordingly.
+- **CSP report endpoint** — `/api/csp-report` now accepts both
+  legacy (`report-uri`) and modern (`Reporting-Endpoints` /
+  `report-to`) violation payloads; sanitized summaries log to
+  stdout so ops can observe before flipping to enforcing
+  (commit `df90513`). CSP-enforce itself still deferred (see below).
+- **extra-payments mass assignment** — last `…body` spread on a
+  mutation handler patched with the same identity-strip pattern
+  used on `clients/[id]` PUT (commit `5adee60`).
+- **`clients/[id]` PUT strip → allowlist** — converted to an explicit
+  `MUTABLE_CLIENT_FIELDS` allowlist so a future sensitive schema
+  column can't silently become user-writable (commit `df90513`).
+
+## Still open
 
 - **zod coverage gap** — schemas shipped for: `allocations` PUT,
   `asset-classes` PUT, `clients` POST. Reusable schemas defined for
@@ -10,9 +40,9 @@ shipped on `security-hardening`. Still open:
   `src/lib/schemas/resources.ts` but not yet wired into the handlers.
   Pattern established in `src/lib/schemas/common.ts`; each remaining
   route is a 3-line drop-in (import + parseBody + destructure from
-  parsed.data). _Why deferred: risk-adjusted — the unwired routes
-  already have mass-assignment guards (C3) and FK validation (H6);
-  zod is belt-and-braces._
+  parsed.data). ~25 POST/PUT handlers still unscoped. _Why deferred:
+  risk-adjusted — the unwired routes already have mass-assignment
+  guards (C3) and FK validation (H6); zod is belt-and-braces._
 - **C6** — Azure OpenAI abuse-monitoring exemption. _Why deferred:
   procurement step; steps live in `docs/SECURITY_RUNBOOK.md` §1._
 - **Two-firm HTTP integration test** — structural invariant is enforced
@@ -22,17 +52,11 @@ shipped on `security-hardening`. Still open:
 - **Sentry wiring with PII scrubbing + Clerk user context.** _Why
   deferred: would pull a third logging stack in; revisit after first
   real incident._
-- **CSP enforce (drop Report-Only)** — needs report endpoint + 2 weeks
-  of prod data. _Steps in `docs/SECURITY_RUNBOOK.md` §3._
-- **`requireOrgId()` rollout** — the strict helper exists but no
-  client-facing handlers have been swapped over. _Why deferred: needs
-  product input on whether users ever legitimately operate outside an
-  org._
-- **Audit log coverage gap** — `recordAudit()` is wired into
-  client/account/liability/CMA deletes (the high-risk destructive set).
-  Incomes, expenses, entities, family-members, deductions, transfers,
-  asset-transactions, savings-rules deletes are not yet audited.
-  _Why deferred: follow-up sweep, pattern established._
+- **CSP enforce (drop Report-Only)** — report endpoint now live
+  (`/api/csp-report`). Needs ~1–2 weeks of clean violation logs in
+  prod before flipping the header name in `next.config.ts` from
+  `Content-Security-Policy-Report-Only` to `Content-Security-Policy`.
+  _Steps in `docs/SECURITY_RUNBOOK.md` §3._
 - **Vercel prod env: Clerk test keys in use.** The Vercel project
   currently ships `pk_test_…` / `sk_test_…` Clerk credentials. That
   points prod at Clerk's test instance — test users, no production
