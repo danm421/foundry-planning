@@ -40,6 +40,34 @@ export interface Entity {
 const BUSINESS_ENTITY_TYPES: EntityType[] = ["llc", "s_corp", "c_corp", "partnership", "other"];
 const TRUST_LIKE_ENTITY_TYPES: EntityType[] = ["trust", "foundation"];
 
+export type ExternalBeneficiary = {
+  id: string;
+  name: string;
+  kind: "charity" | "individual";
+  notes: string | null;
+};
+
+export type AccountLite = {
+  id: string;
+  name: string;
+  category: string;
+  ownerFamilyMemberId: string | null;
+};
+
+export type Tier = "primary" | "contingent";
+
+export type Designation = {
+  id: string;
+  targetKind: "account" | "trust";
+  accountId: string | null;
+  entityId: string | null;
+  tier: Tier;
+  familyMemberId: string | null;
+  externalBeneficiaryId: string | null;
+  percentage: number;
+  sortOrder: number;
+};
+
 export interface PrimaryInfo {
   firstName: string;
   lastName: string;
@@ -59,6 +87,9 @@ interface FamilyViewProps {
   primary: PrimaryInfo;
   initialMembers: FamilyMember[];
   initialEntities: Entity[];
+  initialExternalBeneficiaries: ExternalBeneficiary[];
+  initialAccounts: AccountLite[];
+  initialDesignations: Designation[];
 }
 
 const RELATIONSHIP_LABELS: Record<Relationship, string> = {
@@ -583,9 +614,20 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
 
 // ── Main Family View ──────────────────────────────────────────────────────────
 
-export default function FamilyView({ clientId, primary, initialMembers, initialEntities }: FamilyViewProps) {
+export default function FamilyView({
+  clientId,
+  primary,
+  initialMembers,
+  initialEntities,
+  initialExternalBeneficiaries,
+  initialAccounts,
+  initialDesignations,
+}: FamilyViewProps) {
   const [members, setMembers] = useState<FamilyMember[]>(initialMembers);
   const [entities, setEntities] = useState<Entity[]>(initialEntities);
+  const [externals, setExternals] = useState<ExternalBeneficiary[]>(initialExternalBeneficiaries);
+  const [accts, setAccts] = useState<AccountLite[]>(initialAccounts);
+  const [designations, setDesignations] = useState<Designation[]>(initialDesignations);
 
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<FamilyMember | undefined>();
@@ -848,6 +890,157 @@ export default function FamilyView({ clientId, primary, initialMembers, initialE
         )}
       </section>
 
+      {/* External Beneficiaries */}
+      <ExternalBeneficiariesSection
+        clientId={clientId}
+        externals={externals}
+        setExternals={setExternals}
+      />
+
+      {/* Account Beneficiaries */}
+      <section>
+        <header className="mb-3">
+          <h2 className="text-xl font-bold text-gray-100">Account Beneficiaries</h2>
+          <p className="text-xs text-gray-500">
+            Primary and contingent beneficiary designations per account. Also set optional
+            owner override for individual family members (e.g., UTMA).
+          </p>
+        </header>
+
+        {accts.length === 0 ? (
+          <EmptyState label="No accounts yet." />
+        ) : (
+          <div className="space-y-2">
+            {accts.map((a) => {
+              const rows = designations.filter(
+                (d) => d.targetKind === "account" && d.accountId === a.id,
+              );
+              return (
+                <details
+                  key={a.id}
+                  className="rounded-lg border border-gray-800 bg-gray-900/50 p-3"
+                >
+                  <summary className="cursor-pointer text-sm text-gray-100 flex items-center justify-between">
+                    <span>
+                      <span className="font-medium">{a.name}</span>
+                      <span className="ml-2 text-xs text-gray-500">{a.category}</span>
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {rows.length} designation{rows.length === 1 ? "" : "s"}
+                    </span>
+                  </summary>
+
+                  <div className="mt-3 flex items-center gap-2">
+                    <label className="text-sm text-gray-300">Owned by family member:</label>
+                    <select
+                      value={a.ownerFamilyMemberId ?? ""}
+                      onChange={async (e) => {
+                        const v = e.target.value || null;
+                        const res = await fetch(
+                          `/api/clients/${clientId}/accounts/${a.id}`,
+                          {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ ownerFamilyMemberId: v }),
+                          },
+                        );
+                        if (res.ok) {
+                          setAccts((rows) =>
+                            rows.map((r) =>
+                              r.id === a.id ? { ...r, ownerFamilyMemberId: v } : r,
+                            ),
+                          );
+                        }
+                      }}
+                      className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                    >
+                      <option value="">— none —</option>
+                      {members.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.firstName} {m.lastName ?? ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <BeneficiaryEditor
+                    target={{ kind: "account", accountId: a.id }}
+                    clientId={clientId}
+                    members={members}
+                    externals={externals}
+                    initial={rows}
+                    onSaved={(savedRows) => {
+                      setDesignations((prev) => [
+                        ...prev.filter(
+                          (d) => !(d.targetKind === "account" && d.accountId === a.id),
+                        ),
+                        ...savedRows,
+                      ]);
+                    }}
+                  />
+                </details>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Trust Remainder Beneficiaries */}
+      <section>
+        <header className="mb-3">
+          <h2 className="text-xl font-bold text-gray-100">Trust Remainder Beneficiaries</h2>
+          <p className="text-xs text-gray-500">
+            Designations for trust remainder distributions.
+          </p>
+        </header>
+
+        {entities.filter((e) => e.entityType === "trust").length === 0 ? (
+          <EmptyState label="No trusts defined." />
+        ) : (
+          <div className="space-y-2">
+            {entities
+              .filter((e) => e.entityType === "trust")
+              .map((ent) => {
+                const rows = designations.filter(
+                  (d) => d.targetKind === "trust" && d.entityId === ent.id,
+                );
+                return (
+                  <details
+                    key={ent.id}
+                    className="rounded-lg border border-gray-800 bg-gray-900/50 p-3"
+                  >
+                    <summary className="cursor-pointer text-sm text-gray-100 flex items-center justify-between">
+                      <span>
+                        <span className="font-medium">{ent.name}</span>
+                        <span className="ml-2 text-xs text-gray-500">Trust</span>
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {rows.length} designation{rows.length === 1 ? "" : "s"}
+                      </span>
+                    </summary>
+
+                    <BeneficiaryEditor
+                      target={{ kind: "trust", entityId: ent.id }}
+                      clientId={clientId}
+                      members={members}
+                      externals={externals}
+                      initial={rows}
+                      onSaved={(savedRows) => {
+                        setDesignations((prev) => [
+                          ...prev.filter(
+                            (d) => !(d.targetKind === "trust" && d.entityId === ent.id),
+                          ),
+                          ...savedRows,
+                        ]);
+                      }}
+                    />
+                  </details>
+                );
+              })}
+          </div>
+        )}
+      </section>
+
       <FamilyMemberDialog
         clientId={clientId}
         open={memberDialogOpen}
@@ -942,6 +1135,454 @@ function EmptyState({ label }: { label: string }) {
   return (
     <div className="rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-8 text-center text-sm text-gray-500">
       {label}
+    </div>
+  );
+}
+
+// ── External Beneficiaries Section ────────────────────────────────────────────
+
+function ExternalBeneficiariesSection({
+  clientId,
+  externals,
+  setExternals,
+}: {
+  clientId: string;
+  externals: ExternalBeneficiary[];
+  setExternals: React.Dispatch<React.SetStateAction<ExternalBeneficiary[]>>;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [deleting, setDeleting] = useState<ExternalBeneficiary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <section>
+      <header className="mb-3 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-100">External Beneficiaries</h2>
+          <p className="text-xs text-gray-500">
+            Charities or individuals outside the immediate household.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {externals.length > 0 && (
+            <button
+              onClick={() => setEditMode((v) => !v)}
+              className={`rounded-md border px-3 py-1 text-xs font-medium ${
+                editMode
+                  ? "border-blue-600 bg-blue-900/40 text-blue-300"
+                  : "border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-800"
+              }`}
+            >
+              {editMode ? "Done" : "Edit"}
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setEditingId(null);
+              setAdding(true);
+            }}
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+          >
+            + Add
+          </button>
+        </div>
+      </header>
+
+      {error && (
+        <p className="mb-2 rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
+      )}
+
+      {externals.length === 0 && !adding ? (
+        <EmptyState label="No external beneficiaries yet." />
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">
+          <table className="min-w-full divide-y divide-gray-800">
+            <thead className="bg-gray-800/60">
+              <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-400">
+                <th className="px-4 py-2">Name</th>
+                <th className="px-4 py-2">Kind</th>
+                <th className="px-4 py-2">Notes</th>
+                <th className="px-4 py-2" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800">
+              {externals.map((x) =>
+                editingId === x.id ? (
+                  <ExternalBeneficiaryRowForm
+                    key={x.id}
+                    clientId={clientId}
+                    initial={x}
+                    onCancel={() => setEditingId(null)}
+                    onSaved={(saved) => {
+                      setExternals((prev) =>
+                        prev.map((p) => (p.id === saved.id ? saved : p)),
+                      );
+                      setEditingId(null);
+                    }}
+                    onError={setError}
+                  />
+                ) : (
+                  <tr
+                    key={x.id}
+                    className="cursor-pointer hover:bg-gray-800/50"
+                    onClick={() => {
+                      if (editMode) return;
+                      setEditingId(x.id);
+                    }}
+                  >
+                    <td className="px-4 py-2 text-sm text-gray-100">{x.name}</td>
+                    <td className="px-4 py-2 text-sm text-gray-400 capitalize">{x.kind}</td>
+                    <td className="px-4 py-2 text-sm text-gray-500 truncate max-w-[260px]">
+                      {x.notes ?? ""}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {editMode && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleting(x);
+                          }}
+                          className="text-gray-500 hover:text-red-400"
+                          aria-label={`Delete ${x.name}`}
+                        >
+                          <TrashIcon />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ),
+              )}
+              {adding && (
+                <ExternalBeneficiaryRowForm
+                  clientId={clientId}
+                  onCancel={() => setAdding(false)}
+                  onSaved={(saved) => {
+                    setExternals((prev) => [...prev, saved]);
+                    setAdding(false);
+                  }}
+                  onError={setError}
+                />
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <ConfirmDeleteDialog
+        open={!!deleting}
+        title="Delete External Beneficiary"
+        message={deleting ? `Delete ${deleting.name}?` : ""}
+        onCancel={() => setDeleting(null)}
+        onConfirm={async () => {
+          if (!deleting) return;
+          const res = await fetch(
+            `/api/clients/${clientId}/external-beneficiaries/${deleting.id}`,
+            { method: "DELETE" },
+          );
+          if (res.ok || res.status === 204) {
+            setExternals((prev) => prev.filter((x) => x.id !== deleting.id));
+            setDeleting(null);
+          } else {
+            const j = await res.json().catch(() => ({}));
+            setError(j.error ?? `Failed to delete (HTTP ${res.status})`);
+            setDeleting(null);
+          }
+        }}
+      />
+    </section>
+  );
+}
+
+function ExternalBeneficiaryRowForm({
+  clientId,
+  initial,
+  onCancel,
+  onSaved,
+  onError,
+}: {
+  clientId: string;
+  initial?: ExternalBeneficiary;
+  onCancel: () => void;
+  onSaved: (saved: ExternalBeneficiary) => void;
+  onError: (msg: string | null) => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [kind, setKind] = useState<"charity" | "individual">(initial?.kind ?? "charity");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    if (!name.trim()) {
+      onError("Name is required");
+      return;
+    }
+    setSaving(true);
+    onError(null);
+    try {
+      const isEdit = Boolean(initial);
+      const url = isEdit
+        ? `/api/clients/${clientId}/external-beneficiaries/${initial!.id}`
+        : `/api/clients/${clientId}/external-beneficiaries`;
+      const res = await fetch(url, {
+        method: isEdit ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), kind, notes: notes.trim() || null }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? `HTTP ${res.status}`);
+      }
+      const saved = (await res.json()) as ExternalBeneficiary;
+      onSaved(saved);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <tr className="bg-gray-800/30">
+      <td className="px-4 py-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name"
+          className="w-full rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+        />
+      </td>
+      <td className="px-4 py-2">
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as "charity" | "individual")}
+          className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+        >
+          <option value="charity">Charity</option>
+          <option value="individual">Individual</option>
+        </select>
+      </td>
+      <td className="px-4 py-2">
+        <input
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Notes"
+          className="w-full rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+        />
+      </td>
+      <td className="px-4 py-2 text-right whitespace-nowrap">
+        <button
+          onClick={submit}
+          disabled={saving}
+          className="mr-2 rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          {saving ? "…" : "Save"}
+        </button>
+        <button
+          onClick={onCancel}
+          className="rounded-md border border-gray-600 bg-gray-900 px-3 py-1 text-xs font-medium text-gray-300 hover:bg-gray-800"
+        >
+          Cancel
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+// ── Beneficiary Editor ────────────────────────────────────────────────────────
+
+function BeneficiaryEditor(props: {
+  target: { kind: "account"; accountId: string } | { kind: "trust"; entityId: string };
+  clientId: string;
+  members: FamilyMember[];
+  externals: ExternalBeneficiary[];
+  initial: Designation[];
+  onSaved: (rows: Designation[]) => void;
+}) {
+  const [rows, setRows] = useState<Designation[]>(props.initial);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const byTier = (tier: Tier) => rows.filter((r) => r.tier === tier);
+  const sumTier = (tier: Tier) =>
+    byTier(tier).reduce((acc, r) => acc + (isFinite(r.percentage) ? r.percentage : 0), 0);
+
+  const url =
+    props.target.kind === "account"
+      ? `/api/clients/${props.clientId}/accounts/${props.target.accountId}/beneficiaries`
+      : `/api/clients/${props.clientId}/entities/${props.target.entityId}/beneficiaries`;
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const body = rows.map((r) => ({
+        tier: r.tier,
+        percentage: r.percentage,
+        familyMemberId: r.familyMemberId ?? undefined,
+        externalBeneficiaryId: r.externalBeneficiaryId ?? undefined,
+        sortOrder: r.sortOrder,
+      }));
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? `HTTP ${res.status}`);
+      }
+      const saved = (await res.json()) as Designation[];
+      const normalized = saved.map((d) => ({
+        ...d,
+        percentage:
+          typeof d.percentage === "string" ? parseFloat(d.percentage) : d.percentage,
+      }));
+      setRows(normalized);
+      props.onSaved(normalized);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function addRow(tier: Tier) {
+    setRows((r) => [
+      ...r,
+      {
+        id: `tmp-${Math.random()}`,
+        targetKind: props.target.kind,
+        accountId: props.target.kind === "account" ? props.target.accountId : null,
+        entityId: props.target.kind === "trust" ? props.target.entityId : null,
+        tier,
+        familyMemberId: null,
+        externalBeneficiaryId: null,
+        percentage: 0,
+        sortOrder: r.length,
+      },
+    ]);
+  }
+
+  function updateRow(id: string, patch: Partial<Designation>) {
+    setRows((r) => r.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  }
+
+  function removeRow(id: string) {
+    setRows((r) => r.filter((x) => x.id !== id));
+  }
+
+  const renderTier = (tier: Tier) => {
+    const tierRows = byTier(tier);
+    const sum = sumTier(tier);
+    const sumOk = tierRows.length === 0 || Math.abs(sum - 100) <= 0.01;
+    return (
+      <div className="mt-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-semibold capitalize text-gray-200">{tier}</h4>
+          <span
+            className={
+              sumOk ? "text-xs text-green-400" : "text-xs text-amber-400"
+            }
+          >
+            sum: {sum.toFixed(2)}%
+          </span>
+        </div>
+        <ul className="mt-1 space-y-1">
+          {tierRows.map((r) => (
+            <li key={r.id} className="flex items-center gap-2">
+              <select
+                value={
+                  r.familyMemberId
+                    ? `fm:${r.familyMemberId}`
+                    : r.externalBeneficiaryId
+                      ? `ext:${r.externalBeneficiaryId}`
+                      : ""
+                }
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v.startsWith("fm:")) {
+                    updateRow(r.id, {
+                      familyMemberId: v.slice(3),
+                      externalBeneficiaryId: null,
+                    });
+                  } else if (v.startsWith("ext:")) {
+                    updateRow(r.id, {
+                      externalBeneficiaryId: v.slice(4),
+                      familyMemberId: null,
+                    });
+                  } else {
+                    updateRow(r.id, {
+                      familyMemberId: null,
+                      externalBeneficiaryId: null,
+                    });
+                  }
+                }}
+                className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">— select beneficiary —</option>
+                <optgroup label="Family">
+                  {props.members.map((m) => (
+                    <option key={m.id} value={`fm:${m.id}`}>
+                      {m.firstName} {m.lastName ?? ""} ({m.relationship})
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="External">
+                  {props.externals.map((e) => (
+                    <option key={e.id} value={`ext:${e.id}`}>
+                      {e.name} ({e.kind})
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <input
+                type="number"
+                step="0.01"
+                min={0}
+                max={100}
+                value={r.percentage}
+                onChange={(e) =>
+                  updateRow(r.id, { percentage: parseFloat(e.target.value) || 0 })
+                }
+                className="w-24 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+              />
+              <span className="text-sm text-gray-400">%</span>
+              <button
+                type="button"
+                onClick={() => removeRow(r.id)}
+                className="text-xs text-red-400 hover:text-red-300"
+              >
+                remove
+              </button>
+            </li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          onClick={() => addRow(tier)}
+          className="mt-1 text-xs text-blue-400 hover:text-blue-300"
+        >
+          + add {tier}
+        </button>
+      </div>
+    );
+  };
+
+  return (
+    <div className="mt-3 border-t border-gray-800 pt-3">
+      {renderTier("primary")}
+      {renderTier("contingent")}
+      {error && <div className="mt-2 text-sm text-red-400">{error}</div>}
+      <button
+        type="button"
+        disabled={saving}
+        onClick={save}
+        className="mt-3 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+      >
+        {saving ? "Saving…" : "Save beneficiaries"}
+      </button>
     </div>
   );
 }
