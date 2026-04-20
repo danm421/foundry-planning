@@ -1,0 +1,2311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1440" />
+<title>Estate Planning — Foundry Planning</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* surfaces */
+    --bg-0:        #0A0C10;
+    --bg-1:        #12151C;  /* panels */
+    --bg-2:        #1A1E27;  /* cards */
+    --bg-3:        #232834;  /* hover */
+    --bg-inset:    #0D0F14;  /* recessed wells */
+    --line-soft:   #21262F;
+    --line:        #2A2F3C;
+    --line-strong: #3A414F;
+
+    /* text */
+    --fg-0: #E6E9EF;
+    --fg-1: #B7BECC;
+    --fg-2: #8A92A3;
+    --fg-3: #5C6478;
+    --fg-4: #3A414F;
+
+    /* accent (muted teal) */
+    --accent:       #3FB8AF;
+    --accent-hi:    #7DD3CC;
+    --accent-deep:  #2A8A84;
+    --accent-tint:  rgba(63,184,175,0.10);
+    --accent-line:  rgba(63,184,175,0.35);
+    --accent-glow:  rgba(63,184,175,0.18);
+
+    /* semantic */
+    --neg: #E06B6B;
+    --neg-tint: rgba(224,107,107,0.10);
+    --pos: #7DB58A;
+    --pos-tint: rgba(125,181,138,0.10);
+    --warn: #C9985A;
+    --warn-tint: rgba(201,152,90,0.10);
+    --info: #6A9FD8;
+
+    /* category hues for assets / sankey — desaturated */
+    --cat-cash:        #6A9FD8;   /* cash / brokerage */
+    --cat-retirement:  #A08CD8;   /* retirement */
+    --cat-realestate:  #C9985A;   /* real estate */
+    --cat-business:    #C07A9F;   /* business */
+    --cat-life:        #3FB8AF;   /* life / ILIT */
+    --cat-charity:     #7DB58A;   /* charity */
+
+    --radius: 6px;
+    --radius-lg: 10px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg-0); color: var(--fg-0); }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.45;
+    font-feature-settings: 'cv11','ss01','ss03';
+    -webkit-font-smoothing: antialiased;
+  }
+  .num { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; letter-spacing: -0.01em; }
+
+  /* ---------- shell ---------- */
+  .shell { max-width: 1440px; margin: 0 auto; }
+  .shell-inner { padding: 0 24px 48px; }
+
+  /* top chrome (simulated app frame) */
+  .chrome {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--bg-0);
+    position: sticky; top: 0; z-index: 30;
+  }
+  .chrome-left { display: flex; align-items: center; gap: 14px; }
+  .brand {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-weight: 600; font-size: 13px; letter-spacing: -0.01em;
+  }
+  .brand-mark {
+    width: 18px; height: 18px; border-radius: 4px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #041413; font-size: 10px; font-weight: 700;
+  }
+  .chrome-crumb { color: var(--fg-3); font-size: 12px; display: inline-flex; gap: 6px; align-items: center; }
+  .chrome-crumb .sep { color: var(--fg-4); }
+  .chrome-crumb strong { color: var(--fg-1); font-weight: 500; }
+
+  .chrome-right { display: flex; align-items: center; gap: 10px; color: var(--fg-2); font-size: 12px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 24px; padding: 0 8px;
+    border: 1px solid var(--line); border-radius: 4px;
+    font-size: 11px; color: var(--fg-1); background: var(--bg-1);
+  }
+  .kbd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px; color: var(--fg-2);
+    border: 1px solid var(--line); border-bottom-width: 2px;
+    border-radius: 3px; padding: 1px 5px; background: var(--bg-1);
+  }
+
+  /* report header */
+  .report-header {
+    padding: 22px 0 0;
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
+  }
+  .report-title h1 {
+    margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -0.015em; color: var(--fg-0);
+  }
+  .report-title .sub {
+    display: flex; align-items: center; gap: 10px; color: var(--fg-2); font-size: 12.5px;
+  }
+  .report-title .household { color: var(--fg-1); font-weight: 500; }
+  .report-title .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--fg-4); display: inline-block; }
+  .report-actions { display: flex; align-items: center; gap: 8px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 30px; padding: 0 12px; border-radius: 5px;
+    font: inherit; font-size: 12px; font-weight: 500;
+    border: 1px solid var(--line); background: var(--bg-1); color: var(--fg-0);
+    cursor: pointer; transition: background 120ms, border-color 120ms;
+  }
+  .btn:hover { background: var(--bg-2); border-color: var(--line-strong); }
+  .btn-ghost { background: transparent; }
+  .btn-ghost:hover { background: var(--bg-1); }
+  .btn-accent {
+    background: var(--accent); border-color: var(--accent);
+    color: #04201E;
+  }
+  .btn-accent:hover { background: var(--accent-hi); border-color: var(--accent-hi); }
+  .btn-sm { height: 26px; padding: 0 10px; font-size: 11.5px; }
+  .btn-icon { width: 30px; padding: 0; justify-content: center; }
+
+  /* tabs */
+  .tabs {
+    display: flex; gap: 2px; margin-top: 18px; border-bottom: 1px solid var(--line);
+    position: relative;
+  }
+  .tab {
+    padding: 10px 2px; margin-right: 22px;
+    font-size: 13px; color: var(--fg-2); font-weight: 500;
+    background: transparent; border: none; cursor: pointer;
+    border-bottom: 2px solid transparent;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: color 120ms;
+  }
+  .tab:hover { color: var(--fg-1); }
+  .tab.active { color: var(--fg-0); border-bottom-color: var(--accent); }
+  .tab .count { color: var(--fg-3); font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+
+  /* ---------- deliverable bar (meta navigator for the mock doc) ---------- */
+  .deliverables {
+    border: 1px solid var(--line); background: var(--bg-1);
+    border-radius: 8px; padding: 10px 12px;
+    margin: 20px 0 24px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .deliverables .d-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--fg-3); margin-right: 6px;
+  }
+  .d-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 5px 10px; font-size: 11.5px;
+    border: 1px solid var(--line); border-radius: 999px;
+    color: var(--fg-1); background: var(--bg-2); cursor: pointer;
+  }
+  .d-pill:hover { border-color: var(--line-strong); color: var(--fg-0); }
+  .d-pill .idx { font-family: 'JetBrains Mono', monospace; color: var(--fg-3); font-size: 10.5px; }
+  .d-pill.is-active { border-color: var(--accent-line); background: var(--accent-tint); color: var(--fg-0); }
+  .d-pill.is-active .idx { color: var(--accent); }
+
+  /* ---------- deliverable frame ---------- */
+  .deliverable {
+    margin-bottom: 56px;
+    scroll-margin-top: 24px;
+  }
+  .d-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin: 0 0 12px;
+  }
+  .d-head h2 {
+    margin: 0; font-size: 13px; font-weight: 600; color: var(--fg-0);
+    letter-spacing: -0.01em;
+  }
+  .d-head .d-idx {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--fg-3); font-size: 11px; margin-right: 10px;
+  }
+  .d-head .d-note { color: var(--fg-2); font-size: 11.5px; }
+
+  .frame {
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    background: var(--bg-0);
+  }
+
+  /* ---------- flowchart layout ---------- */
+  .fc {
+    display: grid;
+    grid-template-columns: 260px 1fr 260px 320px;
+    gap: 0;
+    height: 820px;
+    background: var(--bg-0);
+  }
+  .fc-col {
+    border-right: 1px solid var(--line-soft);
+    display: flex; flex-direction: column;
+    min-width: 0;
+  }
+  .fc-col:last-child { border-right: none; }
+  .fc-col-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--bg-1);
+  }
+  .fc-col-head .h-title {
+    font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--fg-1);
+  }
+  .fc-col-head .h-total {
+    font-size: 11px; color: var(--fg-2);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .fc-col-body {
+    flex: 1; overflow-y: auto;
+    padding: 12px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .fc-col-body::-webkit-scrollbar { width: 8px; }
+  .fc-col-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+  .group-label {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--fg-3); padding: 6px 2px 2px;
+  }
+  .group-label .line { flex: 1; height: 1px; background: var(--line-soft); }
+
+  /* asset card */
+  .asset {
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 6px; padding: 10px 11px;
+    display: flex; flex-direction: column; gap: 4px;
+    cursor: grab; transition: border-color 120ms, background 120ms;
+    position: relative;
+  }
+  .asset:hover { border-color: var(--line-strong); background: var(--bg-3); }
+  .asset-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .asset-name {
+    font-size: 12px; font-weight: 500; color: var(--fg-0);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .asset-val { font-size: 12px; color: var(--fg-0); font-family: 'JetBrains Mono', monospace; }
+  .asset-meta {
+    display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--fg-2);
+  }
+  .owner-chip {
+    font-size: 10px; padding: 1px 6px;
+    border: 1px solid var(--line); border-radius: 3px; color: var(--fg-2);
+    background: var(--bg-inset);
+  }
+  .tax-pip {
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px;
+    padding: 0 4px; height: 14px; line-height: 14px;
+    border-radius: 3px; letter-spacing: 0.03em;
+    display: inline-flex; align-items: center;
+  }
+  .tax-pip.taxable    { color: #C5D1E4; background: rgba(106,159,216,0.12); border: 1px solid rgba(106,159,216,0.25); }
+  .tax-pip.deferred   { color: #D5C9EC; background: rgba(160,140,216,0.12); border: 1px solid rgba(160,140,216,0.25); }
+  .tax-pip.free       { color: #BDDAC4; background: rgba(125,181,138,0.12); border: 1px solid rgba(125,181,138,0.28); }
+  .tax-pip.stepup     { color: #E4CDA8; background: rgba(201,152,90,0.12); border: 1px solid rgba(201,152,90,0.28); }
+
+  .asset.is-placed { opacity: 0.38; pointer-events: none; }
+  .asset.is-placed::after {
+    content: ''; position: absolute; inset: 0; border-radius: 6px;
+    background: repeating-linear-gradient(135deg, transparent 0 6px, rgba(255,255,255,0.015) 6px 12px);
+  }
+
+  /* trust card */
+  .trust {
+    background: var(--bg-1); border: 1px solid var(--line);
+    border-radius: 8px; overflow: hidden;
+    transition: border-color 140ms, background 140ms;
+  }
+  .trust-head {
+    padding: 12px 14px;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .trust-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .trust-name {
+    font-size: 13px; font-weight: 600; color: var(--fg-0); letter-spacing: -0.005em;
+  }
+  .trust-tag {
+    font-size: 10px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 3px;
+    color: var(--fg-1); background: var(--bg-3); border: 1px solid var(--line);
+  }
+  .trust-tag.irrev { color: #E4CDA8; background: var(--warn-tint); border-color: rgba(201,152,90,0.3); }
+  .trust-tag.rev   { color: #C5D1E4; background: rgba(106,159,216,0.10); border-color: rgba(106,159,216,0.3); }
+  .trust-tag.slat  { color: #BDE4DF; background: var(--accent-tint); border-color: var(--accent-line); }
+
+  .trust-sub { display: flex; gap: 12px; font-size: 11px; color: var(--fg-2); margin-top: 4px; }
+  .trust-sub .k { color: var(--fg-3); margin-right: 4px; }
+  .trust-head-right { text-align: right; min-width: 110px; }
+  .trust-val { font-size: 15px; color: var(--fg-0); font-family: 'JetBrains Mono', monospace; font-weight: 600; letter-spacing: -0.01em; }
+  .trust-count { font-size: 10.5px; color: var(--fg-3); margin-top: 1px; }
+
+  .trust-body { padding: 10px 12px 12px; }
+  .trust-holdings { display: flex; flex-direction: column; gap: 6px; }
+  .holding {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--bg-inset); border: 1px solid var(--line-soft);
+    padding: 7px 10px; border-radius: 5px; font-size: 11.5px;
+  }
+  .holding .name { color: var(--fg-1); }
+  .holding .v { color: var(--fg-1); font-family: 'JetBrains Mono', monospace; }
+  .holding .rm {
+    color: var(--fg-3); font-size: 10px; cursor: pointer;
+    padding: 2px 5px; border-radius: 3px;
+  }
+  .holding:hover .rm { color: var(--neg); background: var(--neg-tint); }
+
+  .trust-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; border-top: 1px solid var(--line-soft);
+    font-size: 11px; color: var(--fg-2);
+  }
+  .trust-foot .expand {
+    color: var(--fg-2); font-size: 11px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+
+  /* valid drop highlight */
+  .trust.drop-valid {
+    border-color: var(--accent); background: var(--accent-tint);
+    box-shadow: 0 0 0 1px var(--accent) inset, 0 0 24px var(--accent-glow);
+  }
+  .trust.drop-invalid { opacity: 0.32; }
+  .trust.drop-hot {
+    border-color: var(--accent-hi);
+    box-shadow: 0 0 0 1px var(--accent-hi) inset, 0 0 40px rgba(125,211,204,0.24);
+  }
+
+  /* empty slot / create trust */
+  .trust-create {
+    border: 1px dashed var(--line-strong);
+    border-radius: 8px;
+    padding: 22px 14px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    color: var(--fg-2); cursor: pointer;
+    transition: border-color 140ms, background 140ms;
+  }
+  .trust-create:hover { border-color: var(--accent-line); background: var(--accent-tint); color: var(--fg-0); }
+  .trust-create .plus { font-size: 14px; color: var(--fg-2); }
+  .trust-create .t { font-size: 12px; font-weight: 500; color: var(--fg-1); }
+  .trust-create .s { font-size: 11px; color: var(--fg-3); }
+
+  /* beneficiaries */
+  .benef {
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 6px; padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .benef-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px;
+  }
+  .benef-name { font-size: 12.5px; font-weight: 500; color: var(--fg-0); }
+  .benef-rel { font-size: 10.5px; color: var(--fg-3); margin-top: 1px; }
+  .benef-val { font-size: 13px; color: var(--fg-0); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+  .benef-flow {
+    display: flex; flex-direction: column; gap: 3px;
+    border-top: 1px solid var(--line-soft); padding-top: 7px; margin-top: 2px;
+  }
+  .flow-row {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 10.5px; color: var(--fg-2);
+  }
+  .flow-src { display: inline-flex; align-items: center; gap: 5px; }
+  .flow-src .swatch { width: 7px; height: 7px; border-radius: 2px; }
+  .flow-pct { font-family: 'JetBrains Mono', monospace; color: var(--fg-1); }
+
+  /* ---------- right sidebar (estate impact) ---------- */
+  .impact {
+    background: var(--bg-1); border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; min-width: 0;
+  }
+  .impact-head {
+    padding: 12px 16px; border-bottom: 1px solid var(--line-soft);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .impact-head .h-title {
+    font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--fg-1);
+  }
+  .impact-state-tag {
+    font-size: 10px; color: var(--fg-2);
+    padding: 2px 6px; border: 1px solid var(--line); border-radius: 3px;
+    background: var(--bg-inset); font-family: 'JetBrains Mono', monospace;
+  }
+  .impact-body { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+  .metric { display: flex; flex-direction: column; gap: 4px; }
+  .metric-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--fg-3); display: flex; align-items: center; gap: 5px;
+  }
+  .metric-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px; font-weight: 600; color: var(--fg-0);
+    letter-spacing: -0.02em; line-height: 1.1;
+  }
+  .metric-sub { font-size: 11px; color: var(--fg-2); }
+  .metric-sub .k { color: var(--fg-3); }
+  .metric-sub .num { color: var(--fg-1); }
+
+  .metric-hero {
+    padding: 14px 14px 14px 12px;
+    border-left: 2px solid var(--accent);
+    background: var(--accent-tint);
+    border-radius: 0 6px 6px 0;
+  }
+  .metric-hero .metric-value { font-size: 24px; color: var(--accent-hi); }
+
+  .metric-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 2px 0; }
+  .metric-row .k { font-size: 11.5px; color: var(--fg-2); }
+  .metric-row .v { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--fg-0); }
+
+  /* preview state in sidebar */
+  .preview .metric-value.old { color: var(--fg-3); font-size: 14px; text-decoration: line-through; text-decoration-color: var(--fg-4); }
+  .preview .metric-value.new { color: var(--accent-hi); }
+  .preview .delta-pos { color: var(--pos); }
+  .preview .delta-neg { color: var(--neg); }
+
+  .preview-strip {
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: previewPulse 2s ease-in-out infinite;
+  }
+  @keyframes previewPulse {
+    0%, 100% { opacity: 0.4; } 50% { opacity: 1; }
+  }
+
+  .preview-banner {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 14px;
+    background: var(--accent-tint); border-bottom: 1px solid var(--accent-line);
+    color: var(--accent-hi); font-size: 11px; letter-spacing: 0.03em;
+  }
+  .preview-banner .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--accent-hi);
+    box-shadow: 0 0 8px var(--accent);
+    display: inline-block; margin-right: 8px;
+  }
+
+  /* stacked composition bar */
+  .stack-bar {
+    display: flex; height: 6px; border-radius: 3px; overflow: hidden;
+    background: var(--bg-inset);
+  }
+  .stack-bar > span { display: block; height: 100%; }
+  .stack-legend {
+    display: flex; justify-content: space-between; margin-top: 8px;
+    font-size: 10.5px; color: var(--fg-2);
+  }
+  .stack-legend .item { display: flex; align-items: center; gap: 5px; }
+  .stack-legend .sw { width: 8px; height: 8px; border-radius: 2px; }
+
+  /* flow arrows layer (svg overlay) */
+  .fc-arrows {
+    position: absolute; inset: 0; pointer-events: none;
+    overflow: visible;
+  }
+
+  /* ghost dragging card */
+  .ghost {
+    position: absolute;
+    width: 230px;
+    padding: 10px 11px;
+    background: var(--bg-3);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.55), 0 0 0 1px var(--accent-line), 0 0 32px var(--accent-glow);
+    transform: rotate(-1.4deg) scale(1.02);
+    z-index: 20;
+    pointer-events: none;
+  }
+  .ghost .asset-top { margin-bottom: 2px; }
+
+  .drag-guide {
+    position: absolute; pointer-events: none; z-index: 19;
+    border-top: 1.5px dashed var(--accent-line);
+  }
+
+  .cursor-hand {
+    position: absolute; width: 18px; height: 18px; z-index: 25;
+    pointer-events: none;
+  }
+
+  /* toast */
+  .toast {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: var(--bg-2); border: 1px solid var(--line-strong);
+    padding: 9px 14px; border-radius: 6px;
+    display: flex; align-items: center; gap: 12px;
+    font-size: 12px; color: var(--fg-1);
+    box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+  }
+  .toast .ico { color: var(--accent); }
+  .toast .undo { color: var(--accent); cursor: pointer; font-weight: 500; }
+
+  /* ---------- empty state ---------- */
+  .empty-hero {
+    margin: 28px 14px 18px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 32px 28px;
+    background:
+      radial-gradient(ellipse at top left, var(--accent-tint) 0%, transparent 55%),
+      var(--bg-1);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 32px;
+  }
+  .empty-hero h3 {
+    margin: 0 0 6px; font-size: 17px; font-weight: 600; color: var(--fg-0);
+    letter-spacing: -0.01em;
+  }
+  .empty-hero p { margin: 0; color: var(--fg-2); font-size: 12.5px; max-width: 420px; line-height: 1.55; }
+  .empty-hero .eyebrow {
+    font-size: 10.5px; color: var(--accent); letter-spacing: 0.12em; text-transform: uppercase;
+    margin-bottom: 10px; font-weight: 600;
+  }
+
+  .template-grid { display: flex; flex-direction: column; gap: 10px; }
+  .template {
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 14px; background: var(--bg-2);
+    display: flex; justify-content: space-between; align-items: center; gap: 14px;
+    cursor: pointer; transition: border-color 140ms, background 140ms;
+  }
+  .template:hover { border-color: var(--accent-line); background: var(--bg-3); }
+  .template .tt-name { font-size: 12.5px; font-weight: 600; color: var(--fg-0); }
+  .template .tt-desc { font-size: 11px; color: var(--fg-2); margin-top: 2px; max-width: 300px; }
+  .template .tt-stats {
+    font-size: 10.5px; color: var(--fg-3); margin-top: 6px;
+    display: flex; gap: 12px; font-family: 'JetBrains Mono', monospace;
+  }
+  .template .tt-stats .v { color: var(--fg-1); }
+  .template .cta {
+    color: var(--accent); font-size: 12px; font-weight: 500;
+    white-space: nowrap;
+  }
+
+  /* ---------- create trust panel ---------- */
+  .panel-overlay {
+    position: absolute; inset: 0;
+    background: rgba(5,7,11,0.55);
+    backdrop-filter: blur(2px);
+    display: flex; justify-content: flex-end;
+    z-index: 40;
+  }
+  .panel {
+    width: 460px;
+    background: var(--bg-1);
+    border-left: 1px solid var(--line-strong);
+    display: flex; flex-direction: column;
+    box-shadow: -20px 0 60px rgba(0,0,0,0.5);
+  }
+  .panel-head {
+    padding: 16px 18px 14px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    border-bottom: 1px solid var(--line);
+  }
+  .panel-head h3 {
+    margin: 0; font-size: 15px; font-weight: 600; color: var(--fg-0); letter-spacing: -0.01em;
+  }
+  .panel-head .sub { font-size: 11.5px; color: var(--fg-2); margin-top: 3px; }
+  .panel-close {
+    background: transparent; border: 1px solid var(--line); color: var(--fg-2);
+    width: 26px; height: 26px; border-radius: 4px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .panel-body { padding: 16px 18px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+  .panel-foot {
+    padding: 12px 18px; border-top: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--bg-0);
+  }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--fg-3); font-weight: 600; }
+  .inp {
+    background: var(--bg-inset); border: 1px solid var(--line);
+    border-radius: 5px; padding: 8px 10px;
+    color: var(--fg-0); font: inherit; font-size: 12.5px;
+    height: 34px;
+  }
+  .inp:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+  .inp.sel::after { content: '▾'; }
+  .select-wrap { position: relative; }
+  .select-wrap::after {
+    content: ''; position: absolute; right: 12px; top: 50%; transform: translateY(-25%);
+    width: 5px; height: 5px;
+    border-right: 1.5px solid var(--fg-2); border-bottom: 1.5px solid var(--fg-2);
+    transform: translateY(-75%) rotate(45deg);
+    pointer-events: none;
+  }
+  .inp.select { appearance: none; padding-right: 28px; }
+
+  .type-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .type-opt {
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px 12px; cursor: pointer;
+    background: var(--bg-2);
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .type-opt:hover { border-color: var(--line-strong); }
+  .type-opt.selected { border-color: var(--accent); background: var(--accent-tint); }
+  .type-opt .n { font-size: 12.5px; font-weight: 600; color: var(--fg-0); display: flex; align-items: center; gap: 6px; }
+  .type-opt .d { font-size: 11px; color: var(--fg-2); line-height: 1.4; }
+  .type-opt .badge {
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 1px 5px; border-radius: 3px;
+    background: var(--bg-3); color: var(--fg-2);
+  }
+
+  .benef-split-row {
+    display: grid; grid-template-columns: 1fr 60px 22px; gap: 8px; align-items: center;
+    padding: 7px 0; border-bottom: 1px solid var(--line-soft);
+  }
+  .benef-split-row:last-child { border-bottom: none; }
+  .benef-split-row .who { font-size: 12px; color: var(--fg-1); display: flex; align-items: center; gap: 7px; }
+  .benef-split-row .avatar {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--bg-3); border: 1px solid var(--line);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 10px; color: var(--fg-1); font-weight: 500;
+  }
+  .pct-inp {
+    background: var(--bg-inset); border: 1px solid var(--line);
+    border-radius: 4px; padding: 4px 6px; color: var(--fg-0);
+    font: inherit; font-size: 12px; font-family: 'JetBrains Mono', monospace;
+    width: 58px; height: 26px; text-align: right;
+  }
+  .benef-total {
+    display: flex; justify-content: space-between; padding: 10px 0 0;
+    font-size: 11.5px; color: var(--fg-2);
+    border-top: 1px dashed var(--line);
+  }
+  .benef-total .v { font-family: 'JetBrains Mono', monospace; color: var(--fg-0); }
+
+  .hint {
+    font-size: 11px; color: var(--fg-2); line-height: 1.5;
+    padding: 9px 11px; border-radius: 5px;
+    background: var(--bg-inset); border: 1px solid var(--line-soft);
+  }
+  .hint .lead { color: var(--accent); font-weight: 500; }
+
+  /* ---------- impact page (tab 2) ---------- */
+  .impact-page { padding: 24px; display: flex; flex-direction: column; gap: 28px; background: var(--bg-0); }
+  .section {
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--bg-1);
+    overflow: hidden;
+  }
+  .section-head {
+    padding: 14px 18px; border-bottom: 1px solid var(--line-soft);
+    display: flex; align-items: baseline; justify-content: space-between;
+  }
+  .section-head h2 {
+    margin: 0; font-size: 13px; font-weight: 600; color: var(--fg-0);
+    letter-spacing: -0.005em;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-head .section-idx {
+    font-family: 'JetBrains Mono', monospace; color: var(--fg-3); font-size: 11px;
+  }
+  .section-head .hint-txt { font-size: 11px; color: var(--fg-3); }
+  .section-body { padding: 18px; }
+
+  /* headline delta */
+  .headline-delta {
+    padding: 26px 24px;
+    background:
+      radial-gradient(ellipse at 15% 0%, var(--accent-tint), transparent 70%),
+      var(--bg-1);
+    display: flex; align-items: center; justify-content: space-between; gap: 28px;
+  }
+  .headline-delta .kicker {
+    font-size: 10.5px; color: var(--accent); letter-spacing: 0.14em;
+    text-transform: uppercase; font-weight: 600; margin-bottom: 8px;
+  }
+  .headline-delta .big {
+    font-size: 34px; font-weight: 600; color: var(--fg-0); letter-spacing: -0.02em;
+    line-height: 1.15; margin: 0;
+  }
+  .headline-delta .big em {
+    font-style: normal; color: var(--accent-hi);
+    font-family: 'JetBrains Mono', monospace; font-weight: 600;
+  }
+  .headline-delta .sub { color: var(--fg-2); font-size: 12.5px; margin-top: 8px; max-width: 520px; }
+
+  .headline-meta { display: flex; gap: 26px; }
+  .headline-meta .mk { font-size: 10.5px; color: var(--fg-3); letter-spacing: 0.08em; text-transform: uppercase; }
+  .headline-meta .mv { font-size: 18px; color: var(--fg-0); font-family: 'JetBrains Mono', monospace; margin-top: 4px; }
+  .headline-meta .mv.pos { color: var(--accent-hi); }
+  .headline-meta .mv.neg { color: var(--neg); }
+
+  /* before/after grid */
+  .ba-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .ba-col {
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 18px 20px; background: var(--bg-2);
+  }
+  .ba-col.prop { border-color: var(--accent-line); background: linear-gradient(180deg, var(--accent-tint), transparent 30%), var(--bg-2); }
+  .ba-col h4 {
+    margin: 0 0 14px; font-size: 11px; color: var(--fg-3);
+    letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .ba-col.prop h4 { color: var(--accent); }
+  .ba-col h4 .pill {
+    font-size: 9.5px; padding: 1px 6px; border-radius: 3px;
+    background: var(--bg-3); color: var(--fg-2); letter-spacing: 0.05em;
+  }
+  .ba-col.prop h4 .pill { background: var(--accent-tint); color: var(--accent-hi); border: 1px solid var(--accent-line); }
+  .ba-rows { display: flex; flex-direction: column; gap: 14px; }
+  .ba-row { display: flex; justify-content: space-between; align-items: baseline; }
+  .ba-row .k { font-size: 12px; color: var(--fg-2); }
+  .ba-row .v { font-family: 'JetBrains Mono', monospace; font-size: 15px; color: var(--fg-0); font-weight: 500; }
+  .ba-row .v.big { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  .ba-row.accent .v { color: var(--accent-hi); }
+  .ba-row.neg .v { color: var(--neg); }
+  .ba-row.em { padding-top: 12px; border-top: 1px solid var(--line-soft); }
+
+  .ba-stack { margin-top: 16px; }
+
+  /* sankey */
+  .sankey { padding: 18px 4px 4px; }
+  .sankey svg { display: block; width: 100%; height: auto; }
+  .sankey-legend {
+    display: flex; gap: 18px; flex-wrap: wrap;
+    padding: 12px 18px 0; font-size: 11px; color: var(--fg-2);
+  }
+  .sankey-legend .item { display: flex; align-items: center; gap: 6px; }
+  .sankey-legend .sw { width: 10px; height: 10px; border-radius: 2px; }
+
+  /* asset table */
+  table.tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.tbl thead th {
+    position: sticky; top: 0;
+    text-align: left; font-weight: 500; color: var(--fg-3);
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em;
+    padding: 10px 12px; border-bottom: 1px solid var(--line);
+    background: var(--bg-1);
+    cursor: pointer;
+    user-select: none;
+  }
+  table.tbl thead th.num, table.tbl tbody td.num-c { text-align: right; font-family: 'JetBrains Mono', monospace; }
+  table.tbl thead th .sort { color: var(--fg-4); margin-left: 4px; font-size: 10px; }
+  table.tbl thead th.sorted .sort { color: var(--accent); }
+  table.tbl tbody td {
+    padding: 9px 12px; border-bottom: 1px solid var(--line-soft);
+    color: var(--fg-1);
+  }
+  table.tbl tbody tr:hover td { background: var(--bg-2); }
+  table.tbl tbody td .asset-name-cell {
+    display: flex; align-items: center; gap: 8px;
+  }
+  table.tbl tbody td .cat-dot { width: 7px; height: 7px; border-radius: 2px; }
+  table.tbl tbody td.fg-strong { color: var(--fg-0); }
+
+  /* destination tag */
+  .dest {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 2px 7px; border-radius: 3px; font-size: 10.5px;
+    border: 1px solid var(--line); background: var(--bg-2); color: var(--fg-1);
+  }
+  .dest.direct { }
+  .dest.outside { color: var(--fg-2); background: var(--bg-inset); }
+  .dest.trust { border-color: var(--accent-line); background: var(--accent-tint); color: var(--accent-hi); }
+
+  /* rationale */
+  .rationale {
+    border: 1px solid var(--line); border-radius: 10px; padding: 22px 24px;
+    background: var(--bg-1); margin-top: 40px;
+  }
+  .rationale h3 { margin: 0 0 14px; font-size: 14px; font-weight: 600; color: var(--fg-0); }
+  .rationale ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+  .rationale li {
+    font-size: 12.5px; color: var(--fg-1); line-height: 1.55;
+    padding-left: 16px; position: relative;
+  }
+  .rationale li::before {
+    content: ''; position: absolute; left: 0; top: 8px;
+    width: 6px; height: 6px; border-radius: 2px;
+    background: var(--accent);
+  }
+  .rationale li strong { color: var(--fg-0); font-weight: 600; }
+  .rationale li code {
+    font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
+    color: var(--accent-hi); background: var(--bg-inset);
+    padding: 1px 5px; border-radius: 3px; border: 1px solid var(--line-soft);
+  }
+
+  /* icon placeholder: use inline svg */
+  .i { width: 14px; height: 14px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---- sankey helpers ---- */
+  .sk-link { fill: none; opacity: 0.55; transition: opacity 140ms; }
+  .sk-link:hover { opacity: 0.85; }
+  .sk-node { stroke-width: 0; }
+  .sk-label { fill: var(--fg-1); font-size: 11px; font-family: 'Inter'; }
+  .sk-label.sub { fill: var(--fg-3); font-size: 10px; font-family: 'JetBrains Mono'; }
+
+</style>
+</head>
+<body>
+
+<div class="chrome">
+  <div class="chrome-left">
+    <div class="brand"><span class="brand-mark">F</span>Foundry Planning</div>
+    <div class="chrome-crumb">
+      <span>Clients</span><span class="sep">/</span>
+      <strong>Harrington, T. &amp; L.</strong>
+      <span class="sep">/</span><span>Reports</span><span class="sep">/</span>
+      <strong>Estate Planning</strong>
+    </div>
+  </div>
+  <div class="chrome-right">
+    <span class="chip">Base Case · Scenario 01</span>
+    <span class="chip">Unsaved changes <span class="kbd">⌘S</span></span>
+  </div>
+</div>
+
+<div class="shell">
+<div class="shell-inner">
+
+<!-- deliverable navigator -->
+<div class="deliverables">
+  <span class="d-label">Deliverables</span>
+  <a href="#d1" class="d-pill"><span class="idx">01</span> Flowchart — default</a>
+  <a href="#d2" class="d-pill"><span class="idx">02</span> Flowchart — mid-drag</a>
+  <a href="#d3" class="d-pill"><span class="idx">03</span> Create Trust</a>
+  <a href="#d4" class="d-pill"><span class="idx">04</span> Empty state</a>
+  <a href="#d5" class="d-pill"><span class="idx">05</span> Impact &amp; Beneficiaries</a>
+  <a href="#rationale" class="d-pill"><span class="idx">—</span> Rationale</a>
+</div>
+
+<!-- ================= D1: Flowchart default ================= -->
+<section class="deliverable" id="d1">
+  <div class="d-head">
+    <h2><span class="d-idx">01</span>Tab 1 · Flowchart — default, populated</h2>
+    <span class="d-note">~1440px content · three zones + persistent Estate Impact sidebar</span>
+  </div>
+
+  <div class="frame">
+    <!-- report header inside the frame -->
+    <div style="padding: 18px 24px 0; background: var(--bg-0);">
+      <div class="report-header">
+        <div class="report-title">
+          <h1>Estate Planning</h1>
+          <div class="sub">
+            <span class="household">The Harrington Family</span>
+            <span class="dot"></span>
+            <span>MFJ · Connecticut</span>
+            <span class="dot"></span>
+            <span>As of <span class="num" style="color:var(--fg-1)">Apr 20, 2026</span></span>
+            <span class="dot"></span>
+            <span>Federal exemption <span class="num" style="color:var(--fg-1)">$13.99M</span> / person</span>
+          </div>
+        </div>
+        <div class="report-actions">
+          <button class="btn btn-ghost btn-sm">
+            <svg class="i" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg>
+            Revert
+          </button>
+          <button class="btn btn-ghost btn-sm">
+            <svg class="i" viewBox="0 0 24 24"><path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5"/><path d="M9 14h6"/></svg>
+            Save scenario
+          </button>
+          <button class="btn btn-sm">
+            <svg class="i" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+            Export
+          </button>
+          <button class="btn btn-accent btn-sm">
+            <svg class="i" viewBox="0 0 24 24"><path d="M4 12h16"/><path d="M12 4l8 8-8 8"/></svg>
+            Share with client
+          </button>
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="tab active">
+          <svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><path d="M10 6.5h4"/><path d="M6.5 10v4"/><path d="M17.5 10v4"/></svg>
+          Flowchart
+        </button>
+        <button class="tab">
+          <svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          Impact &amp; Beneficiaries
+        </button>
+        <button class="tab">
+          <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>
+          Documents <span class="count">3</span>
+        </button>
+        <button class="tab">
+          <svg class="i" viewBox="0 0 24 24"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4 12H2"/><path d="M22 12h-2"/><circle cx="12" cy="12" r="4"/></svg>
+          Assumptions
+        </button>
+      </div>
+    </div>
+
+    <!-- flowchart body -->
+    <div class="fc">
+      <!-- LEFT: In Estate -->
+      <div class="fc-col">
+        <div class="fc-col-head">
+          <span class="h-title">In Estate</span>
+          <span class="h-total num">$20.56M · 10 assets</span>
+        </div>
+        <div class="fc-col-body" id="leftRail">
+
+          <div class="group-label"><span>Cash &amp; Brokerage</span><span class="line"></span></div>
+          <div class="asset" data-id="wf">
+            <div class="asset-top">
+              <span class="asset-name">Wells Fargo Checking</span>
+              <span class="asset-val">$340K</span>
+            </div>
+            <div class="asset-meta">
+              <span class="owner-chip">Joint</span>
+              <span class="tax-pip taxable">TAX</span>
+            </div>
+          </div>
+          <div class="asset" data-id="fid">
+            <div class="asset-top">
+              <span class="asset-name">Fidelity Brokerage</span>
+              <span class="asset-val">$4.20M</span>
+            </div>
+            <div class="asset-meta">
+              <span class="owner-chip">Joint</span>
+              <span class="tax-pip taxable">TAX</span>
+              <span class="tax-pip stepup">STEP-UP</span>
+            </div>
+          </div>
+          <div class="asset is-placed" data-id="vang" title="In SLAT (proposed)">
+            <div class="asset-top">
+              <span class="asset-name">Vanguard Brokerage</span>
+              <span class="asset-val">$2.40M</span>
+            </div>
+            <div class="asset-meta">
+              <span class="owner-chip">Tom</span>
+              <span class="tax-pip taxable">TAX</span>
+              <span class="tax-pip stepup">STEP-UP</span>
+            </div>
+          </div>
+
+          <div class="group-label"><span>Retirement</span><span class="line"></span></div>
+          <div class="asset">
+            <div class="asset-top">
+              <span class="asset-name">Tom's 401(k)</span>
+              <span class="asset-val">$3.10M</span>
+            </div>
+            <div class="asset-meta">
+              <span class="owner-chip">Tom</span>
+              <span class="tax-pip deferred">DEF</span>
+            </div>
+          </div>
+          <div class="asset">
+            <div class="asset-top">
+              <span class="asset-name">Linda's IRA</span>
+              <span class="asset-val">$1.80M</span>
+            </div>
+            <div class="asset-meta">
+              <span class="owner-chip">Linda</span>
+              <span class="tax-pip deferred">DEF</span>
+            </div>
+          </div>
+          <div class="asset">
+            <div class="asset-top">
+              <span class="asset-name">Tom's Roth IRA</span>
+              <span class="asset-val">$420K</span>
+            </div>
+            <div class="asset-meta">
+              <span class="owner-chip">Tom</span>
+              <span class="tax-pip free">FREE</span>
+            </div>
+          </div>
+
+          <div class="group-label"><span>Real Estate</span><span class="line"></span></div>
+          <div class="asset">
+            <div class="asset-top">
+              <span class="asset-name">Primary — Greenwich</span>
+              <span class="asset-val">$3.60M</span>
+            </div>
+            <div class="asset-meta">
+              <span class="owner-chip">Joint</span>
+              <span class="tax-pip stepup">STEP-UP</span>
+            </div>
+          </div>
+          <div class="asset">
+            <div class="asset-top">
+              <span class="asset-name">Beach House — Watch Hill</span>
+              <span class="asset-val">$1.90M</span>
+            </div>
+            <div class="asset-meta">
+              <span class="owner-chip">Joint</span>
+              <span class="tax-pip stepup">STEP-UP</span>
+            </div>
+          </div>
+
+          <div class="group-label"><span>Business Interests</span><span class="line"></span></div>
+          <div class="asset">
+            <div class="asset-top">
+              <span class="asset-name">Harrington Mfg LLC <span style="color:var(--fg-3);font-weight:400">· 45%</span></span>
+              <span class="asset-val">$2.80M</span>
+            </div>
+            <div class="asset-meta">
+              <span class="owner-chip">Tom</span>
+              <span class="tax-pip taxable">TAX</span>
+            </div>
+          </div>
+
+          <div class="group-label"><span>Life Insurance</span><span class="line"></span></div>
+          <div class="asset">
+            <div class="asset-top">
+              <span class="asset-name">Term Life — Tom</span>
+              <span class="asset-val">$2.00M</span>
+            </div>
+            <div class="asset-meta">
+              <span class="owner-chip">Tom</span>
+              <span class="tax-pip free">DB</span>
+              <span style="font-size:10px;color:var(--fg-3)">$0 cash</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- CENTER: Trusts -->
+      <div class="fc-col" style="background: var(--bg-0); position: relative;">
+        <div class="fc-col-head">
+          <span class="h-title">Trusts &amp; Entities</span>
+          <span class="h-total num">3 trusts · $9.90M held</span>
+        </div>
+        <div class="fc-col-body">
+
+          <!-- Revocable Living Trust -->
+          <div class="trust">
+            <div class="trust-head">
+              <div>
+                <div class="trust-title-row">
+                  <span class="trust-name">Harrington Revocable Living Trust</span>
+                  <span class="trust-tag rev">Revocable</span>
+                </div>
+                <div class="trust-sub">
+                  <span><span class="k">Grantors</span> Tom &amp; Linda</span>
+                  <span><span class="k">Trustee</span> Tom</span>
+                </div>
+              </div>
+              <div class="trust-head-right">
+                <div class="trust-val">$0</div>
+                <div class="trust-count">0 assets · in estate</div>
+              </div>
+            </div>
+            <div class="trust-body">
+              <div style="padding: 14px 6px; font-size: 11.5px; color: var(--fg-3); text-align: center; border: 1px dashed var(--line); border-radius: 5px;">
+                No assets held. Drag from <span style="color: var(--fg-2)">In Estate</span> to fund.
+              </div>
+            </div>
+            <div class="trust-foot">
+              <span>Intent: primary residence, brokerage</span>
+              <span class="expand">Expand ↓</span>
+            </div>
+          </div>
+
+          <!-- Irrevocable Life Insurance Trust -->
+          <div class="trust">
+            <div class="trust-head">
+              <div>
+                <div class="trust-title-row">
+                  <span class="trust-name">Harrington ILIT</span>
+                  <span class="trust-tag irrev">Irrevocable</span>
+                </div>
+                <div class="trust-sub">
+                  <span><span class="k">Grantor</span> Tom</span>
+                  <span><span class="k">Trustee</span> J. Harrington</span>
+                  <span><span class="k">Since</span> 2019</span>
+                </div>
+              </div>
+              <div class="trust-head-right">
+                <div class="trust-val">$5.00M</div>
+                <div class="trust-count">1 asset · outside estate</div>
+              </div>
+            </div>
+            <div class="trust-body">
+              <div class="trust-holdings">
+                <div class="holding">
+                  <span class="name">2nd-to-Die Permanent Policy · $5M DB</span>
+                  <span class="v">$5.00M</span>
+                </div>
+              </div>
+            </div>
+            <div class="trust-foot">
+              <span>Beneficiaries: Tom Jr. 45% · Sarah 45% · Stanford 10%</span>
+              <span class="expand">Collapse ↑</span>
+            </div>
+          </div>
+
+          <!-- SLAT (proposed - where Vanguard was moved) -->
+          <div class="trust" style="border-color: var(--accent-line); background: linear-gradient(180deg, var(--accent-tint), transparent 50%), var(--bg-1);">
+            <div class="trust-head">
+              <div>
+                <div class="trust-title-row">
+                  <span class="trust-name">Harrington SLAT</span>
+                  <span class="trust-tag slat">SLAT · Proposed</span>
+                </div>
+                <div class="trust-sub">
+                  <span><span class="k">Grantor</span> Tom</span>
+                  <span><span class="k">Beneficiary</span> Linda (lifetime)</span>
+                </div>
+              </div>
+              <div class="trust-head-right">
+                <div class="trust-val" style="color: var(--accent-hi);">$2.40M</div>
+                <div class="trust-count">1 asset · outside estate</div>
+              </div>
+            </div>
+            <div class="trust-body">
+              <div class="trust-holdings">
+                <div class="holding" style="border-color: var(--accent-line); background: rgba(63,184,175,0.05);">
+                  <span class="name">Vanguard Brokerage <span style="color: var(--fg-3); font-size: 10px; margin-left: 4px;">· just added</span></span>
+                  <span class="v">$2.40M</span>
+                </div>
+              </div>
+            </div>
+            <div class="trust-foot" style="border-top-color: var(--accent-line);">
+              <span>Uses <span class="num" style="color:var(--accent-hi)">$2.40M</span> of Tom's exemption</span>
+              <span class="expand">Collapse ↑</span>
+            </div>
+          </div>
+
+          <!-- Create Trust -->
+          <div class="trust-create">
+            <span class="plus">＋</span>
+            <span class="t">Create Trust</span>
+            <span class="s">Revocable, ILIT, SLAT, CRT, GRAT…</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- RIGHT: Beneficiaries -->
+      <div class="fc-col">
+        <div class="fc-col-head">
+          <span class="h-title">Beneficiaries</span>
+          <span class="h-total num">4 · $16.88M projected</span>
+        </div>
+        <div class="fc-col-body">
+
+          <div class="benef">
+            <div class="benef-head">
+              <div>
+                <div class="benef-name">Linda Harrington</div>
+                <div class="benef-rel">Spouse · 56</div>
+              </div>
+              <div class="benef-val">$11.24M</div>
+            </div>
+            <div class="benef-flow">
+              <div class="flow-row">
+                <span class="flow-src"><span class="swatch" style="background:var(--cat-cash)"></span> Unlimited marital</span>
+                <span class="flow-pct">100%</span>
+              </div>
+              <div class="flow-row">
+                <span class="flow-src"><span class="swatch" style="background:var(--accent)"></span> SLAT lifetime access</span>
+                <span class="flow-pct">—</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="benef">
+            <div class="benef-head">
+              <div>
+                <div class="benef-name">Tom Harrington Jr.</div>
+                <div class="benef-rel">Son · 24</div>
+              </div>
+              <div class="benef-val">$2.82M</div>
+            </div>
+            <div class="benef-flow">
+              <div class="flow-row">
+                <span class="flow-src"><span class="swatch" style="background:var(--cat-life)"></span> ILIT</span>
+                <span class="flow-pct">45%</span>
+              </div>
+              <div class="flow-row">
+                <span class="flow-src"><span class="swatch" style="background:var(--accent)"></span> SLAT remainder</span>
+                <span class="flow-pct">50%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="benef">
+            <div class="benef-head">
+              <div>
+                <div class="benef-name">Sarah Harrington</div>
+                <div class="benef-rel">Daughter · 21</div>
+              </div>
+              <div class="benef-val">$2.32M</div>
+            </div>
+            <div class="benef-flow">
+              <div class="flow-row">
+                <span class="flow-src"><span class="swatch" style="background:var(--cat-life)"></span> ILIT</span>
+                <span class="flow-pct">45%</span>
+              </div>
+              <div class="flow-row">
+                <span class="flow-src"><span class="swatch" style="background:var(--accent)"></span> SLAT remainder</span>
+                <span class="flow-pct">50%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="benef">
+            <div class="benef-head">
+              <div>
+                <div class="benef-name">Stanford University</div>
+                <div class="benef-rel">Charity · 501(c)(3)</div>
+              </div>
+              <div class="benef-val">$500K</div>
+            </div>
+            <div class="benef-flow">
+              <div class="flow-row">
+                <span class="flow-src"><span class="swatch" style="background:var(--cat-life)"></span> ILIT</span>
+                <span class="flow-pct">10%</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 10px 2px; margin-top: 4px;">
+            <button class="btn btn-ghost btn-sm" style="width: 100%; justify-content: center;">
+              <svg class="i" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              Add beneficiary
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SIDEBAR: Estate Impact -->
+      <div class="impact">
+        <div class="impact-head">
+          <span class="h-title">Estate Impact</span>
+          <span class="impact-state-tag">LIVE</span>
+        </div>
+        <div class="impact-body">
+
+          <div class="metric-hero">
+            <div class="metric-label">Net to Heirs</div>
+            <div class="metric-value">$16.88M</div>
+            <div class="metric-sub"><span class="k">After tax · effective</span> <span class="num">2.6%</span></div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">Gross Estate</div>
+            <div class="metric-value">$20.56M</div>
+            <div class="metric-sub"><span class="k">Excl.</span> ILIT DB $5.00M · SLAT $2.40M</div>
+          </div>
+
+          <div>
+            <div class="metric-label" style="margin-bottom:7px;">Composition</div>
+            <div class="stack-bar" title="In estate / In trusts / Outside estate">
+              <span style="width: 56%; background: var(--cat-cash)"></span>
+              <span style="width: 12%; background: var(--accent)"></span>
+              <span style="width: 32%; background: var(--cat-retirement)"></span>
+            </div>
+            <div class="stack-legend">
+              <span class="item"><span class="sw" style="background:var(--cat-cash)"></span>In estate <span class="num" style="color:var(--fg-1);margin-left:4px">$11.5M</span></span>
+              <span class="item"><span class="sw" style="background:var(--accent)"></span>In trust <span class="num" style="color:var(--fg-1);margin-left:4px">$2.4M</span></span>
+              <span class="item"><span class="sw" style="background:var(--cat-retirement)"></span>Outside <span class="num" style="color:var(--fg-1);margin-left:4px">$6.6M</span></span>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--line-soft); padding-top: 14px;">
+            <div class="metric-row"><span class="k">Federal Estate Tax</span><span class="v">$0</span></div>
+            <div style="font-size: 10.5px; color: var(--fg-3); margin-left: 0; display: flex; justify-content: space-between;">
+              <span>Exemption used</span><span class="num">$2.40M / $27.98M</span>
+            </div>
+            <div style="font-size: 10.5px; color: var(--fg-3); display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span>Remaining</span><span class="num" style="color:var(--fg-1)">$25.58M</span>
+            </div>
+
+            <div class="metric-row"><span class="k">CT Estate Tax</span><span class="v" style="color: var(--warn)">$412K</span></div>
+            <div style="font-size: 10.5px; color: var(--fg-3); display: flex; justify-content: space-between;">
+              <span>Threshold</span><span class="num">$13.61M (CT 2026)</span>
+            </div>
+            <div style="font-size: 10.5px; color: var(--fg-3); display: flex; justify-content: space-between;">
+              <span>Taxable CT estate</span><span class="num" style="color:var(--fg-1)">$6.55M</span>
+            </div>
+          </div>
+
+          <div style="border-top: 1px solid var(--line-soft); padding-top: 14px; display: flex; flex-direction: column; gap: 8px;">
+            <div class="metric-row"><span class="k">Effective Tax Rate</span><span class="v">2.6%</span></div>
+            <div class="metric-row"><span class="k">Vs. prior arrangement</span><span class="v" style="color: var(--pos)">−1.2pp</span></div>
+            <div class="metric-row"><span class="k">Liquidity at death</span><span class="v">$7.82M</span></div>
+          </div>
+
+          <div style="padding-top: 10px;">
+            <button class="btn btn-ghost btn-sm" style="width: 100%; justify-content: center;">
+              <svg class="i" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M21 3l-9 9"/><path d="M10 21H3v-7"/><path d="M3 21l7-7"/></svg>
+              Collapse
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</div></div>
+
+<div class="shell"><div class="shell-inner">
+
+<!-- ================= D2: Flowchart mid-drag ================= -->
+<section class="deliverable" id="d2">
+  <div class="d-head">
+    <h2><span class="d-idx">02</span>Tab 1 · Mid-drag — ghost preview shifts the Estate Impact sidebar</h2>
+    <span class="d-note">Dragging Fidelity Brokerage over the SLAT · valid trusts highlighted · preview numbers in accent</span>
+  </div>
+
+  <div class="frame">
+    <div class="preview-banner">
+      <span><span class="dot"></span>Preview · hovering valid drop target <strong style="color: var(--fg-0); font-weight: 500; margin-left: 4px;">Harrington SLAT</strong></span>
+      <span style="color: var(--fg-3);"><span class="kbd">esc</span> cancel · release to commit</span>
+    </div>
+
+    <div class="fc" style="position: relative;">
+      <!-- LEFT: dimmed source context -->
+      <div class="fc-col">
+        <div class="fc-col-head">
+          <span class="h-title">In Estate</span>
+          <span class="h-total num">$20.56M · 10 assets</span>
+        </div>
+        <div class="fc-col-body">
+          <div class="group-label"><span>Cash &amp; Brokerage</span><span class="line"></span></div>
+          <div class="asset" style="opacity:.5">
+            <div class="asset-top"><span class="asset-name">Wells Fargo Checking</span><span class="asset-val">$340K</span></div>
+            <div class="asset-meta"><span class="owner-chip">Joint</span><span class="tax-pip taxable">TAX</span></div>
+          </div>
+          <!-- the dragged card is shown as a placeholder/slot here -->
+          <div style="border: 1.5px dashed var(--accent-line); border-radius: 6px; padding: 10px 11px; background: rgba(63,184,175,0.04); opacity: 0.9;">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--accent-hi);">
+              <span style="letter-spacing: 0.05em; text-transform: uppercase;">Picked up</span>
+              <span class="num">Fidelity · $4.20M</span>
+            </div>
+          </div>
+          <div class="asset is-placed"><div class="asset-top"><span class="asset-name">Vanguard Brokerage</span><span class="asset-val">$2.40M</span></div><div class="asset-meta"><span class="owner-chip">Tom</span><span class="tax-pip stepup">STEP-UP</span></div></div>
+
+          <div class="group-label"><span>Retirement</span><span class="line"></span></div>
+          <div class="asset" style="opacity:.5"><div class="asset-top"><span class="asset-name">Tom's 401(k)</span><span class="asset-val">$3.10M</span></div><div class="asset-meta"><span class="owner-chip">Tom</span><span class="tax-pip deferred">DEF</span></div></div>
+          <div class="asset" style="opacity:.5"><div class="asset-top"><span class="asset-name">Linda's IRA</span><span class="asset-val">$1.80M</span></div><div class="asset-meta"><span class="owner-chip">Linda</span><span class="tax-pip deferred">DEF</span></div></div>
+          <div class="asset" style="opacity:.5"><div class="asset-top"><span class="asset-name">Tom's Roth IRA</span><span class="asset-val">$420K</span></div><div class="asset-meta"><span class="owner-chip">Tom</span><span class="tax-pip free">FREE</span></div></div>
+
+          <div class="group-label"><span>Real Estate</span><span class="line"></span></div>
+          <div class="asset" style="opacity:.5"><div class="asset-top"><span class="asset-name">Primary — Greenwich</span><span class="asset-val">$3.60M</span></div><div class="asset-meta"><span class="owner-chip">Joint</span><span class="tax-pip stepup">STEP-UP</span></div></div>
+          <div class="asset" style="opacity:.5"><div class="asset-top"><span class="asset-name">Beach House — Watch Hill</span><span class="asset-val">$1.90M</span></div><div class="asset-meta"><span class="owner-chip">Joint</span><span class="tax-pip stepup">STEP-UP</span></div></div>
+        </div>
+      </div>
+
+      <!-- CENTER: trusts with drop state highlighting -->
+      <div class="fc-col" style="background: var(--bg-0); position: relative;">
+        <div class="fc-col-head">
+          <span class="h-title">Trusts &amp; Entities</span>
+          <span class="h-total num">valid: 2 · invalid: 1</span>
+        </div>
+        <div class="fc-col-body" style="position: relative;">
+
+          <!-- Revocable — valid but not hot -->
+          <div class="trust drop-valid">
+            <div class="trust-head">
+              <div>
+                <div class="trust-title-row">
+                  <span class="trust-name">Harrington Revocable Living Trust</span>
+                  <span class="trust-tag rev">Revocable</span>
+                  <span class="trust-tag" style="color: var(--accent); border-color: var(--accent-line); background: var(--accent-tint);">✓ Accepts brokerage</span>
+                </div>
+                <div class="trust-sub">
+                  <span><span class="k">Tax impact</span> neutral — stays in estate</span>
+                </div>
+              </div>
+              <div class="trust-head-right">
+                <div class="trust-val" style="color: var(--fg-2);">$0</div>
+                <div class="trust-count">would hold 1 · $4.20M</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ILIT — invalid for brokerage -->
+          <div class="trust drop-invalid">
+            <div class="trust-head">
+              <div>
+                <div class="trust-title-row">
+                  <span class="trust-name">Harrington ILIT</span>
+                  <span class="trust-tag irrev">Irrevocable</span>
+                  <span class="trust-tag" style="color: var(--neg); border-color: rgba(224,107,107,0.3); background: var(--neg-tint);">✕ Insurance only</span>
+                </div>
+              </div>
+              <div class="trust-head-right">
+                <div class="trust-val" style="color: var(--fg-3);">$5.00M</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SLAT — valid, hot (cursor over) -->
+          <div class="trust drop-valid drop-hot" style="position: relative;">
+            <div class="preview-strip"></div>
+            <div class="trust-head">
+              <div>
+                <div class="trust-title-row">
+                  <span class="trust-name">Harrington SLAT</span>
+                  <span class="trust-tag slat">SLAT</span>
+                  <span class="trust-tag" style="color: var(--accent-hi); border-color: var(--accent-hi); background: rgba(125,211,204,0.15);">✓ Release to add</span>
+                </div>
+                <div class="trust-sub">
+                  <span><span class="k">Effect</span> moves $4.20M outside estate</span>
+                  <span><span class="k">Uses exemption</span> <span style="color: var(--warn)">$4.20M</span></span>
+                </div>
+              </div>
+              <div class="trust-head-right">
+                <div class="trust-val" style="color: var(--accent-hi);">$2.40M <span style="color: var(--fg-3); font-weight:400; font-size: 11px;">→</span> <span style="color: var(--accent-hi);">$6.60M</span></div>
+                <div class="trust-count">1 asset <span style="color: var(--accent);">+1</span></div>
+              </div>
+            </div>
+            <div class="trust-body">
+              <div class="trust-holdings">
+                <div class="holding"><span class="name">Vanguard Brokerage</span><span class="v">$2.40M</span></div>
+                <div class="holding" style="border: 1px dashed var(--accent); background: var(--accent-tint);">
+                  <span class="name" style="color: var(--accent-hi);">Fidelity Brokerage <span style="color:var(--fg-3);font-size:10px">· will add</span></span>
+                  <span class="v" style="color: var(--accent-hi);">+$4.20M</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="trust-create" style="opacity: 0.4;">
+            <span class="plus">＋</span>
+            <span class="t">Create Trust</span>
+          </div>
+
+          <!-- ghost dragging card positioned over SLAT -->
+          <div class="ghost" style="left: 76px; top: 288px;">
+            <div class="asset-top"><span class="asset-name">Fidelity Brokerage</span><span class="asset-val">$4.20M</span></div>
+            <div class="asset-meta"><span class="owner-chip">Joint</span><span class="tax-pip taxable">TAX</span><span class="tax-pip stepup">STEP-UP</span></div>
+          </div>
+          <!-- cursor hand -->
+          <svg class="cursor-hand" style="left: 270px; top: 310px;" viewBox="0 0 24 24" fill="none" stroke="#E6E9EF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 13V5a2 2 0 1 1 4 0v6" fill="#0A0C10"/>
+            <path d="M12 11V3a2 2 0 1 1 4 0v10"/>
+            <path d="M16 9a2 2 0 0 1 4 0v7a6 6 0 0 1-6 6H11a6 6 0 0 1-5.2-3l-3-5a2 2 0 0 1 3.4-2.1L8 16"/>
+          </svg>
+
+        </div>
+      </div>
+
+      <!-- RIGHT: beneficiaries, dimmed -->
+      <div class="fc-col" style="opacity: 0.55;">
+        <div class="fc-col-head">
+          <span class="h-title">Beneficiaries</span>
+          <span class="h-total num">4</span>
+        </div>
+        <div class="fc-col-body">
+          <div class="benef"><div class="benef-head"><div><div class="benef-name">Linda Harrington</div><div class="benef-rel">Spouse</div></div><div class="benef-val">$11.24M</div></div></div>
+          <div class="benef"><div class="benef-head"><div><div class="benef-name">Tom Harrington Jr.</div><div class="benef-rel">Son</div></div><div class="benef-val">$2.82M</div></div></div>
+          <div class="benef"><div class="benef-head"><div><div class="benef-name">Sarah Harrington</div><div class="benef-rel">Daughter</div></div><div class="benef-val">$2.32M</div></div></div>
+          <div class="benef"><div class="benef-head"><div><div class="benef-name">Stanford University</div><div class="benef-rel">Charity</div></div><div class="benef-val">$500K</div></div></div>
+        </div>
+      </div>
+
+      <!-- SIDEBAR: preview state -->
+      <div class="impact preview" style="position: relative;">
+        <div class="preview-strip"></div>
+        <div class="impact-head" style="background: var(--accent-tint); border-bottom-color: var(--accent-line);">
+          <span class="h-title" style="color: var(--accent-hi);">Estate Impact · Preview</span>
+          <span class="impact-state-tag" style="color: var(--accent-hi); border-color: var(--accent-line); background: rgba(63,184,175,0.12);">PREVIEW</span>
+        </div>
+        <div class="impact-body">
+
+          <div class="metric-hero">
+            <div class="metric-label" style="color: var(--accent);">Net to Heirs <span style="color: var(--pos); letter-spacing: 0;">↑</span></div>
+            <div style="display: flex; align-items: baseline; gap: 10px;">
+              <span class="metric-value old num">$16.88M</span>
+              <span class="metric-value new num">$17.20M</span>
+            </div>
+            <div class="metric-sub"><span class="delta-pos num" style="font-weight: 600;">+$320K</span> · effective rate <span class="num" style="color: var(--accent-hi);">2.6% → 1.0%</span></div>
+          </div>
+
+          <div class="metric">
+            <div class="metric-label">Gross Estate <span style="color: var(--pos); letter-spacing: 0;">↓</span></div>
+            <div style="display: flex; align-items: baseline; gap: 10px;">
+              <span class="metric-value old num">$20.56M</span>
+              <span class="metric-value new num">$16.36M</span>
+            </div>
+            <div class="metric-sub"><span class="delta-pos num">−$4.20M</span> moved to SLAT</div>
+          </div>
+
+          <div>
+            <div class="metric-label" style="margin-bottom:7px;">Composition <span style="color: var(--accent); letter-spacing: 0; font-family: 'JetBrains Mono',monospace;">→</span></div>
+            <!-- before -->
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+              <span style="font-size: 9.5px; color: var(--fg-3); width: 32px; font-family: 'JetBrains Mono',monospace;">NOW</span>
+              <div class="stack-bar" style="flex:1; opacity: 0.5;">
+                <span style="width: 56%; background: var(--cat-cash)"></span>
+                <span style="width: 12%; background: var(--accent)"></span>
+                <span style="width: 32%; background: var(--cat-retirement)"></span>
+              </div>
+            </div>
+            <!-- after -->
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 9.5px; color: var(--accent); width: 32px; font-family: 'JetBrains Mono',monospace;">NEXT</span>
+              <div class="stack-bar" style="flex:1; box-shadow: 0 0 0 1px var(--accent-line);">
+                <span style="width: 36%; background: var(--cat-cash)"></span>
+                <span style="width: 32%; background: var(--accent)"></span>
+                <span style="width: 32%; background: var(--cat-retirement)"></span>
+              </div>
+            </div>
+            <div class="stack-legend">
+              <span class="item"><span class="sw" style="background:var(--cat-cash)"></span>In estate</span>
+              <span class="item"><span class="sw" style="background:var(--accent)"></span>In trust <span class="num delta-pos" style="margin-left:4px">+20pp</span></span>
+              <span class="item"><span class="sw" style="background:var(--cat-retirement)"></span>Outside</span>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--accent-line); padding-top: 14px;">
+            <div class="metric-row">
+              <span class="k">CT Estate Tax</span>
+              <span class="v"><span style="color: var(--fg-3); font-size: 11px;">$412K</span> → <span style="color: var(--pos);">$178K</span></span>
+            </div>
+            <div style="font-size: 10.5px; color: var(--fg-3); display: flex; justify-content: space-between;">
+              <span>Δ vs. current</span><span class="num delta-pos">−$234K</span>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 2px; padding-top: 6px;">
+            <div class="metric-row">
+              <span class="k">Federal Estate Tax</span>
+              <span class="v"><span style="color: var(--fg-3); font-size: 11px;">$0</span> → <span style="color: var(--fg-0);">$0</span></span>
+            </div>
+            <div style="font-size: 10.5px; color: var(--fg-3); display: flex; justify-content: space-between;">
+              <span>Exemption used</span><span class="num">$2.40M → $6.60M</span>
+            </div>
+          </div>
+
+          <div style="border-top: 1px solid var(--line-soft); padding-top: 12px; margin-top: 4px;">
+            <div style="font-size: 10.5px; color: var(--fg-3); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px;">Beneficiary Δ</div>
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <div class="metric-row" style="padding: 0;"><span class="k" style="font-size:11px;">Linda</span><span class="v num" style="font-size:11.5px;">$11.24M <span class="delta-pos">+$110K</span></span></div>
+              <div class="metric-row" style="padding: 0;"><span class="k" style="font-size:11px;">Tom Jr.</span><span class="v num" style="font-size:11.5px;">$2.82M <span class="delta-pos">+$105K</span></span></div>
+              <div class="metric-row" style="padding: 0;"><span class="k" style="font-size:11px;">Sarah</span><span class="v num" style="font-size:11.5px;">$2.32M <span class="delta-pos">+$105K</span></span></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= D3: Create Trust panel ================= -->
+<section class="deliverable" id="d3">
+  <div class="d-head">
+    <h2><span class="d-idx">03</span>Tab 1 · Create Trust — side panel</h2>
+    <span class="d-note">Right-side slide-over over dimmed canvas · validated splits, template-aware</span>
+  </div>
+
+  <div class="frame" style="position: relative; height: 820px; overflow: hidden;">
+    <!-- dimmed canvas underneath -->
+    <div class="fc" style="height: 820px;">
+      <div class="fc-col" style="opacity: 0.3;">
+        <div class="fc-col-head"><span class="h-title">In Estate</span><span class="h-total num">$20.56M</span></div>
+        <div class="fc-col-body">
+          <div class="asset"><div class="asset-top"><span class="asset-name">Wells Fargo Checking</span><span class="asset-val">$340K</span></div></div>
+          <div class="asset"><div class="asset-top"><span class="asset-name">Fidelity Brokerage</span><span class="asset-val">$4.20M</span></div></div>
+          <div class="asset"><div class="asset-top"><span class="asset-name">Vanguard Brokerage</span><span class="asset-val">$2.40M</span></div></div>
+          <div class="asset"><div class="asset-top"><span class="asset-name">Tom's 401(k)</span><span class="asset-val">$3.10M</span></div></div>
+        </div>
+      </div>
+      <div class="fc-col" style="background: var(--bg-0); opacity: 0.3;">
+        <div class="fc-col-head"><span class="h-title">Trusts &amp; Entities</span></div>
+        <div class="fc-col-body">
+          <div class="trust"><div class="trust-head"><div class="trust-title-row"><span class="trust-name">Harrington RLT</span></div></div></div>
+          <div class="trust"><div class="trust-head"><div class="trust-title-row"><span class="trust-name">Harrington ILIT</span></div></div></div>
+        </div>
+      </div>
+      <div class="fc-col" style="opacity: 0.3;">
+        <div class="fc-col-head"><span class="h-title">Beneficiaries</span></div>
+      </div>
+      <div class="impact" style="opacity: 0.3;">
+        <div class="impact-head"><span class="h-title">Estate Impact</span></div>
+      </div>
+    </div>
+
+    <!-- overlay + panel -->
+    <div class="panel-overlay">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Create Trust</h3>
+            <div class="sub">Draft — will apply to scenario when saved</div>
+          </div>
+          <button class="panel-close" aria-label="Close">×</button>
+        </div>
+        <div class="panel-body">
+
+          <div class="field">
+            <label class="lbl">Trust type</label>
+            <div class="type-picker">
+              <div class="type-opt">
+                <div class="n">Revocable Living <span class="badge">Common</span></div>
+                <div class="d">Probate-avoidance; assets stay in estate.</div>
+              </div>
+              <div class="type-opt selected">
+                <div class="n">SLAT <span class="badge" style="background: var(--accent-tint); color: var(--accent-hi);">Recommended</span></div>
+                <div class="d">Irrevocable. Spouse is lifetime beneficiary. Removes asset from estate.</div>
+              </div>
+              <div class="type-opt">
+                <div class="n">ILIT</div>
+                <div class="d">Holds life insurance outside the estate.</div>
+              </div>
+              <div class="type-opt">
+                <div class="n">CRT</div>
+                <div class="d">Income stream + remainder to charity.</div>
+              </div>
+              <div class="type-opt">
+                <div class="n">GRAT</div>
+                <div class="d">Term annuity; shifts appreciation out of estate.</div>
+              </div>
+              <div class="type-opt">
+                <div class="n">Other…</div>
+                <div class="d">Custom type with manual rules.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="lbl">Trust name</label>
+            <input class="inp" value="Harrington SLAT" />
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label class="lbl">Grantor</label>
+              <div class="select-wrap"><select class="inp select"><option>Tom Harrington</option><option>Linda Harrington</option></select></div>
+            </div>
+            <div class="field">
+              <label class="lbl">Trustee</label>
+              <div class="select-wrap"><select class="inp select"><option>J. Harrington (brother)</option><option>Add new…</option></select></div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="lbl">Initial beneficiaries &amp; splits</label>
+            <div style="border: 1px solid var(--line); border-radius: 6px; background: var(--bg-inset); padding: 4px 12px;">
+
+              <div class="benef-split-row">
+                <div class="who"><span class="avatar">LH</span> Linda Harrington <span style="color: var(--fg-3); font-size: 10.5px;">lifetime income</span></div>
+                <input class="pct-inp" value="— " disabled style="color: var(--fg-3);" />
+                <span style="color: var(--fg-3);">·</span>
+              </div>
+
+              <div class="benef-split-row">
+                <div class="who"><span class="avatar">TJ</span> Tom Harrington Jr. <span style="color: var(--fg-3); font-size: 10.5px;">remainder</span></div>
+                <input class="pct-inp" value="50" /> <span style="color: var(--fg-3); font-family: 'JetBrains Mono'; font-size: 11px;">%</span>
+              </div>
+
+              <div class="benef-split-row">
+                <div class="who"><span class="avatar">SH</span> Sarah Harrington <span style="color: var(--fg-3); font-size: 10.5px;">remainder</span></div>
+                <input class="pct-inp" value="50" /> <span style="color: var(--fg-3); font-family: 'JetBrains Mono'; font-size: 11px;">%</span>
+              </div>
+
+              <div class="benef-total">
+                <span>Remainder total</span>
+                <span><span class="v">100%</span> <span style="color: var(--pos); margin-left: 6px;">✓ balanced</span></span>
+              </div>
+            </div>
+            <button class="btn btn-ghost btn-sm" style="align-self: flex-start; margin-top: 6px;">
+              <svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              Add beneficiary
+            </button>
+          </div>
+
+          <div class="field">
+            <label class="lbl">Initial funding <span style="color: var(--fg-4); font-weight: 400; text-transform: none; letter-spacing: 0;">— optional</span></label>
+            <div class="select-wrap"><select class="inp select"><option>Vanguard Brokerage · $2.40M (Tom)</option><option>Fidelity Brokerage · $4.20M (Joint)</option><option>None — fund later</option></select></div>
+          </div>
+
+          <div class="hint">
+            <span class="lead">Estate impact:</span> a SLAT funded with Vanguard Brokerage removes <span class="num" style="color: var(--accent-hi);">$2.40M</span> from Tom's estate, uses <span class="num" style="color: var(--warn);">$2.40M</span> of his $13.99M exemption, and is projected to reduce CT estate tax by <span class="num" style="color: var(--pos);">~$234K</span> at second death.
+          </div>
+
+        </div>
+        <div class="panel-foot">
+          <button class="btn btn-ghost">Cancel</button>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn">Save draft</button>
+            <button class="btn btn-accent">Create &amp; fund</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= D4: Empty state ================= -->
+<section class="deliverable" id="d4">
+  <div class="d-head">
+    <h2><span class="d-idx">04</span>Tab 1 · Empty state — no trusts yet</h2>
+    <span class="d-note">Persuasive empty canvas with 3 template starting points · sidebar shows current (no trust) position</span>
+  </div>
+
+  <div class="frame">
+    <div class="fc">
+      <div class="fc-col">
+        <div class="fc-col-head"><span class="h-title">In Estate</span><span class="h-total num">$22.56M · 10 assets</span></div>
+        <div class="fc-col-body">
+          <div class="group-label"><span>Cash &amp; Brokerage</span><span class="line"></span></div>
+          <div class="asset"><div class="asset-top"><span class="asset-name">Wells Fargo Checking</span><span class="asset-val">$340K</span></div><div class="asset-meta"><span class="owner-chip">Joint</span><span class="tax-pip taxable">TAX</span></div></div>
+          <div class="asset"><div class="asset-top"><span class="asset-name">Fidelity Brokerage</span><span class="asset-val">$4.20M</span></div><div class="asset-meta"><span class="owner-chip">Joint</span><span class="tax-pip taxable">TAX</span><span class="tax-pip stepup">STEP-UP</span></div></div>
+          <div class="asset"><div class="asset-top"><span class="asset-name">Vanguard Brokerage</span><span class="asset-val">$2.40M</span></div><div class="asset-meta"><span class="owner-chip">Tom</span><span class="tax-pip taxable">TAX</span></div></div>
+
+          <div class="group-label"><span>Retirement</span><span class="line"></span></div>
+          <div class="asset"><div class="asset-top"><span class="asset-name">Tom's 401(k)</span><span class="asset-val">$3.10M</span></div><div class="asset-meta"><span class="owner-chip">Tom</span><span class="tax-pip deferred">DEF</span></div></div>
+          <div class="asset"><div class="asset-top"><span class="asset-name">Linda's IRA</span><span class="asset-val">$1.80M</span></div><div class="asset-meta"><span class="owner-chip">Linda</span><span class="tax-pip deferred">DEF</span></div></div>
+
+          <div class="group-label"><span>Real Estate</span><span class="line"></span></div>
+          <div class="asset"><div class="asset-top"><span class="asset-name">Primary — Greenwich</span><span class="asset-val">$3.60M</span></div><div class="asset-meta"><span class="owner-chip">Joint</span><span class="tax-pip stepup">STEP-UP</span></div></div>
+          <div class="asset"><div class="asset-top"><span class="asset-name">Beach House — Watch Hill</span><span class="asset-val">$1.90M</span></div><div class="asset-meta"><span class="owner-chip">Joint</span><span class="tax-pip stepup">STEP-UP</span></div></div>
+
+          <div class="group-label"><span>Life Insurance</span><span class="line"></span></div>
+          <div class="asset"><div class="asset-top"><span class="asset-name">2nd-to-Die Permanent</span><span class="asset-val">$5.00M</span></div><div class="asset-meta"><span class="owner-chip">Tom</span><span class="tax-pip free">DB</span></div></div>
+        </div>
+      </div>
+
+      <!-- CENTER: empty-state hero -->
+      <div class="fc-col" style="background: var(--bg-0); grid-column: span 2;">
+        <div class="fc-col-head">
+          <span class="h-title">Trusts &amp; Entities</span>
+          <span class="h-total num">0 trusts</span>
+        </div>
+        <div class="fc-col-body" style="padding: 0;">
+          <div class="empty-hero">
+            <div>
+              <div class="eyebrow">Start here</div>
+              <h3>No trusts yet. Let&rsquo;s build the Harringtons&rsquo; structure.</h3>
+              <p>With <strong style="color: var(--fg-1);">$20.56M</strong> in estate and CT&rsquo;s <strong style="color: var(--fg-1);">$13.61M</strong> threshold, the household is exposed to ~<strong style="color: var(--warn);">$520K</strong> in state estate tax today. A combination of these templates typically recovers <strong style="color: var(--accent-hi);">$1.1M&ndash;$1.6M</strong> for heirs.</p>
+
+              <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 11.5px; color: var(--fg-2);">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <span style="width: 14px; height: 14px; border-radius: 50%; background: var(--accent-tint); color: var(--accent-hi); display: inline-flex; align-items: center; justify-content: center; font-size: 9.5px; font-weight: 600;">1</span>
+                  Pick a template, or start blank.
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <span style="width: 14px; height: 14px; border-radius: 50%; background: var(--accent-tint); color: var(--accent-hi); display: inline-flex; align-items: center; justify-content: center; font-size: 9.5px; font-weight: 600;">2</span>
+                  Drag assets from the left rail to fund it.
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <span style="width: 14px; height: 14px; border-radius: 50%; background: var(--accent-tint); color: var(--accent-hi); display: inline-flex; align-items: center; justify-content: center; font-size: 9.5px; font-weight: 600;">3</span>
+                  Watch Estate Impact update in real time.
+                </div>
+              </div>
+
+              <div style="margin-top: 20px;">
+                <button class="btn btn-ghost btn-sm">
+                  <svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                  Start from blank trust
+                </button>
+              </div>
+            </div>
+
+            <div class="template-grid">
+              <div class="eyebrow" style="color: var(--fg-3); letter-spacing: 0.12em; text-transform: uppercase; font-size: 10.5px; font-weight: 600; margin-bottom: -2px;">Suggested for this household</div>
+
+              <div class="template">
+                <div>
+                  <div class="tt-name">Revocable Living Trust</div>
+                  <div class="tt-desc">Avoid CT probate for home &amp; brokerage. No tax effect.</div>
+                  <div class="tt-stats">
+                    <span><span class="v">Probate</span> avoided</span>
+                    <span><span class="v">Est. tax</span> neutral</span>
+                  </div>
+                </div>
+                <span class="cta">Use template →</span>
+              </div>
+
+              <div class="template" style="border-color: var(--accent-line); background: linear-gradient(180deg, var(--accent-tint), transparent 40%), var(--bg-2);">
+                <div>
+                  <div class="tt-name">SLAT <span style="font-size: 10px; color: var(--accent-hi); background: var(--accent-tint); padding: 1px 6px; border-radius: 3px; margin-left: 6px; letter-spacing: 0.05em;">BEST FIT</span></div>
+                  <div class="tt-desc">Irrevocable. Linda is lifetime beneficiary. Removes up to exemption from estate.</div>
+                  <div class="tt-stats">
+                    <span><span class="v">CT tax saved</span> <span style="color: var(--accent-hi);">~$234K</span></span>
+                    <span><span class="v">Exemption used</span> $2.4M</span>
+                  </div>
+                </div>
+                <span class="cta">Use template →</span>
+              </div>
+
+              <div class="template">
+                <div>
+                  <div class="tt-name">ILIT</div>
+                  <div class="tt-desc">Hold the $5M 2nd-to-die policy outside the estate.</div>
+                  <div class="tt-stats">
+                    <span><span class="v">DB excluded</span> $5.00M</span>
+                    <span><span class="v">CT tax saved</span> <span style="color: var(--accent-hi);">~$280K</span></span>
+                  </div>
+                </div>
+                <span class="cta">Use template →</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SIDEBAR: current exposure (no trust version) -->
+      <div class="impact">
+        <div class="impact-head">
+          <span class="h-title">Estate Impact</span>
+          <span class="impact-state-tag">CURRENT</span>
+        </div>
+        <div class="impact-body">
+          <div class="metric-hero" style="border-left-color: var(--warn); background: var(--warn-tint);">
+            <div class="metric-label" style="color: var(--warn);">Exposure · CT estate tax</div>
+            <div class="metric-value" style="color: #E4CDA8;">$520K</div>
+            <div class="metric-sub">With no trust structure applied</div>
+          </div>
+          <div class="metric"><div class="metric-label">Gross Estate</div><div class="metric-value">$22.56M</div><div class="metric-sub">Incl. life insurance DB</div></div>
+          <div class="metric"><div class="metric-label">Net to Heirs</div><div class="metric-value">$15.98M</div></div>
+          <div style="border-top: 1px solid var(--line-soft); padding-top: 14px;">
+            <div class="metric-label" style="margin-bottom: 7px;">Composition</div>
+            <div class="stack-bar">
+              <span style="width: 78%; background: var(--cat-cash)"></span>
+              <span style="width: 0%; background: var(--accent)"></span>
+              <span style="width: 22%; background: var(--cat-retirement)"></span>
+            </div>
+            <div class="stack-legend">
+              <span class="item"><span class="sw" style="background:var(--cat-cash)"></span>In estate <span class="num" style="color:var(--fg-1);margin-left:4px">$17.5M</span></span>
+              <span class="item"><span class="sw" style="background:var(--accent)"></span>In trust <span class="num" style="color:var(--fg-1);margin-left:4px">$0</span></span>
+              <span class="item"><span class="sw" style="background:var(--cat-retirement)"></span>Outside <span class="num" style="color:var(--fg-1);margin-left:4px">$5.0M</span></span>
+            </div>
+          </div>
+          <div style="border-top: 1px solid var(--line-soft); padding-top: 14px;">
+            <div class="metric-row"><span class="k">Federal Estate Tax</span><span class="v">$0</span></div>
+            <div class="metric-row"><span class="k">Effective Tax Rate</span><span class="v">2.3%</span></div>
+            <div class="metric-row"><span class="k">Exemption unused</span><span class="v">$7.52M</span></div>
+          </div>
+          <div style="padding-top: 6px;">
+            <div class="hint"><span class="lead">Opportunity:</span> $7.52M of combined federal exemption is currently unused. Funding a SLAT now locks in exemption before TCJA sunset in 2026.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= D5: Impact & Beneficiaries ================= -->
+<section class="deliverable" id="d5">
+  <div class="d-head">
+    <h2><span class="d-idx">05</span>Tab 2 · Impact &amp; Beneficiaries — full scroll</h2>
+    <span class="d-note">Three stacked sections · headline delta, Sankey, per-asset table</span>
+  </div>
+
+  <div class="frame">
+    <!-- report header + tabs (context) -->
+    <div style="padding: 18px 24px 0; background: var(--bg-0);">
+      <div class="report-header">
+        <div class="report-title">
+          <h1>Estate Planning</h1>
+          <div class="sub">
+            <span class="household">The Harrington Family</span><span class="dot"></span>
+            <span>MFJ · Connecticut</span><span class="dot"></span>
+            <span>As of <span class="num" style="color:var(--fg-1)">Apr 20, 2026</span></span>
+          </div>
+        </div>
+        <div class="report-actions">
+          <button class="btn btn-sm"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Export PDF</button>
+          <button class="btn btn-accent btn-sm">Share with client</button>
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="tab">Flowchart</button>
+        <button class="tab active">Impact &amp; Beneficiaries</button>
+        <button class="tab">Documents <span class="count">3</span></button>
+        <button class="tab">Assumptions</button>
+      </div>
+    </div>
+
+    <div class="impact-page">
+
+      <!-- Section 1 -->
+      <div class="section">
+        <div class="section-head">
+          <h2><span class="section-idx">§ 01</span>Estate Summary</h2>
+          <span class="hint-txt">Comparison holds all other assumptions constant · Scenario: Base Case</span>
+        </div>
+
+        <div class="headline-delta">
+          <div>
+            <div class="kicker">Plan outcome</div>
+            <p class="big">Proposed plan preserves <em>$1.42M</em> more for heirs.</p>
+            <div class="sub">Moving Vanguard Brokerage into a new SLAT reduces CT estate tax, locks in $2.40M of Tom&rsquo;s federal exemption before TCJA sunset, and preserves Linda&rsquo;s lifetime access.</div>
+          </div>
+          <div class="headline-meta">
+            <div>
+              <div class="mk">Net to heirs</div>
+              <div class="mv pos">+ $1.42M</div>
+            </div>
+            <div>
+              <div class="mk">CT estate tax</div>
+              <div class="mv pos">− $234K</div>
+            </div>
+            <div>
+              <div class="mk">Effective rate</div>
+              <div class="mv pos">− 1.6 pp</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-body">
+          <div class="ba-grid">
+
+            <div class="ba-col">
+              <h4>Current arrangement <span class="pill">As-is</span></h4>
+              <div class="ba-rows">
+                <div class="ba-row"><span class="k">Gross estate</span><span class="v big">$22.56M</span></div>
+                <div class="ba-row"><span class="k">Federal estate tax</span><span class="v">$0</span></div>
+                <div class="ba-row neg"><span class="k">CT estate tax</span><span class="v">$520K</span></div>
+                <div class="ba-row em"><span class="k">Net to heirs</span><span class="v big">$15.98M</span></div>
+                <div class="ba-row"><span class="k">Effective tax rate</span><span class="v">2.3%</span></div>
+                <div class="ba-row"><span class="k">Exemption used</span><span class="v">$0 / $27.98M</span></div>
+              </div>
+
+              <div class="ba-stack">
+                <div style="display: flex; justify-content: space-between; font-size: 10.5px; color: var(--fg-3); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 6px;">
+                  <span>Composition</span><span class="num" style="color:var(--fg-2)">$22.56M</span>
+                </div>
+                <div class="stack-bar">
+                  <span style="width: 78%; background: var(--cat-cash)"></span>
+                  <span style="width: 0%; background: var(--accent)"></span>
+                  <span style="width: 22%; background: var(--cat-life)"></span>
+                </div>
+                <div class="stack-legend">
+                  <span class="item"><span class="sw" style="background:var(--cat-cash)"></span>In estate 78%</span>
+                  <span class="item"><span class="sw" style="background:var(--accent)"></span>In trust 0%</span>
+                  <span class="item"><span class="sw" style="background:var(--cat-life)"></span>Outside 22%</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="ba-col prop">
+              <h4>Proposed arrangement <span class="pill">+ SLAT</span></h4>
+              <div class="ba-rows">
+                <div class="ba-row"><span class="k">Gross estate</span><span class="v big">$16.36M</span></div>
+                <div class="ba-row"><span class="k">Federal estate tax</span><span class="v">$0</span></div>
+                <div class="ba-row accent"><span class="k">CT estate tax</span><span class="v">$178K</span></div>
+                <div class="ba-row em accent"><span class="k">Net to heirs</span><span class="v big">$17.40M</span></div>
+                <div class="ba-row"><span class="k">Effective tax rate</span><span class="v">0.7%</span></div>
+                <div class="ba-row"><span class="k">Exemption used</span><span class="v">$2.40M / $27.98M</span></div>
+              </div>
+
+              <div class="ba-stack">
+                <div style="display: flex; justify-content: space-between; font-size: 10.5px; color: var(--accent); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 6px;">
+                  <span>Composition</span><span class="num">$22.56M</span>
+                </div>
+                <div class="stack-bar" style="box-shadow: 0 0 0 1px var(--accent-line);">
+                  <span style="width: 57%; background: var(--cat-cash)"></span>
+                  <span style="width: 21%; background: var(--accent)"></span>
+                  <span style="width: 22%; background: var(--cat-life)"></span>
+                </div>
+                <div class="stack-legend">
+                  <span class="item"><span class="sw" style="background:var(--cat-cash)"></span>In estate 57%</span>
+                  <span class="item"><span class="sw" style="background:var(--accent)"></span>In trust <span class="num delta-pos" style="margin-left: 4px;">+21pp</span></span>
+                  <span class="item"><span class="sw" style="background:var(--cat-life)"></span>Outside 22%</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 2: Sankey -->
+      <div class="section">
+        <div class="section-head">
+          <h2><span class="section-idx">§ 02</span>Beneficiary Flow</h2>
+          <span class="hint-txt">Proposed arrangement · stroke width proportional to dollars</span>
+        </div>
+        <div class="section-body">
+          <div class="sankey">
+            <svg viewBox="0 0 1200 460" preserveAspectRatio="none">
+              <defs>
+                <!-- link gradients: left hue → right hue -->
+                <linearGradient id="g-cash-rlt" x1="0" x2="1"><stop offset="0" stop-color="#6A9FD8" stop-opacity=".55"/><stop offset="1" stop-color="#6A9FD8" stop-opacity=".40"/></linearGradient>
+                <linearGradient id="g-cash-direct" x1="0" x2="1"><stop offset="0" stop-color="#6A9FD8" stop-opacity=".55"/><stop offset="1" stop-color="#6A9FD8" stop-opacity=".40"/></linearGradient>
+                <linearGradient id="g-broker-slat" x1="0" x2="1"><stop offset="0" stop-color="#6A9FD8" stop-opacity=".55"/><stop offset="1" stop-color="#3FB8AF" stop-opacity=".50"/></linearGradient>
+                <linearGradient id="g-broker-rlt" x1="0" x2="1"><stop offset="0" stop-color="#6A9FD8" stop-opacity=".55"/><stop offset="1" stop-color="#6A9FD8" stop-opacity=".40"/></linearGradient>
+                <linearGradient id="g-retire-direct" x1="0" x2="1"><stop offset="0" stop-color="#A08CD8" stop-opacity=".55"/><stop offset="1" stop-color="#A08CD8" stop-opacity=".40"/></linearGradient>
+                <linearGradient id="g-real-rlt" x1="0" x2="1"><stop offset="0" stop-color="#C9985A" stop-opacity=".55"/><stop offset="1" stop-color="#C9985A" stop-opacity=".40"/></linearGradient>
+                <linearGradient id="g-biz-outside" x1="0" x2="1"><stop offset="0" stop-color="#C07A9F" stop-opacity=".55"/><stop offset="1" stop-color="#C07A9F" stop-opacity=".40"/></linearGradient>
+                <linearGradient id="g-life-ilit" x1="0" x2="1"><stop offset="0" stop-color="#3FB8AF" stop-opacity=".55"/><stop offset="1" stop-color="#3FB8AF" stop-opacity=".45"/></linearGradient>
+              </defs>
+
+              <!-- column labels -->
+              <text x="90" y="18" class="sk-label" style="fill: var(--fg-3); letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px;">Assets</text>
+              <text x="560" y="18" class="sk-label" style="fill: var(--fg-3); letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px;">Trusts / Pass-through</text>
+              <text x="1050" y="18" class="sk-label" style="fill: var(--fg-3); letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px;">Beneficiaries</text>
+
+              <!-- ============================
+                   ASSET NODES (left column x=180..200)
+                   Node heights roughly proportional; total height ~380
+              ============================ -->
+              <!-- Cash $340K height 10 -->
+              <rect x="180" y="30" width="10" height="10" fill="#6A9FD8" class="sk-node"/>
+              <text x="170" y="38" text-anchor="end" class="sk-label">Cash</text>
+              <text x="170" y="50" text-anchor="end" class="sk-label sub">$340K</text>
+
+              <!-- Brokerage $6.6M height 80 -->
+              <rect x="180" y="60" width="10" height="80" fill="#6A9FD8" class="sk-node"/>
+              <text x="170" y="100" text-anchor="end" class="sk-label">Brokerage</text>
+              <text x="170" y="114" text-anchor="end" class="sk-label sub">$6.60M</text>
+
+              <!-- Retirement $5.3M height 66 -->
+              <rect x="180" y="155" width="10" height="66" fill="#A08CD8" class="sk-node"/>
+              <text x="170" y="188" text-anchor="end" class="sk-label">Retirement</text>
+              <text x="170" y="202" text-anchor="end" class="sk-label sub">$5.32M</text>
+
+              <!-- Real estate $5.5M height 68 -->
+              <rect x="180" y="235" width="10" height="68" fill="#C9985A" class="sk-node"/>
+              <text x="170" y="268" text-anchor="end" class="sk-label">Real Estate</text>
+              <text x="170" y="282" text-anchor="end" class="sk-label sub">$5.50M</text>
+
+              <!-- Business $2.8M height 36 -->
+              <rect x="180" y="315" width="10" height="36" fill="#C07A9F" class="sk-node"/>
+              <text x="170" y="335" text-anchor="end" class="sk-label">Business</text>
+              <text x="170" y="349" text-anchor="end" class="sk-label sub">$2.80M</text>
+
+              <!-- Life DB $5.0M height 62 -->
+              <rect x="180" y="365" width="10" height="62" fill="#3FB8AF" class="sk-node"/>
+              <text x="170" y="396" text-anchor="end" class="sk-label">Life (DB)</text>
+              <text x="170" y="410" text-anchor="end" class="sk-label sub">$5.00M</text>
+
+              <!-- ============================
+                   PASS NODES (middle column x=580..600)
+              ============================ -->
+              <!-- RLT $5.04M h=62 -->
+              <rect x="580" y="60" width="10" height="62" fill="#6A9FD8" class="sk-node" opacity="0.9"/>
+              <text x="600" y="90" class="sk-label">Revocable Living Trust</text>
+              <text x="600" y="104" class="sk-label sub">$5.04M</text>
+
+              <!-- SLAT $2.40M h=30 -->
+              <rect x="580" y="130" width="10" height="30" fill="#3FB8AF" class="sk-node"/>
+              <text x="600" y="148" class="sk-label" style="fill: var(--accent-hi);">SLAT</text>
+              <text x="600" y="162" class="sk-label sub">$2.40M</text>
+
+              <!-- ILIT $5.00M h=62 -->
+              <rect x="580" y="170" width="10" height="62" fill="#3FB8AF" class="sk-node" opacity="0.9"/>
+              <text x="600" y="200" class="sk-label">ILIT</text>
+              <text x="600" y="214" class="sk-label sub">$5.00M</text>
+
+              <!-- Direct / Outside estate $10.12M h=125 -->
+              <rect x="580" y="245" width="10" height="180" fill="#8A92A3" class="sk-node" opacity="0.75"/>
+              <text x="600" y="320" class="sk-label">Direct / Outside</text>
+              <text x="600" y="334" class="sk-label sub">$10.12M</text>
+
+              <!-- ============================
+                   BENEFICIARY NODES (right column x=1020..1040)
+              ============================ -->
+              <!-- Linda $11.24M h=140 -->
+              <rect x="1020" y="40" width="10" height="140" fill="#C5D1E4" class="sk-node" opacity="0.85"/>
+              <text x="1040" y="105" class="sk-label">Linda Harrington</text>
+              <text x="1040" y="119" class="sk-label sub">$11.24M · spouse</text>
+
+              <!-- Tom Jr $2.82M h=42 -->
+              <rect x="1020" y="195" width="10" height="42" fill="#C5D1E4" class="sk-node" opacity="0.85"/>
+              <text x="1040" y="218" class="sk-label">Tom Jr.</text>
+              <text x="1040" y="232" class="sk-label sub">$2.82M · son</text>
+
+              <!-- Sarah $2.32M h=38 -->
+              <rect x="1020" y="250" width="10" height="38" fill="#C5D1E4" class="sk-node" opacity="0.85"/>
+              <text x="1040" y="271" class="sk-label">Sarah</text>
+              <text x="1040" y="285" class="sk-label sub">$2.32M · daughter</text>
+
+              <!-- Stanford $500K h=10 -->
+              <rect x="1020" y="300" width="10" height="10" fill="#7DB58A" class="sk-node"/>
+              <text x="1040" y="308" class="sk-label">Stanford</text>
+              <text x="1040" y="322" class="sk-label sub">$500K · charity</text>
+
+              <!-- CT/Federal tax $412K h=8 -->
+              <rect x="1020" y="340" width="10" height="12" fill="#E06B6B" class="sk-node" opacity="0.7"/>
+              <text x="1040" y="347" class="sk-label" style="fill: var(--neg);">Estate tax</text>
+              <text x="1040" y="361" class="sk-label sub">$178K</text>
+
+              <!-- ============================
+                   LINKS — assets → middle
+                   Using curved paths with stroke-width ∝ value
+              ============================ -->
+              <!-- Cash → direct: $340K (thin ~10) -->
+              <path class="sk-link" d="M 190 35 C 390 35, 390 255, 580 255" stroke="url(#g-cash-direct)" stroke-width="10"/>
+
+              <!-- Brokerage → RLT: $4.20M fat ~50 -->
+              <path class="sk-link" d="M 190 85 C 400 85, 400 80, 580 85" stroke="url(#g-broker-rlt)" stroke-width="50"/>
+              <!-- Brokerage → SLAT: $2.40M ~30 -->
+              <path class="sk-link" d="M 190 125 C 400 125, 400 145, 580 145" stroke="url(#g-broker-slat)" stroke-width="30"/>
+
+              <!-- Retirement → direct: $5.32M ~66 -->
+              <path class="sk-link" d="M 190 188 C 400 188, 400 300, 580 300" stroke="url(#g-retire-direct)" stroke-width="66"/>
+
+              <!-- Real estate → RLT: $5.5M ~68 -->
+              <path class="sk-link" d="M 190 270 C 400 270, 400 115, 580 115" stroke="url(#g-real-rlt)" stroke-width="68"/>
+
+              <!-- Business → outside: $2.8M ~36 -->
+              <path class="sk-link" d="M 190 333 C 400 333, 400 360, 580 360" stroke="url(#g-biz-outside)" stroke-width="36"/>
+
+              <!-- Life DB → ILIT: $5.0M ~62 -->
+              <path class="sk-link" d="M 190 396 C 400 396, 400 200, 580 200" stroke="url(#g-life-ilit)" stroke-width="62"/>
+
+              <!-- ============================
+                   LINKS — middle → beneficiaries
+              ============================ -->
+              <!-- RLT → Linda: $5.04M ~62 -->
+              <path class="sk-link" d="M 590 92 C 800 92, 800 90, 1020 90" stroke="url(#g-broker-rlt)" stroke-width="62"/>
+
+              <!-- SLAT → Linda (lifetime): $1.20M ~15 -->
+              <path class="sk-link" d="M 590 140 C 800 140, 800 130, 1020 130" stroke="url(#g-broker-slat)" stroke-width="15"/>
+              <!-- SLAT → Tom Jr: $0.60M ~8 -->
+              <path class="sk-link" d="M 590 148 C 800 148, 800 205, 1020 205" stroke="url(#g-broker-slat)" stroke-width="8"/>
+              <!-- SLAT → Sarah: $0.60M ~8 -->
+              <path class="sk-link" d="M 590 156 C 800 156, 800 256, 1020 256" stroke="url(#g-broker-slat)" stroke-width="8"/>
+
+              <!-- ILIT → Tom Jr: $2.25M ~28 -->
+              <path class="sk-link" d="M 590 192 C 800 192, 800 218, 1020 218" stroke="url(#g-life-ilit)" stroke-width="28"/>
+              <!-- ILIT → Sarah: $2.25M ~28 -->
+              <path class="sk-link" d="M 590 208 C 800 208, 800 263, 1020 263" stroke="url(#g-life-ilit)" stroke-width="28"/>
+              <!-- ILIT → Stanford: $500K ~6 -->
+              <path class="sk-link" d="M 590 230 C 800 230, 800 305, 1020 305" stroke="url(#g-life-ilit)" stroke-width="6"/>
+
+              <!-- direct → Linda: $5.0M ~61 (retirement spousal rollover + cash) -->
+              <path class="sk-link" d="M 590 290 C 800 290, 800 155, 1020 155" stroke="url(#g-retire-direct)" stroke-width="61"/>
+              <!-- direct → Estate Tax $178K ~3 -->
+              <path class="sk-link" d="M 590 345 C 800 345, 800 346, 1020 346" stroke="#E06B6B" stroke-opacity="0.5" stroke-width="3"/>
+              <!-- outside (business) → Linda + Jr + Sarah (split): $2.8M ~36 -->
+              <path class="sk-link" d="M 590 360 C 800 360, 800 175, 1020 175" stroke="url(#g-biz-outside)" stroke-width="36"/>
+
+            </svg>
+          </div>
+          <div class="sankey-legend">
+            <span class="item"><span class="sw" style="background:var(--cat-cash)"></span>Cash &amp; brokerage</span>
+            <span class="item"><span class="sw" style="background:var(--cat-retirement)"></span>Retirement</span>
+            <span class="item"><span class="sw" style="background:var(--cat-realestate)"></span>Real estate</span>
+            <span class="item"><span class="sw" style="background:var(--cat-business)"></span>Business</span>
+            <span class="item"><span class="sw" style="background:var(--cat-life)"></span>Life insurance / trust path</span>
+            <span class="item"><span class="sw" style="background:#8A92A3"></span>Direct / outside</span>
+            <span class="item"><span class="sw" style="background:var(--neg)"></span>Estate tax</span>
+            <span class="item" style="margin-left:auto; color: var(--fg-3);">Hover a flow for specific amounts</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 3: Per-asset table -->
+      <div class="section">
+        <div class="section-head">
+          <h2><span class="section-idx">§ 03</span>Per-Asset Detail</h2>
+          <span class="hint-txt">10 rows · sortable · sticky header</span>
+        </div>
+        <div style="max-height: 540px; overflow-y: auto;">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th class="sorted">Asset <span class="sort">↓</span></th>
+                <th>Owner</th>
+                <th class="num">Current Value <span class="sort">↕</span></th>
+                <th>Destination</th>
+                <th>Beneficiary(ies)</th>
+                <th>Tax Treatment at Death</th>
+                <th class="num">Estate Tax on this Asset <span class="sort">↕</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="fg-strong"><span class="asset-name-cell"><span class="cat-dot" style="background: var(--cat-cash)"></span>Wells Fargo Checking</span></td>
+                <td>Joint</td>
+                <td class="num-c">$340,000</td>
+                <td><span class="dest direct">Direct · spouse</span></td>
+                <td>Linda (100%)</td>
+                <td>Unlimited marital</td>
+                <td class="num-c">$0</td>
+              </tr>
+              <tr>
+                <td class="fg-strong"><span class="asset-name-cell"><span class="cat-dot" style="background: var(--cat-cash)"></span>Fidelity Brokerage</span></td>
+                <td>Joint</td>
+                <td class="num-c">$4,200,000</td>
+                <td><span class="dest trust">RLT</span></td>
+                <td>Linda · then children 50/50</td>
+                <td>Step-up · marital</td>
+                <td class="num-c">$0</td>
+              </tr>
+              <tr>
+                <td class="fg-strong"><span class="asset-name-cell"><span class="cat-dot" style="background: var(--cat-cash)"></span>Vanguard Brokerage</span></td>
+                <td>Tom</td>
+                <td class="num-c">$2,400,000</td>
+                <td><span class="dest trust">SLAT</span></td>
+                <td>Linda lifetime · Tom Jr./Sarah 50/50</td>
+                <td>Outside estate</td>
+                <td class="num-c" style="color: var(--pos)">$0</td>
+              </tr>
+              <tr>
+                <td class="fg-strong"><span class="asset-name-cell"><span class="cat-dot" style="background: var(--cat-retirement)"></span>Tom&rsquo;s 401(k)</span></td>
+                <td>Tom</td>
+                <td class="num-c">$3,100,000</td>
+                <td><span class="dest direct">Direct · spouse rollover</span></td>
+                <td>Linda (100%)</td>
+                <td>Tax-deferred inherited IRA</td>
+                <td class="num-c">$0</td>
+              </tr>
+              <tr>
+                <td class="fg-strong"><span class="asset-name-cell"><span class="cat-dot" style="background: var(--cat-retirement)"></span>Linda&rsquo;s IRA</span></td>
+                <td>Linda</td>
+                <td class="num-c">$1,800,000</td>
+                <td><span class="dest direct">Direct</span></td>
+                <td>Tom · then children</td>
+                <td>Tax-deferred</td>
+                <td class="num-c">$0</td>
+              </tr>
+              <tr>
+                <td class="fg-strong"><span class="asset-name-cell"><span class="cat-dot" style="background: var(--cat-retirement)"></span>Tom&rsquo;s Roth IRA</span></td>
+                <td>Tom</td>
+                <td class="num-c">$420,000</td>
+                <td><span class="dest direct">Direct</span></td>
+                <td>Tom Jr. · Sarah 50/50</td>
+                <td>Tax-free</td>
+                <td class="num-c">$0</td>
+              </tr>
+              <tr>
+                <td class="fg-strong"><span class="asset-name-cell"><span class="cat-dot" style="background: var(--cat-realestate)"></span>Primary — Greenwich, CT</span></td>
+                <td>Joint</td>
+                <td class="num-c">$3,600,000</td>
+                <td><span class="dest trust">RLT</span></td>
+                <td>Linda · then children</td>
+                <td>Step-up</td>
+                <td class="num-c" style="color: var(--warn)">$118,000</td>
+              </tr>
+              <tr>
+                <td class="fg-strong"><span class="asset-name-cell"><span class="cat-dot" style="background: var(--cat-realestate)"></span>Beach House — Watch Hill, RI</span></td>
+                <td>Joint</td>
+                <td class="num-c">$1,900,000</td>
+                <td><span class="dest direct">Direct</span></td>
+                <td>Children 50/50</td>
+                <td>Step-up</td>
+                <td class="num-c" style="color: var(--warn)">$60,000</td>
+              </tr>
+              <tr>
+                <td class="fg-strong"><span class="asset-name-cell"><span class="cat-dot" style="background: var(--cat-business)"></span>Harrington Mfg LLC · 45%</span></td>
+                <td>Tom</td>
+                <td class="num-c">$2,800,000</td>
+                <td><span class="dest direct">Direct · buy-sell</span></td>
+                <td>Linda · then Tom Jr.</td>
+                <td>Step-up · buy-sell fund</td>
+                <td class="num-c">$0</td>
+              </tr>
+              <tr>
+                <td class="fg-strong"><span class="asset-name-cell"><span class="cat-dot" style="background: var(--cat-life)"></span>Term Life — Tom</span></td>
+                <td>Tom</td>
+                <td class="num-c">$2,000,000</td>
+                <td><span class="dest direct">Direct DB</span></td>
+                <td>Linda (100%)</td>
+                <td>Income-tax-free DB</td>
+                <td class="num-c">$0</td>
+              </tr>
+              <tr style="background: var(--bg-inset);">
+                <td style="color: var(--fg-3); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;">Totals</td>
+                <td></td>
+                <td class="num-c" style="color: var(--fg-0); font-weight: 600;">$22,560,000</td>
+                <td style="color: var(--fg-3);">10 assets</td>
+                <td></td>
+                <td></td>
+                <td class="num-c" style="color: var(--warn); font-weight: 600;">$178,000</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ================= RATIONALE ================= -->
+<section class="rationale" id="rationale">
+  <h3>Design rationale — 5 notes</h3>
+  <ul>
+    <li><strong>Muted teal as the single accent.</strong> One color (<code>#3FB8AF</code>) carries all interactive and affirmative meaning — drop targets, preview deltas, proposed arrangements, primary CTAs. Semantic red and warm amber are reserved for exposure and warnings; positive deltas use a desaturated sage so teal stays special. No rainbow, no gradient sprawl.</li>
+    <li><strong>Three surface tiers + tight borders, not shadows.</strong> <code>#0A0C10</code> base → <code>#12151C</code> panel → <code>#1A1E27</code> card, separated by 1px lines at <code>#21&ndash;2A</code>. No elevated drop shadows on data; only the dragging ghost and toast get shadow. This matches the Bloomberg-terminal density goal and lets numbers be the loudest thing on screen.</li>
+    <li><strong>Drag affordance is a numbers-first preview, not a visual celebration.</strong> Valid trusts get a soft teal border; the hot one gets a pulsing accent strip and a mirrored &ldquo;+$4.20M&rdquo; holding inside. The real payload is the sidebar flipping to preview mode — current value struck through, proposed value bumped up in accent, explicit deltas (<code>+$320K</code>, <code>−1.6pp</code>). The advisor is a numbers person; we lead with numbers.</li>
+    <li><strong>Sidebar is the persistent protagonist.</strong> It lives at 320px against every canvas state (default, drag, empty, even dimmed during modals) so the advisor can run meetings without ever looking away from impact. In the empty state it becomes a warning (<code>$520K exposure</code>) to create narrative urgency; during drag it becomes the preview surface; after commit it returns to factual.</li>
+    <li><strong>Tabular numbers everywhere, geometric type for labels.</strong> Inter for UI, JetBrains Mono for every dollar figure, percentage, and ratio. Numbers of different magnitudes line up at the decimal across rows — in the before/after table, the Sankey node labels, the per-asset table. That alignment is what separates &ldquo;hedge-fund terminal&rdquo; from &ldquo;SaaS report.&rdquo;</li>
+  </ul>
+</section>
+
+</div></div>
+</body>
+</html>
