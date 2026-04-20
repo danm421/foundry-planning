@@ -628,3 +628,24 @@ shipped on `security-hardening`. Still open:
 - **Inflation randomization.** Why deferred: inflation-tied accounts stay fixed-rate per v1 scoping.
 - **Orchestrator smoke test** (`monte-carlo-report.test.tsx`). Why deferred: skipped during Phase 5; the component's visual contract is exercised manually each checkpoint, and pure-helper tests cover the data-transform surface.
 - **Cash-flow `portfolioAssets.total` excludes non-liquid categories.** Why deferred (flagged in-session): the cash-flow report's portfolio total currently includes real estate / business / life insurance. MC uses a liquid-only total. User acknowledged this as a separate cashflow fix outside this session.
+
+## Admin tool Plan 1 (shipped 2026-04-20)
+
+- **Admin Clerk instance + webhook.** Plan 1 ships lazy-create inside
+  `getActingContext()`; a real Clerk webhook route for `admin_users` sync lives
+  with `apps/admin` (Plan 2). Keep the webhook idempotent and signature-verified.
+  Why deferred: webhook needs an HTTP route, which requires `apps/admin`.
+- **Transactional audit emission.** `neon-http` driver cannot span mutation +
+  `writeAuditLog` in a single transaction. Migrate to the WebSocket Pool or
+  Postgres RLS triggers when we promote to the Approach-3 enforcement model.
+  Why deferred: current driver is simpler, and the append-only trigger catches
+  tampering even if the emission is non-atomic.
+- **`drizzle.__drizzle_migrations` bookkeeping drift on Neon.** `production` and
+  the `admin-tool-plan-1` dev branch both contain rows that don't align with
+  the current repo's `_journal.json`, leading `drizzle-kit migrate` to report
+  success while skipping pending migrations. Plan 1's 0037/0038 were applied
+  manually via Neon MCP against the dev branch to unblock the work. Needs a
+  one-time reconciliation before the next `drizzle-kit migrate` run on any
+  shared branch.
+  Why deferred: orthogonal to Plan 1's feature scope; requires deciding which
+  lineage is authoritative on production before touching it.

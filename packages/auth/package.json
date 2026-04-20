@@ -8,8 +8,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@clerk/nextjs": "^7.2.3",
-    "@foundry/db": "*"
+    "@clerk/nextjs": "^7.2.3"
   },
   "devDependencies": {
     "vitest": "^4.1.4",
