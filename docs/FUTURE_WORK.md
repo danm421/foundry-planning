@@ -530,42 +530,41 @@ Dependency notes that override raw score:
   applied manually via `drizzle-kit migrate` against the Neon URL in
   `.env.local`. _Why deferred: single dev, single environment for now._
 
-## Security Hardening (partial, 2026-04-20)
+## Security Hardening (substantially complete, 2026-04-20)
 
-Week-1 (C1-C4, C7, H2) and week-2 (H1, H4, H5, H9, most Mediums, force-dynamic,
-tenant-isolation contract test, `UnauthorizedError` class, `requireOrgId()`)
-shipped on `security-hardening`. Open items from `docs/SECURITY_AUDIT.md`:
+Week-1 (C1-C4, C7, H2), week-2 (H1, H4 partial, H5, H9, most Mediums),
+and week-3 (H3, H6, H7, H8, C5, CMA role checks, audit_log table) all
+shipped on `security-hardening`. Still open:
 
-- **H3** — PDF/xlsx magic-byte validation, `Content-Length` pre-check,
-  `AbortSignal.timeout` on `unpdf`, page cap. _Why deferred: needs a
-  standalone pass on `src/lib/extraction/pdf-parser.ts` and `extract.ts`._
-- **H6** — firm-scoped FK validation on POST handlers (ownerEntityId,
-  modelPortfolioId, cashAccountId, etc. verified to belong to caller's
-  firm). _Why deferred: ~12 handlers, each one-line fix, pattern copied
-  from `plan-settings/route.ts`._
-- **H7** — tighter SELECT projections on list endpoints (stop returning
-  full DOBs/advisorId on `/api/clients`). _Why deferred: UI audit needed
-  to know what the list page actually consumes._
-- **H8** — `AbortSignal.timeout(25_000)` around `renderToStream` in the
-  balance-sheet PDF. _Why deferred: react-pdf upstream fix is closer;
-  timeout treats the symptom._
-- **zod coverage gap** — schemas shipped for `allocations` and
-  `asset-classes`; pattern established in `src/lib/schemas/common.ts`.
-  Remaining ~25 mutating handlers still take raw `await req.json()`.
-  _Why deferred: mechanical but touches too many files for one PR._
-- **C5** — prompt-injection hardening (wrap doc text in
-  `<document>…</document>`, strict Zod schema before DB write, never
-  spread-insert LLM output). _Why deferred: month-two audit bucket._
+- **zod coverage gap** — schemas shipped for: `allocations` PUT,
+  `asset-classes` PUT, `clients` POST. Reusable schemas defined for
+  accounts/incomes/expenses/liabilities POST in
+  `src/lib/schemas/resources.ts` but not yet wired into the handlers.
+  Pattern established in `src/lib/schemas/common.ts`; each remaining
+  route is a 3-line drop-in (import + parseBody + destructure from
+  parsed.data). _Why deferred: risk-adjusted — the unwired routes
+  already have mass-assignment guards (C3) and FK validation (H6);
+  zod is belt-and-braces._
 - **C6** — Azure OpenAI abuse-monitoring exemption. _Why deferred:
-  procurement step, steps live in `docs/SECURITY_RUNBOOK.md`._
-- **Medium items still open**: CMA role checks (`has({ role: "org:admin" })`
-  on mutations), `audit_log` table + writes on every mutation, two-firm
-  HTTP integration test, Sentry wiring with PII scrubbing. _Why deferred:
-  each is its own feature; contract test in
-  `src/__tests__/tenant-isolation.test.ts` covers the structural
-  invariant in the meantime._
+  procurement step; steps live in `docs/SECURITY_RUNBOOK.md` §1._
+- **Two-firm HTTP integration test** — structural invariant is enforced
+  by `src/__tests__/tenant-isolation.test.ts`; full end-to-end still
+  needs a Clerk test-double + Postgres harness. _Why deferred: harness
+  cost > incremental SOC-2 value given the contract test._
+- **Sentry wiring with PII scrubbing + Clerk user context.** _Why
+  deferred: would pull a third logging stack in; revisit after first
+  real incident._
 - **CSP enforce (drop Report-Only)** — needs report endpoint + 2 weeks
   of prod data. _Steps in `docs/SECURITY_RUNBOOK.md` §3._
+- **`requireOrgId()` rollout** — the strict helper exists but no
+  client-facing handlers have been swapped over. _Why deferred: needs
+  product input on whether users ever legitimately operate outside an
+  org._
+- **Audit log coverage gap** — `recordAudit()` is wired into
+  client/account/liability/CMA deletes (the high-risk destructive set).
+  Incomes, expenses, entities, family-members, deductions, transfers,
+  asset-transactions, savings-rules deletes are not yet audited.
+  _Why deferred: follow-up sweep, pattern established._
 
 ## Timeline Report (shipped 2026-04-19)
 
