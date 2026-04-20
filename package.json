@@ -19,7 +19,6 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "jose": "^5.10.0",
     "svix": "^1.90.0"
   }
 }

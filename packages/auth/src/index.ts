@@ -15,3 +15,5 @@ export type {
   ActiveImpersonation,
 } from "./admin-user-repo";
 export { requireRole } from "./roles";
+export { signImpersonationToken, verifyImpersonationToken, hashImpersonationToken, ImpersonationTokenError } from './impersonation-token';
+export type { ImpersonationClaims } from './impersonation-token';
