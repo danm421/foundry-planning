@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
 import { eq, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -40,9 +41,8 @@ export async function GET() {
       }))
     );
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResp = authErrorResponse(err);
+    if (authResp) return NextResponse.json(authResp.body, { status: authResp.status });
     console.error("GET /api/cma/model-portfolios error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -50,6 +50,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    await requireOrgAdmin();
     const firmId = await getOrgId();
     const body = await request.json();
     const { name, description } = body;
@@ -65,9 +66,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ...created, allocations: [] }, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResp = authErrorResponse(err);
+    if (authResp) return NextResponse.json(authResp.body, { status: authResp.status });
     console.error("POST /api/cma/model-portfolios error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

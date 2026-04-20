@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await requireOrgAdmin();
     const firmId = await getOrgId();
     const { id } = await params;
 
@@ -60,9 +62,8 @@ export async function PUT(
 
     return NextResponse.json(updated);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResp = authErrorResponse(err);
+    if (authResp) return NextResponse.json(authResp.body, { status: authResp.status });
     console.error("PUT /api/cma/model-portfolios/[id]/allocations error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
