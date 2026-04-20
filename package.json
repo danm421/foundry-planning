@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "npm@11.12.1",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
@@ -14,5 +17,9 @@
   "devDependencies": {
     "turbo": "^2.9.6",
     "typescript": "^5"
+  },
+  "dependencies": {
+    "jose": "^5.10.0",
+    "svix": "^1.90.0"
   }
 }
