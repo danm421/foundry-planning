@@ -1,0 +1,71 @@
+// @vitest-environment jsdom
+import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
+import WillsPanel from "../wills-panel";
+
+const u = (s: string) => `00000000-0000-0000-0000-${s.padStart(12, "0")}`;
+
+const baseProps = {
+  clientId: u("c"),
+  primary: {
+    firstName: "Tom",
+    lastName: "Smith",
+    spouseName: "Linda",
+    spouseLastName: "Smith",
+  },
+  accounts: [
+    { id: u("a1"), name: "Fidelity Brokerage", category: "taxable" as const },
+  ],
+  familyMembers: [
+    { id: u("f1"), firstName: "Child", lastName: "A" },
+  ],
+  externalBeneficiaries: [],
+  entities: [],
+};
+
+describe("WillsPanel", () => {
+  it("renders an empty state for a grantor with no will", () => {
+    render(<WillsPanel {...baseProps} initialWills={[]} />);
+    expect(screen.getByText(/Tom Smith/)).toBeDefined();
+    expect(screen.getByText(/Linda Smith/)).toBeDefined();
+    expect(screen.getAllByText(/No bequests yet/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders a will with one bequest", () => {
+    render(
+      <WillsPanel
+        {...baseProps}
+        initialWills={[
+          {
+            id: u("w1"),
+            grantor: "client",
+            bequests: [
+              {
+                id: u("b1"),
+                name: "Brokerage to spouse",
+                assetMode: "specific",
+                accountId: u("a1"),
+                percentage: 100,
+                condition: "if_spouse_survives",
+                sortOrder: 0,
+                recipients: [
+                  {
+                    id: u("r1"),
+                    recipientKind: "spouse",
+                    recipientId: null,
+                    percentage: 100,
+                    sortOrder: 0,
+                  },
+                ],
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Brokerage to spouse")).toBeDefined();
+    expect(screen.getByText(/Fidelity Brokerage/)).toBeDefined();
+    expect(screen.getAllByText(/100%/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/If spouse survives/i)).toBeDefined();
+  });
+});
