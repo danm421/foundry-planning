@@ -649,3 +649,82 @@ shipped on `security-hardening`. Still open:
   shared branch.
   Why deferred: orthogonal to Plan 1's feature scope; requires deciding which
   lineage is authoritative on production before touching it.
+
+## Admin tool Plan 2 (shipped 2026-04-20) [2026-04-20 plan-2]
+
+- **Audit coverage sweep — low-risk mutations.** `auditedMutation` covers the
+  high-risk set (clients, accounts, liabilities, plan_settings, incomes,
+  expenses, deductions, savings_rules, transfers, asset_transactions). Entities,
+  family-members, and other low-risk endpoints are not yet wrapped.
+  Why deferred: risk-adjusted — the high-risk set is what a hostile
+  impersonation session could damage; full coverage is belt-and-braces for a
+  follow-up sweep.
+
+- **ESLint rule forcing `auditedMutation` on `apps/web/src/app/api/**`.**
+  New mutation routes added after Plan 2 won't be automatically wrapped. An
+  ESLint `no-restricted-syntax` rule (or a custom plugin rule) that detects
+  `db.insert/update/delete` outside an `auditedMutation` call on those paths
+  would catch future drift at lint time.
+  Why deferred: pattern is established; rule authoring is its own task.
+
+- **Audit chain verification UI / background verifier.** The hash chain is a
+  DB-layer property enforced by the append-only trigger and Plan 1's
+  integration test. A `/audit/verify` UI or background cron that walks the
+  chain and surfaces any gap would give the founder confidence without manual
+  SQL. No tamper-evidence UI ships in Plan 2.
+  Why deferred: chain integrity is already covered at the DB layer; UI is
+  nice-to-have for the Plan 3 / SOC-2 audit story.
+
+- **Session renewal UX.** Impersonation sessions expire hard at 30 min. An
+  admin mid-task gets dropped to Clerk sign-in without warning. A renewal flow
+  (banner countdown + "Extend session" button minting a fresh JWT) would
+  improve operator ergonomics.
+  Why deferred: hard expiry is the safer default; renewal is a UX polish item.
+
+- **WebSocket Pool driver promotion for mutation+audit atomicity (carryover
+  from Plan 1).** `neon-http` cannot span the mutation statement and the
+  `writeAuditLog` INSERT in a single transaction. Migrating to
+  `@neondatabase/serverless` Pool (WebSocket driver) eliminates the atomicity
+  gap; if the audit write fails, the mutation rolls back.
+  Why deferred: append-only trigger still catches tampering; full atomicity
+  requires a driver migration with broader scope than Plan 2.
+
+- **`/admin-users` UI and admin-user CRUD.** The admin Clerk bootstrap is
+  currently manual (create user in Clerk dashboard; webhook syncs the
+  `admin_users` row). A CRUD UI at `/admin-users` would let the founder manage
+  admin access without touching the Clerk dashboard.
+  Why deferred: Plan 2 non-goal; single founder has no need yet. Plan 3.
+
+- **`drizzle-kit` ↔ Neon journal resync (still broken; documented, not
+  fixed).** Plan 2 applied migration 0039 manually via Neon MCP following the
+  same pattern as Plan 1's 0037/0038. The repo journal and Neon's
+  `__drizzle_migrations` table remain out of sync on shared branches. A
+  one-time reconciliation (decide authoritative lineage → reset Neon table →
+  re-apply) is required before any CI-driven migration workflow can work.
+  Why deferred: orthogonal to Plan 2's feature scope; no CI migration
+  workflow exists yet so the drift is harmless today.
+
+- **Prod admin Clerk instance + `admin.foundry-planning.com` DNS.** Plan 2
+  ships against test keys (`pk_test_…` / `sk_test_…`) on `*.vercel.app`
+  preview URLs. Production Clerk provisioning and the DNS flip are Plan 3
+  cutover work. See `docs/DEPLOYMENT_RUNBOOK.md` §Plan 3.
+  Why deferred: pre-launch; no real admin users yet.
+
+- **Playwright E2E execution (Task 19 deferred).** The happy-path test
+  (`apps/admin/tests/impersonation.spec.ts`) is scaffolded and covers the
+  full impersonation lifecycle across both preview deployments. Running it
+  requires live preview URLs, seeded Clerk test credentials, and Playwright
+  browser binaries — none of which are available in the automated worktree
+  environment.
+  Why deferred: environment constraint; run manually after Step 8 in
+  `docs/DEPLOYMENT_RUNBOOK.md`.
+
+- **`audit_log` append-only trigger blocks test cleanup (DELETE forbidden).**
+  The DB-level trigger installed in Plan 1 rejects any DELETE on `audit_log`.
+  Integration tests that insert rows and then clean up after themselves fail
+  with a trigger violation. Tests must mock `defaultAuditInserter` (the
+  injectable audit writer) instead of hitting the real table, or use a
+  separate schema/db without the trigger for test runs.
+  Why deferred: affects only integration tests that write real audit rows;
+  current test suite mocks the inserter. A proper solution (per-test schema
+  isolation or a test-only trigger bypass) is its own infra task.
