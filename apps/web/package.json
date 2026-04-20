@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "db:generate": "drizzle-kit generate",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
