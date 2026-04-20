@@ -347,13 +347,29 @@ Dependency notes that override raw score:
   Requires multi-year stateful tracking of AMT paid vs recovered. _Why
   deferred: edge case for most planning clients; significant complexity._
 
-- **State-level bracket tax** _(P5 E2 L4)_ — replace flat state rate with
+- **State-level bracket tax** _(P6 E2 L4)_ — replace flat state rate with
   per-state progressive brackets. Needs a data-ingestion pipeline covering
   all 50 states + DC (bracket thresholds vary per state, update annually).
   Some states tax LTCG as ordinary (most), some have no state tax (FL, TX,
   etc.), some have local/city tax (NY, NYC). Big data project. _Why deferred:
   flat-rate approximation within ~1% of actual state tax for most clients
-  is acceptable for planning-horizon work._
+  is acceptable for planning-horizon work._ **Known accuracy gap**: flat
+  approximation breaks down sharply for high-bracket states (CA, NY, NJ, MA,
+  HI, OR) on clients with large taxable events — a $1M LTCG year for a CA
+  resident using a 7% flat rate vs the actual 13.3% top marginal mis-states
+  state tax by $63k. Until per-state brackets ship, the UI should not present
+  state-tax numbers for those states as authoritative — tag the state tax
+  column with a "flat-rate estimate" caveat in tax-detail views (new
+  deferred sub-item below).
+
+- **"Flat state-tax estimate" badge in tax-detail UI** _(P4 E8 L1)_ — small
+  UI tag on the state-tax row/column indicating the engine is using the
+  plan's flat state rate, not actual state brackets. Prevents advisors
+  inadvertently showing clients a state-tax number that's off by 5-figures
+  for high-tax-state residents with large events. Ships independently of
+  the full per-state bracket project. _Why deferred: waiting for the
+  cashflow-fixes branch to land before stacking another tax-detail UI
+  change._
 
 - **Entity withdrawal strategy** _(P2 E5 L2)_ — when an entity's checking
   goes negative, the engine leaves it negative instead of pulling from the
