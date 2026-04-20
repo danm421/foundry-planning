@@ -1,0 +1,148 @@
+import { describe, it, expect } from "vitest";
+import {
+  willCreateSchema,
+  willUpdateSchema,
+  willBequestSchema,
+} from "../wills";
+
+const u = (suffix: string) =>
+  `00000000-0000-0000-0000-${suffix.padStart(12, "0")}`;
+
+const spouseRecipient = {
+  recipientKind: "spouse" as const,
+  recipientId: null,
+  percentage: 100,
+  sortOrder: 0,
+};
+
+const validBequest = {
+  name: "Brokerage to spouse",
+  assetMode: "specific" as const,
+  accountId: u("1"),
+  percentage: 100,
+  condition: "always" as const,
+  sortOrder: 0,
+  recipients: [spouseRecipient],
+};
+
+describe("willBequestSchema", () => {
+  it("accepts a well-formed specific bequest to spouse", () => {
+    expect(willBequestSchema.safeParse(validBequest).success).toBe(true);
+  });
+
+  it("rejects specific bequest with null accountId", () => {
+    const r = willBequestSchema.safeParse({ ...validBequest, accountId: null });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects all_assets bequest with non-null accountId", () => {
+    const r = willBequestSchema.safeParse({
+      ...validBequest,
+      assetMode: "all_assets",
+      accountId: u("1"),
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("accepts all_assets bequest with null accountId", () => {
+    const r = willBequestSchema.safeParse({
+      ...validBequest,
+      assetMode: "all_assets",
+      accountId: null,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects recipient with recipientKind='spouse' AND non-null recipientId", () => {
+    const r = willBequestSchema.safeParse({
+      ...validBequest,
+      recipients: [{ ...spouseRecipient, recipientId: u("2") }],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects recipient with recipientKind='family_member' AND null recipientId", () => {
+    const r = willBequestSchema.safeParse({
+      ...validBequest,
+      recipients: [
+        {
+          recipientKind: "family_member" as const,
+          recipientId: null,
+          percentage: 100,
+          sortOrder: 0,
+        },
+      ],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects when recipient percentages do not sum to 100", () => {
+    const r = willBequestSchema.safeParse({
+      ...validBequest,
+      recipients: [
+        {
+          recipientKind: "family_member" as const,
+          recipientId: u("2"),
+          percentage: 40,
+          sortOrder: 0,
+        },
+        {
+          recipientKind: "family_member" as const,
+          recipientId: u("3"),
+          percentage: 40,
+          sortOrder: 1,
+        },
+      ],
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("accepts multi-recipient split summing to 100", () => {
+    const r = willBequestSchema.safeParse({
+      ...validBequest,
+      recipients: [
+        {
+          recipientKind: "family_member" as const,
+          recipientId: u("2"),
+          percentage: 60,
+          sortOrder: 0,
+        },
+        {
+          recipientKind: "family_member" as const,
+          recipientId: u("3"),
+          percentage: 40,
+          sortOrder: 1,
+        },
+      ],
+    });
+    expect(r.success).toBe(true);
+  });
+});
+
+describe("willCreateSchema", () => {
+  it("accepts grantor='client' with empty bequests", () => {
+    expect(
+      willCreateSchema.safeParse({ grantor: "client", bequests: [] }).success,
+    ).toBe(true);
+  });
+
+  it("rejects grantor='joint'", () => {
+    expect(
+      willCreateSchema.safeParse({ grantor: "joint", bequests: [] }).success,
+    ).toBe(false);
+  });
+
+  it("defaults bequests to empty array", () => {
+    const r = willCreateSchema.safeParse({ grantor: "client" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.bequests).toEqual([]);
+  });
+});
+
+describe("willUpdateSchema", () => {
+  it("accepts a full replace payload", () => {
+    expect(
+      willUpdateSchema.safeParse({ bequests: [validBequest] }).success,
+    ).toBe(true);
+  });
+});
