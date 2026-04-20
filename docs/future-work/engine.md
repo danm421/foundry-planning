@@ -200,3 +200,95 @@
   no-default-checking branch. _Why deferred: every real client now has a
   default checking; legacy path exists only for fixtures and pre-migration
   data._
+
+## From the 2026-04-19/20 cashflow accuracy audit
+
+The fix pass at 74e946d / f5abaf2 / 08af937 closed 12 of 15 P0/P1
+findings against live data. The items below are followups that were either
+deliberately scoped out of that pass or surfaced during verification.
+
+- **OBBBA SALT cap effective year + AGI phase-down** _(P5 E8 L2)_ —
+  [derive-deductions.ts:25-27](../../src/lib/tax/derive-deductions.ts#L25-L27)
+  uses `year >= 2026 ? 40_000 : 10_000`. Per Pub. L. No. 119-21 §70120
+  (OBBBA), the $40k cap is effective tax year **2025+**, and phases down
+  30% above $500k single / $600k MFJ AGI back toward the $10k floor by
+  AGI ≈ $700k MFJ. Current code is off by one year for 2025 projections
+  AND silently keeps $40k for very-high-income clients who'd see a
+  meaningful phase-down. _Why deferred: cosmetic for 2026+ projections;
+  matters for plans that include TY 2025 or HENRY clients._
+
+- **Age 65+ additional standard deduction (and OBBBA senior bonus)**
+  _(P6 E7 L3)_ — [derive-deductions.ts](../../src/lib/tax/derive-deductions.ts)
+  doesn't apply the $1,550-MFJ-each / $1,950-single (2024 values)
+  age-65+/blind additional standard deduction, and doesn't apply the OBBBA
+  $6,000-per-filer 65+ "senior bonus" added 2025+. For a target audience
+  of retirement-planning advisors this is a recurring miss: a 70/68 MFJ
+  couple gets +$3,100 (pre-OBBBA) or +$15,100 (post-OBBBA) of additional
+  std deduction not currently modeled — typically $700-$3,300 of tax per
+  year. _Why deferred: requires age plumbing into deduction derivation;
+  not in the SS/AMT/NIIT pass._
+
+- **Roth 401(k) employer match — taxability post-2023** _(P5 E6 L2)_ —
+  [projection.ts:1006-1029](../../src/engine/projection.ts#L1006-L1029)
+  treats all employer match as tax-free regardless of destination. SECURE
+  2.0 §604 made employer match to a Roth 401(k) **taxable to the employee
+  in the year contributed**. Engine misses this for any savings rule with
+  `employerMatchPct > 0` targeting a Roth 401(k) account. _Why deferred:
+  uncommon today (most plans still match to traditional bucket) but
+  growing._
+
+- **IRA contribution-limit MAGI phase-outs** _(P5 E6 L3)_ —
+  [contribution-limits.ts](../../src/engine/contribution-limits.ts) treats
+  IRA limits as flat dollar caps. Reality:
+  - Traditional IRA deductibility phases out by MAGI when covered by a
+    workplace plan ($77k–$87k single, $123k–$143k MFJ for 2024)
+  - Roth IRA contributions phase out by MAGI ($146k–$161k single,
+    $230k–$240k MFJ for 2024)
+  Engine models high earners as making full Roth contributions when
+  legally barred. _Why deferred: most clients with this issue should be
+  using backdoor Roth, which we don't model either._
+
+- **Property-tax inflation start year for mid-projection asset purchases**
+  _(P3 E8 L1)_ — [projection.ts:374-385](../../src/engine/projection.ts#L374-L385)
+  inflates synthetic property tax from `planSettings.planStartYear` for
+  every account, including accounts created mid-projection by an asset
+  purchase technique. So a property bought in 2035 with $10k of tax (in
+  user-entered dollars) shows ~$13.04k in its first year because of 9
+  years of compounded inflation from 2026. Either inflate from
+  acquisition year (correct for "expressed in year-of-purchase dollars")
+  or document the convention so users know to enter today's dollars.
+  _Why deferred: rare; only matters when users add asset-purchase
+  techniques._
+
+- **Realization OI → `interestIncome` lumping for NIIT** _(P3 E5 L2)_ —
+  [projection.ts:901](../../src/engine/projection.ts#L901) feeds **all**
+  ordinary-income realization (cash + taxable buckets) into the tax
+  engine's `interestIncome` field. The asset-class realization split's
+  OI bucket on a brokerage account can include interest, non-qualified
+  dividends, REIT distributions, and royalties — most of which ARE
+  NIIT-qualifying anyway, so the result is materially correct, but the
+  labeling is loose and would mis-classify if any future asset class
+  routed pension/annuity income through the OI bucket (NIIT-exempt). Fix:
+  split realization OI into per-source sub-categories. _Why deferred:
+  current behavior is conservative (slight over-inclusion in NIIT) and
+  fixing it requires extending the realization split schema._
+
+- **SECA tax not surfaced in `taxResult.flow.fica` field** _(P2 E9 L1)_ —
+  [projection.ts](../../src/engine/projection.ts) mutates
+  `taxResult.flow.totalTax += secaResult.seTax` after `calculateTaxYear`
+  returns, but `taxResult.flow.fica` still shows only the W-2 employee
+  share. UI tax-detail rows that show "FICA" won't include SECA, so
+  advisors looking at a self-employed client's tax-detail breakdown will
+  see a mismatch between the FICA row and the bottom-line total. Fix:
+  add a separate `seca` field on `flow` and either show it as its own row
+  or fold into a "Payroll/SE Tax" combined row. _Why deferred: the
+  totals are right; only the per-line UI display is off._
+
+- **Silent clamp in `Math.max(0, ordinaryIncome - interestIncomeForTax)`**
+  _(P1 E10 L1)_ — [projection.ts](../../src/engine/projection.ts) clamps
+  `ordinaryIncome - interestIncomeForTax` at 0. If a future code path
+  ever makes `interestIncomeForTax > taxDetail.ordinaryIncome` (probably
+  impossible given current build order), the engine silently truncates
+  without flagging. Add a `console.warn` in dev mode (or assertion in
+  test mode) to catch regressions. _Why deferred: defensive; not a
+  current-day bug._

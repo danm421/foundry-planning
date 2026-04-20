@@ -56,3 +56,17 @@
 - **Audit log / change history** _(P3 E7 L2)_ — "what changed on this plan
   since last meeting?" view. _Why deferred: low priority until advisors
   request it._
+
+- **Net Cash Flow column masks portfolio depletion** _(P8 E7 L4)_ — the
+  cashflow table's "Net Cash Flow" column ([cashflow-report.tsx:1000](../../src/components/cashflow-report.tsx#L1000))
+  is colored `v < 0 ? red : green`, but the engine's supplemental withdrawal
+  loop plugs shortfalls before this number is computed, so the column reads
+  green ($0) even in years the household is bleeding 6-figure portfolio
+  withdrawals. Verified live on Dan Sample: 51 of 55 years are
+  zero/near-zero, only 1 negative. Advisors looking at the table cannot
+  see plan stress. Suggested fix: rename the column to "Cash Filled From
+  Portfolio" using `withdrawals.total` as the value, or color by
+  withdrawal-rate-vs-portfolio threshold (yellow >4%, red >7%). _Why
+  deferred: surfaced in the 2026-04-19 cashflow audit; not addressed in
+  the engine-fix pass that landed the same day. Highest-impact UI gap
+  remaining._

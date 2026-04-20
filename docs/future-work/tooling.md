@@ -10,3 +10,12 @@
 - **Scheduled / automated migrations in CI** _(P2 E7 L5)_ — migrations are
   applied manually via `drizzle-kit migrate` against the Neon URL in
   `.env.local`. _Why deferred: single dev, single environment for now._
+
+- **Export `loadClientData` from `scripts/audit-cashflow.ts`** _(P2 E10 L2)_
+  — [audit-cashflow.ts](../../scripts/audit-cashflow.ts) ends `main()` with
+  `process.exit(0)`, so other tsx scripts that try to import its
+  `loadClientData` helper get cut off mid-execution. Mark `loadClientData`
+  as `export` and wrap the `process.exit(0)` so the loader can be reused
+  by sibling diagnostic scripts (e.g. a follow-up fix-verification
+  script). _Why deferred: trivial QoL; only matters when adding more
+  one-off audit scripts._
