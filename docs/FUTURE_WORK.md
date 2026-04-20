@@ -529,6 +529,25 @@ Dependency notes that override raw score:
 - **Scheduled / automated migrations in CI** _(P2 E7 L5)_ — migrations are
   applied manually via `drizzle-kit migrate` against the Neon URL in
   `.env.local`. _Why deferred: single dev, single environment for now._
+
+## Security Hardening (partial, 2026-04-20)
+
+Six "this week" critical items shipped on `security-hardening` branch. The
+rest of `docs/SECURITY_AUDIT.md` is still open:
+
+- **H1, H3, H4, H5, H6, H7, H8, H9** — clientId WHERE filters, magic-byte
+  upload validation, zod on every mutating route, CSP/HSTS/etc. headers,
+  firm-scoped FK validation on POST handlers, tighter SELECT projections on
+  list endpoints, AbortSignal on PDF render, unsanitized filename logging.
+  _Why deferred: "next week" bucket per audit._
+- **C5, C6** — prompt-injection hardening (document delimiters, strict Zod
+  schema before DB write) and Azure OpenAI abuse-monitoring exemption.
+  _Why deferred: "month two" and procurement step._
+- **Medium/Low audit items** — CMA role checks, `UnauthorizedError` class,
+  multi-tenant isolation integration test, `audit_log` table, `force-dynamic`
+  on every API route, Sentry wiring, filename/Azure-error sanitization.
+  _Why deferred: audit-tracked, not blocking the criticals._
+
 ## Timeline Report (shipped 2026-04-19)
 
 - **PDF export.** Why deferred: v1 scope is on-screen only. Semantic HTML + `page-break-inside: avoid` on cards + a print hook that hides the sticky mini-map gets us 80% there.

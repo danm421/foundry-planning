@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { extractDocument } from "@/lib/extraction/extract";
 import { DOCUMENT_TYPES } from "@/lib/extraction/types";
 import type { DocumentType } from "@/lib/extraction/types";
+import { checkExtractRateLimit } from "@/lib/rate-limit";
 
 // Next.js App Router: increase body size limit for file uploads (default is 1MB)
 export const maxDuration = 60;
@@ -19,6 +20,20 @@ export async function POST(
   try {
     const firmId = await getOrgId();
     const { id } = await params;
+
+    const rl = await checkExtractRateLimit(firmId);
+    if (!rl.allowed) {
+      const status = rl.reason === "unconfigured" ? 503 : 429;
+      const message =
+        rl.reason === "unconfigured"
+          ? "Rate limiting is not configured — document extraction is disabled."
+          : "Too many extraction requests. Please wait and try again.";
+      const headers: Record<string, string> = {};
+      if (rl.reset) {
+        headers["Retry-After"] = String(Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000)));
+      }
+      return NextResponse.json({ error: message }, { status, headers });
+    }
 
     // Verify client access
     const [client] = await db
