@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { clients, scenarios, incomes } from "@/db/schema";
+import { db } from "@foundry/db";
+import { clients, scenarios, incomes } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";

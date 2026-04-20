@@ -1,11 +1,11 @@
-import { db } from "@/db";
+import { db } from "@foundry/db";
 import {
   accounts,
   clients,
   entities,
   modelPortfolios,
   assetClasses,
-} from "@/db/schema";
+} from "@foundry/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 
 /**

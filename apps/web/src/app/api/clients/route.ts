@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db } from "@/db";
-import { clients, scenarios, planSettings, accounts, expenses, incomes } from "@/db/schema";
+import { db } from "@foundry/db";
+import { clients, scenarios, planSettings, accounts, expenses, incomes } from "@foundry/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { computePlanEndAge } from "@/lib/plan-horizon";

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { modelPortfolios } from "@/db/schema";
+import { db } from "@foundry/db";
+import { modelPortfolios } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";

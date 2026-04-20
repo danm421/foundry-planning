@@ -1,5 +1,5 @@
-import { db } from "@/db";
-import { clients, entities } from "@/db/schema";
+import { db } from "@foundry/db";
+import { clients, entities } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { getOrgId } from "@/lib/db-helpers";

@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
-import { db } from "@/db";
-import { auditLog } from "@/db/schema";
+import { db } from "@foundry/db";
+import { auditLog } from "@foundry/db/schema";
 
 /**
  * Write-side audit log. Every mutating handler that performs a

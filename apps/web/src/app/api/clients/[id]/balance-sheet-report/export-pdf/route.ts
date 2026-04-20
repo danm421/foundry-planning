@@ -1,7 +1,7 @@
 // src/app/api/clients/[id]/balance-sheet-report/export-pdf/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { clients, entities as entitiesTable } from "@/db/schema";
+import { db } from "@foundry/db";
+import { clients, entities as entitiesTable } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { runProjection } from "@/engine/projection";

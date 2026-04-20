@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { accountAssetAllocations, assetClasses, accounts, clients } from "@/db/schema";
+import { db } from "@foundry/db";
+import { accountAssetAllocations, assetClasses, accounts, clients } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";

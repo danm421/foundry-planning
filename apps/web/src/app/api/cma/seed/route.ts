@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { db } from "@/db";
-import { assetClasses, modelPortfolios, modelPortfolioAllocations, assetClassCorrelations } from "@/db/schema";
+import { db } from "@foundry/db";
+import { assetClasses, modelPortfolios, modelPortfolioAllocations, assetClassCorrelations } from "@foundry/db/schema";
 import { eq } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { DEFAULT_ASSET_CLASSES, DEFAULT_MODEL_PORTFOLIOS, DEFAULT_CORRELATIONS } from "@/lib/cma-seed";

@@ -1,4 +1,4 @@
-import type { taxYearParameters } from "../../db/schema";
+import type { taxYearParameters } from "@foundry/db/schema";
 import type { TaxYearParameters } from "./types";
 
 type Row = typeof taxYearParameters.$inferSelect;

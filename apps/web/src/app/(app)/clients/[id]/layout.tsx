@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { db } from "@foundry/db";
+import { clients } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import TabLink from "@/components/tab-link";

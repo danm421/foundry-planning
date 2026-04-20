@@ -24,7 +24,7 @@ try {
   }
 } catch {}
 import { eq, and, asc, inArray } from "drizzle-orm";
-import { db } from "../src/db";
+import { db } from "@foundry/db";
 import {
   clients,
   scenarios,
@@ -50,7 +50,7 @@ import {
   transferSchedules,
   assetTransactions,
   clientCmaOverrides,
-} from "../src/db/schema";
+} from "@foundry/db/schema";
 import { dbRowToTaxYearParameters } from "../src/lib/tax/dbMapper";
 import { resolveInflationRate } from "../src/lib/inflation";
 import { runProjection } from "../src/engine/projection";

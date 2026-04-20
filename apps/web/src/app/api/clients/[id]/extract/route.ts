@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrgId } from "@/lib/db-helpers";
-import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { db } from "@foundry/db";
+import { clients } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { extractDocument } from "@/lib/extraction/extract";
 import { DOCUMENT_TYPES } from "@/lib/extraction/types";

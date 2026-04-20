@@ -6,7 +6,7 @@
 //   npm run seed:tax-data -- --dry-run
 //   npm run seed:tax-data -- --write-snapshot
 
-import { taxYearParameters } from "../src/db/schema";
+import { taxYearParameters } from "@foundry/db/schema";
 import { sql } from "drizzle-orm";
 import { parseIrsUpdatesSheet } from "./parsers/irs-updates-sheet";
 import type { TaxYearParameters } from "../src/lib/tax/types";
@@ -42,7 +42,7 @@ async function main() {
   }
 
   // Lazy-import DB so dry-run path doesn't require DATABASE_URL at module load.
-  const { db } = await import("../src/db");
+  const { db } = await import("@foundry/db");
 
   for (const y of years) {
     await upsertYear(y, db);

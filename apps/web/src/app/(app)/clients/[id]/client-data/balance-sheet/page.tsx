@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { db } from "@/db";
+import { db } from "@foundry/db";
 import {
   clients,
   scenarios,
@@ -11,7 +11,7 @@ import {
   modelPortfolioAllocations,
   assetClasses,
   clientCmaOverrides,
-} from "@/db/schema";
+} from "@foundry/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import BalanceSheetView, { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";

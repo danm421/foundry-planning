@@ -1,5 +1,5 @@
-import { db } from "@/db";
-import { clients, scenarios, accounts, planSettings } from "@/db/schema";
+import { db } from "@foundry/db";
+import { clients, scenarios, accounts, planSettings } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { redirect } from "next/navigation";

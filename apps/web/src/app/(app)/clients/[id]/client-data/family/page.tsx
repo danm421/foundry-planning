@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
-import { db } from "@/db";
-import { clients, familyMembers, entities } from "@/db/schema";
+import { db } from "@foundry/db";
+import { clients, familyMembers, entities } from "@foundry/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import FamilyView, { FamilyMember, Entity, NamePctRow, PrimaryInfo } from "@/components/family-view";

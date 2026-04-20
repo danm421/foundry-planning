@@ -1,5 +1,5 @@
-import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { db } from "@foundry/db";
+import { clients } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { Fraunces, Outfit } from "next/font/google";

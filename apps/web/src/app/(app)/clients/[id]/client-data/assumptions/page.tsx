@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { db } from "@/db";
+import { db } from "@foundry/db";
 import {
   clients,
   scenarios,
@@ -14,7 +14,7 @@ import {
   savingsRules,
   expenses,
   liabilities,
-} from "@/db/schema";
+} from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import AssumptionsClient from "./assumptions-client";

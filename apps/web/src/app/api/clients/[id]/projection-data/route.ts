@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
+import { db } from "@foundry/db";
 import {
   clients,
   scenarios,
@@ -25,7 +25,7 @@ import {
   transferSchedules,
   assetTransactions,
   clientCmaOverrides,
-} from "@/db/schema";
+} from "@foundry/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
+import { db } from "@foundry/db";
 import {
   clients,
   scenarios,
@@ -10,7 +10,7 @@ import {
   assetClasses,
   accountAssetAllocations,
   assetClassCorrelations,
-} from "@/db/schema";
+} from "@foundry/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { buildCorrelationMatrix } from "@/engine/monteCarlo/correlation-matrix";
