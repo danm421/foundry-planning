@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, savingsRules } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +73,15 @@ export async function PUT(
       return NextResponse.json({ error: "Savings rule not found" }, { status: 404 });
     }
 
+    await recordAudit({
+      action: "savings_rule.update",
+      resourceType: "savings_rule",
+      resourceId: ruleId,
+      clientId: id,
+      firmId,
+      metadata: { accountId: updated.accountId },
+    });
+
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
@@ -99,6 +109,14 @@ export async function DELETE(
     await db
       .delete(savingsRules)
       .where(and(eq(savingsRules.id, ruleId), eq(savingsRules.clientId, id)));
+
+    await recordAudit({
+      action: "savings_rule.delete",
+      resourceType: "savings_rule",
+      resourceId: ruleId,
+      clientId: id,
+      firmId,
+    });
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {

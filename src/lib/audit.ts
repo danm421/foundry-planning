@@ -12,20 +12,76 @@ import { auditLog } from "@/db/schema";
  * than a 500 on a delete the advisor just saw succeed.
  */
 
+// Explicit union so new action types surface as a TS error until
+// they're wired into the audit taxonomy. Grouped by resource family
+// for SOC-2 auditor readability.
 export type AuditAction =
+  // Clients
+  | "client.create"
+  | "client.update"
   | "client.delete"
+  // Accounts (balance-sheet line items)
+  | "account.create"
+  | "account.update"
   | "account.delete"
+  | "account.allocation.update"
+  | "account.reset_growth"
+  // Liabilities
+  | "liability.create"
+  | "liability.update"
   | "liability.delete"
+  | "extra_payment.create"
+  | "extra_payment.update"
+  | "extra_payment.delete"
+  // Cash flow
+  | "income.create"
+  | "income.update"
   | "income.delete"
+  | "income.schedule.update"
+  | "expense.create"
+  | "expense.update"
   | "expense.delete"
-  | "entity.delete"
-  | "family_member.delete"
-  | "deduction.delete"
-  | "transfer.delete"
-  | "asset_transaction.delete"
+  | "expense.schedule.update"
+  | "savings_rule.create"
+  | "savings_rule.update"
   | "savings_rule.delete"
+  | "savings_rule.schedule.update"
+  // Tax / deductions
+  | "deduction.create"
+  | "deduction.update"
+  | "deduction.delete"
+  // Scenario-level movements
+  | "transfer.create"
+  | "transfer.update"
+  | "transfer.delete"
+  | "asset_transaction.create"
+  | "asset_transaction.update"
+  | "asset_transaction.delete"
+  | "withdrawal_strategy.create"
+  | "withdrawal_strategy.update"
+  | "withdrawal_strategy.delete"
+  // Plan structure
+  | "plan_settings.update"
+  | "entity.create"
+  | "entity.update"
+  | "entity.delete"
+  | "family_member.create"
+  | "family_member.update"
+  | "family_member.delete"
+  // Reports & comments
+  | "report_comment.create"
+  | "report_comment.update"
+  // Document extraction (LLM call)
+  | "client.extract"
+  // CMA (firm-level, admin-gated)
+  | "cma.asset_class.create"
+  | "cma.asset_class.update"
   | "cma.asset_class.delete"
-  | "cma.model_portfolio.delete";
+  | "cma.model_portfolio.create"
+  | "cma.model_portfolio.update"
+  | "cma.model_portfolio.delete"
+  | "cma.model_portfolio.allocation.update"
+  | "cma.seed";
 
 type Args = {
   action: AuditAction;

@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, modelPortfolios, scenarios, planSettings } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -162,6 +163,15 @@ export async function PUT(
     if (!updated) {
       return NextResponse.json({ error: "Plan settings not found" }, { status: 404 });
     }
+
+    await recordAudit({
+      action: "plan_settings.update",
+      resourceType: "plan_settings",
+      resourceId: updated.id,
+      clientId: id,
+      firmId,
+      metadata: { scenarioId },
+    });
 
     return NextResponse.json(updated);
   } catch (err) {

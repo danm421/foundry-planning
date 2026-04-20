@@ -124,6 +124,18 @@ export async function PUT(
         .where(eq(planSettings.clientId, id));
     }
 
+    await recordAudit({
+      action: "client.update",
+      resourceType: "client",
+      resourceId: id,
+      clientId: id,
+      firmId,
+      metadata: {
+        firstName: updated.firstName,
+        lastName: updated.lastName,
+      },
+    });
+
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {

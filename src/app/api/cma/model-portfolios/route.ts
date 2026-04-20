@@ -4,6 +4,7 @@ import { modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
 import { eq, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,14 @@ export async function POST(request: NextRequest) {
       .insert(modelPortfolios)
       .values({ firmId, name, description: description ?? null })
       .returning();
+
+    await recordAudit({
+      action: "cma.model_portfolio.create",
+      resourceType: "cma.model_portfolio",
+      resourceId: created.id,
+      firmId,
+      metadata: { name: created.name },
+    });
 
     return NextResponse.json({ ...created, allocations: [] }, { status: 201 });
   } catch (err) {

@@ -7,6 +7,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { computePlanEndAge } from "@/lib/plan-horizon";
 import { parseBody } from "@/lib/schemas/common";
 import { clientCreateSchema } from "@/lib/schemas/resources";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -201,6 +202,15 @@ export async function POST(request: NextRequest) {
         claimingAge: 67,
       }))
     );
+
+    await recordAudit({
+      action: "client.create",
+      resourceType: "client",
+      resourceId: client.id,
+      clientId: client.id,
+      firmId,
+      metadata: { firstName, lastName },
+    });
 
     return NextResponse.json(client, { status: 201 });
   } catch (err) {

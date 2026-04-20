@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, scenarios, accounts } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,15 @@ export async function POST(
         )
       )
       .returning({ id: accounts.id });
+
+    await recordAudit({
+      action: "account.reset_growth",
+      resourceType: "account",
+      resourceId: id,
+      clientId: id,
+      firmId,
+      metadata: { resetCount: result.length, scenarioId: scenario.id },
+    });
 
     return NextResponse.json({ resetCount: result.length });
   } catch (err) {

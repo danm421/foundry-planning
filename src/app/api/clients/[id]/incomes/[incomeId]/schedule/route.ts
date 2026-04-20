@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, incomes, incomeScheduleOverrides } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
         }))
       );
     }
+
+    await recordAudit({
+      action: "income.schedule.update",
+      resourceType: "income",
+      resourceId: incomeId,
+      clientId: id,
+      firmId,
+      metadata: { count: overrides.length },
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

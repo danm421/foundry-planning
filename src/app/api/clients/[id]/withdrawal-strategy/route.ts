@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, scenarios, withdrawalStrategies } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -87,6 +88,15 @@ export async function POST(
         endYearRef,
       })
       .returning();
+
+    await recordAudit({
+      action: "withdrawal_strategy.create",
+      resourceType: "withdrawal_strategy",
+      resourceId: strategy.id,
+      clientId: id,
+      firmId,
+      metadata: { accountId: strategy.accountId, priorityOrder: strategy.priorityOrder },
+    });
 
     return NextResponse.json(strategy, { status: 201 });
   } catch (err) {

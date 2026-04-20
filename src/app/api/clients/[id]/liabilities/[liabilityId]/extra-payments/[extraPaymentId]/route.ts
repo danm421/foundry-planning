@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, liabilities, extraPayments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    await recordAudit({
+      action: "extra_payment.update",
+      resourceType: "extra_payment",
+      resourceId: extraPaymentId,
+      clientId: id,
+      firmId,
+      metadata: { liabilityId, year: updated.year, type: updated.type },
+    });
+
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
@@ -90,6 +100,15 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
           eq(extraPayments.liabilityId, liabilityId)
         )
       );
+
+    await recordAudit({
+      action: "extra_payment.delete",
+      resourceType: "extra_payment",
+      resourceId: extraPaymentId,
+      clientId: id,
+      firmId,
+      metadata: { liabilityId },
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {

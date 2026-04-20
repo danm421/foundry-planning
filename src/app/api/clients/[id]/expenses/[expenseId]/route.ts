@@ -4,6 +4,7 @@ import { clients, expenses } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,15 @@ export async function PUT(
       return NextResponse.json({ error: "Expense not found" }, { status: 404 });
     }
 
+    await recordAudit({
+      action: "expense.update",
+      resourceType: "expense",
+      resourceId: expenseId,
+      clientId: id,
+      firmId,
+      metadata: { type: updated.type, name: updated.name },
+    });
+
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
@@ -106,6 +116,14 @@ export async function DELETE(
     await db
       .delete(expenses)
       .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, id)));
+
+    await recordAudit({
+      action: "expense.delete",
+      resourceType: "expense",
+      resourceId: expenseId,
+      clientId: id,
+      firmId,
+    });
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {

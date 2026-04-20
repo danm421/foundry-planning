@@ -69,6 +69,15 @@ export async function PUT(
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
     }
 
+    await recordAudit({
+      action: "account.update",
+      resourceType: "account",
+      resourceId: accountId,
+      clientId: id,
+      firmId,
+      metadata: { name: updated.name, category: updated.category },
+    });
+
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {

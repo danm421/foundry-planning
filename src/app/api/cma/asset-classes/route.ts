@@ -5,6 +5,7 @@ import { eq, asc } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { isAssetTypeId } from "@/lib/investments/asset-types";
 import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,14 @@ export async function POST(request: NextRequest) {
         assetType: assetType ?? "other",
       })
       .returning();
+
+    await recordAudit({
+      action: "cma.asset_class.create",
+      resourceType: "cma.asset_class",
+      resourceId: created.id,
+      firmId,
+      metadata: { name: created.name, assetType: created.assetType },
+    });
 
     return NextResponse.json(created, { status: 201 });
   } catch (err) {

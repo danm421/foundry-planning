@@ -7,6 +7,7 @@ import {
   assertEntitiesInClient,
   assertModelPortfoliosInFirm,
 } from "@/lib/db-scoping";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -128,6 +129,15 @@ export async function POST(
         propertyTaxGrowthRate: body.propertyTaxGrowthRate ?? "0.03",
       })
       .returning();
+
+    await recordAudit({
+      action: "account.create",
+      resourceType: "account",
+      resourceId: account.id,
+      clientId: id,
+      firmId,
+      metadata: { name: account.name, category: account.category },
+    });
 
     return NextResponse.json(account, { status: 201 });
   } catch (err) {

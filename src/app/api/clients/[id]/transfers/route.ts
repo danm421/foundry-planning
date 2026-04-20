@@ -4,6 +4,7 @@ import { clients, scenarios, transfers, transferSchedules } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient } from "@/lib/db-scoping";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -137,6 +138,15 @@ export async function POST(
       .from(transferSchedules)
       .where(eq(transferSchedules.transferId, created.id));
 
+    await recordAudit({
+      action: "transfer.create",
+      resourceType: "transfer",
+      resourceId: created.id,
+      clientId: id,
+      firmId,
+      metadata: { name: created.name, mode: created.mode },
+    });
+
     return NextResponse.json({ ...created, schedules: insertedSchedules }, { status: 201 });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
@@ -229,6 +239,15 @@ export async function PUT(
       .from(transferSchedules)
       .where(eq(transferSchedules.transferId, transferId));
 
+    await recordAudit({
+      action: "transfer.update",
+      resourceType: "transfer",
+      resourceId: transferId,
+      clientId: id,
+      firmId,
+      metadata: { name: updated.name, mode: updated.mode },
+    });
+
     return NextResponse.json({ ...updated, schedules: updatedSchedules });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
@@ -263,6 +282,14 @@ export async function DELETE(
     await db
       .delete(transfers)
       .where(and(eq(transfers.id, transferId), eq(transfers.clientId, id)));
+
+    await recordAudit({
+      action: "transfer.delete",
+      resourceType: "transfer",
+      resourceId: transferId,
+      clientId: id,
+      firmId,
+    });
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {

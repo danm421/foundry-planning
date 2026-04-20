@@ -8,6 +8,7 @@ import { DOCUMENT_TYPES } from "@/lib/extraction/types";
 import type { DocumentType } from "@/lib/extraction/types";
 import { checkExtractRateLimit } from "@/lib/rate-limit";
 import { detectUploadKind } from "@/lib/extraction/validate-upload";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +107,15 @@ export async function POST(
       model,
       kind
     );
+
+    await recordAudit({
+      action: "client.extract",
+      resourceType: "client",
+      resourceId: id,
+      clientId: id,
+      firmId,
+      metadata: { documentType, model, kind, size: file.size },
+    });
 
     return NextResponse.json(result);
   } catch (err) {

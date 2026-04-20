@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, scenarios, savingsRules } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -108,6 +109,15 @@ export async function POST(
         endYearRef,
       })
       .returning();
+
+    await recordAudit({
+      action: "savings_rule.create",
+      resourceType: "savings_rule",
+      resourceId: rule.id,
+      clientId: id,
+      firmId,
+      metadata: { accountId: rule.accountId },
+    });
 
     return NextResponse.json(rule, { status: 201 });
   } catch (err) {

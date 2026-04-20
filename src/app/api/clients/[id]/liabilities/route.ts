@@ -4,6 +4,7 @@ import { clients, scenarios, liabilities } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -119,6 +120,15 @@ export async function POST(
         isInterestDeductible: body.isInterestDeductible ?? false,
       })
       .returning();
+
+    await recordAudit({
+      action: "liability.create",
+      resourceType: "liability",
+      resourceId: liability.id,
+      clientId: id,
+      firmId,
+      metadata: { name: liability.name },
+    });
 
     return NextResponse.json(liability, { status: 201 });
   } catch (err) {

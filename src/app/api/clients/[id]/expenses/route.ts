@@ -4,6 +4,7 @@ import { clients, scenarios, expenses } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -116,6 +117,15 @@ export async function POST(
         deductionType: deductionType ?? null,
       })
       .returning();
+
+    await recordAudit({
+      action: "expense.create",
+      resourceType: "expense",
+      resourceId: expense.id,
+      clientId: id,
+      firmId,
+      metadata: { type: expense.type, name: expense.name },
+    });
 
     return NextResponse.json(expense, { status: 201 });
   } catch (err) {

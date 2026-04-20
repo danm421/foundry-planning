@@ -52,6 +52,15 @@ export async function PUT(
       return NextResponse.json({ error: "Liability not found" }, { status: 404 });
     }
 
+    await recordAudit({
+      action: "liability.update",
+      resourceType: "liability",
+      resourceId: liabilityId,
+      clientId: id,
+      firmId,
+      metadata: { name: updated.name ?? null },
+    });
+
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {

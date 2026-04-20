@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, entities, scenarios, accounts } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -108,6 +109,15 @@ export async function POST(
         }))
       );
     }
+
+    await recordAudit({
+      action: "entity.create",
+      resourceType: "entity",
+      resourceId: entity.id,
+      clientId: id,
+      firmId,
+      metadata: { name: entity.name, entityType: entity.entityType },
+    });
 
     return NextResponse.json(entity, { status: 201 });
   } catch (err) {

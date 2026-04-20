@@ -63,6 +63,15 @@ export async function PUT(
     if (!updated) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    await recordAudit({
+      action: "cma.asset_class.update",
+      resourceType: "cma.asset_class",
+      resourceId: id,
+      firmId,
+      metadata: { name: updated.name },
+    });
+
     return NextResponse.json(updated);
   } catch (err) {
     const authResp = authErrorResponse(err);

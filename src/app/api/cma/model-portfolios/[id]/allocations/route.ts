@@ -4,6 +4,7 @@ import { modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,14 @@ export async function PUT(
       .select()
       .from(modelPortfolioAllocations)
       .where(eq(modelPortfolioAllocations.modelPortfolioId, id));
+
+    await recordAudit({
+      action: "cma.model_portfolio.allocation.update",
+      resourceType: "cma.model_portfolio",
+      resourceId: id,
+      firmId,
+      metadata: { count: updated.length },
+    });
 
     return NextResponse.json(updated);
   } catch (err) {

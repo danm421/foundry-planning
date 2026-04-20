@@ -6,6 +6,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { DEFAULT_ASSET_CLASSES, DEFAULT_MODEL_PORTFOLIOS, DEFAULT_CORRELATIONS } from "@/lib/cma-seed";
 import { canonicalPair } from "@/engine/monteCarlo/correlation-matrix";
 import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -120,6 +121,18 @@ export async function POST() {
         correlationsSeeded = correlationRows.length;
       }
     }
+
+    await recordAudit({
+      action: "cma.seed",
+      resourceType: "cma",
+      resourceId: firmId,
+      firmId,
+      metadata: {
+        assetClasses: allClasses.length,
+        portfolios: allPortfolios.length,
+        correlations: correlationsSeeded,
+      },
+    });
 
     return NextResponse.json(
       {

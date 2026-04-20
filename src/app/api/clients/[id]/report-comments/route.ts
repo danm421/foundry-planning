@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, scenarios, reportComments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,16 @@ export async function PUT(
         .set({ body: commentBody, updatedAt: new Date() })
         .where(eq(reportComments.id, existing.id))
         .returning();
+
+      await recordAudit({
+        action: "report_comment.update",
+        resourceType: "report_comment",
+        resourceId: updated.id,
+        clientId: id,
+        firmId,
+        metadata: { reportKey },
+      });
+
       return NextResponse.json(updated);
     }
 
@@ -89,6 +100,16 @@ export async function PUT(
       .insert(reportComments)
       .values({ clientId: id, scenarioId, reportKey, body: commentBody })
       .returning();
+
+    await recordAudit({
+      action: "report_comment.create",
+      resourceType: "report_comment",
+      resourceId: inserted.id,
+      clientId: id,
+      firmId,
+      metadata: { reportKey },
+    });
+
     return NextResponse.json(inserted);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {

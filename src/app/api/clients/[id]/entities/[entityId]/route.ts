@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, entities, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,15 @@ export async function PUT(
       return NextResponse.json({ error: "Entity not found" }, { status: 404 });
     }
 
+    await recordAudit({
+      action: "entity.update",
+      resourceType: "entity",
+      resourceId: entityId,
+      clientId: id,
+      firmId,
+      metadata: { name: updated.name, entityType: updated.entityType },
+    });
+
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
@@ -98,6 +108,14 @@ export async function DELETE(
     await db
       .delete(entities)
       .where(and(eq(entities.id, entityId), eq(entities.clientId, id)));
+
+    await recordAudit({
+      action: "entity.delete",
+      resourceType: "entity",
+      resourceId: entityId,
+      clientId: id,
+      firmId,
+    });
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {

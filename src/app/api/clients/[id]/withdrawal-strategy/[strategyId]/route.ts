@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, withdrawalStrategies } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,15 @@ export async function PUT(
       return NextResponse.json({ error: "Withdrawal strategy not found" }, { status: 404 });
     }
 
+    await recordAudit({
+      action: "withdrawal_strategy.update",
+      resourceType: "withdrawal_strategy",
+      resourceId: strategyId,
+      clientId: id,
+      firmId,
+      metadata: { accountId: updated.accountId, priorityOrder: updated.priorityOrder },
+    });
+
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
@@ -76,6 +86,14 @@ export async function DELETE(
     await db
       .delete(withdrawalStrategies)
       .where(and(eq(withdrawalStrategies.id, strategyId), eq(withdrawalStrategies.clientId, id)));
+
+    await recordAudit({
+      action: "withdrawal_strategy.delete",
+      resourceType: "withdrawal_strategy",
+      resourceId: strategyId,
+      clientId: id,
+      firmId,
+    });
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {

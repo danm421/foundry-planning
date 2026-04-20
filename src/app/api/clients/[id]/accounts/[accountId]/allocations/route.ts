@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { allocationPutSchema } from "@/lib/schemas/allocations";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -118,6 +119,15 @@ export async function PUT(
           }))
         );
       }
+    });
+
+    await recordAudit({
+      action: "account.allocation.update",
+      resourceType: "account",
+      resourceId: accountId,
+      clientId: id,
+      firmId,
+      metadata: { count: nonZero.length },
     });
 
     return NextResponse.json({ ok: true });

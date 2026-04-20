@@ -4,6 +4,7 @@ import { clients, scenarios, incomes } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -130,6 +131,15 @@ export async function POST(
         claimingAgeMode,
       })
       .returning();
+
+    await recordAudit({
+      action: "income.create",
+      resourceType: "income",
+      resourceId: income.id,
+      clientId: id,
+      firmId,
+      metadata: { type: income.type, name: income.name },
+    });
 
     return NextResponse.json(income, { status: 201 });
   } catch (err) {

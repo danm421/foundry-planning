@@ -7,6 +7,7 @@ import {
   assertAccountsInClient,
   assertModelPortfoliosInFirm,
 } from "@/lib/db-scoping";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -148,6 +149,15 @@ export async function POST(
       })
       .returning();
 
+    await recordAudit({
+      action: "asset_transaction.create",
+      resourceType: "asset_transaction",
+      resourceId: created.id,
+      clientId: id,
+      firmId,
+      metadata: { name: created.name, type: created.type, year: created.year },
+    });
+
     return NextResponse.json(created, { status: 201 });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
@@ -263,6 +273,15 @@ export async function PUT(
       .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)))
       .returning();
 
+    await recordAudit({
+      action: "asset_transaction.update",
+      resourceType: "asset_transaction",
+      resourceId: transactionId,
+      clientId: id,
+      firmId,
+      metadata: { name: updated.name, type: updated.type, year: updated.year },
+    });
+
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
@@ -308,6 +327,15 @@ export async function DELETE(
     await db
       .delete(assetTransactions)
       .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)));
+
+    await recordAudit({
+      action: "asset_transaction.delete",
+      resourceType: "asset_transaction",
+      resourceId: transactionId,
+      clientId: id,
+      firmId,
+      metadata: { name: existing.name, type: existing.type },
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

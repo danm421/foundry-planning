@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, familyMembers } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,15 @@ export async function POST(
         notes: notes ?? null,
       })
       .returning();
+
+    await recordAudit({
+      action: "family_member.create",
+      resourceType: "family_member",
+      resourceId: member.id,
+      clientId: id,
+      firmId,
+      metadata: { firstName: member.firstName, relationship: member.relationship },
+    });
 
     return NextResponse.json(member, { status: 201 });
   } catch (err) {
