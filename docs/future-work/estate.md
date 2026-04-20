@@ -67,6 +67,19 @@ start getting upvoted across sessions.
   verifyCrossRefs inside the transaction. Why deferred: pre-existing pattern
   across several routes; batch-fix in a dedicated pass.
 
+## Loaders
+
+- **Wills loader duplication** — the three-query Map-folding loader
+  (wills → bequests → recipients) exists in both
+  `src/app/api/clients/[id]/projection-data/route.ts` (engine shape) and
+  `src/app/api/clients/[id]/wills/route.ts` GET (API shape). The two copies
+  differ only in the response type (recipients have `id` in the API shape,
+  not in the engine shape) and the early-return-vs-inline-guard for empty
+  will lists. Worth extracting to `src/lib/wills/load-wills.ts` with a
+  generic mapper once a third consumer appears. Why deferred: a shared
+  helper would need a type parameter or transform callback — adds
+  indirection before there's a clear third use case.
+
 ## Zod schema DRY-up
 
 - **Shared `uuidSchema` in `src/lib/schemas/common.ts`** — the custom-regex
