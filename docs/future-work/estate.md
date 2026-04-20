@@ -82,6 +82,31 @@ start getting upvoted across sessions.
 
 ## Wills panel
 
+- **Scenario scoping on the wills page account dropdown (fix before spec
+  4b)** — `src/app/(app)/clients/[id]/client-data/wills/page.tsx` queries
+  `accounts` by `clientId` only, not by `scenarioId`. For clients with
+  multiple scenarios, the bequest modal's account selector shows accounts
+  from every scenario; a selection from a non-base-case scenario will
+  pass `verifyCrossRefs` but fail to resolve in the engine (which loads
+  base-case only). The pre-existing `beneficiaries` routes have the same
+  gap, so this is not a regression, but spec 4b is the first consumer
+  that will silently break on unresolvable accountIds. Mirror the
+  `assumptions/page.tsx` pattern: look up the base-case `scenarioId`
+  first, then add `eq(accounts.scenarioId, ...)` to the query.
+- **Concurrent duplicate-will POST returns 500 instead of 409** — the
+  `POST /api/clients/[id]/wills` duplicate-grantor guard does a SELECT
+  then INSERT. Two simultaneous posts for the same (client, grantor) can
+  race past the SELECT; the second hits the unique index and surfaces as
+  a 500. Catch Postgres error code `23505` and map to 409. Operationally
+  low-risk for a single-advisor tool but a real correctness gap.
+- **Drag-to-reorder** — the spec called for drag-to-reorder via a ⋮⋮
+  handle. The implementation ships ↑/↓ buttons for accessibility and
+  simplicity. Swap in a DnD library (react-dnd / @dnd-kit) if advisor
+  feedback prefers drag.
+- **Engine-input snapshot test** — the spec listed a dedicated
+  DB → `ClientData.wills` end-to-end snapshot test under the
+  `projection-data` route. Not delivered; coverage relies on the tenant
+  tests + tsc. Add when spec 4b's first engine consumer lands.
 - **Under-allocation warning** — the WillsPanel banner currently flags
   only over-allocation (`sum > 100.01` on a specific-asset / condition
   group). Under-allocation (e.g., 50% of an account bequeathed, other 50%
