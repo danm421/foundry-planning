@@ -255,9 +255,23 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
     let syntheticLiabilityId: string | undefined;
     let syntheticLiabilityName: string | undefined;
 
-    // Debit equity from funding account
-    accountBalances[fundingAccountId] = (accountBalances[fundingAccountId] ?? 0) - equity;
-    basisMap[fundingAccountId] = (basisMap[fundingAccountId] ?? 0) - equity;
+    // Debit equity from funding account. Balance drops dollar-for-dollar.
+    // Basis, though, should reduce proportionally to the fraction of the
+    // account being spent — a $100k purchase funded from a taxable account
+    // worth $500k with $200k basis should pull down $40k of basis (20% of
+    // the account), not the full $100k. Flat-debiting basis dollar-for-
+    // dollar drives basis negative over repeated large withdrawals (and
+    // distorts future capital-gain calcs for the funding account). Cash
+    // accounts have basis == balance by construction, so either rule
+    // produces the same number there.
+    const fundingBalance = accountBalances[fundingAccountId] ?? 0;
+    const fundingBasis = basisMap[fundingAccountId] ?? 0;
+    const basisDebit =
+      fundingBalance > 0
+        ? Math.min(fundingBasis, fundingBasis * (equity / fundingBalance))
+        : equity;
+    accountBalances[fundingAccountId] = fundingBalance - equity;
+    basisMap[fundingAccountId] = Math.max(0, fundingBasis - basisDebit);
 
     if (accountLedgers[fundingAccountId]) {
       accountLedgers[fundingAccountId].distributions -= equity;
