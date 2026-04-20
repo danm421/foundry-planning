@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { clients, entities, scenarios, accounts } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { getOrgId, requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { entityCreateSchema } from "@/lib/schemas/entities";
+import type { TrustSubType } from "@/lib/entities/trust";
 
 export const dynamic = "force-dynamic";
 
@@ -52,34 +54,39 @@ export async function POST(
     }
 
     const body = await request.json();
-    const {
-      name,
-      entityType,
-      notes,
-      includeInPortfolio,
-      isGrantor,
-      value,
-      owner,
-      grantors,
-      beneficiaries,
-    } = body;
-    if (!name) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    const parsed = entityCreateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid body", issues: parsed.error.issues },
+        { status: 400 },
+      );
     }
+    const data = parsed.data;
 
     const [entity] = await db
       .insert(entities)
       .values({
         clientId: id,
-        name,
-        entityType: entityType ?? "trust",
-        notes: notes ?? null,
-        includeInPortfolio: includeInPortfolio ?? false,
-        isGrantor: isGrantor ?? false,
-        value: value != null ? String(value) : "0",
-        owner: owner ?? null,
-        grantors: grantors ?? null,
-        beneficiaries: beneficiaries ?? null,
+        name: data.name,
+        entityType: data.entityType,
+        notes: data.notes ?? null,
+        includeInPortfolio: data.includeInPortfolio ?? false,
+        isGrantor: data.isGrantor ?? false,
+        value: data.value != null ? String(data.value) : "0",
+        owner: data.owner ?? null,
+        grantors: data.grantors ?? null,
+        beneficiaries: data.beneficiaries ?? null,
+        trustSubType:
+          data.entityType === "trust"
+            ? ((data.trustSubType ?? null) as TrustSubType | null)
+            : null,
+        isIrrevocable:
+          data.entityType === "trust" ? data.isIrrevocable ?? null : null,
+        trustee: data.entityType === "trust" ? data.trustee ?? null : null,
+        exemptionConsumed:
+          data.entityType === "trust" && data.exemptionConsumed != null
+            ? String(data.exemptionConsumed)
+            : "0",
       })
       .returning();
 
