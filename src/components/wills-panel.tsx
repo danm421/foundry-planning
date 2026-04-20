@@ -141,11 +141,20 @@ export default function WillsPanel(props: WillsPanelProps) {
     ],
   });
 
+  // Rehydrate a will from the server so our local state holds real
+  // server-generated bequest/recipient IDs after a POST or PATCH.
+  async function fetchWill(willId: string): Promise<WillsPanelWill | null> {
+    const res = await fetch(`/api/clients/${props.clientId}/wills/${willId}`);
+    if (!res.ok) return null;
+    return (await res.json()) as WillsPanelWill;
+  }
+
   async function saveWill(g: WillGrantor, nextBequests: WillsPanelBequest[]) {
     setSaving(true);
     setError(null);
     try {
       const existing = wills.find((w) => w.grantor === g);
+      let willId: string;
       if (!existing) {
         const res = await fetch(`/api/clients/${props.clientId}/wills`, {
           method: "POST",
@@ -157,10 +166,7 @@ export default function WillsPanel(props: WillsPanelProps) {
           throw new Error(body.error ?? `HTTP ${res.status}`);
         }
         const out = (await res.json()) as { id: string };
-        setWills((prev) => [
-          ...prev.filter((w) => w.grantor !== g),
-          { id: out.id, grantor: g, bequests: nextBequests },
-        ]);
+        willId = out.id;
       } else {
         const res = await fetch(
           `/api/clients/${props.clientId}/wills/${existing.id}`,
@@ -174,12 +180,41 @@ export default function WillsPanel(props: WillsPanelProps) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(body.error ?? `HTTP ${res.status}`);
         }
-        setWills((prev) =>
-          prev.map((w) => (w.grantor === g ? { ...w, bequests: nextBequests } : w)),
-        );
+        willId = existing.id;
+      }
+      // Re-fetch so bequests + recipients carry server-assigned IDs.
+      const hydrated = await fetchWill(willId);
+      if (hydrated) {
+        setWills((prev) => [...prev.filter((w) => w.grantor !== g), hydrated]);
+      } else {
+        // Fallback: optimistic update without the real IDs.
+        setWills((prev) => {
+          const rest = prev.filter((w) => w.grantor !== g);
+          return [...rest, { id: willId, grantor: g, bequests: nextBequests }];
+        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteWill(g: WillGrantor, willId: string) {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/clients/${props.clientId}/wills/${willId}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      setWills((prev) => prev.filter((w) => w.grantor !== g));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
     } finally {
       setSaving(false);
     }
@@ -203,24 +238,12 @@ export default function WillsPanel(props: WillsPanelProps) {
                 {will && (
                   <button
                     type="button"
+                    disabled={saving}
                     onClick={async () => {
                       if (!confirm("Delete this will and all its bequests?")) return;
-                      setSaving(true);
-                      setError(null);
-                      try {
-                        const res = await fetch(
-                          `/api/clients/${props.clientId}/wills/${will.id}`,
-                          { method: "DELETE" },
-                        );
-                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                        setWills((prev) => prev.filter((w) => w.grantor !== g));
-                      } catch (err) {
-                        setError(err instanceof Error ? err.message : "Delete failed");
-                      } finally {
-                        setSaving(false);
-                      }
+                      await deleteWill(g, will.id);
                     }}
-                    className="rounded-md border border-red-800 bg-red-900/20 px-3 py-1.5 text-sm text-red-300 hover:bg-red-900/40"
+                    className="rounded-md border border-red-800 bg-red-900/20 px-3 py-1.5 text-sm text-red-300 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Delete will
                   </button>
@@ -286,7 +309,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                           <button
                             type="button"
                             aria-label="Move up"
-                            disabled={idx === 0}
+                            disabled={idx === 0 || saving}
                             onClick={async () => {
                               const next = [...(will?.bequests ?? [])];
                               const tmp = next[idx - 1];
@@ -301,7 +324,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                           <button
                             type="button"
                             aria-label="Move down"
-                            disabled={idx === (will?.bequests.length ?? 1) - 1}
+                            disabled={idx === (will?.bequests.length ?? 1) - 1 || saving}
                             onClick={async () => {
                               const next = [...(will?.bequests ?? [])];
                               const tmp = next[idx + 1];
@@ -315,24 +338,26 @@ export default function WillsPanel(props: WillsPanelProps) {
                           </button>
                           <button
                             type="button"
+                            disabled={saving}
                             onClick={() => {
                               setDraft(b);
                               setEditingIndex(idx);
                               setModalOpen(g);
                             }}
-                            className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800"
+                            className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Edit
                           </button>
                           <button
                             type="button"
+                            disabled={saving}
                             onClick={async () => {
                               const next = (will?.bequests ?? [])
                                 .filter((_, i) => i !== idx)
                                 .map((x, i) => ({ ...x, sortOrder: i }));
                               await saveWill(g, next);
                             }}
-                            className="rounded border border-gray-700 px-2 py-0.5 text-xs text-red-300 hover:bg-gray-800"
+                            className="rounded border border-gray-700 px-2 py-0.5 text-xs text-red-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Delete
                           </button>
@@ -354,7 +379,7 @@ export default function WillsPanel(props: WillsPanelProps) {
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="New bequest"
+          aria-label={editingIndex != null ? "Edit bequest" : "New bequest"}
           onClick={() => {
             setModalOpen(null);
             setEditingIndex(null);
@@ -546,7 +571,7 @@ export default function WillsPanel(props: WillsPanelProps) {
               </button>
               <button
                 type="button"
-                disabled={!draft.name.trim() || !recipientSumOk}
+                disabled={!draft.name.trim() || !recipientSumOk || saving}
                 onClick={async () => {
                   if (!modalOpen) return;
                   const g = modalOpen;
