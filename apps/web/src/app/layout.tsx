@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ensureClerkFallbackInstalled } from "@/lib/install-clerk-fallback";
+ensureClerkFallbackInstalled();
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
