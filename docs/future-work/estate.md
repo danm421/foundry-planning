@@ -69,16 +69,16 @@ start getting upvoted across sessions.
 
 ## Loaders
 
-- **Wills loader duplication** — the three-query Map-folding loader
-  (wills → bequests → recipients) exists in both
-  `src/app/api/clients/[id]/projection-data/route.ts` (engine shape) and
-  `src/app/api/clients/[id]/wills/route.ts` GET (API shape). The two copies
-  differ only in the response type (recipients have `id` in the API shape,
-  not in the engine shape) and the early-return-vs-inline-guard for empty
-  will lists. Worth extracting to `src/lib/wills/load-wills.ts` with a
-  generic mapper once a third consumer appears. Why deferred: a shared
-  helper would need a type parameter or transform callback — adds
-  indirection before there's a clear third use case.
+- **Wills loader duplication (now at 3 consumers)** — the three-query
+  Map-folding loader (wills → bequests → recipients) lives in three files:
+  `src/app/api/clients/[id]/projection-data/route.ts` (engine shape, no
+  recipient id), `src/app/api/clients/[id]/wills/route.ts` GET (API shape,
+  early return), and `src/app/(app)/clients/[id]/client-data/wills/page.tsx`
+  (page shape). The three-consumer trigger has fired; extraction into
+  `src/lib/wills/load-wills.ts` with a generic `includeRecipientId` flag is
+  now actionable tech debt rather than deferred. Why not done in the same
+  session: requires plan-level scope that wasn't budgeted alongside UI work.
+  Next session touching any wills loader should do this extraction first.
 
 ## Zod schema DRY-up
 
