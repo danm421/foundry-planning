@@ -117,6 +117,19 @@ export const beneficiaryTargetKindEnum = pgEnum("beneficiary_target_kind", [
   "trust",
 ]);
 
+export const trustSubTypeEnum = pgEnum("trust_sub_type", [
+  "revocable",
+  "irrevocable",
+  "ilit",
+  "slat",
+  "crt",
+  "grat",
+  "qprt",
+  "clat",
+  "qtip",
+  "bypass",
+]);
+
 export const yearRefEnum = pgEnum("year_ref", [
   "plan_start",
   "plan_end",
@@ -294,6 +307,19 @@ export const entities = pgTable("entities", {
   // DEPRECATED: superseded by the beneficiary_designations table. Retained for read-back
   // compatibility; item 2 will migrate and drop.
   beneficiaries: jsonb("beneficiaries"),
+  // Trust-only. Nullable on non-trust rows (LLC / S-Corp / etc.). API-level
+  // rule: required when entity_type = 'trust', forbidden otherwise.
+  trustSubType: trustSubTypeEnum("trust_sub_type"),
+  // Trust-only. Must stay consistent with trust_sub_type (revocable → false;
+  // all others → true). API-enforced via deriveIsIrrevocable.
+  isIrrevocable: boolean("is_irrevocable"),
+  // Free-text display-only field. Co-trustees as comma-separated.
+  trustee: text("trustee"),
+  // Per-trust rollup of lifetime exemption consumed. Item 3 will layer a
+  // proper per-grantor gift ledger on top.
+  exemptionConsumed: decimal("exemption_consumed", { precision: 15, scale: 2 })
+    .notNull()
+    .default("0"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
