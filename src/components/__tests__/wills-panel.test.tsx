@@ -68,4 +68,16 @@ describe("WillsPanel", () => {
     expect(screen.getAllByText(/100%/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/If spouse survives/i)).toBeDefined();
   });
+
+  it("hides the spouse section when spouseName is null", () => {
+    render(
+      <WillsPanel
+        {...baseProps}
+        primary={{ ...baseProps.primary, spouseName: null, spouseLastName: null }}
+        initialWills={[]}
+      />,
+    );
+    expect(screen.queryByText(/Linda Smith/)).toBeNull();
+    expect(screen.getByText(/Tom Smith/)).toBeDefined();
+  });
 });

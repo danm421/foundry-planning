@@ -126,7 +126,7 @@ export default function WillsPanel(props: WillsPanelProps) {
               </h2>
               <button
                 type="button"
-                className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700"
+                className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled
               >
                 + Add bequest
