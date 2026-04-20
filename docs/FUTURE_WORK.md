@@ -532,21 +532,40 @@ Dependency notes that override raw score:
 
 ## Security Hardening (partial, 2026-04-20)
 
-Six "this week" critical items shipped on `security-hardening` branch. The
-rest of `docs/SECURITY_AUDIT.md` is still open:
+Week-1 (C1-C4, C7, H2) and week-2 (H1, H4, H5, H9, most Mediums, force-dynamic,
+tenant-isolation contract test, `UnauthorizedError` class, `requireOrgId()`)
+shipped on `security-hardening`. Open items from `docs/SECURITY_AUDIT.md`:
 
-- **H1, H3, H4, H5, H6, H7, H8, H9** — clientId WHERE filters, magic-byte
-  upload validation, zod on every mutating route, CSP/HSTS/etc. headers,
-  firm-scoped FK validation on POST handlers, tighter SELECT projections on
-  list endpoints, AbortSignal on PDF render, unsanitized filename logging.
-  _Why deferred: "next week" bucket per audit._
-- **C5, C6** — prompt-injection hardening (document delimiters, strict Zod
-  schema before DB write) and Azure OpenAI abuse-monitoring exemption.
-  _Why deferred: "month two" and procurement step._
-- **Medium/Low audit items** — CMA role checks, `UnauthorizedError` class,
-  multi-tenant isolation integration test, `audit_log` table, `force-dynamic`
-  on every API route, Sentry wiring, filename/Azure-error sanitization.
-  _Why deferred: audit-tracked, not blocking the criticals._
+- **H3** — PDF/xlsx magic-byte validation, `Content-Length` pre-check,
+  `AbortSignal.timeout` on `unpdf`, page cap. _Why deferred: needs a
+  standalone pass on `src/lib/extraction/pdf-parser.ts` and `extract.ts`._
+- **H6** — firm-scoped FK validation on POST handlers (ownerEntityId,
+  modelPortfolioId, cashAccountId, etc. verified to belong to caller's
+  firm). _Why deferred: ~12 handlers, each one-line fix, pattern copied
+  from `plan-settings/route.ts`._
+- **H7** — tighter SELECT projections on list endpoints (stop returning
+  full DOBs/advisorId on `/api/clients`). _Why deferred: UI audit needed
+  to know what the list page actually consumes._
+- **H8** — `AbortSignal.timeout(25_000)` around `renderToStream` in the
+  balance-sheet PDF. _Why deferred: react-pdf upstream fix is closer;
+  timeout treats the symptom._
+- **zod coverage gap** — schemas shipped for `allocations` and
+  `asset-classes`; pattern established in `src/lib/schemas/common.ts`.
+  Remaining ~25 mutating handlers still take raw `await req.json()`.
+  _Why deferred: mechanical but touches too many files for one PR._
+- **C5** — prompt-injection hardening (wrap doc text in
+  `<document>…</document>`, strict Zod schema before DB write, never
+  spread-insert LLM output). _Why deferred: month-two audit bucket._
+- **C6** — Azure OpenAI abuse-monitoring exemption. _Why deferred:
+  procurement step, steps live in `docs/SECURITY_RUNBOOK.md`._
+- **Medium items still open**: CMA role checks (`has({ role: "org:admin" })`
+  on mutations), `audit_log` table + writes on every mutation, two-firm
+  HTTP integration test, Sentry wiring with PII scrubbing. _Why deferred:
+  each is its own feature; contract test in
+  `src/__tests__/tenant-isolation.test.ts` covers the structural
+  invariant in the meantime._
+- **CSP enforce (drop Report-Only)** — needs report endpoint + 2 weeks
+  of prod data. _Steps in `docs/SECURITY_RUNBOOK.md` §3._
 
 ## Timeline Report (shipped 2026-04-19)
 
