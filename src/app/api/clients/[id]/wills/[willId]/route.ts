@@ -127,8 +127,7 @@ export async function PATCH(
     }
 
     // Transactional full-replace: delete existing bequests (cascades to
-    // recipients), then re-insert. Uses real ACID transactions via the
-    // neon-serverless driver.
+    // recipients), then re-insert.
     await db.transaction(async (tx) => {
       await tx.delete(willBequests).where(eq(willBequests.willId, willId));
       for (const b of bequests) {
