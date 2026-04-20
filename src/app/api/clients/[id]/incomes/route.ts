@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, scenarios, incomes } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +92,15 @@ export async function POST(
 
     if (!type || !name || !startYear || !endYear) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    const entCheck = await assertEntitiesInClient(id, [linkedEntityId, ownerEntityId]);
+    if (!entCheck.ok) {
+      return NextResponse.json({ error: entCheck.reason }, { status: 400 });
+    }
+    const acctCheck = await assertAccountsInClient(id, [cashAccountId]);
+    if (!acctCheck.ok) {
+      return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
 
     const [income] = await db

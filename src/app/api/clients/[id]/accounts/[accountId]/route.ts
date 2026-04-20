@@ -3,6 +3,11 @@ import { db } from "@/db";
 import { clients, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import {
+  assertEntitiesInClient,
+  assertModelPortfoliosInFirm,
+} from "@/lib/db-scoping";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +43,18 @@ export async function PUT(
     } = body;
     void _stripId; void _stripClientId;
     void _stripCreatedAt; void _stripUpdatedAt;
+
+    // If the body attempts to set a cross-tenant FK, reject now. Without
+     // these checks an attacker could use a legitimate PUT to swap a
+     // victim's ownerEntity / modelPortfolio id in as a side effect.
+    if ("ownerEntityId" in safeUpdate) {
+      const c = await assertEntitiesInClient(id, [safeUpdate.ownerEntityId]);
+      if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
+    }
+    if ("modelPortfolioId" in safeUpdate) {
+      const c = await assertModelPortfoliosInFirm(firmId, [safeUpdate.modelPortfolioId]);
+      if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
+    }
 
     const [updated] = await db
       .update(accounts)
@@ -96,6 +113,15 @@ export async function DELETE(
     await db
       .delete(accounts)
       .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
+
+    await recordAudit({
+      action: "account.delete",
+      resourceType: "account",
+      resourceId: accountId,
+      clientId: id,
+      firmId,
+      metadata: { name: target?.name ?? null },
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {

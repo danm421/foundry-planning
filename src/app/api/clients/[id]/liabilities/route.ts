@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, scenarios, liabilities } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +85,17 @@ export async function POST(
 
     if (!name || startYear == null || termMonths == null) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    const entCheck = await assertEntitiesInClient(id, [ownerEntityId]);
+    if (!entCheck.ok) {
+      return NextResponse.json({ error: entCheck.reason }, { status: 400 });
+    }
+    // linkedPropertyId is an account id (real-estate account) — ensure it
+     // belongs to this client before linking.
+    const acctCheck = await assertAccountsInClient(id, [linkedPropertyId]);
+    if (!acctCheck.ok) {
+      return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
 
     const [liability] = await db
