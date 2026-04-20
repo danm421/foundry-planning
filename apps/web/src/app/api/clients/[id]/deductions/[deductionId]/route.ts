@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, clientDeductions } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -46,22 +46,28 @@ export async function PUT(
       endYearRef,
     } = body;
 
-    const [updated] = await db
-      .update(clientDeductions)
-      .set({
-        type: type ?? undefined,
-        name: name !== undefined ? name : undefined,
-        owner: owner ?? undefined,
-        annualAmount: annualAmount != null ? String(annualAmount) : undefined,
-        growthRate: growthRate != null ? String(growthRate) : undefined,
-        startYear: startYear ?? undefined,
-        endYear: endYear ?? undefined,
-        startYearRef: startYearRef !== undefined ? startYearRef : undefined,
-        endYearRef: endYearRef !== undefined ? endYearRef : undefined,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(clientDeductions.id, deductionId), eq(clientDeductions.clientId, id)))
-      .returning();
+    let updated: typeof clientDeductions.$inferSelect | undefined;
+    await auditedMutation(
+      { action: 'client_deduction.update', resourceType: 'client_deduction', resourceId: deductionId, metadata: { after: body } },
+      async () => {
+        [updated] = await db
+          .update(clientDeductions)
+          .set({
+            type: type ?? undefined,
+            name: name !== undefined ? name : undefined,
+            owner: owner ?? undefined,
+            annualAmount: annualAmount != null ? String(annualAmount) : undefined,
+            growthRate: growthRate != null ? String(growthRate) : undefined,
+            startYear: startYear ?? undefined,
+            endYear: endYear ?? undefined,
+            startYearRef: startYearRef !== undefined ? startYearRef : undefined,
+            endYearRef: endYearRef !== undefined ? endYearRef : undefined,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(clientDeductions.id, deductionId), eq(clientDeductions.clientId, id)))
+          .returning();
+      }
+    );
 
     return NextResponse.json(updated);
   } catch (err) {
@@ -86,9 +92,14 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    await db
-      .delete(clientDeductions)
-      .where(and(eq(clientDeductions.id, deductionId), eq(clientDeductions.clientId, id)));
+    await auditedMutation(
+      { action: 'client_deduction.delete', resourceType: 'client_deduction', resourceId: deductionId },
+      async () => {
+        await db
+          .delete(clientDeductions)
+          .where(and(eq(clientDeductions.id, deductionId), eq(clientDeductions.clientId, id)));
+      }
+    );
 
     return NextResponse.json({ ok: true });
   } catch (err) {

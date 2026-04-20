@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, scenarios, clientDeductions } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -82,22 +82,28 @@ export async function POST(
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const [created] = await db
-      .insert(clientDeductions)
-      .values({
-        clientId: id,
-        scenarioId,
-        type,
-        name: name ?? null,
-        owner: owner ?? "joint",
-        annualAmount: annualAmount != null ? String(annualAmount) : "0",
-        growthRate: growthRate != null ? String(growthRate) : "0",
-        startYear,
-        endYear,
-        startYearRef: startYearRef ?? null,
-        endYearRef: endYearRef ?? null,
-      })
-      .returning();
+    let created!: typeof clientDeductions.$inferSelect;
+    await auditedMutation(
+      { action: 'client_deduction.create', resourceType: 'client_deduction', resourceId: 'pending', metadata: { after: body } },
+      async () => {
+        [created] = await db
+          .insert(clientDeductions)
+          .values({
+            clientId: id,
+            scenarioId,
+            type,
+            name: name ?? null,
+            owner: owner ?? "joint",
+            annualAmount: annualAmount != null ? String(annualAmount) : "0",
+            growthRate: growthRate != null ? String(growthRate) : "0",
+            startYear,
+            endYear,
+            startYearRef: startYearRef ?? null,
+            endYearRef: endYearRef ?? null,
+          })
+          .returning();
+      }
+    );
 
     return NextResponse.json(created, { status: 201 });
   } catch (err) {
