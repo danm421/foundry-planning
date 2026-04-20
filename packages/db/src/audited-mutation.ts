@@ -1,4 +1,4 @@
-import { getAdvisorContext } from '@foundry/auth';
+import { getAdvisorContextOrFallback } from '@foundry/auth';
 import { defaultAuditInserter } from './admin-scope';
 
 export type AuditedMutationEntry = {
@@ -50,7 +50,7 @@ export async function auditedMutation<T>(
   entry: AuditedMutationEntry,
   run: () => Promise<T>,
 ): Promise<T> {
-  const ctx = await getAdvisorContext();
+  const ctx = await getAdvisorContextOrFallback();
   // Run the mutation first — only audit on success.
   const result = await run();
   if (ctx.kind === 'impersonated') {

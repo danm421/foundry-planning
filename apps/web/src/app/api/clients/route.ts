@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, scenarios, planSettings, accounts, expenses, incomes } from "@foundry/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -80,25 +80,31 @@ export async function POST(request: NextRequest) {
     const currentYear = new Date().getFullYear();
 
     // Insert client
-    const [client] = await db
-      .insert(clients)
-      .values({
-        firmId,
-        advisorId: userId,
-        firstName,
-        lastName,
-        dateOfBirth,
-        retirementAge: Number(retirementAge),
-        planEndAge,
-        lifeExpectancy: Number(lifeExpectancy),
-        filingStatus,
-        spouseName: spouseName ?? null,
-        spouseLastName: spouseLastName ?? null,
-        spouseDob: spouseDob ?? null,
-        spouseRetirementAge: spouseRetirementAge ? Number(spouseRetirementAge) : null,
-        spouseLifeExpectancy: spouseLifeExpectancy != null ? Number(spouseLifeExpectancy) : null,
-      })
-      .returning();
+    let client!: typeof clients.$inferSelect;
+    await auditedMutation(
+      { action: 'client.create', resourceType: 'client', resourceId: 'pending', metadata: { after: parsed.data } },
+      async () => {
+        [client] = await db
+          .insert(clients)
+          .values({
+            firmId,
+            advisorId: userId,
+            firstName,
+            lastName,
+            dateOfBirth,
+            retirementAge: Number(retirementAge),
+            planEndAge,
+            lifeExpectancy: Number(lifeExpectancy),
+            filingStatus,
+            spouseName: spouseName ?? null,
+            spouseLastName: spouseLastName ?? null,
+            spouseDob: spouseDob ?? null,
+            spouseRetirementAge: spouseRetirementAge ? Number(spouseRetirementAge) : null,
+            spouseLifeExpectancy: spouseLifeExpectancy != null ? Number(spouseLifeExpectancy) : null,
+          })
+          .returning();
+      }
+    );
 
     // Insert base case scenario
     const [scenario] = await db

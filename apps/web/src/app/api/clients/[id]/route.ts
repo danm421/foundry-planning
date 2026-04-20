@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, planSettings } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -89,14 +89,20 @@ export async function PUT(
     void _stripId; void _stripFirmId; void _stripAdvisorId;
     void _stripCreatedAt; void _stripUpdatedAt;
 
-    const [updated] = await db
-      .update(clients)
-      .set({
-        ...safeUpdate,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
-      .returning();
+    let updated!: typeof clients.$inferSelect;
+    await auditedMutation(
+      { action: 'client.update', resourceType: 'client', resourceId: id, metadata: { before: existing, after: safeUpdate } },
+      async () => {
+        [updated] = await db
+          .update(clients)
+          .set({
+            ...safeUpdate,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
+          .returning();
+      }
+    );
 
     // If the horizon moved, push the new planEndYear through to all the
     // client's scenarios so the engine and UI stay in sync without the
@@ -138,9 +144,14 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    await db
-      .delete(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
+    await auditedMutation(
+      { action: 'client.delete', resourceType: 'client', resourceId: id, metadata: { before: existing } },
+      async () => {
+        await db
+          .delete(clients)
+          .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
+      }
+    );
 
     await recordAudit({
       action: "client.delete",
