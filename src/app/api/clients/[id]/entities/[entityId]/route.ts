@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { clients, entities, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { requireOrgId } from "@/lib/db-helpers";
+import { getOrgId, requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { entityCreateSchema, entityUpdateSchema } from "@/lib/schemas/entities";
+import type { TrustSubType } from "@/lib/entities/trust";
 
 export const dynamic = "force-dynamic";
 
@@ -26,31 +28,111 @@ export async function PUT(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
+    const [existing] = await db
+      .select()
+      .from(entities)
+      .where(and(eq(entities.id, entityId), eq(entities.clientId, id)));
+    if (!existing) {
+      return NextResponse.json({ error: "Entity not found" }, { status: 404 });
+    }
+
     const body = await request.json();
-    const {
-      name,
-      entityType,
-      notes,
-      includeInPortfolio,
-      isGrantor,
-      value,
-      owner,
-      grantors,
-      beneficiaries,
-    } = body;
+    const parsed = entityUpdateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid body", issues: parsed.error.issues },
+        { status: 400 },
+      );
+    }
+    const patch = parsed.data as {
+      name?: string;
+      entityType?: typeof existing.entityType;
+      notes?: string | null;
+      includeInPortfolio?: boolean;
+      isGrantor?: boolean;
+      value?: string | number;
+      owner?: "client" | "spouse" | "joint" | null;
+      grantors?: Array<{ name: string; pct: number }> | null;
+      beneficiaries?: Array<{ name: string; pct: number }> | null;
+      trustSubType?: string;
+      isIrrevocable?: boolean;
+      trustee?: string | null;
+      exemptionConsumed?: number;
+    };
+
+    const merged = {
+      name: patch.name ?? existing.name,
+      entityType: patch.entityType ?? existing.entityType,
+      notes: patch.notes !== undefined ? patch.notes : existing.notes,
+      includeInPortfolio: patch.includeInPortfolio ?? existing.includeInPortfolio,
+      isGrantor: patch.isGrantor ?? existing.isGrantor,
+      value: patch.value ?? existing.value,
+      owner: patch.owner !== undefined ? patch.owner : existing.owner,
+      grantors: patch.grantors !== undefined ? patch.grantors : existing.grantors,
+      beneficiaries:
+        patch.beneficiaries !== undefined ? patch.beneficiaries : existing.beneficiaries,
+      trustSubType:
+        patch.trustSubType !== undefined
+          ? patch.trustSubType
+          : existing.trustSubType ?? undefined,
+      isIrrevocable:
+        patch.isIrrevocable !== undefined
+          ? patch.isIrrevocable
+          : existing.isIrrevocable ?? undefined,
+      trustee: patch.trustee !== undefined ? patch.trustee : existing.trustee,
+      exemptionConsumed:
+        patch.exemptionConsumed !== undefined
+          ? patch.exemptionConsumed
+          : Number(existing.exemptionConsumed ?? 0),
+    };
+
+    const mergedCheck = entityCreateSchema.safeParse(merged);
+    if (!mergedCheck.success) {
+      return NextResponse.json(
+        { error: "Resulting entity would be invalid", issues: mergedCheck.error.issues },
+        { status: 400 },
+      );
+    }
+
+    const typeSwitchedAwayFromTrust =
+      patch.entityType !== undefined &&
+      patch.entityType !== "trust" &&
+      existing.entityType === "trust";
 
     const [updated] = await db
       .update(entities)
       .set({
-        ...(name !== undefined && { name }),
-        ...(entityType !== undefined && { entityType }),
-        ...(notes !== undefined && { notes }),
-        ...(includeInPortfolio !== undefined && { includeInPortfolio: Boolean(includeInPortfolio) }),
-        ...(isGrantor !== undefined && { isGrantor: Boolean(isGrantor) }),
-        ...(value !== undefined && { value: String(value) }),
-        ...(owner !== undefined && { owner: owner ?? null }),
-        ...(grantors !== undefined && { grantors }),
-        ...(beneficiaries !== undefined && { beneficiaries }),
+        ...(patch.name !== undefined && { name: patch.name }),
+        ...(patch.entityType !== undefined && { entityType: patch.entityType }),
+        ...(patch.notes !== undefined && { notes: patch.notes }),
+        ...(patch.includeInPortfolio !== undefined && {
+          includeInPortfolio: Boolean(patch.includeInPortfolio),
+        }),
+        ...(patch.isGrantor !== undefined && {
+          isGrantor: Boolean(patch.isGrantor),
+        }),
+        ...(patch.value !== undefined && { value: String(patch.value) }),
+        ...(patch.owner !== undefined && { owner: patch.owner ?? null }),
+        ...(patch.grantors !== undefined && { grantors: patch.grantors ?? null }),
+        ...(patch.beneficiaries !== undefined && {
+          beneficiaries: patch.beneficiaries ?? null,
+        }),
+        ...(patch.trustSubType !== undefined && {
+          trustSubType: patch.trustSubType as TrustSubType,
+        }),
+        ...(patch.isIrrevocable !== undefined && {
+          isIrrevocable: patch.isIrrevocable,
+        }),
+        ...(patch.trustee !== undefined && { trustee: patch.trustee ?? null }),
+        ...(patch.exemptionConsumed !== undefined && {
+          exemptionConsumed: String(patch.exemptionConsumed),
+        }),
+        ...(typeSwitchedAwayFromTrust && {
+          trustSubType: null,
+          isIrrevocable: null,
+          trustee: null,
+          exemptionConsumed: "0",
+        }),
         updatedAt: new Date(),
       })
       .where(and(eq(entities.id, entityId), eq(entities.clientId, id)))
