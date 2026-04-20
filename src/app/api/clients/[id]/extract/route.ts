@@ -8,6 +8,8 @@ import { DOCUMENT_TYPES } from "@/lib/extraction/types";
 import type { DocumentType } from "@/lib/extraction/types";
 import { checkExtractRateLimit } from "@/lib/rate-limit";
 
+export const dynamic = "force-dynamic";
+
 // Next.js App Router: increase body size limit for file uploads (default is 1MB)
 export const maxDuration = 60;
 
@@ -83,7 +85,12 @@ export async function POST(
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.error("POST /api/clients/[id]/extract error:", err);
+    // Azure errors can carry endpoint / deployment / request-id detail in
+     // their stack; log only a truncated message so that detail doesn't
+     // end up in Vercel Runtime Logs.
+    const safeMessage =
+      err instanceof Error ? err.message.slice(0, 200) : "unknown error";
+    console.error("POST /api/clients/[id]/extract failed:", safeMessage);
     return NextResponse.json(
       { error: "Extraction failed. Please try again." },
       { status: 500 }

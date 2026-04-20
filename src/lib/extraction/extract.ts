@@ -23,6 +23,16 @@ function getFileExtension(fileName: string): string {
     return fileName.split(".").pop()?.toLowerCase() ?? "";
 }
 
+/**
+ * Strip PII-bearing filename down to something safe to log. Advisor
+ * filenames routinely contain client names and account numbers
+ * ("Smith_Fidelity_2025.pdf") and land in Vercel Runtime Logs; they can
+ * also forge log lines via embedded newlines.
+ */
+function sanitizeForLog(fileName: string): string {
+    return fileName.replace(/[^\w.\- ]/g, "_").slice(0, 128);
+}
+
 export async function extractDocument(
     fileBuffer: Buffer,
     fileName: string,
@@ -44,10 +54,11 @@ export async function extractDocument(
         text = await extractPdfText(fileBuffer);
     }
 
-    console.log(`[extract] ${fileName}: got ${text.length} chars of text from ${ext || "pdf"}`);
+    const logName = sanitizeForLog(fileName);
+    console.log(`[extract] ${logName}: got ${text.length} chars of text from ${ext || "pdf"}`);
 
     if (!text || text.trim().length < 30) {
-        console.log(`[extract] ${fileName}: too little text, skipping AI call`);
+        console.log(`[extract] ${logName}: too little text, skipping AI call`);
         warnings.push(
             "Very little text could be extracted from this document. It may be a scanned image — try uploading a text-based PDF."
         );
@@ -72,13 +83,13 @@ export async function extractDocument(
 
     // 4. Call AI
     const prompt = PROMPTS[documentType];
-    console.log(`[extract] ${fileName}: calling AI (${model}) for type ${documentType}, text length ${text.length}`);
+    console.log(`[extract] ${logName}: calling AI (${model}) for type ${documentType}, text length ${text.length}`);
     const raw = await callAIExtraction(prompt, text, model);
-    console.log(`[extract] ${fileName}: AI returned ${raw.length} chars`);
+    console.log(`[extract] ${logName}: AI returned ${raw.length} chars`);
 
     // 5. Parse response
     const parsed = parseAIResponse(raw);
-    console.log(`[extract] ${fileName}: parsed keys: ${Object.keys(parsed).join(", ")}`);
+    console.log(`[extract] ${logName}: parsed keys: ${Object.keys(parsed).join(", ")}`);
 
     const extracted = {
         accounts: Array.isArray(parsed.accounts) ? parsed.accounts : [],
