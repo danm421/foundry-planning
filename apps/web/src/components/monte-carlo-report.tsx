@@ -19,7 +19,7 @@ import {
   type MonteCarloResult,
   type AccountAssetMix,
   type IndexInput,
-} from "@/engine";
+} from "@foundry/engine";
 
 interface Props {
   clientId: string;

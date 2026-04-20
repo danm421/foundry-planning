@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeTopRisks } from "../lib/top-risks";
-import type { MonteCarloSummary } from "@/engine";
+import type { MonteCarloSummary } from "@foundry/engine";
 
 function summaryWithYearTen(p5AtYearTen: number, startMedian: number): MonteCarloSummary {
   const byYear = Array.from({ length: 20 }, (_, i) => ({

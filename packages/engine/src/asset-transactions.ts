@@ -1,5 +1,5 @@
 import type { Account, AccountLedger, AssetTransaction, Liability } from "./types";
-import type { FilingStatus } from "../lib/tax/types";
+import type { FilingStatus } from "./lib/tax/types";
 
 /** IRC §121 home-sale exclusion caps by filing status.
  *  Married filing jointly gets $500k; all other statuses (single, head of

@@ -4,8 +4,8 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import AddTransferForm from "./forms/add-transfer-form";
 import AddAssetTransactionForm from "./forms/add-asset-transaction-form";
-import { runProjection } from "@/engine";
-import type { ClientData, ProjectionYear } from "@/engine/types";
+import { runProjection } from "@foundry/engine";
+import type { ClientData, ProjectionYear } from "@foundry/engine/types";
 import type { ClientMilestones } from "@/lib/milestones";
 
 // ── Types ─────────────────────────────────────────────────────────────────────

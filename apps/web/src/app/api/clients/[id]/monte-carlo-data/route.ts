@@ -13,9 +13,9 @@ import {
 } from "@foundry/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
-import { buildCorrelationMatrix } from "@/engine/monteCarlo/correlation-matrix";
-import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
-import type { IndexInput } from "@/engine/monteCarlo/returns";
+import { buildCorrelationMatrix } from "@foundry/engine/monteCarlo/correlation-matrix";
+import type { AccountAssetMix } from "@foundry/engine/monteCarlo/trial";
+import type { IndexInput } from "@foundry/engine/monteCarlo/returns";
 
 export const dynamic = "force-dynamic";
 

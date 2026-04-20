@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import MilestoneYearPicker from "../milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { resolveMilestone } from "@/lib/milestones";
-import { calcPayment, calcTerm, calcRate } from "@/lib/loan-math";
+import { calcPayment, calcTerm, calcRate } from "@foundry/engine/lib/loan-math";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 

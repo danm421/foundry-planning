@@ -871,7 +871,7 @@ describe("runProjection — liability amortization alignment", () => {
     // projection year — the answer must match what the balance-sheet /
     // amortization-tab already show via lib/loan-math.
     const { calcPayment, calcOriginalBalance, computeAmortizationSchedule } =
-      await import("../../lib/loan-math");
+      await import("../lib/loan-math");
 
     const origBalance = 300000;
     const rate = 0.065;
@@ -945,7 +945,7 @@ describe("runProjection — liability amortization alignment", () => {
 
   it("mortgagePaidOff on a future sale equals the schedule's BoY balance for the sale year", async () => {
     const { calcPayment, computeAmortizationSchedule } = await import(
-      "../../lib/loan-math"
+      "../lib/loan-math"
     );
 
     const origBalance = 300000;

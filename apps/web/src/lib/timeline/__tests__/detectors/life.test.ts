@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { detectLifeEvents } from "../../detectors/life";
-import { runProjection } from "@/engine";
-import { buildClientData, baseClient } from "@/engine/__tests__/fixtures";
+import { runProjection } from "@foundry/engine";
+import { buildClientData, baseClient } from "@foundry/engine/__tests__/fixtures";
 
 describe("detectLifeEvents", () => {
   it("emits primary retirement at retirementAge", () => {

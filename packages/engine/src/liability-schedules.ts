@@ -4,7 +4,7 @@ import {
   computeAmortizationSchedule,
   type AmortizationScheduleRow,
   type ScheduleExtraPayment,
-} from "@/lib/loan-math";
+} from "./lib/loan-math";
 
 export type LiabilityScheduleMap = Map<string, AmortizationScheduleRow[]>;
 

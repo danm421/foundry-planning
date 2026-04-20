@@ -1,4 +1,4 @@
-import type { ProjectionYear } from "@/engine";
+import type { ProjectionYear } from "@foundry/engine";
 
 export type TransitionType =
   | "amt_first_year"

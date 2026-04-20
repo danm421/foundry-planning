@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { Income, ClientInfo, PlanSettings } from "@/engine/types";
+import type { Income, ClientInfo, PlanSettings } from "@foundry/engine/types";
 import { SocialSecurityDialog } from "./social-security-dialog";
-import { fraForBirthDate } from "@/engine/socialSecurity/fra";
-import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
-import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import { fraForBirthDate } from "@foundry/engine/socialSecurity/fra";
+import { computeOwnMonthlyBenefit } from "@foundry/engine/socialSecurity/ownRetirement";
+import { resolveClaimAgeMonths } from "@foundry/engine/socialSecurity/claimAge";
 
 export interface SocialSecurityCardProps {
   clientId: string;

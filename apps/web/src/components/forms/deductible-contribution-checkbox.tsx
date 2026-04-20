@@ -1,6 +1,6 @@
 "use client";
 
-import { DEDUCTIBLE_ELIGIBLE_SUBTYPES } from "@/lib/tax/derive-deductions";
+import { DEDUCTIBLE_ELIGIBLE_SUBTYPES } from "@foundry/engine/lib/tax/derive-deductions";
 
 /** True if the deductibility checkbox should be rendered for this account.
  *  Hides the checkbox for Roth, non-retirement, 529, cash, taxable, etc. */

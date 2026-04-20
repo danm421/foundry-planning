@@ -3,8 +3,8 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
-import { runProjection } from "@/engine";
-import type { ClientData, ProjectionYear } from "@/engine/types";
+import { runProjection } from "@foundry/engine";
+import type { ClientData, ProjectionYear } from "@foundry/engine/types";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 

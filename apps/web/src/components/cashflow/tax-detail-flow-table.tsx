@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { ProjectionYear } from "@/engine";
+import type { ProjectionYear } from "@foundry/engine";
 import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
   detectRegimeTransitions,

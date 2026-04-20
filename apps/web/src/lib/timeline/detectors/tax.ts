@@ -1,4 +1,4 @@
-import type { ClientData, ProjectionYear } from "@/engine";
+import type { ClientData, ProjectionYear } from "@foundry/engine";
 import type { TimelineEvent } from "../timeline-types";
 
 function currency(n: number): string {

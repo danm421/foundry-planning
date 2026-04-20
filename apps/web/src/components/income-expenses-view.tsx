@@ -12,7 +12,7 @@ import { PercentInput } from "./percent-input";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/milestones";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
-import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
+import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@foundry/engine/types";
 import { SocialSecurityCard } from "./social-security-card";
 
 // ── Types ─────────────────────────────────────────────────────────────────────

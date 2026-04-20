@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildTimeline } from "../build-timeline";
-import { runProjection } from "@/engine";
-import { buildClientData } from "@/engine/__tests__/fixtures";
+import { runProjection } from "@foundry/engine";
+import { buildClientData } from "@foundry/engine/__tests__/fixtures";
 
 describe("buildTimeline", () => {
   it("returns events sorted by (year asc, category priority, subject)", () => {

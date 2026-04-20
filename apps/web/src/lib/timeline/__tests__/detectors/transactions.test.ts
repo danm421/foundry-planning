@@ -1,8 +1,8 @@
 // src/lib/timeline/__tests__/detectors/transactions.test.ts
 import { describe, it, expect } from "vitest";
 import { detectTransactionEvents } from "../../detectors/transactions";
-import { runProjection } from "@/engine";
-import { buildClientData } from "@/engine/__tests__/fixtures";
+import { runProjection } from "@foundry/engine";
+import { buildClientData } from "@foundry/engine/__tests__/fixtures";
 
 describe("detectTransactionEvents", () => {
   it("emits a sale event with runtime figures from techniqueBreakdown", () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildFanChartSeries } from "../lib/fan-chart-series";
-import type { MonteCarloSummary } from "@/engine";
+import type { MonteCarloSummary } from "@foundry/engine";
 
 function mkByYear(years: number): MonteCarloSummary["byYear"] {
   return Array.from({ length: years }, (_, i) => ({

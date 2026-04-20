@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { parseIrsUpdatesSheet } from "../irs-updates-sheet";
 import path from "node:path";
-import type { TaxYearParameters } from "../../../src/lib/tax/types";
+import type { TaxYearParameters } from "@foundry/engine/lib/tax/types";
 
 const FIXTURE = path.join(process.cwd(), "data/tax/2022-2026 Tax Values Updated.xlsx");
 

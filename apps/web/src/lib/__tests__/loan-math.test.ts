@@ -5,7 +5,7 @@ import {
   calcRate,
   calcOriginalBalance,
   computeAmortizationSchedule,
-} from "../loan-math";
+} from "@foundry/engine/lib/loan-math";
 
 describe("calcPayment", () => {
   it("computes monthly payment for a 30-year mortgage", () => {

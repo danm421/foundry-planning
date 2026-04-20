@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Income, ClientInfo, PlanSettings } from "@/engine/types";
-import { fraForBirthDate } from "@/engine/socialSecurity/fra";
-import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
-import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import type { Income, ClientInfo, PlanSettings } from "@foundry/engine/types";
+import { fraForBirthDate } from "@foundry/engine/socialSecurity/fra";
+import { computeOwnMonthlyBenefit } from "@foundry/engine/socialSecurity/ownRetirement";
+import { resolveClaimAgeMonths } from "@foundry/engine/socialSecurity/claimAge";
 
 type SsBenefitMode = "pia_at_fra" | "manual_amount" | "no_benefit";
 type ClaimAgeMode = "fra" | "at_retirement" | "years";

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { runProjection } from "@/engine/projection";
-import type { ProjectionYear } from "@/engine/types";
+import { runProjection } from "@foundry/engine/projection";
+import type { ProjectionYear } from "@foundry/engine/types";
 import type { OwnerNames } from "@/lib/owner-labels";
 import HeaderControls from "./balance-sheet-report/header-controls";
 import AssetsPanel from "./balance-sheet-report/assets-panel";

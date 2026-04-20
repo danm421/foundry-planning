@@ -20,8 +20,8 @@ import {
   type LiabilityScheduleMap,
 } from "./liability-schedules";
 import { calculateTaxYearBracket, calculateTaxYearFlat, makeEmptyTaxParams } from "./tax";
-import { createTaxResolver } from "../lib/tax/resolver";
-import type { TaxYearParameters, FilingStatus } from "../lib/tax/types";
+import { createTaxResolver } from "./lib/tax/resolver";
+import type { TaxYearParameters, FilingStatus } from "./lib/tax/types";
 import {
   deriveAboveLineFromSavings,
   deriveAboveLineFromExpenses,
@@ -31,14 +31,14 @@ import {
   sumItemizedFromEntries,
   aggregateDeductions,
   saltCap,
-} from "../lib/tax/derive-deductions";
+} from "./lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
 import { applyContributionLimits } from "./contribution-limits";
 import { executeWithdrawals } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
 import { applyAssetSales, applyAssetPurchases, _resetSyntheticIdCounter } from "./asset-transactions";
-import { calcSeca } from "../lib/tax/fica";
+import { calcSeca } from "./lib/tax/fica";
 
 // Map legacy income type to the new tax type categories.
 function legacyTaxType(
@@ -778,7 +778,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Estimate state income tax for SALT pool before aggregation.
       const preAGI = Math.max(0, taxableIncome - contributions[0].aboveLine - contributions[1].aboveLine - contributions[5].aboveLine);
       const estStateTax = preAGI * planSettings.flatStateRate;
-      const stateIncomeTaxContribution: import("../lib/tax/derive-deductions").DeductionContribution = {
+      const stateIncomeTaxContribution: import("./lib/tax/derive-deductions").DeductionContribution = {
         aboveLine: 0,
         itemized: 0,
         saltPool: estStateTax,

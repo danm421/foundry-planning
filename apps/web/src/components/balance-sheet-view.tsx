@@ -8,7 +8,7 @@ import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import { AccountFormInitial, EntityOption, CategoryDefaults, ModelPortfolioOption } from "./forms/add-account-form";
 import { type AssetClassOption } from "./forms/asset-mix-tab";
 import { LiabilityFormInitial } from "./forms/add-liability-form";
-import { computeAmortizationSchedule, calcOriginalBalance } from "@/lib/loan-math";
+import { computeAmortizationSchedule, calcOriginalBalance } from "@foundry/engine/lib/loan-math";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import type { ClientMilestones } from "@/lib/milestones";
 

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ProjectionYear } from "@/engine";
+import type { ProjectionYear } from "@foundry/engine";
 import { TaxDetailTooltip } from "./tax-detail-tooltip";
 import {
   detectRegimeTransitions,

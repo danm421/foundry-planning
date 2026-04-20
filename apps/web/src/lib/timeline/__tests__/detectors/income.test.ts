@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { detectIncomeEvents } from "../../detectors/income";
-import { runProjection } from "@/engine";
-import { buildClientData } from "@/engine/__tests__/fixtures";
+import { runProjection } from "@foundry/engine";
+import { buildClientData } from "@foundry/engine/__tests__/fixtures";
 
 describe("detectIncomeEvents", () => {
   it("emits salary start and stop per salary income", () => {

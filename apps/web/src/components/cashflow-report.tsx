@@ -22,8 +22,8 @@ import {
   type ColumnDef,
   type CellContext,
 } from "@tanstack/react-table";
-import { runProjection } from "@/engine";
-import type { ClientData, ProjectionYear, AccountLedger } from "@/engine";
+import { runProjection } from "@foundry/engine";
+import type { ClientData, ProjectionYear, AccountLedger } from "@foundry/engine";
 import { TaxDetailModal } from "@/components/cashflow/tax-detail-modal";
 import { YearRangeSlider } from "@/components/cashflow/year-range-slider";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";

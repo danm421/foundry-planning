@@ -9,7 +9,7 @@
 import { taxYearParameters } from "@foundry/db/schema";
 import { sql } from "drizzle-orm";
 import { parseIrsUpdatesSheet } from "./parsers/irs-updates-sheet";
-import type { TaxYearParameters } from "../src/lib/tax/types";
+import type { TaxYearParameters } from "@foundry/engine/lib/tax/types";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 

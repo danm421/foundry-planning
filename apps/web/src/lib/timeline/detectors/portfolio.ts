@@ -1,5 +1,5 @@
 // src/lib/timeline/detectors/portfolio.ts
-import type { ClientData, ProjectionYear } from "@/engine";
+import type { ClientData, ProjectionYear } from "@foundry/engine";
 import type { TimelineEvent } from "../timeline-types";
 
 export const DEFAULT_PORTFOLIO_THRESHOLDS: number[] = [

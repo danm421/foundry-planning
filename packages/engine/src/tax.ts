@@ -8,8 +8,8 @@
 // Routing happens in projection.ts based on planSettings.taxEngineMode.
 
 import type { PlanSettings } from "./types";
-import type { TaxResult, TaxYearParameters, BracketTier, FilingStatus } from "../lib/tax/types";
-import { calculateTaxYear as calculateTaxYearBracket } from "../lib/tax/calculate";
+import type { TaxResult, TaxYearParameters, BracketTier, FilingStatus } from "./lib/tax/types";
+import { calculateTaxYear as calculateTaxYearBracket } from "./lib/tax/calculate";
 
 export { calculateTaxYearBracket };
 

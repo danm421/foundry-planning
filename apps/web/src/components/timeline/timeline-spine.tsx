@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ProjectionYear } from "@/engine";
+import type { ProjectionYear } from "@foundry/engine";
 import type { TimelineEvent, SeriesPoint } from "@/lib/timeline/timeline-types";
 import TimelineYearSegment from "./timeline-year-segment";
 import TimelineSparkline from "./timeline-sparkline";

@@ -1,4 +1,4 @@
-import type { MonteCarloSummary } from "@/engine";
+import type { MonteCarloSummary } from "@foundry/engine";
 import { formatShortCurrency, formatPercent } from "./lib/format";
 
 interface YearlyBreakdownProps {

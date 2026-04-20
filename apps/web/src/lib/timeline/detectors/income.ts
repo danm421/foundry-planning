@@ -1,4 +1,4 @@
-import type { ClientData, ProjectionYear, Income } from "@/engine";
+import type { ClientData, ProjectionYear, Income } from "@foundry/engine";
 import type { TimelineEvent, TimelineSubject } from "../timeline-types";
 
 function subjectFor(owner: Income["owner"]): TimelineSubject {

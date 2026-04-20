@@ -51,10 +51,10 @@ import {
   assetTransactions,
   clientCmaOverrides,
 } from "@foundry/db/schema";
-import { dbRowToTaxYearParameters } from "../src/lib/tax/dbMapper";
+import { dbRowToTaxYearParameters } from "@foundry/engine/lib/tax/dbMapper";
 import { resolveInflationRate } from "../src/lib/inflation";
-import { runProjection } from "../src/engine/projection";
-import type { ClientData } from "../src/engine/types";
+import { runProjection } from "@foundry/engine/projection";
+import type { ClientData } from "@foundry/engine/types";
 
 async function loadClientData(clientId: string): Promise<ClientData> {
   const [client] = await db.select().from(clients).where(eq(clients.id, clientId));

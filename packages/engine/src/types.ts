@@ -1,5 +1,5 @@
-import type { TaxResult, TaxYearParameters } from "../lib/tax/types";
-import type { ClientDeductionRow } from "../lib/tax/derive-deductions";
+import type { TaxResult, TaxYearParameters } from "./lib/tax/types";
+import type { ClientDeductionRow } from "./lib/tax/derive-deductions";
 
 // ── Input Types ──────────────────────────────────────────────────────────────
 

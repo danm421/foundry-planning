@@ -18,8 +18,8 @@ import {
   type IndexInput,
   type ClientData,
   type Account,
-} from "../src/engine";
-import { runProjection } from "../src/engine/projection";
+} from "@foundry/engine";
+import { runProjection } from "@foundry/engine/projection";
 
 const sql = neon(process.env.DATABASE_URL!);
 

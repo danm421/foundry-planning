@@ -1,4 +1,4 @@
-import type { MonteCarloSummary, ClientData, PlanSettings } from "@/engine";
+import type { MonteCarloSummary, ClientData, PlanSettings } from "@foundry/engine";
 import { KpiCard } from "./kpi-card";
 import { SuccessGauge } from "./success-gauge";
 import { formatShortCurrency } from "./lib/format";

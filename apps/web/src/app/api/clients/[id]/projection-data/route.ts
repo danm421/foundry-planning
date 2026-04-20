@@ -28,7 +28,7 @@ import {
 } from "@foundry/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
-import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
+import { dbRowToTaxYearParameters } from "@foundry/engine/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
 
 export const dynamic = "force-dynamic";

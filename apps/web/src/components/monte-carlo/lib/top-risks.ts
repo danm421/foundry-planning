@@ -1,4 +1,4 @@
-import type { MonteCarloSummary } from "@/engine";
+import type { MonteCarloSummary } from "@foundry/engine";
 
 export type RiskTone = "emerald" | "amber" | "rose";
 

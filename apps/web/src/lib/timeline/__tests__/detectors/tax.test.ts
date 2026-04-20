@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { detectTaxEvents } from "../../detectors/tax";
-import { runProjection } from "@/engine";
-import { buildClientData } from "@/engine/__tests__/fixtures";
+import { runProjection } from "@foundry/engine";
+import { buildClientData } from "@foundry/engine/__tests__/fixtures";
 
 describe("detectTaxEvents", () => {
   it("emits first-negative-cashflow at most once", () => {

@@ -4,7 +4,7 @@ import { assetClasses, modelPortfolios, modelPortfolioAllocations, assetClassCor
 import { eq } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { DEFAULT_ASSET_CLASSES, DEFAULT_MODEL_PORTFOLIOS, DEFAULT_CORRELATIONS } from "@/lib/cma-seed";
-import { canonicalPair } from "@/engine/monteCarlo/correlation-matrix";
+import { canonicalPair } from "@foundry/engine/monteCarlo/correlation-matrix";
 import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";

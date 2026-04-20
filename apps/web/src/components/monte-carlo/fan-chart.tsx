@@ -13,7 +13,7 @@ import {
   type ChartOptions,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
-import type { MonteCarloSummary } from "@/engine";
+import type { MonteCarloSummary } from "@foundry/engine";
 import { buildFanChartSeries } from "./lib/fan-chart-series";
 import { formatShortCurrency } from "./lib/format";
 

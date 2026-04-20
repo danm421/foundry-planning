@@ -1,8 +1,8 @@
 // src/lib/timeline/__tests__/detectors/portfolio.test.ts
 import { describe, it, expect } from "vitest";
 import { detectPortfolioEvents, DEFAULT_PORTFOLIO_THRESHOLDS } from "../../detectors/portfolio";
-import { runProjection } from "@/engine";
-import { buildClientData } from "@/engine/__tests__/fixtures";
+import { runProjection } from "@foundry/engine";
+import { buildClientData } from "@foundry/engine/__tests__/fixtures";
 
 describe("detectPortfolioEvents", () => {
   it("emits first-withdrawal year per account when byAccount transitions to non-zero", () => {

@@ -4,7 +4,7 @@ import { db } from "@foundry/db";
 import { clients, entities as entitiesTable } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
-import { runProjection } from "@/engine/projection";
+import { runProjection } from "@foundry/engine/projection";
 import { renderToStream } from "@react-pdf/renderer";
 import type { DocumentProps } from "@react-pdf/renderer";
 import { BalanceSheetPdfDocument } from "@/components/balance-sheet-report-pdf/balance-sheet-pdf-document";

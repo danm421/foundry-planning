@@ -1,8 +1,8 @@
 // src/lib/timeline/__tests__/detectors/insurance.test.ts
 import { describe, it, expect } from "vitest";
 import { detectInsuranceEvents } from "../../detectors/insurance";
-import { runProjection } from "@/engine";
-import { buildClientData } from "@/engine/__tests__/fixtures";
+import { runProjection } from "@foundry/engine";
+import { buildClientData } from "@foundry/engine/__tests__/fixtures";
 
 describe("detectInsuranceEvents", () => {
   it("returns empty array when no life-insurance accounts exist", () => {

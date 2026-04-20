@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildSeries } from "../build-series";
-import { runProjection } from "@/engine";
-import { buildClientData } from "@/engine/__tests__/fixtures";
+import { runProjection } from "@foundry/engine";
+import { buildClientData } from "@foundry/engine/__tests__/fixtures";
 
 describe("buildSeries", () => {
   it("returns one SeriesPoint per projection year", () => {

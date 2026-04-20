@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { runProjection } from "@/engine";
-import type { ClientData, ProjectionYear } from "@/engine";
+import { runProjection } from "@foundry/engine";
+import type { ClientData, ProjectionYear } from "@foundry/engine";
 import { buildTimeline } from "@/lib/timeline/build-timeline";
 import { buildSeries } from "@/lib/timeline/build-series";
 import type { TimelineCategory, TimelineEvent, SeriesPoint } from "@/lib/timeline/timeline-types";

@@ -6,8 +6,8 @@
 // for known section headers.
 
 import ExcelJS from "exceljs";
-import type { TaxYearParameters, BracketsByStatus, FilingStatus } from "../../src/lib/tax/types";
-import { STATUTORY_FIXED } from "../../src/lib/tax/constants";
+import type { TaxYearParameters, BracketsByStatus, FilingStatus } from "@foundry/engine/lib/tax/types";
+import { STATUTORY_FIXED } from "@foundry/engine/lib/tax/constants";
 
 export type Row = (string | number | null)[];
 

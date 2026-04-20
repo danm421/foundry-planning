@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ProjectionYear } from "@/engine";
+import type { ProjectionYear } from "@foundry/engine";
 import { TaxDetailIncomeTable } from "./tax-detail-income-table";
 import { TaxDetailFlowTable } from "./tax-detail-flow-table";
 import { YearRangeSlider } from "./year-range-slider";

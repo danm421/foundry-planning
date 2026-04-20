@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { detectRegimeTransitions } from "../tax-regime-indicators";
-import type { ProjectionYear } from "@/engine";
+import type { ProjectionYear } from "@foundry/engine";
 
 function makeYear(overrides: Partial<{
   year: number;

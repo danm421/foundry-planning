@@ -17,7 +17,7 @@ import {
   calcOriginalBalance,
   type AmortizationScheduleRow,
   type ScheduleExtraPayment,
-} from "@/lib/loan-math";
+} from "@foundry/engine/lib/loan-math";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 

@@ -20,7 +20,7 @@ import { getOrgId } from "@/lib/db-helpers";
 import AssumptionsClient from "./assumptions-client";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
-import { amortizeLiability } from "@/engine/liabilities";
+import { amortizeLiability } from "@foundry/engine/liabilities";
 
 interface PageProps {
   params: Promise<{ id: string }>;
