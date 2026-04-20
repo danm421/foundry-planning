@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, scenarios, expenses } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -96,26 +96,32 @@ export async function POST(
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
 
-    const [expense] = await db
-      .insert(expenses)
-      .values({
-        clientId: id,
-        scenarioId,
-        type,
-        name,
-        annualAmount: annualAmount ?? "0",
-        startYear: Number(startYear),
-        endYear: Number(endYear),
-        growthRate: growthRate ?? "0.03",
-        growthSource: growthSource === "inflation" ? "inflation" : "custom",
-        ownerEntityId: ownerEntityId ?? null,
-        cashAccountId: cashAccountId ?? null,
-        inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,
-        startYearRef,
-        endYearRef,
-        deductionType: deductionType ?? null,
-      })
-      .returning();
+    let expense!: typeof expenses.$inferSelect;
+    await auditedMutation(
+      { action: 'expense.create', resourceType: 'expense', resourceId: 'pending', metadata: { after: body } },
+      async () => {
+        [expense] = await db
+          .insert(expenses)
+          .values({
+            clientId: id,
+            scenarioId,
+            type,
+            name,
+            annualAmount: annualAmount ?? "0",
+            startYear: Number(startYear),
+            endYear: Number(endYear),
+            growthRate: growthRate ?? "0.03",
+            growthSource: growthSource === "inflation" ? "inflation" : "custom",
+            ownerEntityId: ownerEntityId ?? null,
+            cashAccountId: cashAccountId ?? null,
+            inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,
+            startYearRef,
+            endYearRef,
+            deductionType: deductionType ?? null,
+          })
+          .returning();
+      }
+    );
 
     return NextResponse.json(expense, { status: 201 });
   } catch (err) {
