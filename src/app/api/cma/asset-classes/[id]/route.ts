@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { assetClasses } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { isAssetTypeId } from "@/lib/investments/asset-types";
 import { parseBody } from "@/lib/schemas/common";
 import { assetClassPutSchema } from "@/lib/schemas/asset-classes";
@@ -17,7 +17,7 @@ export async function PUT(
 ) {
   try {
     await requireOrgAdmin();
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id } = await params;
 
     const parsed = await parseBody(assetClassPutSchema, request);
@@ -78,7 +78,7 @@ export async function DELETE(
 ) {
   try {
     await requireOrgAdmin();
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id } = await params;
 
     await db

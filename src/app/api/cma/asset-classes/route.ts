@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { assetClasses } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { isAssetTypeId } from "@/lib/investments/asset-types";
 import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const rows = await db
       .select()
       .from(assetClasses)
@@ -29,7 +29,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     await requireOrgAdmin();
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const body = await request.json();
     const {
       name, geometricReturn, arithmeticMean, volatility,

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { assetClasses, modelPortfolios, modelPortfolioAllocations, assetClassCorrelations } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { DEFAULT_ASSET_CLASSES, DEFAULT_MODEL_PORTFOLIOS, DEFAULT_CORRELATIONS } from "@/lib/cma-seed";
 import { canonicalPair } from "@/engine/monteCarlo/correlation-matrix";
 import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export async function POST() {
   try {
     await requireOrgAdmin();
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
 
     // No early-return here: every downstream insert is idempotent (ON CONFLICT
     // DO NOTHING on asset classes and portfolios; per-portfolio allocation

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { clients, entities, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; entityId: string }> }
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, entityId } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -74,7 +74,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; entityId: string }> }
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, entityId } = await params;
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { accountAssetAllocations, assetClasses, accounts, clients } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
 import { allocationPutSchema } from "@/lib/schemas/allocations";
 
@@ -29,7 +29,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string; accountId: string }> }
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, accountId } = await params;
 
     const acct = await assertAccountInFirm(id, accountId, firmId);
@@ -63,7 +63,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; accountId: string }> }
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, accountId } = await params;
 
     const acct = await assertAccountInFirm(id, accountId, firmId);

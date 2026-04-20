@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { clients, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import {
   assertEntitiesInClient,
   assertModelPortfoliosInFirm,
@@ -17,7 +17,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; accountId: string }> }
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, accountId } = await params;
 
     // Verify client belongs to this firm
@@ -85,7 +85,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; accountId: string }> }
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, accountId } = await params;
 
     // Verify client belongs to this firm

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { modelPortfolios } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 
@@ -14,7 +14,7 @@ export async function PUT(
 ) {
   try {
     await requireOrgAdmin();
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id } = await params;
     const body = await request.json();
 
@@ -42,7 +42,7 @@ export async function DELETE(
 ) {
   try {
     await requireOrgAdmin();
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id } = await params;
 
     await db

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { clients, expenses, expenseScheduleOverrides } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ async function verifyOwnership(clientId: string, expenseId: string, firmId: stri
 
 export async function GET(_request: NextRequest, { params }: Params) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, expenseId } = await params;
 
     if (!(await verifyOwnership(id, expenseId, firmId))) {
@@ -50,7 +50,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, expenseId } = await params;
 
     if (!(await verifyOwnership(id, expenseId, firmId))) {
@@ -86,7 +86,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, expenseId } = await params;
 
     if (!(await verifyOwnership(id, expenseId, firmId))) {

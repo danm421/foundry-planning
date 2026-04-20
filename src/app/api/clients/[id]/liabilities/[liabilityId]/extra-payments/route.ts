@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { clients, liabilities, extraPayments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ async function verifyOwnership(clientId: string, liabilityId: string, firmId: st
 
 export async function GET(_request: NextRequest, { params }: Params) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, liabilityId } = await params;
 
     if (!(await verifyOwnership(id, liabilityId, firmId))) {
@@ -48,7 +48,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
 export async function POST(request: NextRequest, { params }: Params) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, liabilityId } = await params;
 
     if (!(await verifyOwnership(id, liabilityId, firmId))) {

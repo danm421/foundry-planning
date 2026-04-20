@@ -27,7 +27,7 @@ import {
   clientCmaOverrides,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
 
@@ -39,7 +39,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id } = await params;
 
     // Verify client access

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { clients, liabilities, extraPayments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,7 @@ async function verifyOwnership(clientId: string, liabilityId: string, firmId: st
 
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, liabilityId, extraPaymentId } = await params;
 
     if (!(await verifyOwnership(id, liabilityId, firmId))) {
@@ -35,9 +35,22 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     const body = await request.json();
 
+    // Strip identity / ownership fields so an attacker can't reparent an
+    // extra-payment row to a different liability or rewrite its id via
+    // request body. Same hardening pattern as clients/[id] PUT.
+    const {
+      id: _stripId,
+      liabilityId: _stripLiabilityId,
+      createdAt: _stripCreatedAt,
+      updatedAt: _stripUpdatedAt,
+      ...safeUpdate
+    } = body;
+    void _stripId; void _stripLiabilityId;
+    void _stripCreatedAt; void _stripUpdatedAt;
+
     const [updated] = await db
       .update(extraPayments)
-      .set({ ...body, updatedAt: new Date() })
+      .set({ ...safeUpdate, updatedAt: new Date() })
       .where(
         and(
           eq(extraPayments.id, extraPaymentId),
@@ -62,7 +75,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, liabilityId, extraPaymentId } = await params;
 
     if (!(await verifyOwnership(id, liabilityId, firmId))) {

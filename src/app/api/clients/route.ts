@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { clients, scenarios, planSettings, accounts, expenses, incomes } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { computePlanEndAge } from "@/lib/plan-horizon";
 import { parseBody } from "@/lib/schemas/common";
 import { clientCreateSchema } from "@/lib/schemas/resources";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // GET /api/clients — list all clients for the firm
 export async function GET() {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
 
     // Tight projection: the list UI only needs identity + the fields
      // shown in the table. Full DOB, spouse DOB, filing status, and the
@@ -46,7 +46,7 @@ export async function GET() {
 // POST /api/clients — create a new client with base case scenario + plan settings
 export async function POST(request: NextRequest) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

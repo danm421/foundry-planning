@@ -12,7 +12,7 @@ import {
   assetClassCorrelations,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { buildCorrelationMatrix } from "@/engine/monteCarlo/correlation-matrix";
 import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import type { IndexInput } from "@/engine/monteCarlo/returns";
@@ -44,7 +44,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id } = await params;
 
     const [client] = await db
@@ -214,7 +214,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id } = await params;
 
     const [client] = await db

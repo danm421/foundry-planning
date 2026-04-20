@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export async function PUT(
 ) {
   try {
     await requireOrgAdmin();
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id } = await params;
 
     // Verify portfolio belongs to this firm

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { clients, clientDeductions } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; deductionId: string }> }
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, deductionId } = await params;
 
     if (!(await ownsDeduction(id, deductionId, firmId))) {
@@ -79,7 +79,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; deductionId: string }> }
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, deductionId } = await params;
 
     if (!(await ownsDeduction(id, deductionId, firmId))) {

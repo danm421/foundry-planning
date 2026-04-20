@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
 import { eq, asc, inArray } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const portfolios = await db
       .select()
       .from(modelPortfolios)
@@ -51,7 +51,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     await requireOrgAdmin();
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const body = await request.json();
     const { name, description } = body;
 

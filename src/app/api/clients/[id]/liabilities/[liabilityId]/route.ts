@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { clients, liabilities } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string; liabilityId: string }> }
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, liabilityId } = await params;
 
     // Verify client belongs to this firm
@@ -68,7 +68,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; liabilityId: string }> }
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, liabilityId } = await params;
 
     // Verify client belongs to this firm
