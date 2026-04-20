@@ -4,6 +4,7 @@ import { clients, planSettings } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { computePlanEndAge } from "@/lib/plan-horizon";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -140,6 +141,18 @@ export async function DELETE(
     await db
       .delete(clients)
       .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
+
+    await recordAudit({
+      action: "client.delete",
+      resourceType: "client",
+      resourceId: id,
+      clientId: id,
+      firmId,
+      metadata: {
+        firstName: existing.firstName,
+        lastName: existing.lastName,
+      },
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {

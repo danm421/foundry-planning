@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { clients, liabilities } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,14 @@ export async function DELETE(
     await db
       .delete(liabilities)
       .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)));
+
+    await recordAudit({
+      action: "liability.delete",
+      resourceType: "liability",
+      resourceId: liabilityId,
+      clientId: id,
+      firmId,
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {
