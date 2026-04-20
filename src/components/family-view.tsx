@@ -35,6 +35,10 @@ export interface Entity {
   owner: "client" | "spouse" | "joint" | null;
   grantors: NamePctRow[] | null;
   beneficiaries: NamePctRow[] | null;
+  trustSubType: "revocable" | "irrevocable" | "ilit" | "slat" | "crt" | "grat" | "qprt" | "clat" | "qtip" | "bypass" | null;
+  isIrrevocable: boolean | null;
+  trustee: string | null;
+  exemptionConsumed: string;
 }
 
 const BUSINESS_ENTITY_TYPES: EntityType[] = ["llc", "s_corp", "c_corp", "partnership", "other"];

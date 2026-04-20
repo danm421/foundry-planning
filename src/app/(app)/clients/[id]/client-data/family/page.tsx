@@ -76,6 +76,10 @@ export default async function FamilyPage({ params }: PageProps) {
     owner: (e.owner as "client" | "spouse" | "joint" | null) ?? null,
     grantors: (e.grantors as NamePctRow[] | null) ?? null,
     beneficiaries: (e.beneficiaries as NamePctRow[] | null) ?? null,
+    trustSubType: e.trustSubType ?? null,
+    isIrrevocable: e.isIrrevocable ?? null,
+    trustee: e.trustee ?? null,
+    exemptionConsumed: String(e.exemptionConsumed ?? "0"),
   }));
 
   const externals: ExternalBeneficiary[] = externalRows.map((e) => ({
