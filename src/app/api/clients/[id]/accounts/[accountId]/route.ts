@@ -25,12 +25,22 @@ export async function PUT(
 
     const body = await request.json();
 
+    // Prevent mass-assignment: strip identity / tenancy fields so the row
+     // can't be reparented or its id rewritten via request body.
+    const {
+      id: _stripId,
+      clientId: _stripClientId,
+      createdAt: _stripCreatedAt,
+      updatedAt: _stripUpdatedAt,
+      ...safeUpdate
+    } = body;
+    void _stripId; void _stripClientId;
+    void _stripCreatedAt; void _stripUpdatedAt;
+
     const [updated] = await db
       .update(accounts)
       .set({
-        ...body,
-        ...(body.annualPropertyTax !== undefined && { annualPropertyTax: body.annualPropertyTax }),
-        ...(body.propertyTaxGrowthRate !== undefined && { propertyTaxGrowthRate: body.propertyTaxGrowthRate }),
+        ...safeUpdate,
         updatedAt: new Date(),
       })
       .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)))

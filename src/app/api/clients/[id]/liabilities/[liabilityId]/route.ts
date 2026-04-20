@@ -25,11 +25,21 @@ export async function PUT(
 
     const body = await request.json();
 
+    // Prevent mass-assignment: strip identity / tenancy fields.
+    const {
+      id: _stripId,
+      clientId: _stripClientId,
+      createdAt: _stripCreatedAt,
+      updatedAt: _stripUpdatedAt,
+      ...safeUpdate
+    } = body;
+    void _stripId; void _stripClientId;
+    void _stripCreatedAt; void _stripUpdatedAt;
+
     const [updated] = await db
       .update(liabilities)
       .set({
-        ...body,
-        ...(body.isInterestDeductible !== undefined && { isInterestDeductible: body.isInterestDeductible }),
+        ...safeUpdate,
         updatedAt: new Date(),
       })
       .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)))

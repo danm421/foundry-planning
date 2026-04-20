@@ -18,9 +18,21 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid assetType" }, { status: 400 });
     }
 
+    // Prevent mass-assignment: strip identity / tenancy fields so the
+     // row can't be reparented or its id rewritten via request body.
+    const {
+      id: _stripId,
+      firmId: _stripFirmId,
+      createdAt: _stripCreatedAt,
+      updatedAt: _stripUpdatedAt,
+      ...safeUpdate
+    } = body;
+    void _stripId; void _stripFirmId;
+    void _stripCreatedAt; void _stripUpdatedAt;
+
     const [updated] = await db
       .update(assetClasses)
-      .set({ ...body, updatedAt: new Date() })
+      .set({ ...safeUpdate, updatedAt: new Date() })
       .where(and(eq(assetClasses.id, id), eq(assetClasses.firmId, firmId)))
       .returning();
 

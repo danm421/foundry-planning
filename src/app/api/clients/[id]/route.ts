@@ -73,10 +73,23 @@ export async function PUT(
       });
     }
 
+    // Strip identity / ownership fields from the update payload so a client
+     // can't be reparented across firms or its id rewritten via request body.
+    const {
+      id: _stripId,
+      firmId: _stripFirmId,
+      advisorId: _stripAdvisorId,
+      createdAt: _stripCreatedAt,
+      updatedAt: _stripUpdatedAt,
+      ...safeUpdate
+    } = updateBody;
+    void _stripId; void _stripFirmId; void _stripAdvisorId;
+    void _stripCreatedAt; void _stripUpdatedAt;
+
     const [updated] = await db
       .update(clients)
       .set({
-        ...updateBody,
+        ...safeUpdate,
         updatedAt: new Date(),
       })
       .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
