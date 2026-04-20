@@ -267,6 +267,13 @@
       "when": 1776695760792,
       "tag": "0037_audit_log",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1776707597558,
+      "tag": "0038_admin_tool",
+      "breakpoints": true
     }
   ]
 }

@@ -13,8 +13,9 @@ import {
   varchar,
   jsonb,
   index,
+  customType,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
@@ -1014,10 +1015,50 @@ export const auditLog = pgTable(
     resourceId: text("resource_id").notNull(),
     clientId: uuid("client_id"),
     metadata: jsonb("metadata"),
+    actingAsAdvisorId: text("acting_as_advisor_id"),
+    impersonationSessionId: uuid("impersonation_session_id"),
+    prevHash: customType<{ data: Buffer }>({ dataType() { return "bytea"; } })("prev_hash"),
+    rowHash: customType<{ data: Buffer }>({ dataType() { return "bytea"; } })("row_hash"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
     index("audit_log_firm_created_idx").on(t.firmId, t.createdAt),
     index("audit_log_resource_idx").on(t.resourceType, t.resourceId),
+  ],
+);
+
+// Admin tool (Phase 1). Kept separate from tenant tables on purpose:
+// admin_users authenticates against a dedicated Clerk instance and
+// is not reachable through the advisor-facing app.
+export const adminUsers = pgTable("admin_users", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clerkUserId: text("clerk_user_id").notNull().unique(),
+  email: text("email").notNull(),
+  role: text("role").notNull(), // 'support' | 'operator' | 'superadmin'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  disabledAt: timestamp("disabled_at"),
+});
+
+// One row per impersonation attempt. Never deleted. `ended_at` NULL means
+// the session is active; `expires_at` bounds the live window even if the
+// admin forgot to end it.
+export const adminImpersonationSessions = pgTable(
+  "admin_impersonation_sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    adminUserId: uuid("admin_user_id")
+      .notNull()
+      .references(() => adminUsers.id),
+    advisorClerkUserId: text("advisor_clerk_user_id").notNull(),
+    firmId: text("firm_id").notNull(),
+    startedAt: timestamp("started_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    endedAt: timestamp("ended_at"),
+    reason: text("reason").notNull(),
+  },
+  (t) => [
+    index("admin_impersonation_active_idx")
+      .on(t.adminUserId)
+      .where(sql`${t.endedAt} IS NULL`),
   ],
 );
