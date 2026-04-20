@@ -7,6 +7,7 @@ import {
   accounts,
   externalBeneficiaries,
   beneficiaryDesignations,
+  gifts,
 } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -35,7 +36,7 @@ export default async function FamilyPage({ params }: PageProps) {
 
   if (!client) notFound();
 
-  const [memberRows, entityRows, externalRows, accountRows, designationRows] =
+  const [memberRows, entityRows, externalRows, accountRows, designationRows, giftRows] =
     await Promise.all([
       db
         .select()
@@ -54,6 +55,11 @@ export default async function FamilyPage({ params }: PageProps) {
         .from(beneficiaryDesignations)
         .where(eq(beneficiaryDesignations.clientId, id))
         .orderBy(asc(beneficiaryDesignations.tier), asc(beneficiaryDesignations.sortOrder)),
+      db
+        .select()
+        .from(gifts)
+        .where(eq(gifts.clientId, id))
+        .orderBy(asc(gifts.year), asc(gifts.createdAt)),
     ]);
 
   const members: FamilyMember[] = memberRows.map((m) => ({
@@ -109,6 +115,18 @@ export default async function FamilyPage({ params }: PageProps) {
     sortOrder: d.sortOrder,
   }));
 
+  const giftsList = giftRows.map((g) => ({
+    id: g.id,
+    year: g.year,
+    amount: parseFloat(g.amount),
+    grantor: g.grantor,
+    recipientEntityId: g.recipientEntityId ?? null,
+    recipientFamilyMemberId: g.recipientFamilyMemberId ?? null,
+    recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? null,
+    useCrummeyPowers: g.useCrummeyPowers,
+    notes: g.notes ?? null,
+  }));
+
   const primary: PrimaryInfo = {
     firstName: client.firstName,
     lastName: client.lastName,
@@ -132,6 +150,7 @@ export default async function FamilyPage({ params }: PageProps) {
       initialExternalBeneficiaries={externals}
       initialAccounts={accts}
       initialDesignations={designations}
+      initialGifts={giftsList}
     />
   );
 }
