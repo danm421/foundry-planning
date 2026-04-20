@@ -565,6 +565,20 @@ shipped on `security-hardening`. Still open:
   Incomes, expenses, entities, family-members, deductions, transfers,
   asset-transactions, savings-rules deletes are not yet audited.
   _Why deferred: follow-up sweep, pattern established._
+- **Vercel prod env: Clerk test keys in use.** The Vercel project
+  currently ships `pk_test_…` / `sk_test_…` Clerk credentials. That
+  points prod at Clerk's test instance — test users, no production
+  auth hardening, no real billing/bot protection. Create a prod Clerk
+  instance, rotate `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` +
+  `CLERK_SECRET_KEY` in Vercel to `pk_live_…` / `sk_live_…` before
+  onboarding any real customer. _Why deferred: pre-launch; test keys
+  are fine for staging._
+- **Vercel prod env: Azure OpenAI creds missing.** `AZURE_API_KEY`,
+  `AZURE_ENDPOINT`, `AZURE_API_VERSION`, `AZURE_MODEL`,
+  `AZURE_ANALYSIS_MODEL` are not set in Vercel. `/api/clients/[id]/extract`
+  will 500 on first use in prod until they're added. _Why deferred:
+  not yet provisioned; tracked alongside the Azure abuse-monitoring
+  exemption (C6) in `docs/SECURITY_RUNBOOK.md` §1._
 
 ## Timeline Report (shipped 2026-04-19)
 
