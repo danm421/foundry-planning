@@ -247,6 +247,7 @@ export default function WillsPanel(props: WillsPanelProps) {
       {(["client", "spouse"] as const).map((g) => {
         if (g === "spouse" && !primary.spouseName) return null;
         const will = wills.find((w) => w.grantor === g);
+        const grantorWarnings = warnings.filter((x) => x.grantor === g);
         const heading = grantorFullName(g, primary) || (g === "client" ? "Client" : "Spouse");
         return (
           <section key={g} className="rounded-lg border border-gray-800 bg-gray-900/40 p-5">
@@ -292,15 +293,13 @@ export default function WillsPanel(props: WillsPanelProps) {
                 </button>
               </div>
             </header>
-            {warnings.filter((x) => x.grantor === g).length > 0 && (
+            {grantorWarnings.length > 0 && (
               <div className="mb-3 rounded-md border border-amber-700 bg-amber-900/20 p-3 text-xs text-amber-300">
                 <p className="mb-1 font-semibold">Allocation warnings</p>
                 <ul className="list-disc pl-4">
-                  {warnings
-                    .filter((x) => x.grantor === g)
-                    .map((x, i) => (
-                      <li key={i}>{x.text}</li>
-                    ))}
+                  {grantorWarnings.map((x, i) => (
+                    <li key={i}>{x.text}</li>
+                  ))}
                 </ul>
               </div>
             )}

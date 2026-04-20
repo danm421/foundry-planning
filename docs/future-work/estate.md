@@ -80,6 +80,17 @@ start getting upvoted across sessions.
   session: requires plan-level scope that wasn't budgeted alongside UI work.
   Next session touching any wills loader should do this extraction first.
 
+## Wills panel
+
+- **Under-allocation warning** — the WillsPanel banner currently flags
+  only over-allocation (`sum > 100.01` on a specific-asset / condition
+  group). Under-allocation (e.g., 50% of an account bequeathed, other 50%
+  unaccounted for) silently falls to intestacy for the remainder. Add a
+  second warning tier once over-allocation handling is validated in
+  production. Why deferred: over-allocation is the more common data-entry
+  error; under-allocation often reflects intentional residual disposition
+  that the advisor will cover with an all-assets bequest.
+
 ## Zod schema DRY-up
 
 - **Shared `uuidSchema` in `src/lib/schemas/common.ts`** — the custom-regex
