@@ -9,3 +9,5 @@ export const db = drizzle(sql, { schema });
 export type DB = ReturnType<typeof drizzle<typeof schema>>;
 
 export { drizzleImpersonationSessionRepo } from './drizzle-impersonation-session-repo';
+export { auditedMutation } from './audited-mutation';
+export type { AuditedMutationEntry } from './audited-mutation';
