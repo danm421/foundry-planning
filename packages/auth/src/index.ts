@@ -15,5 +15,12 @@ export type {
   ActiveImpersonation,
 } from "./admin-user-repo";
 export { requireRole } from "./roles";
+export {
+  getAdvisorContext,
+  getAdvisorContextOrFallback,
+  installClerkAdvisorFallback,
+  runWithAdvisorContext,
+} from './advisor-context';
+export type { AdvisorContext } from './advisor-context';
 export { signImpersonationToken, verifyImpersonationToken, hashImpersonationToken, ImpersonationTokenError } from './impersonation-token';
 export type { ImpersonationClaims } from './impersonation-token';
