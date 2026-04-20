@@ -72,7 +72,7 @@ d("beneficiaries tenant isolation", () => {
       externalBeneficiaries,
       beneficiaryDesignations,
     } = schema;
-    const { eq, inArray } = drizzleOrm;
+    const { inArray } = drizzleOrm;
 
     const testClients = await db
       .select({ id: clients.id })
@@ -108,14 +108,17 @@ d("beneficiaries tenant isolation", () => {
         planEndAge: 90,
         lifeExpectancy: 90,
         filingStatus: "married_joint",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
       .returning();
     const [scenario] = await db
       .insert(scenarios)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .values({ clientId: client.id, name: "base", isDefault: true } as any)
       .returning();
     const [fm] = await db
       .insert(familyMembers)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .values({ clientId: client.id, firstName: "Kid" } as any)
       .returning();
     const [account] = await db
@@ -127,6 +130,7 @@ d("beneficiaries tenant isolation", () => {
         category: "taxable",
         subType: "brokerage",
         owner: "client",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
       .returning();
     return { clientId: client.id, accountId: account.id, fmId: fm.id };
@@ -144,14 +148,17 @@ d("beneficiaries tenant isolation", () => {
 
     await db
       .insert(externalBeneficiaries)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .values({ clientId: a.clientId, name: "Stanford" } as any);
 
     vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
     const { GET } = await import(
       "@/app/api/clients/[id]/external-beneficiaries/route"
     );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const res = await GET(new Request("http://x") as any, {
       params: Promise.resolve({ id: a.clientId }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
     expect(res.status).toBe(404);
   });
@@ -169,9 +176,11 @@ d("beneficiaries tenant isolation", () => {
       new Request("http://x", {
         method: "PUT",
         body: JSON.stringify(body),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       }) as any,
       {
         params: Promise.resolve({ id: a.clientId, accountId: a.accountId }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
     );
     expect(res.status).toBe(404);
@@ -191,9 +200,11 @@ d("beneficiaries tenant isolation", () => {
       new Request("http://x", {
         method: "PUT",
         body: JSON.stringify(body),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       }) as any,
       {
         params: Promise.resolve({ id: a.clientId, accountId: a.accountId }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
     );
     expect(res.status).toBe(400);
