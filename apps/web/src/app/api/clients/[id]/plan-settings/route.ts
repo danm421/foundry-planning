@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, modelPortfolios, scenarios, planSettings } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -121,43 +121,49 @@ export async function PUT(
       }
     }
 
-    const [updated] = await db
-      .update(planSettings)
-      .set({
-        flatFederalRate: flatFederalRate != null ? String(flatFederalRate) : undefined,
-        flatStateRate: flatStateRate != null ? String(flatStateRate) : undefined,
-        inflationRate: inflationRate != null ? String(inflationRate) : undefined,
-        taxEngineMode: taxEngineMode != null ? taxEngineMode : undefined,
-        taxInflationRate: "taxInflationRate" in body
-          ? (taxInflationRate === null ? null : String(taxInflationRate))
-          : undefined,
-        ssWageGrowthRate: "ssWageGrowthRate" in body
-          ? (ssWageGrowthRate === null ? null : String(ssWageGrowthRate))
-          : undefined,
-        planStartYear: planStartYear != null ? Number(planStartYear) : undefined,
-        planEndYear: planEndYear != null ? Number(planEndYear) : undefined,
-        defaultGrowthTaxable: defaultGrowthTaxable != null ? String(defaultGrowthTaxable) : undefined,
-        defaultGrowthCash: defaultGrowthCash != null ? String(defaultGrowthCash) : undefined,
-        defaultGrowthRetirement: defaultGrowthRetirement != null ? String(defaultGrowthRetirement) : undefined,
-        defaultGrowthRealEstate: defaultGrowthRealEstate != null ? String(defaultGrowthRealEstate) : undefined,
-        defaultGrowthBusiness: defaultGrowthBusiness != null ? String(defaultGrowthBusiness) : undefined,
-        defaultGrowthLifeInsurance: defaultGrowthLifeInsurance != null ? String(defaultGrowthLifeInsurance) : undefined,
-        growthSourceTaxable: growthSourceTaxable ?? undefined,
-        growthSourceCash: growthSourceCash ?? undefined,
-        growthSourceRetirement: growthSourceRetirement ?? undefined,
-        modelPortfolioIdTaxable: modelPortfolioIdTaxable !== undefined ? modelPortfolioIdTaxable : undefined,
-        modelPortfolioIdCash: modelPortfolioIdCash !== undefined ? modelPortfolioIdCash : undefined,
-        modelPortfolioIdRetirement: modelPortfolioIdRetirement !== undefined ? modelPortfolioIdRetirement : undefined,
-        selectedBenchmarkPortfolioId: "selectedBenchmarkPortfolioId" in body
-          ? (selectedBenchmarkPortfolioId === null ? null : selectedBenchmarkPortfolioId)
-          : undefined,
-        inflationRateSource: inflationRateSource === "custom" || inflationRateSource === "asset_class"
-          ? inflationRateSource
-          : undefined,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenarioId)))
-      .returning();
+    let updated: typeof planSettings.$inferSelect | undefined;
+    await auditedMutation(
+      { action: 'plan_settings.update', resourceType: 'plan_settings', resourceId: id, metadata: { after: body } },
+      async () => {
+        [updated] = await db
+          .update(planSettings)
+          .set({
+            flatFederalRate: flatFederalRate != null ? String(flatFederalRate) : undefined,
+            flatStateRate: flatStateRate != null ? String(flatStateRate) : undefined,
+            inflationRate: inflationRate != null ? String(inflationRate) : undefined,
+            taxEngineMode: taxEngineMode != null ? taxEngineMode : undefined,
+            taxInflationRate: "taxInflationRate" in body
+              ? (taxInflationRate === null ? null : String(taxInflationRate))
+              : undefined,
+            ssWageGrowthRate: "ssWageGrowthRate" in body
+              ? (ssWageGrowthRate === null ? null : String(ssWageGrowthRate))
+              : undefined,
+            planStartYear: planStartYear != null ? Number(planStartYear) : undefined,
+            planEndYear: planEndYear != null ? Number(planEndYear) : undefined,
+            defaultGrowthTaxable: defaultGrowthTaxable != null ? String(defaultGrowthTaxable) : undefined,
+            defaultGrowthCash: defaultGrowthCash != null ? String(defaultGrowthCash) : undefined,
+            defaultGrowthRetirement: defaultGrowthRetirement != null ? String(defaultGrowthRetirement) : undefined,
+            defaultGrowthRealEstate: defaultGrowthRealEstate != null ? String(defaultGrowthRealEstate) : undefined,
+            defaultGrowthBusiness: defaultGrowthBusiness != null ? String(defaultGrowthBusiness) : undefined,
+            defaultGrowthLifeInsurance: defaultGrowthLifeInsurance != null ? String(defaultGrowthLifeInsurance) : undefined,
+            growthSourceTaxable: growthSourceTaxable ?? undefined,
+            growthSourceCash: growthSourceCash ?? undefined,
+            growthSourceRetirement: growthSourceRetirement ?? undefined,
+            modelPortfolioIdTaxable: modelPortfolioIdTaxable !== undefined ? modelPortfolioIdTaxable : undefined,
+            modelPortfolioIdCash: modelPortfolioIdCash !== undefined ? modelPortfolioIdCash : undefined,
+            modelPortfolioIdRetirement: modelPortfolioIdRetirement !== undefined ? modelPortfolioIdRetirement : undefined,
+            selectedBenchmarkPortfolioId: "selectedBenchmarkPortfolioId" in body
+              ? (selectedBenchmarkPortfolioId === null ? null : selectedBenchmarkPortfolioId)
+              : undefined,
+            inflationRateSource: inflationRateSource === "custom" || inflationRateSource === "asset_class"
+              ? inflationRateSource
+              : undefined,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenarioId)))
+          .returning();
+      }
+    );
 
     if (!updated) {
       return NextResponse.json({ error: "Plan settings not found" }, { status: 404 });
