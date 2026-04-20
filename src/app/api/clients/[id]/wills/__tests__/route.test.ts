@@ -1,15 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { getTableName } from "drizzle-orm";
 
 vi.mock("@/lib/db-helpers", () => ({
   getOrgId: vi.fn(),
 }));
 
-vi.mock("@/db", () => {
+vi.mock("@/db", async () => {
+  // Resolve real schema objects so we can match tables by identity-equivalent name.
+  const schema = await vi.importActual<typeof import("@/db/schema")>("@/db/schema");
   const state: {
     clients: Array<{ id: string; firmId: string }>;
     wills: Array<{ id: string; clientId: string; grantor: string }>;
-    bequests: unknown[];
-    recipients: unknown[];
     accounts: Array<{ id: string; clientId: string }>;
     familyMembers: Array<{ id: string; clientId: string }>;
   } = {
@@ -18,8 +19,6 @@ vi.mock("@/db", () => {
       { id: "c_B", firmId: "firm_B" },
     ],
     wills: [],
-    bequests: [],
-    recipients: [],
     accounts: [
       { id: "acct_A", clientId: "c_A" },
       { id: "acct_B", clientId: "c_B" },
@@ -32,26 +31,35 @@ vi.mock("@/db", () => {
   const makeResult = (rows: unknown[]) => ({
     [Symbol.iterator]: () => rows[Symbol.iterator](),
     then: (r: (v: unknown[]) => unknown) => Promise.resolve(rows).then(r),
+    orderBy: () => makeResult(rows),
   });
+  const rowsFor = (t: unknown): unknown[] => {
+    if (t === schema.clients) return state.clients;
+    if (t === schema.wills) return state.wills;
+    if (t === schema.accounts) return state.accounts;
+    if (t === schema.familyMembers) return state.familyMembers;
+    try {
+      const name = getTableName(t as Parameters<typeof getTableName>[0]);
+      if (name === "clients") return state.clients;
+      if (name === "wills") return state.wills;
+      if (name === "accounts") return state.accounts;
+      if (name === "family_members") return state.familyMembers;
+    } catch {
+      /* getTableName throws on non-table inputs; fall through */
+    }
+    return [];
+  };
   return {
     db: {
       __state: state,
       select: () => ({
-        from: (t: { _: { name?: string }; name?: string }) => ({
-          where: () => {
-            const name =
-              (t as unknown as { _?: { name?: string } })?._?.name ??
-              (t as unknown as { name?: string })?.name ??
-              "";
-            if (name === "clients") return makeResult(state.clients);
-            if (name === "wills") return makeResult(state.wills);
-            if (name === "accounts") return makeResult(state.accounts);
-            if (name === "family_members") return makeResult(state.familyMembers);
-            return makeResult([]);
-          },
+        from: (t: unknown) => ({
+          where: () => makeResult(rowsFor(t)),
         }),
       }),
-      insert: () => ({ values: () => ({ returning: () => Promise.resolve([{ id: "w_new" }]) }) }),
+      insert: () => ({
+        values: () => ({ returning: () => Promise.resolve([{ id: "w_new" }]) }),
+      }),
     },
   };
 });

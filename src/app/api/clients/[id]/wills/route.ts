@@ -208,7 +208,9 @@ export async function POST(
   try {
     const firmId = await getOrgId();
     const { id } = await params;
-
+    if (!(await verifyClient(id, firmId))) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
     const body = await request.json();
     const parsed = willCreateSchema.safeParse(body);
     if (!parsed.success) {
@@ -218,10 +220,6 @@ export async function POST(
       );
     }
     const data = parsed.data;
-
-    if (!(await verifyClient(id, firmId))) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
 
     // Duplicate (client_id, grantor) check
     const [existing] = await db
