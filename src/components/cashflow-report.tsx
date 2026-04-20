@@ -272,7 +272,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // line-item breakdown and subtotal) instead of a flat `details` list. Used
     // by the consolidated Other Income drill so a single year-column cell can
     // surface all asset transactions that contributed.
-    groups?: { name: string; amount: number; details: { label: string; amount: number }[] }[];
+    groups?: { name: string; amount: number; details: { label: string; amount: number }[]; kind?: "sale" | "purchase" | "deficit" }[];
   } | null>(null);
   const [taxDrillModal, setTaxDrillModal] = useState<TaxDrillModal | null>(null);
   const [showTaxDetailModal, setShowTaxDetailModal] = useState(false);
@@ -697,6 +697,38 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       }
     }
   }
+  // Synthetic accounts created by asset-purchase techniques aren't in
+  // clientData.accounts (they're minted inside the engine). Recover their
+  // categories from portfolioAssets buckets so withdrawal-by-category and
+  // the net-cash-flow drill include them instead of silently dropping them.
+  const PORTFOLIO_BUCKET_TO_CATEGORY: Record<string, string> = {
+    taxable: "taxable",
+    cash: "cash",
+    retirement: "retirement",
+    realEstate: "real_estate",
+    business: "business",
+    lifeInsurance: "life_insurance",
+  };
+  for (const y of years) {
+    for (const [bucket, category] of Object.entries(PORTFOLIO_BUCKET_TO_CATEGORY)) {
+      const map = (y.portfolioAssets as Record<string, unknown>)[bucket];
+      if (!map || typeof map !== "object") continue;
+      for (const id of Object.keys(map as Record<string, number>)) {
+        if (!(id in accountCategoryById)) {
+          accountCategoryById[id] = category;
+          const segmentKey = Object.entries(PORTFOLIO_SEGMENT_TO_CATEGORY).find(
+            ([, c]) => c === category,
+          )?.[0];
+          if (segmentKey) {
+            if (!accountsByCategory[segmentKey]) accountsByCategory[segmentKey] = [];
+            if (!accountsByCategory[segmentKey].includes(id)) {
+              accountsByCategory[segmentKey].push(id);
+            }
+          }
+        }
+      }
+    }
+  }
 
   // ── Net cash flow drill helpers ───────────────────────────────────────────
 
@@ -940,7 +972,19 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol(
           "other_income_l0",
           () => <DrillBtn segment="other_income_detail" label="Other Inflows" />,
-          (r) => r.income.other
+          // Parent column reconciles with the drill's "Other Inflows Total":
+          // income.other (type=other rows) PLUS technique-income bySource
+          // entries (asset-sale net proceeds, purchase-funding deficits). The
+          // engine assigns technique-proceeds an id starting with "technique-"
+          // but doesn't bucket them into income.other, so reading the parent
+          // off income.other alone left proceeds invisible at the top level
+          // yet visible when drilled — advisors saw a discrepancy.
+          (r) => {
+            const techniqueTotal = Object.entries(r.income.bySource ?? {})
+              .filter(([id]) => id.startsWith("technique-"))
+              .reduce((sum, [, v]) => sum + v, 0);
+            return r.income.other + techniqueTotal;
+          }
         ),
         numCol("totalIncome", "Total Income", (r) => r.totalIncome, true),
         numCol("expenses_total", () => <DrillBtn segment="expenses" label="Expenses" />, (r) => r.expenses.total),
@@ -1002,10 +1046,16 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                     .map((id) => {
                       const amt = row.income.bySource[id] ?? 0;
                       if (amt === 0) return null;
+                      const kind: "sale" | "purchase" | "deficit" | undefined =
+                        id.startsWith("technique-proceeds:") ? "sale"
+                        : id.startsWith("technique-purchase:") ? "purchase"
+                        : id.startsWith("technique-deficit:") ? "deficit"
+                        : undefined;
                       return {
                         name: incomeNames[id] ?? id,
                         amount: amt,
                         details: buildTechniqueDetails(id, row.year, amt),
+                        kind,
                       };
                     })
                     .filter((g): g is NonNullable<typeof g> => g !== null);
@@ -1098,6 +1148,29 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             "ss_spouse_survivor",
             `${spouseName} Survivor`,
             (r) => r.socialSecurityDetail?.spouse?.survivor ?? 0,
+            (info) => fmtSS(info.getValue() as number)
+          )] : []),
+          // Reconciling column: when some SS rows are in pia_at_fra mode
+          // (captured in socialSecurityDetail) and others are in
+          // manual_amount mode (NOT captured there), the per-spouse columns
+          // sum to less than income.socialSecurity. Surface that residual
+          // explicitly so the drill reconciles with the parent.
+          ...(visibleYears.some((y) => {
+            const d = y.socialSecurityDetail;
+            const detailed =
+              (d?.client.retirement ?? 0) + (d?.client.spousal ?? 0) + (d?.client.survivor ?? 0) +
+              (d?.spouse?.retirement ?? 0) + (d?.spouse?.spousal ?? 0) + (d?.spouse?.survivor ?? 0);
+            return y.income.socialSecurity - detailed > 0.5; // >$0.5 tolerance
+          }) ? [col(
+            "ss_manual_residual",
+            "Manual / Legacy SS",
+            (r) => {
+              const d = r.socialSecurityDetail;
+              const detailed =
+                (d?.client.retirement ?? 0) + (d?.client.spousal ?? 0) + (d?.client.survivor ?? 0) +
+                (d?.spouse?.retirement ?? 0) + (d?.spouse?.spousal ?? 0) + (d?.spouse?.survivor ?? 0);
+              return Math.max(0, r.income.socialSecurity - detailed);
+            },
             (info) => fmtSS(info.getValue() as number)
           )] : []),
           numCol("ss_total", "Total", (r) => r.income.socialSecurity, true),
@@ -1236,10 +1309,16 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                             .map((id) => {
                               const amt = row.expenses.bySource[id] ?? 0;
                               if (amt === 0) return null;
+                              const kind: "sale" | "purchase" | "deficit" | undefined =
+                                id.startsWith("technique-proceeds:") ? "sale"
+                                : id.startsWith("technique-purchase:") ? "purchase"
+                                : id.startsWith("technique-deficit:") ? "deficit"
+                                : undefined;
                               return {
                                 name: expenseNames[id] ?? id,
                                 amount: amt,
                                 details: buildTechniqueDetails(id, row.year, amt),
+                                kind,
                               };
                             })
                             .filter((g): g is NonNullable<typeof g> => g !== null);
@@ -1349,7 +1428,17 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           "Withdrawal %",
           (r, idx) => {
             const boy = portfolioBoy(r, idx);
-            return boy > 0 ? r.withdrawals.total / boy : 0;
+            // RMDs are forced withdrawals and belong in the numerator even
+            // though the engine tracks them on ledger.rmdAmount rather than
+            // inside withdrawals.byAccount. Advisors reading the column
+            // expect "cash pulled out of the portfolio this year" — leaving
+            // RMDs out under-reports stress for retirees on fixed RMDs.
+            const rmdTotal = Object.values(r.accountLedgers ?? {}).reduce(
+              (sum, led) => sum + (led?.rmdAmount ?? 0),
+              0,
+            );
+            const numerator = r.withdrawals.total + rmdTotal;
+            return boy > 0 ? numerator / boy : 0;
           },
           (info) => {
             const v = info.getValue() as number;
@@ -1929,7 +2018,13 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                         </div>
                       ))}
                       <div className="flex justify-between text-sm pt-1.5 mt-1.5 border-t border-gray-800">
-                        <span className="text-gray-300 font-medium">Net Proceeds</span>
+                        <span className="text-gray-300 font-medium">
+                          {g.kind === "purchase"
+                            ? "Net Equity Out"
+                            : g.kind === "deficit"
+                              ? "Net Shortfall"
+                              : "Net Proceeds"}
+                        </span>
                         <span className={`tabular-nums font-medium ${g.amount < 0 ? "text-red-400" : "text-gray-100"}`}>
                           {fmtNum(g.amount)}
                         </span>
