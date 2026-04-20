@@ -108,7 +108,16 @@ export async function POST(
       barPng,
     }) as React.ReactElement<DocumentProps>;
 
-    const stream = await renderToStream(doc);
+    // @react-pdf/renderer has a memory-leak history on large docs, and
+     // a malformed view model can send it into an unbounded layout loop.
+     // Race the render against a 25 s timeout so a pathological PDF can
+     // never pin the serverless function to its maxDuration.
+    const stream = await Promise.race<Awaited<ReturnType<typeof renderToStream>>>([
+      renderToStream(doc),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("PDF render timed out")), 25_000)
+      ),
+    ]);
 
     return new NextResponse(stream as unknown as ReadableStream, {
       status: 200,
