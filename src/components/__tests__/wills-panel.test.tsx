@@ -114,3 +114,60 @@ describe("WillsPanel — add bequest modal", () => {
     expect((save as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+describe("WillsPanel — soft warnings", () => {
+  it("shows an allocation warning when an account is over-allocated at one condition", () => {
+    render(
+      <WillsPanel
+        {...baseProps}
+        initialWills={[
+          {
+            id: u("w1"),
+            grantor: "client",
+            bequests: [
+              {
+                id: u("b1"),
+                name: "60% to child A",
+                assetMode: "specific",
+                accountId: u("a1"),
+                percentage: 60,
+                condition: "always",
+                sortOrder: 0,
+                recipients: [
+                  {
+                    id: u("r1"),
+                    recipientKind: "family_member",
+                    recipientId: u("f1"),
+                    percentage: 100,
+                    sortOrder: 0,
+                  },
+                ],
+              },
+              {
+                id: u("b2"),
+                name: "60% to child A again",
+                assetMode: "specific",
+                accountId: u("a1"),
+                percentage: 60,
+                condition: "always",
+                sortOrder: 1,
+                recipients: [
+                  {
+                    id: u("r2"),
+                    recipientKind: "family_member",
+                    recipientId: u("f1"),
+                    percentage: 100,
+                    sortOrder: 0,
+                  },
+                ],
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText(/Allocation warnings/i)).toBeDefined();
+    expect(screen.getByText(/over-allocated/i)).toBeDefined();
+    expect(screen.getByText(/120\.00%/)).toBeDefined();
+  });
+});

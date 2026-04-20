@@ -220,6 +220,26 @@ export default function WillsPanel(props: WillsPanelProps) {
     }
   }
 
+  const warnings: { grantor: WillGrantor; text: string }[] = [];
+  for (const w of wills) {
+    const byKey = new Map<string, number>();
+    for (const b of w.bequests) {
+      if (b.assetMode !== "specific" || !b.accountId) continue;
+      const key = `${b.accountId}|${b.condition}`;
+      byKey.set(key, (byKey.get(key) ?? 0) + b.percentage);
+    }
+    for (const [key, sum] of byKey.entries()) {
+      if (sum > 100.01) {
+        const [accountId, condition] = key.split("|");
+        const acct = accounts.find((a) => a.id === accountId)?.name ?? accountId;
+        warnings.push({
+          grantor: w.grantor,
+          text: `${acct}: over-allocated at "${condition}" (${sum.toFixed(2)}%)`,
+        });
+      }
+    }
+  }
+
   return (
     <div className="space-y-8">
       {saving && <div className="text-xs text-gray-400">Saving…</div>}
@@ -272,6 +292,18 @@ export default function WillsPanel(props: WillsPanelProps) {
                 </button>
               </div>
             </header>
+            {warnings.filter((x) => x.grantor === g).length > 0 && (
+              <div className="mb-3 rounded-md border border-amber-700 bg-amber-900/20 p-3 text-xs text-amber-300">
+                <p className="mb-1 font-semibold">Allocation warnings</p>
+                <ul className="list-disc pl-4">
+                  {warnings
+                    .filter((x) => x.grantor === g)
+                    .map((x, i) => (
+                      <li key={i}>{x.text}</li>
+                    ))}
+                </ul>
+              </div>
+            )}
             {!will || will.bequests.length === 0 ? (
               <p className="text-sm text-gray-500">No bequests yet.</p>
             ) : (
