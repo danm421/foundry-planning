@@ -4,6 +4,21 @@ Lightweight running list of items deferred from past sessions. Add a new entry
 when you consciously scope something out; remove the entry when it ships.
 Format: one line per item plus a short "Why deferred" note.
 
+## Per-category files
+
+Detailed retro entries from each plan are maintained in category files under
+`docs/future-work/`:
+
+- [`docs/future-work/admin.md`](future-work/admin.md) — admin-tool deferrals
+  (Plan 2 retro: audit coverage, ESLint rule, chain verification UI, session
+  renewal, admin-user CRUD, prod Clerk + DNS, Playwright E2E)
+- [`docs/future-work/engine.md`](future-work/engine.md) — back-end / DB-level
+  deferrals (Plan 2 retro: WebSocket pool driver promotion, drizzle-kit journal
+  resync, per-app DB separation)
+
+The entries below are the full in-file list and duplicate what is in the
+category files; the category files are the canonical home going forward.
+
 Items are scored on three axes:
 
 - **P (Priority)** 1–10: how important/urgent
@@ -728,3 +743,10 @@ shipped on `security-hardening`. Still open:
   Why deferred: affects only integration tests that write real audit rows;
   current test suite mocks the inserter. A proper solution (per-test schema
   isolation or a test-only trigger bypass) is its own infra task.
+
+- **Per-app DB separation.** Admin (`apps/admin`) and web (`apps/web`) share a
+  single Neon branch in Plan 2. Splitting into separate Neon projects or
+  branches would provide data isolation and cleaner access-control boundaries.
+  Why deferred: Plan 3 decision if we want data isolation; shared branch is
+  simpler and sufficient while both apps are owned by a single operator.
+  See `docs/future-work/engine.md`.
