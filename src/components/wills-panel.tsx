@@ -111,6 +111,18 @@ function recipientLabel(
 export default function WillsPanel(props: WillsPanelProps) {
   const { primary, initialWills, accounts, familyMembers, externalBeneficiaries, entities } = props;
   const [wills] = useState<WillsPanelWill[]>(initialWills);
+  const [modalOpen, setModalOpen] = useState<WillGrantor | null>(null);
+  const [draft, setDraft] = useState<WillsPanelBequest>({
+    name: "",
+    assetMode: "specific",
+    accountId: null,
+    percentage: 100,
+    condition: "always",
+    sortOrder: 0,
+    recipients: [
+      { recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 },
+    ],
+  });
 
   return (
     <div className="space-y-8">
@@ -126,8 +138,20 @@ export default function WillsPanel(props: WillsPanelProps) {
               </h2>
               <button
                 type="button"
-                className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled
+                className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700"
+                onClick={() => {
+                  const hasAccounts = accounts.length > 0;
+                  setDraft({
+                    name: "",
+                    assetMode: hasAccounts ? "specific" : "all_assets",
+                    accountId: hasAccounts ? accounts[0].id : null,
+                    percentage: 100,
+                    condition: "always",
+                    sortOrder: (will?.bequests.length ?? 0),
+                    recipients: [],
+                  });
+                  setModalOpen(g);
+                }}
               >
                 + Add bequest
               </button>
@@ -174,6 +198,216 @@ export default function WillsPanel(props: WillsPanelProps) {
           </section>
         );
       })}
+
+      {modalOpen && (
+        <div
+          role="dialog"
+          aria-label="New bequest"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        >
+          <div className="w-full max-w-lg rounded-lg border border-gray-700 bg-gray-900 p-5">
+            <h3 className="mb-4 text-base font-semibold text-gray-100">New bequest</h3>
+
+            <label className="mb-3 block text-sm">
+              <span className="mb-1 block text-gray-300">Name</span>
+              <input
+                type="text"
+                value={draft.name}
+                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                className="w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-gray-100"
+              />
+            </label>
+
+            <label className="mb-3 block text-sm">
+              <span className="mb-1 block text-gray-300">Asset</span>
+              <select
+                value={draft.assetMode === "all_assets" ? "__residual__" : (draft.accountId ?? "")}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "__residual__") {
+                    setDraft({ ...draft, assetMode: "all_assets", accountId: null });
+                  } else {
+                    setDraft({ ...draft, assetMode: "specific", accountId: v });
+                  }
+                }}
+                className="w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-gray-100"
+              >
+                <option value="__residual__">All other assets</option>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="mb-3 block text-sm">
+              <span className="mb-1 block text-gray-300">Percentage</span>
+              <input
+                type="number"
+                min={0.01}
+                max={100}
+                step={0.01}
+                value={draft.percentage}
+                onChange={(e) => setDraft({ ...draft, percentage: parseFloat(e.target.value) || 0 })}
+                className="w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-gray-100"
+              />
+            </label>
+
+            <label className="mb-3 block text-sm">
+              <span className="mb-1 block text-gray-300">Condition</span>
+              <select
+                value={draft.condition}
+                onChange={(e) => setDraft({ ...draft, condition: e.target.value as WillCondition })}
+                className="w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-gray-100"
+              >
+                <option value="always">Always</option>
+                <option value="if_spouse_survives">If spouse survives</option>
+                <option value="if_spouse_predeceased">If spouse predeceases</option>
+              </select>
+            </label>
+
+            <fieldset className="mb-4">
+              <legend className="mb-2 text-sm text-gray-300">Recipients</legend>
+              {draft.recipients.map((r, i) => (
+                <div key={i} className="mb-2 flex items-center gap-2">
+                  <select
+                    value={r.recipientKind}
+                    onChange={(e) => {
+                      const nextKind = e.target.value as WillRecipientKind;
+                      const next = [...draft.recipients];
+                      next[i] = {
+                        ...r,
+                        recipientKind: nextKind,
+                        recipientId: nextKind === "spouse" ? null : (
+                          nextKind === "family_member" ? familyMembers[0]?.id ?? null :
+                          nextKind === "external_beneficiary" ? externalBeneficiaries[0]?.id ?? null :
+                          entities[0]?.id ?? null
+                        ),
+                      };
+                      setDraft({ ...draft, recipients: next });
+                    }}
+                    className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100"
+                  >
+                    <option value="spouse">Spouse</option>
+                    <option value="family_member">Family member</option>
+                    <option value="external_beneficiary">External beneficiary</option>
+                    <option value="entity">Entity / Trust</option>
+                  </select>
+                  {r.recipientKind !== "spouse" && (
+                    <select
+                      value={r.recipientId ?? ""}
+                      onChange={(e) => {
+                        const next = [...draft.recipients];
+                        next[i] = { ...r, recipientId: e.target.value };
+                        setDraft({ ...draft, recipients: next });
+                      }}
+                      className="flex-1 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100"
+                    >
+                      {r.recipientKind === "family_member" &&
+                        familyMembers.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.firstName} {f.lastName ?? ""}
+                          </option>
+                        ))}
+                      {r.recipientKind === "external_beneficiary" &&
+                        externalBeneficiaries.map((x) => (
+                          <option key={x.id} value={x.id}>{x.name}</option>
+                        ))}
+                      {r.recipientKind === "entity" &&
+                        entities.map((x) => (
+                          <option key={x.id} value={x.id}>{x.name}</option>
+                        ))}
+                    </select>
+                  )}
+                  <input
+                    type="number"
+                    min={0.01}
+                    max={100}
+                    step={0.01}
+                    value={r.percentage}
+                    onChange={(e) => {
+                      const next = [...draft.recipients];
+                      next[i] = { ...r, percentage: parseFloat(e.target.value) || 0 };
+                      setDraft({ ...draft, recipients: next });
+                    }}
+                    className="w-20 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = draft.recipients.filter((_, j) => j !== i);
+                      setDraft({ ...draft, recipients: next });
+                    }}
+                    className="rounded-md border border-gray-700 px-2 py-1 text-sm text-gray-300 hover:bg-gray-800"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  const sortOrder = draft.recipients.length;
+                  setDraft({
+                    ...draft,
+                    recipients: [
+                      ...draft.recipients,
+                      {
+                        recipientKind: "family_member",
+                        recipientId: familyMembers[0]?.id ?? null,
+                        percentage: 0,
+                        sortOrder,
+                      },
+                    ],
+                  });
+                }}
+                className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-gray-100 hover:bg-gray-700"
+              >
+                + Add recipient
+              </button>
+              <p className="mt-2 text-xs text-gray-400">
+                Total:{" "}
+                <span
+                  className={
+                    Math.abs(
+                      draft.recipients.reduce((s, x) => s + x.percentage, 0) - 100,
+                    ) < 0.01
+                      ? "text-green-400"
+                      : "text-red-400"
+                  }
+                >
+                  {draft.recipients.reduce((s, x) => s + x.percentage, 0).toFixed(2)}%
+                </span>
+              </p>
+            </fieldset>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setModalOpen(null)}
+                className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={
+                  !draft.name.trim() ||
+                  Math.abs(
+                    draft.recipients.reduce((s, x) => s + x.percentage, 0) - 100,
+                  ) > 0.01
+                }
+                onClick={() => {
+                  // Save wiring is Task 10's responsibility. For now just close the modal.
+                  setModalOpen(null);
+                }}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

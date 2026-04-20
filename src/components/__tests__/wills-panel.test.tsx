@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import WillsPanel from "../wills-panel";
 
 const u = (s: string) => `00000000-0000-0000-0000-${s.padStart(12, "0")}`;
@@ -79,5 +79,26 @@ describe("WillsPanel", () => {
     );
     expect(screen.queryByText(/Linda Smith/)).toBeNull();
     expect(screen.getByText(/Tom Smith/)).toBeDefined();
+  });
+});
+
+describe("WillsPanel — add bequest modal", () => {
+  it("opens the modal when + Add bequest is clicked", () => {
+    render(<WillsPanel {...baseProps} initialWills={[]} />);
+    const addButtons = screen.getAllByRole("button", { name: /Add bequest/i });
+    fireEvent.click(addButtons[0]);
+    expect(screen.getByText(/New bequest/i)).toBeDefined();
+    expect(screen.getByLabelText(/Name/i)).toBeDefined();
+    expect(screen.getByLabelText(/Asset/i)).toBeDefined();
+    expect(screen.getByLabelText(/Percentage/i)).toBeDefined();
+    expect(screen.getByLabelText(/Condition/i)).toBeDefined();
+  });
+
+  it("disables Save until recipients sum to 100", () => {
+    render(<WillsPanel {...baseProps} initialWills={[]} />);
+    fireEvent.click(screen.getAllByRole("button", { name: /Add bequest/i })[0]);
+    fireEvent.change(screen.getByLabelText(/Name/i), { target: { value: "Test" } });
+    const save = screen.getByRole("button", { name: /^Save$/i });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
   });
 });
