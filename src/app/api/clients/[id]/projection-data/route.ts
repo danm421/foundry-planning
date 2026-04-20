@@ -27,12 +27,15 @@ import {
   clientCmaOverrides,
   beneficiaryDesignations,
   gifts,
+  wills,
+  willBequests,
+  willBequestRecipients,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
-import type { BeneficiaryRef } from "@/engine/types";
+import type { BeneficiaryRef, Will, WillBequest } from "@/engine/types";
 
 export const dynamic = "force-dynamic";
 
@@ -361,6 +364,65 @@ export async function GET(
       }
     }
 
+    // ── Wills loader ────────────────────────────────────────────────────────
+    const willRows = await db
+      .select()
+      .from(wills)
+      .where(eq(wills.clientId, id))
+      .orderBy(asc(wills.grantor));
+    const willIds = willRows.map((w) => w.id);
+    const willBequestRows = willIds.length
+      ? await db
+          .select()
+          .from(willBequests)
+          .where(inArray(willBequests.willId, willIds))
+          .orderBy(asc(willBequests.willId), asc(willBequests.sortOrder))
+      : [];
+    const bequestIds = willBequestRows.map((b) => b.id);
+    const willRecipientRows = bequestIds.length
+      ? await db
+          .select()
+          .from(willBequestRecipients)
+          .where(inArray(willBequestRecipients.bequestId, bequestIds))
+          .orderBy(
+            asc(willBequestRecipients.bequestId),
+            asc(willBequestRecipients.sortOrder),
+          )
+      : [];
+
+    const recipientsByBequest = new Map<string, typeof willRecipientRows>();
+    for (const r of willRecipientRows) {
+      const list = recipientsByBequest.get(r.bequestId) ?? [];
+      list.push(r);
+      recipientsByBequest.set(r.bequestId, list);
+    }
+    const bequestsByWill = new Map<string, WillBequest[]>();
+    for (const b of willBequestRows) {
+      const list = bequestsByWill.get(b.willId) ?? [];
+      list.push({
+        id: b.id,
+        name: b.name,
+        assetMode: b.assetMode,
+        accountId: b.accountId,
+        percentage: parseFloat(b.percentage),
+        condition: b.condition,
+        sortOrder: b.sortOrder,
+        recipients: (recipientsByBequest.get(b.id) ?? []).map((r) => ({
+          recipientKind: r.recipientKind,
+          recipientId: r.recipientId,
+          percentage: parseFloat(r.percentage),
+          sortOrder: r.sortOrder,
+        })),
+      });
+      bequestsByWill.set(b.willId, list);
+    }
+
+    const engineWills: Will[] = willRows.map((w) => ({
+      id: w.id,
+      grantor: w.grantor,
+      bequests: bequestsByWill.get(w.id) ?? [],
+    }));
+
     // ── Build response ──────────────────────────────────────────────────────
 
     // Convert Drizzle decimal strings to numbers for the engine
@@ -619,6 +681,7 @@ export async function GET(
         recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? undefined,
         useCrummeyPowers: g.useCrummeyPowers,
       })),
+      wills: engineWills,
     });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {

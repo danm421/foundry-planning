@@ -15,6 +15,30 @@ export interface Gift {
   useCrummeyPowers: boolean;
 }
 
+export interface WillBequestRecipient {
+  recipientKind: "family_member" | "external_beneficiary" | "entity" | "spouse";
+  recipientId: string | null;
+  percentage: number;
+  sortOrder: number;
+}
+
+export interface WillBequest {
+  id: string;
+  name: string;
+  assetMode: "specific" | "all_assets";
+  accountId: string | null;
+  percentage: number;
+  condition: "if_spouse_survives" | "if_spouse_predeceased" | "always";
+  sortOrder: number;
+  recipients: WillBequestRecipient[];
+}
+
+export interface Will {
+  id: string;
+  grantor: "client" | "spouse";
+  bequests: WillBequest[];
+}
+
 export interface ClientData {
   client: ClientInfo;
   accounts: Account[];
@@ -35,6 +59,8 @@ export interface ClientData {
   assetTransactions?: AssetTransaction[];
   /** Gifts made by the client or spouse. */
   gifts?: Gift[];
+  /** Wills per grantor — spec 4a data-only. Engine consumption arrives in spec 4b. */
+  wills?: Will[];
 }
 
 // Minimal entity view used by the engine to decide cash-flow treatment of entity-owned
