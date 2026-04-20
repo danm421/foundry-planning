@@ -31,6 +31,7 @@ export interface EntitySummary {
   includeInPortfolio: boolean;
   // When true, taxes on the entity's income and RMDs are paid at the household rate.
   isGrantor: boolean;
+  beneficiaries?: BeneficiaryRef[];
 }
 
 export interface ClientInfo {
@@ -47,6 +48,15 @@ export interface ClientInfo {
   filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household";
 }
 
+export interface BeneficiaryRef {
+  id: string;
+  tier: "primary" | "contingent";
+  percentage: number;
+  familyMemberId?: string;
+  externalBeneficiaryId?: string;
+  sortOrder: number;
+}
+
 export interface Account {
   id: string;
   name: string;
@@ -58,6 +68,8 @@ export interface Account {
   growthRate: number;
   rmdEnabled: boolean;
   ownerEntityId?: string;
+  ownerFamilyMemberId?: string;
+  beneficiaries?: BeneficiaryRef[];
   isDefaultChecking?: boolean;
   annualPropertyTax?: number;
   propertyTaxGrowthRate?: number;
