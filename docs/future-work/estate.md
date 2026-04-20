@@ -55,6 +55,17 @@ start getting upvoted across sessions.
   manually if they care. Why deferred: compounds with trustee-succession
   rules we also don't model.
 
+## Zod schema DRY-up
+
+- **Shared `uuidSchema` in `src/lib/schemas/common.ts`** — the custom-regex
+  `uuidSchema` is now duplicated across `gifts.ts`, `beneficiaries.ts`, and
+  `wills.ts`. The regex works around Zod v4's strict `.uuid()` rejecting
+  sequential test UUIDs. Every new schema file that uses a UUID will repeat
+  the 2-line block unless we export it once from `common.ts` and update the
+  three existing files. Why deferred: cross-cutting cleanup touching three
+  schemas is outside the wills scope; bundle with the next schema addition
+  or do as a standalone consolidation PR.
+
 ## Trust / entity
 
 - **Per-entity portfolio-inclusion override** — `includeInPortfolio` was

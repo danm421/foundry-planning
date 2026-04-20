@@ -145,4 +145,11 @@ describe("willUpdateSchema", () => {
       willUpdateSchema.safeParse({ bequests: [validBequest] }).success,
     ).toBe(true);
   });
+
+  it("propagates bequest-level validation errors (specific with null accountId)", () => {
+    const r = willUpdateSchema.safeParse({
+      bequests: [{ ...validBequest, accountId: null }],
+    });
+    expect(r.success).toBe(false);
+  });
 });
