@@ -1,2 +1,6 @@
-// Public exports filled in by Tasks 9–11.
-export {};
+export {
+  runWithActingContext,
+  getCurrentActingContext,
+  type ActingContext,
+  type AdminRole,
+} from "./context";
