@@ -110,14 +110,20 @@ function recipientLabel(
 
 export default function WillsPanel(props: WillsPanelProps) {
   const { primary, initialWills, accounts, familyMembers, externalBeneficiaries, entities } = props;
-  const [wills] = useState<WillsPanelWill[]>(initialWills);
+  const [wills, setWills] = useState<WillsPanelWill[]>(initialWills);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState<WillGrantor | null>(null);
 
   // ESC-to-close while the modal is open.
   useEffect(() => {
     if (!modalOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setModalOpen(null);
+      if (e.key === "Escape") {
+        setModalOpen(null);
+        setEditingIndex(null);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -135,8 +141,54 @@ export default function WillsPanel(props: WillsPanelProps) {
     ],
   });
 
+  async function saveWill(g: WillGrantor, nextBequests: WillsPanelBequest[]) {
+    setSaving(true);
+    setError(null);
+    try {
+      const existing = wills.find((w) => w.grantor === g);
+      if (!existing) {
+        const res = await fetch(`/api/clients/${props.clientId}/wills`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ grantor: g, bequests: nextBequests }),
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? `HTTP ${res.status}`);
+        }
+        const out = (await res.json()) as { id: string };
+        setWills((prev) => [
+          ...prev.filter((w) => w.grantor !== g),
+          { id: out.id, grantor: g, bequests: nextBequests },
+        ]);
+      } else {
+        const res = await fetch(
+          `/api/clients/${props.clientId}/wills/${existing.id}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bequests: nextBequests }),
+          },
+        );
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? `HTTP ${res.status}`);
+        }
+        setWills((prev) =>
+          prev.map((w) => (w.grantor === g ? { ...w, bequests: nextBequests } : w)),
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-8">
+      {saving && <div className="text-xs text-gray-400">Saving…</div>}
+      {error && <div className="text-xs text-red-400">{error}</div>}
       {(["client", "spouse"] as const).map((g) => {
         if (g === "spouse" && !primary.spouseName) return null;
         const will = wills.find((w) => w.grantor === g);
@@ -147,27 +199,55 @@ export default function WillsPanel(props: WillsPanelProps) {
               <h2 className="text-lg font-semibold text-gray-100">
                 {heading}&apos;s Will
               </h2>
-              <button
-                type="button"
-                className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700"
-                onClick={() => {
-                  const hasAccounts = accounts.length > 0;
-                  setDraft({
-                    name: "",
-                    assetMode: hasAccounts ? "specific" : "all_assets",
-                    accountId: hasAccounts ? accounts[0].id : null,
-                    percentage: 100,
-                    condition: "always",
-                    sortOrder: (will?.bequests.length ?? 0),
-                    recipients: [
-                      { recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 },
-                    ],
-                  });
-                  setModalOpen(g);
-                }}
-              >
-                + Add bequest
-              </button>
+              <div className="flex items-center gap-2">
+                {will && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!confirm("Delete this will and all its bequests?")) return;
+                      setSaving(true);
+                      setError(null);
+                      try {
+                        const res = await fetch(
+                          `/api/clients/${props.clientId}/wills/${will.id}`,
+                          { method: "DELETE" },
+                        );
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                        setWills((prev) => prev.filter((w) => w.grantor !== g));
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : "Delete failed");
+                      } finally {
+                        setSaving(false);
+                      }
+                    }}
+                    className="rounded-md border border-red-800 bg-red-900/20 px-3 py-1.5 text-sm text-red-300 hover:bg-red-900/40"
+                  >
+                    Delete will
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700"
+                  onClick={() => {
+                    const hasAccounts = accounts.length > 0;
+                    setDraft({
+                      name: "",
+                      assetMode: hasAccounts ? "specific" : "all_assets",
+                      accountId: hasAccounts ? accounts[0].id : null,
+                      percentage: 100,
+                      condition: "always",
+                      sortOrder: (will?.bequests.length ?? 0),
+                      recipients: [
+                        { recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 },
+                      ],
+                    });
+                    setEditingIndex(null);
+                    setModalOpen(g);
+                  }}
+                >
+                  + Add bequest
+                </button>
+              </div>
             </header>
             {!will || will.bequests.length === 0 ? (
               <p className="text-sm text-gray-500">No bequests yet.</p>
@@ -202,6 +282,61 @@ export default function WillsPanel(props: WillsPanelProps) {
                               .join(", ")}
                           </p>
                         </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            aria-label="Move up"
+                            disabled={idx === 0}
+                            onClick={async () => {
+                              const next = [...(will?.bequests ?? [])];
+                              const tmp = next[idx - 1];
+                              next[idx - 1] = { ...next[idx], sortOrder: idx - 1 };
+                              next[idx] = { ...tmp, sortOrder: idx };
+                              await saveWill(g, next);
+                            }}
+                            className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Move down"
+                            disabled={idx === (will?.bequests.length ?? 1) - 1}
+                            onClick={async () => {
+                              const next = [...(will?.bequests ?? [])];
+                              const tmp = next[idx + 1];
+                              next[idx + 1] = { ...next[idx], sortOrder: idx + 1 };
+                              next[idx] = { ...tmp, sortOrder: idx };
+                              await saveWill(g, next);
+                            }}
+                            className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDraft(b);
+                              setEditingIndex(idx);
+                              setModalOpen(g);
+                            }}
+                            className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const next = (will?.bequests ?? [])
+                                .filter((_, i) => i !== idx)
+                                .map((x, i) => ({ ...x, sortOrder: i }));
+                              await saveWill(g, next);
+                            }}
+                            className="rounded border border-gray-700 px-2 py-0.5 text-xs text-red-300 hover:bg-gray-800"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     </li>
                   );
@@ -220,14 +355,19 @@ export default function WillsPanel(props: WillsPanelProps) {
           role="dialog"
           aria-modal="true"
           aria-label="New bequest"
-          onClick={() => setModalOpen(null)}
+          onClick={() => {
+            setModalOpen(null);
+            setEditingIndex(null);
+          }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-lg rounded-lg border border-gray-700 bg-gray-900 p-5"
           >
-            <h3 className="mb-4 text-base font-semibold text-gray-100">New bequest</h3>
+            <h3 className="mb-4 text-base font-semibold text-gray-100">
+              {editingIndex != null ? "Edit bequest" : "New bequest"}
+            </h3>
 
             <label className="mb-3 block text-sm">
               <span className="mb-1 block text-gray-300">Name</span>
@@ -396,7 +536,10 @@ export default function WillsPanel(props: WillsPanelProps) {
             <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setModalOpen(null)}
+                onClick={() => {
+                  setModalOpen(null);
+                  setEditingIndex(null);
+                }}
                 className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700"
               >
                 Cancel
@@ -404,9 +547,23 @@ export default function WillsPanel(props: WillsPanelProps) {
               <button
                 type="button"
                 disabled={!draft.name.trim() || !recipientSumOk}
-                onClick={() => {
-                  // Save wiring is Task 10's responsibility. For now just close the modal.
+                onClick={async () => {
+                  if (!modalOpen) return;
+                  const g = modalOpen;
+                  const existing = wills.find((w) => w.grantor === g)?.bequests ?? [];
+                  let next: WillsPanelBequest[];
+                  if (editingIndex != null) {
+                    next = existing.map((b, i) =>
+                      i === editingIndex
+                        ? { ...draft, sortOrder: i, id: b.id }
+                        : b,
+                    );
+                  } else {
+                    next = [...existing, { ...draft, sortOrder: existing.length }];
+                  }
+                  await saveWill(g, next);
                   setModalOpen(null);
+                  setEditingIndex(null);
                 }}
                 className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
