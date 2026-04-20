@@ -88,6 +88,64 @@ export async function PUT(
   }
 }
 
+// PATCH /api/clients/[id]/accounts/[accountId] — partial update
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; accountId: string }> }
+) {
+  try {
+    const firmId = await getOrgId();
+    const { id, accountId } = await params;
+
+    // Verify client belongs to this firm
+    const [client] = await db
+      .select()
+      .from(clients)
+      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
+
+    if (!client) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const { ownerFamilyMemberId } = body;
+
+    if (
+      ownerFamilyMemberId !== undefined &&
+      ownerFamilyMemberId !== null &&
+      body.ownerEntityId
+    ) {
+      return NextResponse.json(
+        { error: "Cannot set both ownerEntityId and ownerFamilyMemberId" },
+        { status: 400 },
+      );
+    }
+
+    const [updated] = await db
+      .update(accounts)
+      .set({
+        ...(ownerFamilyMemberId !== undefined
+          ? { ownerFamilyMemberId: ownerFamilyMemberId || null }
+          : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)))
+      .returning();
+
+    if (!updated) {
+      return NextResponse.json({ error: "Account not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(updated);
+  } catch (err) {
+    if (err instanceof Error && err.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    console.error("PATCH /api/clients/[id]/accounts/[accountId] error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
 // DELETE /api/clients/[id]/accounts/[accountId] — delete account
 export async function DELETE(
   _request: NextRequest,
