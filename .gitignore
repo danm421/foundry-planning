@@ -19,6 +19,11 @@
 /coverage
 **/coverage
 
+# playwright
+tests/e2e/test-results/
+tests/e2e/playwright-report/
+tests/e2e/.playwright-cache/
+
 # next.js
 /.next/
 **/.next/
