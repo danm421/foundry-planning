@@ -76,18 +76,32 @@ export async function PUT(
       });
     }
 
-    // Strip identity / ownership fields from the update payload so a client
-     // can't be reparented across firms or its id rewritten via request body.
-    const {
-      id: _stripId,
-      firmId: _stripFirmId,
-      advisorId: _stripAdvisorId,
-      createdAt: _stripCreatedAt,
-      updatedAt: _stripUpdatedAt,
-      ...safeUpdate
-    } = updateBody;
-    void _stripId; void _stripFirmId; void _stripAdvisorId;
-    void _stripCreatedAt; void _stripUpdatedAt;
+    // Explicit allowlist of mutable columns. New columns must be added
+    // here to be settable via PUT — default-deny so a future sensitive
+    // column doesn't silently become user-writable if we forget to add
+    // it to a strip list. Schema identity fields (id/firmId/advisorId/
+    // createdAt) and server-managed timestamps (updatedAt) are absent
+    // by construction.
+    const MUTABLE_CLIENT_FIELDS = [
+      "firstName",
+      "lastName",
+      "dateOfBirth",
+      "retirementAge",
+      "planEndAge",
+      "lifeExpectancy",
+      "spouseName",
+      "spouseLastName",
+      "spouseDob",
+      "spouseRetirementAge",
+      "spouseLifeExpectancy",
+      "filingStatus",
+    ] as const;
+
+    const safeUpdate: Record<string, unknown> = {};
+    const incoming = updateBody as Record<string, unknown>;
+    for (const key of MUTABLE_CLIENT_FIELDS) {
+      if (key in incoming) safeUpdate[key] = incoming[key];
+    }
 
     const [updated] = await db
       .update(clients)

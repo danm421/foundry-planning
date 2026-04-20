@@ -4,6 +4,8 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/",
+  // Browsers POST CSP violation reports here with no session cookie.
+  "/api/csp-report",
 ]);
 
 export default clerkMiddleware(async (auth, request) => {

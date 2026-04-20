@@ -21,10 +21,16 @@ const csp = [
   "form-action 'self'",
   "object-src 'none'",
   "upgrade-insecure-requests",
+  // Legacy reporting — still the most-supported browser API.
+  "report-uri /api/csp-report",
+  // Modern Reporting API — names a group declared in Reporting-Endpoints.
+  "report-to csp-endpoint",
 ].join("; ");
 
 const securityHeaders = [
   { key: "Content-Security-Policy-Report-Only", value: csp },
+  // Modern Reporting API endpoint group referenced by `report-to` above.
+  { key: "Reporting-Endpoints", value: 'csp-endpoint="/api/csp-report"' },
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
