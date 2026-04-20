@@ -4,6 +4,8 @@ import { clients, scenarios, assetTransactions } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
+export const dynamic = "force-dynamic";
+
 const toStr = (v: any) => (v != null ? String(v) : null);
 
 async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
@@ -228,7 +230,7 @@ export async function PUT(
         mortgageRate: mortgageRate !== undefined ? toStr(mortgageRate) : undefined,
         updatedAt: new Date(),
       })
-      .where(eq(assetTransactions.id, transactionId))
+      .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)))
       .returning();
 
     return NextResponse.json(updated);
@@ -273,7 +275,9 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    await db.delete(assetTransactions).where(eq(assetTransactions.id, transactionId));
+    await db
+      .delete(assetTransactions)
+      .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)));
 
     return NextResponse.json({ ok: true });
   } catch (err) {

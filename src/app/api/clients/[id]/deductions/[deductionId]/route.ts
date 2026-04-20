@@ -4,6 +4,8 @@ import { clients, clientDeductions } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
+export const dynamic = "force-dynamic";
+
 async function ownsDeduction(clientId: string, deductionId: string, firmId: string): Promise<boolean> {
   const [client] = await db
     .select()
@@ -58,7 +60,7 @@ export async function PUT(
         endYearRef: endYearRef !== undefined ? endYearRef : undefined,
         updatedAt: new Date(),
       })
-      .where(eq(clientDeductions.id, deductionId))
+      .where(and(eq(clientDeductions.id, deductionId), eq(clientDeductions.clientId, id)))
       .returning();
 
     return NextResponse.json(updated);
@@ -84,7 +86,9 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    await db.delete(clientDeductions).where(eq(clientDeductions.id, deductionId));
+    await db
+      .delete(clientDeductions)
+      .where(and(eq(clientDeductions.id, deductionId), eq(clientDeductions.clientId, id)));
 
     return NextResponse.json({ ok: true });
   } catch (err) {
