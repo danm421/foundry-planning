@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, scenarios, accounts } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -102,32 +102,38 @@ export async function POST(
       return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
     }
 
-    const [account] = await db
-      .insert(accounts)
-      .values({
-        clientId: id,
-        scenarioId,
-        name,
-        category,
-        subType: subType ?? "other",
-        owner: owner ?? "client",
-        value: value ?? "0",
-        basis: basis ?? "0",
-        // null = inherit the default growth rate for this category from plan_settings
-        growthRate: growthRate ?? null,
-        rmdEnabled: rmdEnabled ?? false,
-        ownerEntityId: ownerEntityId ?? null,
-        growthSource: growthSource ?? "default",
-        modelPortfolioId: modelPortfolioId ?? null,
-        turnoverPct: turnoverPct ?? "0",
-        overridePctOi: overridePctOi ?? null,
-        overridePctLtCg: overridePctLtCg ?? null,
-        overridePctQdiv: overridePctQdiv ?? null,
-        overridePctTaxExempt: overridePctTaxExempt ?? null,
-        annualPropertyTax: body.annualPropertyTax ?? "0",
-        propertyTaxGrowthRate: body.propertyTaxGrowthRate ?? "0.03",
-      })
-      .returning();
+    let account!: typeof accounts.$inferSelect;
+    await auditedMutation(
+      { action: 'account.create', resourceType: 'account', resourceId: 'pending', metadata: { after: body } },
+      async () => {
+        [account] = await db
+          .insert(accounts)
+          .values({
+            clientId: id,
+            scenarioId,
+            name,
+            category,
+            subType: subType ?? "other",
+            owner: owner ?? "client",
+            value: value ?? "0",
+            basis: basis ?? "0",
+            // null = inherit the default growth rate for this category from plan_settings
+            growthRate: growthRate ?? null,
+            rmdEnabled: rmdEnabled ?? false,
+            ownerEntityId: ownerEntityId ?? null,
+            growthSource: growthSource ?? "default",
+            modelPortfolioId: modelPortfolioId ?? null,
+            turnoverPct: turnoverPct ?? "0",
+            overridePctOi: overridePctOi ?? null,
+            overridePctLtCg: overridePctLtCg ?? null,
+            overridePctQdiv: overridePctQdiv ?? null,
+            overridePctTaxExempt: overridePctTaxExempt ?? null,
+            annualPropertyTax: body.annualPropertyTax ?? "0",
+            propertyTaxGrowthRate: body.propertyTaxGrowthRate ?? "0.03",
+          })
+          .returning();
+      }
+    );
 
     return NextResponse.json(account, { status: 201 });
   } catch (err) {

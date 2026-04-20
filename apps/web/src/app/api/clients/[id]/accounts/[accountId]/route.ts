@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, accounts } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -56,14 +56,20 @@ export async function PUT(
       if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
     }
 
-    const [updated] = await db
-      .update(accounts)
-      .set({
-        ...safeUpdate,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)))
-      .returning();
+    let updated: typeof accounts.$inferSelect | undefined;
+    await auditedMutation(
+      { action: 'account.update', resourceType: 'account', resourceId: accountId, metadata: { after: safeUpdate } },
+      async () => {
+        [updated] = await db
+          .update(accounts)
+          .set({
+            ...safeUpdate,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)))
+          .returning();
+      }
+    );
 
     if (!updated) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
@@ -110,9 +116,14 @@ export async function DELETE(
       );
     }
 
-    await db
-      .delete(accounts)
-      .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
+    await auditedMutation(
+      { action: 'account.delete', resourceType: 'account', resourceId: accountId, metadata: { before: target } },
+      async () => {
+        await db
+          .delete(accounts)
+          .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
+      }
+    );
 
     await recordAudit({
       action: "account.delete",
