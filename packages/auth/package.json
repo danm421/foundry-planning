@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^7.2.3",
-    "jose": "^5.10.0"
+    "jose": "^5.10.0",
+    "svix": "^1.90.0"
   },
   "devDependencies": {
     "typescript": "^5",

@@ -24,4 +24,8 @@ export type AdminUserRepo = {
   findActiveImpersonation(
     adminUserId: string,
   ): Promise<ActiveImpersonation | null>;
+  /** Upsert an admin user by Clerk ID (used by the webhook handler). */
+  upsert(params: { clerkUserId: string; email: string; role: AdminRole }): Promise<void>;
+  /** Delete an admin user by Clerk ID (used by the webhook handler). */
+  delete(clerkUserId: string): Promise<void>;
 };

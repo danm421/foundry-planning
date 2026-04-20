@@ -17,8 +17,5 @@
   "devDependencies": {
     "turbo": "^2.9.6",
     "typescript": "^5"
-  },
-  "dependencies": {
-    "svix": "^1.90.0"
   }
 }

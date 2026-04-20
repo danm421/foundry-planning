@@ -25,3 +25,4 @@ export type { AdvisorContext } from './advisor-context';
 export { signImpersonationToken, verifyImpersonationToken, hashImpersonationToken, ImpersonationTokenError } from './impersonation-token';
 export type { ImpersonationClaims } from './impersonation-token';
 export type { ImpersonationSessionRepo, ActiveImpersonationSession } from './impersonation-session-repo';
+export { handleClerkAdminWebhook } from './clerk-admin-webhook';
