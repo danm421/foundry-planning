@@ -43,3 +43,28 @@ async function ensureTestAdmin(db: ReturnType<typeof getTestDb>): Promise<string
   `);
   return id;
 }
+
+export async function seedClient(
+  db: ReturnType<typeof getTestDb>,
+  opts: { firmId: string; advisorId?: string; clientId?: string },
+): Promise<string> {
+  const clientId = opts.clientId ?? randomUUID();
+  const advisorId = opts.advisorId ?? 'user_test_advisor';
+  await db.execute(sql`
+    INSERT INTO clients
+      (id, firm_id, advisor_id, first_name, last_name, date_of_birth,
+       retirement_age, plan_end_age, life_expectancy, filing_status)
+    VALUES
+      (${clientId}::uuid, ${opts.firmId}, ${advisorId},
+       'Test', 'Client', '1970-01-01', 65, 95, 95, 'single')
+    ON CONFLICT (id) DO NOTHING
+  `);
+  return clientId;
+}
+
+export async function cleanupClient(
+  db: ReturnType<typeof getTestDb>,
+  clientId: string,
+): Promise<void> {
+  await db.execute(sql`DELETE FROM clients WHERE id = ${clientId}::uuid`);
+}
