@@ -392,6 +392,37 @@ export const beneficiaryDesignations = pgTable(
   ],
 );
 
+export const gifts = pgTable(
+  "gifts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    year: integer("year").notNull(),
+    amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+    grantor: ownerEnum("grantor").notNull(),
+    recipientEntityId: uuid("recipient_entity_id").references(() => entities.id, {
+      onDelete: "cascade",
+    }),
+    recipientFamilyMemberId: uuid("recipient_family_member_id").references(
+      () => familyMembers.id,
+      { onDelete: "cascade" },
+    ),
+    recipientExternalBeneficiaryId: uuid(
+      "recipient_external_beneficiary_id",
+    ).references(() => externalBeneficiaries.id, { onDelete: "cascade" }),
+    useCrummeyPowers: boolean("use_crummey_powers").notNull().default(false),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("gifts_client_year_idx").on(t.clientId, t.year),
+    index("gifts_client_grantor_year_idx").on(t.clientId, t.grantor, t.year),
+  ],
+);
+
 export const assetClasses = pgTable("asset_classes", {
   id: uuid("id").defaultRandom().primaryKey(),
   firmId: text("firm_id").notNull(),
@@ -797,6 +828,25 @@ export const beneficiaryDesignationsRelations = relations(
   }),
 );
 
+export const giftsRelations = relations(gifts, ({ one }) => ({
+  client: one(clients, {
+    fields: [gifts.clientId],
+    references: [clients.id],
+  }),
+  recipientEntity: one(entities, {
+    fields: [gifts.recipientEntityId],
+    references: [entities.id],
+  }),
+  recipientFamilyMember: one(familyMembers, {
+    fields: [gifts.recipientFamilyMemberId],
+    references: [familyMembers.id],
+  }),
+  recipientExternalBeneficiary: one(externalBeneficiaries, {
+    fields: [gifts.recipientExternalBeneficiaryId],
+    references: [externalBeneficiaries.id],
+  }),
+}));
+
 export const scenariosRelations = relations(scenarios, ({ one, many }) => ({
   client: one(clients, {
     fields: [scenarios.clientId],
@@ -996,6 +1046,10 @@ export const taxYearParameters = pgTable("tax_year_parameters", {
   hsaLimitSelf: decimal("hsa_limit_self", { precision: 10, scale: 2 }).notNull(),
   hsaLimitFamily: decimal("hsa_limit_family", { precision: 10, scale: 2 }).notNull(),
   hsaCatchup55: decimal("hsa_catchup_55", { precision: 10, scale: 2 }).notNull(),
+
+  giftAnnualExclusion: decimal("gift_annual_exclusion", { precision: 10, scale: 2 })
+    .notNull()
+    .default("0"),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
