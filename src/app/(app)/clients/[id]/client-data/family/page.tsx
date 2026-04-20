@@ -1,9 +1,24 @@
 import { notFound } from "next/navigation";
 import { db } from "@/db";
-import { clients, familyMembers, entities } from "@/db/schema";
+import {
+  clients,
+  familyMembers,
+  entities,
+  accounts,
+  externalBeneficiaries,
+  beneficiaryDesignations,
+} from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
-import FamilyView, { FamilyMember, Entity, NamePctRow, PrimaryInfo } from "@/components/family-view";
+import FamilyView, {
+  FamilyMember,
+  Entity,
+  NamePctRow,
+  PrimaryInfo,
+  ExternalBeneficiary,
+  AccountLite,
+  Designation,
+} from "@/components/family-view";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -20,14 +35,26 @@ export default async function FamilyPage({ params }: PageProps) {
 
   if (!client) notFound();
 
-  const [memberRows, entityRows] = await Promise.all([
-    db
-      .select()
-      .from(familyMembers)
-      .where(eq(familyMembers.clientId, id))
-      .orderBy(asc(familyMembers.relationship), asc(familyMembers.firstName)),
-    db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
-  ]);
+  const [memberRows, entityRows, externalRows, accountRows, designationRows] =
+    await Promise.all([
+      db
+        .select()
+        .from(familyMembers)
+        .where(eq(familyMembers.clientId, id))
+        .orderBy(asc(familyMembers.relationship), asc(familyMembers.firstName)),
+      db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
+      db
+        .select()
+        .from(externalBeneficiaries)
+        .where(eq(externalBeneficiaries.clientId, id))
+        .orderBy(asc(externalBeneficiaries.name)),
+      db.select().from(accounts).where(eq(accounts.clientId, id)).orderBy(asc(accounts.name)),
+      db
+        .select()
+        .from(beneficiaryDesignations)
+        .where(eq(beneficiaryDesignations.clientId, id))
+        .orderBy(asc(beneficiaryDesignations.tier), asc(beneficiaryDesignations.sortOrder)),
+    ]);
 
   const members: FamilyMember[] = memberRows.map((m) => ({
     id: m.id,
@@ -51,6 +78,32 @@ export default async function FamilyPage({ params }: PageProps) {
     beneficiaries: (e.beneficiaries as NamePctRow[] | null) ?? null,
   }));
 
+  const externals: ExternalBeneficiary[] = externalRows.map((e) => ({
+    id: e.id,
+    name: e.name,
+    kind: e.kind,
+    notes: e.notes ?? null,
+  }));
+
+  const accts: AccountLite[] = accountRows.map((a) => ({
+    id: a.id,
+    name: a.name,
+    category: a.category,
+    ownerFamilyMemberId: a.ownerFamilyMemberId ?? null,
+  }));
+
+  const designations: Designation[] = designationRows.map((d) => ({
+    id: d.id,
+    targetKind: d.targetKind,
+    accountId: d.accountId,
+    entityId: d.entityId,
+    tier: d.tier,
+    familyMemberId: d.familyMemberId,
+    externalBeneficiaryId: d.externalBeneficiaryId,
+    percentage: parseFloat(d.percentage),
+    sortOrder: d.sortOrder,
+  }));
+
   const primary: PrimaryInfo = {
     firstName: client.firstName,
     lastName: client.lastName,
@@ -65,5 +118,15 @@ export default async function FamilyPage({ params }: PageProps) {
     spouseLifeExpectancy: client.spouseLifeExpectancy ?? null,
   };
 
-  return <FamilyView clientId={id} primary={primary} initialMembers={members} initialEntities={ents} />;
+  return (
+    <FamilyView
+      clientId={id}
+      primary={primary}
+      initialMembers={members}
+      initialEntities={ents}
+      initialExternalBeneficiaries={externals}
+      initialAccounts={accts}
+      initialDesignations={designations}
+    />
+  );
 }
