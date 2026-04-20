@@ -1,5 +1,6 @@
 import type { TaxResult, TaxYearParameters } from "../lib/tax/types";
 import type { ClientDeductionRow } from "../lib/tax/derive-deductions";
+import type { TrustSubType } from "@/lib/entities/trust";
 
 // ── Input Types ──────────────────────────────────────────────────────────────
 
@@ -32,6 +33,11 @@ export interface EntitySummary {
   // When true, taxes on the entity's income and RMDs are paid at the household rate.
   isGrantor: boolean;
   beneficiaries?: BeneficiaryRef[];
+  // Item 2 additions (data-only; no engine rule reads these yet):
+  trustSubType?: TrustSubType;
+  isIrrevocable?: boolean;
+  trustee?: string;
+  exemptionConsumed?: number;
 }
 
 export interface ClientInfo {
