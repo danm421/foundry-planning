@@ -36,7 +36,7 @@ export interface Entity {
   owner: "client" | "spouse" | "joint" | null;
   grantors: NamePctRow[] | null;
   beneficiaries: NamePctRow[] | null;
-  trustSubType: "revocable" | "irrevocable" | "ilit" | "slat" | "crt" | "grat" | "qprt" | "clat" | "qtip" | "bypass" | null;
+  trustSubType: TrustSubType | null;
   isIrrevocable: boolean | null;
   trustee: string | null;
   exemptionConsumed: string;
@@ -45,10 +45,7 @@ export interface Entity {
 const BUSINESS_ENTITY_TYPES: EntityType[] = ["llc", "s_corp", "c_corp", "partnership", "other"];
 const TRUST_LIKE_ENTITY_TYPES: EntityType[] = ["trust", "foundation"];
 
-const TRUST_SUB_TYPE_LABELS: Record<
-  "revocable" | "irrevocable" | "ilit" | "slat" | "crt" | "grat" | "qprt" | "clat" | "qtip" | "bypass",
-  string
-> = {
+const TRUST_SUB_TYPE_LABELS: Record<TrustSubType, string> = {
   revocable: "Revocable",
   irrevocable: "Irrevocable (generic)",
   ilit: "ILIT",
@@ -413,8 +410,8 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
   const [owner, setOwner] = useState<"client" | "spouse" | "joint" | "">(editing?.owner ?? "");
   const [grantors, setGrantors] = useState<NamePctRow[]>(editing?.grantors ?? []);
   const [beneficiaries, setBeneficiaries] = useState<NamePctRow[]>(editing?.beneficiaries ?? []);
-  const [trustSubType, setTrustSubType] = useState<TrustSubType>(
-    (editing?.trustSubType as TrustSubType | null) ?? "revocable",
+  const [trustSubType, setTrustSubType] = useState<TrustSubType | "">(
+    (editing?.trustSubType as TrustSubType | null) ?? "",
   );
   const [trustee, setTrustee] = useState<string>(editing?.trustee ?? "");
   const [exemptionConsumed, setExemptionConsumed] = useState<string>(
@@ -428,10 +425,14 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
     const data = new FormData(e.currentTarget);
     const submittedType = data.get("entityType") as EntityType;
+    if (submittedType === "trust" && trustSubType === "") {
+      setError("Please pick a trust sub-type.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
     const submittedShowBusiness = BUSINESS_ENTITY_TYPES.includes(submittedType);
     const submittedShowTrust = TRUST_LIKE_ENTITY_TYPES.includes(submittedType);
     const body = {
@@ -444,9 +445,9 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
       owner: submittedShowBusiness && owner ? owner : null,
       grantors: submittedShowTrust ? grantors.filter((g) => g.name.trim().length > 0) : null,
       beneficiaries: submittedShowTrust ? beneficiaries.filter((b) => b.name.trim().length > 0) : null,
-      trustSubType: submittedType === "trust" ? trustSubType : undefined,
+      trustSubType: submittedType === "trust" ? (trustSubType as TrustSubType) : undefined,
       isIrrevocable:
-        submittedType === "trust" ? deriveIsIrrevocable(trustSubType) : undefined,
+        submittedType === "trust" ? deriveIsIrrevocable(trustSubType as TrustSubType) : undefined,
       trustee: submittedType === "trust" ? (trustee.trim() || null) : undefined,
       exemptionConsumed:
         submittedType === "trust" ? Number(exemptionConsumed || "0") : undefined,
@@ -585,17 +586,20 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
                 <select
                   id="ent-subtype"
                   value={trustSubType}
-                  onChange={(e) => setTrustSubType(e.target.value as TrustSubType)}
+                  onChange={(e) => setTrustSubType(e.target.value as TrustSubType | "")}
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
+                  <option value="" disabled>— select sub-type —</option>
                   {Object.entries(TRUST_SUB_TYPE_LABELS).map(([v, l]) => (
                     <option key={v} value={v}>{l}</option>
                   ))}
                 </select>
                 <p className="mt-1 text-[11px] text-gray-500">
-                  {deriveIsIrrevocable(trustSubType)
-                    ? "Treated as irrevocable (out-of-estate in future engine work)."
-                    : "Treated as revocable (in-estate)."}
+                  {trustSubType === ""
+                    ? "Pick a sub-type to classify this trust."
+                    : deriveIsIrrevocable(trustSubType as TrustSubType)
+                      ? "Treated as irrevocable (out-of-estate in future engine work)."
+                      : "Treated as revocable (in-estate)."}
                 </p>
               </div>
 
