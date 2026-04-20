@@ -5,6 +5,10 @@ import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AddClientDialog from "./add-client-dialog";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
+import {
+  computeGiftTaxTreatment,
+  type GiftContext,
+} from "@/lib/gifts/compute-tax-treatment";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -58,6 +62,18 @@ const TRUST_SUB_TYPE_LABELS: Record<TrustSubType, string> = {
   bypass: "Bypass / Credit Shelter",
 };
 
+export type Gift = {
+  id: string;
+  year: number;
+  amount: number;
+  grantor: "client" | "spouse" | "joint";
+  recipientEntityId: string | null;
+  recipientFamilyMemberId: string | null;
+  recipientExternalBeneficiaryId: string | null;
+  useCrummeyPowers: boolean;
+  notes: string | null;
+};
+
 export type ExternalBeneficiary = {
   id: string;
   name: string;
@@ -109,7 +125,11 @@ interface FamilyViewProps {
   initialExternalBeneficiaries: ExternalBeneficiary[];
   initialAccounts: AccountLite[];
   initialDesignations: Designation[];
+  initialGifts: Gift[];
 }
+
+// FUTURE_WORK: source from tax_year_parameters when portability/DSUE lands.
+const LIFETIME_EXEMPTION_CAP = 13_990_000;
 
 const RELATIONSHIP_LABELS: Record<Relationship, string> = {
   child: "Child",
@@ -622,7 +642,7 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
 
               <div>
                 <label className="block text-sm font-medium text-gray-300" htmlFor="ent-exemption">
-                  Lifetime exemption used by this trust ($)
+                  Opening balance (legacy) ($)
                 </label>
                 <input
                   id="ent-exemption"
@@ -634,7 +654,7 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
                   className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
                 <p className="mt-1 text-[11px] text-gray-500">
-                  Advisor-entered rollup. A per-grantor gift ledger is coming in a later session.
+                  Historical exemption already used before you started tracking individual gifts. Gifts added below stack on top.
                 </p>
               </div>
             </div>
@@ -721,12 +741,14 @@ export default function FamilyView({
   initialExternalBeneficiaries,
   initialAccounts,
   initialDesignations,
+  initialGifts,
 }: FamilyViewProps) {
   const [members, setMembers] = useState<FamilyMember[]>(initialMembers);
   const [entities, setEntities] = useState<Entity[]>(initialEntities);
   const [externals, setExternals] = useState<ExternalBeneficiary[]>(initialExternalBeneficiaries);
   const [accts, setAccts] = useState<AccountLite[]>(initialAccounts);
   const [designations, setDesignations] = useState<Designation[]>(initialDesignations);
+  const [giftsState, setGiftsState] = useState<Gift[]>(initialGifts);
 
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<FamilyMember | undefined>();
@@ -996,6 +1018,15 @@ export default function FamilyView({
         setExternals={setExternals}
       />
 
+      <GiftsSection
+        clientId={clientId}
+        members={members}
+        externals={externals}
+        entities={entities}
+        gifts={giftsState}
+        onChange={setGiftsState}
+      />
+
       {/* Account Beneficiaries */}
       <section>
         <header className="mb-3">
@@ -1137,6 +1168,44 @@ export default function FamilyView({
                         ]);
                       }}
                     />
+                    {(() => {
+                      const openingBalance = parseFloat(ent.exemptionConsumed || "0");
+                      const beneficiaryCount = designations.filter(
+                        (d) => d.targetKind === "trust" && d.entityId === ent.id && d.tier === "primary",
+                      ).length;
+                      const lifetimeFromGifts = giftsState
+                        .filter((g) => g.recipientEntityId === ent.id)
+                        .reduce((acc, g) => {
+                          try {
+                            const treatment = computeGiftTaxTreatment(
+                              {
+                                amount: g.amount,
+                                useCrummeyPowers: g.useCrummeyPowers,
+                                recipientEntityId: g.recipientEntityId,
+                                recipientFamilyMemberId: g.recipientFamilyMemberId,
+                                recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId,
+                              },
+                              {
+                                entity: {
+                                  isIrrevocable: ent.isIrrevocable ?? false,
+                                  entityType: "trust",
+                                },
+                                annualExclusionAmount: 19_000,
+                                crummeyBeneficiaryCount: beneficiaryCount,
+                              } as GiftContext,
+                            );
+                            return acc + treatment.lifetimeUsed;
+                          } catch {
+                            return acc;
+                          }
+                        }, 0);
+                      const total = openingBalance + lifetimeFromGifts;
+                      return (
+                        <p className="mt-2 border-t border-gray-800 pt-2 text-xs text-gray-400">
+                          Uses exemption · ${(total / 1_000_000).toFixed(2)}M / ${(LIFETIME_EXEMPTION_CAP / 1_000_000).toFixed(2)}M
+                        </p>
+                      );
+                    })()}
                   </details>
                 );
               })}
@@ -1230,6 +1299,318 @@ function PersonCard({ name, badge, fields }: { name: string; badge: string; fiel
           </div>
         ))}
       </dl>
+    </div>
+  );
+}
+
+type RecipientKind = "trust" | "family" | "external";
+
+function GiftsSection(props: {
+  clientId: string;
+  members: FamilyMember[];
+  externals: ExternalBeneficiary[];
+  entities: Entity[];
+  gifts: Gift[];
+  onChange: (gifts: Gift[]) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+
+  const resolveRecipient = (g: Gift): { label: string; kind: RecipientKind } | null => {
+    if (g.recipientEntityId) {
+      const e = props.entities.find((x) => x.id === g.recipientEntityId);
+      return e ? { label: e.name, kind: "trust" } : null;
+    }
+    if (g.recipientFamilyMemberId) {
+      const m = props.members.find((x) => x.id === g.recipientFamilyMemberId);
+      return m ? { label: `${m.firstName} ${m.lastName ?? ""}`.trim(), kind: "family" } : null;
+    }
+    if (g.recipientExternalBeneficiaryId) {
+      const ex = props.externals.find(
+        (x) => x.id === g.recipientExternalBeneficiaryId,
+      );
+      return ex ? { label: ex.name, kind: "external" } : null;
+    }
+    return null;
+  };
+
+  async function deleteGift(giftId: string) {
+    const res = await fetch(`/api/clients/${props.clientId}/gifts/${giftId}`, {
+      method: "DELETE",
+    });
+    if (res.ok) {
+      props.onChange(props.gifts.filter((x) => x.id !== giftId));
+    }
+  }
+
+  return (
+    <section className="mt-6 rounded-lg border border-gray-700 bg-gray-900 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-300">
+          Gifts
+        </h3>
+        <button
+          type="button"
+          onClick={() => setAdding((v) => !v)}
+          className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-500"
+        >
+          {adding ? "Cancel" : "+ Add gift"}
+        </button>
+      </div>
+
+      {adding && (
+        <GiftRowForm
+          clientId={props.clientId}
+          members={props.members}
+          externals={props.externals}
+          entities={props.entities}
+          onSaved={(newGift) => {
+            props.onChange([...props.gifts, newGift]);
+            setAdding(false);
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
+
+      {props.gifts.length === 0 ? (
+        <p className="text-sm text-gray-500">No gifts recorded.</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase text-gray-400">
+              <th className="px-2 py-1">Year</th>
+              <th className="px-2 py-1">Grantor</th>
+              <th className="px-2 py-1 text-right">Amount</th>
+              <th className="px-2 py-1">Recipient</th>
+              <th className="px-2 py-1">Crummey</th>
+              <th className="px-2 py-1">Notes</th>
+              <th className="px-2 py-1"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {props.gifts.map((g) => {
+              const r = resolveRecipient(g);
+              return (
+                <tr key={g.id} className="border-t border-gray-800">
+                  <td className="px-2 py-1">{g.year}</td>
+                  <td className="px-2 py-1 capitalize">{g.grantor}</td>
+                  <td className="px-2 py-1 text-right">
+                    ${g.amount.toLocaleString()}
+                  </td>
+                  <td className="px-2 py-1">{r?.label ?? "—"}</td>
+                  <td className="px-2 py-1">{g.useCrummeyPowers ? "✓" : ""}</td>
+                  <td className="px-2 py-1 text-gray-400">{g.notes ?? ""}</td>
+                  <td className="px-2 py-1 text-right">
+                    <button
+                      type="button"
+                      onClick={() => deleteGift(g.id)}
+                      className="text-xs text-red-400 hover:text-red-300"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+function GiftRowForm(props: {
+  clientId: string;
+  members: FamilyMember[];
+  externals: ExternalBeneficiary[];
+  entities: Entity[];
+  onSaved: (g: Gift) => void;
+  onCancel: () => void;
+}) {
+  const trusts = props.entities.filter(
+    (e) => e.entityType === "trust" && e.isIrrevocable === true,
+  );
+  const [year, setYear] = useState<string>(`${new Date().getFullYear()}`);
+  const [grantor, setGrantor] = useState<"client" | "spouse" | "joint">("client");
+  const [amount, setAmount] = useState<string>("0");
+  const [kind, setKind] = useState<RecipientKind>("trust");
+  const [recipientId, setRecipientId] = useState<string>("");
+  const [crummey, setCrummey] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      if (!recipientId) {
+        throw new Error("Please select a recipient.");
+      }
+      const body: Record<string, unknown> = {
+        year: Number(year),
+        amount: Number(amount),
+        grantor,
+        useCrummeyPowers: kind === "trust" ? crummey : false,
+        notes: notes.trim() || null,
+      };
+      if (kind === "trust") body.recipientEntityId = recipientId;
+      if (kind === "family") body.recipientFamilyMemberId = recipientId;
+      if (kind === "external") body.recipientExternalBeneficiaryId = recipientId;
+
+      const res = await fetch(`/api/clients/${props.clientId}/gifts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? `HTTP ${res.status}`);
+      }
+      const row = await res.json();
+      props.onSaved({
+        id: row.id,
+        year: row.year,
+        amount: typeof row.amount === "string" ? parseFloat(row.amount) : row.amount,
+        grantor: row.grantor,
+        recipientEntityId: row.recipientEntityId ?? null,
+        recipientFamilyMemberId: row.recipientFamilyMemberId ?? null,
+        recipientExternalBeneficiaryId: row.recipientExternalBeneficiaryId ?? null,
+        useCrummeyPowers: row.useCrummeyPowers,
+        notes: row.notes ?? null,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mb-3 space-y-2 rounded border border-gray-700 bg-gray-800 p-3">
+      <div className="grid grid-cols-4 gap-2">
+        <div>
+          <label className="text-xs text-gray-400">Year</label>
+          <input
+            type="number"
+            min={1900}
+            max={2200}
+            value={year}
+            onChange={(e) => setYear(e.target.value)}
+            className="mt-1 block w-full rounded border border-gray-600 bg-gray-900 px-2 py-1 text-sm text-gray-100"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-400">Grantor</label>
+          <select
+            value={grantor}
+            onChange={(e) =>
+              setGrantor(e.target.value as "client" | "spouse" | "joint")
+            }
+            className="mt-1 block w-full rounded border border-gray-600 bg-gray-900 px-2 py-1 text-sm text-gray-100"
+          >
+            <option value="client">Client</option>
+            <option value="spouse">Spouse</option>
+            <option value="joint">Joint</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-400">Amount ($)</label>
+          <input
+            type="number"
+            min={0}
+            step={1000}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="mt-1 block w-full rounded border border-gray-600 bg-gray-900 px-2 py-1 text-sm text-gray-100"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-400">Recipient kind</label>
+          <select
+            value={kind}
+            onChange={(e) => {
+              setKind(e.target.value as RecipientKind);
+              setRecipientId("");
+              setCrummey(false);
+            }}
+            className="mt-1 block w-full rounded border border-gray-600 bg-gray-900 px-2 py-1 text-sm text-gray-100"
+          >
+            <option value="trust">Irrevocable trust</option>
+            <option value="family">Family member</option>
+            <option value="external">Charity / external</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs text-gray-400">Recipient</label>
+        <select
+          value={recipientId}
+          onChange={(e) => setRecipientId(e.target.value)}
+          className="mt-1 block w-full rounded border border-gray-600 bg-gray-900 px-2 py-1 text-sm text-gray-100"
+        >
+          <option value="">— select —</option>
+          {kind === "trust" &&
+            trusts.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          {kind === "family" &&
+            props.members.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.firstName} {m.lastName ?? ""}
+              </option>
+            ))}
+          {kind === "external" &&
+            props.externals.map((ex) => (
+              <option key={ex.id} value={ex.id}>
+                {ex.name} ({ex.kind})
+              </option>
+            ))}
+        </select>
+      </div>
+
+      {kind === "trust" && recipientId && (
+        <label className="flex items-center gap-2 text-sm text-gray-200">
+          <input
+            type="checkbox"
+            checked={crummey}
+            onChange={(e) => setCrummey(e.target.checked)}
+          />
+          Use Crummey powers (annual-exclusion per beneficiary)
+        </label>
+      )}
+
+      <div>
+        <label className="text-xs text-gray-400">Notes</label>
+        <input
+          type="text"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          className="mt-1 block w-full rounded border border-gray-600 bg-gray-900 px-2 py-1 text-sm text-gray-100"
+        />
+      </div>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={save}
+          className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          onClick={props.onCancel}
+          className="rounded bg-gray-700 px-3 py-1 text-sm text-gray-100"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
