@@ -6,6 +6,10 @@ import { eq, and } from "drizzle-orm";
 import { extractDocument } from "@/lib/extraction/extract";
 import { DOCUMENT_TYPES } from "@/lib/extraction/types";
 import type { DocumentType } from "@/lib/extraction/types";
+import { checkExtractRateLimit } from "@/lib/rate-limit";
+import { detectUploadKind } from "@/lib/extraction/validate-upload";
+
+export const dynamic = "force-dynamic";
 
 // Next.js App Router: increase body size limit for file uploads (default is 1MB)
 export const maxDuration = 60;
@@ -20,6 +24,20 @@ export async function POST(
     const firmId = await getOrgId();
     const { id } = await params;
 
+    const rl = await checkExtractRateLimit(firmId);
+    if (!rl.allowed) {
+      const status = rl.reason === "unconfigured" ? 503 : 429;
+      const message =
+        rl.reason === "unconfigured"
+          ? "Rate limiting is not configured — document extraction is disabled."
+          : "Too many extraction requests. Please wait and try again.";
+      const headers: Record<string, string> = {};
+      if (rl.reset) {
+        headers["Retry-After"] = String(Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000)));
+      }
+      return NextResponse.json({ error: message }, { status, headers });
+    }
+
     // Verify client access
     const [client] = await db
       .select()
@@ -28,6 +46,18 @@ export async function POST(
 
     if (!client) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+
+    // Refuse the request before buffering if the client advertised an
+     // oversize body. Cheap filter for accidental / drive-by uploads; the
+     // real enforcement is the file.size check below because a client can
+     // lie about Content-Length.
+    const contentLength = Number(request.headers.get("content-length") ?? "0");
+    if (Number.isFinite(contentLength) && contentLength > MAX_FILE_SIZE + 65536) {
+      return NextResponse.json(
+        { error: "File too large. Maximum size is 20MB." },
+        { status: 413 }
+      );
     }
 
     const formData = await request.formData();
@@ -42,7 +72,7 @@ export async function POST(
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         { error: "File too large. Maximum size is 20MB." },
-        { status: 400 }
+        { status: 413 }
       );
     }
 
@@ -56,11 +86,25 @@ export async function POST(
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+
+    // Magic-byte check — reject files whose content doesn't match any of
+     // the formats the extraction pipeline knows how to parse safely.
+     // Previously the parser branch was picked from the user-supplied
+     // filename extension alone.
+    const kind = detectUploadKind(buffer);
+    if (!kind) {
+      return NextResponse.json(
+        { error: "Unsupported file type. Upload a PDF, Excel, or CSV file." },
+        { status: 400 }
+      );
+    }
+
     const result = await extractDocument(
       buffer,
       file.name,
       documentType as DocumentType | "auto",
-      model
+      model,
+      kind
     );
 
     return NextResponse.json(result);
@@ -68,7 +112,12 @@ export async function POST(
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.error("POST /api/clients/[id]/extract error:", err);
+    // Azure errors can carry endpoint / deployment / request-id detail in
+     // their stack; log only a truncated message so that detail doesn't
+     // end up in Vercel Runtime Logs.
+    const safeMessage =
+      err instanceof Error ? err.message.slice(0, 200) : "unknown error";
+    console.error("POST /api/clients/[id]/extract failed:", safeMessage);
     return NextResponse.json(
       { error: "Extraction failed. Please try again." },
       { status: 500 }

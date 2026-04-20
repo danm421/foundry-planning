@@ -17,6 +17,8 @@ import { buildCorrelationMatrix } from "@/engine/monteCarlo/correlation-matrix";
 import type { AccountAssetMix } from "@/engine/monteCarlo/trial";
 import type { IndexInput } from "@/engine/monteCarlo/returns";
 
+export const dynamic = "force-dynamic";
+
 // Fresh seed in the signed-int32 range — well within PostgreSQL's `integer` column.
 function generateSeed(): number {
   return Math.floor(Math.random() * 0x7fffffff);

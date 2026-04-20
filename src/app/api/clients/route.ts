@@ -5,14 +5,30 @@ import { clients, scenarios, planSettings, accounts, expenses, incomes } from "@
 import { eq, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { computePlanEndAge } from "@/lib/plan-horizon";
+import { parseBody } from "@/lib/schemas/common";
+import { clientCreateSchema } from "@/lib/schemas/resources";
+
+export const dynamic = "force-dynamic";
 
 // GET /api/clients — list all clients for the firm
 export async function GET() {
   try {
     const firmId = await getOrgId();
 
+    // Tight projection: the list UI only needs identity + the fields
+     // shown in the table. Full DOB, spouse DOB, filing status, and the
+     // internal advisorId Clerk user reference are held back.
     const rows = await db
-      .select()
+      .select({
+        id: clients.id,
+        firstName: clients.firstName,
+        lastName: clients.lastName,
+        spouseName: clients.spouseName,
+        spouseLastName: clients.spouseLastName,
+        retirementAge: clients.retirementAge,
+        planEndAge: clients.planEndAge,
+        createdAt: clients.createdAt,
+      })
       .from(clients)
       .where(eq(clients.firmId, firmId))
       .orderBy(asc(clients.lastName), asc(clients.firstName));
@@ -36,7 +52,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
+    const parsed = await parseBody(clientCreateSchema, request);
+    if (!parsed.ok) return parsed.response;
     const {
       firstName,
       lastName,
@@ -49,11 +66,7 @@ export async function POST(request: NextRequest) {
       spouseDob,
       spouseRetirementAge,
       spouseLifeExpectancy,
-    } = body;
-
-    if (!firstName || !lastName || !dateOfBirth || !retirementAge || !lifeExpectancy || !filingStatus) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-    }
+    } = parsed.data;
 
     // Plan horizon is the year the last spouse dies; plan_end_age is derived
     // from client + spouse life expectancies.

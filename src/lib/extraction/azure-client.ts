@@ -45,7 +45,9 @@ export async function callAIExtraction(
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    max_completion_tokens: 65000,
+    // 16k keeps completions inside our 60s function budget and caps cost
+     // exposure per request (see SECURITY_AUDIT.md §C7).
+    max_completion_tokens: 16000,
   });
 
   const content = response.choices[0]?.message?.content;

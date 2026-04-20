@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   varchar,
   jsonb,
+  index,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -995,4 +996,28 @@ export const reportComments = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [uniqueIndex("report_comments_client_scenario_key_unique").on(t.clientId, t.scenarioId, t.reportKey)],
+);
+
+// Audit log. Append-only record of mutating actions against tenant
+// data. Keeps a 7-year retention window by policy (dropped via a cron
+// outside the app). No FK to clients/firm on purpose — the table must
+// survive cascade-deletes so a "compromised advisor nuked everything"
+// incident still has a log trail.
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    action: text("action").notNull(),
+    resourceType: text("resource_type").notNull(),
+    resourceId: text("resource_id").notNull(),
+    clientId: uuid("client_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("audit_log_firm_created_idx").on(t.firmId, t.createdAt),
+    index("audit_log_resource_idx").on(t.resourceType, t.resourceId),
+  ],
 );

@@ -5,11 +5,15 @@ import { eq } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { DEFAULT_ASSET_CLASSES, DEFAULT_MODEL_PORTFOLIOS, DEFAULT_CORRELATIONS } from "@/lib/cma-seed";
 import { canonicalPair } from "@/engine/monteCarlo/correlation-matrix";
+import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
+
+export const dynamic = "force-dynamic";
 
 // POST /api/cma/seed — seed default asset classes and model portfolios for this firm.
 // Only runs if the firm has zero asset classes (first visit).
 export async function POST() {
   try {
+    await requireOrgAdmin();
     const firmId = await getOrgId();
 
     // No early-return here: every downstream insert is idempotent (ON CONFLICT
@@ -127,9 +131,8 @@ export async function POST() {
       { status: 201 }
     );
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResp = authErrorResponse(err);
+    if (authResp) return NextResponse.json(authResp.body, { status: authResp.status });
     console.error("POST /api/cma/seed error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

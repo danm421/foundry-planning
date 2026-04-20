@@ -4,6 +4,9 @@ import { assetClasses } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { isAssetTypeId } from "@/lib/investments/asset-types";
+import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
@@ -25,6 +28,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    await requireOrgAdmin();
     const firmId = await getOrgId();
     const body = await request.json();
     const {
@@ -59,9 +63,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(created, { status: 201 });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResp = authErrorResponse(err);
+    if (authResp) return NextResponse.json(authResp.body, { status: authResp.status });
     console.error("POST /api/cma/asset-classes error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

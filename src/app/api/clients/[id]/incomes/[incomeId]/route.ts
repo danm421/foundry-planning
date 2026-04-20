@@ -3,6 +3,9 @@ import { db } from "@/db";
 import { clients, incomes } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
+
+export const dynamic = "force-dynamic";
 
 async function verifyClientAccess(clientId: string, firmId: string): Promise<boolean> {
   const [client] = await db
@@ -42,6 +45,15 @@ export async function PUT(
       cashAccountId,
       inflationStartYear,
     } = body;
+
+    if (linkedEntityId !== undefined || ownerEntityId !== undefined) {
+      const c = await assertEntitiesInClient(id, [linkedEntityId, ownerEntityId]);
+      if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
+    }
+    if (cashAccountId !== undefined) {
+      const c = await assertAccountsInClient(id, [cashAccountId]);
+      if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
+    }
 
     const [updated] = await db
       .update(incomes)

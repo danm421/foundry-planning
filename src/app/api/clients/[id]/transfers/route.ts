@@ -3,6 +3,9 @@ import { db } from "@/db";
 import { clients, scenarios, transfers, transferSchedules } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { assertAccountsInClient } from "@/lib/db-scoping";
+
+export const dynamic = "force-dynamic";
 
 async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
   const [client] = await db
@@ -96,6 +99,11 @@ export async function POST(
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
+    const acctCheck = await assertAccountsInClient(id, [sourceAccountId, targetAccountId]);
+    if (!acctCheck.ok) {
+      return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
+    }
+
     const [created] = await db
       .insert(transfers)
       .values({
@@ -171,6 +179,11 @@ export async function PUT(
 
     if (!transferId) {
       return NextResponse.json({ error: "Missing transferId" }, { status: 400 });
+    }
+
+    const acctCheck = await assertAccountsInClient(id, [sourceAccountId, targetAccountId]);
+    if (!acctCheck.ok) {
+      return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
 
     const [updated] = await db

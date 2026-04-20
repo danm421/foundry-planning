@@ -5,7 +5,7 @@
 // followed by a header row, then one data row per year. We walk the sheet looking
 // for known section headers.
 
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import type { TaxYearParameters, BracketsByStatus, FilingStatus } from "../../src/lib/tax/types";
 import { STATUTORY_FIXED } from "../../src/lib/tax/constants";
 
@@ -13,12 +13,40 @@ export type Row = (string | number | null)[];
 
 const SHEET_NAME = "2022-2026 IRS Updates";
 
-export function parseIrsUpdatesSheet(filePath: string): TaxYearParameters[] {
-  const wb = XLSX.readFile(filePath);
-  const ws = wb.Sheets[SHEET_NAME];
+function worksheetToRows(ws: ExcelJS.Worksheet): Row[] {
+  const out: Row[] = [];
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    const values = row.values as unknown[]; // 1-indexed, values[0] is undefined
+    const cells: (string | number | null)[] = [];
+    const maxCol = values.length > 0 ? values.length - 1 : 0;
+    for (let c = 1; c <= maxCol; c++) {
+      const v = values[c];
+      if (v == null) {
+        cells.push(null);
+      } else if (typeof v === "number" || typeof v === "string") {
+        cells.push(v);
+      } else if (typeof v === "object" && "result" in (v as object)) {
+        const r = (v as { result: unknown }).result;
+        cells.push(typeof r === "number" || typeof r === "string" ? r : null);
+      } else if (typeof v === "object" && "text" in (v as object)) {
+        const t = (v as { text: unknown }).text;
+        cells.push(typeof t === "string" ? t : String(t ?? ""));
+      } else {
+        cells.push(String(v));
+      }
+    }
+    out.push(cells);
+  });
+  return out;
+}
+
+export async function parseIrsUpdatesSheet(filePath: string): Promise<TaxYearParameters[]> {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(filePath);
+  const ws = wb.getWorksheet(SHEET_NAME);
   if (!ws) throw new Error(`Sheet "${SHEET_NAME}" not found in ${filePath}`);
 
-  const rows: Row[] = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false }) as Row[];
+  const rows: Row[] = worksheetToRows(ws);
 
   const ssMedicare = parseSection(rows, "Social Security Taxable Wages", 4);
   const stdDeduction = parseSection(rows, "Standard Deduction by Filing Status", 4);

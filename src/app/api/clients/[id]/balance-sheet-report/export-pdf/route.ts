@@ -12,6 +12,8 @@ import { buildViewModel } from "@/components/balance-sheet-report/view-model";
 import type { OwnershipView } from "@/components/balance-sheet-report/ownership-filter";
 import React from "react";
 
+export const dynamic = "force-dynamic";
+
 const VIEW_LABELS: Record<OwnershipView, string> = {
   consolidated: "Consolidated",
   client: "Client only",
@@ -47,8 +49,15 @@ export async function POST(
     if (!isOwnershipView(viewParam)) return NextResponse.json({ error: "Invalid view" }, { status: 400 });
 
     const body = await request.json().catch(() => ({}));
-    const donutPng: string | null = typeof body.donutPng === "string" ? body.donutPng : null;
-    const barPng: string | null = typeof body.barPng === "string" ? body.barPng : null;
+    // SSRF hardening: @react-pdf/renderer fetches any URL passed as Image src,
+     // which would reach IMDS and internal hosts. Accept only data: PNG URIs
+     // with a hard size cap.
+    const isSafePngDataUri = (v: unknown): v is string =>
+      typeof v === "string" &&
+      v.startsWith("data:image/png;base64,") &&
+      v.length < 2_000_000;
+    const donutPng: string | null = isSafePngDataUri(body.donutPng) ? body.donutPng : null;
+    const barPng: string | null = isSafePngDataUri(body.barPng) ? body.barPng : null;
 
     // Pull projection data the same way the page does by hitting the API.
     // Using an internal fetch avoids duplicating the projection-data query.
@@ -99,7 +108,16 @@ export async function POST(
       barPng,
     }) as React.ReactElement<DocumentProps>;
 
-    const stream = await renderToStream(doc);
+    // @react-pdf/renderer has a memory-leak history on large docs, and
+     // a malformed view model can send it into an unbounded layout loop.
+     // Race the render against a 25 s timeout so a pathological PDF can
+     // never pin the serverless function to its maxDuration.
+    const stream = await Promise.race<Awaited<ReturnType<typeof renderToStream>>>([
+      renderToStream(doc),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("PDF render timed out")), 25_000)
+      ),
+    ]);
 
     return new NextResponse(stream as unknown as ReadableStream, {
       status: 200,
@@ -110,6 +128,9 @@ export async function POST(
       },
     });
   } catch (err) {
+    if (err instanceof Error && err.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     console.error("POST balance-sheet export-pdf error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

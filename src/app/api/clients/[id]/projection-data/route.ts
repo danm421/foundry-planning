@@ -31,6 +31,8 @@ import { getOrgId } from "@/lib/db-helpers";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/clients/[id]/projection-data — fetch all data needed for the projection engine
 export async function GET(
   _request: NextRequest,

@@ -3,6 +3,12 @@ import { db } from "@/db";
 import { clients, scenarios, assetTransactions } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import {
+  assertAccountsInClient,
+  assertModelPortfoliosInFirm,
+} from "@/lib/db-scoping";
+
+export const dynamic = "force-dynamic";
 
 const toStr = (v: any) => (v != null ? String(v) : null);
 
@@ -95,6 +101,19 @@ export async function POST(
 
     if (!name || !type || typeof year !== "number") {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    const acctCheck = await assertAccountsInClient(id, [
+      accountId,
+      proceedsAccountId,
+      fundingAccountId,
+    ]);
+    if (!acctCheck.ok) {
+      return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
+    }
+    const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
+    if (!mpCheck.ok) {
+      return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
     }
 
     const [created] = await db
@@ -198,6 +217,19 @@ export async function PUT(
       mortgageTermMonths,
     } = rest;
 
+    const acctCheck = await assertAccountsInClient(id, [
+      accountId,
+      proceedsAccountId,
+      fundingAccountId,
+    ]);
+    if (!acctCheck.ok) {
+      return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
+    }
+    const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
+    if (!mpCheck.ok) {
+      return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
+    }
+
     const [updated] = await db
       .update(assetTransactions)
       .set({
@@ -228,7 +260,7 @@ export async function PUT(
         mortgageRate: mortgageRate !== undefined ? toStr(mortgageRate) : undefined,
         updatedAt: new Date(),
       })
-      .where(eq(assetTransactions.id, transactionId))
+      .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)))
       .returning();
 
     return NextResponse.json(updated);
@@ -273,7 +305,9 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    await db.delete(assetTransactions).where(eq(assetTransactions.id, transactionId));
+    await db
+      .delete(assetTransactions)
+      .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)));
 
     return NextResponse.json({ ok: true });
   } catch (err) {

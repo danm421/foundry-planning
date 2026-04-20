@@ -4,6 +4,8 @@ import { clients, incomes, incomeScheduleOverrides } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
+export const dynamic = "force-dynamic";
+
 type Params = { params: Promise<{ id: string; incomeId: string }> };
 
 async function verifyOwnership(clientId: string, incomeId: string, firmId: string) {

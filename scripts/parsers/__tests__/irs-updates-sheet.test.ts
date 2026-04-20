@@ -1,11 +1,15 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { parseIrsUpdatesSheet } from "../irs-updates-sheet";
 import path from "node:path";
+import type { TaxYearParameters } from "../../../src/lib/tax/types";
 
 const FIXTURE = path.join(process.cwd(), "data/tax/2022-2026 Tax Values Updated.xlsx");
 
 describe("parseIrsUpdatesSheet", () => {
-  const years = parseIrsUpdatesSheet(FIXTURE);
+  let years: TaxYearParameters[];
+  beforeAll(async () => {
+    years = await parseIrsUpdatesSheet(FIXTURE);
+  });
 
   it("produces one row per tax year 2022-2026", () => {
     expect(years.map((y) => y.year)).toEqual([2022, 2023, 2024, 2025, 2026]);

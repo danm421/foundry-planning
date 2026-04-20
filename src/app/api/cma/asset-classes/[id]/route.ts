@@ -4,23 +4,59 @@ import { assetClasses } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { isAssetTypeId } from "@/lib/investments/asset-types";
+import { parseBody } from "@/lib/schemas/common";
+import { assetClassPutSchema } from "@/lib/schemas/asset-classes";
+import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
+import { recordAudit } from "@/lib/audit";
+
+export const dynamic = "force-dynamic";
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await requireOrgAdmin();
     const firmId = await getOrgId();
     const { id } = await params;
-    const body = await request.json();
 
-    if (body.assetType !== undefined && !isAssetTypeId(body.assetType)) {
+    const parsed = await parseBody(assetClassPutSchema, request);
+    if (!parsed.ok) return parsed.response;
+    const safeUpdate = parsed.data;
+
+    if (safeUpdate.assetType !== undefined && !isAssetTypeId(safeUpdate.assetType)) {
       return NextResponse.json({ error: "Invalid assetType" }, { status: 400 });
     }
 
     const [updated] = await db
       .update(assetClasses)
-      .set({ ...body, updatedAt: new Date() })
+      .set({
+        ...safeUpdate,
+        // numeric columns are stored as decimal strings
+        geometricReturn:
+          safeUpdate.geometricReturn !== undefined
+            ? String(safeUpdate.geometricReturn)
+            : undefined,
+        arithmeticMean:
+          safeUpdate.arithmeticMean !== undefined
+            ? String(safeUpdate.arithmeticMean)
+            : undefined,
+        volatility:
+          safeUpdate.volatility !== undefined ? String(safeUpdate.volatility) : undefined,
+        pctOrdinaryIncome:
+          safeUpdate.pctOrdinaryIncome !== undefined
+            ? String(safeUpdate.pctOrdinaryIncome)
+            : undefined,
+        pctLtCapitalGains:
+          safeUpdate.pctLtCapitalGains !== undefined
+            ? String(safeUpdate.pctLtCapitalGains)
+            : undefined,
+        pctQualifiedDividends:
+          safeUpdate.pctQualifiedDividends !== undefined
+            ? String(safeUpdate.pctQualifiedDividends)
+            : undefined,
+        updatedAt: new Date(),
+      })
       .where(and(eq(assetClasses.id, id), eq(assetClasses.firmId, firmId)))
       .returning();
 
@@ -29,9 +65,8 @@ export async function PUT(
     }
     return NextResponse.json(updated);
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResp = authErrorResponse(err);
+    if (authResp) return NextResponse.json(authResp.body, { status: authResp.status });
     console.error("PUT /api/cma/asset-classes/[id] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -42,6 +77,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await requireOrgAdmin();
     const firmId = await getOrgId();
     const { id } = await params;
 
@@ -49,11 +85,17 @@ export async function DELETE(
       .delete(assetClasses)
       .where(and(eq(assetClasses.id, id), eq(assetClasses.firmId, firmId)));
 
+    await recordAudit({
+      action: "cma.asset_class.delete",
+      resourceType: "asset_class",
+      resourceId: id,
+      firmId,
+    });
+
     return NextResponse.json({ success: true });
   } catch (err) {
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const authResp = authErrorResponse(err);
+    if (authResp) return NextResponse.json(authResp.body, { status: authResp.status });
     console.error("DELETE /api/cma/asset-classes/[id] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

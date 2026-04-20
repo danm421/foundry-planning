@@ -14,7 +14,7 @@ vi.mock("../pdf-parser", () => ({
 }));
 
 vi.mock("../excel-parser", () => ({
-    extractExcelText: vi.fn().mockReturnValue("Account\tValue\nIRA\t200000"),
+    extractExcelText: vi.fn().mockResolvedValue("Account\tValue\nIRA\t200000"),
 }));
 
 import { extractDocument } from "../extract";

@@ -3,6 +3,13 @@ import { db } from "@/db";
 import { clients, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import {
+  assertEntitiesInClient,
+  assertModelPortfoliosInFirm,
+} from "@/lib/db-scoping";
+import { recordAudit } from "@/lib/audit";
+
+export const dynamic = "force-dynamic";
 
 // PUT /api/clients/[id]/accounts/[accountId] — update account
 export async function PUT(
@@ -25,12 +32,34 @@ export async function PUT(
 
     const body = await request.json();
 
+    // Prevent mass-assignment: strip identity / tenancy fields so the row
+     // can't be reparented or its id rewritten via request body.
+    const {
+      id: _stripId,
+      clientId: _stripClientId,
+      createdAt: _stripCreatedAt,
+      updatedAt: _stripUpdatedAt,
+      ...safeUpdate
+    } = body;
+    void _stripId; void _stripClientId;
+    void _stripCreatedAt; void _stripUpdatedAt;
+
+    // If the body attempts to set a cross-tenant FK, reject now. Without
+     // these checks an attacker could use a legitimate PUT to swap a
+     // victim's ownerEntity / modelPortfolio id in as a side effect.
+    if ("ownerEntityId" in safeUpdate) {
+      const c = await assertEntitiesInClient(id, [safeUpdate.ownerEntityId]);
+      if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
+    }
+    if ("modelPortfolioId" in safeUpdate) {
+      const c = await assertModelPortfoliosInFirm(firmId, [safeUpdate.modelPortfolioId]);
+      if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
+    }
+
     const [updated] = await db
       .update(accounts)
       .set({
-        ...body,
-        ...(body.annualPropertyTax !== undefined && { annualPropertyTax: body.annualPropertyTax }),
-        ...(body.propertyTaxGrowthRate !== undefined && { propertyTaxGrowthRate: body.propertyTaxGrowthRate }),
+        ...safeUpdate,
         updatedAt: new Date(),
       })
       .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)))
@@ -84,6 +113,15 @@ export async function DELETE(
     await db
       .delete(accounts)
       .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
+
+    await recordAudit({
+      action: "account.delete",
+      resourceType: "account",
+      resourceId: accountId,
+      clientId: id,
+      firmId,
+      metadata: { name: target?.name ?? null },
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {

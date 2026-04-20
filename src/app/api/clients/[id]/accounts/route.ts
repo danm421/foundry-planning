@@ -3,6 +3,12 @@ import { db } from "@/db";
 import { clients, scenarios, accounts } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import {
+  assertEntitiesInClient,
+  assertModelPortfoliosInFirm,
+} from "@/lib/db-scoping";
+
+export const dynamic = "force-dynamic";
 
 async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
   const [client] = await db
@@ -85,6 +91,15 @@ export async function POST(
 
     if (!name || !category) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    const entCheck = await assertEntitiesInClient(id, [ownerEntityId]);
+    if (!entCheck.ok) {
+      return NextResponse.json({ error: entCheck.reason }, { status: 400 });
+    }
+    const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
+    if (!mpCheck.ok) {
+      return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
     }
 
     const [account] = await db
