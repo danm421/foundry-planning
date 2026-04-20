@@ -12,6 +12,8 @@ import { buildViewModel } from "@/components/balance-sheet-report/view-model";
 import type { OwnershipView } from "@/components/balance-sheet-report/ownership-filter";
 import React from "react";
 
+export const dynamic = "force-dynamic";
+
 const VIEW_LABELS: Record<OwnershipView, string> = {
   consolidated: "Consolidated",
   client: "Client only",

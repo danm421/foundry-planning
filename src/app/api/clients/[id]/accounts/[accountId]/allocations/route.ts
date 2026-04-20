@@ -3,6 +3,10 @@ import { db } from "@/db";
 import { accountAssetAllocations, assetClasses, accounts, clients } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { parseBody } from "@/lib/schemas/common";
+import { allocationPutSchema } from "@/lib/schemas/allocations";
+
+export const dynamic = "force-dynamic";
 
 async function assertAccountInFirm(clientId: string, accountId: string, firmId: string) {
   const [acct] = await db
@@ -67,20 +71,11 @@ export async function PUT(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const body = await req.json();
-    const allocations: { assetClassId: string; weight: number }[] = body.allocations ?? [];
+    const parsed = await parseBody(allocationPutSchema, req);
+    if (!parsed.ok) return parsed.response;
+    const { allocations } = parsed.data;
 
-    // Validate: no negative weights, no weight > 1, total <= 1
-    let total = 0;
-    for (const a of allocations) {
-      if (a.weight < 0 || a.weight > 1) {
-        return NextResponse.json(
-          { error: `Weight must be between 0 and 1, got ${a.weight}` },
-          { status: 400 }
-        );
-      }
-      total += a.weight;
-    }
+    const total = allocations.reduce((s, a) => s + a.weight, 0);
     if (total > 1.0001) {
       return NextResponse.json(
         { error: `Total weight ${total} exceeds 1.0` },

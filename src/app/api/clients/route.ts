@@ -6,6 +6,8 @@ import { eq, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { computePlanEndAge } from "@/lib/plan-horizon";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/clients — list all clients for the firm
 export async function GET() {
   try {

@@ -4,6 +4,8 @@ import { clients, savingsRules } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
+export const dynamic = "force-dynamic";
+
 async function verifyClientAccess(clientId: string, firmId: string): Promise<boolean> {
   const [client] = await db
     .select()

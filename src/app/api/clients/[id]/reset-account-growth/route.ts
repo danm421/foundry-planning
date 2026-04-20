@@ -4,6 +4,8 @@ import { clients, scenarios, accounts } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
+export const dynamic = "force-dynamic";
+
 // POST /api/clients/[id]/reset-account-growth
 // Resets all investable accounts (taxable/cash/retirement) for the base-case
 // scenario to growth_source='default' and clears any custom portfolio / rate /

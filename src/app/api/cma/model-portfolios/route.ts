@@ -4,6 +4,8 @@ import { modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
 import { eq, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const firmId = await getOrgId();

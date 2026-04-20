@@ -5,6 +5,8 @@ import { eq, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { isAssetTypeId } from "@/lib/investments/asset-types";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const firmId = await getOrgId();

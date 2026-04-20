@@ -4,6 +4,8 @@ import { clients, liabilities } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
+export const dynamic = "force-dynamic";
+
 // PUT /api/clients/[id]/liabilities/[liabilityId] — update liability
 export async function PUT(
   request: NextRequest,

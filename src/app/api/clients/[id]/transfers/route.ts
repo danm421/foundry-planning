@@ -4,6 +4,8 @@ import { clients, scenarios, transfers, transferSchedules } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
+export const dynamic = "force-dynamic";
+
 async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
   const [client] = await db
     .select()

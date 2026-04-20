@@ -4,6 +4,10 @@ import { assetClasses } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { isAssetTypeId } from "@/lib/investments/asset-types";
+import { parseBody } from "@/lib/schemas/common";
+import { assetClassPutSchema } from "@/lib/schemas/asset-classes";
+
+export const dynamic = "force-dynamic";
 
 export async function PUT(
   request: NextRequest,
@@ -12,27 +16,44 @@ export async function PUT(
   try {
     const firmId = await getOrgId();
     const { id } = await params;
-    const body = await request.json();
 
-    if (body.assetType !== undefined && !isAssetTypeId(body.assetType)) {
+    const parsed = await parseBody(assetClassPutSchema, request);
+    if (!parsed.ok) return parsed.response;
+    const safeUpdate = parsed.data;
+
+    if (safeUpdate.assetType !== undefined && !isAssetTypeId(safeUpdate.assetType)) {
       return NextResponse.json({ error: "Invalid assetType" }, { status: 400 });
     }
 
-    // Prevent mass-assignment: strip identity / tenancy fields so the
-     // row can't be reparented or its id rewritten via request body.
-    const {
-      id: _stripId,
-      firmId: _stripFirmId,
-      createdAt: _stripCreatedAt,
-      updatedAt: _stripUpdatedAt,
-      ...safeUpdate
-    } = body;
-    void _stripId; void _stripFirmId;
-    void _stripCreatedAt; void _stripUpdatedAt;
-
     const [updated] = await db
       .update(assetClasses)
-      .set({ ...safeUpdate, updatedAt: new Date() })
+      .set({
+        ...safeUpdate,
+        // numeric columns are stored as decimal strings
+        geometricReturn:
+          safeUpdate.geometricReturn !== undefined
+            ? String(safeUpdate.geometricReturn)
+            : undefined,
+        arithmeticMean:
+          safeUpdate.arithmeticMean !== undefined
+            ? String(safeUpdate.arithmeticMean)
+            : undefined,
+        volatility:
+          safeUpdate.volatility !== undefined ? String(safeUpdate.volatility) : undefined,
+        pctOrdinaryIncome:
+          safeUpdate.pctOrdinaryIncome !== undefined
+            ? String(safeUpdate.pctOrdinaryIncome)
+            : undefined,
+        pctLtCapitalGains:
+          safeUpdate.pctLtCapitalGains !== undefined
+            ? String(safeUpdate.pctLtCapitalGains)
+            : undefined,
+        pctQualifiedDividends:
+          safeUpdate.pctQualifiedDividends !== undefined
+            ? String(safeUpdate.pctQualifiedDividends)
+            : undefined,
+        updatedAt: new Date(),
+      })
       .where(and(eq(assetClasses.id, id), eq(assetClasses.firmId, firmId)))
       .returning();
 

@@ -4,6 +4,8 @@ import { modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 
+export const dynamic = "force-dynamic";
+
 // PUT /api/cma/model-portfolios/[id]/allocations — replace all allocations
 export async function PUT(
   request: NextRequest,
