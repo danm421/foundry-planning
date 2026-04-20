@@ -274,6 +274,13 @@
       "when": 1776707597558,
       "tag": "0038_admin_tool",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1745136000000,
+      "tag": "0039_impersonation_session_token_hash",
+      "breakpoints": true
     }
   ]
 }

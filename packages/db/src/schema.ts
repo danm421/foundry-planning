@@ -1055,6 +1055,10 @@ export const adminImpersonationSessions = pgTable(
     expiresAt: timestamp("expires_at").notNull(),
     endedAt: timestamp("ended_at"),
     reason: text("reason").notNull(),
+    handoffTokenHash: customType<{ data: Buffer; driverData: Buffer }>({
+      dataType() { return "bytea"; },
+    })("handoff_token_hash"),
+    handoffConsumedAt: timestamp("handoff_consumed_at"),
   },
   (t) => [
     index("admin_impersonation_active_idx")
