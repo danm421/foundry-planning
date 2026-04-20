@@ -7,6 +7,7 @@ import { extractDocument } from "@/lib/extraction/extract";
 import { DOCUMENT_TYPES } from "@/lib/extraction/types";
 import type { DocumentType } from "@/lib/extraction/types";
 import { checkExtractRateLimit } from "@/lib/rate-limit";
+import { detectUploadKind } from "@/lib/extraction/validate-upload";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,18 @@ export async function POST(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
+    // Refuse the request before buffering if the client advertised an
+     // oversize body. Cheap filter for accidental / drive-by uploads; the
+     // real enforcement is the file.size check below because a client can
+     // lie about Content-Length.
+    const contentLength = Number(request.headers.get("content-length") ?? "0");
+    if (Number.isFinite(contentLength) && contentLength > MAX_FILE_SIZE + 65536) {
+      return NextResponse.json(
+        { error: "File too large. Maximum size is 20MB." },
+        { status: 413 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const documentType = (formData.get("documentType") as string) ?? "auto";
@@ -59,7 +72,7 @@ export async function POST(
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         { error: "File too large. Maximum size is 20MB." },
-        { status: 400 }
+        { status: 413 }
       );
     }
 
@@ -73,11 +86,25 @@ export async function POST(
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+
+    // Magic-byte check — reject files whose content doesn't match any of
+     // the formats the extraction pipeline knows how to parse safely.
+     // Previously the parser branch was picked from the user-supplied
+     // filename extension alone.
+    const kind = detectUploadKind(buffer);
+    if (!kind) {
+      return NextResponse.json(
+        { error: "Unsupported file type. Upload a PDF, Excel, or CSV file." },
+        { status: 400 }
+      );
+    }
+
     const result = await extractDocument(
       buffer,
       file.name,
       documentType as DocumentType | "auto",
-      model
+      model,
+      kind
     );
 
     return NextResponse.json(result);
