@@ -238,39 +238,41 @@ export async function POST(
       return NextResponse.json({ error: crossRefError }, { status: 400 });
     }
 
-    const [willRow] = await db
-      .insert(wills)
-      .values({ clientId: id, grantor: data.grantor })
-      .returning();
-
-    for (const b of data.bequests) {
-      const [bequestRow] = await db
-        .insert(willBequests)
-        .values({
-          willId: willRow.id,
-          name: b.name,
-          assetMode: b.assetMode,
-          accountId: b.accountId ?? null,
-          percentage: String(b.percentage),
-          condition: b.condition,
-          sortOrder: b.sortOrder,
-        })
+    const willId = await db.transaction(async (tx) => {
+      const [willRow] = await tx
+        .insert(wills)
+        .values({ clientId: id, grantor: data.grantor })
         .returning();
-      if (b.recipients.length > 0) {
-        await db.insert(willBequestRecipients).values(
-          b.recipients.map((r) => ({
-            bequestId: bequestRow.id,
-            recipientKind: r.recipientKind,
-            recipientId: r.recipientId,
-            percentage: String(r.percentage),
-            sortOrder: r.sortOrder,
-          })),
-        );
+      for (const b of data.bequests) {
+        const [bequestRow] = await tx
+          .insert(willBequests)
+          .values({
+            willId: willRow.id,
+            name: b.name,
+            assetMode: b.assetMode,
+            accountId: b.accountId ?? null,
+            percentage: String(b.percentage),
+            condition: b.condition,
+            sortOrder: b.sortOrder,
+          })
+          .returning();
+        if (b.recipients.length > 0) {
+          await tx.insert(willBequestRecipients).values(
+            b.recipients.map((r) => ({
+              bequestId: bequestRow.id,
+              recipientKind: r.recipientKind,
+              recipientId: r.recipientId,
+              percentage: String(r.percentage),
+              sortOrder: r.sortOrder,
+            })),
+          );
+        }
       }
-    }
+      return willRow.id;
+    });
 
     return NextResponse.json(
-      { id: willRow.id, warnings: computeSoftWarnings(data.bequests) },
+      { id: willId, warnings: computeSoftWarnings(data.bequests) },
       { status: 201 },
     );
   } catch (err) {

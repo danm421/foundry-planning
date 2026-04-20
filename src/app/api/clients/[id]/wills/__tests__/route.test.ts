@@ -60,6 +60,16 @@ vi.mock("@/db", async () => {
       insert: () => ({
         values: () => ({ returning: () => Promise.resolve([{ id: "w_new" }]) }),
       }),
+      transaction: async <T>(cb: (tx: unknown) => Promise<T>) => {
+        const tx = {
+          insert: () => ({
+            values: () => ({
+              returning: () => Promise.resolve([{ id: "w_new" }]),
+            }),
+          }),
+        };
+        return cb(tx);
+      },
     },
   };
 });
