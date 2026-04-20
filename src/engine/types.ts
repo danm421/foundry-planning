@@ -4,6 +4,17 @@ import type { TrustSubType } from "@/lib/entities/trust";
 
 // ── Input Types ──────────────────────────────────────────────────────────────
 
+export interface Gift {
+  id: string;
+  year: number;
+  amount: number;
+  grantor: "client" | "spouse" | "joint";
+  recipientEntityId?: string;
+  recipientFamilyMemberId?: string;
+  recipientExternalBeneficiaryId?: string;
+  useCrummeyPowers: boolean;
+}
+
 export interface ClientData {
   client: ClientInfo;
   accounts: Account[];
@@ -22,6 +33,8 @@ export interface ClientData {
   transfers?: Transfer[];
   /** Asset buy/sell transactions — acquire or dispose of assets in specific years. */
   assetTransactions?: AssetTransaction[];
+  /** Gifts made by the client or spouse. */
+  gifts?: Gift[];
 }
 
 // Minimal entity view used by the engine to decide cash-flow treatment of entity-owned

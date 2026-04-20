@@ -26,6 +26,7 @@ import {
   assetTransactions,
   clientCmaOverrides,
   beneficiaryDesignations,
+  gifts,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -81,6 +82,7 @@ export async function GET(
       transferRows,
       transferScheduleRows,
       assetTransactionRows,
+      giftRows,
     ] = await Promise.all([
       db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
       db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
@@ -97,6 +99,11 @@ export async function GET(
       db.select().from(transfers).where(and(eq(transfers.clientId, id), eq(transfers.scenarioId, scenario.id))),
       db.select().from(transferSchedules),
       db.select().from(assetTransactions).where(and(eq(assetTransactions.clientId, id), eq(assetTransactions.scenarioId, scenario.id))),
+      db
+        .select()
+        .from(gifts)
+        .where(eq(gifts.clientId, id))
+        .orderBy(asc(gifts.year), asc(gifts.createdAt)),
     ]);
 
     // Load schedule overrides for all incomes, expenses, and savings rules
@@ -601,6 +608,16 @@ export async function GET(
         mortgageAmount: t.mortgageAmount ? parseFloat(t.mortgageAmount) : undefined,
         mortgageRate: t.mortgageRate ? parseFloat(t.mortgageRate) : undefined,
         mortgageTermMonths: t.mortgageTermMonths ?? undefined,
+      })),
+      gifts: giftRows.map((g) => ({
+        id: g.id,
+        year: g.year,
+        amount: parseFloat(g.amount),
+        grantor: g.grantor,
+        recipientEntityId: g.recipientEntityId ?? undefined,
+        recipientFamilyMemberId: g.recipientFamilyMemberId ?? undefined,
+        recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? undefined,
+        useCrummeyPowers: g.useCrummeyPowers,
       })),
     });
   } catch (err) {
