@@ -14,9 +14,10 @@ export async function seedSession(db: ReturnType<typeof getTestDb>, opts: {
   expiresInMs: number;
   handoffTokenHash?: Buffer;
   endedAt?: Date;
+  sessionId?: string;
 }) {
   const adminId = await ensureTestAdmin(db);
-  const sessionId = randomUUID();
+  const sessionId = opts.sessionId ?? randomUUID();
   await db.execute(sql`
     INSERT INTO admin_impersonation_sessions
       (id, admin_user_id, advisor_clerk_user_id, firm_id, expires_at, ended_at, handoff_token_hash, reason)
