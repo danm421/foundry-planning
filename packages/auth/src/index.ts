@@ -14,3 +14,4 @@ export type {
   AdminUserRow,
   ActiveImpersonation,
 } from "./admin-user-repo";
+export { requireRole } from "./roles";
