@@ -25,3 +25,14 @@ Generate and run migrations:
 npx drizzle-kit generate
 npx drizzle-kit migrate
 ```
+
+## Admin tool
+
+- Design spec: [docs/superpowers/specs/2026-04-20-admin-tool-phase-1-design.md](docs/superpowers/specs/2026-04-20-admin-tool-phase-1-design.md)
+- Implementation plans:
+  - Plan 1 (Foundations — this repo state): [docs/superpowers/plans/2026-04-20-admin-tool-foundations.md](docs/superpowers/plans/2026-04-20-admin-tool-foundations.md)
+  - Plan 2 (Admin shell + impersonation): TBD
+  - Plan 3 (Audit viewer + cutover): TBD
+- Key primitives:
+  - `@foundry/auth` — `getActingContext()`, `requireRole()`, `ActingContext`
+  - `@foundry/db/admin-scope` — `adminQuery()`, `writeAuditLog()`, `defaultAuditInserter`
