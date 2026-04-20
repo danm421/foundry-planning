@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export type WillGrantor = "client" | "spouse";
 export type WillAssetMode = "specific" | "all_assets";
@@ -112,6 +112,17 @@ export default function WillsPanel(props: WillsPanelProps) {
   const { primary, initialWills, accounts, familyMembers, externalBeneficiaries, entities } = props;
   const [wills] = useState<WillsPanelWill[]>(initialWills);
   const [modalOpen, setModalOpen] = useState<WillGrantor | null>(null);
+
+  // ESC-to-close while the modal is open.
+  useEffect(() => {
+    if (!modalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setModalOpen(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [modalOpen]);
+
   const [draft, setDraft] = useState<WillsPanelBequest>({
     name: "",
     assetMode: "specific",
@@ -148,7 +159,9 @@ export default function WillsPanel(props: WillsPanelProps) {
                     percentage: 100,
                     condition: "always",
                     sortOrder: (will?.bequests.length ?? 0),
-                    recipients: [],
+                    recipients: [
+                      { recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 },
+                    ],
                   });
                   setModalOpen(g);
                 }}
@@ -199,13 +212,21 @@ export default function WillsPanel(props: WillsPanelProps) {
         );
       })}
 
-      {modalOpen && (
+      {modalOpen && (() => {
+        const recipientSum = draft.recipients.reduce((s, x) => s + x.percentage, 0);
+        const recipientSumOk = Math.abs(recipientSum - 100) < 0.01;
+        return (
         <div
           role="dialog"
+          aria-modal="true"
           aria-label="New bequest"
+          onClick={() => setModalOpen(null)}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
         >
-          <div className="w-full max-w-lg rounded-lg border border-gray-700 bg-gray-900 p-5">
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg rounded-lg border border-gray-700 bg-gray-900 p-5"
+          >
             <h3 className="mb-4 text-base font-semibold text-gray-100">New bequest</h3>
 
             <label className="mb-3 block text-sm">
@@ -366,16 +387,8 @@ export default function WillsPanel(props: WillsPanelProps) {
               </button>
               <p className="mt-2 text-xs text-gray-400">
                 Total:{" "}
-                <span
-                  className={
-                    Math.abs(
-                      draft.recipients.reduce((s, x) => s + x.percentage, 0) - 100,
-                    ) < 0.01
-                      ? "text-green-400"
-                      : "text-red-400"
-                  }
-                >
-                  {draft.recipients.reduce((s, x) => s + x.percentage, 0).toFixed(2)}%
+                <span className={recipientSumOk ? "text-green-400" : "text-red-400"}>
+                  {recipientSum.toFixed(2)}%
                 </span>
               </p>
             </fieldset>
@@ -390,12 +403,7 @@ export default function WillsPanel(props: WillsPanelProps) {
               </button>
               <button
                 type="button"
-                disabled={
-                  !draft.name.trim() ||
-                  Math.abs(
-                    draft.recipients.reduce((s, x) => s + x.percentage, 0) - 100,
-                  ) > 0.01
-                }
+                disabled={!draft.name.trim() || !recipientSumOk}
                 onClick={() => {
                   // Save wiring is Task 10's responsibility. For now just close the modal.
                   setModalOpen(null);
@@ -407,7 +415,8 @@ export default function WillsPanel(props: WillsPanelProps) {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

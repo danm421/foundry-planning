@@ -94,10 +94,22 @@ describe("WillsPanel — add bequest modal", () => {
     expect(screen.getByLabelText(/Condition/i)).toBeDefined();
   });
 
-  it("disables Save until recipients sum to 100", () => {
+  it("enables Save when name is filled and default spouse recipient is at 100%", () => {
+    render(<WillsPanel {...baseProps} initialWills={[]} />);
+    fireEvent.click(screen.getAllByRole("button", { name: /Add bequest/i })[0]);
+    const save = screen.getByRole("button", { name: /^Save$/i });
+    expect((save as HTMLButtonElement).disabled).toBe(true); // name empty
+    fireEvent.change(screen.getByLabelText(/Name/i), { target: { value: "Test" } });
+    expect((save as HTMLButtonElement).disabled).toBe(false); // name filled, spouse default at 100%
+  });
+
+  it("disables Save when recipient percentages drift from 100", () => {
     render(<WillsPanel {...baseProps} initialWills={[]} />);
     fireEvent.click(screen.getAllByRole("button", { name: /Add bequest/i })[0]);
     fireEvent.change(screen.getByLabelText(/Name/i), { target: { value: "Test" } });
+    const pctInputs = screen.getAllByRole("spinbutton");
+    // Recipient percentage input is the second spinbutton (first is bequest-percentage).
+    fireEvent.change(pctInputs[1], { target: { value: "50" } });
     const save = screen.getByRole("button", { name: /^Save$/i });
     expect((save as HTMLButtonElement).disabled).toBe(true);
   });
