@@ -25,11 +25,13 @@ import {
   transferSchedules,
   assetTransactions,
   clientCmaOverrides,
+  beneficiaryDesignations,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
+import type { BeneficiaryRef } from "@/engine/types";
 
 export const dynamic = "force-dynamic";
 
@@ -323,6 +325,35 @@ export async function GET(
       clientInflationOverride,
     );
 
+    // ── Beneficiary designations ────────────────────────────────────────────
+    const designationRows = await db
+      .select()
+      .from(beneficiaryDesignations)
+      .where(eq(beneficiaryDesignations.clientId, id))
+      .orderBy(asc(beneficiaryDesignations.tier), asc(beneficiaryDesignations.sortOrder));
+
+    const accountBens = new Map<string, BeneficiaryRef[]>();
+    const trustBens = new Map<string, BeneficiaryRef[]>();
+    for (const d of designationRows) {
+      const ref: BeneficiaryRef = {
+        id: d.id,
+        tier: d.tier,
+        percentage: parseFloat(d.percentage),
+        familyMemberId: d.familyMemberId ?? undefined,
+        externalBeneficiaryId: d.externalBeneficiaryId ?? undefined,
+        sortOrder: d.sortOrder,
+      };
+      if (d.targetKind === "account" && d.accountId) {
+        const arr = accountBens.get(d.accountId) ?? [];
+        arr.push(ref);
+        accountBens.set(d.accountId, arr);
+      } else if (d.targetKind === "trust" && d.entityId) {
+        const arr = trustBens.get(d.entityId) ?? [];
+        arr.push(ref);
+        trustBens.set(d.entityId, arr);
+      }
+    }
+
     // ── Build response ──────────────────────────────────────────────────────
 
     // Convert Drizzle decimal strings to numbers for the engine
@@ -420,6 +451,8 @@ export async function GET(
           growthRate,
           rmdEnabled: a.rmdEnabled,
           ownerEntityId: a.ownerEntityId ?? undefined,
+          ownerFamilyMemberId: a.ownerFamilyMemberId ?? undefined,
+          beneficiaries: accountBens.get(a.id) ?? undefined,
           isDefaultChecking: a.isDefaultChecking,
           realization,
           annualPropertyTax: parseFloat(a.annualPropertyTax),
@@ -521,6 +554,7 @@ export async function GET(
         id: e.id,
         includeInPortfolio: e.includeInPortfolio,
         isGrantor: e.isGrantor,
+        beneficiaries: trustBens.get(e.id) ?? undefined,
       })),
       taxYearRows: parsedTaxRows,
       deductions: parsedDeductions,
