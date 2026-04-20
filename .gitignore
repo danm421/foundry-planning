@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# turborepo
+**/.turbo
+
 # next.js
 /.next/
 /out/
