@@ -1169,6 +1169,7 @@ export default function FamilyView({
                       }}
                     />
                     {(() => {
+                      if (!(ent.isIrrevocable ?? false)) return null;
                       const openingBalance = parseFloat(ent.exemptionConsumed || "0");
                       const beneficiaryCount = designations.filter(
                         (d) => d.targetKind === "trust" && d.entityId === ent.id && d.tier === "primary",

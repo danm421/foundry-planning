@@ -300,4 +300,63 @@ d("gifts tenant isolation", () => {
     );
     expect(res.status).toBe(400);
   });
+
+  it("Firm B cannot PATCH Firm A's gift", async () => {
+    const a = await setupFirmWithClient(FIRM_A);
+    // Seed a gift under Firm A.
+    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    const { db } = dbMod;
+    const { gifts } = schema;
+    const [seeded] = await db
+      .insert(gifts)
+      .values({
+        clientId: a.clientId,
+        year: 2026,
+        amount: "1000000",
+        grantor: "client",
+        recipientEntityId: a.irrevTrustId,
+        useCrummeyPowers: false,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+      .returning();
+
+    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
+    const { PATCH } = await import("@/app/api/clients/[id]/gifts/[giftId]/route");
+    const res = await PATCH(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      new Request("http://x", { method: "PATCH", body: JSON.stringify({ amount: 500 }) }) as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { params: Promise.resolve({ id: a.clientId, giftId: seeded.id }) } as any,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("Firm B cannot DELETE Firm A's gift", async () => {
+    const a = await setupFirmWithClient(FIRM_A);
+    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    const { db } = dbMod;
+    const { gifts } = schema;
+    const [seeded] = await db
+      .insert(gifts)
+      .values({
+        clientId: a.clientId,
+        year: 2026,
+        amount: "1000000",
+        grantor: "client",
+        recipientEntityId: a.irrevTrustId,
+        useCrummeyPowers: false,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+      .returning();
+
+    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_B);
+    const { DELETE } = await import("@/app/api/clients/[id]/gifts/[giftId]/route");
+    const res = await DELETE(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      new Request("http://x", { method: "DELETE" }) as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { params: Promise.resolve({ id: a.clientId, giftId: seeded.id }) } as any,
+    );
+    expect(res.status).toBe(404);
+  });
 });
