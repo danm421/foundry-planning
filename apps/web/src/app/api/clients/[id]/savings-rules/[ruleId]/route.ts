@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, savingsRules } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -44,29 +44,35 @@ export async function PUT(
       employerMatchAmount,
     } = body;
 
-    const [updated] = await db
-      .update(savingsRules)
-      .set({
-        ...(accountId !== undefined && { accountId }),
-        ...(annualAmount !== undefined && { annualAmount }),
-        ...(annualPercent !== undefined && { annualPercent: annualPercent ?? null }),
-        ...(isDeductible !== undefined && { isDeductible }),
-        ...(applyContributionLimit !== undefined && { applyContributionLimit }),
-        ...(startYear !== undefined && { startYear: Number(startYear) }),
-        ...(endYear !== undefined && { endYear: Number(endYear) }),
-        ...(growthRate != null && { growthRate: String(growthRate) }),
-        ...(growthSource !== undefined && { growthSource: growthSource === "inflation" ? "inflation" : "custom" }),
-        ...(employerMatchPct !== undefined && { employerMatchPct: employerMatchPct ?? null }),
-        ...(employerMatchCap !== undefined && { employerMatchCap: employerMatchCap ?? null }),
-        ...(employerMatchAmount !== undefined && {
-          employerMatchAmount: employerMatchAmount ?? null,
-        }),
-        ...(body.startYearRef !== undefined && { startYearRef: body.startYearRef }),
-        ...(body.endYearRef !== undefined && { endYearRef: body.endYearRef }),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(savingsRules.id, ruleId), eq(savingsRules.clientId, id)))
-      .returning();
+    let updated: typeof savingsRules.$inferSelect | undefined;
+    await auditedMutation(
+      { action: 'savings_rule.update', resourceType: 'savings_rule', resourceId: ruleId, metadata: { after: body } },
+      async () => {
+        [updated] = await db
+          .update(savingsRules)
+          .set({
+            ...(accountId !== undefined && { accountId }),
+            ...(annualAmount !== undefined && { annualAmount }),
+            ...(annualPercent !== undefined && { annualPercent: annualPercent ?? null }),
+            ...(isDeductible !== undefined && { isDeductible }),
+            ...(applyContributionLimit !== undefined && { applyContributionLimit }),
+            ...(startYear !== undefined && { startYear: Number(startYear) }),
+            ...(endYear !== undefined && { endYear: Number(endYear) }),
+            ...(growthRate != null && { growthRate: String(growthRate) }),
+            ...(growthSource !== undefined && { growthSource: growthSource === "inflation" ? "inflation" : "custom" }),
+            ...(employerMatchPct !== undefined && { employerMatchPct: employerMatchPct ?? null }),
+            ...(employerMatchCap !== undefined && { employerMatchCap: employerMatchCap ?? null }),
+            ...(employerMatchAmount !== undefined && {
+              employerMatchAmount: employerMatchAmount ?? null,
+            }),
+            ...(body.startYearRef !== undefined && { startYearRef: body.startYearRef }),
+            ...(body.endYearRef !== undefined && { endYearRef: body.endYearRef }),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(savingsRules.id, ruleId), eq(savingsRules.clientId, id)))
+          .returning();
+      }
+    );
 
     if (!updated) {
       return NextResponse.json({ error: "Savings rule not found" }, { status: 404 });
@@ -96,9 +102,14 @@ export async function DELETE(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    await db
-      .delete(savingsRules)
-      .where(and(eq(savingsRules.id, ruleId), eq(savingsRules.clientId, id)));
+    await auditedMutation(
+      { action: 'savings_rule.delete', resourceType: 'savings_rule', resourceId: ruleId },
+      async () => {
+        await db
+          .delete(savingsRules)
+          .where(and(eq(savingsRules.id, ruleId), eq(savingsRules.clientId, id)));
+      }
+    );
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {

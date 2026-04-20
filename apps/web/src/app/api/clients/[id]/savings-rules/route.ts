@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, scenarios, savingsRules } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -87,27 +87,33 @@ export async function POST(
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const [rule] = await db
-      .insert(savingsRules)
-      .values({
-        clientId: id,
-        scenarioId,
-        accountId,
-        annualAmount: annualAmount ?? "0",
-        annualPercent: annualPercent ?? null,
-        isDeductible: isDeductible ?? true,
-        applyContributionLimit: applyContributionLimit ?? true,
-        startYear: Number(startYear),
-        endYear: Number(endYear),
-        growthRate: growthRate != null ? String(growthRate) : undefined,
-        growthSource: growthSource === "inflation" ? "inflation" : "custom",
-        employerMatchPct: employerMatchPct ?? null,
-        employerMatchCap: employerMatchCap ?? null,
-        employerMatchAmount: employerMatchAmount ?? null,
-        startYearRef,
-        endYearRef,
-      })
-      .returning();
+    let rule!: typeof savingsRules.$inferSelect;
+    await auditedMutation(
+      { action: 'savings_rule.create', resourceType: 'savings_rule', resourceId: 'pending', metadata: { after: body } },
+      async () => {
+        [rule] = await db
+          .insert(savingsRules)
+          .values({
+            clientId: id,
+            scenarioId,
+            accountId,
+            annualAmount: annualAmount ?? "0",
+            annualPercent: annualPercent ?? null,
+            isDeductible: isDeductible ?? true,
+            applyContributionLimit: applyContributionLimit ?? true,
+            startYear: Number(startYear),
+            endYear: Number(endYear),
+            growthRate: growthRate != null ? String(growthRate) : undefined,
+            growthSource: growthSource === "inflation" ? "inflation" : "custom",
+            employerMatchPct: employerMatchPct ?? null,
+            employerMatchCap: employerMatchCap ?? null,
+            employerMatchAmount: employerMatchAmount ?? null,
+            startYearRef,
+            endYearRef,
+          })
+          .returning();
+      }
+    );
 
     return NextResponse.json(rule, { status: 201 });
   } catch (err) {
