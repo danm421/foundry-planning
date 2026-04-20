@@ -5,6 +5,7 @@ import type {
   AdminUserRepo,
   AdminUserRow,
   ActiveImpersonation,
+  AdminRole,
 } from "@foundry/auth";
 
 export const drizzleAdminUserRepo: AdminUserRepo = {
@@ -65,5 +66,23 @@ export const drizzleAdminUserRepo: AdminUserRepo = {
       advisorClerkUserId: row.advisorClerkUserId,
       firmId: row.firmId,
     };
+  },
+
+  async upsert(params: { clerkUserId: string; email: string; role: AdminRole }): Promise<void> {
+    await db
+      .insert(adminUsers)
+      .values({
+        clerkUserId: params.clerkUserId,
+        email: params.email,
+        role: params.role,
+      })
+      .onConflictDoUpdate({
+        target: adminUsers.clerkUserId,
+        set: { email: params.email, role: params.role },
+      });
+  },
+
+  async delete(clerkUserId: string): Promise<void> {
+    await db.delete(adminUsers).where(eq(adminUsers.clerkUserId, clerkUserId));
   },
 };

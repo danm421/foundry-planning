@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",
-    "./admin-scope": "./src/admin-scope.ts"
+    "./admin-scope": "./src/admin-scope.ts",
+    "./admin-user-repo-drizzle": "./src/admin-user-repo-drizzle.ts"
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",
