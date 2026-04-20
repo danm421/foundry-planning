@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, liabilities } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -39,14 +39,20 @@ export async function PUT(
     void _stripId; void _stripClientId;
     void _stripCreatedAt; void _stripUpdatedAt;
 
-    const [updated] = await db
-      .update(liabilities)
-      .set({
-        ...safeUpdate,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)))
-      .returning();
+    let updated: typeof liabilities.$inferSelect | undefined;
+    await auditedMutation(
+      { action: 'liability.update', resourceType: 'liability', resourceId: liabilityId, metadata: { after: safeUpdate } },
+      async () => {
+        [updated] = await db
+          .update(liabilities)
+          .set({
+            ...safeUpdate,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)))
+          .returning();
+      }
+    );
 
     if (!updated) {
       return NextResponse.json({ error: "Liability not found" }, { status: 404 });
@@ -81,9 +87,14 @@ export async function DELETE(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    await db
-      .delete(liabilities)
-      .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)));
+    await auditedMutation(
+      { action: 'liability.delete', resourceType: 'liability', resourceId: liabilityId },
+      async () => {
+        await db
+          .delete(liabilities)
+          .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)));
+      }
+    );
 
     await recordAudit({
       action: "liability.delete",

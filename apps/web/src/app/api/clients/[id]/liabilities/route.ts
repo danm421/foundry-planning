@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, scenarios, liabilities } from "@foundry/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -98,27 +98,33 @@ export async function POST(
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
 
-    const [liability] = await db
-      .insert(liabilities)
-      .values({
-        clientId: id,
-        scenarioId,
-        name,
-        balance: balance ?? "0",
-        interestRate: interestRate ?? "0",
-        monthlyPayment: monthlyPayment ?? "0",
-        startYear: Number(startYear),
-        startMonth: startMonth != null ? Number(startMonth) : 1,
-        termMonths: Number(termMonths),
-        termUnit: termUnit ?? "annual",
-        balanceAsOfMonth: balanceAsOfMonth != null ? Number(balanceAsOfMonth) : null,
-        balanceAsOfYear: balanceAsOfYear != null ? Number(balanceAsOfYear) : null,
-        linkedPropertyId: linkedPropertyId ?? null,
-        ownerEntityId: ownerEntityId ?? null,
-        startYearRef,
-        isInterestDeductible: body.isInterestDeductible ?? false,
-      })
-      .returning();
+    let liability!: typeof liabilities.$inferSelect;
+    await auditedMutation(
+      { action: 'liability.create', resourceType: 'liability', resourceId: 'pending', metadata: { after: body } },
+      async () => {
+        [liability] = await db
+          .insert(liabilities)
+          .values({
+            clientId: id,
+            scenarioId,
+            name,
+            balance: balance ?? "0",
+            interestRate: interestRate ?? "0",
+            monthlyPayment: monthlyPayment ?? "0",
+            startYear: Number(startYear),
+            startMonth: startMonth != null ? Number(startMonth) : 1,
+            termMonths: Number(termMonths),
+            termUnit: termUnit ?? "annual",
+            balanceAsOfMonth: balanceAsOfMonth != null ? Number(balanceAsOfMonth) : null,
+            balanceAsOfYear: balanceAsOfYear != null ? Number(balanceAsOfYear) : null,
+            linkedPropertyId: linkedPropertyId ?? null,
+            ownerEntityId: ownerEntityId ?? null,
+            startYearRef,
+            isInterestDeductible: body.isInterestDeductible ?? false,
+          })
+          .returning();
+      }
+    );
 
     return NextResponse.json(liability, { status: 201 });
   } catch (err) {
