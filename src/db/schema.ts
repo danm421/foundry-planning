@@ -878,12 +878,9 @@ export const wills = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => ({
-    uniqueClientGrantor: uniqueIndex("wills_client_grantor_idx").on(
-      t.clientId,
-      t.grantor,
-    ),
-  }),
+  (t) => [
+    uniqueIndex("wills_client_grantor_idx").on(t.clientId, t.grantor),
+  ],
 );
 
 export const willBequests = pgTable(
@@ -904,9 +901,9 @@ export const willBequests = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => ({
-    willSortIdx: index("will_bequests_will_sort_idx").on(t.willId, t.sortOrder),
-  }),
+  (t) => [
+    index("will_bequests_will_sort_idx").on(t.willId, t.sortOrder),
+  ],
 );
 
 export const willBequestRecipients = pgTable("will_bequest_recipients", {
