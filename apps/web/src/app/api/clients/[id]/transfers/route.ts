@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@foundry/db";
+import { db, auditedMutation } from "@foundry/db";
 import { clients, scenarios, transfers, transferSchedules } from "@foundry/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -104,33 +104,39 @@ export async function POST(
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
 
-    const [created] = await db
-      .insert(transfers)
-      .values({
-        clientId: id,
-        scenarioId,
-        name,
-        sourceAccountId,
-        targetAccountId,
-        startYear,
-        amount: amount != null ? String(amount) : "0",
-        mode: mode ?? "one_time",
-        startYearRef: startYearRef ?? null,
-        endYear: endYear ?? null,
-        endYearRef: endYearRef ?? null,
-        growthRate: growthRate != null ? String(growthRate) : "0",
-      })
-      .returning();
+    let created!: typeof transfers.$inferSelect;
+    await auditedMutation(
+      { action: 'transfer.create', resourceType: 'transfer', resourceId: 'pending', metadata: { after: body } },
+      async () => {
+        [created] = await db
+          .insert(transfers)
+          .values({
+            clientId: id,
+            scenarioId,
+            name,
+            sourceAccountId,
+            targetAccountId,
+            startYear,
+            amount: amount != null ? String(amount) : "0",
+            mode: mode ?? "one_time",
+            startYearRef: startYearRef ?? null,
+            endYear: endYear ?? null,
+            endYearRef: endYearRef ?? null,
+            growthRate: growthRate != null ? String(growthRate) : "0",
+          })
+          .returning();
 
-    if (Array.isArray(schedules) && schedules.length > 0) {
-      await db.insert(transferSchedules).values(
-        schedules.map((s: { year: number; amount: number }) => ({
-          transferId: created.id,
-          year: s.year,
-          amount: String(s.amount),
-        }))
-      );
-    }
+        if (Array.isArray(schedules) && schedules.length > 0) {
+          await db.insert(transferSchedules).values(
+            schedules.map((s: { year: number; amount: number }) => ({
+              transferId: created.id,
+              year: s.year,
+              amount: String(s.amount),
+            }))
+          );
+        }
+      }
+    );
 
     const insertedSchedules = await db
       .select()
@@ -186,42 +192,48 @@ export async function PUT(
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
 
-    const [updated] = await db
-      .update(transfers)
-      .set({
-        ...(name !== undefined && { name }),
-        ...(sourceAccountId !== undefined && { sourceAccountId }),
-        ...(targetAccountId !== undefined && { targetAccountId }),
-        ...(startYear !== undefined && { startYear }),
-        ...(amount !== undefined && { amount: String(amount) }),
-        ...(mode !== undefined && { mode }),
-        ...(startYearRef !== undefined && { startYearRef: startYearRef ?? null }),
-        ...(endYear !== undefined && { endYear: endYear ?? null }),
-        ...(endYearRef !== undefined && { endYearRef: endYearRef ?? null }),
-        ...(growthRate !== undefined && { growthRate: String(growthRate) }),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(transfers.id, transferId), eq(transfers.clientId, id)))
-      .returning();
+    let updated: typeof transfers.$inferSelect | undefined;
+    await auditedMutation(
+      { action: 'transfer.update', resourceType: 'transfer', resourceId: transferId, metadata: { after: body } },
+      async () => {
+        [updated] = await db
+          .update(transfers)
+          .set({
+            ...(name !== undefined && { name }),
+            ...(sourceAccountId !== undefined && { sourceAccountId }),
+            ...(targetAccountId !== undefined && { targetAccountId }),
+            ...(startYear !== undefined && { startYear }),
+            ...(amount !== undefined && { amount: String(amount) }),
+            ...(mode !== undefined && { mode }),
+            ...(startYearRef !== undefined && { startYearRef: startYearRef ?? null }),
+            ...(endYear !== undefined && { endYear: endYear ?? null }),
+            ...(endYearRef !== undefined && { endYearRef: endYearRef ?? null }),
+            ...(growthRate !== undefined && { growthRate: String(growthRate) }),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(transfers.id, transferId), eq(transfers.clientId, id)))
+          .returning();
+
+        if (Array.isArray(schedules)) {
+          await db
+            .delete(transferSchedules)
+            .where(eq(transferSchedules.transferId, transferId));
+
+          if (schedules.length > 0) {
+            await db.insert(transferSchedules).values(
+              schedules.map((s: { year: number; amount: number }) => ({
+                transferId,
+                year: s.year,
+                amount: String(s.amount),
+              }))
+            );
+          }
+        }
+      }
+    );
 
     if (!updated) {
       return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
-    }
-
-    if (Array.isArray(schedules)) {
-      await db
-        .delete(transferSchedules)
-        .where(eq(transferSchedules.transferId, transferId));
-
-      if (schedules.length > 0) {
-        await db.insert(transferSchedules).values(
-          schedules.map((s: { year: number; amount: number }) => ({
-            transferId,
-            year: s.year,
-            amount: String(s.amount),
-          }))
-        );
-      }
     }
 
     const updatedSchedules = await db
@@ -260,9 +272,14 @@ export async function DELETE(
       return NextResponse.json({ error: "Missing transferId" }, { status: 400 });
     }
 
-    await db
-      .delete(transfers)
-      .where(and(eq(transfers.id, transferId), eq(transfers.clientId, id)));
+    await auditedMutation(
+      { action: 'transfer.delete', resourceType: 'transfer', resourceId: transferId },
+      async () => {
+        await db
+          .delete(transfers)
+          .where(and(eq(transfers.id, transferId), eq(transfers.clientId, id)));
+      }
+    );
 
     return new NextResponse(null, { status: 204 });
   } catch (err) {
