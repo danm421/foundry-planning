@@ -43,10 +43,13 @@ export async function GET(
     if (!(await verifyClient(id, firmId))) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
-    if (!(await verifyWillBelongsToClient(willId, id))) {
+    const [willRow] = await db
+      .select()
+      .from(wills)
+      .where(and(eq(wills.id, willId), eq(wills.clientId, id)));
+    if (!willRow) {
       return NextResponse.json({ error: "Will not found" }, { status: 404 });
     }
-    const [willRow] = await db.select().from(wills).where(eq(wills.id, willId));
     const bequestRows = await db
       .select()
       .from(willBequests)

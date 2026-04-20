@@ -55,6 +55,18 @@ start getting upvoted across sessions.
   manually if they care. Why deferred: compounds with trustee-succession
   rules we also don't model.
 
+## API routes
+
+- **`verifyCrossRefs` TOCTOU under concurrent deletes** — the wills POST/PATCH
+  and the beneficiary-designations PUT both read cross-reference rows
+  (accounts, family members, external beneficiaries, entities) *outside* the
+  insert transaction. A concurrent DELETE of a referenced row between the
+  check and the insert would leak a dangling FK violation to the user as a
+  500 rather than a clean 400. Not worth fixing per-route; the real fix is
+  either (1) a DB-level deferred constraint check, or (2) re-running
+  verifyCrossRefs inside the transaction. Why deferred: pre-existing pattern
+  across several routes; batch-fix in a dedicated pass.
+
 ## Zod schema DRY-up
 
 - **Shared `uuidSchema` in `src/lib/schemas/common.ts`** — the custom-regex
