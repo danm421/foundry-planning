@@ -23,7 +23,7 @@ async function main() {
   const filePath = fileArg ? fileArg.slice("--file=".length) : DEFAULT_FILE;
 
   console.log(`Parsing: ${filePath}`);
-  const years = parseIrsUpdatesSheet(filePath);
+  const years = await parseIrsUpdatesSheet(filePath);
   console.log(`Found ${years.length} year rows: ${years.map((y) => y.year).join(", ")}`);
 
   validate(years);

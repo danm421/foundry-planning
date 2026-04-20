@@ -34,8 +34,11 @@ export async function extractDocument(
 
     // 1. Parse file to text
     let text: string;
-    if (["xlsx", "xls", "csv"].includes(ext)) {
-        text = extractExcelText(fileBuffer);
+    if (ext === "csv") {
+        text = fileBuffer.toString("utf-8");
+        if (documentType === "auto") documentType = "excel_import";
+    } else if (["xlsx", "xls"].includes(ext)) {
+        text = await extractExcelText(fileBuffer);
         if (documentType === "auto") documentType = "excel_import";
     } else {
         text = await extractPdfText(fileBuffer);
