@@ -1543,15 +1543,11 @@ describe("first-death asset transfer (spec 4b)", () => {
     expect(years.find((y) => y.year === 2051)!.firstDeathTransfers).toBeUndefined();
   });
 
-  it("tax filing status is single from 2051 onward", () => {
+  it("death event on the happy path emits no warnings", () => {
     const data = buildEstateScenario();
     const years = runProjection(data);
-    // With no income, tax is zero in both years. Check effective filing through a
-    // sale: set up a capital-gain event in year 2051 and verify single-filer exclusion.
-    // Simplest assertion: confirm the engine didn't crash and no warnings fired beyond
-    // expected. Since tax-status visibility requires inspection of internals, we
-    // verify the filing-status resolver was consulted indirectly via the warnings
-    // + transfer ledger being populated.
+    // Happy path (all accounts disposed via titling / beneficiary / will):
+    // no fallback fires, so deathWarnings stays empty.
     const deathRow = years.find((y) => y.year === 2050)!;
     expect(deathRow.deathWarnings).toEqual([]);
   });

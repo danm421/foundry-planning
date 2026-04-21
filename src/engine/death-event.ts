@@ -687,11 +687,14 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     // Build an adjusted copy that carries the current (grown) balance and basis.
     // workingAccounts[i].value is a snapshot from plan-start and never updated
     // year-over-year; the authoritative grown value lives in accountBalances[id].
-    const effectiveAcct: Account = {
-      ...acct,
-      value: accountBalances[acct.id] ?? acct.value,
-      basis: basisMap[acct.id] ?? acct.basis,
-    };
+    const balance = accountBalances[acct.id];
+    const basis = basisMap[acct.id];
+    if (balance == null || basis == null) {
+      throw new Error(
+        `applyFirstDeath: missing accountBalances/basisMap entry for ${acct.id}`,
+      );
+    }
+    const effectiveAcct: Account = { ...acct, value: balance, basis };
 
     // Track remaining undisposed fraction for this account.
     let undisposed = acct.owner === "joint" ? 1 : 1; // either way, the account goes through steps
@@ -815,7 +818,7 @@ function assertInvariants(result: DeathEventResult, input: DeathEventInput): voi
     bySource.set(t.sourceAccountId, (bySource.get(t.sourceAccountId) ?? 0) + t.amount);
   }
   for (const [sourceId, summed] of bySource.entries()) {
-    const originalBalance = input.accountBalances[sourceId] ?? input.accounts.find((a) => a.id === sourceId)?.value;
+    const originalBalance = input.accountBalances[sourceId];
     if (originalBalance == null) continue;
     if (Math.abs(summed - originalBalance) > 0.01) {
       throw new Error(

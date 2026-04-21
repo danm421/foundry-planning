@@ -758,4 +758,26 @@ describe("applyFirstDeath orchestrator", () => {
     expect(totalLedger).toBeCloseTo(400000 + 600000 + 100000, 2);
   });
 
+  it("transfer ledger uses accountBalances (grown value), not the Account.value snapshot", () => {
+    // Deliberately diverge accountBalances from the accounts' .value snapshots
+    // to prove the ledger picks up the grown balance.
+    const grownInput: DeathEventInput = {
+      ...input,
+      accountBalances: {
+        "joint-brok": 600000,   // grew from 400k
+        "client-ira": 900000,   // grew from 600k
+        "client-cash": 120000,  // grew from 100k
+      },
+      basisMap: {
+        "joint-brok": 250000,
+        "client-ira": 0,
+        "client-cash": 100000,
+      },
+    };
+    const result = applyFirstDeath(grownInput);
+    const totalLedger = result.transfers.reduce((s, t) => s + t.amount, 0);
+    // Sum should match the grown balances, not the snapshot .value fields.
+    expect(totalLedger).toBeCloseTo(600000 + 900000 + 120000, 2);
+  });
+
 });
