@@ -1,4 +1,4 @@
-import type { ClientInfo, Account, Liability, FirstDeathTransfer } from "./types";
+import type { ClientInfo, Account, Liability, FirstDeathTransfer, FamilyMember } from "./types";
 import { nextSyntheticId } from "./asset-transactions";
 
 /** Compute the year of the first-death event. Returns null when there is no
@@ -209,6 +209,12 @@ export interface StepResult {
   fractionClaimed: number;
 }
 
+interface ExternalBeneficiarySummary {
+  id: string;
+  name: string;
+  kind?: string;
+}
+
 /** Step 1: Titling. Joint accounts pass 100% to the survivor via right-of-
  *  survivorship. Non-joint accounts pass through unchanged. */
 export function applyTitling(
@@ -249,5 +255,107 @@ export function applyTitling(
     resultingLiabilities: split.resultingLiabilities,
     ledgerEntries: split.ledgerEntries,
     fractionClaimed: 1,
+  };
+}
+
+/** Step 2: Primary beneficiary designations on the account. Returns
+ *  fractionClaimed ≤ undisposedFraction. When designations sum to full
+ *  coverage of the undisposed remainder, consumed=true. */
+export function applyBeneficiaryDesignations(
+  source: Account,
+  undisposedFraction: number,
+  familyMembers: FamilyMember[],
+  externals: ExternalBeneficiarySummary[],
+  linkedLiability: Liability | undefined,
+): StepResult {
+  const primaries = (source.beneficiaries ?? []).filter(
+    (b) => b.tier === "primary",
+  );
+  if (primaries.length === 0) {
+    return {
+      consumed: false,
+      resultingAccounts: [],
+      resultingLiabilities: [],
+      ledgerEntries: [],
+      fractionClaimed: 0,
+    };
+  }
+
+  const famMap = new Map(familyMembers.map((f) => [f.id, f]));
+  const extMap = new Map(externals.map((e) => [e.id, e]));
+
+  const shares: SplitShare[] = primaries.map((b) => {
+    const fraction = undisposedFraction * (b.percentage / 100);
+    let ownerMutation: OwnerMutation | undefined;
+    let recipientKind: FirstDeathTransfer["recipientKind"];
+    let recipientId: string | null;
+    let recipientLabel: string;
+    let removed = false;
+
+    if (b.familyMemberId) {
+      ownerMutation = { ownerFamilyMemberId: b.familyMemberId };
+      recipientKind = "family_member";
+      recipientId = b.familyMemberId;
+      const fam = famMap.get(b.familyMemberId);
+      recipientLabel = fam
+        ? `${fam.firstName}${fam.lastName ? " " + fam.lastName : ""}`
+        : "Family member";
+    } else if (b.externalBeneficiaryId) {
+      removed = true;
+      recipientKind = "external_beneficiary";
+      recipientId = b.externalBeneficiaryId;
+      const ext = extMap.get(b.externalBeneficiaryId);
+      recipientLabel = ext?.name ?? "External beneficiary";
+    } else {
+      // Defensive — shouldn't happen if API validation is intact.
+      removed = true;
+      recipientKind = "external_beneficiary";
+      recipientId = null;
+      recipientLabel = "Unknown beneficiary";
+    }
+
+    return {
+      fraction,
+      removed: removed || undefined,
+      ownerMutation,
+      ledgerMeta: {
+        via: "beneficiary_designation",
+        recipientKind,
+        recipientId,
+        recipientLabel,
+      },
+    };
+  });
+
+  const totalClaimed = shares.reduce((s, sh) => s + sh.fraction, 0);
+
+  // Scale source to the totalClaimed portion so splitAccount (which requires
+  // shares summing to 1) works correctly. Normalize shares to sum to 1.
+  const scaledSource: Account = {
+    ...source,
+    value: source.value * totalClaimed,
+    basis: source.basis * totalClaimed,
+  };
+  const scaledLiability: Liability | undefined = linkedLiability
+    ? {
+        ...linkedLiability,
+        balance: linkedLiability.balance * totalClaimed,
+        monthlyPayment: linkedLiability.monthlyPayment * totalClaimed,
+      }
+    : undefined;
+
+  const normalized = shares.map((sh) => ({
+    ...sh,
+    fraction: sh.fraction / totalClaimed,
+  }));
+
+  const split = splitAccount(scaledSource, normalized, scaledLiability);
+
+  return {
+    consumed: Math.abs(totalClaimed - undisposedFraction) < 1e-9,
+    resultingAccounts: split.resultingAccounts,
+    resultingLiabilities: split.resultingLiabilities,
+    ledgerEntries: split.ledgerEntries,
+    fractionClaimed: totalClaimed,
   };
 }

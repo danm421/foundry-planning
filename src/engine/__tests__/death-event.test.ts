@@ -250,3 +250,100 @@ describe("applyTitling (Step 1)", () => {
     expect(result.ledgerEntries).toHaveLength(0);
   });
 });
+
+import { applyBeneficiaryDesignations } from "../death-event";
+import type { BeneficiaryRef } from "../types";
+
+describe("applyBeneficiaryDesignations (Step 2)", () => {
+  const ira: Account = {
+    id: "acct-ira",
+    name: "John Traditional IRA",
+    category: "retirement",
+    subType: "traditional_ira",
+    owner: "client",
+    value: 500000,
+    basis: 0,
+    growthRate: 0.07,
+    rmdEnabled: true,
+  };
+
+  it("routes 100% to primaries when they sum to 100", () => {
+    const iraWithBens: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 60, familyMemberId: "child-a", sortOrder: 0 },
+        { id: "ben-2", tier: "primary", percentage: 40, familyMemberId: "child-b", sortOrder: 1 },
+      ],
+    };
+
+    const result = applyBeneficiaryDesignations(
+      iraWithBens,
+      /* undisposedFraction */ 1,
+      /* familyMembers */ [
+        { id: "child-a", relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" },
+        { id: "child-b", relationship: "child", firstName: "Bob", lastName: "Smith", dateOfBirth: "2002-01-01" },
+      ],
+      /* externals */ [],
+      undefined,
+    );
+
+    expect(result.consumed).toBe(true);
+    expect(result.fractionClaimed).toBeCloseTo(1, 9);
+    expect(result.ledgerEntries).toHaveLength(2);
+    expect(result.ledgerEntries[0]).toMatchObject({
+      via: "beneficiary_designation",
+      recipientKind: "family_member",
+      recipientId: "child-a",
+      amount: 300000,
+    });
+    expect(result.ledgerEntries[1].amount).toBe(200000);
+  });
+
+  it("leaves residual to cascade when primaries sum < 100", () => {
+    const iraWithBens: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 70, familyMemberId: "child-a", sortOrder: 0 },
+      ],
+    };
+
+    const result = applyBeneficiaryDesignations(
+      iraWithBens, 1,
+      [{ id: "child-a", relationship: "child", firstName: "Alice", lastName: null, dateOfBirth: null }],
+      [], undefined,
+    );
+
+    expect(result.consumed).toBe(false);
+    expect(result.fractionClaimed).toBeCloseTo(0.7, 9);
+    expect(result.ledgerEntries).toHaveLength(1);
+    expect(result.ledgerEntries[0].amount).toBe(350000);
+    expect(result.resultingAccounts).toHaveLength(1); // synthetic for child-a's 70%
+  });
+
+  it("no-op when no beneficiaries are set (solo-owned non-retirement)", () => {
+    const result = applyBeneficiaryDesignations(ira, 1, [], [], undefined);
+    expect(result.consumed).toBe(false);
+    expect(result.fractionClaimed).toBe(0);
+  });
+
+  it("skips contingent tier in v1", () => {
+    const iraBothTiers: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 50, familyMemberId: "child-a", sortOrder: 0 },
+        { id: "ben-2", tier: "contingent", percentage: 100, familyMemberId: "child-b", sortOrder: 0 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraBothTiers, 1,
+      [
+        { id: "child-a", relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+        { id: "child-b", relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
+      ],
+      [], undefined,
+    );
+    expect(result.ledgerEntries).toHaveLength(1);
+    expect(result.ledgerEntries[0].recipientId).toBe("child-a");
+    expect(result.fractionClaimed).toBeCloseTo(0.5, 9);
+  });
+});
