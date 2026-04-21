@@ -202,4 +202,13 @@ describe("splitAccount", () => {
     ], mortgage);
     expect(result.resultingLiabilities).toHaveLength(0);
   });
+
+  it("throws when any share has fraction <= 0 (enforces JSDoc contract)", () => {
+    expect(() =>
+      splitAccount(brokerage, [
+        { fraction: 1.0, ownerMutation: { owner: "spouse" }, ledgerMeta: { via: "titling", recipientKind: "spouse", recipientId: null, recipientLabel: "Spouse" } },
+        { fraction: 0, removed: true, ledgerMeta: { via: "will", recipientKind: "external_beneficiary", recipientId: null, recipientLabel: "X" } },
+      ], undefined),
+    ).toThrow(/share fraction must be > 0/);
+  });
 });

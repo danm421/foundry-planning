@@ -85,6 +85,14 @@ export function splitAccount(
   shares: SplitShare[],
   linkedLiability: Liability | undefined,
 ): SplitAccountResult {
+  for (const sh of shares) {
+    if (sh.fraction <= 0) {
+      throw new Error(
+        `splitAccount: share fraction must be > 0 (got ${sh.fraction})`,
+      );
+    }
+  }
+
   // Invariant: shares fractions sum to 1 (± 1e-9 for float safety)
   const total = shares.reduce((s, sh) => s + sh.fraction, 0);
   if (Math.abs(total - 1) > 1e-9) {
