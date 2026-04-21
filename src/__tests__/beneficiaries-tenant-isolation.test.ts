@@ -44,6 +44,7 @@ const d = HAS_DB ? describe : describe.skip;
 // Mock BEFORE importing anything that touches the module (route handlers).
 vi.mock("@/lib/db-helpers", () => ({
   getOrgId: vi.fn(),
+  requireOrgId: vi.fn(),
 }));
 
 const FIRM_A = "firm_isolation_test_a";
@@ -214,6 +215,7 @@ d("beneficiaries tenant isolation", () => {
     const a = await setupFirmWithClient(FIRM_A);
     const b = await setupFirmWithClient(FIRM_B);
     vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A);
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(FIRM_A);
     const { PATCH } = await import(
       "@/app/api/clients/[id]/accounts/[accountId]/route"
     );

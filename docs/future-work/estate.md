@@ -4,6 +4,42 @@ Items consciously scoped out of the estate-planning build. Delete the bullet
 when the item ships. Promote to `FUTURE_WORK.md` (main index) if any of these
 start getting upvoted across sessions.
 
+## Beneficiary designations (item 1 — shipped 2026-04-20)
+
+- **Migrate legacy `entities.beneficiaries` JSON → `beneficiary_designations`
+  rows.** Why deferred: belongs to Estate Planning item 2 (trust data model)
+  consolidation work; the free-form JSON is still read for backwards
+  compatibility.
+- **Charity metadata (EIN, address) on `external_beneficiaries`.** Why
+  deferred: no consumer yet; add when a report actually needs it.
+- **DB-level `SUM(percentage) = 100` enforcement on designations.** Why
+  deferred: API + helper validation is sufficient for v1; a deferred trigger
+  is noisy to maintain and not needed until direct DB imports land.
+- **Polymorphic unified-owner column on `accounts`.** Why deferred:
+  backwards-incompatible refactor; additive `owner_family_member_id` column
+  chosen instead.
+
+## Trust data model (item 2 — shipped 2026-04-20)
+
+- **Drop legacy `entities.beneficiaries` JSON column.** Why deferred: engine
+  still consumes it as the shipping read path; drop after item 4 wires the
+  `beneficiary_designations` consumption end-to-end.
+- **Migrate `entities.exemption_consumed` opening balance into the gift
+  ledger.** Why deferred: advisor-entered balance is still the authoritative
+  starting point; gift ledger takes over once item 4 threads exemption math
+  through engine rules.
+
+## Gift ledger (item 3 — shipped 2026-04-20)
+
+- **Source `LIFETIME_EXEMPTION_CAP` and `annualExclusionAmount` from
+  `tax_year_parameters` in the UI.** Why deferred: UI currently hardcodes
+  `LIFETIME_EXEMPTION_CAP = 13_990_000` and `annualExclusionAmount = 19_000`.
+  Move to DB-sourced values once item 5 (estate-tax engine) wires
+  cap-with-sunset.
+- **GST exemption tracking.** Why deferred: advisor typically doesn't model
+  skip-person gifting in v1; add if/when item 5 adds generation-skipping
+  transfer tax.
+
 ## Wills
 
 - **Legal will document generation** — the platform models a will as structured

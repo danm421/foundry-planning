@@ -94,7 +94,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; accountId: string }> }
 ) {
   try {
-    const firmId = await getOrgId();
+    const firmId = await requireOrgId();
     const { id, accountId } = await params;
 
     // Verify client belongs to this firm
