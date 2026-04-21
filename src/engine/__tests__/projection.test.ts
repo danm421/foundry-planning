@@ -1561,14 +1561,15 @@ describe("first-death asset transfer (spec 4b)", () => {
     const years = runProjection(data);
     const deathRow = years.find((y) => y.year === 2050)!;
     const ledgerSum = deathRow.firstDeathTransfers!.reduce((s, t) => s + t.amount, 0);
-    // Deceased-owned (joint brokerage + IRA + savings) — these are routed by the chain.
-    // Jane's Roth is unaffected (she's the survivor). The ledger sum should match the
-    // initial values of accounts touched by the deceased (the engine's invariant enforces
-    // this: transfer amounts are based on account.value at scenario definition time).
-    const touchedInitialValues = data.accounts
-      .filter((a) => ["joint-brok", "john-ira", "john-cash"].includes(a.id))
-      .reduce((s, a) => s + a.value, 0);
-    expect(ledgerSum).toBeCloseTo(touchedInitialValues, 0);
+    // Deceased-touched accounts (joint brokerage, John's IRA, John's cash). Their
+    // 2050 end-of-year values live on the ProjectionYear's accountLedgers as
+    // endingValue. Jane's Roth is unaffected (she's the survivor).
+    const touched = ["joint-brok", "john-ira", "john-cash"];
+    const expectedSum = touched.reduce(
+      (s, id) => s + (deathRow.accountLedgers[id]?.endingValue ?? 0),
+      0,
+    );
+    expect(ledgerSum).toBeCloseTo(expectedSum, 0);
   });
 
   it("single-filer client (no spouse) is a death-event no-op", () => {

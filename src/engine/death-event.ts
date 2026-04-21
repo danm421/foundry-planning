@@ -684,6 +684,15 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     // accumulator list once we know what the account split becomes.
     const linkedLiability = liabilities.find((l) => l.linkedPropertyId === acct.id);
 
+    // Build an adjusted copy that carries the current (grown) balance and basis.
+    // workingAccounts[i].value is a snapshot from plan-start and never updated
+    // year-over-year; the authoritative grown value lives in accountBalances[id].
+    const effectiveAcct: Account = {
+      ...acct,
+      value: accountBalances[acct.id] ?? acct.value,
+      basis: basisMap[acct.id] ?? acct.basis,
+    };
+
     // Track remaining undisposed fraction for this account.
     let undisposed = acct.owner === "joint" ? 1 : 1; // either way, the account goes through steps
     let anySpecificClauseTouched = false;
@@ -692,7 +701,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     const stepLedger: Array<Omit<FirstDeathTransfer, "year" | "deceased">> = [];
 
     // Step 1: Titling
-    const step1 = applyTitling(acct, survivor, linkedLiability);
+    const step1 = applyTitling(effectiveAcct, survivor, linkedLiability);
     if (step1.consumed) {
       stepAccts.push(...step1.resultingAccounts);
       stepLiabs.push(...step1.resultingLiabilities);
@@ -703,7 +712,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     // Step 2: Beneficiary designations
     if (undisposed > 1e-9) {
       const step2 = applyBeneficiaryDesignations(
-        acct, undisposed,
+        effectiveAcct, undisposed,
         familyMembers, externalBeneficiaries, linkedLiability,
       );
       if (step2.fractionClaimed > 0) {
@@ -717,7 +726,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     // Step 3a: Specific bequests
     if (undisposed > 1e-9 && deceasedWill) {
       const step3a = applyWillSpecificBequests(
-        acct, undisposed, deceasedWill, survivor,
+        effectiveAcct, undisposed, deceasedWill, survivor,
         familyMembers, externalBeneficiaries, entities, linkedLiability,
       );
       if (step3a.fractionClaimed > 0) {
@@ -733,7 +742,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     // Step 3b: all_assets residual (only if no specific clause touched this account)
     if (undisposed > 1e-9 && deceasedWill) {
       const step3b = applyWillAllAssetsResidual(
-        acct, undisposed, anySpecificClauseTouched, deceasedWill, survivor,
+        effectiveAcct, undisposed, anySpecificClauseTouched, deceasedWill, survivor,
         familyMembers, externalBeneficiaries, entities, linkedLiability,
       );
       if (step3b.fractionClaimed > 0) {
@@ -747,7 +756,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     // Step 4: Fallback
     if (undisposed > 1e-9) {
       const step4 = applyFallback(
-        acct, undisposed, survivor, familyMembers, linkedLiability,
+        effectiveAcct, undisposed, survivor, familyMembers, linkedLiability,
       );
       stepAccts.push(...step4.step.resultingAccounts);
       stepLiabs.push(...step4.step.resultingLiabilities);
@@ -806,11 +815,11 @@ function assertInvariants(result: DeathEventResult, input: DeathEventInput): voi
     bySource.set(t.sourceAccountId, (bySource.get(t.sourceAccountId) ?? 0) + t.amount);
   }
   for (const [sourceId, summed] of bySource.entries()) {
-    const original = input.accounts.find((a) => a.id === sourceId);
-    if (!original) continue;
-    if (Math.abs(summed - original.value) > 0.01) {
+    const originalBalance = input.accountBalances[sourceId] ?? input.accounts.find((a) => a.id === sourceId)?.value;
+    if (originalBalance == null) continue;
+    if (Math.abs(summed - originalBalance) > 0.01) {
       throw new Error(
-        `applyFirstDeath invariant: ledger sum for ${sourceId} = ${summed}, expected ${original.value}`,
+        `applyFirstDeath invariant: ledger sum for ${sourceId} = ${summed}, expected ${originalBalance}`,
       );
     }
   }
