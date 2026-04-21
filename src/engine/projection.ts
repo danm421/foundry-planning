@@ -9,6 +9,7 @@ import type {
   WithdrawalPriority,
   PlanSettings,
   DeductionBreakdown,
+  Income,
 } from "./types";
 import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
@@ -38,7 +39,12 @@ import { executeWithdrawals } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
 import { applyAssetSales, applyAssetPurchases, _resetSyntheticIdCounter } from "./asset-transactions";
-import { computeFirstDeathYear, effectiveFilingStatus } from "./death-event";
+import {
+  computeFirstDeathYear,
+  identifyDeceased,
+  effectiveFilingStatus,
+  applyFirstDeath,
+} from "./death-event";
 import { calcSeca } from "../lib/tax/fica";
 
 // Map legacy income type to the new tax type categories.
@@ -226,6 +232,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     planSettings.planStartYear,
     planSettings.planEndYear,
   );
+  const firstDeathDeceased =
+    firstDeathYear != null ? identifyDeceased(client, firstDeathYear) : null;
+  const firstDeathSurvivor: "client" | "spouse" | null =
+    firstDeathDeceased === "client" ? "spouse" : firstDeathDeceased === "spouse" ? "client" : null;
+
+  let currentIncomes: Income[] = [...data.incomes];
 
   for (
     let year = planSettings.planStartYear;
@@ -241,13 +253,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // separate because grantor income flows to the entity checking but is still
     // taxable at the household rate.
     const income = computeIncome(
-      data.incomes,
+      currentIncomes,
       year,
       client,
       (inc) => inc.ownerEntityId == null
     );
     const grantorIncome = computeIncome(
-      data.incomes,
+      currentIncomes,
       year,
       client,
       (inc) => inc.ownerEntityId != null && isGrantorEntity(inc.ownerEntityId)
@@ -615,7 +627,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // and adds the taxable portion to `totalIncome`. Adding SS here (as the
     // legacy mapping did, via legacyTaxType("social_security") → ordinary)
     // double-counted it for every retiree in bracket mode.
-    for (const inc of data.incomes) {
+    for (const inc of currentIncomes) {
       if (year < inc.startYear || year > inc.endYear) continue;
       if (inc.ownerEntityId != null && !isGrantorEntity(inc.ownerEntityId)) continue;
       if (inc.type === "social_security") continue;
@@ -676,7 +688,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       spouse: 0,
       joint: 0,
     };
-    for (const inc of data.incomes) {
+    for (const inc of currentIncomes) {
       if (inc.type !== "salary") continue;
       if (inc.ownerEntityId != null) continue;
       if (year < inc.startYear || year > inc.endYear) continue;
@@ -885,7 +897,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // income. Only personal (non-entity) SE flows are taxed at the
     // household level here.
     let seEarnings = 0;
-    for (const inc of data.incomes) {
+    for (const inc of currentIncomes) {
       if (!inc.isSelfEmployment) continue;
       if (year < inc.startYear || year > inc.endYear) continue;
       if (inc.ownerEntityId != null && !isGrantorEntity(inc.ownerEntityId)) continue;
@@ -978,7 +990,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // and credit a different number than `income.socialSecurity` shows (and
     // than `socialSecurityGross` fed into the tax calc), producing three
     // different SS numbers per row.
-    for (const inc of data.incomes) {
+    for (const inc of currentIncomes) {
       if (year < inc.startYear || year > inc.endYear) continue;
       const resolved = income.bySource[inc.id] ?? grantorIncome.bySource[inc.id];
       let amount: number;
@@ -1444,6 +1456,47 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           }
         : {}),
     });
+
+    // Death event (spec 4b) — fires exactly once at the first death year.
+    if (
+      firstDeathYear != null &&
+      firstDeathDeceased != null &&
+      firstDeathSurvivor != null &&
+      year === firstDeathYear
+    ) {
+      const deceasedWill = (data.wills ?? []).find(
+        (w) => w.grantor === firstDeathDeceased,
+      ) ?? null;
+
+      const deathResult = applyFirstDeath({
+        year,
+        deceased: firstDeathDeceased,
+        survivor: firstDeathSurvivor,
+        will: deceasedWill,
+        accounts: workingAccounts,
+        accountBalances,
+        basisMap,
+        incomes: currentIncomes,
+        liabilities: currentLiabilities,
+        familyMembers: data.familyMembers ?? [],
+        externalBeneficiaries: [], // populated once the projection-data loader includes them; see future-work
+        entities: data.entities ?? [],
+      });
+
+      workingAccounts = deathResult.accounts;
+      // Reassign the mutable balance / basis maps in place so later years see the new state.
+      for (const key of Object.keys(accountBalances)) delete (accountBalances as Record<string, number>)[key];
+      Object.assign(accountBalances, deathResult.accountBalances);
+      for (const key of Object.keys(basisMap)) delete (basisMap as Record<string, number>)[key];
+      Object.assign(basisMap, deathResult.basisMap);
+      currentIncomes = deathResult.incomes;
+      currentLiabilities = deathResult.liabilities;
+
+      // Attach to the just-built ProjectionYear
+      const thisYear = years[years.length - 1];
+      thisYear.firstDeathTransfers = deathResult.transfers;
+      thisYear.deathWarnings = deathResult.warnings;
+    }
   }
 
   return years;
