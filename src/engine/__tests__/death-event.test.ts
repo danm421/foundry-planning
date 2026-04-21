@@ -633,3 +633,129 @@ describe("effectiveFilingStatus", () => {
     expect(effectiveFilingStatus("married_joint" as FilingStatus, null, 2070)).toBe("married_joint");
   });
 });
+
+import { applyFirstDeath } from "../death-event";
+import type { DeathEventInput, DeathEventResult } from "../death-event";
+
+describe("applyFirstDeath orchestrator", () => {
+  const baseAccounts: Account[] = [
+    {
+      id: "joint-brok",
+      name: "Joint Brokerage",
+      category: "taxable", subType: "brokerage",
+      owner: "joint", value: 400000, basis: 250000,
+      growthRate: 0.06, rmdEnabled: false,
+    },
+    {
+      id: "client-ira",
+      name: "John IRA",
+      category: "retirement", subType: "traditional_ira",
+      owner: "client", value: 600000, basis: 0,
+      growthRate: 0.07, rmdEnabled: true,
+      beneficiaries: [
+        { id: "b-1", tier: "primary", percentage: 100, familyMemberId: "child-a", sortOrder: 0 },
+      ],
+    },
+    {
+      id: "client-cash",
+      name: "John Savings",
+      category: "cash", subType: "savings",
+      owner: "client", value: 100000, basis: 100000,
+      growthRate: 0.04, rmdEnabled: false,
+    },
+  ];
+
+  const baseIncomes: Income[] = [
+    { id: "inc-salary", type: "salary", name: "John salary", annualAmount: 150000, startYear: 2026, endYear: 2055, growthRate: 0.03, owner: "client" },
+  ];
+
+  const fams: FamilyMember[] = [
+    { id: "child-a", relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" },
+  ];
+
+  const will: Will = {
+    id: "will-john", grantor: "client",
+    bequests: [{
+      id: "beq-1", name: "Residual to Jane",
+      assetMode: "all_assets", accountId: null,
+      percentage: 100, condition: "always", sortOrder: 0,
+      recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
+    }],
+  };
+
+  const input: DeathEventInput = {
+    year: 2050,
+    deceased: "client",
+    survivor: "spouse",
+    will,
+    accounts: baseAccounts,
+    accountBalances: { "joint-brok": 400000, "client-ira": 600000, "client-cash": 100000 },
+    basisMap: { "joint-brok": 250000, "client-ira": 0, "client-cash": 100000 },
+    incomes: baseIncomes,
+    liabilities: [],
+    familyMembers: fams,
+    externalBeneficiaries: [],
+    entities: [],
+  };
+
+  it("joint account titles to survivor; IRA beneficiary-designates; residual sweeps to spouse", () => {
+    const result = applyFirstDeath(input);
+    // Joint → spouse via titling (in-place; id preserved)
+    const titledJoint = result.accounts.find((a) => a.id === "joint-brok")!;
+    expect(titledJoint.owner).toBe("spouse");
+    // IRA → child-a via bene designation (100% claimed, in-place mutation)
+    const titledIra = result.accounts.find((a) => a.id === "client-ira")!;
+    expect(titledIra.ownerFamilyMemberId).toBe("child-a");
+    expect(titledIra.beneficiaries).toBeUndefined();
+    // Cash → spouse via all_assets residual (in-place, 100%)
+    const titledCash = result.accounts.find((a) => a.id === "client-cash")!;
+    expect(titledCash.owner).toBe("spouse");
+    // Ledger: 3 entries (titling, bene-designation, will)
+    expect(result.transfers).toHaveLength(3);
+    expect(result.transfers.map((t) => t.via).sort()).toEqual([
+      "beneficiary_designation", "titling", "will",
+    ]);
+    // No fallback fires → no residual_fallback_fired warning
+    expect(result.warnings).toEqual([]);
+    // Income clipped
+    expect(result.incomes[0].endYear).toBe(2050);
+  });
+
+  it("emits residual_fallback_fired when a deceased-owned account has no will clause", () => {
+    const noResidualWill: Will = { id: "w", grantor: "client", bequests: [] };
+    const result = applyFirstDeath({ ...input, will: noResidualWill });
+    expect(result.warnings.some((w) => w.startsWith("residual_fallback_fired:"))).toBe(true);
+    // Fallback tier 1 routes cash → spouse
+    const cashResult = result.transfers.find((t) => t.sourceAccountId === "client-cash")!;
+    expect(cashResult.via).toBe("fallback_spouse");
+  });
+
+  it("no-op when deceased has no owned accounts (all joint + bene-designated)", () => {
+    const narrowAccounts: Account[] = [baseAccounts[0], baseAccounts[1]];
+    const narrowInput: DeathEventInput = {
+      ...input,
+      accounts: narrowAccounts,
+      accountBalances: { "joint-brok": 400000, "client-ira": 600000 },
+      basisMap: { "joint-brok": 250000, "client-ira": 0 },
+    };
+    const result = applyFirstDeath(narrowInput);
+    expect(result.transfers).toHaveLength(2);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("invariant: sum of transfer amounts matches pre-death deceased-owned balance", () => {
+    const result = applyFirstDeath(input);
+    const totalLedger = result.transfers.reduce((s, t) => s + t.amount, 0);
+    // Joint (400k full passes) + IRA (600k) + cash (100k) = 1.1M.
+    // Note: the joint account emits only the deceased's 50%? Spec says:
+    // titling passes 100% to survivor — which is the full account value at
+    // time of death since the survivor already held the other 50%. So
+    // ledger entry records the transferring half... Actually spec says
+    // "survivor takes deceased's 50%", but the account itself just flips
+    // owner — the transferred AMOUNT is 400000 because that's the full
+    // account value. The ledger records 100% of the joint account moving
+    // to the survivor (implicit titling completion).
+    expect(totalLedger).toBeCloseTo(400000 + 600000 + 100000, 2);
+  });
+
+});

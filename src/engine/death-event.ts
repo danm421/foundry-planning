@@ -624,6 +624,222 @@ export function applyIncomeTermination(
   });
 }
 
+export interface DeathEventInput {
+  year: number;
+  deceased: "client" | "spouse";
+  survivor: "client" | "spouse";
+  will: Will | null;
+  accounts: Account[];
+  accountBalances: Record<string, number>;
+  basisMap: Record<string, number>;
+  incomes: Income[];
+  liabilities: Liability[];
+  familyMembers: FamilyMember[];
+  externalBeneficiaries: ExternalBeneficiarySummary[];
+  entities: EntitySummary[];
+}
+
+export interface DeathEventResult {
+  accounts: Account[];
+  accountBalances: Record<string, number>;
+  basisMap: Record<string, number>;
+  incomes: Income[];
+  liabilities: Liability[];
+  transfers: FirstDeathTransfer[];
+  warnings: string[];
+}
+
+/** Orchestrator. Applies the precedence chain (titling → bene-designations →
+ *  will → fallback) to every account touched by the deceased, and clips the
+ *  deceased's personal income streams. Returns fully-updated engine state +
+ *  a transfer ledger + any warnings. */
+export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
+  const {
+    year, deceased, survivor, will,
+    accounts, accountBalances, basisMap,
+    incomes, liabilities,
+    familyMembers, externalBeneficiaries, entities,
+  } = input;
+
+  const nextAccounts: Account[] = [];
+  const nextLiabilities: Liability[] = [...liabilities];
+  const nextAccountBalances: Record<string, number> = { ...accountBalances };
+  const nextBasisMap: Record<string, number> = { ...basisMap };
+  const transfers: FirstDeathTransfer[] = [];
+  const warnings: string[] = [];
+
+  // Build a per-will map for quick lookups. Only the deceased's will matters.
+  const deceasedWill: Will | null = will && will.grantor === deceased ? will : null;
+
+  for (const acct of accounts) {
+    // Accounts not touched by the deceased pass through unchanged.
+    const touchedByDeceased =
+      acct.owner === deceased || acct.owner === "joint";
+    if (!touchedByDeceased || acct.ownerEntityId || acct.ownerFamilyMemberId) {
+      nextAccounts.push(acct);
+      continue;
+    }
+
+    // Collect the linked liability (if any) — we'll replace it on the
+    // accumulator list once we know what the account split becomes.
+    const linkedLiability = liabilities.find((l) => l.linkedPropertyId === acct.id);
+
+    // Track remaining undisposed fraction for this account.
+    let undisposed = acct.owner === "joint" ? 1 : 1; // either way, the account goes through steps
+    let anySpecificClauseTouched = false;
+    const stepAccts: Account[] = [];
+    const stepLiabs: Liability[] = [];
+    const stepLedger: Array<Omit<FirstDeathTransfer, "year" | "deceased">> = [];
+
+    // Step 1: Titling
+    const step1 = applyTitling(acct, survivor, linkedLiability);
+    if (step1.consumed) {
+      stepAccts.push(...step1.resultingAccounts);
+      stepLiabs.push(...step1.resultingLiabilities);
+      stepLedger.push(...step1.ledgerEntries);
+      undisposed = 0;
+    }
+
+    // Step 2: Beneficiary designations
+    if (undisposed > 1e-9) {
+      const step2 = applyBeneficiaryDesignations(
+        acct, undisposed,
+        familyMembers, externalBeneficiaries, linkedLiability,
+      );
+      if (step2.fractionClaimed > 0) {
+        stepAccts.push(...step2.resultingAccounts);
+        stepLiabs.push(...step2.resultingLiabilities);
+        stepLedger.push(...step2.ledgerEntries);
+        undisposed -= step2.fractionClaimed;
+      }
+    }
+
+    // Step 3a: Specific bequests
+    if (undisposed > 1e-9 && deceasedWill) {
+      const step3a = applyWillSpecificBequests(
+        acct, undisposed, deceasedWill, survivor,
+        familyMembers, externalBeneficiaries, entities, linkedLiability,
+      );
+      if (step3a.fractionClaimed > 0) {
+        stepAccts.push(...step3a.resultingAccounts);
+        stepLiabs.push(...step3a.resultingLiabilities);
+        stepLedger.push(...step3a.ledgerEntries);
+        undisposed -= step3a.fractionClaimed;
+        anySpecificClauseTouched = true;
+        warnings.push(...step3a.warnings);
+      }
+    }
+
+    // Step 3b: all_assets residual (only if no specific clause touched this account)
+    if (undisposed > 1e-9 && deceasedWill) {
+      const step3b = applyWillAllAssetsResidual(
+        acct, undisposed, anySpecificClauseTouched, deceasedWill, survivor,
+        familyMembers, externalBeneficiaries, entities, linkedLiability,
+      );
+      if (step3b.fractionClaimed > 0) {
+        stepAccts.push(...step3b.resultingAccounts);
+        stepLiabs.push(...step3b.resultingLiabilities);
+        stepLedger.push(...step3b.ledgerEntries);
+        undisposed -= step3b.fractionClaimed;
+      }
+    }
+
+    // Step 4: Fallback
+    if (undisposed > 1e-9) {
+      const step4 = applyFallback(
+        acct, undisposed, survivor, familyMembers, linkedLiability,
+      );
+      stepAccts.push(...step4.step.resultingAccounts);
+      stepLiabs.push(...step4.step.resultingLiabilities);
+      stepLedger.push(...step4.step.ledgerEntries);
+      warnings.push(...step4.warnings);
+      undisposed = 0;
+    }
+
+    // Emit ledger (with year + deceased populated) and fold accumulators
+    for (const entry of stepLedger) {
+      transfers.push({ ...entry, year, deceased });
+    }
+
+    // Replace `acct` in the accounts list with the step-produced accounts.
+    // Also: remove the old account's balance / basis maps and add new ones.
+    delete nextAccountBalances[acct.id];
+    delete nextBasisMap[acct.id];
+    for (const a of stepAccts) {
+      nextAccounts.push(a);
+      nextAccountBalances[a.id] = a.value;
+      nextBasisMap[a.id] = a.basis;
+    }
+
+    // Swap liability records: drop the original linked liability (if any) and
+    // add the new split liabilities.
+    if (linkedLiability) {
+      const idx = nextLiabilities.findIndex((l) => l.id === linkedLiability.id);
+      if (idx >= 0) nextLiabilities.splice(idx, 1);
+      for (const lib of stepLiabs) nextLiabilities.push(lib);
+    }
+  }
+
+  // Income termination
+  const nextIncomes = applyIncomeTermination(incomes, deceased, survivor, year);
+
+  const result: DeathEventResult = {
+    accounts: nextAccounts,
+    accountBalances: nextAccountBalances,
+    basisMap: nextBasisMap,
+    incomes: nextIncomes,
+    liabilities: nextLiabilities,
+    transfers,
+    warnings,
+  };
+
+  assertInvariants(result, input);
+
+  return result;
+}
+
+/** Post-event invariant checks. Violations indicate a routing bug. */
+function assertInvariants(result: DeathEventResult, input: DeathEventInput): void {
+  // 1. Sum of ledger amounts grouped by source = each source's pre-death value
+  const bySource = new Map<string, number>();
+  for (const t of result.transfers) {
+    bySource.set(t.sourceAccountId, (bySource.get(t.sourceAccountId) ?? 0) + t.amount);
+  }
+  for (const [sourceId, summed] of bySource.entries()) {
+    const original = input.accounts.find((a) => a.id === sourceId);
+    if (!original) continue;
+    if (Math.abs(summed - original.value) > 0.01) {
+      throw new Error(
+        `applyFirstDeath invariant: ledger sum for ${sourceId} = ${summed}, expected ${original.value}`,
+      );
+    }
+  }
+  // 2. No deceased-owner orphan accounts (no entity/family-member tag, owner = deceased)
+  for (const a of result.accounts) {
+    if (
+      a.owner === input.deceased &&
+      !a.ownerEntityId &&
+      !a.ownerFamilyMemberId
+    ) {
+      throw new Error(
+        `applyFirstDeath invariant: account ${a.id} still has deceased as sole owner`,
+      );
+    }
+  }
+  // 3. No personal (non-entity) deceased-owner incomes active after deathYear
+  for (const inc of result.incomes) {
+    if (
+      !inc.ownerEntityId &&
+      inc.owner === input.deceased &&
+      inc.endYear > input.year
+    ) {
+      throw new Error(
+        `applyFirstDeath invariant: income ${inc.id} still active after death year`,
+      );
+    }
+  }
+}
+
 /** Step 4: Fallback chain. Routes the undisposed residual to:
  *    tier 1 — surviving spouse (4b: always fires here)
  *    tier 2 — even split across living children (4c territory; dead code in 4b)
