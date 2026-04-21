@@ -39,6 +39,39 @@ export interface Will {
   bequests: WillBequest[];
 }
 
+export interface FirstDeathTransfer {
+  year: number;
+  deceased: "client" | "spouse";
+  sourceAccountId: string;
+  sourceAccountName: string;
+  via:
+    | "titling"
+    | "beneficiary_designation"
+    | "will"
+    | "fallback_spouse"
+    | "fallback_children"
+    | "fallback_other_heirs";
+  recipientKind:
+    | "spouse"
+    | "family_member"
+    | "entity"
+    | "external_beneficiary"
+    | "system_default";
+  recipientId: string | null;
+  recipientLabel: string;
+  amount: number;
+  basis: number;
+  resultingAccountId: string | null;
+}
+
+export interface FamilyMember {
+  id: string;
+  relationship: "child" | "grandchild" | "parent" | "sibling" | "other";
+  firstName: string;
+  lastName: string | null;
+  dateOfBirth: string | null;
+}
+
 export interface ClientData {
   client: ClientInfo;
   accounts: Account[];
@@ -61,6 +94,10 @@ export interface ClientData {
   gifts?: Gift[];
   /** Wills per grantor — spec 4a data-only. Engine consumption arrives in spec 4b. */
   wills?: Will[];
+  /** Family members (children, grandchildren, parents, siblings). Consumed by the
+   *  death-event module to resolve fallback tier 2 (even split among living children)
+   *  and for recipient-label lookups. */
+  familyMembers?: FamilyMember[];
 }
 
 // Minimal entity view used by the engine to decide cash-flow treatment of entity-owned
@@ -423,6 +460,10 @@ export interface ProjectionYear {
       liabilityName?: string;
     }[];
   };
+  /** Only populated on the first-death year. One entry per (source-account × recipient). */
+  firstDeathTransfers?: FirstDeathTransfer[];
+  /** Non-fatal warnings emitted by the first-death precedence chain. */
+  deathWarnings?: string[];
 }
 
 export interface AccountLedger {
