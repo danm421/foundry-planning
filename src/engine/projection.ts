@@ -38,6 +38,7 @@ import { executeWithdrawals } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
 import { applyAssetSales, applyAssetPurchases, _resetSyntheticIdCounter } from "./asset-transactions";
+import { computeFirstDeathYear, effectiveFilingStatus } from "./death-event";
 import { calcSeca } from "../lib/tax/fica";
 
 // Map legacy income type to the new tax type categories.
@@ -220,6 +221,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     ? parseInt(client.spouseDob.slice(0, 4), 10)
     : undefined;
 
+  const firstDeathYear = computeFirstDeathYear(
+    client,
+    planSettings.planStartYear,
+    planSettings.planEndYear,
+  );
+
   for (
     let year = planSettings.planStartYear;
     year <= planSettings.planEndYear;
@@ -316,7 +323,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           accountLedgers,
           year,
           defaultCheckingId: defaultChecking?.id ?? "",
-          filingStatus: (client.filingStatus ?? "single") as FilingStatus,
+          filingStatus: effectiveFilingStatus(
+            (client.filingStatus ?? "single") as FilingStatus,
+            firstDeathYear,
+            year,
+          ),
         });
 
         if (saleResult.removedAccountIds.length > 0) {
@@ -649,7 +660,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // 5. Taxes on household + grantor-trust income/RMDs. Routes to bracket or flat
     // engine depending on planSettings.taxEngineMode and whether tax year data is loaded.
     const resolved = taxResolver ? taxResolver.getYear(year) : null;
-    const filingStatus = (client.filingStatus ?? "single") as FilingStatus;
+    const filingStatus = effectiveFilingStatus(
+      (client.filingStatus ?? "single") as FilingStatus,
+      firstDeathYear,
+      year,
+    );
     const useBracket = planSettings.taxEngineMode === "bracket" && resolved != null;
 
     // Pre-compute salary-by-owner and salary-by-rule-id so both the deduction

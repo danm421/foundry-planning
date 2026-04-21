@@ -590,6 +590,19 @@ function empty(): StepResult {
   };
 }
 
+import type { FilingStatus } from "../lib/tax/types";
+
+/** Per-year filing status. After the first-death year, the survivor files as
+ *  single. Year of death itself keeps the configured MFJ status (matches IRS). */
+export function effectiveFilingStatus(
+  configured: FilingStatus,
+  firstDeathYear: number | null,
+  year: number,
+): FilingStatus {
+  if (firstDeathYear != null && year > firstDeathYear) return "single";
+  return configured;
+}
+
 /** Clip deceased-owner personal incomes at the death year, and retitle joint
  *  personal incomes to the survivor. Entity-owned incomes pass through. */
 export function applyIncomeTermination(

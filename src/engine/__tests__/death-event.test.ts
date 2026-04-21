@@ -575,8 +575,9 @@ describe("applyFallback (Step 4)", () => {
   });
 });
 
-import { applyIncomeTermination } from "../death-event";
+import { applyIncomeTermination, effectiveFilingStatus } from "../death-event";
 import type { Income } from "../types";
+import type { FilingStatus } from "../../lib/tax/types";
 
 describe("applyIncomeTermination", () => {
   it("clips deceased-owner incomes at endYear=deathYear", () => {
@@ -612,5 +613,23 @@ describe("applyIncomeTermination", () => {
     ];
     const result = applyIncomeTermination(incomes, "client", "spouse", 2045);
     expect(result[0].endYear).toBe(2030); // already past; leave alone
+  });
+});
+
+describe("effectiveFilingStatus", () => {
+  it("returns configured status before the death year", () => {
+    expect(effectiveFilingStatus("married_joint" as FilingStatus, 2050, 2049)).toBe("married_joint");
+  });
+
+  it("returns configured status IN the death year (MFJ for year of death)", () => {
+    expect(effectiveFilingStatus("married_joint" as FilingStatus, 2050, 2050)).toBe("married_joint");
+  });
+
+  it("returns 'single' from year+1 onward", () => {
+    expect(effectiveFilingStatus("married_joint" as FilingStatus, 2050, 2051)).toBe("single");
+  });
+
+  it("returns configured status when no death year present", () => {
+    expect(effectiveFilingStatus("married_joint" as FilingStatus, null, 2070)).toBe("married_joint");
   });
 });
