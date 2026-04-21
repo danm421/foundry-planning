@@ -30,6 +30,7 @@ import {
   wills,
   willBequests,
   willBequestRecipients,
+  familyMembers,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -86,6 +87,7 @@ export async function GET(
       transferScheduleRows,
       assetTransactionRows,
       giftRows,
+      familyMemberRows,
     ] = await Promise.all([
       db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
       db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
@@ -107,6 +109,7 @@ export async function GET(
         .from(gifts)
         .where(eq(gifts.clientId, id))
         .orderBy(asc(gifts.year), asc(gifts.createdAt)),
+      db.select().from(familyMembers).where(eq(familyMembers.clientId, id)).orderBy(asc(familyMembers.dateOfBirth)),
     ]);
 
     // Load schedule overrides for all incomes, expenses, and savings rules
@@ -682,6 +685,13 @@ export async function GET(
         useCrummeyPowers: g.useCrummeyPowers,
       })),
       wills: engineWills,
+      familyMembers: familyMemberRows.map((f) => ({
+        id: f.id,
+        relationship: f.relationship,
+        firstName: f.firstName,
+        lastName: f.lastName ?? null,
+        dateOfBirth: f.dateOfBirth ?? null,
+      })),
     });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
