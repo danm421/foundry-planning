@@ -160,3 +160,20 @@ start getting upvoted across sessions.
   narrative (or hide a revocable trust), we'd re-introduce a per-entity
   override. Why deferred: no advisor has asked; `isIrrevocable` is the right
   default truth.
+
+## Account ownership
+
+- **Fractional lifetime ownership of accounts** — today `Account.owner` is
+  `"client" | "spouse" | "joint"` and joint is the only way to express a
+  split. Advisors with clients who own e.g. 25% of a business, a
+  tenants-in-common real-estate stake, or a minority LLC interest have to
+  model it as "enter the account value equal to the client's share" —
+  crude but produces correct household totals. A real fix would introduce
+  a principal-ownership percentage (or a `principals: [{who, pct}]`
+  array) and propagate through the account form, balance sheet,
+  investments report, engine owner checks, RMD pro-rating, and
+  tax-realization code. Why deferred: orthogonal to the 4b death-event
+  split mechanic (lifetime-fraction and at-death-split compose cleanly
+  if both exist), and the blast radius is its own multi-spec project.
+  Revisit after 4b–4d + estate-tax engine ship and we know whether the
+  crude workaround has bitten the advisor workflow.
