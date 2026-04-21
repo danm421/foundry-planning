@@ -99,3 +99,107 @@ describe("identifyDeceased", () => {
     expect(identifyDeceased(client, 2050)).toBe("client");
   });
 });
+
+import { splitAccount } from "../death-event";
+import type { Account, Liability } from "../types";
+
+describe("splitAccount", () => {
+  const brokerage: Account = {
+    id: "acct-brokerage",
+    name: "Joint Brokerage",
+    category: "taxable",
+    subType: "brokerage",
+    owner: "joint",
+    value: 300000,
+    basis: 200000,
+    growthRate: 0.06,
+    rmdEnabled: false,
+  };
+
+  it("returns a single in-place mutation when one share takes 100%", () => {
+    const result = splitAccount(brokerage, [
+      { fraction: 1.0, ownerMutation: { owner: "spouse" }, ledgerMeta: { recipientKind: "spouse", recipientId: null, recipientLabel: "Spouse", via: "titling" } },
+    ], undefined);
+
+    expect(result.resultingAccounts).toHaveLength(1);
+    expect(result.resultingAccounts[0].id).toBe("acct-brokerage"); // no rename
+    expect(result.resultingAccounts[0].owner).toBe("spouse");
+    expect(result.resultingAccounts[0].value).toBe(300000);
+    expect(result.resultingAccounts[0].basis).toBe(200000);
+    expect(result.resultingLiabilities).toHaveLength(0);
+    expect(result.ledgerEntries).toHaveLength(1);
+    expect(result.ledgerEntries[0]).toMatchObject({
+      recipientKind: "spouse",
+      via: "titling",
+      amount: 300000,
+      basis: 200000,
+      resultingAccountId: "acct-brokerage",
+    });
+  });
+
+  it("splits 50/50 across two recipients with proportional balance + basis", () => {
+    const result = splitAccount(brokerage, [
+      { fraction: 0.5, ownerMutation: { ownerFamilyMemberId: "child-a" }, ledgerMeta: { recipientKind: "family_member", recipientId: "child-a", recipientLabel: "Child A", via: "will" } },
+      { fraction: 0.5, ownerMutation: { ownerFamilyMemberId: "child-b" }, ledgerMeta: { recipientKind: "family_member", recipientId: "child-b", recipientLabel: "Child B", via: "will" } },
+    ], undefined);
+
+    expect(result.resultingAccounts).toHaveLength(2);
+    // Synthetic ids, new names prefixed:
+    expect(result.resultingAccounts[0].id).not.toBe("acct-brokerage");
+    expect(result.resultingAccounts[0].name).toBe("Joint Brokerage — to Child A");
+    expect(result.resultingAccounts[0].value).toBe(150000);
+    expect(result.resultingAccounts[0].basis).toBe(100000);
+    expect(result.resultingAccounts[0].ownerFamilyMemberId).toBe("child-a");
+    expect(result.resultingAccounts[1].name).toBe("Joint Brokerage — to Child B");
+    expect(result.resultingAccounts[1].value).toBe(150000);
+    expect(result.ledgerEntries).toHaveLength(2);
+  });
+
+  it("removes the account (no resulting row) for out-of-household recipients", () => {
+    const result = splitAccount(brokerage, [
+      { fraction: 1.0, removed: true, ledgerMeta: { recipientKind: "external_beneficiary", recipientId: "charity-1", recipientLabel: "Community Foundation", via: "will" } },
+    ], undefined);
+
+    expect(result.resultingAccounts).toHaveLength(0);
+    expect(result.ledgerEntries).toHaveLength(1);
+    expect(result.ledgerEntries[0].resultingAccountId).toBeNull();
+    expect(result.ledgerEntries[0].amount).toBe(300000);
+  });
+
+  it("splits a linked liability proportionally when the account splits", () => {
+    const home: Account = { ...brokerage, id: "acct-home", name: "Primary Home", category: "real_estate", value: 800000, basis: 500000 };
+    const mortgage: Liability = {
+      id: "liab-mortgage",
+      name: "Primary Mortgage",
+      balance: 300000,
+      interestRate: 0.06,
+      monthlyPayment: 2000,
+      startYear: 2020,
+      startMonth: 1,
+      termMonths: 360,
+      linkedPropertyId: "acct-home",
+      extraPayments: [],
+    };
+
+    const result = splitAccount(home, [
+      { fraction: 0.6, ownerMutation: { owner: "spouse" }, ledgerMeta: { recipientKind: "spouse", recipientId: null, recipientLabel: "Spouse", via: "will" } },
+      { fraction: 0.4, ownerMutation: { ownerFamilyMemberId: "child-a" }, ledgerMeta: { recipientKind: "family_member", recipientId: "child-a", recipientLabel: "Child A", via: "will" } },
+    ], mortgage);
+
+    expect(result.resultingLiabilities).toHaveLength(2);
+    expect(result.resultingLiabilities[0].balance).toBeCloseTo(180000, 2);
+    expect(result.resultingLiabilities[0].monthlyPayment).toBeCloseTo(1200, 2);
+    expect(result.resultingLiabilities[0].linkedPropertyId).toBe(result.resultingAccounts[0].id);
+    expect(result.resultingLiabilities[1].balance).toBeCloseTo(120000, 2);
+    expect(result.resultingLiabilities[1].linkedPropertyId).toBe(result.resultingAccounts[1].id);
+  });
+
+  it("removes a linked liability when the account is removed (debts follow assets)", () => {
+    const home: Account = { ...brokerage, id: "acct-home", name: "Primary Home" };
+    const mortgage: Liability = { id: "liab-m", name: "Mortgage", balance: 100000, interestRate: 0.05, monthlyPayment: 600, startYear: 2020, startMonth: 1, termMonths: 360, linkedPropertyId: "acct-home", extraPayments: [] };
+    const result = splitAccount(home, [
+      { fraction: 1.0, removed: true, ledgerMeta: { recipientKind: "external_beneficiary", recipientId: "charity-1", recipientLabel: "Charity", via: "will" } },
+    ], mortgage);
+    expect(result.resultingLiabilities).toHaveLength(0);
+  });
+});
