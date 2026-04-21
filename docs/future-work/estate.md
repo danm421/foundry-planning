@@ -91,6 +91,74 @@ start getting upvoted across sessions.
   manually if they care. Why deferred: compounds with trustee-succession
   rules we also don't model.
 
+### After 4b ship (2026-04-21)
+
+- **External-beneficiary label resolution in the transfer ledger** — the
+  projection loop currently passes `externalBeneficiaries: []` to
+  `applyFirstDeath`, so ledger entries for external recipients carry the
+  fallback label "External beneficiary" instead of the actual name. Extend
+  the projection-data loader to include external beneficiaries and pass them
+  through. Why deferred: ledger correctness (ids, percentages, and amounts)
+  is all intact; only the display label is missing, and no UI surface
+  consumes the label yet.
+- **Inherited-IRA RMD mechanics (SECURE Act 10-year rule)** — retirement
+  accounts willed to non-spouse recipients are treated as normal accounts
+  with the new owner. Real inherited-IRAs follow a 10-year distribution rule
+  with no further contributions. Add when the first report actually needs
+  the distinction.
+- **Qualifying-surviving-spouse 2-year MFJ extension** — the IRS allows a
+  widow(er) with a dependent child to file MFJ for two additional years
+  after the death year. `effectiveFilingStatus` flips to single at year+1
+  regardless. Add when advisor demand surfaces.
+- **Beneficiary-designation contingent-tier logic** — primaries only in v1.
+  If a primary predeceases the deceased, the contingent tier should receive
+  their share. Add when contingent designations land in the UI.
+- **Fallback tier-2 deceased-child filtering** — the fallback chain
+  currently treats every child as living (no `dateOfDeath` field on
+  `family_members`). When child mortality modeling is added, filter out
+  deceased children from the even-split denominator and emit
+  `fallback_children_recipient_deceased` warnings.
+- **Widow(er) Social Security survivor benefit** — when a deceased spouse is
+  claiming SS, the survivor is typically entitled to the greater of their
+  own benefit or a survivor benefit based on the deceased's record.
+  `applyIncomeTermination` currently clips the deceased's SS income at
+  death year with no survivor-benefit uplift on the survivor's own SS
+  income. Domain-correctness gap; add when the SS-modeling surface is
+  revisited.
+- **Liability-schedule rollforward for death-event-created liabilities** —
+  when a linked mortgage is split proportionally across two recipients at
+  death, the two resulting `death-liab-N` liabilities inherit
+  balance/payment but don't have entries in the pre-loop
+  `liabilitySchedules` map. `projection.ts` falls back to `liab.balance` for
+  the remaining years, so amortization post-split may not roll forward
+  correctly (interest accrues but principal doesn't amortize from the
+  schedule). Why deferred: no current test exercises a multi-year mortgage
+  rollforward after a split, and the household-level cash-flow still
+  reflects the right monthly payment. Fix when the first integration test
+  for cross-year post-split mortgage amortization is added.
+- **Orphan `owner === "joint"` invariant** — the orchestrator's
+  `assertInvariants` rejects lingering `owner === deceased` but not
+  `owner === "joint"`. Today `applyTitling` always consumes joint accounts,
+  so this can't leak, but the invariant is incomplete as defense-in-depth.
+  Add the `owner === "joint"` check when the next refactor touches this
+  function.
+- **Dangling `linkedPropertyId` audit** — if a liability has a
+  `linkedPropertyId` that doesn't appear in the accounts list, the
+  death-event silently passes it through. Harmless today but would mask a
+  data-integrity issue; worth surfacing as a warning at projection-data
+  load time.
+- **Eliminate `Account.value` inside the engine** — `Account.value` is the
+  starting fixture balance, but year-over-year growth updates only
+  `accountBalances[id]`, leaving `workingAccounts[i].value` stale for the
+  whole projection. Task 14 fixed the death-event symptom by plumbing the
+  current balance into `effectiveAcct`, but the root-cause risk class
+  remains: any future engine pass that reads `Account.value` mid-loop will
+  silently use stale data. The right structural fix is to split the type
+  (e.g., `AccountDefinition` with `initialValue` for DB/UI boundaries vs.
+  an engine-internal `Account` with no value field, driven entirely by
+  `accountBalances` + `basisMap`). Larger refactor; not blocking for 4b
+  but worth surfacing before 4c/4d land.
+
 ## API routes
 
 - **`verifyCrossRefs` TOCTOU under concurrent deletes** — the wills POST/PATCH
