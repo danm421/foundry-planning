@@ -118,17 +118,6 @@ start getting upvoted across sessions.
 
 ## Wills panel
 
-- **Scenario scoping on the wills page account dropdown (fix before spec
-  4b)** — `src/app/(app)/clients/[id]/client-data/wills/page.tsx` queries
-  `accounts` by `clientId` only, not by `scenarioId`. For clients with
-  multiple scenarios, the bequest modal's account selector shows accounts
-  from every scenario; a selection from a non-base-case scenario will
-  pass `verifyCrossRefs` but fail to resolve in the engine (which loads
-  base-case only). The pre-existing `beneficiaries` routes have the same
-  gap, so this is not a regression, but spec 4b is the first consumer
-  that will silently break on unresolvable accountIds. Mirror the
-  `assumptions/page.tsx` pattern: look up the base-case `scenarioId`
-  first, then add `eq(accounts.scenarioId, ...)` to the query.
 - **Concurrent duplicate-will POST returns 500 instead of 409** — the
   `POST /api/clients/[id]/wills` duplicate-grantor guard does a SELECT
   then INSERT. Two simultaneous posts for the same (client, grantor) can

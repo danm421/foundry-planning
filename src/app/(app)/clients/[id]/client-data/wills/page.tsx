@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/db";
 import {
   clients,
+  scenarios,
   accounts,
   familyMembers,
   externalBeneficiaries,
@@ -35,10 +36,27 @@ export default async function WillsPage({ params }: PageProps) {
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
   if (!client) notFound();
 
+  const [scenario] = await db
+    .select()
+    .from(scenarios)
+    .where(and(eq(scenarios.clientId, id), eq(scenarios.isBaseCase, true)));
+
+  if (!scenario) {
+    return (
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
+        No base case scenario found.
+      </div>
+    );
+  }
+
   const [willRows, accountRows, familyRows, externalRows, entityRows] =
     await Promise.all([
       db.select().from(wills).where(eq(wills.clientId, id)).orderBy(asc(wills.grantor)),
-      db.select().from(accounts).where(eq(accounts.clientId, id)).orderBy(asc(accounts.name)),
+      db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id)))
+        .orderBy(asc(accounts.name)),
       db.select().from(familyMembers).where(eq(familyMembers.clientId, id)).orderBy(asc(familyMembers.firstName)),
       db
         .select()
