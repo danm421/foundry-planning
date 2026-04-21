@@ -103,6 +103,7 @@ describe("identifyDeceased", () => {
 import { splitAccount } from "../death-event";
 import type { Account, Liability } from "../types";
 
+
 describe("splitAccount", () => {
   const brokerage: Account = {
     id: "acct-brokerage",
@@ -210,5 +211,42 @@ describe("splitAccount", () => {
         { fraction: 0, removed: true, ledgerMeta: { via: "will", recipientKind: "external_beneficiary", recipientId: null, recipientLabel: "X" } },
       ], undefined),
     ).toThrow(/share fraction must be > 0/);
+  });
+});
+
+import { applyTitling } from "../death-event";
+
+describe("applyTitling (Step 1)", () => {
+  const joint: Account = {
+    id: "acct-joint",
+    name: "Joint Brokerage",
+    category: "taxable",
+    subType: "brokerage",
+    owner: "joint",
+    value: 400000,
+    basis: 250000,
+    growthRate: 0.06,
+    rmdEnabled: false,
+  };
+
+  const soloClient: Account = { ...joint, id: "acct-solo", name: "Client Solo", owner: "client" };
+
+  it("flips joint → survivor, emits single titling ledger entry", () => {
+    const result = applyTitling(joint, "spouse", undefined);
+    expect(result.consumed).toBe(true);
+    expect(result.resultingAccounts[0].owner).toBe("spouse");
+    expect(result.resultingAccounts[0].id).toBe("acct-joint"); // in-place
+    expect(result.ledgerEntries[0]).toMatchObject({
+      via: "titling",
+      recipientKind: "spouse",
+      amount: 400000,
+    });
+  });
+
+  it("no-op for non-joint accounts", () => {
+    const result = applyTitling(soloClient, "spouse", undefined);
+    expect(result.consumed).toBe(false);
+    expect(result.resultingAccounts).toHaveLength(0);
+    expect(result.ledgerEntries).toHaveLength(0);
   });
 });

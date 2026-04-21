@@ -195,3 +195,59 @@ export function splitAccount(
 
   return { resultingAccounts, resultingLiabilities, ledgerEntries };
 }
+
+/** Result of a precedence step for a single source account. When `consumed`
+ *  is true, the caller should NOT cascade this account to later steps —
+ *  step 1 (titling) and full-coverage later steps mark consumed=true. */
+export interface StepResult {
+  consumed: boolean;
+  resultingAccounts: Account[];
+  resultingLiabilities: Liability[];
+  ledgerEntries: Array<Omit<FirstDeathTransfer, "year" | "deceased">>;
+  /** Fraction of the source account that has been claimed by this step (0–1).
+   *  Used when step 2 partially claims and step 3 picks up the remainder. */
+  fractionClaimed: number;
+}
+
+/** Step 1: Titling. Joint accounts pass 100% to the survivor via right-of-
+ *  survivorship. Non-joint accounts pass through unchanged. */
+export function applyTitling(
+  source: Account,
+  survivor: "client" | "spouse",
+  linkedLiability: Liability | undefined,
+): StepResult {
+  if (source.owner !== "joint") {
+    return {
+      consumed: false,
+      resultingAccounts: [],
+      resultingLiabilities: [],
+      ledgerEntries: [],
+      fractionClaimed: 0,
+    };
+  }
+
+  const split = splitAccount(
+    source,
+    [
+      {
+        fraction: 1,
+        ownerMutation: { owner: survivor },
+        ledgerMeta: {
+          via: "titling",
+          recipientKind: "spouse",
+          recipientId: null,
+          recipientLabel: "Spouse",
+        },
+      },
+    ],
+    linkedLiability,
+  );
+
+  return {
+    consumed: true,
+    resultingAccounts: split.resultingAccounts,
+    resultingLiabilities: split.resultingLiabilities,
+    ledgerEntries: split.ledgerEntries,
+    fractionClaimed: 1,
+  };
+}
