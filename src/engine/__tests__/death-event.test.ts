@@ -525,3 +525,52 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
     expect(result.fractionClaimed).toBe(0);
   });
 });
+
+import { applyFallback } from "../death-event";
+
+describe("applyFallback (Step 4)", () => {
+  const source: Account = {
+    id: "acct-x", name: "Leftover",
+    category: "taxable", subType: "brokerage",
+    owner: "client", value: 100000, basis: 80000,
+    growthRate: 0.05, rmdEnabled: false,
+  };
+
+  it("tier 1: survivor exists → residual to spouse, with warning", () => {
+    const result = applyFallback(source, 1, "spouse", [], undefined);
+    expect(result.step.ledgerEntries[0]).toMatchObject({
+      via: "fallback_spouse", recipientKind: "spouse", amount: 100000,
+    });
+    expect(result.warnings).toContain("residual_fallback_fired:acct-x");
+  });
+
+  it("tier 2: no survivor → even split among living children", () => {
+    const kids: FamilyMember[] = [
+      { id: "c1", relationship: "child", firstName: "Alice", lastName: null, dateOfBirth: null },
+      { id: "c2", relationship: "child", firstName: "Bob", lastName: null, dateOfBirth: null },
+    ];
+    const result = applyFallback(source, 1, null, kids, undefined);
+    expect(result.step.ledgerEntries).toHaveLength(2);
+    expect(result.step.ledgerEntries[0].amount).toBe(50000);
+    expect(result.step.ledgerEntries[0].via).toBe("fallback_children");
+  });
+
+  it("tier 3: no survivor, no children → Other Heirs sink", () => {
+    const result = applyFallback(source, 1, null, [], undefined);
+    expect(result.step.ledgerEntries).toHaveLength(1);
+    expect(result.step.ledgerEntries[0]).toMatchObject({
+      via: "fallback_other_heirs",
+      recipientKind: "system_default",
+      recipientId: null,
+      recipientLabel: "Other Heirs",
+      resultingAccountId: null,
+    });
+    expect(result.step.resultingAccounts).toHaveLength(0);
+  });
+
+  it("no-op when undisposedFraction is ~0", () => {
+    const result = applyFallback(source, 1e-12, "spouse", [], undefined);
+    expect(result.step.ledgerEntries).toHaveLength(0);
+    expect(result.warnings).toHaveLength(0);
+  });
+});

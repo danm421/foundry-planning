@@ -589,3 +589,119 @@ function empty(): StepResult {
     fractionClaimed: 0,
   };
 }
+
+/** Step 4: Fallback chain. Routes the undisposed residual to:
+ *    tier 1 — surviving spouse (4b: always fires here)
+ *    tier 2 — even split across living children (4c territory; dead code in 4b)
+ *    tier 3 — "Other Heirs" system-default sink
+ *  Always emits `residual_fallback_fired` warning when it fires.
+ */
+export function applyFallback(
+  source: Account,
+  undisposedFraction: number,
+  survivor: "client" | "spouse" | null,
+  familyMembers: FamilyMember[],
+  linkedLiability: Liability | undefined,
+): { step: StepResult; warnings: string[] } {
+  if (undisposedFraction < 1e-9) {
+    return { step: empty(), warnings: [] };
+  }
+
+  const warnings = [`residual_fallback_fired:${source.id}`];
+
+  // Scale source + liability to the residual portion; normalize shares to sum=1.
+  const scaledSource: Account = {
+    ...source,
+    value: source.value * undisposedFraction,
+    basis: source.basis * undisposedFraction,
+  };
+  const scaledLiability: Liability | undefined = linkedLiability
+    ? {
+        ...linkedLiability,
+        balance: linkedLiability.balance * undisposedFraction,
+        monthlyPayment: linkedLiability.monthlyPayment * undisposedFraction,
+      }
+    : undefined;
+
+  // Tier 1
+  if (survivor) {
+    const split = splitAccount(
+      scaledSource,
+      [{
+        fraction: 1,
+        ownerMutation: { owner: survivor },
+        ledgerMeta: {
+          via: "fallback_spouse",
+          recipientKind: "spouse",
+          recipientId: null,
+          recipientLabel: "Spouse",
+        },
+      }],
+      scaledLiability,
+    );
+    return {
+      step: {
+        consumed: true,
+        resultingAccounts: split.resultingAccounts,
+        resultingLiabilities: split.resultingLiabilities,
+        ledgerEntries: split.ledgerEntries,
+        fractionClaimed: undisposedFraction,
+      },
+      warnings,
+    };
+  }
+
+  // Tier 2 — living children. "Living" = no dateOfDeath field today; assume
+  // all listed children are living. (See future-work fallback_children_recipient_deceased.)
+  const children = familyMembers.filter((f) => f.relationship === "child");
+  if (children.length > 0) {
+    const perChild = 1 / children.length;
+    const shares: SplitShare[] = children.map((c) => ({
+      fraction: perChild,
+      ownerMutation: { ownerFamilyMemberId: c.id },
+      ledgerMeta: {
+        via: "fallback_children" as const,
+        recipientKind: "family_member" as const,
+        recipientId: c.id,
+        recipientLabel: `${c.firstName}${c.lastName ? " " + c.lastName : ""}`,
+      },
+    }));
+    const split = splitAccount(scaledSource, shares, scaledLiability);
+    return {
+      step: {
+        consumed: true,
+        resultingAccounts: split.resultingAccounts,
+        resultingLiabilities: split.resultingLiabilities,
+        ledgerEntries: split.ledgerEntries,
+        fractionClaimed: undisposedFraction,
+      },
+      warnings,
+    };
+  }
+
+  // Tier 3 — Other Heirs sink; account is removed from state.
+  const split = splitAccount(
+    scaledSource,
+    [{
+      fraction: 1,
+      removed: true,
+      ledgerMeta: {
+        via: "fallback_other_heirs" as const,
+        recipientKind: "system_default" as const,
+        recipientId: null,
+        recipientLabel: "Other Heirs",
+      },
+    }],
+    scaledLiability,
+  );
+  return {
+    step: {
+      consumed: true,
+      resultingAccounts: split.resultingAccounts,
+      resultingLiabilities: split.resultingLiabilities,
+      ledgerEntries: split.ledgerEntries,
+      fractionClaimed: undisposedFraction,
+    },
+    warnings,
+  };
+}
