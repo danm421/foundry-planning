@@ -1,4 +1,4 @@
-import type { ClientInfo, Account, Liability, FirstDeathTransfer, FamilyMember, Will, WillBequest, EntitySummary } from "./types";
+import type { ClientInfo, Account, Liability, FirstDeathTransfer, FamilyMember, Will, WillBequest, EntitySummary, Income } from "./types";
 import { nextSyntheticId } from "./asset-transactions";
 
 /** Compute the year of the first-death event. Returns null when there is no
@@ -588,6 +588,27 @@ function empty(): StepResult {
     ledgerEntries: [],
     fractionClaimed: 0,
   };
+}
+
+/** Clip deceased-owner personal incomes at the death year, and retitle joint
+ *  personal incomes to the survivor. Entity-owned incomes pass through. */
+export function applyIncomeTermination(
+  incomes: Income[],
+  deceased: "client" | "spouse",
+  survivor: "client" | "spouse",
+  deathYear: number,
+): Income[] {
+  return incomes.map((inc) => {
+    if (inc.ownerEntityId) return inc;
+    if (inc.owner === deceased) {
+      // Death year runs to completion; year+1 onward is suppressed.
+      return { ...inc, endYear: Math.min(inc.endYear, deathYear) };
+    }
+    if (inc.owner === "joint") {
+      return { ...inc, owner: survivor };
+    }
+    return inc;
+  });
 }
 
 /** Step 4: Fallback chain. Routes the undisposed residual to:

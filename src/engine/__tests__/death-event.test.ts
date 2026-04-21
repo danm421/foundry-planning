@@ -574,3 +574,43 @@ describe("applyFallback (Step 4)", () => {
     expect(result.warnings).toHaveLength(0);
   });
 });
+
+import { applyIncomeTermination } from "../death-event";
+import type { Income } from "../types";
+
+describe("applyIncomeTermination", () => {
+  it("clips deceased-owner incomes at endYear=deathYear", () => {
+    const incomes: Income[] = [
+      { id: "i-1", type: "salary", name: "John salary", annualAmount: 100000, startYear: 2020, endYear: 2050, growthRate: 0.03, owner: "client" },
+      { id: "i-2", type: "salary", name: "Jane salary", annualAmount: 80000, startYear: 2020, endYear: 2050, growthRate: 0.03, owner: "spouse" },
+    ];
+    const result = applyIncomeTermination(incomes, "client", "spouse", 2045);
+    expect(result.find((i) => i.id === "i-1")!.endYear).toBe(2045);
+    expect(result.find((i) => i.id === "i-2")!.endYear).toBe(2050); // untouched
+  });
+
+  it("retitles joint incomes to survivor (no termination)", () => {
+    const incomes: Income[] = [
+      { id: "i-j", type: "business", name: "Joint K-1", annualAmount: 50000, startYear: 2020, endYear: 2050, growthRate: 0.03, owner: "joint" },
+    ];
+    const result = applyIncomeTermination(incomes, "client", "spouse", 2045);
+    expect(result[0].owner).toBe("spouse");
+    expect(result[0].endYear).toBe(2050);
+  });
+
+  it("ignores entity-owned incomes", () => {
+    const incomes: Income[] = [
+      { id: "i-trust", type: "trust", name: "SLAT distribution", annualAmount: 10000, startYear: 2020, endYear: 2060, growthRate: 0, owner: "client", ownerEntityId: "ent-1" },
+    ];
+    const result = applyIncomeTermination(incomes, "client", "spouse", 2045);
+    expect(result[0].endYear).toBe(2060); // untouched; entity's own story is 4d
+  });
+
+  it("lowers endYear only when it was later than deathYear", () => {
+    const incomes: Income[] = [
+      { id: "i-past", type: "salary", name: "Past contract", annualAmount: 50000, startYear: 2020, endYear: 2030, growthRate: 0, owner: "client" },
+    ];
+    const result = applyIncomeTermination(incomes, "client", "spouse", 2045);
+    expect(result[0].endYear).toBe(2030); // already past; leave alone
+  });
+});
