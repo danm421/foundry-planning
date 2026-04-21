@@ -1,4 +1,4 @@
-import type { ClientInfo, Account, Liability, FirstDeathTransfer, FamilyMember } from "./types";
+import type { ClientInfo, Account, Liability, FirstDeathTransfer, FamilyMember, Will, WillBequest, EntitySummary } from "./types";
 import { nextSyntheticId } from "./asset-transactions";
 
 /** Compute the year of the first-death event. Returns null when there is no
@@ -357,5 +357,235 @@ export function applyBeneficiaryDesignations(
     resultingLiabilities: split.resultingLiabilities,
     ledgerEntries: split.ledgerEntries,
     fractionClaimed: totalClaimed,
+  };
+}
+
+/** Predicate: which condition-tier bequests fire at first death. */
+function firesAtFirstDeath(b: WillBequest): boolean {
+  return b.condition === "always" || b.condition === "if_spouse_survives";
+}
+
+function resolveRecipientLabelAndMutation(
+  r: WillBequest["recipients"][number],
+  survivor: "client" | "spouse",
+  familyMembers: FamilyMember[],
+  externals: ExternalBeneficiarySummary[],
+  entities: EntitySummary[],
+): {
+  ownerMutation?: OwnerMutation;
+  removed: boolean;
+  recipientKind: FirstDeathTransfer["recipientKind"];
+  recipientId: string | null;
+  recipientLabel: string;
+} {
+  if (r.recipientKind === "spouse") {
+    return {
+      ownerMutation: { owner: survivor },
+      removed: false,
+      recipientKind: "spouse",
+      recipientId: null,
+      recipientLabel: "Spouse",
+    };
+  }
+  if (r.recipientKind === "family_member") {
+    const fam = familyMembers.find((f) => f.id === r.recipientId);
+    return {
+      ownerMutation: { ownerFamilyMemberId: r.recipientId! },
+      removed: false,
+      recipientKind: "family_member",
+      recipientId: r.recipientId,
+      recipientLabel: fam
+        ? `${fam.firstName}${fam.lastName ? " " + fam.lastName : ""}`
+        : "Family member",
+    };
+  }
+  if (r.recipientKind === "entity") {
+    const ent = entities.find((e) => e.id === r.recipientId);
+    return {
+      ownerMutation: { ownerEntityId: r.recipientId! },
+      removed: false,
+      recipientKind: "entity",
+      recipientId: r.recipientId,
+      recipientLabel: ent ? `Entity ${r.recipientId}` : "Entity",
+    };
+  }
+  // external_beneficiary
+  const ext = externals.find((e) => e.id === r.recipientId);
+  return {
+    removed: true,
+    recipientKind: "external_beneficiary",
+    recipientId: r.recipientId,
+    recipientLabel: ext?.name ?? "External beneficiary",
+  };
+}
+
+/** Step 3a: specific-asset bequests for this account. Over-allocation
+ *  (specifics summing >100% of the undisposed remainder) is pro-rated and a
+ *  warning is emitted. Returns fractionClaimed + warnings. */
+export function applyWillSpecificBequests(
+  source: Account,
+  undisposedFraction: number,
+  will: Will,
+  survivor: "client" | "spouse",
+  familyMembers: FamilyMember[],
+  externals: ExternalBeneficiarySummary[],
+  entities: EntitySummary[],
+  linkedLiability: Liability | undefined,
+): StepResult & { warnings: string[] } {
+  const specifics = will.bequests.filter(
+    (b) =>
+      b.assetMode === "specific" &&
+      b.accountId === source.id &&
+      firesAtFirstDeath(b),
+  );
+
+  if (specifics.length === 0) {
+    return {
+      consumed: false,
+      resultingAccounts: [],
+      resultingLiabilities: [],
+      ledgerEntries: [],
+      fractionClaimed: 0,
+      warnings: [],
+    };
+  }
+
+  // Compute per-bequest fractions (of the source account total). Over-
+  // allocation (sum > 1) pro-rates.
+  const bequestFractions = specifics.map(
+    (b) => undisposedFraction * (b.percentage / 100),
+  );
+  const rawTotal = bequestFractions.reduce((s, f) => s + f, 0);
+  const warnings: string[] = [];
+  let scale = 1;
+  if (rawTotal > undisposedFraction + 1e-9) {
+    warnings.push(`over_allocation_in_will:${source.id}`);
+    scale = undisposedFraction / rawTotal;
+  }
+  const scaledBequestFractions = bequestFractions.map((f) => f * scale);
+
+  // Flatten into per-recipient shares
+  const shares: SplitShare[] = [];
+  specifics.forEach((b, i) => {
+    const bFrac = scaledBequestFractions[i];
+    b.recipients.forEach((r) => {
+      const rFrac = bFrac * (r.percentage / 100);
+      const { ownerMutation, removed, recipientKind, recipientId, recipientLabel } =
+        resolveRecipientLabelAndMutation(r, survivor, familyMembers, externals, entities);
+      shares.push({
+        fraction: rFrac,
+        removed: removed || undefined,
+        ownerMutation,
+        ledgerMeta: { via: "will", recipientKind, recipientId, recipientLabel },
+      });
+    });
+  });
+
+  const totalClaimed = shares.reduce((s, sh) => s + sh.fraction, 0);
+
+  // Scale source + liability down to `totalClaimed` and normalize shares to sum=1.
+  const scaledSource: Account = {
+    ...source,
+    value: source.value * totalClaimed,
+    basis: source.basis * totalClaimed,
+  };
+  const scaledLiability: Liability | undefined = linkedLiability
+    ? {
+        ...linkedLiability,
+        balance: linkedLiability.balance * totalClaimed,
+        monthlyPayment: linkedLiability.monthlyPayment * totalClaimed,
+      }
+    : undefined;
+  const normalized = shares.map((sh) => ({ ...sh, fraction: sh.fraction / totalClaimed }));
+
+  const split = splitAccount(scaledSource, normalized, scaledLiability);
+
+  return {
+    consumed: Math.abs(totalClaimed - undisposedFraction) < 1e-9,
+    resultingAccounts: split.resultingAccounts,
+    resultingLiabilities: split.resultingLiabilities,
+    ledgerEntries: split.ledgerEntries,
+    fractionClaimed: totalClaimed,
+    warnings,
+  };
+}
+
+/** Step 3b: "all other assets" residual. Fires ONLY when no specific clause
+ *  in this will touched this account. Sweeps the full undisposed remainder
+ *  across the all_assets clauses' recipients. Multiple all_assets clauses
+ *  (rare) split the residual among themselves per their own percentages. */
+export function applyWillAllAssetsResidual(
+  source: Account,
+  undisposedFraction: number,
+  accountTouchedBySpecific: boolean,
+  will: Will,
+  survivor: "client" | "spouse",
+  familyMembers: FamilyMember[],
+  externals: ExternalBeneficiarySummary[],
+  entities: EntitySummary[],
+  linkedLiability: Liability | undefined,
+): StepResult {
+  if (accountTouchedBySpecific) {
+    return empty();
+  }
+  const allAssets = will.bequests.filter(
+    (b) => b.assetMode === "all_assets" && firesAtFirstDeath(b),
+  );
+  if (allAssets.length === 0) {
+    return empty();
+  }
+
+  // Distribute undisposedFraction across all_assets clauses by their percentage.
+  const weights = allAssets.map((b) => b.percentage);
+  const weightSum = weights.reduce((s, w) => s + w, 0);
+
+  const shares: SplitShare[] = [];
+  allAssets.forEach((b, i) => {
+    const clauseFraction = undisposedFraction * (weights[i] / weightSum);
+    b.recipients.forEach((r) => {
+      const rFrac = clauseFraction * (r.percentage / 100);
+      const { ownerMutation, removed, recipientKind, recipientId, recipientLabel } =
+        resolveRecipientLabelAndMutation(r, survivor, familyMembers, externals, entities);
+      shares.push({
+        fraction: rFrac,
+        removed: removed || undefined,
+        ownerMutation,
+        ledgerMeta: { via: "will", recipientKind, recipientId, recipientLabel },
+      });
+    });
+  });
+
+  const totalClaimed = shares.reduce((s, sh) => s + sh.fraction, 0);
+  const scaledSource: Account = {
+    ...source,
+    value: source.value * totalClaimed,
+    basis: source.basis * totalClaimed,
+  };
+  const scaledLiability: Liability | undefined = linkedLiability
+    ? {
+        ...linkedLiability,
+        balance: linkedLiability.balance * totalClaimed,
+        monthlyPayment: linkedLiability.monthlyPayment * totalClaimed,
+      }
+    : undefined;
+  const normalized = shares.map((sh) => ({ ...sh, fraction: sh.fraction / totalClaimed }));
+  const split = splitAccount(scaledSource, normalized, scaledLiability);
+
+  return {
+    consumed: true,
+    resultingAccounts: split.resultingAccounts,
+    resultingLiabilities: split.resultingLiabilities,
+    ledgerEntries: split.ledgerEntries,
+    fractionClaimed: totalClaimed,
+  };
+}
+
+function empty(): StepResult {
+  return {
+    consumed: false,
+    resultingAccounts: [],
+    resultingLiabilities: [],
+    ledgerEntries: [],
+    fractionClaimed: 0,
   };
 }

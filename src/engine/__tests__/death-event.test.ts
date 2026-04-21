@@ -253,6 +253,8 @@ describe("applyTitling (Step 1)", () => {
 
 import { applyBeneficiaryDesignations } from "../death-event";
 import type { BeneficiaryRef } from "../types";
+import { applyWillSpecificBequests, applyWillAllAssetsResidual } from "../death-event";
+import type { Will, FamilyMember } from "../types";
 
 describe("applyBeneficiaryDesignations (Step 2)", () => {
   const ira: Account = {
@@ -345,5 +347,181 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
     expect(result.ledgerEntries).toHaveLength(1);
     expect(result.ledgerEntries[0].recipientId).toBe("child-a");
     expect(result.fractionClaimed).toBeCloseTo(0.5, 9);
+  });
+});
+
+describe("applyWillSpecificBequests (Step 3a)", () => {
+  const brokerage: Account = {
+    id: "acct-brok", name: "Taxable Brokerage",
+    category: "taxable", subType: "brokerage",
+    owner: "client", value: 200000, basis: 150000,
+    growthRate: 0.06, rmdEnabled: false,
+  };
+  const fams: FamilyMember[] = [
+    { id: "child-a", relationship: "child", firstName: "Alice", lastName: "S", dateOfBirth: null },
+    { id: "child-b", relationship: "child", firstName: "Bob", lastName: "S", dateOfBirth: null },
+  ];
+
+  it("routes a 100% specific bequest to one family-member recipient", () => {
+    const will: Will = {
+      id: "will-1",
+      grantor: "client",
+      bequests: [{
+        id: "beq-1", name: "Brokerage to Alice",
+        assetMode: "specific", accountId: "acct-brok",
+        percentage: 100,
+        condition: "always",
+        sortOrder: 0,
+        recipients: [
+          { recipientKind: "family_member", recipientId: "child-a", percentage: 100, sortOrder: 0 },
+        ],
+      }],
+    };
+
+    const result = applyWillSpecificBequests(brokerage, 1, will, "spouse", fams, [], [], undefined);
+    expect(result.fractionClaimed).toBeCloseTo(1, 9);
+    expect(result.consumed).toBe(true);
+    expect(result.ledgerEntries[0]).toMatchObject({
+      via: "will", recipientKind: "family_member", recipientId: "child-a", amount: 200000,
+    });
+  });
+
+  it("splits a 100% bequest across two recipients 50/50", () => {
+    const will: Will = {
+      id: "will-1", grantor: "client",
+      bequests: [{
+        id: "beq-1", name: "Brokerage split",
+        assetMode: "specific", accountId: "acct-brok",
+        percentage: 100, condition: "always", sortOrder: 0,
+        recipients: [
+          { recipientKind: "family_member", recipientId: "child-a", percentage: 50, sortOrder: 0 },
+          { recipientKind: "family_member", recipientId: "child-b", percentage: 50, sortOrder: 1 },
+        ],
+      }],
+    };
+
+    const result = applyWillSpecificBequests(brokerage, 1, will, "spouse", fams, [], [], undefined);
+    expect(result.ledgerEntries).toHaveLength(2);
+    expect(result.ledgerEntries[0].amount).toBe(100000);
+    expect(result.ledgerEntries[1].amount).toBe(100000);
+  });
+
+  it("40% specific bequest leaves 60% to cascade", () => {
+    const will: Will = {
+      id: "will-1", grantor: "client",
+      bequests: [{
+        id: "beq-1", name: "40% to Alice",
+        assetMode: "specific", accountId: "acct-brok",
+        percentage: 40, condition: "always", sortOrder: 0,
+        recipients: [
+          { recipientKind: "family_member", recipientId: "child-a", percentage: 100, sortOrder: 0 },
+        ],
+      }],
+    };
+    const result = applyWillSpecificBequests(brokerage, 1, will, "spouse", fams, [], [], undefined);
+    expect(result.fractionClaimed).toBeCloseTo(0.4, 9);
+    expect(result.consumed).toBe(false);
+  });
+
+  it("filters bequests by condition at first death", () => {
+    const will: Will = {
+      id: "will-1", grantor: "client",
+      bequests: [{
+        id: "beq-1", name: "Only if spouse predeceased",
+        assetMode: "specific", accountId: "acct-brok",
+        percentage: 100, condition: "if_spouse_predeceased", sortOrder: 0,
+        recipients: [
+          { recipientKind: "family_member", recipientId: "child-a", percentage: 100, sortOrder: 0 },
+        ],
+      }],
+    };
+    const result = applyWillSpecificBequests(brokerage, 1, will, "spouse", fams, [], [], undefined);
+    expect(result.fractionClaimed).toBe(0);
+  });
+
+  it("emits over_allocation_in_will warning when specifics sum >100%", () => {
+    const will: Will = {
+      id: "will-1", grantor: "client",
+      bequests: [
+        {
+          id: "beq-1", name: "Sixty to A",
+          assetMode: "specific", accountId: "acct-brok",
+          percentage: 60, condition: "always", sortOrder: 0,
+          recipients: [{ recipientKind: "family_member", recipientId: "child-a", percentage: 100, sortOrder: 0 }],
+        },
+        {
+          id: "beq-2", name: "Sixty more to B",
+          assetMode: "specific", accountId: "acct-brok",
+          percentage: 60, condition: "always", sortOrder: 1,
+          recipients: [{ recipientKind: "family_member", recipientId: "child-b", percentage: 100, sortOrder: 0 }],
+        },
+      ],
+    };
+    const result = applyWillSpecificBequests(brokerage, 1, will, "spouse", fams, [], [], undefined);
+    // Pro-rate down: each bequest effectively claims 60/120 of the undisposed remainder.
+    expect(result.fractionClaimed).toBeCloseTo(1, 9);
+    expect(result.warnings).toContain("over_allocation_in_will:acct-brok");
+  });
+});
+
+describe("applyWillAllAssetsResidual (Step 3b)", () => {
+  const cash: Account = {
+    id: "acct-cash", name: "Savings",
+    category: "cash", subType: "savings",
+    owner: "client", value: 50000, basis: 50000,
+    growthRate: 0.04, rmdEnabled: false,
+  };
+
+  const fams: FamilyMember[] = [
+    { id: "child-a", relationship: "child", firstName: "Alice", lastName: null, dateOfBirth: null },
+  ];
+
+  it("sweeps residual when no specific clause touched this account", () => {
+    const will: Will = {
+      id: "will-1", grantor: "client",
+      bequests: [{
+        id: "beq-1", name: "All other assets",
+        assetMode: "all_assets", accountId: null,
+        percentage: 100, condition: "always", sortOrder: 0,
+        recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
+      }],
+    };
+
+    const result = applyWillAllAssetsResidual(
+      cash,
+      /* undisposedFraction */ 1,
+      /* accountTouchedBySpecific */ false,
+      will, "spouse", fams, [], [], undefined,
+    );
+    expect(result.consumed).toBe(true);
+    expect(result.fractionClaimed).toBe(1);
+    expect(result.ledgerEntries[0]).toMatchObject({
+      recipientKind: "spouse", via: "will",
+    });
+  });
+
+  it("does NOT fire when a specific clause claimed any portion", () => {
+    const will: Will = {
+      id: "will-1", grantor: "client",
+      bequests: [{
+        id: "beq-1", name: "All other assets",
+        assetMode: "all_assets", accountId: null,
+        percentage: 100, condition: "always", sortOrder: 0,
+        recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
+      }],
+    };
+    const result = applyWillAllAssetsResidual(
+      cash, 0.6, /* accountTouchedBySpecific */ true,
+      will, "spouse", fams, [], [], undefined,
+    );
+    expect(result.consumed).toBe(false);
+    expect(result.fractionClaimed).toBe(0);
+  });
+
+  it("no-op when the will has no all_assets clause", () => {
+    const will: Will = { id: "will-1", grantor: "client", bequests: [] };
+    const result = applyWillAllAssetsResidual(cash, 1, false, will, "spouse", fams, [], [], undefined);
+    expect(result.consumed).toBe(false);
+    expect(result.fractionClaimed).toBe(0);
   });
 });
