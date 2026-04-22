@@ -71,3 +71,13 @@ remaining items were closed:
   will 500 on first use in prod until they're added. _Why deferred:
   not yet provisioned; tracked alongside the Azure abuse-monitoring
   exemption (C6) in `docs/SECURITY_RUNBOOK.md` §1._
+- **Clerk webhook rate-limiting.** `/api/webhooks/clerk` is Svix-signed
+  (invalid signatures return 401 before any DB work), but the spec
+  `2026-04-22-cma-seed-on-org-creation-design.md` also called for a
+  60-rpm-per-source-IP Upstash limit as belt-and-braces against
+  credential-stuffing of the endpoint. Not shipped in the initial
+  implementation. ~15-line add using the existing `src/lib/rate-limit.ts`
+  helper. _Why deferred: Svix verification is the primary gate; the
+  rate-limiter only defends against rotating-IP abuse, which is a
+  lower-priority attack vector for an unauthenticated seed-only
+  endpoint that's cheap to execute even on a hit._
