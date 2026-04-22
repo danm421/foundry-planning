@@ -47,6 +47,7 @@ export default function CmaClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [seedError, setSeedError] = useState<string | null>(null);
   // Guard against React strict-mode double-mount re-firing the seed request.
   const fetchInFlight = useRef(false);
 
@@ -54,9 +55,26 @@ export default function CmaClient() {
     if (fetchInFlight.current) return;
     fetchInFlight.current = true;
     setLoading(true);
+    setSeedError(null);
     try {
-      // Seed if needed
-      await fetch("/api/cma/seed", { method: "POST" });
+      // Layer 3 safety net. If the Clerk webhook or future signup-handler
+      // inline call already seeded this firm, this POST is a near no-op
+      // (returns 201 with inserted counts of 0).
+      const seedRes = await fetch("/api/cma/seed", { method: "POST" });
+      if (!seedRes.ok) {
+        let detail = `status ${seedRes.status}`;
+        try {
+          const body = (await seedRes.json()) as { error?: string };
+          if (body.error) detail = body.error;
+        } catch {
+          // non-JSON response — keep the status-only detail
+        }
+        setSeedError(detail);
+        // Still try to fetch existing rows — the firm may have been
+        // partially seeded by a prior call and we don't want a blank page
+        // on top of a banner if data actually exists.
+      }
+
       const [acRes, mpRes] = await Promise.all([
         fetch("/api/cma/asset-classes"),
         fetch("/api/cma/model-portfolios"),
@@ -142,6 +160,28 @@ export default function CmaClient() {
 
   return (
     <div>
+      {seedError && (
+        <div
+          role="alert"
+          className="mb-4 flex items-start justify-between gap-4 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+        >
+          <div>
+            <p className="font-medium">
+              We couldn&apos;t set up your default capital-market assumptions.
+            </p>
+            <p className="mt-1 text-amber-800">
+              {seedError}. If this persists, contact support.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => fetchData()}
+            className="whitespace-nowrap rounded border border-amber-400 bg-white px-3 py-1 font-medium text-amber-900 hover:bg-amber-100"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {error && <p className="mb-4 rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
 
       {/* Tab toggle */}
