@@ -37,6 +37,7 @@ export async function handleClerkEvent(evt: ClerkEvent): Promise<Response> {
       resourceType: "cma",
       resourceId: firmId,
       firmId,
+      actorId: "clerk:webhook",
       metadata: { ...result, trigger: "clerk.organization.created" },
     });
     return NextResponse.json(

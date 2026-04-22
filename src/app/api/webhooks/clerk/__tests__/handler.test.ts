@@ -22,13 +22,14 @@ vi.mock("@/lib/audit", () => ({
 }));
 
 import { seedCmaForFirm } from "@/lib/cma-seed-runner";
+import { recordAudit } from "@/lib/audit";
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe("handleClerkEvent", () => {
-  it("seeds the new org on organization.created", async () => {
+  it("seeds the new org on organization.created and audits as clerk:webhook", async () => {
     const evt: ClerkEvent = {
       type: "organization.created",
       data: { id: "org_abc123" },
@@ -39,6 +40,21 @@ describe("handleClerkEvent", () => {
     expect(res.status).toBe(200);
     expect(seedCmaForFirm).toHaveBeenCalledWith("org_abc123");
     expect(seedCmaForFirm).toHaveBeenCalledTimes(1);
+
+    // Webhook-triggered audits must tag actorId as "clerk:webhook" to
+    // distinguish from admin-triggered reseeds (spec requirement).
+    expect(recordAudit).toHaveBeenCalledTimes(1);
+    const auditArgs = (recordAudit as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as {
+      action: string;
+      actorId?: string;
+      firmId: string;
+      metadata?: Record<string, unknown>;
+    };
+    expect(auditArgs.action).toBe("cma.seed");
+    expect(auditArgs.actorId).toBe("clerk:webhook");
+    expect(auditArgs.firmId).toBe("org_abc123");
+    expect(auditArgs.metadata?.trigger).toBe("clerk.organization.created");
   });
 
   it("returns 200 no-op for unrelated event types", async () => {
