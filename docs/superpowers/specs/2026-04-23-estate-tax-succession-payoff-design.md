@@ -104,32 +104,42 @@ always `0` in v1.
 
 Two new phases sandwich the existing 4b/4c precedence chain at each death.
 
+Grantor succession is a two-phase operation: **compute** the required
+entity updates (including the trust pour-out queue) **up front**, but
+**apply** them only after gross-estate computation and the creditor /
+estate-tax drains have all read the un-mutated entity state. This
+eliminates an ordering gotcha — gross-estate's "was decedent a revocable
+grantor?" predicate needs pre-flip state, while the 4c precedence chain
+needs post-flip state to route trust pour-outs cleanly.
+
 ### At first death
 
 1. **4b precedence chain** (existing) — produces asset transfer ledger
-2. **Grantor-trust succession** (new) — revocable-trust flip for decedent-grantor trusts; IDGT grantor-flip; pour-out queued for single-grantor revocables that just became irrevocable
-3. **Gross estate computation** (new) — builds `grossEstateLines[]` from post-4b-chain balances using Section "Gross estate rules" below
+2. **Compute grantor-trust succession updates** (new) — calculates the revocable-flip / IDGT-flip entity updates and queues trust pour-outs; does **not** yet mutate `entities[]`
+3. **Gross estate computation** (new) — reads un-mutated `entities[]`; builds `grossEstateLines[]` from post-4b-chain balances using Section "Gross estate rules" below
 4. **Deduction stack** (new) — marital (from 4b ledger), charitable (from ledger filtered by `external_beneficiary.kind === 'charity'`), admin expenses (from plan settings)
 5. **Federal tax** (new) — Form 706 formula with `BEA(year)` + `dsueReceived = 0`
 6. **State tax** (new) — `flatStateEstateRate × taxableEstate`
 7. **DSUE derivation** (new) — `max(0, applicableExclusion − tentativeTaxBase)`, stashed in projection state for the final-death event
-8. **Estate-tax payment** (new) — `drainLiquidAssets()` on decedent's individual residuary only (not marital share)
-9. **`applyIncomeTermination`** (existing)
-10. Emit `EstateTaxResult` onto the first-death year's `ProjectionYear`
+8. **Estate-tax payment** (new) — `drainLiquidAssets()` on decedent's individual residuary only (not marital share); eligibility filter reads un-mutated `entities[]`
+9. **Apply grantor-succession updates** (new) — mutate `entities[]` now (isGrantor / isIrrevocable / grantor flips). Pour-out queue at first death is typically empty unless the decedent was a sole grantor of a single-grantor revocable trust, in which case the queued pour-outs fire through the simplified precedence chain (see "Trust pour-out" below) and their ledger entries are appended to the 4b transfer ledger.
+10. **`applyIncomeTermination`** (existing)
+11. Emit `EstateTaxResult` onto the first-death year's `ProjectionYear`
 
 ### At final death
 
-1. **Grantor-trust succession** (new) — final-grantor flip for any still-revocable entities; trust pour-outs queued
-2. **Gross estate computation** (new) — pre-drain balances, no 50/50 joint (4b already retitled)
-3. **Creditor-payoff drain** (new) — `drainLiquidAssets()` extinguishes unlinked decedent debt. Residual falls to existing `distributeUnlinkedLiabilities` helper.
+1. **Compute grantor-trust succession updates** (new) — queues entity updates + pour-outs; does not yet mutate
+2. **Gross estate computation** (new) — reads un-mutated entities; pre-drain balances, no 50/50 joint (4b already retitled)
+3. **Creditor-payoff drain** (new) — `drainLiquidAssets()` extinguishes unlinked decedent debt; filter reads un-mutated entities. Residual falls to existing `distributeUnlinkedLiabilities` helper.
 4. **Deduction stack** (new) — charitable, admin (no marital)
 5. **Federal tax** (new) — Form 706 with `BEA(year)` + `dsueReceived` from stashed first-death value (0 for single-filer)
 6. **State tax** (new)
 7. **Estate-tax payment drain** (new) — same liquidation order
-8. **4c precedence chain** (existing, repositioned) — runs on **post-drain** account balances; queued trust pour-outs are folded in as a preceding step before the will step
-9. **`applyIncomeTermination`** (existing)
-10. **Projection truncation** (existing)
-11. Emit `EstateTaxResult` onto the final-death year's `ProjectionYear`
+8. **Apply grantor-succession updates** (new) — mutate `entities[]`
+9. **4c precedence chain** (existing, repositioned) — runs on **post-drain**, **post-succession** balances; queued trust pour-outs are folded in as a preceding step before the will step
+10. **`applyIncomeTermination`** (existing)
+11. **Projection truncation** (existing)
+12. Emit `EstateTaxResult` onto the final-death year's `ProjectionYear`
 
 Key structural change: **at final death, 4c's precedence chain moves from
 "runs first" to "runs last."** Creditor-payoff and estate-tax payment
@@ -172,9 +182,13 @@ ALTER TABLE plan_settings
   ADD COLUMN estate_admin_expenses     numeric(15, 2) NOT NULL DEFAULT '0',
   ADD COLUMN flat_state_estate_rate    numeric(5, 4)  NOT NULL DEFAULT '0';
 
--- Single-grantor-per-trust simplification
+-- Single-grantor-per-trust simplification. Note: uses a new purpose-built
+-- enum (not the existing owner_enum, which includes 'joint') so the
+-- schema itself enforces "no multi-grantor" without a check constraint.
+CREATE TYPE entity_grantor_enum AS ENUM ('client', 'spouse');
+
 ALTER TABLE entities
-  ADD COLUMN grantor owner_enum NULL;
+  ADD COLUMN grantor entity_grantor_enum NULL;
 
 -- Pre-production data fix-up: copy first grantor's name into the
 -- single-grantor column, mapping name matches to 'client' / 'spouse'.
@@ -184,11 +198,11 @@ UPDATE entities
     WHEN jsonb_array_length(grantors) >= 1
          AND (grantors -> 0 ->> 'name') = (
            SELECT first_name FROM clients WHERE clients.id = entities.client_id
-         ) THEN 'client'::owner_enum
+         ) THEN 'client'::entity_grantor_enum
     WHEN jsonb_array_length(grantors) >= 1
          AND (grantors -> 0 ->> 'name') = (
            SELECT spouse_name FROM clients WHERE clients.id = entities.client_id
-         ) THEN 'spouse'::owner_enum
+         ) THEN 'spouse'::entity_grantor_enum
     ELSE NULL
   END;
 
@@ -660,18 +674,17 @@ elif entity.isIrrevocable AND entity.isGrantor:
 
 Three branches total (including skip). No multi-grantor mechanics.
 
-### Ordering relative to gross estate
+### Ordering relative to gross estate and drains
 
-`applyGrantorSuccession` runs **before** `computeGrossEstate()` at each
-death. Gross estate reads post-succession entity state:
-- Still-revocable trusts (where decedent was a grantor) already flipped
-  to irrevocable at this point — succession zeros them out for future
-  estates but the gross-estate rule above uses the `grantor === decedent`
-  predicate against the *original* entity state for THIS event. To
-  avoid an ordering gotcha, the gross-estate builder takes a snapshot of
-  the pre-succession entities and consults *that* for the "was decedent
-  the grantor?" question. Post-succession state is used for all other
-  purposes (downstream years, the `ProjectionYear.estateTax` output).
+Per the "Pipeline shape" section, `applyGrantorSuccession` runs as a
+**compute-only** step at the top of each death event. It returns a
+queued `TrustSuccessionResult` but does not mutate `entities[]`. The
+gross-estate builder and both drain callers (creditor-payoff and
+estate-tax payment) all read the un-mutated entity state. Updates are
+applied only after the drains, just before the 4c precedence chain (or
+at the end of the event, for first death). This eliminates the ordering
+gotcha where includibility's "was decedent the grantor?" predicate
+would otherwise need a snapshot of pre-flip state.
 
 ### Trust pour-out
 
@@ -876,9 +889,11 @@ Existing 4b/4c invariants continue to fire. 4d adds:
       match the helper invocations listed in the `File layout` split.
       Creditor-payoff only at final death; estate-tax drain at both.
 - [x] Scope check: split into two plans (4d-1 engine+data, 4d-2 report).
-- [x] Ambiguity check: single-grantor-per-trust enforced; multi-grantor
-      is explicitly future-work. BEA formula is a single pure function;
+- [x] Ambiguity check: single-grantor-per-trust enforced at the schema
+      level via a purpose-built `entity_grantor_enum` (no 'joint' value,
+      no check constraint needed). BEA formula is a single pure function;
       no DB column conflict. Flat state rate has no exemption/bracket
-      ambiguity.
+      ambiguity. Pipeline ordering made explicit — succession computes
+      up front, applies after drains.
 - [x] Terminology section distinguishes statutory Form 706 terms from
       any third-party derivations.
