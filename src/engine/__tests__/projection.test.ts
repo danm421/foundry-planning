@@ -1574,6 +1574,7 @@ describe("first-death asset transfer (spec 4b)", () => {
       ...data,
       client: {
         ...data.client,
+        lifeExpectancy: 140, // push past planEndYear (2080) so no death event fires
         spouseDob: undefined,
         spouseLifeExpectancy: undefined,
         filingStatus: "single",
