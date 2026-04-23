@@ -1,4 +1,4 @@
-import type { ClientInfo, Account, Liability, DeathTransfer, FamilyMember, Will, WillBequest, EntitySummary, Income } from "./types";
+import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, FamilyMember, Will, WillBequest, EntitySummary, Income } from "./types";
 import { nextSyntheticId } from "./asset-transactions";
 
 /** Compute the year of the first-death event. Returns null when there is no
@@ -832,6 +832,8 @@ export interface DeathEventResult {
   liabilities: Liability[];
   transfers: DeathTransfer[];
   warnings: string[];
+  estateTax: EstateTaxResult;
+  dsueGenerated: number;   // first-death only; always 0 at final death
 }
 
 /** Orchestrator. Applies the precedence chain (titling → bene-designations →

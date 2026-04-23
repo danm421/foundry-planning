@@ -60,7 +60,8 @@ export interface DeathTransfer {
     | "fallback_spouse"
     | "fallback_children"
     | "fallback_other_heirs"
-    | "unlinked_liability_proportional";
+    | "unlinked_liability_proportional"
+    | "trust_pour_out";
   recipientKind:
     | "spouse"
     | "family_member"
@@ -79,6 +80,67 @@ export interface DeathTransfer {
    *  null for asset transfers and for external / system_default liability
    *  transfers. */
   resultingLiabilityId: string | null;
+}
+
+export interface GrossEstateLine {
+  /** Display label, e.g. "INV - Client 401k" or "Home (50%)". */
+  label: string;
+  /** Source account id; null when this line is a liability. */
+  accountId: string | null;
+  /** Source liability id; null when this line is an asset. */
+  liabilityId: string | null;
+  /** 0.5 for joint-at-first-death, 1.0 otherwise. Stored for display. */
+  percentage: number;
+  /** Positive for assets, negative for debts. */
+  amount: number;
+}
+
+export interface EstateTaxResult {
+  year: number;
+  deathOrder: 1 | 2;
+  deceased: "client" | "spouse";
+
+  // Gross Estate
+  grossEstateLines: GrossEstateLine[];
+  grossEstate: number;
+
+  // Deductions
+  estateAdminExpenses: number;
+  maritalDeduction: number;          // 0 at final death
+  charitableDeduction: number;
+  // Debts are already folded into grossEstateLines as negative entries.
+  taxableEstate: number;
+
+  // Tentative Tax Base
+  adjustedTaxableGifts: number;
+  lifetimeGiftTaxAdjustment: number; // always 0 in v1; reserved
+  tentativeTaxBase: number;
+
+  // Federal Tax
+  tentativeTax: number;
+  beaAtDeathYear: number;
+  dsueReceived: number;
+  applicableExclusion: number;       // BEA + DSUE
+  unifiedCredit: number;
+  federalEstateTax: number;
+
+  // State Tax
+  stateEstateTaxRate: number;
+  stateEstateTax: number;
+
+  // Totals
+  totalEstateTax: number;            // federal + state
+  totalTaxesAndExpenses: number;     // totalEstateTax + estateAdminExpenses
+
+  // Portability
+  dsueGenerated: number;             // first-death only; ported to survivor
+
+  // Payments
+  estateTaxDebits: Array<{ accountId: string; amount: number }>;
+
+  // Creditor-payoff (final death only; empty arrays/0 at first death)
+  creditorPayoffDebits: Array<{ accountId: string; amount: number }>;
+  creditorPayoffResidual: number;
 }
 
 export interface FamilyMember {
@@ -131,6 +193,10 @@ export interface EntitySummary {
   isIrrevocable?: boolean;
   trustee?: string;
   exemptionConsumed?: number;
+  /** Single household grantor — "client" | "spouse". Undefined means the
+   *  trust was funded by a third party (e.g., parent-funded trust for the
+   *  client). 4d-1 replaces the prior `grantors: {name, pct}[]` list. */
+  grantor?: "client" | "spouse";
 }
 
 export interface ClientInfo {
@@ -487,6 +553,8 @@ export interface ProjectionYear {
   deathTransfers?: DeathTransfer[];
   /** Non-fatal warnings emitted by the first-death precedence chain. */
   deathWarnings?: string[];
+  /** Estate-tax computation result. Only present in death-event years. */
+  estateTax?: EstateTaxResult;
 }
 
 export interface AccountLedger {
