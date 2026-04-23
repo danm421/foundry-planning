@@ -245,6 +245,10 @@ export interface Liability {
   balanceAsOfYear?: number;
   linkedPropertyId?: string;
   ownerEntityId?: string;
+  /** Set by the final-death event (4c) when an unlinked household liability
+   *  is distributed proportionally to a family-member heir. Null / absent
+   *  for household-originated liabilities. */
+  ownerFamilyMemberId?: string;
   isInterestDeductible?: boolean;
   extraPayments: ExtraPayment[];
 }
