@@ -192,7 +192,7 @@ describe("firesAtDeath", () => {
 });
 
 import { splitAccount } from "../death-event";
-import type { Account, Liability, DeathTransfer } from "../types";
+import type { Account, Liability, DeathTransfer, EntitySummary } from "../types";
 
 
 describe("splitAccount", () => {
@@ -725,7 +725,7 @@ describe("effectiveFilingStatus", () => {
   });
 });
 
-import { applyFirstDeath } from "../death-event";
+import { applyFirstDeath, applyFinalDeath } from "../death-event";
 import type { DeathEventInput, DeathEventResult } from "../death-event";
 
 describe("applyFirstDeath orchestrator", () => {
@@ -999,5 +999,206 @@ describe("distributeUnlinkedLiabilities", () => {
       .reduce((s, t) => s + t.amount, 0);
     // $10k × 75% = $7,500, as negative
     expect(aTotal).toBeCloseTo(-7500, 2);
+  });
+});
+
+describe("applyFinalDeath orchestrator", () => {
+  const mkAccount = (over: Partial<Account> = {}): Account => ({
+    id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
+    owner: "client", value: 100_000, basis: 60_000,
+    growthRate: 0.05, rmdEnabled: false,
+    ...over,
+  });
+
+  const mkInput = (over: Partial<DeathEventInput> = {}): DeathEventInput => {
+    const accounts = over.accounts ?? [mkAccount()];
+    const accountBalances: Record<string, number> = over.accountBalances ?? {};
+    const basisMap: Record<string, number> = over.basisMap ?? {};
+    // Default balance/basis maps mirror the account list.
+    for (const a of accounts) {
+      if (accountBalances[a.id] == null) accountBalances[a.id] = a.value;
+      if (basisMap[a.id] == null) basisMap[a.id] = a.basis;
+    }
+    return {
+      year: 2050,
+      deceased: "client",
+      survivor: "spouse",  // note: 4c's applyFinalDeath treats this field loosely; orchestrator internally passes null to fallback
+      will: over.will ?? null,
+      accounts,
+      accountBalances,
+      basisMap,
+      incomes: over.incomes ?? [],
+      liabilities: over.liabilities ?? [],
+      familyMembers: over.familyMembers ?? [],
+      externalBeneficiaries: over.externalBeneficiaries ?? [],
+      entities: over.entities ?? [],
+      ...over,
+    };
+  };
+
+  it("distributes an unwilled account to living children when no will exists (fallback tier 2)", () => {
+    const children: FamilyMember[] = [
+      { id: "c1", relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+      { id: "c2", relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
+    ];
+    const input = mkInput({ familyMembers: children });
+    const result = applyFinalDeath(input);
+
+    // 2 accounts (one per child), each $50k, both with ownerFamilyMemberId
+    expect(result.accounts).toHaveLength(2);
+    expect(result.accounts[0].ownerFamilyMemberId).toBe("c1");
+    expect(result.accounts[1].ownerFamilyMemberId).toBe("c2");
+    expect(result.accounts[0].value).toBeCloseTo(50_000, 2);
+    expect(result.accounts[1].value).toBeCloseTo(50_000, 2);
+
+    // 2 asset ledger entries, both via fallback_children with deathOrder=2
+    const assetEntries = result.transfers.filter((t) => t.sourceAccountId != null);
+    expect(assetEntries).toHaveLength(2);
+    expect(assetEntries.every((t) => t.deathOrder === 2)).toBe(true);
+    expect(assetEntries.every((t) => t.via === "fallback_children")).toBe(true);
+  });
+
+  it("falls back to tier 3 (Other Heirs sink) when no spouse + no children", () => {
+    const input = mkInput();
+    const result = applyFinalDeath(input);
+
+    expect(result.accounts).toHaveLength(0);  // removed
+    expect(result.transfers).toHaveLength(1);
+    expect(result.transfers[0].via).toBe("fallback_other_heirs");
+    expect(result.transfers[0].recipientKind).toBe("system_default");
+    expect(result.transfers[0].deathOrder).toBe(2);
+  });
+
+  it("executes an always-condition will at 4c with deathOrder=2", () => {
+    const children: FamilyMember[] = [
+      { id: "c1", relationship: "child", firstName: "Child", lastName: null, dateOfBirth: null },
+    ];
+    const will: Will = {
+      id: "w1", grantor: "client", bequests: [
+        {
+          id: "b1", name: "Always bequest", assetMode: "all_assets", accountId: null,
+          percentage: 100, condition: "always", sortOrder: 0,
+          recipients: [{ recipientKind: "family_member", recipientId: "c1", percentage: 100, sortOrder: 0 }],
+        },
+      ],
+    };
+    const input = mkInput({ will, familyMembers: children });
+    const result = applyFinalDeath(input);
+
+    expect(result.accounts).toHaveLength(1);
+    expect(result.accounts[0].ownerFamilyMemberId).toBe("c1");
+    const willEntry = result.transfers.find((t) => t.via === "will");
+    expect(willEntry).toBeDefined();
+    expect(willEntry!.deathOrder).toBe(2);
+  });
+
+  it("skips if_spouse_survives clauses and fires if_spouse_predeceased clauses at 4c", () => {
+    const children: FamilyMember[] = [
+      { id: "c1", relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+    ];
+    const will: Will = {
+      id: "w1", grantor: "client", bequests: [
+        {
+          id: "b1", name: "Spouse bequest", assetMode: "all_assets", accountId: null,
+          percentage: 100, condition: "if_spouse_survives", sortOrder: 0,
+          recipients: [{ recipientKind: "family_member", recipientId: "c1", percentage: 100, sortOrder: 0 }],
+        },
+        {
+          id: "b2", name: "No-spouse bequest", assetMode: "all_assets", accountId: null,
+          percentage: 100, condition: "if_spouse_predeceased", sortOrder: 1,
+          recipients: [{ recipientKind: "family_member", recipientId: "c1", percentage: 100, sortOrder: 0 }],
+        },
+      ],
+    };
+    const input = mkInput({ will, familyMembers: children });
+    const result = applyFinalDeath(input);
+
+    // The if_spouse_predeceased bequest fires; the if_spouse_survives skips.
+    // Account fully routed to c1 — no fallback warning.
+    const willEntries = result.transfers.filter((t) => t.via === "will");
+    expect(willEntries).toHaveLength(1);
+    expect(willEntries[0].recipientId).toBe("c1");
+    expect(result.warnings.filter((w) => w.startsWith("residual_fallback_fired"))).toHaveLength(0);
+  });
+
+  it("runs the unlinked-liability proportional distribution step", () => {
+    const children: FamilyMember[] = [
+      { id: "c1", relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+    ];
+    const liabilities: Liability[] = [
+      {
+        id: "cc1", name: "Credit Card", balance: 10_000,
+        interestRate: 0.18, monthlyPayment: 500,
+        startYear: 2025, startMonth: 1, termMonths: 24, extraPayments: [],
+      },
+    ];
+    const input = mkInput({ familyMembers: children, liabilities });
+    const result = applyFinalDeath(input);
+
+    // Asset transfers: 1 ($100k → c1). Liability transfers: 1 ($10k → c1).
+    const liabEntries = result.transfers.filter((t) => t.via === "unlinked_liability_proportional");
+    expect(liabEntries).toHaveLength(1);
+    expect(liabEntries[0].recipientId).toBe("c1");
+    expect(liabEntries[0].amount).toBeCloseTo(-10_000, 2);
+
+    // Original CC removed, new family-member-owned CC added.
+    expect(result.liabilities.some((l) => l.id === "cc1")).toBe(false);
+    const newCC = result.liabilities.find((l) => l.ownerFamilyMemberId === "c1");
+    expect(newCC).toBeDefined();
+    expect(newCC!.balance).toBeCloseTo(10_000, 2);
+  });
+
+  it("clips deceased's personal incomes at final death year", () => {
+    const incomes: Income[] = [
+      { id: "sal1", type: "salary", name: "Salary", annualAmount: 100_000,
+        startYear: 2030, endYear: 2070, growthRate: 0.03, owner: "client" },
+      { id: "ent1", type: "trust", name: "Trust Income", annualAmount: 50_000,
+        startYear: 2030, endYear: 2070, growthRate: 0.03, owner: "client", ownerEntityId: "e1" },
+    ];
+    const input = mkInput({ incomes });
+    const result = applyFinalDeath(input);
+
+    const salary = result.incomes.find((i) => i.id === "sal1");
+    expect(salary!.endYear).toBe(2050);
+    const trust = result.incomes.find((i) => i.id === "ent1");
+    expect(trust!.endYear).toBe(2070);  // untouched (ownerEntityId)
+  });
+
+  it("passes entity-owned accounts through untouched", () => {
+    const accounts = [
+      mkAccount({ id: "a1", owner: "client", ownerEntityId: "e1", value: 500_000, basis: 200_000 }),
+      mkAccount({ id: "a2", owner: "client", value: 100_000, basis: 60_000 }),
+    ];
+    const entities: EntitySummary[] = [
+      { id: "e1", includeInPortfolio: true, isGrantor: true },
+    ];
+    const input = mkInput({ accounts, entities });
+    const result = applyFinalDeath(input);
+
+    expect(result.accounts.find((a) => a.id === "a1")).toBeDefined();
+    const a1 = result.accounts.find((a) => a.id === "a1")!;
+    expect(a1.ownerEntityId).toBe("e1");
+  });
+
+  it("throws when a will clause routes 'spouse' as recipient at 4c (defensive invariant)", () => {
+    const will: Will = {
+      id: "w1", grantor: "client", bequests: [
+        {
+          id: "b1", name: "Spouse clause", assetMode: "all_assets", accountId: null,
+          percentage: 100, condition: "always", sortOrder: 0,
+          recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
+        },
+      ],
+    };
+    const input = mkInput({ will });
+    expect(() => applyFinalDeath(input)).toThrow(/spouse/i);
+  });
+
+  it("throws when any account remains with owner='joint' post-event (defensive)", () => {
+    // This is impossible in production because 4b retitles joint accounts,
+    // but the orchestrator should reject the data defensively.
+    const accounts = [mkAccount({ owner: "joint" })];
+    const input = mkInput({ accounts });
+    expect(() => applyFinalDeath(input)).toThrow(/joint/i);
   });
 });
