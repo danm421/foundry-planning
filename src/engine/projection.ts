@@ -41,9 +41,12 @@ import { applyTransfers } from "./transfers";
 import { applyAssetSales, applyAssetPurchases, _resetSyntheticIdCounter } from "./asset-transactions";
 import {
   computeFirstDeathYear,
+  computeFinalDeathYear,
   identifyDeceased,
+  identifyFinalDeceased,
   effectiveFilingStatus,
   applyFirstDeath,
+  applyFinalDeath,
 } from "./death-event";
 import { calcSeca } from "../lib/tax/fica";
 
@@ -236,6 +239,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     firstDeathYear != null ? identifyDeceased(client, firstDeathYear) : null;
   const firstDeathSurvivor: "client" | "spouse" | null =
     firstDeathDeceased === "client" ? "spouse" : firstDeathDeceased === "spouse" ? "client" : null;
+
+  const finalDeathYear = computeFinalDeathYear(
+    client,
+    planSettings.planStartYear,
+    planSettings.planEndYear,
+  );
+  const finalDeceased: "client" | "spouse" | null =
+    finalDeathYear != null
+      ? identifyFinalDeceased(client, firstDeathDeceased)
+      : null;
 
   let currentIncomes: Income[] = [...data.incomes];
 
@@ -1496,6 +1509,57 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const thisYear = years[years.length - 1];
       thisYear.deathTransfers = deathResult.transfers;
       thisYear.deathWarnings = deathResult.warnings;
+    }
+
+    // Final-death event (spec 4c) — fires at the final death year. For
+    // same-year double death, fires the same year as 4b on the already-4b-
+    // mutated state. After this block, break out of the year loop to
+    // truncate the projection.
+    if (
+      finalDeathYear != null &&
+      finalDeceased != null &&
+      year === finalDeathYear
+    ) {
+      const finalWill = (data.wills ?? []).find(
+        (w) => w.grantor === finalDeceased,
+      ) ?? null;
+
+      const finalResult = applyFinalDeath({
+        year,
+        deceased: finalDeceased,
+        // survivor field is unused by applyFinalDeath internally; pass
+        // deceased as a safe placeholder to keep the shared input type.
+        survivor: finalDeceased,
+        will: finalWill,
+        accounts: workingAccounts,
+        accountBalances,
+        basisMap,
+        incomes: currentIncomes,
+        liabilities: currentLiabilities,
+        familyMembers: data.familyMembers ?? [],
+        externalBeneficiaries: [],
+        entities: data.entities ?? [],
+      });
+
+      workingAccounts = finalResult.accounts;
+      for (const key of Object.keys(accountBalances)) delete (accountBalances as Record<string, number>)[key];
+      Object.assign(accountBalances, finalResult.accountBalances);
+      for (const key of Object.keys(basisMap)) delete (basisMap as Record<string, number>)[key];
+      Object.assign(basisMap, finalResult.basisMap);
+      currentIncomes = finalResult.incomes;
+      currentLiabilities = finalResult.liabilities;
+
+      const thisYear = years[years.length - 1];
+      thisYear.deathTransfers = [
+        ...(thisYear.deathTransfers ?? []),
+        ...finalResult.transfers,
+      ];
+      thisYear.deathWarnings = [
+        ...(thisYear.deathWarnings ?? []),
+        ...finalResult.warnings,
+      ];
+
+      break;
     }
   }
 
