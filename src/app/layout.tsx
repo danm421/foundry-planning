@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Geist, Geist_Mono } from "next/font/google";
+import { SentryUserContext } from "@/components/sentry-user-context";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,8 +29,12 @@ export default function RootLayout({
       <html
         lang="en"
         className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+        suppressHydrationWarning
       >
-        <body className="min-h-full flex flex-col bg-gray-950 text-gray-100">{children}</body>
+        <body className="min-h-full flex flex-col bg-gray-950 text-gray-100">
+          <SentryUserContext />
+          {children}
+        </body>
       </html>
     </ClerkProvider>
   );
