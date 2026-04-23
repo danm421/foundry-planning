@@ -1532,15 +1532,15 @@ describe("first-death asset transfer (spec 4b)", () => {
     return data;
   }
 
-  it("death-year row carries firstDeathTransfers; next year has post-death ownership", () => {
+  it("death-year row carries deathTransfers; next year has post-death ownership", () => {
     const data = buildEstateScenario();
     const years = runProjection(data);
     const deathRow = years.find((y) => y.year === 2050)!;
-    expect(deathRow.firstDeathTransfers).toBeDefined();
-    expect(deathRow.firstDeathTransfers!.length).toBeGreaterThan(0);
+    expect(deathRow.deathTransfers).toBeDefined();
+    expect(deathRow.deathTransfers!.length).toBeGreaterThan(0);
     // Non-death years carry no transfers
-    expect(years.find((y) => y.year === 2049)!.firstDeathTransfers).toBeUndefined();
-    expect(years.find((y) => y.year === 2051)!.firstDeathTransfers).toBeUndefined();
+    expect(years.find((y) => y.year === 2049)!.deathTransfers).toBeUndefined();
+    expect(years.find((y) => y.year === 2051)!.deathTransfers).toBeUndefined();
   });
 
   it("death event on the happy path emits no warnings", () => {
@@ -1556,7 +1556,7 @@ describe("first-death asset transfer (spec 4b)", () => {
     const data = buildEstateScenario();
     const years = runProjection(data);
     const deathRow = years.find((y) => y.year === 2050)!;
-    const ledgerSum = deathRow.firstDeathTransfers!.reduce((s, t) => s + t.amount, 0);
+    const ledgerSum = deathRow.deathTransfers!.reduce((s, t) => s + t.amount, 0);
     // Deceased-touched accounts (joint brokerage, John's IRA, John's cash). Their
     // 2050 end-of-year values live on the ProjectionYear's accountLedgers as
     // endingValue. Jane's Roth is unaffected (she's the survivor).
@@ -1581,7 +1581,7 @@ describe("first-death asset transfer (spec 4b)", () => {
     };
     const years = runProjection(singleClient);
     for (const y of years) {
-      expect(y.firstDeathTransfers).toBeUndefined();
+      expect(y.deathTransfers).toBeUndefined();
       expect(y.deathWarnings).toBeUndefined();
     }
   });

@@ -39,18 +39,28 @@ export interface Will {
   bequests: WillBequest[];
 }
 
-export interface FirstDeathTransfer {
+export interface DeathTransfer {
   year: number;
+  /** 1 = first death (4b); 2 = final death (4c). */
+  deathOrder: 1 | 2;
   deceased: "client" | "spouse";
-  sourceAccountId: string;
-  sourceAccountName: string;
+  /** Source account id for asset transfers; null when this entry represents
+   *  a proportional unlinked-liability transfer (see sourceLiabilityId). */
+  sourceAccountId: string | null;
+  /** Frozen at event time. Null for liability transfers. */
+  sourceAccountName: string | null;
+  /** Source liability id for unlinked_liability_proportional entries only. */
+  sourceLiabilityId: string | null;
+  /** Frozen at event time. Null for asset transfers. */
+  sourceLiabilityName: string | null;
   via:
     | "titling"
     | "beneficiary_designation"
     | "will"
     | "fallback_spouse"
     | "fallback_children"
-    | "fallback_other_heirs";
+    | "fallback_other_heirs"
+    | "unlinked_liability_proportional";
   recipientKind:
     | "spouse"
     | "family_member"
@@ -59,9 +69,16 @@ export interface FirstDeathTransfer {
     | "system_default";
   recipientId: string | null;
   recipientLabel: string;
+  /** Positive for asset transfers; negative for liability transfers. */
   amount: number;
+  /** Proportional basis for asset transfers. 0 for liability transfers. */
   basis: number;
+  /** Synthetic account id when recipient kept it in household; null otherwise. */
   resultingAccountId: string | null;
+  /** Synthetic liability id for family-member recipients of unlinked debt;
+   *  null for asset transfers and for external / system_default liability
+   *  transfers. */
+  resultingLiabilityId: string | null;
 }
 
 export interface FamilyMember {
@@ -464,8 +481,10 @@ export interface ProjectionYear {
       liabilityName?: string;
     }[];
   };
-  /** Only populated on the first-death year. One entry per (source-account × recipient). */
-  firstDeathTransfers?: FirstDeathTransfer[];
+  /** Only populated on death-event years. One entry per (source × recipient).
+   *  Same-year double death (4b + 4c in the same year) produces both
+   *  deathOrder = 1 and deathOrder = 2 entries on the same row. */
+  deathTransfers?: DeathTransfer[];
   /** Non-fatal warnings emitted by the first-death precedence chain. */
   deathWarnings?: string[];
 }

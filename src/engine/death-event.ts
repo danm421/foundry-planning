@@ -1,4 +1,4 @@
-import type { ClientInfo, Account, Liability, FirstDeathTransfer, FamilyMember, Will, WillBequest, EntitySummary, Income } from "./types";
+import type { ClientInfo, Account, Liability, DeathTransfer, FamilyMember, Will, WillBequest, EntitySummary, Income } from "./types";
 import { nextSyntheticId } from "./asset-transactions";
 
 /** Compute the year of the first-death event. Returns null when there is no
@@ -60,8 +60,8 @@ export type SplitShare = {
    *  should be set. */
   ownerMutation?: OwnerMutation;
   ledgerMeta: {
-    via: FirstDeathTransfer["via"];
-    recipientKind: FirstDeathTransfer["recipientKind"];
+    via: DeathTransfer["via"];
+    recipientKind: DeathTransfer["recipientKind"];
     recipientId: string | null;
     recipientLabel: string;
   };
@@ -70,7 +70,7 @@ export type SplitShare = {
 export interface SplitAccountResult {
   resultingAccounts: Account[];
   resultingLiabilities: Liability[];
-  ledgerEntries: Array<Omit<FirstDeathTransfer, "year" | "deceased">>;
+  ledgerEntries: Array<Omit<DeathTransfer, "year" | "deceased" | "deathOrder">>;
 }
 
 /** Split (or mutate-in-place) an account according to a list of shares.
@@ -114,6 +114,8 @@ export function splitAccount(
       ledgerEntries.push({
         sourceAccountId: source.id,
         sourceAccountName: source.name,
+        sourceLiabilityId: null,
+        sourceLiabilityName: null,
         via: share.ledgerMeta.via,
         recipientKind: share.ledgerMeta.recipientKind,
         recipientId: share.ledgerMeta.recipientId,
@@ -121,6 +123,7 @@ export function splitAccount(
         amount,
         basis: basisShare,
         resultingAccountId: null,
+        resultingLiabilityId: null,
       });
       continue;
     }
@@ -183,6 +186,8 @@ export function splitAccount(
     ledgerEntries.push({
       sourceAccountId: source.id,
       sourceAccountName: source.name,
+      sourceLiabilityId: null,
+      sourceLiabilityName: null,
       via: share.ledgerMeta.via,
       recipientKind: share.ledgerMeta.recipientKind,
       recipientId: share.ledgerMeta.recipientId,
@@ -190,6 +195,7 @@ export function splitAccount(
       amount,
       basis: basisShare,
       resultingAccountId: newAccount.id,
+      resultingLiabilityId: null,
     });
   }
 
@@ -203,7 +209,7 @@ export interface StepResult {
   consumed: boolean;
   resultingAccounts: Account[];
   resultingLiabilities: Liability[];
-  ledgerEntries: Array<Omit<FirstDeathTransfer, "year" | "deceased">>;
+  ledgerEntries: Array<Omit<DeathTransfer, "year" | "deceased" | "deathOrder">>;
   /** Fraction of the source account that has been claimed by this step (0–1).
    *  Used when step 2 partially claims and step 3 picks up the remainder. */
   fractionClaimed: number;
@@ -287,7 +293,7 @@ export function applyBeneficiaryDesignations(
   const shares: SplitShare[] = primaries.map((b) => {
     const fraction = undisposedFraction * (b.percentage / 100);
     let ownerMutation: OwnerMutation | undefined;
-    let recipientKind: FirstDeathTransfer["recipientKind"];
+    let recipientKind: DeathTransfer["recipientKind"];
     let recipientId: string | null;
     let recipientLabel: string;
     let removed = false;
@@ -374,7 +380,7 @@ function resolveRecipientLabelAndMutation(
 ): {
   ownerMutation?: OwnerMutation;
   removed: boolean;
-  recipientKind: FirstDeathTransfer["recipientKind"];
+  recipientKind: DeathTransfer["recipientKind"];
   recipientId: string | null;
   recipientLabel: string;
 } {
@@ -645,7 +651,7 @@ export interface DeathEventResult {
   basisMap: Record<string, number>;
   incomes: Income[];
   liabilities: Liability[];
-  transfers: FirstDeathTransfer[];
+  transfers: DeathTransfer[];
   warnings: string[];
 }
 
@@ -665,7 +671,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   const nextLiabilities: Liability[] = [...liabilities];
   const nextAccountBalances: Record<string, number> = { ...accountBalances };
   const nextBasisMap: Record<string, number> = { ...basisMap };
-  const transfers: FirstDeathTransfer[] = [];
+  const transfers: DeathTransfer[] = [];
   const warnings: string[] = [];
 
   // Build a per-will map for quick lookups. Only the deceased's will matters.
@@ -701,7 +707,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     let anySpecificClauseTouched = false;
     const stepAccts: Account[] = [];
     const stepLiabs: Liability[] = [];
-    const stepLedger: Array<Omit<FirstDeathTransfer, "year" | "deceased">> = [];
+    const stepLedger: Array<Omit<DeathTransfer, "year" | "deceased" | "deathOrder">> = [];
 
     // Step 1: Titling
     const step1 = applyTitling(effectiveAcct, survivor, linkedLiability);
@@ -768,9 +774,9 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
       undisposed = 0;
     }
 
-    // Emit ledger (with year + deceased populated) and fold accumulators
+    // Emit ledger (with year + deceased + deathOrder populated) and fold accumulators
     for (const entry of stepLedger) {
-      transfers.push({ ...entry, year, deceased });
+      transfers.push({ ...entry, year, deceased, deathOrder: 1 });
     }
 
     // Replace `acct` in the accounts list with the step-produced accounts.
@@ -813,8 +819,10 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
 /** Post-event invariant checks. Violations indicate a routing bug. */
 function assertInvariants(result: DeathEventResult, input: DeathEventInput): void {
   // 1. Sum of ledger amounts grouped by source = each source's pre-death value
+  //    (skip liability-only transfers which have null sourceAccountId)
   const bySource = new Map<string, number>();
   for (const t of result.transfers) {
+    if (t.sourceAccountId == null) continue;
     bySource.set(t.sourceAccountId, (bySource.get(t.sourceAccountId) ?? 0) + t.amount);
   }
   for (const [sourceId, summed] of bySource.entries()) {

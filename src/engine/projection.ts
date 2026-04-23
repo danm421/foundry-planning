@@ -1494,7 +1494,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       // Attach to the just-built ProjectionYear
       const thisYear = years[years.length - 1];
-      thisYear.firstDeathTransfers = deathResult.transfers;
+      thisYear.deathTransfers = deathResult.transfers;
       thisYear.deathWarnings = deathResult.warnings;
     }
   }
