@@ -90,14 +90,20 @@ type Args = {
   clientId?: string | null;
   firmId: string;
   metadata?: Record<string, unknown>;
+  // Override the default `auth().userId` actor. Use for unauthenticated
+  // inbound callers that still produce a real audit event — e.g.
+  // "clerk:webhook" for Clerk-signed webhook deliveries. Without this,
+  // such callers get logged as "system", losing the distinction from
+  // admin-triggered actions.
+  actorId?: string;
 };
 
 export async function recordAudit(args: Args): Promise<void> {
   try {
-    const { userId } = await auth();
+    const actorId = args.actorId ?? (await auth()).userId ?? "system";
     await db.insert(auditLog).values({
       firmId: args.firmId,
-      actorId: userId ?? "system",
+      actorId,
       action: args.action,
       resourceType: args.resourceType,
       resourceId: args.resourceId,

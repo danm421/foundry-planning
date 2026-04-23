@@ -7,6 +7,10 @@ const isPublicRoute = createRouteMatcher([
   "/",
   // Browsers POST CSP violation reports here with no session cookie.
   "/api/csp-report",
+  "/api/webhooks/clerk",
+  // Sentry tunnel route (configured in next.config.ts `tunnelRoute`).
+  // Browser SDK POSTs error envelopes here without a session cookie.
+  "/monitoring(.*)",
 ]);
 
 // The org picker is the one authenticated route that signed-in-but-
