@@ -1598,3 +1598,160 @@ describe("first-death asset transfer (spec 4b)", () => {
     expect(deathRow.deathWarnings!.length).toBeGreaterThan(0); // residual_fallback_fired per account
   });
 });
+
+describe("runProjection — final-death event (spec 4c)", () => {
+  const twoSpouseClient: ClientInfo = {
+    firstName: "Tom", lastName: "Test",
+    dateOfBirth: "1970-01-01",
+    retirementAge: 65, planEndAge: 95,
+    filingStatus: "married_joint",
+    lifeExpectancy: 75,          // dies 2045 (first death)
+    spouseDob: "1972-01-01",
+    spouseLifeExpectancy: 80,    // dies 2052 (final death)
+  };
+
+  const planSettings: PlanSettings = {
+    ...basePlanSettings,
+    planStartYear: 2026,
+    planEndYear: 2066,
+    inflationRate: 0.025,
+    flatFederalRate: 0,
+    flatStateRate: 0,
+  };
+
+  it("truncates the projection at the final-death year (couple with distinct deaths)", () => {
+    const data = buildClientData({
+      client: twoSpouseClient,
+      planSettings,
+      accounts: [{
+        id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
+        owner: "client", value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+      }],
+      familyMembers: [
+        { id: "c1", relationship: "child", firstName: "Child", lastName: null, dateOfBirth: null },
+      ],
+    });
+
+    const years = runProjection(data);
+    const lastYear = years[years.length - 1];
+    expect(lastYear.year).toBe(2052);  // final-death year
+    expect(years.find((y) => y.year === 2053)).toBeUndefined();
+  });
+
+  it("attaches deathOrder=1 and deathOrder=2 entries to distinct years for distinct-year deaths", () => {
+    const data = buildClientData({
+      client: twoSpouseClient,
+      planSettings,
+      accounts: [{
+        id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
+        owner: "client", value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+      }],
+      familyMembers: [
+        { id: "c1", relationship: "child", firstName: "Child", lastName: null, dateOfBirth: null },
+      ],
+    });
+
+    const years = runProjection(data);
+    const firstDeathYr = years.find((y) => y.year === 2045);
+    const finalDeathYr = years.find((y) => y.year === 2052);
+    expect(firstDeathYr?.deathTransfers?.every((t) => t.deathOrder === 1)).toBe(true);
+    expect(finalDeathYr?.deathTransfers?.every((t) => t.deathOrder === 2)).toBe(true);
+  });
+
+  it("same-year double death: both orders attach to the same ProjectionYear", () => {
+    const client: ClientInfo = {
+      ...twoSpouseClient,
+      lifeExpectancy: 75,           // dies 2045
+      spouseLifeExpectancy: 73,     // dies 2045 (1972 + 73)
+    };
+    const data = buildClientData({
+      client, planSettings,
+      accounts: [{
+        id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
+        owner: "client", value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+      }, {
+        id: "a2", name: "Spouse IRA", category: "retirement", subType: "trad_ira",
+        owner: "spouse", value: 200_000, basis: 200_000, growthRate: 0.05, rmdEnabled: true,
+      }],
+      familyMembers: [
+        { id: "c1", relationship: "child", firstName: "Child", lastName: null, dateOfBirth: null },
+      ],
+    });
+
+    const years = runProjection(data);
+    expect(years[years.length - 1].year).toBe(2045);
+
+    const deathYr = years[years.length - 1];
+    const orders = new Set(deathYr.deathTransfers?.map((t) => t.deathOrder));
+    expect(orders.has(1)).toBe(true);
+    expect(orders.has(2)).toBe(true);
+  });
+
+  it("single-filer client: 4b no-ops, 4c fires at the client's death year, truncates", () => {
+    const client: ClientInfo = {
+      firstName: "Solo", lastName: "Test",
+      dateOfBirth: "1970-01-01",
+      retirementAge: 65, planEndAge: 95,
+      filingStatus: "single",
+      lifeExpectancy: 80,  // dies 2050
+    };
+    const data = buildClientData({
+      client, planSettings,
+      accounts: [{
+        id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
+        owner: "client", value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+      }],
+      familyMembers: [
+        { id: "c1", relationship: "child", firstName: "Child", lastName: null, dateOfBirth: null },
+      ],
+    });
+
+    const years = runProjection(data);
+    expect(years[years.length - 1].year).toBe(2050);
+    const deathYr = years[years.length - 1];
+    expect(deathYr.deathTransfers?.every((t) => t.deathOrder === 2)).toBe(true);
+    expect(deathYr.deathTransfers?.length).toBeGreaterThan(0);
+  });
+
+  it("past-horizon final death: 4c no-ops; loop runs to planEndYear", () => {
+    const client: ClientInfo = {
+      ...twoSpouseClient,
+      lifeExpectancy: 100,          // dies 2070 — past 2066 horizon
+      spouseLifeExpectancy: 105,
+    };
+    const data = buildClientData({ client, planSettings });
+    const years = runProjection(data);
+    expect(years[years.length - 1].year).toBe(2066);
+    // No deathTransfers on any year
+    for (const y of years) expect(y.deathTransfers ?? []).toEqual([]);
+  });
+
+  it("distributes unlinked household debt proportionally to heirs", () => {
+    const data = buildClientData({
+      client: twoSpouseClient,
+      planSettings,
+      accounts: [{
+        id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
+        owner: "client", value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+      }],
+      liabilities: [{
+        id: "cc1", name: "Credit Card", balance: 20_000,
+        interestRate: 0.18, monthlyPayment: 800,
+        startYear: 2025, startMonth: 1, termMonths: 36, extraPayments: [],
+      }],
+      familyMembers: [
+        { id: "c1", relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+        { id: "c2", relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
+      ],
+    });
+
+    const years = runProjection(data);
+    const finalYr = years.find((y) => y.year === 2052);
+    const liabEntries = finalYr?.deathTransfers?.filter(
+      (t) => t.via === "unlinked_liability_proportional",
+    );
+    expect(liabEntries?.length).toBe(2);  // one per child
+    // At most one entry per child, both with via unlinked_liability_proportional.
+    expect(liabEntries?.every((t) => t.deathOrder === 2)).toBe(true);
+  });
+});
