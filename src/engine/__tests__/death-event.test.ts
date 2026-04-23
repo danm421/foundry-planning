@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeFirstDeathYear, computeFinalDeathYear, identifyDeceased, identifyFinalDeceased, firesAtDeath } from "../death-event";
+import { computeFirstDeathYear, computeFinalDeathYear, identifyDeceased, identifyFinalDeceased, firesAtDeath, distributeUnlinkedLiabilities } from "../death-event";
 import type { ClientInfo, WillBequest } from "../types";
 
 describe("computeFirstDeathYear", () => {
@@ -192,7 +192,7 @@ describe("firesAtDeath", () => {
 });
 
 import { splitAccount } from "../death-event";
-import type { Account, Liability } from "../types";
+import type { Account, Liability, DeathTransfer } from "../types";
 
 
 describe("splitAccount", () => {
@@ -871,4 +871,133 @@ describe("applyFirstDeath orchestrator", () => {
     expect(totalLedger).toBeCloseTo(600000 + 900000 + 120000, 2);
   });
 
+});
+
+describe("distributeUnlinkedLiabilities", () => {
+  const mkTransfer = (
+    recipient: { kind: DeathTransfer["recipientKind"]; id: string | null; label: string },
+    amount: number,
+    resultingAccountId: string | null = "acct-new",
+  ): DeathTransfer => ({
+    year: 2050, deathOrder: 2, deceased: "client",
+    sourceAccountId: "acct-src", sourceAccountName: "Src",
+    sourceLiabilityId: null, sourceLiabilityName: null,
+    via: "will", recipientKind: recipient.kind,
+    recipientId: recipient.id, recipientLabel: recipient.label,
+    amount, basis: 0, resultingAccountId, resultingLiabilityId: null,
+  });
+
+  const mkLiability = (overrides: Partial<Liability> = {}): Liability => ({
+    id: "liab-cc", name: "Credit Card", balance: 10_000,
+    interestRate: 0.15, monthlyPayment: 500,
+    startYear: 2025, startMonth: 1, termMonths: 24,
+    extraPayments: [],
+    ...overrides,
+  });
+
+  it("returns empty transfers when no unlinked liabilities exist", () => {
+    const liabilities = [mkLiability({ linkedPropertyId: "acct-home" })];
+    const transfers = [mkTransfer({ kind: "family_member", id: "fm-1", label: "Sarah" }, 50_000)];
+    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
+    expect(result.liabilityTransfers).toEqual([]);
+    expect(result.updatedLiabilities).toEqual(liabilities);
+  });
+
+  it("skips entity-owned liabilities (4d territory)", () => {
+    const liabilities = [mkLiability({ ownerEntityId: "ent-1" })];
+    const transfers = [mkTransfer({ kind: "family_member", id: "fm-1", label: "Sarah" }, 50_000)];
+    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
+    expect(result.liabilityTransfers).toEqual([]);
+    expect(result.updatedLiabilities).toEqual(liabilities);
+  });
+
+  it("distributes one unlinked liability proportionally across family-member heirs", () => {
+    const liabilities = [mkLiability()];  // $10k CC, unlinked
+    const transfers = [
+      mkTransfer({ kind: "family_member", id: "fm-a", label: "A" }, 60_000),
+      mkTransfer({ kind: "family_member", id: "fm-b", label: "B" }, 40_000),
+    ];
+    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
+
+    // fm-a inherits 60% → $6k debt; fm-b inherits 40% → $4k debt
+    expect(result.liabilityTransfers).toHaveLength(2);
+
+    const [tA, tB] = result.liabilityTransfers;
+    expect(tA.recipientId).toBe("fm-a");
+    expect(tA.amount).toBeCloseTo(-6000, 2);
+    expect(tA.via).toBe("unlinked_liability_proportional");
+    expect(tA.sourceLiabilityId).toBe("liab-cc");
+    expect(tA.resultingLiabilityId).toMatch(/^death-liab-/);
+    expect(tB.recipientId).toBe("fm-b");
+    expect(tB.amount).toBeCloseTo(-4000, 2);
+
+    // Original removed; two new family-member-owned liabilities added.
+    expect(result.updatedLiabilities).toHaveLength(2);
+    expect(result.updatedLiabilities.find((l) => l.id === "liab-cc")).toBeUndefined();
+    const newA = result.updatedLiabilities.find((l) => l.ownerFamilyMemberId === "fm-a");
+    expect(newA).toBeDefined();
+    expect(newA!.balance).toBeCloseTo(6000, 2);
+    expect(newA!.monthlyPayment).toBeCloseTo(300, 2);
+    expect(newA!.interestRate).toBe(0.15);
+  });
+
+  it("external recipient receives a ledger entry but no new liability row", () => {
+    const liabilities = [mkLiability()];
+    const transfers = [
+      mkTransfer({ kind: "family_member", id: "fm-a", label: "A" }, 50_000),
+      mkTransfer({ kind: "external_beneficiary", id: "ext-1", label: "Charity" }, 50_000, null),
+    ];
+    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
+
+    expect(result.liabilityTransfers).toHaveLength(2);
+    const externalEntry = result.liabilityTransfers.find(
+      (t) => t.recipientKind === "external_beneficiary",
+    );
+    expect(externalEntry).toBeDefined();
+    expect(externalEntry!.amount).toBeCloseTo(-5000, 2);
+    expect(externalEntry!.resultingLiabilityId).toBeNull();
+
+    // Only one new liability (for the family-member share).
+    const newLiabs = result.updatedLiabilities.filter((l) => l.id !== "liab-cc");
+    expect(newLiabs).toHaveLength(1);
+    expect(newLiabs[0].ownerFamilyMemberId).toBe("fm-a");
+  });
+
+  it("system_default recipient gets ledger entry with no new liability", () => {
+    const liabilities = [mkLiability({ balance: 4_000, monthlyPayment: 200 })];
+    const transfers = [
+      mkTransfer({ kind: "system_default", id: null, label: "Other Heirs" }, 100_000, null),
+    ];
+    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
+    expect(result.liabilityTransfers).toHaveLength(1);
+    expect(result.liabilityTransfers[0].recipientKind).toBe("system_default");
+    expect(result.liabilityTransfers[0].amount).toBeCloseTo(-4000, 2);
+    expect(result.liabilityTransfers[0].resultingLiabilityId).toBeNull();
+    expect(result.updatedLiabilities.filter((l) => l.id !== "liab-cc")).toEqual([]);
+  });
+
+  it("zero-estate deceased with unlinked debt drops the debt with a warning", () => {
+    const liabilities = [mkLiability()];
+    const transfers: DeathTransfer[] = [];  // no asset transfers
+    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
+    expect(result.liabilityTransfers).toEqual([]);
+    expect(result.updatedLiabilities.filter((l) => l.id === "liab-cc")).toEqual([]);
+    expect(result.warnings).toContain("unlinked_liability_no_estate_recipient:liab-cc");
+  });
+
+  it("groups multiple transfers to the same recipient into one share", () => {
+    const liabilities = [mkLiability()];
+    // fm-a appears in 2 asset transfers (different source accounts); combined share = 75%.
+    const transfers = [
+      mkTransfer({ kind: "family_member", id: "fm-a", label: "A" }, 30_000),
+      mkTransfer({ kind: "family_member", id: "fm-a", label: "A" }, 45_000),
+      mkTransfer({ kind: "family_member", id: "fm-b", label: "B" }, 25_000),
+    ];
+    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
+    const aTotal = result.liabilityTransfers
+      .filter((t) => t.recipientId === "fm-a")
+      .reduce((s, t) => s + t.amount, 0);
+    // $10k × 75% = $7,500, as negative
+    expect(aTotal).toBeCloseTo(-7500, 2);
+  });
 });

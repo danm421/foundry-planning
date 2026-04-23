@@ -684,6 +684,131 @@ export function applyIncomeTermination(
   });
 }
 
+export interface UnlinkedLiabilityDistributionResult {
+  updatedLiabilities: Liability[];
+  liabilityTransfers: DeathTransfer[];
+  warnings: string[];
+}
+
+/** Feature A — proportional distribution of unlinked household liabilities.
+ *  Runs after the asset precedence chain at 4c. For each unlinked liability
+ *  (linkedPropertyId null AND ownerEntityId null), each final-tier recipient
+ *  receives balance × (their share of the estate) either as a new
+ *  family-member-owned liability row (kept in model) or as a ledger-only
+ *  entry (external / system_default — liability leaves the model with the
+ *  asset share).
+ *
+ *  Deceased with zero-estate but nonzero unlinked debt: liability is
+ *  dropped and a warning is emitted. */
+export function distributeUnlinkedLiabilities(
+  liabilities: Liability[],
+  assetTransfers: DeathTransfer[],
+  year: number,
+  deceased: "client" | "spouse",
+): UnlinkedLiabilityDistributionResult {
+  const unlinked = liabilities.filter(
+    (l) => l.linkedPropertyId == null && l.ownerEntityId == null,
+  );
+
+  if (unlinked.length === 0) {
+    return { updatedLiabilities: liabilities, liabilityTransfers: [], warnings: [] };
+  }
+
+  // Group asset transfers by (recipientKind, recipientId, recipientLabel) to
+  // compute each recipient's total share. Use a composite key so recipients
+  // with null ids (spouse / system_default) don't collide.
+  type RecipientKey = string;
+  const keyOf = (t: DeathTransfer): RecipientKey =>
+    `${t.recipientKind}|${t.recipientId ?? ""}|${t.recipientLabel}`;
+
+  const totalsByRecipient = new Map<
+    RecipientKey,
+    { kind: DeathTransfer["recipientKind"]; id: string | null; label: string; amount: number }
+  >();
+  let estateTotal = 0;
+
+  for (const t of assetTransfers) {
+    estateTotal += t.amount;
+    const k = keyOf(t);
+    const prev = totalsByRecipient.get(k);
+    if (prev) {
+      prev.amount += t.amount;
+    } else {
+      totalsByRecipient.set(k, {
+        kind: t.recipientKind,
+        id: t.recipientId,
+        label: t.recipientLabel,
+        amount: t.amount,
+      });
+    }
+  }
+
+  const warnings: string[] = [];
+  const liabilityTransfers: DeathTransfer[] = [];
+  const newLiabilityRows: Liability[] = [];
+  const removedLiabilityIds = new Set<string>();
+
+  for (const liab of unlinked) {
+    if (estateTotal <= 0) {
+      warnings.push(`unlinked_liability_no_estate_recipient:${liab.id}`);
+      removedLiabilityIds.add(liab.id);
+      continue;
+    }
+
+    for (const rec of totalsByRecipient.values()) {
+      const share = rec.amount / estateTotal;
+      const shareBalance = liab.balance * share;
+      const sharePayment = liab.monthlyPayment * share;
+
+      let resultingLiabilityId: string | null = null;
+      if (rec.kind === "family_member" && rec.id != null) {
+        const newId = nextSyntheticId("death-liab");
+        newLiabilityRows.push({
+          id: newId,
+          name: `${liab.name} — ${rec.label} share`,
+          balance: shareBalance,
+          interestRate: liab.interestRate,
+          monthlyPayment: sharePayment,
+          startYear: liab.startYear,
+          startMonth: liab.startMonth,
+          termMonths: liab.termMonths,
+          extraPayments: [],
+          ownerFamilyMemberId: rec.id,
+          isInterestDeductible: liab.isInterestDeductible,
+        });
+        resultingLiabilityId = newId;
+      }
+
+      liabilityTransfers.push({
+        year,
+        deathOrder: 2,
+        deceased,
+        sourceAccountId: null,
+        sourceAccountName: null,
+        sourceLiabilityId: liab.id,
+        sourceLiabilityName: liab.name,
+        via: "unlinked_liability_proportional",
+        recipientKind: rec.kind,
+        recipientId: rec.id,
+        recipientLabel: rec.label,
+        amount: -shareBalance,
+        basis: 0,
+        resultingAccountId: null,
+        resultingLiabilityId,
+      });
+    }
+
+    removedLiabilityIds.add(liab.id);
+  }
+
+  const updatedLiabilities = [
+    ...liabilities.filter((l) => !removedLiabilityIds.has(l.id)),
+    ...newLiabilityRows,
+  ];
+
+  return { updatedLiabilities, liabilityTransfers, warnings };
+}
+
 export interface DeathEventInput {
   year: number;
   deceased: "client" | "spouse";
