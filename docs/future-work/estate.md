@@ -245,3 +245,25 @@ start getting upvoted across sessions.
   if both exist), and the blast radius is its own multi-spec project.
   Revisit after 4b–4d + estate-tax engine ship and we know whether the
   crude workaround has bitten the advisor workflow.
+
+### After 4c ship (2026-04-23)
+
+- **Spec 4e — liability bequest overrides** — extend the will schema to
+  let advisors route specific debts to specific heirs (complements 4c's
+  proportional-default distribution). Needs DB migration + API updates +
+  wills UI panel changes + a new pre-proportional step in 4b / 4c. A
+  full-stack sibling to 4a; scheduled after 4d (estate tax).
+- **`ExternalBeneficiarySummary` loader for 4c** — same follow-up as 4b;
+  the projection loop still passes `externalBeneficiaries: []` to
+  `applyFinalDeath`, so any external recipient in the 4c chain gets the
+  fallback "External beneficiary" label. Extend `projection-data/route.ts`.
+- **Creditor-payoff at final death (supersedes Feature A)** — the more
+  realistic model: liquidate liquid assets to pay unlinked debts before
+  distributing the residual estate. 4c's proportional-to-heirs default
+  is honest-but-not-realistic; reality is creditors-before-heirs. 4d
+  (estate tax) is the natural home for the payoff step since it also
+  wants "debts of decedent" as an estate-tax deduction.
+- **Post-truncation heir rollforward** — 4c hard-stops the projection;
+  heirs who received accounts at 4c don't roll forward in the same
+  projection. When the multi-generational report ships, each heir gets
+  their own sub-projection seeded from the 4c ledger.
