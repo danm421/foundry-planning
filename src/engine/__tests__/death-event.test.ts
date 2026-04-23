@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeFirstDeathYear, identifyDeceased } from "../death-event";
+import { computeFirstDeathYear, computeFinalDeathYear, identifyDeceased, identifyFinalDeceased } from "../death-event";
 import type { ClientInfo } from "../types";
 
 describe("computeFirstDeathYear", () => {
@@ -97,6 +97,75 @@ describe("identifyDeceased", () => {
     // Client 1970+80=2050; spouse 1970+80=2050. Tiebreaker: client first.
     const client: ClientInfo = { ...baseClient, dateOfBirth: "1970-01-01", lifeExpectancy: 80, spouseDob: "1970-01-01", spouseLifeExpectancy: 80 };
     expect(identifyDeceased(client, 2050)).toBe("client");
+  });
+});
+
+describe("computeFinalDeathYear", () => {
+  const baseClient: ClientInfo = {
+    firstName: "T", lastName: "T",
+    dateOfBirth: "1970-01-01",
+    retirementAge: 65, planEndAge: 95,
+    filingStatus: "married_joint",
+    lifeExpectancy: 80,            // dies 2050
+    spouseDob: "1972-01-01",
+    spouseLifeExpectancy: 85,      // dies 2057
+  };
+
+  it("returns the later of two assumed deaths for a couple", () => {
+    expect(computeFinalDeathYear(baseClient, 2026, 2100)).toBe(2057);
+  });
+
+  it("returns the client's death year for a single-filer (no spouseDob)", () => {
+    const client: ClientInfo = { ...baseClient, spouseDob: undefined, spouseLifeExpectancy: undefined, filingStatus: "single" };
+    expect(computeFinalDeathYear(client, 2026, 2100)).toBe(2050);
+  });
+
+  it("returns null when no lifeExpectancy is set", () => {
+    const client: ClientInfo = { ...baseClient, lifeExpectancy: undefined };
+    expect(computeFinalDeathYear(client, 2026, 2100)).toBeNull();
+  });
+
+  it("returns null when the final death falls past planEndYear", () => {
+    expect(computeFinalDeathYear(baseClient, 2026, 2050)).toBeNull();
+  });
+
+  it("handles same-year double death (both die the same year)", () => {
+    const client: ClientInfo = {
+      ...baseClient,
+      lifeExpectancy: 80,          // dies 2050
+      spouseLifeExpectancy: 78,    // dies 2050 (1972 + 78)
+    };
+    expect(computeFinalDeathYear(client, 2026, 2100)).toBe(2050);
+  });
+
+  it("falls back spouseLifeExpectancy=95 when null (matches 4b convention)", () => {
+    const client: ClientInfo = { ...baseClient, spouseLifeExpectancy: null };
+    // client dies 2050, spouse falls back to 1972 + 95 = 2067
+    expect(computeFinalDeathYear(client, 2026, 2100)).toBe(2067);
+  });
+});
+
+describe("identifyFinalDeceased", () => {
+  const baseClient: ClientInfo = {
+    firstName: "T", lastName: "T",
+    dateOfBirth: "1970-01-01",
+    retirementAge: 65, planEndAge: 95,
+    filingStatus: "married_joint",
+    lifeExpectancy: 80,
+    spouseDob: "1972-01-01",
+    spouseLifeExpectancy: 85,
+  };
+
+  it("returns the survivor of the first death (client died first → spouse is final)", () => {
+    expect(identifyFinalDeceased(baseClient, "client")).toBe("spouse");
+  });
+
+  it("returns the survivor of the first death (spouse died first → client is final)", () => {
+    expect(identifyFinalDeceased(baseClient, "spouse")).toBe("client");
+  });
+
+  it("returns 'client' for a single-filer (firstDeceased === null)", () => {
+    expect(identifyFinalDeceased(baseClient, null)).toBe("client");
   });
 });
 

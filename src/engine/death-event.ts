@@ -43,6 +43,50 @@ export function identifyDeceased(
   return clientDeathYear <= firstDeathYear ? "client" : "spouse";
 }
 
+/** Compute the final-death year. For a couple, the later of the two assumed
+ *  death years. For a single-filer client (no spouseDob), the client's own
+ *  death year. Returns null when lifeExpectancy is missing or the computed
+ *  year falls past the plan horizon.
+ *
+ *  Mirrors computeFirstDeathYear's spouseLifeExpectancy fallback of 95. */
+export function computeFinalDeathYear(
+  client: ClientInfo,
+  planStartYear: number,
+  planEndYear: number,
+): number | null {
+  if (client.lifeExpectancy == null) return null;
+
+  const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+  const clientDeathYear = clientBirthYear + client.lifeExpectancy;
+
+  let finalDeathYear: number;
+  if (client.spouseDob) {
+    const spouseBirthYear = parseInt(client.spouseDob.slice(0, 4), 10);
+    const spouseLE = client.spouseLifeExpectancy ?? 95;
+    const spouseDeathYear = spouseBirthYear + spouseLE;
+    finalDeathYear = Math.max(clientDeathYear, spouseDeathYear);
+  } else {
+    finalDeathYear = clientDeathYear;
+  }
+
+  if (finalDeathYear < planStartYear || finalDeathYear > planEndYear) {
+    return null;
+  }
+  return finalDeathYear;
+}
+
+/** Given who died first (or null for single-filer), identify who the final
+ *  deceased is. For a couple, it's whoever didn't die first. For a
+ *  single-filer, always "client". */
+export function identifyFinalDeceased(
+  _client: ClientInfo,
+  firstDeceased: "client" | "spouse" | null,
+): "client" | "spouse" {
+  if (firstDeceased === "client") return "spouse";
+  if (firstDeceased === "spouse") return "client";
+  return "client";
+}
+
 export type OwnerMutation = {
   owner?: "client" | "spouse";
   ownerFamilyMemberId?: string;
