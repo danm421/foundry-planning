@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { computeFirstDeathYear, computeFinalDeathYear, identifyDeceased, identifyFinalDeceased } from "../death-event";
-import type { ClientInfo } from "../types";
+import { computeFirstDeathYear, computeFinalDeathYear, identifyDeceased, identifyFinalDeceased, firesAtDeath } from "../death-event";
+import type { ClientInfo, WillBequest } from "../types";
 
 describe("computeFirstDeathYear", () => {
   const baseClient: ClientInfo = {
@@ -166,6 +166,28 @@ describe("identifyFinalDeceased", () => {
 
   it("returns 'client' for a single-filer (firstDeceased === null)", () => {
     expect(identifyFinalDeceased(baseClient, null)).toBe("client");
+  });
+});
+
+describe("firesAtDeath", () => {
+  const mkB = (condition: WillBequest["condition"]): WillBequest => ({
+    id: "b1", name: "All assets", assetMode: "all_assets", accountId: null,
+    percentage: 100, condition, sortOrder: 0, recipients: [],
+  });
+
+  it("fires always-condition at both first and final death", () => {
+    expect(firesAtDeath(mkB("always"), 1)).toBe(true);
+    expect(firesAtDeath(mkB("always"), 2)).toBe(true);
+  });
+
+  it("fires if_spouse_survives at first death only", () => {
+    expect(firesAtDeath(mkB("if_spouse_survives"), 1)).toBe(true);
+    expect(firesAtDeath(mkB("if_spouse_survives"), 2)).toBe(false);
+  });
+
+  it("fires if_spouse_predeceased at final death only", () => {
+    expect(firesAtDeath(mkB("if_spouse_predeceased"), 1)).toBe(false);
+    expect(firesAtDeath(mkB("if_spouse_predeceased"), 2)).toBe(true);
   });
 });
 
@@ -447,7 +469,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
       }],
     };
 
-    const result = applyWillSpecificBequests(brokerage, 1, will, "spouse", fams, [], [], undefined);
+    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", fams, [], [], undefined);
     expect(result.fractionClaimed).toBeCloseTo(1, 9);
     expect(result.consumed).toBe(true);
     expect(result.ledgerEntries[0]).toMatchObject({
@@ -469,7 +491,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
       }],
     };
 
-    const result = applyWillSpecificBequests(brokerage, 1, will, "spouse", fams, [], [], undefined);
+    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", fams, [], [], undefined);
     expect(result.ledgerEntries).toHaveLength(2);
     expect(result.ledgerEntries[0].amount).toBe(100000);
     expect(result.ledgerEntries[1].amount).toBe(100000);
@@ -487,7 +509,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
         ],
       }],
     };
-    const result = applyWillSpecificBequests(brokerage, 1, will, "spouse", fams, [], [], undefined);
+    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", fams, [], [], undefined);
     expect(result.fractionClaimed).toBeCloseTo(0.4, 9);
     expect(result.consumed).toBe(false);
   });
@@ -504,7 +526,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
         ],
       }],
     };
-    const result = applyWillSpecificBequests(brokerage, 1, will, "spouse", fams, [], [], undefined);
+    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", fams, [], [], undefined);
     expect(result.fractionClaimed).toBe(0);
   });
 
@@ -526,7 +548,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
         },
       ],
     };
-    const result = applyWillSpecificBequests(brokerage, 1, will, "spouse", fams, [], [], undefined);
+    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", fams, [], [], undefined);
     // Pro-rate down: each bequest effectively claims 60/120 of the undisposed remainder.
     expect(result.fractionClaimed).toBeCloseTo(1, 9);
     expect(result.warnings).toContain("over_allocation_in_will:acct-brok");
@@ -560,7 +582,7 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
       cash,
       /* undisposedFraction */ 1,
       /* accountTouchedBySpecific */ false,
-      will, "spouse", fams, [], [], undefined,
+      will, 1, "spouse", fams, [], [], undefined,
     );
     expect(result.consumed).toBe(true);
     expect(result.fractionClaimed).toBe(1);
@@ -581,7 +603,7 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
     };
     const result = applyWillAllAssetsResidual(
       cash, 0.6, /* accountTouchedBySpecific */ true,
-      will, "spouse", fams, [], [], undefined,
+      will, 1, "spouse", fams, [], [], undefined,
     );
     expect(result.consumed).toBe(false);
     expect(result.fractionClaimed).toBe(0);
@@ -589,7 +611,7 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
 
   it("no-op when the will has no all_assets clause", () => {
     const will: Will = { id: "will-1", grantor: "client", bequests: [] };
-    const result = applyWillAllAssetsResidual(cash, 1, false, will, "spouse", fams, [], [], undefined);
+    const result = applyWillAllAssetsResidual(cash, 1, false, will, 1, "spouse", fams, [], [], undefined);
     expect(result.consumed).toBe(false);
     expect(result.fractionClaimed).toBe(0);
   });

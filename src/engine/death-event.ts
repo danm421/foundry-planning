@@ -410,14 +410,22 @@ export function applyBeneficiaryDesignations(
   };
 }
 
-/** Predicate: which condition-tier bequests fire at first death. */
-function firesAtFirstDeath(b: WillBequest): boolean {
-  return b.condition === "always" || b.condition === "if_spouse_survives";
+/** Predicate: which condition-tier bequests fire at a given death order.
+ *  At first death (order 1): `always` and `if_spouse_survives` fire.
+ *  At final death (order 2): `always` and `if_spouse_predeceased` fire.
+ *  For a single-filer client, the advisor UI shouldn't present spouse-
+ *  conditional options, but if either appears in the data, the order-2
+ *  interpretation (no living spouse is the single-filer state) applies. */
+export function firesAtDeath(b: WillBequest, deathOrder: 1 | 2): boolean {
+  if (b.condition === "always") return true;
+  if (b.condition === "if_spouse_survives") return deathOrder === 1;
+  if (b.condition === "if_spouse_predeceased") return deathOrder === 2;
+  return false;
 }
 
 function resolveRecipientLabelAndMutation(
   r: WillBequest["recipients"][number],
-  survivor: "client" | "spouse",
+  survivor: "client" | "spouse" | null,
   familyMembers: FamilyMember[],
   externals: ExternalBeneficiarySummary[],
   entities: EntitySummary[],
@@ -430,7 +438,7 @@ function resolveRecipientLabelAndMutation(
 } {
   if (r.recipientKind === "spouse") {
     return {
-      ownerMutation: { owner: survivor },
+      ownerMutation: survivor ? { owner: survivor } : undefined,
       removed: false,
       recipientKind: "spouse",
       recipientId: null,
@@ -476,7 +484,8 @@ export function applyWillSpecificBequests(
   source: Account,
   undisposedFraction: number,
   will: Will,
-  survivor: "client" | "spouse",
+  deathOrder: 1 | 2,
+  survivor: "client" | "spouse" | null,
   familyMembers: FamilyMember[],
   externals: ExternalBeneficiarySummary[],
   entities: EntitySummary[],
@@ -486,7 +495,7 @@ export function applyWillSpecificBequests(
     (b) =>
       b.assetMode === "specific" &&
       b.accountId === source.id &&
-      firesAtFirstDeath(b),
+      firesAtDeath(b, deathOrder),
   );
 
   if (specifics.length === 0) {
@@ -569,7 +578,8 @@ export function applyWillAllAssetsResidual(
   undisposedFraction: number,
   accountTouchedBySpecific: boolean,
   will: Will,
-  survivor: "client" | "spouse",
+  deathOrder: 1 | 2,
+  survivor: "client" | "spouse" | null,
   familyMembers: FamilyMember[],
   externals: ExternalBeneficiarySummary[],
   entities: EntitySummary[],
@@ -579,7 +589,7 @@ export function applyWillAllAssetsResidual(
     return empty();
   }
   const allAssets = will.bequests.filter(
-    (b) => b.assetMode === "all_assets" && firesAtFirstDeath(b),
+    (b) => b.assetMode === "all_assets" && firesAtDeath(b, deathOrder),
   );
   if (allAssets.length === 0) {
     return empty();
@@ -779,7 +789,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     // Step 3a: Specific bequests
     if (undisposed > 1e-9 && deceasedWill) {
       const step3a = applyWillSpecificBequests(
-        effectiveAcct, undisposed, deceasedWill, survivor,
+        effectiveAcct, undisposed, deceasedWill, 1, survivor,
         familyMembers, externalBeneficiaries, entities, linkedLiability,
       );
       if (step3a.fractionClaimed > 0) {
@@ -795,7 +805,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     // Step 3b: all_assets residual (only if no specific clause touched this account)
     if (undisposed > 1e-9 && deceasedWill) {
       const step3b = applyWillAllAssetsResidual(
-        effectiveAcct, undisposed, anySpecificClauseTouched, deceasedWill, survivor,
+        effectiveAcct, undisposed, anySpecificClauseTouched, deceasedWill, 1, survivor,
         familyMembers, externalBeneficiaries, entities, linkedLiability,
       );
       if (step3b.fractionClaimed > 0) {
