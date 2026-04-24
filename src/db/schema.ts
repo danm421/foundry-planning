@@ -15,7 +15,7 @@ import {
   jsonb,
   index,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
@@ -875,6 +875,11 @@ export const willRecipientKindEnum = pgEnum("will_recipient_kind", [
   "spouse",
 ]);
 
+export const willBequestKindEnum = pgEnum("will_bequest_kind", [
+  "asset",
+  "liability",
+]);
+
 export const wills = pgTable(
   "wills",
   {
@@ -899,8 +904,12 @@ export const willBequests = pgTable(
       .notNull()
       .references(() => wills.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    assetMode: willAssetModeEnum("asset_mode").notNull(),
+    kind: willBequestKindEnum("kind").notNull(),
+    assetMode: willAssetModeEnum("asset_mode"),
     accountId: uuid("account_id").references(() => accounts.id, {
+      onDelete: "cascade",
+    }),
+    liabilityId: uuid("liability_id").references(() => liabilities.id, {
       onDelete: "cascade",
     }),
     percentage: numeric("percentage", { precision: 5, scale: 2 }).notNull(),
@@ -911,6 +920,9 @@ export const willBequests = pgTable(
   },
   (t) => [
     index("will_bequests_will_sort_idx").on(t.willId, t.sortOrder),
+    uniqueIndex("will_bequests_liability_idx")
+      .on(t.willId, t.liabilityId)
+      .where(sql`${t.kind} = 'liability'`),
   ],
 );
 
@@ -937,6 +949,10 @@ export const willBequestsRelations = relations(willBequests, ({ one, many }) => 
   account: one(accounts, {
     fields: [willBequests.accountId],
     references: [accounts.id],
+  }),
+  liability: one(liabilities, {
+    fields: [willBequests.liabilityId],
+    references: [liabilities.id],
   }),
   recipients: many(willBequestRecipients),
 }));

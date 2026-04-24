@@ -302,6 +302,13 @@
       "when": 1777665600000,
       "tag": "0042_estate_tax_grantor_succession",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1777752000000,
+      "tag": "0043_estate_liability_bequests",
+      "breakpoints": true
     }
   ]
 }
