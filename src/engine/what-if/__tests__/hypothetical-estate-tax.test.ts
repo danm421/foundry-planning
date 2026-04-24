@@ -93,4 +93,80 @@ describe("computeHypotheticalEstateTax", () => {
       result.primaryFirst.firstDeath.dsueGenerated,
     );
   });
+
+  it("married: spouseFirst mirrors primaryFirst with decedent/survivor swapped", () => {
+    const accounts = [
+      makeAccount("client-401k", "client", 5_000_000),
+      makeAccount("spouse-401k", "spouse", 3_000_000),
+      makeAccount("joint-brokerage", "joint", 2_000_000),
+    ];
+    const accountBalances: Record<string, number> = {
+      "client-401k": 5_000_000,
+      "spouse-401k": 3_000_000,
+      "joint-brokerage": 2_000_000,
+    };
+    const basisMap: Record<string, number> = {
+      "client-401k": 5_000_000,
+      "spouse-401k": 3_000_000,
+      "joint-brokerage": 2_000_000,
+    };
+
+    const result = computeHypotheticalEstateTax({
+      year: 2030,
+      isMarried: true,
+      accounts,
+      accountBalances,
+      basisMap,
+      incomes: [] as Income[],
+      liabilities: [] as Liability[],
+      familyMembers: [] as FamilyMember[],
+      externalBeneficiaries: [],
+      entities: [] as EntitySummary[],
+      wills: [] as Will[],
+      planSettings: basePlanSettings(),
+      gifts: [] as Gift[],
+      annualExclusionsByYear: {},
+    });
+
+    expect(result.spouseFirst).toBeDefined();
+    expect(result.spouseFirst!.firstDecedent).toBe("spouse");
+    expect(result.spouseFirst!.firstDeath.deceased).toBe("spouse");
+    expect(result.spouseFirst!.finalDeath).toBeDefined();
+    expect(result.spouseFirst!.finalDeath!.deceased).toBe("client");
+    expect(result.spouseFirst!.finalDeath!.dsueReceived).toBe(
+      result.spouseFirst!.firstDeath.dsueGenerated,
+    );
+  });
+
+  it("single: only primaryFirst populated; no finalDeath; totals reflect one death", () => {
+    const accounts = [makeAccount("client-401k", "client", 5_000_000)];
+    const accountBalances: Record<string, number> = {
+      "client-401k": 5_000_000,
+    };
+    const basisMap: Record<string, number> = { "client-401k": 5_000_000 };
+
+    const result = computeHypotheticalEstateTax({
+      year: 2030,
+      isMarried: false,
+      accounts,
+      accountBalances,
+      basisMap,
+      incomes: [] as Income[],
+      liabilities: [] as Liability[],
+      familyMembers: [] as FamilyMember[],
+      externalBeneficiaries: [],
+      entities: [] as EntitySummary[],
+      wills: [] as Will[],
+      planSettings: basePlanSettings(),
+      gifts: [] as Gift[],
+      annualExclusionsByYear: {},
+    });
+
+    expect(result.primaryFirst.firstDecedent).toBe("client");
+    expect(result.primaryFirst.finalDeath).toBeUndefined();
+    expect(result.spouseFirst).toBeUndefined();
+    expect(result.primaryFirst.totals.total).toBe(
+      result.primaryFirst.firstDeath.totalTaxesAndExpenses,
+    );
+  });
 });
