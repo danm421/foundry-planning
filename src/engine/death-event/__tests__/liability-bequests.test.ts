@@ -143,3 +143,33 @@ describe("applyLiabilityBequests — multi-recipient split", () => {
     expect(result.bequestTransfers.map((t) => t.amount).reduce((a, b) => a + b, 0)).toBe(-10_000);
   });
 });
+
+describe("applyLiabilityBequests — entity recipient", () => {
+  it("entity recipient → new liability row with ownerEntityId set; no ownerFamilyMemberId", () => {
+    const liab = baseLiability();
+    const entity: EntitySummary = {
+      id: "ent-1",
+      includeInPortfolio: false,
+      isIrrevocable: false,
+      isGrantor: true,
+      grantor: "client",
+      beneficiaries: [],
+      exemptionConsumed: 0,
+      trustSubType: "revocable",
+    } as unknown as EntitySummary;
+    const will = baseWill([{
+      id: "beq-1", name: "Visa", kind: "liability", assetMode: null, accountId: null,
+      liabilityId: liab.id, percentage: 100, condition: "always", sortOrder: 0,
+      recipients: [{ recipientKind: "entity", recipientId: entity.id, percentage: 100, sortOrder: 0 }],
+    }]);
+
+    const result = applyLiabilityBequests({
+      will, deceased: "client", liabilities: [liab], familyMembers: [], entities: [entity], year: 2050,
+    });
+
+    expect(result.newLiabilityRows).toHaveLength(1);
+    expect(result.newLiabilityRows[0].ownerEntityId).toBe(entity.id);
+    expect(result.newLiabilityRows[0].ownerFamilyMemberId).toBeUndefined();
+    expect(result.bequestTransfers[0].recipientKind).toBe("entity");
+  });
+});
