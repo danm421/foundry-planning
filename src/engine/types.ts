@@ -69,7 +69,8 @@ export interface DeathTransfer {
     | "fallback_children"
     | "fallback_other_heirs"
     | "unlinked_liability_proportional"
-    | "trust_pour_out";
+    | "trust_pour_out"
+    | "life_insurance_payout";
   recipientKind:
     | "spouse"
     | "family_member"
@@ -88,6 +89,7 @@ export interface DeathTransfer {
    *  null for asset transfers and for external / system_default liability
    *  transfers. */
   resultingLiabilityId: string | null;
+  postPayoutGrowthRate?: number;
 }
 
 export interface GrossEstateLine {
@@ -269,6 +271,26 @@ export interface BeneficiaryRef {
   sortOrder: number;
 }
 
+export interface LifeInsuranceCashValueScheduleRow {
+  year: number;
+  cashValue: number;
+}
+
+export interface LifeInsurancePolicy {
+  faceValue: number;
+  costBasis: number;
+  premiumAmount: number;
+  premiumYears: number | null;
+  policyType: "term" | "whole" | "universal" | "variable";
+  termIssueYear: number | null;
+  termLengthYears: number | null;
+  endsAtInsuredRetirement: boolean;
+  cashValueGrowthMode: "basic" | "free_form";
+  postPayoutMergeAccountId: string | null;
+  postPayoutGrowthRate: number;
+  cashValueSchedule: LifeInsuranceCashValueScheduleRow[];
+}
+
 export interface Account {
   id: string;
   name: string;
@@ -285,6 +307,8 @@ export interface Account {
   isDefaultChecking?: boolean;
   annualPropertyTax?: number;
   propertyTaxGrowthRate?: number;
+  insuredPerson?: "client" | "spouse" | "joint" | null;
+  lifeInsurance?: LifeInsurancePolicy;
   // CMA realization model — present when account uses a model portfolio or has overrides
   realization?: {
     pctOrdinaryIncome: number;
