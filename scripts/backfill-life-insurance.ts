@@ -5,15 +5,35 @@
  * insured_person derived from accounts.owner.
  * Advisors update the real values through the new Insurance panel.
  *
- * Run with: DATABASE_URL="<...>" npx tsx scripts/backfill-life-insurance.ts
- * Or copy DATABASE_URL from .env.local and pass it as an environment variable.
+ * Run with: npx tsx scripts/backfill-life-insurance.ts
+ * Idempotent — re-runs skip accounts that already have a policy row.
  */
 
-import { db } from "../src/db";
-import { accounts, lifeInsurancePolicies } from "../src/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+// Load .env.local without a runtime dep. Shell-sourcing breaks on `&` in the
+// Neon URL, so scripts read it directly. Must run before `../src/db` is
+// evaluated (which constructs a Pool from process.env.DATABASE_URL at module
+// load) — so the db import is dynamic, inside main().
+try {
+  const envFile = readFileSync(resolve(process.cwd(), ".env.local"), "utf8");
+  for (const line of envFile.split("\n")) {
+    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (!m) continue;
+    const [, k, raw] = m;
+    if (process.env[k]) continue;
+    let v = raw.trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    process.env[k] = v;
+  }
+} catch {}
 
 async function main() {
+  const { db } = await import("../src/db");
+  const { accounts, lifeInsurancePolicies } = await import("../src/db/schema");
+  const { eq, and, isNull } = await import("drizzle-orm");
+
   const existing = await db
     .select()
     .from(accounts)
@@ -36,16 +56,14 @@ async function main() {
     const insured = a.owner === "joint" ? "joint" : a.owner; // client | spouse | joint
 
     await db.transaction(async (tx) => {
-      // Populate insured_person on the account.
       await tx
         .update(accounts)
         .set({ insuredPerson: insured })
         .where(eq(accounts.id, a.id));
 
-      // Insert the policy child row with conservative defaults.
       await tx.insert(lifeInsurancePolicies).values({
         accountId: a.id,
-        faceValue: a.value, // treat existing `value` as death benefit
+        faceValue: a.value,
         costBasis: "0",
         premiumAmount: "0",
         premiumYears: null,
@@ -76,7 +94,7 @@ function mapSubTypeToPolicyType(
     case "variable_life":
       return "variable";
     default:
-      return "whole"; // conservative default for null or unmapped values
+      return "whole";
   }
 }
 
