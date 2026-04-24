@@ -1,13 +1,24 @@
 import Link from "next/link";
+import type { ReactElement } from "react";
+import { Card, CardBody, CardFooter, CardHeader } from "@/components/card";
+import MoneyText from "@/components/money-text";
+import SectionMarker from "@/components/section-marker";
+import { PieChartIcon } from "@/components/icons";
+import EmptyBlock from "./empty-block";
 import type { Rollup } from "@/lib/overview/get-asset-allocation-by-type";
 
-const COLORS: Record<string, string> = {
-  equities: "bg-blue-500",
-  fixed_income: "bg-emerald-500",
-  cash: "bg-slate-400",
-  real_estate: "bg-amber-500",
-  alternatives: "bg-purple-500",
-  other: "bg-gray-500",
+interface Props {
+  clientId: string;
+  rollup: Rollup[];
+}
+
+const SWATCH_CLASS: Record<string, string> = {
+  equities: "bg-alloc-equities",
+  fixed_income: "bg-alloc-fi",
+  cash: "bg-alloc-cash",
+  real_estate: "bg-alloc-re",
+  alternatives: "bg-alloc-alt",
+  other: "bg-ink-4",
 };
 
 const LABELS: Record<string, string> = {
@@ -19,52 +30,71 @@ const LABELS: Record<string, string> = {
   other: "Other",
 };
 
-export default function AllocationPanel({
-  clientId,
-  rollup,
-}: {
-  clientId: string;
-  rollup: Rollup[];
-}) {
+export default function AllocationPanel({ clientId, rollup }: Props): ReactElement {
   if (!rollup.length) {
     return (
-      <div className="rounded-lg border border-gray-800 bg-gray-950 p-6">
-        <h3 className="mb-2 text-sm font-semibold text-gray-300">Asset allocation</h3>
-        <p className="text-sm text-gray-400">No portfolio data yet.</p>
-        <Link href={`/clients/${clientId}/client-data`} className="text-sm text-blue-400 underline">
-          Add accounts
-        </Link>
-      </div>
+      <EmptyBlock
+        icon={<PieChartIcon width={22} height={22} />}
+        title="No portfolio data yet"
+        body="Add accounts on the Client Data tab to populate this block."
+        cta={{ href: `/clients/${clientId}/client-data`, label: "Add accounts" }}
+      />
     );
   }
+
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-950 p-6">
-      <h3 className="mb-3 text-sm font-semibold text-gray-300">Asset allocation</h3>
-      <div className="flex h-4 overflow-hidden rounded bg-gray-800">
-        {rollup.map((r) => (
-          <div
-            key={r.group}
-            className={COLORS[r.group] ?? COLORS.other}
-            style={{ width: `${(r.pct * 100).toFixed(2)}%` }}
-            title={`${LABELS[r.group] ?? r.group}: ${(r.pct * 100).toFixed(1)}%`}
-          />
-        ))}
-      </div>
-      <table className="mt-3 w-full text-sm">
-        <tbody>
-          {rollup.map((r) => (
-            <tr key={r.group} className="border-t border-gray-800">
-              <td className="py-1 text-gray-300">{LABELS[r.group] ?? r.group}</td>
-              <td className="py-1 text-right text-gray-300">
-                ${Math.round(r.value).toLocaleString()}
-              </td>
-              <td className="py-1 pl-3 text-right text-gray-400">
-                {(r.pct * 100).toFixed(1)}%
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-0.5">
+          <SectionMarker num="04" label="Asset allocation" />
+          <p className="text-[14px] font-semibold text-ink">Asset allocation</p>
+        </div>
+      </CardHeader>
+      <CardBody className="flex flex-col gap-4">
+        <div className="flex h-[10px] gap-[2px] overflow-hidden">
+          {rollup.map((r, i) => {
+            const isFirst = i === 0;
+            const isLast = i === rollup.length - 1;
+            const radius = isFirst && isLast ? "rounded" : isFirst ? "rounded-l" : isLast ? "rounded-r" : "";
+            return (
+              <div
+                key={r.group}
+                className={`${SWATCH_CLASS[r.group] ?? SWATCH_CLASS.other} ${radius}`}
+                style={{ width: `${(r.pct * 100).toFixed(2)}%` }}
+                title={`${LABELS[r.group] ?? r.group}: ${(r.pct * 100).toFixed(1)}%`}
+              />
+            );
+          })}
+        </div>
+        <table className="w-full text-[13px]">
+          <tbody>
+            {rollup.map((r) => (
+              <tr key={r.group} className="border-t border-hair transition-colors hover:text-ink">
+                <td className="py-2 text-ink-2">
+                  <span className="inline-flex items-center gap-2">
+                    <span
+                      className={`inline-block h-2 w-2 rounded-sm ${SWATCH_CLASS[r.group] ?? SWATCH_CLASS.other}`}
+                    />
+                    {LABELS[r.group] ?? r.group}
+                  </span>
+                </td>
+                <td className="py-2 text-right">
+                  <MoneyText value={r.value} />
+                </td>
+                <td className="py-2 pl-3 text-right tabular font-mono text-[12px] text-ink-3">
+                  {(r.pct * 100).toFixed(1)}%
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </CardBody>
+      <CardFooter>
+        <span>Rolled up from {rollup.length} groups</span>
+        <Link href={`/clients/${clientId}/investments`} className="text-accent hover:text-accent-ink">
+          Open Investments →
+        </Link>
+      </CardFooter>
+    </Card>
   );
 }
