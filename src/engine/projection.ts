@@ -274,6 +274,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
   let currentIncomes: Income[] = [...data.incomes];
 
+  const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? []);
+
   for (
     let year = planSettings.planStartYear;
     year <= planSettings.planEndYear;
@@ -1470,7 +1472,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       wills: data.wills ?? [],
       planSettings,
       gifts: data.gifts ?? [],
-      annualExclusionsByYear: buildAnnualExclusionsMap(data.taxYearRows ?? []),
+      annualExclusionsByYear,
     });
 
     years.push({
@@ -1544,7 +1546,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         entities: data.entities ?? [],
         planSettings,
         gifts: data.gifts ?? [],
-        annualExclusionsByYear: buildAnnualExclusionsMap(data.taxYearRows ?? []),
+        annualExclusionsByYear,
         dsueReceived: 0, // first decedent has no prior DSUE
       });
 
@@ -1597,7 +1599,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         entities: data.entities ?? [],
         planSettings,
         gifts: data.gifts ?? [],
-        annualExclusionsByYear: buildAnnualExclusionsMap(data.taxYearRows ?? []),
+        annualExclusionsByYear,
         dsueReceived: stashedDSUE,
       });
 
