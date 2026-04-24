@@ -50,6 +50,8 @@ import {
 } from "./death-event";
 import { computeHypotheticalEstateTax } from "./what-if/hypothetical-estate-tax";
 import { calcSeca } from "../lib/tax/fica";
+import { resolveCashValueForYear } from "./life-insurance-schedule";
+import { computeTermEndYear } from "./life-insurance-expiry";
 
 // Map legacy income type to the new tax type categories.
 function legacyTaxType(
@@ -459,6 +461,46 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     );
     currentLiabilities = liabResult.updatedLiabilities;
 
+    // Life-insurance cash-value schedule override (free-form mode). The schedule
+    // is authoritative for the year, replacing whatever growth model the account
+    // would otherwise use. Basic-mode policies fall through to the normal
+    // growth loop, unchanged.
+    const scheduleOverriddenAccounts = new Set<string>();
+    for (const acct of workingAccounts) {
+      if (
+        acct.category === "life_insurance" &&
+        acct.lifeInsurance &&
+        acct.lifeInsurance.cashValueGrowthMode === "free_form"
+      ) {
+        accountBalances[acct.id] = resolveCashValueForYear(
+          acct.lifeInsurance.cashValueSchedule,
+          year,
+        );
+        scheduleOverriddenAccounts.add(acct.id);
+      }
+    }
+
+    // Term-policy retirement: drop policies whose last-in-force year is past.
+    // The filter runs after the cash-value override so both apply in the same
+    // pre-growth phase.
+    workingAccounts = workingAccounts.filter((acct) => {
+      if (acct.category !== "life_insurance" || !acct.lifeInsurance) return true;
+      if (acct.lifeInsurance.policyType !== "term") return true;
+
+      const endYear = computeTermEndYear({
+        policy: acct.lifeInsurance,
+        insured: acct.insuredPerson ?? "client",
+        client,
+      });
+
+      if (endYear == null) return true;
+      if (year > endYear) {
+        delete accountBalances[acct.id];
+        return false;
+      }
+      return true;
+    });
+
     // 4. Grow every account (post-BoY: sold accounts are gone, newly-bought
     // accounts are included). When the account has a realization model, split
     // growth into tax buckets: OI, QDiv, STCG, LTCG, Tax-Exempt. Turnover %
@@ -471,6 +513,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     for (const acct of workingAccounts) {
       const currentBalance = accountBalances[acct.id] ?? 0;
+      if (scheduleOverriddenAccounts.has(acct.id)) continue;
       const overriddenRate = options?.returnsOverride?.(year, acct.id);
       const effectiveGrowthRate =
         overriddenRate != null && Number.isFinite(overriddenRate)
