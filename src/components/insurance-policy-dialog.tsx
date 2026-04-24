@@ -11,6 +11,8 @@ import type {
   InsurancePanelExternal,
 } from "./insurance-panel";
 import InsurancePolicyDetailsTab from "./insurance-policy-details-tab";
+import InsurancePolicyBeneficiariesTab from "./insurance-policy-beneficiaries-tab";
+import InsurancePolicyCashValueTab from "./insurance-policy-cash-value-tab";
 
 export interface PolicyFormState {
   name: string;
@@ -367,8 +369,24 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
                 policyId={policyId}
               />
             )}
-            {tab === "beneficiaries" && <InsurancePolicyBeneficiariesTab />}
-            {tab === "cash_value" && <InsurancePolicyCashValueTab />}
+            {tab === "beneficiaries" && (
+              <InsurancePolicyBeneficiariesTab
+                clientId={clientId}
+                mode={mode}
+                policyId={policyId}
+                members={props.familyMembers}
+                externals={props.externalBeneficiaries}
+              />
+            )}
+            {tab === "cash_value" && (
+              <InsurancePolicyCashValueTab
+                policyType={state.policyType}
+                mode={state.cashValueGrowthMode}
+                schedule={state.cashValueSchedule}
+                onChangeMode={(m) => handlePatch({ cashValueGrowthMode: m })}
+                onChangeSchedule={(s) => handlePatch({ cashValueSchedule: s })}
+              />
+            )}
           </div>
 
           {/* Error banner */}
@@ -416,16 +434,3 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
   );
 }
 
-// ── Tab stubs (replaced in Task 22) ─────────────────────────────────────────
-
-function InsurancePolicyBeneficiariesTab() {
-  return (
-    <div className="py-6 text-sm text-gray-400">Coming in Task 22.</div>
-  );
-}
-
-function InsurancePolicyCashValueTab() {
-  return (
-    <div className="py-6 text-sm text-gray-400">Coming in Task 22.</div>
-  );
-}

@@ -88,6 +88,8 @@ export default async function InsurancePage({ params }: PageProps) {
     firstName: f.firstName,
     lastName: f.lastName ?? null,
     relationship: f.relationship,
+    dateOfBirth: f.dateOfBirth ?? null,
+    notes: f.notes ?? null,
   }));
   const ents: InsurancePanelEntity[] = entityRows.map((e) => ({
     id: e.id,
@@ -97,6 +99,8 @@ export default async function InsurancePage({ params }: PageProps) {
   const exts: InsurancePanelExternal[] = externalRows.map((e) => ({
     id: e.id,
     name: e.name,
+    kind: e.kind,
+    notes: e.notes ?? null,
   }));
 
   return (

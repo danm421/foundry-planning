@@ -29,6 +29,8 @@ export interface InsurancePanelFamilyMember {
   firstName: string;
   lastName: string | null;
   relationship: FamilyMemberRow["relationship"];
+  dateOfBirth: string | null;
+  notes: string | null;
 }
 
 export interface InsurancePanelEntity {
@@ -40,6 +42,8 @@ export interface InsurancePanelEntity {
 export interface InsurancePanelExternal {
   id: string;
   name: string;
+  kind: "charity" | "individual";
+  notes: string | null;
 }
 
 export interface InsurancePanelProps {
