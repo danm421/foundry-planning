@@ -17,7 +17,7 @@ describe("EmptyBlock", () => {
     expect(
       screen.getByText("Run the cash-flow projection to populate this block."),
     ).toBeInTheDocument();
-    const link = screen.getByRole("link", { name: "Run a projection" });
+    const link = screen.getByRole("link", { name: /Run a projection/ });
     expect(link).toHaveAttribute("href", "/clients/abc/cashflow");
     expect(screen.getByTestId("icon")).toBeInTheDocument();
   });

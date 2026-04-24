@@ -27,7 +27,7 @@ export default function EmptyBlock({
           href={cta.href}
           className="text-[12px] font-medium text-accent hover:text-accent-ink"
         >
-          {cta.label}
+          {cta.label} →
         </Link>
       </CardBody>
     </Card>
