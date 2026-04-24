@@ -376,6 +376,13 @@ export interface Expense {
   deductionType?: "charitable" | "above_line" | "below_line" | "property_tax" | null;
   /** Year-by-year amount overrides. When present, bypasses growth-rate calc. */
   scheduleOverrides?: Map<number, number>;
+  /** Provenance. "manual" = user-entered, "extracted" = from a parsed document,
+   *  "policy" = synthesized from a life-insurance policy's premium. */
+  source?: "manual" | "extracted" | "policy";
+  /** When source = "policy", the life-insurance account whose premium produced
+   *  this synthetic expense. Used by downstream consumers (cash routing, UI
+   *  disambiguation, payout transform) to link the expense to its policy. */
+  sourcePolicyAccountId?: string;
 }
 
 export interface ExtraPayment {
