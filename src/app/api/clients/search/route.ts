@@ -2,6 +2,8 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { searchClients } from "@/lib/client-search";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: Request): Promise<Response> {
   const { userId, orgId } = await auth();
   if (!userId) {

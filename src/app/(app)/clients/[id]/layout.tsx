@@ -1,77 +1,46 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
+import { clerkClient } from "@clerk/nextjs/server";
+import type { ReactElement } from "react";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
-import { getOrgId } from "@/lib/db-helpers";
-import TabLink from "@/components/tab-link";
+import { eq } from "drizzle-orm";
+import { requireOrgId } from "@/lib/db-helpers";
+import ClientHeader from "@/components/client-header";
+import ClientTabs from "@/components/client-tabs";
 
-interface ClientLayoutProps {
+interface Props {
   children: React.ReactNode;
   params: Promise<{ id: string }>;
 }
 
-const tabs = [
-  { label: "Overview", href: "overview" },
-  { label: "Details", href: "client-data" },
-  { label: "Balance Sheet", href: "balance-sheet-report" },
-  { label: "Cash Flow", href: "cashflow" },
-  { label: "Investments", href: "investments" },
-  { label: "Timeline", href: "timeline" },
-  { label: "Estate Tax", href: "estate-tax-report" },
-  { label: "Monte Carlo", href: "monte-carlo" },
-];
-
-export default async function ClientLayout({ children, params }: ClientLayoutProps) {
-  const firmId = await getOrgId();
+export default async function ClientLayout({ children, params }: Props): Promise<ReactElement> {
   const { id } = await params;
+  const firmId = await requireOrgId();
 
   const [client] = await db
     .select()
     .from(clients)
-    .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
+    .where(eq(clients.id, id))
+    .limit(1);
+  if (!client || client.firmId !== firmId) notFound();
 
-  if (!client) {
-    notFound();
+  const cc = await clerkClient();
+  let advisorName = "Advisor";
+  try {
+    const advisor = await cc.users.getUser(client.advisorId);
+    advisorName =
+      [advisor.firstName, advisor.lastName].filter(Boolean).join(" ").trim() ||
+      advisor.emailAddresses?.[0]?.emailAddress ||
+      "Advisor";
+  } catch {
+    // advisor user deleted / not found — fall back to "Advisor"
   }
 
-  const primaryFullName = `${client.firstName} ${client.lastName}`;
-  const spouseFirst = client.spouseName ?? null;
-  const spouseLast = client.spouseLastName ?? (spouseFirst ? client.lastName : null);
-  const spouseFullName = spouseFirst ? `${spouseFirst} ${spouseLast ?? ""}`.trim() : null;
-  const householdTitle = spouseFullName
-    ? client.lastName && spouseLast === client.lastName
-      ? `${client.firstName} & ${spouseFirst} ${client.lastName}`
-      : `${primaryFullName} & ${spouseFullName}`
-    : primaryFullName;
-
   return (
-    <div>
-      <div className="mb-6">
-        <nav className="mb-1 text-sm text-gray-400">
-          <Link href="/clients" className="hover:text-gray-200">
-            Clients
-          </Link>
-          <span className="mx-2">/</span>
-          <span className="text-gray-100">{householdTitle}</span>
-        </nav>
-        <h1 className="text-2xl font-bold text-gray-100">{householdTitle}</h1>
-        {spouseFullName && (
-          <p className="mt-1 text-xs text-gray-500">
-            {primaryFullName} · {spouseFullName}
-          </p>
-        )}
-      </div>
-
-      <div className="mb-6 border-b border-gray-700">
-        <nav className="-mb-px flex space-x-8">
-          {tabs.map((tab) => (
-            <TabLink key={tab.href} clientId={id} tab={tab} />
-          ))}
-        </nav>
-      </div>
-
-      {children}
-    </div>
+    <>
+      <ClientHeader client={client} advisorName={advisorName} />
+      <ClientTabs clientId={id} />
+      <section className="px-[var(--pad-card)] py-6">{children}</section>
+    </>
   );
 }
