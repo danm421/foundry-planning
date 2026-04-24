@@ -118,6 +118,31 @@ export interface SplitAccountResult {
   ledgerEntries: Array<Omit<DeathTransfer, "year" | "deceased" | "deathOrder">>;
 }
 
+/** §1014 basis step-up at death. Returns the post-death basis for an
+ *  asset that was owned (in whole or in part) by the decedent.
+ *  Categories that are income-in-respect-of-a-decedent (`retirement`)
+ *  or have no cost-basis concept (`life_insurance`) do not step up.
+ *  Joint accounts at first death receive a half step-up — the
+ *  decedent's half resets to FMV, the survivor's half retains its
+ *  basis. Common-law JTWROS only; community-property double step-up
+ *  is deferred. `fmv < originalBasis` (a depreciated asset) still
+ *  returns FMV — §1014 allows step-*down* as well as step-up.
+ */
+export function computeSteppedUpBasis(
+  category: Account["category"],
+  fmv: number,
+  originalBasis: number,
+  opts: { isJointAtFirstDeath: boolean },
+): number {
+  if (category === "retirement" || category === "life_insurance") {
+    return originalBasis;
+  }
+  if (opts.isJointAtFirstDeath) {
+    return originalBasis * 0.5 + fmv * 0.5;
+  }
+  return fmv;
+}
+
 /** Split (or mutate-in-place) an account according to a list of shares.
  *  Shares' fractions must sum to 1. When there's exactly one share with
  *  fraction=1, the original account is mutated in-place and its id is
