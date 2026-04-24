@@ -92,6 +92,8 @@ export default async function WillsPage({ params }: PageProps) {
   }
   const bequestsByWill = new Map<string, WillsPanelWill["bequests"]>();
   for (const b of bequestRows) {
+    // Task 13 will render liability bequests in a separate Debt bequests section.
+    if (b.kind === "liability") continue;
     const list = bequestsByWill.get(b.willId) ?? [];
     list.push({
       id: b.id,

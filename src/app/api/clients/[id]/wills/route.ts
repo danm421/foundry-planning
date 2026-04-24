@@ -151,6 +151,7 @@ export async function POST(
           .values({
             willId: willRow.id,
             name: b.name,
+            // TODO(4e-Task3): discriminated-union Zod schema will populate this from request body.
             kind: "asset",
             assetMode: b.assetMode,
             accountId: b.accountId ?? null,
