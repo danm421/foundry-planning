@@ -193,6 +193,12 @@ export const itemGrowthSourceEnum = pgEnum("item_growth_source", [
   "inflation",
 ]);
 
+export const openItemPriorityEnum = pgEnum("open_item_priority", [
+  "low",
+  "medium",
+  "high",
+]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
@@ -757,6 +763,25 @@ export const savingsRules = pgTable("savings_rules", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const clientOpenItems = pgTable(
+  "client_open_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    priority: openItemPriorityEnum("priority").notNull().default("medium"),
+    dueDate: date("due_date"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("client_open_items_client_completed_idx").on(t.clientId, t.completedAt),
+  ],
+);
 
 export const withdrawalStrategies = pgTable("withdrawal_strategies", {
   id: uuid("id").defaultRandom().primaryKey(),

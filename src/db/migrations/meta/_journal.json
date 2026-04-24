@@ -337,6 +337,13 @@
       "when": 1777036920841,
       "tag": "0047_add_savings_rule_contribute_max",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1777038857102,
+      "tag": "0048_client_open_items",
+      "breakpoints": true
     }
   ]
 }

@@ -81,7 +81,12 @@ export type AuditAction =
   | "cma.model_portfolio.update"
   | "cma.model_portfolio.delete"
   | "cma.model_portfolio.allocation.update"
-  | "cma.seed";
+  | "cma.seed"
+  // Open items (client-scoped to-do / data-gathering tracker)
+  | "open_item.create"
+  | "open_item.update"
+  | "open_item.complete"
+  | "open_item.delete";
 
 type Args = {
   action: AuditAction;
