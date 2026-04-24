@@ -300,6 +300,9 @@ export async function GET(
           realization: { pctOrdinaryIncome: p.pctOi, pctLtCapitalGains: p.pctLtcg, pctQualifiedDividends: p.pctQdiv, pctTaxExempt: p.pctTaxEx, turnoverPct: 0 },
         };
       }
+      if (entry.source === "inflation") {
+        return { rate: resolvedInflationRate };
+      }
       return { rate: parseFloat(entry.customRate) };
     }
 

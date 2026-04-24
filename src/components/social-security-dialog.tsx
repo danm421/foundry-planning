@@ -160,27 +160,31 @@ export function SocialSecurityDialog({
   const fraDisabled = !ownerDob;
   const retirementDisabled = ownerRetirementAge == null;
 
+  const inputClass = "w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+  const selectClass = "rounded border border-gray-700 bg-gray-800 px-2 py-1 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
-        <h2 className="text-lg font-semibold mb-4">Edit {firstName}&apos;s Social Security</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-lg rounded-lg bg-gray-900 border border-gray-600 p-6 shadow-xl">
+        <h2 className="text-lg font-semibold text-gray-100 mb-4">Edit {firstName}&apos;s Social Security</h2>
 
         {fraDisplay && (
-          <p className="text-xs text-slate-500 mb-4">{fraDisplay}</p>
+          <p className="text-xs text-gray-400 mb-4">{fraDisplay}</p>
         )}
 
         {/* Benefit mode */}
         <fieldset className="mb-4">
-          <legend className="text-sm font-medium mb-2">Benefit mode</legend>
-          <label className="block text-sm mb-1">
+          <legend className="text-sm font-medium text-gray-200 mb-2">Benefit mode</legend>
+          <label className="block text-sm text-gray-200 mb-1">
             <input type="radio" checked={ssBenefitMode === "pia_at_fra"} onChange={() => setSsBenefitMode("pia_at_fra")} className="mr-2" />
             Primary Insurance Amount (PIA)
           </label>
-          <label className="block text-sm mb-1">
+          <label className="block text-sm text-gray-200 mb-1">
             <input type="radio" checked={ssBenefitMode === "manual_amount"} onChange={() => setSsBenefitMode("manual_amount")} className="mr-2" />
             Annual benefit amount
           </label>
-          <label className="block text-sm mb-1">
+          <label className="block text-sm text-gray-200 mb-1">
             <input type="radio" checked={ssBenefitMode === "no_benefit"} onChange={() => setSsBenefitMode("no_benefit")} className="mr-2" />
             No Benefit
           </label>
@@ -189,30 +193,30 @@ export function SocialSecurityDialog({
         {/* Conditional amount input */}
         {ssBenefitMode === "pia_at_fra" && (
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Monthly PIA</label>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Monthly PIA</label>
             <input
               type="number"
               value={piaMonthly}
               onChange={(e) => setPiaMonthly(e.target.value)}
               placeholder="e.g. 2800"
-              className="w-full border rounded px-2 py-1"
+              className={inputClass}
             />
-            <p className="text-xs text-slate-500 mt-1">From your SSA statement — monthly benefit at FRA.</p>
+            <p className="text-xs text-gray-400 mt-1">From your SSA statement — monthly benefit at FRA.</p>
           </div>
         )}
         {ssBenefitMode === "manual_amount" && (
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Annual benefit amount</label>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Annual benefit amount</label>
             <input
               type="number"
               value={annualAmount}
               onChange={(e) => setAnnualAmount(e.target.value)}
-              className="w-full border rounded px-2 py-1"
+              className={inputClass}
             />
           </div>
         )}
         {ssBenefitMode === "no_benefit" && (
-          <p className="text-sm text-slate-500 italic mb-4">
+          <p className="text-sm text-gray-400 italic mb-4">
             This person will receive no Social Security benefit in the projection.
           </p>
         )}
@@ -220,8 +224,8 @@ export function SocialSecurityDialog({
         {/* Claim age mode */}
         {ssBenefitMode !== "no_benefit" && (
           <fieldset className="mb-4">
-            <legend className="text-sm font-medium mb-2">Claim age</legend>
-            <label className="block text-sm mb-1" title={fraDisabled ? "Set date of birth to use FRA" : undefined}>
+            <legend className="text-sm font-medium text-gray-200 mb-2">Claim age</legend>
+            <label className="block text-sm text-gray-200 mb-1" title={fraDisabled ? "Set date of birth to use FRA" : undefined}>
               <input
                 type="radio"
                 disabled={fraDisabled}
@@ -231,7 +235,7 @@ export function SocialSecurityDialog({
               />
               Full Retirement Age
             </label>
-            <label className="block text-sm mb-1" title={retirementDisabled ? "Set retirement age to use this option" : undefined}>
+            <label className="block text-sm text-gray-200 mb-1" title={retirementDisabled ? "Set retirement age to use this option" : undefined}>
               <input
                 type="radio"
                 disabled={retirementDisabled}
@@ -241,7 +245,7 @@ export function SocialSecurityDialog({
               />
               At Retirement{ownerRetirementAge != null ? ` (${ownerRetirementAge})` : ""}
             </label>
-            <label className="block text-sm mb-1">
+            <label className="block text-sm text-gray-200 mb-1">
               <input
                 type="radio"
                 checked={claimingAgeMode === "years"}
@@ -255,7 +259,7 @@ export function SocialSecurityDialog({
                 <select
                   value={claimingAge}
                   onChange={(e) => setClaimingAge(parseInt(e.target.value, 10))}
-                  className="border rounded px-2 py-1"
+                  className={selectClass}
                 >
                   {[62, 63, 64, 65, 66, 67, 68, 69, 70].map((y) => (
                     <option key={y} value={y}>{y} years</option>
@@ -264,7 +268,7 @@ export function SocialSecurityDialog({
                 <select
                   value={claimingAgeMonths}
                   onChange={(e) => setClaimingAgeMonths(parseInt(e.target.value, 10))}
-                  className="border rounded px-2 py-1"
+                  className={selectClass}
                 >
                   {Array.from({ length: 12 }, (_, i) => (
                     <option key={i} value={i}>{i} months</option>
@@ -278,28 +282,28 @@ export function SocialSecurityDialog({
         {/* COLA */}
         {ssBenefitMode !== "no_benefit" && (
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Annual COLA %</label>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Annual COLA %</label>
             <input
               type="number"
               step="0.5"
               value={growthRate}
               onChange={(e) => setGrowthRate(e.target.value)}
-              className="w-32 border rounded px-2 py-1"
+              className={`${inputClass} w-32`}
             />
           </div>
         )}
 
         {/* Preview */}
         {preview != null && (
-          <p className="text-sm text-slate-600 mb-4">
+          <p className="text-sm text-gray-300 mb-4">
             Estimated first-year benefit: ${preview.toLocaleString()}
           </p>
         )}
 
         {/* Buttons */}
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1 border rounded">Cancel</button>
-          <button onClick={handleSave} className="px-3 py-1 bg-blue-600 text-white rounded">Save</button>
+          <button onClick={onClose} className="rounded border border-gray-600 bg-gray-800 px-3 py-1 text-sm text-gray-200 hover:bg-gray-700">Cancel</button>
+          <button onClick={handleSave} className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-500">Save</button>
         </div>
       </div>
     </div>

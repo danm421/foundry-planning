@@ -73,8 +73,14 @@ export function detectPortfolioEvents(
     }
   }
 
-  // Threshold crossings (investable portfolio)
+  // Threshold crossings (investable portfolio).
+  // Suppress thresholds the client has already crossed before the plan starts
+  // so they don't surface as year-1 "crossings".
   const seenThresholds = new Set<number>();
+  const firstYearValue = investableValue(projection[0]);
+  for (const t of thresholds) {
+    if (firstYearValue >= t) seenThresholds.add(t);
+  }
   for (const py of projection) {
     const v = investableValue(py);
     for (const t of thresholds) {
