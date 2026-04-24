@@ -65,23 +65,34 @@ export default function TrustForm({
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [externals, setExternals] = useState<ExternalBeneficiary[]>([]);
   const [beneDataLoaded, setBeneDataLoaded] = useState(false);
+  const [beneDataLoading, setBeneDataLoading] = useState(false);
 
   async function loadBeneficiariesData() {
-    if (beneDataLoaded || !editing) return;
-    const [desigRes, membersRes, externalsRes] = await Promise.all([
-      fetch(`/api/clients/${clientId}/entities/${editing.id}/beneficiaries`),
-      fetch(`/api/clients/${clientId}/family-members`),
-      fetch(`/api/clients/${clientId}/external-beneficiaries`),
-    ]);
-    const [desig, mem, ext] = await Promise.all([
-      desigRes.json(),
-      membersRes.json(),
-      externalsRes.json(),
-    ]);
-    setDesignations(desig as Designation[]);
-    setMembers(mem as FamilyMember[]);
-    setExternals(ext as ExternalBeneficiary[]);
-    setBeneDataLoaded(true);
+    if (beneDataLoaded || beneDataLoading || !editing) return;
+    setBeneDataLoading(true);
+    try {
+      const [desigRes, membersRes, externalsRes] = await Promise.all([
+        fetch(`/api/clients/${clientId}/entities/${editing.id}/beneficiaries`),
+        fetch(`/api/clients/${clientId}/family-members`),
+        fetch(`/api/clients/${clientId}/external-beneficiaries`),
+      ]);
+      if (!desigRes.ok || !membersRes.ok || !externalsRes.ok) {
+        throw new Error("Failed to load beneficiaries data");
+      }
+      const [desig, mem, ext] = await Promise.all([
+        desigRes.json(),
+        membersRes.json(),
+        externalsRes.json(),
+      ]);
+      setDesignations(desig as Designation[]);
+      setMembers(mem as FamilyMember[]);
+      setExternals(ext as ExternalBeneficiary[]);
+      setBeneDataLoaded(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load beneficiaries");
+    } finally {
+      setBeneDataLoading(false);
+    }
   }
 
   useEffect(() => {
