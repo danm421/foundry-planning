@@ -155,7 +155,13 @@ function buildPayload(state: PolicyFormState): Record<string, unknown> {
     cashValueGrowthMode: state.cashValueGrowthMode,
     postPayoutMergeAccountId: state.postPayoutMergeAccountId,
     postPayoutGrowthRate: state.postPayoutGrowthRate,
-    cashValueSchedule: state.cashValueSchedule,
+    // Only persist the schedule when the user has opted into free-form mode.
+    // Sending `[]` in basic mode wipes any previously-persisted rows on
+    // PATCH (full-replacement semantics), which is what we want — otherwise
+    // a user who populated free-form, then switched back to basic, would
+    // leave orphan rows in `life_insurance_cash_value_schedule`.
+    cashValueSchedule:
+      state.cashValueGrowthMode === "free_form" ? state.cashValueSchedule : [],
   };
   return payload;
 }
@@ -331,9 +337,11 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
             return (
               <button
                 key={t.key}
+                id={`tab-${t.key}`}
                 type="button"
                 role="tab"
                 aria-selected={active}
+                aria-controls={`panel-${t.key}`}
                 onClick={() => setTab(t.key)}
                 className={
                   "relative px-4 py-2 text-sm font-medium transition-colors " +
@@ -361,31 +369,49 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
           {/* Body — scrolls when content overflows */}
           <div className="min-h-0 flex-1 overflow-y-auto">
             {tab === "details" && (
-              <InsurancePolicyDetailsTab
-                state={state}
-                onChange={handlePatch}
-                accounts={props.accounts}
-                entities={props.entities}
-                policyId={policyId}
-              />
+              <div
+                role="tabpanel"
+                id="panel-details"
+                aria-labelledby="tab-details"
+              >
+                <InsurancePolicyDetailsTab
+                  state={state}
+                  onChange={handlePatch}
+                  accounts={props.accounts}
+                  entities={props.entities}
+                  policyId={policyId}
+                />
+              </div>
             )}
             {tab === "beneficiaries" && (
-              <InsurancePolicyBeneficiariesTab
-                clientId={clientId}
-                mode={mode}
-                policyId={policyId}
-                members={props.familyMembers}
-                externals={props.externalBeneficiaries}
-              />
+              <div
+                role="tabpanel"
+                id="panel-beneficiaries"
+                aria-labelledby="tab-beneficiaries"
+              >
+                <InsurancePolicyBeneficiariesTab
+                  clientId={clientId}
+                  mode={mode}
+                  policyId={policyId}
+                  members={props.familyMembers}
+                  externals={props.externalBeneficiaries}
+                />
+              </div>
             )}
             {tab === "cash_value" && (
-              <InsurancePolicyCashValueTab
-                policyType={state.policyType}
-                mode={state.cashValueGrowthMode}
-                schedule={state.cashValueSchedule}
-                onChangeMode={(m) => handlePatch({ cashValueGrowthMode: m })}
-                onChangeSchedule={(s) => handlePatch({ cashValueSchedule: s })}
-              />
+              <div
+                role="tabpanel"
+                id="panel-cash_value"
+                aria-labelledby="tab-cash_value"
+              >
+                <InsurancePolicyCashValueTab
+                  policyType={state.policyType}
+                  mode={state.cashValueGrowthMode}
+                  schedule={state.cashValueSchedule}
+                  onChangeMode={(m) => handlePatch({ cashValueGrowthMode: m })}
+                  onChangeSchedule={(s) => handlePatch({ cashValueSchedule: s })}
+                />
+              </div>
             )}
           </div>
 
