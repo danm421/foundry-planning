@@ -1,19 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import BeneficiaryEditor from "./beneficiary-editor";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AddClientDialog from "./add-client-dialog";
 import EntityDialog from "./entity-dialog";
 import AddEntityMenu from "./add-entity-menu";
+import BeneficiarySummary from "./beneficiary-summary";
+import AddAccountDialog from "./add-account-dialog";
+import type { AccountFormInitial } from "./forms/add-account-form";
 import type { EntityKind } from "./entity-dialog/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import { type TrustSubType } from "@/lib/entities/trust";
-import {
-  computeGiftTaxTreatment,
-  type GiftContext,
-} from "@/lib/gifts/compute-tax-treatment";
-import { beaForYear } from "@/lib/tax/estate";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -115,12 +112,6 @@ interface FamilyViewProps {
   initialAccounts: AccountLite[];
   initialDesignations: Designation[];
   initialGifts: Gift[];
-  /**
-   * Annual inflation rate used to grow the federal estate-tax basic exclusion
-   * amount (BEA) past the 2026 baseline. Sourced from `plan_settings.tax_inflation_rate`.
-   * Falls back to 0.03 when not provided (page does not yet fetch plan_settings here).
-   */
-  taxInflationRate?: number;
 }
 
 const RELATIONSHIP_LABELS: Record<Relationship, string> = {
@@ -149,6 +140,29 @@ function computeAge(dob: string | null): string {
   const years = diff / (365.25 * 24 * 60 * 60 * 1000);
   if (years < 1) return "< 1";
   return String(Math.floor(years));
+}
+
+/**
+ * Hydrate an `AccountLite` into the shape `AddAccountForm` expects. Used by
+ * the Beneficiary Summary's Edit deep-link, which always opens the dialog on
+ * the Beneficiaries tab — that tab only reads `initial.id`, so the remaining
+ * fields get safe zero-values. If the user then switches to other tabs, they
+ * will see empty/default values; the canonical edit path from Balance Sheet
+ * still provides the full `AccountFormInitial` with accurate values.
+ */
+function accountLiteToFormInitial(a: AccountLite): AccountFormInitial {
+  const category = (a.category as AccountFormInitial["category"]) ?? "taxable";
+  return {
+    id: a.id,
+    name: a.name,
+    category,
+    subType: "other",
+    owner: "client",
+    value: "0",
+    basis: "0",
+    growthRate: null,
+    ownerEntityId: a.ownerEntityId ?? null,
+  };
 }
 
 export function TrashIcon() {
@@ -340,13 +354,12 @@ export default function FamilyView({
   initialAccounts,
   initialDesignations,
   initialGifts,
-  taxInflationRate = 0.03,
 }: FamilyViewProps) {
   const [members, setMembers] = useState<FamilyMember[]>(initialMembers);
   const [entities, setEntities] = useState<Entity[]>(initialEntities);
   const [externals, setExternals] = useState<ExternalBeneficiary[]>(initialExternalBeneficiaries);
-  const [accts, setAccts] = useState<AccountLite[]>(initialAccounts);
-  const [designations, setDesignations] = useState<Designation[]>(initialDesignations);
+  const [accounts] = useState<AccountLite[]>(initialAccounts);
+  const [designations] = useState<Designation[]>(initialDesignations);
   const [giftsState, setGiftsState] = useState<Gift[]>(initialGifts);
 
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
@@ -359,6 +372,11 @@ export default function FamilyView({
   const [editingEntity, setEditingEntity] = useState<Entity | undefined>();
   const [deletingEntity, setDeletingEntity] = useState<Entity | null>(null);
   const [entitiesEdit, setEntitiesEdit] = useState(false);
+  const [entityDialogInitialTab, setEntityDialogInitialTab] = useState<"details" | "beneficiaries">("details");
+
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
+  const [accountDialogEditing, setAccountDialogEditing] = useState<AccountFormInitial | undefined>(undefined);
+  const [accountDialogInitialTab, setAccountDialogInitialTab] = useState<"details" | "beneficiaries">("details");
 
   const primaryAge = computeAge(primary.dateOfBirth);
   const spouseAge = primary.spouseDob ? computeAge(primary.spouseDob) : null;
@@ -625,193 +643,27 @@ export default function FamilyView({
         onChange={setGiftsState}
       />
 
-      {/* Account Beneficiaries */}
-      <section>
-        <header className="mb-3">
-          <h2 className="text-xl font-bold text-gray-100">Account Beneficiaries</h2>
-          <p className="text-xs text-gray-500">
-            Primary and contingent beneficiary designations per account. Also set optional
-            owner override for individual family members (e.g., UTMA).
-          </p>
-        </header>
-
-        {accts.length === 0 ? (
-          <EmptyState label="No accounts yet." />
-        ) : (
-          <div className="space-y-2">
-            {accts.map((a) => {
-              const rows = designations.filter(
-                (d) => d.targetKind === "account" && d.accountId === a.id,
-              );
-              return (
-                <details
-                  key={a.id}
-                  className="rounded-lg border border-gray-800 bg-gray-900/50 p-3"
-                >
-                  <summary className="cursor-pointer text-sm text-gray-100 flex items-center justify-between">
-                    <span>
-                      <span className="font-medium">{a.name}</span>
-                      <span className="ml-2 text-xs text-gray-500">{a.category}</span>
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {rows.length} designation{rows.length === 1 ? "" : "s"}
-                    </span>
-                  </summary>
-
-                  <div className="mt-3 flex items-center gap-2">
-                    <label className="text-sm text-gray-300">Owned by family member:</label>
-                    <select
-                      value={a.ownerFamilyMemberId ?? ""}
-                      disabled={!!a.ownerEntityId}
-                      onChange={async (e) => {
-                        const v = e.target.value || null;
-                        const res = await fetch(
-                          `/api/clients/${clientId}/accounts/${a.id}`,
-                          {
-                            method: "PATCH",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ ownerFamilyMemberId: v }),
-                          },
-                        );
-                        if (res.ok) {
-                          setAccts((rows) =>
-                            rows.map((r) =>
-                              r.id === a.id ? { ...r, ownerFamilyMemberId: v } : r,
-                            ),
-                          );
-                        }
-                      }}
-                      className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <option value="">— none —</option>
-                      {members.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.firstName} {m.lastName ?? ""}
-                        </option>
-                      ))}
-                    </select>
-                    {a.ownerEntityId ? (
-                      <span className="text-xs text-gray-400">Owned by an entity; clear entity owner first.</span>
-                    ) : null}
-                  </div>
-
-                  <BeneficiaryEditor
-                    target={{ kind: "account", accountId: a.id }}
-                    clientId={clientId}
-                    members={members}
-                    externals={externals}
-                    initial={rows}
-                    onSaved={(savedRows) => {
-                      setDesignations((prev) => [
-                        ...prev.filter(
-                          (d) => !(d.targetKind === "account" && d.accountId === a.id),
-                        ),
-                        ...savedRows,
-                      ]);
-                    }}
-                  />
-                </details>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* Trust Remainder Beneficiaries */}
-      <section>
-        <header className="mb-3">
-          <h2 className="text-xl font-bold text-gray-100">Trust Remainder Beneficiaries</h2>
-          <p className="text-xs text-gray-500">
-            Designations for trust remainder distributions.
-          </p>
-        </header>
-
-        {entities.filter((e) => e.entityType === "trust").length === 0 ? (
-          <EmptyState label="No trusts defined." />
-        ) : (
-          <div className="space-y-2">
-            {entities
-              .filter((e) => e.entityType === "trust")
-              .map((ent) => {
-                const rows = designations.filter(
-                  (d) => d.targetKind === "trust" && d.entityId === ent.id,
-                );
-                return (
-                  <details
-                    key={ent.id}
-                    className="rounded-lg border border-gray-800 bg-gray-900/50 p-3"
-                  >
-                    <summary className="cursor-pointer text-sm text-gray-100 flex items-center justify-between">
-                      <span>
-                        <span className="font-medium">{ent.name}</span>
-                        <span className="ml-2 text-xs text-gray-500">Trust</span>
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {rows.length} designation{rows.length === 1 ? "" : "s"}
-                      </span>
-                    </summary>
-
-                    <BeneficiaryEditor
-                      target={{ kind: "trust", entityId: ent.id }}
-                      clientId={clientId}
-                      members={members}
-                      externals={externals}
-                      initial={rows}
-                      onSaved={(savedRows) => {
-                        setDesignations((prev) => [
-                          ...prev.filter(
-                            (d) => !(d.targetKind === "trust" && d.entityId === ent.id),
-                          ),
-                          ...savedRows,
-                        ]);
-                      }}
-                    />
-                    {(() => {
-                      if (!(ent.isIrrevocable ?? false)) return null;
-                      const openingBalance = parseFloat(ent.exemptionConsumed || "0");
-                      const beneficiaryCount = designations.filter(
-                        (d) => d.targetKind === "trust" && d.entityId === ent.id && d.tier === "primary",
-                      ).length;
-                      const lifetimeFromGifts = giftsState
-                        .filter((g) => g.recipientEntityId === ent.id)
-                        .reduce((acc, g) => {
-                          try {
-                            const treatment = computeGiftTaxTreatment(
-                              {
-                                amount: g.amount,
-                                useCrummeyPowers: g.useCrummeyPowers,
-                                recipientEntityId: g.recipientEntityId,
-                                recipientFamilyMemberId: g.recipientFamilyMemberId,
-                                recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId,
-                              },
-                              {
-                                entity: {
-                                  isIrrevocable: ent.isIrrevocable ?? false,
-                                  entityType: "trust",
-                                },
-                                annualExclusionAmount: 19_000,
-                                crummeyBeneficiaryCount: beneficiaryCount,
-                              } as GiftContext,
-                            );
-                            return acc + treatment.lifetimeUsed;
-                          } catch {
-                            return acc;
-                          }
-                        }, 0);
-                      const total = openingBalance + lifetimeFromGifts;
-                      const exemptionCap = beaForYear(new Date().getFullYear(), taxInflationRate);
-                      return (
-                        <p className="mt-2 border-t border-gray-800 pt-2 text-xs text-gray-400">
-                          Uses exemption · ${(total / 1_000_000).toFixed(2)}M / ${(exemptionCap / 1_000_000).toFixed(2)}M
-                        </p>
-                      );
-                    })()}
-                  </details>
-                );
-              })}
-          </div>
-        )}
-      </section>
+      <BeneficiarySummary
+        accounts={accounts}
+        entities={entities}
+        designations={designations}
+        members={members}
+        externals={externals}
+        onEditAccount={(accountId) => {
+          const acct = accounts.find((a) => a.id === accountId);
+          if (!acct) return;
+          setAccountDialogEditing(accountLiteToFormInitial(acct));
+          setAccountDialogInitialTab("beneficiaries");
+          setAccountDialogOpen(true);
+        }}
+        onEditEntity={(entityId) => {
+          const ent = entities.find((e) => e.id === entityId);
+          if (!ent) return;
+          setEditingEntity(ent);
+          setEntityDialogInitialTab("beneficiaries");
+          setEntityDialogOpen(true);
+        }}
+      />
 
       {memberDialogOpen && (
         <FamilyMemberDialog
@@ -835,9 +687,13 @@ export default function FamilyView({
           key={editingEntity?.id ?? "new"}
           clientId={clientId}
           open={entityDialogOpen}
-          onOpenChange={setEntityDialogOpen}
+          onOpenChange={(open) => {
+            setEntityDialogOpen(open);
+            if (!open) setEntityDialogInitialTab("details");
+          }}
           editing={editingEntity}
           createKind={entityCreateKind}
+          initialTab={entityDialogInitialTab}
           onSaved={(e, mode) => {
             if (mode === "create") setEntities((prev) => [...prev, e]);
             else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));
@@ -845,6 +701,19 @@ export default function FamilyView({
           onRequestDelete={() => {
             if (editingEntity) setDeletingEntity(editingEntity);
           }}
+        />
+      )}
+
+      {accountDialogOpen && (
+        <AddAccountDialog
+          clientId={clientId}
+          open={accountDialogOpen}
+          onOpenChange={(open) => {
+            setAccountDialogOpen(open);
+            if (!open) setAccountDialogInitialTab("details");
+          }}
+          editing={accountDialogEditing}
+          initialTab={accountDialogInitialTab}
         />
       )}
 
