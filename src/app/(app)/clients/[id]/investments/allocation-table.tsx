@@ -67,8 +67,8 @@ function HighLevelTable({
           <tr className="border-b border-gray-800 text-gray-500">
             <th className="px-2 py-2 font-medium">Asset Type</th>
             <th className="px-2 py-2 text-right font-medium">$</th>
-            <th className="px-2 py-2 font-medium">Current</th>
-            <th className="px-2 py-2 font-medium">Target</th>
+            <th className="px-2 py-2 text-right font-medium">Current</th>
+            <th className="px-2 py-2 text-right font-medium">Target</th>
           </tr>
         </thead>
         <tbody>
@@ -149,8 +149,8 @@ function DetailedTable({
           <tr className="border-b border-gray-800 text-gray-500">
             <th className="px-2 py-2 font-medium">Asset Class</th>
             <th className="px-2 py-2 text-right font-medium">$</th>
-            <th className="px-2 py-2 font-medium">Current</th>
-            <th className="px-2 py-2 font-medium">Target</th>
+            <th className="px-2 py-2 text-right font-medium">Current</th>
+            <th className="px-2 py-2 text-right font-medium">Target</th>
           </tr>
         </thead>
         <tbody>
@@ -219,8 +219,8 @@ function CombinedTable({
           <tr className="border-b border-gray-800 text-gray-500">
             <th className="px-2 py-2 font-medium">Asset Class</th>
             <th className="px-2 py-2 text-right font-medium">$</th>
-            <th className="px-2 py-2 font-medium">Current</th>
-            <th className="px-2 py-2 font-medium">Target</th>
+            <th className="px-2 py-2 text-right font-medium">Current</th>
+            <th className="px-2 py-2 text-right font-medium">Target</th>
           </tr>
         </thead>
         <tbody>
@@ -293,7 +293,7 @@ function CombinedTable({
 
 function BarCell({ pct: p, color }: { pct: number; color: string }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center justify-end gap-2">
       <div className="h-1.5 w-16 overflow-hidden rounded bg-gray-800">
         <div className="h-full" style={{ width: `${Math.min(p * 100, 100)}%`, backgroundColor: color }} />
       </div>
@@ -328,8 +328,8 @@ function UnallocatedRow({
         Unallocated
       </td>
       <td className="px-2 py-2 text-right tabular-nums">{dollars(household.unallocatedValue)}</td>
-      <td className="px-2 py-2">—</td>
-      <td className="px-2 py-2">—</td>
+      <td className="px-2 py-2 text-right">—</td>
+      <td className="px-2 py-2 text-right">—</td>
     </tr>
   );
 }

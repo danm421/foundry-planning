@@ -32,6 +32,7 @@ export interface AccountRow {
   overridePctLtCg?: string | null;
   overridePctQdiv?: string | null;
   overridePctTaxExempt?: string | null;
+  isDefaultChecking?: boolean;
 }
 
 export interface LiabilityRow {
@@ -140,6 +141,7 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     overridePctLtCg: a.overridePctLtCg ?? null,
     overridePctQdiv: a.overridePctQdiv ?? null,
     overridePctTaxExempt: a.overridePctTaxExempt ?? null,
+    isDefaultChecking: a.isDefaultChecking ?? false,
   };
 }
 
@@ -375,6 +377,7 @@ export default function BalanceSheetView({
                       onClick={() => !assetsEdit && setEditingAccount(a)}
                       editMode={assetsEdit}
                       onDelete={() => setDeletingAccount(a)}
+                      deletable={!a.isDefaultChecking}
                       label={a.name}
                       subLabel={`${ownerDisplay(a)} · ${growthDisplay(a)}`}
                       value={fmt(a.value)}
@@ -678,6 +681,7 @@ function Row({
   onClick,
   editMode,
   onDelete,
+  deletable = true,
   label,
   subLabel,
   value,
@@ -686,6 +690,7 @@ function Row({
   onClick: () => void;
   editMode: boolean;
   onDelete: () => void;
+  deletable?: boolean;
   label: string;
   subLabel?: string;
   value: string;
@@ -702,7 +707,7 @@ function Row({
       </div>
       <div className="flex items-center gap-3">
         <span className={`text-sm font-medium ${valueClassName ?? "text-gray-100"}`}>{value}</span>
-        {editMode && (
+        {editMode && deletable && (
           <button
             onClick={(e) => {
               e.stopPropagation();

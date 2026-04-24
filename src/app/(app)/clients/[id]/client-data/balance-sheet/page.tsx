@@ -139,6 +139,7 @@ export default async function BalanceSheetPage({ params }: PageProps) {
     overridePctLtCg: a.overridePctLtCg == null ? null : String(a.overridePctLtCg),
     overridePctQdiv: a.overridePctQdiv == null ? null : String(a.overridePctQdiv),
     overridePctTaxExempt: a.overridePctTaxExempt == null ? null : String(a.overridePctTaxExempt),
+    isDefaultChecking: a.isDefaultChecking ?? false,
   }));
 
   const liabilityProps: LiabilityRow[] = liabilityRows.map((l) => ({

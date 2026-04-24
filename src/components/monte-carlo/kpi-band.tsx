@@ -39,12 +39,13 @@ export function KpiBand({ summary, clientData, planSettings }: KpiBandProps) {
   const startAgeVal = startAge(clientData.client.dateOfBirth, planSettings.planStartYear);
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-      <KpiCard
-        label="Success Probability"
-        value={<span className="sr-only">{Math.round(successPct * 100)}%</span>}
-        visual={<SuccessGauge value={successPct} />}
-        className="lg:col-span-2"
-      />
+      <div
+        role="img"
+        aria-label={`Success probability ${Math.round(successPct * 100)} percent`}
+        className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4 flex items-center justify-center min-h-[96px] lg:col-span-2"
+      >
+        <SuccessGauge value={successPct} />
+      </div>
       <KpiCard
         label="Median Portfolio Value"
         value={formatShortCurrency(medianEnding)}
