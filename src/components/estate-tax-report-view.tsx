@@ -172,7 +172,9 @@ export default function EstateTaxReportView({
         />
       )}
 
-      <GrandTotals ordering={activeOrdering} />
+      {isMarried && activeOrdering.finalDeath && (
+        <GrandTotals ordering={activeOrdering} />
+      )}
     </div>
   );
 }
@@ -192,8 +194,7 @@ function Row({
     <div
       className={
         "flex items-center justify-between border-b border-gray-800 py-1.5 text-sm " +
-        (muted ? "text-gray-500" : "text-gray-200") +
-        (bold ? " font-semibold text-gray-100" : "")
+        (bold ? "font-semibold text-gray-100" : muted ? "text-gray-500" : "text-gray-200")
       }
     >
       <span>{label}</span>
