@@ -141,6 +141,11 @@ describe("applyLiabilityBequests — multi-recipient split", () => {
     expect(result.newLiabilityRows.map((r) => r.balance).reduce((a, b) => a + b, 0)).toBe(10_000);
     expect(result.bequestTransfers).toHaveLength(2);
     expect(result.bequestTransfers.map((t) => t.amount).reduce((a, b) => a + b, 0)).toBe(-10_000);
+    const names = result.newLiabilityRows.map((r) => r.name).sort();
+    expect(names).toEqual([
+      "Visa CC — bequest to Sarah",
+      "Visa CC — bequest to Tom Jr.",
+    ]);
   });
 });
 
@@ -150,13 +155,10 @@ describe("applyLiabilityBequests — entity recipient", () => {
     const entity: EntitySummary = {
       id: "ent-1",
       includeInPortfolio: false,
-      isIrrevocable: false,
       isGrantor: true,
+      isIrrevocable: false,
       grantor: "client",
-      beneficiaries: [],
-      exemptionConsumed: 0,
-      trustSubType: "revocable",
-    } as unknown as EntitySummary;
+    };
     const will = baseWill([{
       id: "beq-1", name: "Visa", kind: "liability", assetMode: null, accountId: null,
       liabilityId: liab.id, percentage: 100, condition: "always", sortOrder: 0,
@@ -217,6 +219,8 @@ describe("applyLiabilityBequests — defensive skip cases", () => {
       will, deceased: "client", liabilities: [], familyMembers: [fam], entities: [], year: 2050,
     });
     expect(result.warnings).toContain("liability_bequest_target_missing:ghost-liab");
+    expect(result.updatedLiabilities).toEqual([]);
+    expect(result.newLiabilityRows).toHaveLength(0);
   });
 
   it("empty recipients → warning, bequest skipped", () => {
