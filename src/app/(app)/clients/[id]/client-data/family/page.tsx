@@ -20,6 +20,7 @@ import FamilyView, {
   AccountLite,
   Designation,
 } from "@/components/family-view";
+import OpenItemsPanel from "@/components/open-items/open-items-panel";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -142,15 +143,18 @@ export default async function FamilyPage({ params }: PageProps) {
   };
 
   return (
-    <FamilyView
-      clientId={id}
-      primary={primary}
-      initialMembers={members}
-      initialEntities={ents}
-      initialExternalBeneficiaries={externals}
-      initialAccounts={accts}
-      initialDesignations={designations}
-      initialGifts={giftsList}
-    />
+    <>
+      <FamilyView
+        clientId={id}
+        primary={primary}
+        initialMembers={members}
+        initialEntities={ents}
+        initialExternalBeneficiaries={externals}
+        initialAccounts={accts}
+        initialDesignations={designations}
+        initialGifts={giftsList}
+      />
+      <OpenItemsPanel clientId={id} firmId={firmId} />
+    </>
   );
 }
