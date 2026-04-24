@@ -48,6 +48,7 @@ import {
   applyFirstDeath,
   applyFinalDeath,
 } from "./death-event";
+import { computeHypotheticalEstateTax } from "./what-if/hypothetical-estate-tax";
 import { calcSeca } from "../lib/tax/fica";
 
 // Map legacy income type to the new tax type categories.
@@ -1447,6 +1448,31 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const hasTechniques = saleResult.breakdown.length > 0 || purchaseBreakdown.length > 0;
     const txnNameMap = new Map((data.assetTransactions ?? []).map((t) => [t.id, t.name]));
 
+    // 4d-2: hypothetical estate tax — computed on the pre-real-death snapshot
+    // of year-N state, so the report always displays consistent "both die in
+    // year N" numbers regardless of where real deaths land. Attached to the
+    // ProjectionYear at push time so the required field is always populated.
+    const clientFilingStatus = (client.filingStatus ?? "single") as FilingStatus;
+    const hypotheticalIsMarried =
+      clientFilingStatus === "married_joint" ||
+      clientFilingStatus === "married_separate";
+    const hypotheticalEstateTax = computeHypotheticalEstateTax({
+      year,
+      isMarried: hypotheticalIsMarried,
+      accounts: workingAccounts,
+      accountBalances,
+      basisMap,
+      incomes: currentIncomes,
+      liabilities: currentLiabilities,
+      familyMembers: data.familyMembers ?? [],
+      externalBeneficiaries: data.externalBeneficiaries ?? [],
+      entities: data.entities ?? [],
+      wills: data.wills ?? [],
+      planSettings,
+      gifts: data.gifts ?? [],
+      annualExclusionsByYear: buildAnnualExclusionsMap(data.taxYearRows ?? []),
+    });
+
     years.push({
       year,
       ages,
@@ -1465,6 +1491,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       accountLedgers,
       accountBasisBoY,
       liabilityBalancesBoY,
+      hypotheticalEstateTax,
       ...(hasTechniques
         ? {
             techniqueBreakdown: {
