@@ -67,6 +67,24 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
 
 export const ownerEnum = pgEnum("owner", ["client", "spouse", "joint"]);
 
+export const insuredPersonEnum = pgEnum("insured_person", [
+  "client",
+  "spouse",
+  "joint",
+]);
+
+export const policyTypeEnum = pgEnum("policy_type", [
+  "term",
+  "whole",
+  "universal",
+  "variable",
+]);
+
+export const cashValueGrowthModeEnum = pgEnum("cash_value_growth_mode", [
+  "basic",
+  "free_form",
+]);
+
 export const entityGrantorEnum = pgEnum("entity_grantor_enum", ["client", "spouse"]);
 
 export const incomeTypeEnum = pgEnum("income_type", [
@@ -85,7 +103,7 @@ export const expenseTypeEnum = pgEnum("expense_type", [
   "insurance",
 ]);
 
-export const sourceEnum = pgEnum("source", ["manual", "extracted"]);
+export const sourceEnum = pgEnum("source", ["manual", "extracted", "policy"]);
 
 export const entityTypeEnum = pgEnum("entity_type", [
   "trust",
@@ -550,6 +568,7 @@ export const accounts = pgTable("accounts", {
   category: accountCategoryEnum("category").notNull(),
   subType: accountSubTypeEnum("sub_type").notNull().default("other"),
   owner: ownerEnum("owner").notNull().default("client"),
+  insuredPerson: insuredPersonEnum("insured_person"),
   value: decimal("value", { precision: 15, scale: 2 }).notNull().default("0"),
   basis: decimal("basis", { precision: 15, scale: 2 }).notNull().default("0"),
   // Null means: inherit the default for this category from plan_settings.
@@ -585,6 +604,48 @@ export const accounts = pgTable("accounts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const lifeInsurancePolicies = pgTable("life_insurance_policies", {
+  accountId: uuid("account_id")
+    .primaryKey()
+    .references(() => accounts.id, { onDelete: "cascade" }),
+  faceValue: decimal("face_value", { precision: 15, scale: 2 }).notNull().default("0"),
+  costBasis: decimal("cost_basis", { precision: 15, scale: 2 }).notNull().default("0"),
+  premiumAmount: decimal("premium_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  premiumYears: integer("premium_years"),
+  policyType: policyTypeEnum("policy_type").notNull(),
+  termIssueYear: integer("term_issue_year"),
+  termLengthYears: integer("term_length_years"),
+  endsAtInsuredRetirement: boolean("ends_at_insured_retirement").notNull().default(false),
+  cashValueGrowthMode: cashValueGrowthModeEnum("cash_value_growth_mode")
+    .notNull()
+    .default("basic"),
+  postPayoutMergeAccountId: uuid("post_payout_merge_account_id").references(
+    () => accounts.id,
+    { onDelete: "set null" },
+  ),
+  postPayoutGrowthRate: decimal("post_payout_growth_rate", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0.06"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const lifeInsuranceCashValueSchedule = pgTable(
+  "life_insurance_cash_value_schedule",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    policyId: uuid("policy_id")
+      .notNull()
+      .references(() => lifeInsurancePolicies.accountId, { onDelete: "cascade" }),
+    year: integer("year").notNull(),
+    cashValue: decimal("cash_value", { precision: 15, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    policyYearUnique: unique().on(table.policyId, table.year),
+  }),
+);
 
 export const incomes = pgTable("incomes", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -664,6 +725,10 @@ export const expenses = pgTable("expenses", {
   cashAccountId: uuid("cash_account_id").references(() => accounts.id, {
     onDelete: "set null",
   }),
+  sourcePolicyAccountId: uuid("source_policy_account_id").references(
+    () => accounts.id,
+    { onDelete: "set null" },
+  ),
   deductionType: deductionTypeEnum("deduction_type"),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -1026,6 +1091,30 @@ export const accountsRelations = relations(accounts, ({ one, many }) => ({
   savingsRules: many(savingsRules),
   withdrawalStrategies: many(withdrawalStrategies),
 }));
+
+export const lifeInsurancePoliciesRelations = relations(lifeInsurancePolicies, ({ one, many }) => ({
+  account: one(accounts, {
+    fields: [lifeInsurancePolicies.accountId],
+    references: [accounts.id],
+    relationName: "policyAccount",
+  }),
+  mergeTargetAccount: one(accounts, {
+    fields: [lifeInsurancePolicies.postPayoutMergeAccountId],
+    references: [accounts.id],
+    relationName: "mergeTargetAccount",
+  }),
+  cashValueSchedule: many(lifeInsuranceCashValueSchedule),
+}));
+
+export const lifeInsuranceCashValueScheduleRelations = relations(
+  lifeInsuranceCashValueSchedule,
+  ({ one }) => ({
+    policy: one(lifeInsurancePolicies, {
+      fields: [lifeInsuranceCashValueSchedule.policyId],
+      references: [lifeInsurancePolicies.accountId],
+    }),
+  }),
+);
 
 export const incomesRelations = relations(incomes, ({ one }) => ({
   client: one(clients, {
