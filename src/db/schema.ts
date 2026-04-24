@@ -771,8 +771,8 @@ export const clientOpenItems = pgTable(
     priority: openItemPriorityEnum("priority").notNull().default("medium"),
     dueDate: date("due_date"),
     completedAt: timestamp("completed_at"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
     index("client_open_items_client_completed_idx").on(t.clientId, t.completedAt),
