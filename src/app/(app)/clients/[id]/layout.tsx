@@ -17,6 +17,7 @@ const tabs = [
   { label: "Cash Flow", href: "cashflow" },
   { label: "Investments", href: "investments" },
   { label: "Timeline", href: "timeline" },
+  { label: "Estate Tax", href: "estate-tax-report" },
   { label: "Monte Carlo", href: "monte-carlo" },
 ];
 
