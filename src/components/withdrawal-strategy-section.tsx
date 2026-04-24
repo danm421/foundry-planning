@@ -407,24 +407,27 @@ export default function WithdrawalStrategySection({
         )}
       </div>
 
-      <WithdrawalDialog
-        clientId={clientId}
-        accounts={accounts}
-        nextPriority={nextPriority}
-        milestones={milestones}
-        clientFirstName={clientFirstName}
-        spouseFirstName={spouseFirstName}
-        open={dialog.open}
-        onOpenChange={(o) => setDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
-        editing={dialog.editing}
-        onSaved={(strategy, mode) => {
-          if (mode === "create") setList((prev) => [...prev, strategy]);
-          else setList((prev) => prev.map((w) => (w.id === strategy.id ? strategy : w)));
-        }}
-        onRequestDelete={() => {
-          if (dialog.editing) setDeleting(dialog.editing);
-        }}
-      />
+      {dialog.open && (
+        <WithdrawalDialog
+          key={dialog.editing?.id ?? "new"}
+          clientId={clientId}
+          accounts={accounts}
+          nextPriority={nextPriority}
+          milestones={milestones}
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
+          open={dialog.open}
+          onOpenChange={(o) => setDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
+          editing={dialog.editing}
+          onSaved={(strategy, mode) => {
+            if (mode === "create") setList((prev) => [...prev, strategy]);
+            else setList((prev) => prev.map((w) => (w.id === strategy.id ? strategy : w)));
+          }}
+          onRequestDelete={() => {
+            if (dialog.editing) setDeleting(dialog.editing);
+          }}
+        />
+      )}
 
       <ConfirmDeleteDialog
         open={!!deleting}

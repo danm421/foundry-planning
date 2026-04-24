@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import GrowthSourceRadio from "./forms/growth-source-radio";
 import SavingsRuleDialog from "./forms/savings-rule-dialog";
 import SavingsRulesList from "./forms/savings-rules-list";
@@ -180,6 +180,13 @@ const INCOME_TYPE_LABELS: Partial<Record<IncomeType, string>> = {
   trust: "Trust",
   other: "Other",
 };
+
+function makeDefaultIncomeName(owner: Owner, type: IncomeType, ownerNames: OwnerNames): string {
+  const label = INCOME_TYPE_LABELS[type];
+  if (!label) return "";
+  const ownerFirst = individualOwnerLabel(owner, ownerNames).split(" ")[0];
+  return `${ownerFirst} - ${label}`;
+}
 
 
 function yearsDescriptor(start: number, end: number, planStart?: number, planEnd?: number): string {
@@ -413,6 +420,36 @@ function IncomeDialog({
   const [endYear, setEndYear] = useState<number>(
     editing?.endYear ?? (endYearRef && clientInfo?.milestones ? resolveMilestone(endYearRef, clientInfo.milestones) ?? (currentYear + 20) : currentYear + 20)
   );
+  const [name, setName] = useState<string>(
+    editing?.name ?? makeDefaultIncomeName(owner, type, ownerNames)
+  );
+  const nameTouchedRef = useRef<boolean>(Boolean(editing?.name));
+  const startYearTouchedRef = useRef<boolean>(Boolean(editing));
+  const endYearTouchedRef = useRef<boolean>(Boolean(editing));
+
+  // In create mode, snap the name + year refs to sensible defaults when the
+  // user switches owner or type — unless they've explicitly edited those fields.
+  useEffect(() => {
+    if (isEdit) return;
+    if (!nameTouchedRef.current) {
+      setName(makeDefaultIncomeName(owner, type, ownerNames));
+    }
+    const refs = defaultIncomeRefs(type, owner);
+    if (!startYearTouchedRef.current && refs.startYearRef) {
+      setStartYearRef(refs.startYearRef);
+      if (clientInfo?.milestones) {
+        const y = resolveMilestone(refs.startYearRef, clientInfo.milestones);
+        if (y != null) setStartYear(y);
+      }
+    }
+    if (!endYearTouchedRef.current && refs.endYearRef) {
+      setEndYearRef(refs.endYearRef);
+      if (clientInfo?.milestones) {
+        const y = resolveMilestone(refs.endYearRef, clientInfo.milestones);
+        if (y != null) setEndYear(y);
+      }
+    }
+  }, [owner, type, isEdit, ownerNames, clientInfo?.milestones]);
 
   if (!open) return null;
 
@@ -566,7 +603,8 @@ function IncomeDialog({
               name="name"
               type="text"
               required
-              defaultValue={editing?.name ?? ""}
+              value={name}
+              onChange={(e) => { nameTouchedRef.current = true; setName(e.target.value); }}
               placeholder="e.g., Base Salary"
               className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
@@ -622,7 +660,7 @@ function IncomeDialog({
                   yearRef={startYearRef}
                   milestones={clientInfo.milestones}
                   showSSRefs={false}
-                  onChange={(yr, ref) => { setStartYear(yr); setStartYearRef(ref); }}
+                  onChange={(yr, ref) => { startYearTouchedRef.current = true; setStartYear(yr); setStartYearRef(ref); }}
                   label="Start Year"
                   clientFirstName={ownerNames.clientName.split(" ")[0]}
                   spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
@@ -634,7 +672,7 @@ function IncomeDialog({
                   yearRef={endYearRef}
                   milestones={clientInfo.milestones}
                   showSSRefs={false}
-                  onChange={(yr, ref) => { setEndYear(yr); setEndYearRef(ref); }}
+                  onChange={(yr, ref) => { endYearTouchedRef.current = true; setEndYear(yr); setEndYearRef(ref); }}
                   label="End Year"
                   clientFirstName={ownerNames.clientName.split(" ")[0]}
                   spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
@@ -653,7 +691,7 @@ function IncomeDialog({
                     type="number"
                     required
                     value={startYear}
-                    onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
+                    onChange={(e) => { startYearTouchedRef.current = true; setStartYear(Number(e.target.value)); setStartYearRef(null); }}
                     className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
@@ -667,7 +705,7 @@ function IncomeDialog({
                     type="number"
                     required
                     value={endYear}
-                    onChange={(e) => { setEndYear(Number(e.target.value)); setEndYearRef(null); }}
+                    onChange={(e) => { endYearTouchedRef.current = true; setEndYear(Number(e.target.value)); setEndYearRef(null); }}
                     className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
@@ -1419,47 +1457,53 @@ export default function IncomeExpensesView({
       </Panel>
 
       {/* Dialogs */}
-      <IncomeDialog
-        clientId={clientId}
-        accounts={accounts}
-        entities={entities}
-        clientInfo={clientInfo}
-        ownerNames={ownerNames}
-        open={incomeDialog.open}
-        onOpenChange={(o) => setIncomeDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
-        defaultType={incomeDialog.defaultType}
-        editing={incomeDialog.editing}
-        onSaved={(income, mode) => {
-          if (mode === "create") setIncomeList((prev) => [...prev, income]);
-          else setIncomeList((prev) => prev.map((i) => (i.id === income.id ? income : i)));
-        }}
-        onRequestDelete={() => {
-          if (incomeDialog.editing) setDeletingIncome(incomeDialog.editing);
-        }}
-        schedule={incomeDialog.editing ? incomeSchedules[incomeDialog.editing.id] : undefined}
-        resolvedInflationRate={resolvedInflationRate}
-      />
+      {incomeDialog.open && (
+        <IncomeDialog
+          key={incomeDialog.editing?.id ?? "new"}
+          clientId={clientId}
+          accounts={accounts}
+          entities={entities}
+          clientInfo={clientInfo}
+          ownerNames={ownerNames}
+          open={incomeDialog.open}
+          onOpenChange={(o) => setIncomeDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
+          defaultType={incomeDialog.defaultType}
+          editing={incomeDialog.editing}
+          onSaved={(income, mode) => {
+            if (mode === "create") setIncomeList((prev) => [...prev, income]);
+            else setIncomeList((prev) => prev.map((i) => (i.id === income.id ? income : i)));
+          }}
+          onRequestDelete={() => {
+            if (incomeDialog.editing) setDeletingIncome(incomeDialog.editing);
+          }}
+          schedule={incomeDialog.editing ? incomeSchedules[incomeDialog.editing.id] : undefined}
+          resolvedInflationRate={resolvedInflationRate}
+        />
+      )}
 
-      <ExpenseDialog
-        clientId={clientId}
-        accounts={accounts}
-        entities={entities}
-        clientInfo={clientInfo}
-        ownerNames={ownerNames}
-        open={expenseDialog.open}
-        onOpenChange={(o) => setExpenseDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
-        defaultType={expenseDialog.defaultType}
-        editing={expenseDialog.editing}
-        onSaved={(expense, mode) => {
-          if (mode === "create") setExpenseList((prev) => [...prev, expense]);
-          else setExpenseList((prev) => prev.map((e) => (e.id === expense.id ? expense : e)));
-        }}
-        onRequestDelete={() => {
-          if (expenseDialog.editing) setDeletingExpense(expenseDialog.editing);
-        }}
-        schedule={expenseDialog.editing ? expenseSchedules[expenseDialog.editing.id] : undefined}
-        resolvedInflationRate={resolvedInflationRate}
-      />
+      {expenseDialog.open && (
+        <ExpenseDialog
+          key={expenseDialog.editing?.id ?? "new"}
+          clientId={clientId}
+          accounts={accounts}
+          entities={entities}
+          clientInfo={clientInfo}
+          ownerNames={ownerNames}
+          open={expenseDialog.open}
+          onOpenChange={(o) => setExpenseDialog((d) => ({ ...d, open: o, editing: o ? d.editing : undefined }))}
+          defaultType={expenseDialog.defaultType}
+          editing={expenseDialog.editing}
+          onSaved={(expense, mode) => {
+            if (mode === "create") setExpenseList((prev) => [...prev, expense]);
+            else setExpenseList((prev) => prev.map((e) => (e.id === expense.id ? expense : e)));
+          }}
+          onRequestDelete={() => {
+            if (expenseDialog.editing) setDeletingExpense(expenseDialog.editing);
+          }}
+          schedule={expenseDialog.editing ? expenseSchedules[expenseDialog.editing.id] : undefined}
+          resolvedInflationRate={resolvedInflationRate}
+        />
+      )}
 
       {savingsDialog.open && (
         <SavingsRuleDialog

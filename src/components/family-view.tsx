@@ -1235,33 +1235,39 @@ export default function FamilyView({
         )}
       </section>
 
-      <FamilyMemberDialog
-        clientId={clientId}
-        open={memberDialogOpen}
-        onOpenChange={setMemberDialogOpen}
-        editing={editingMember}
-        onSaved={(m, mode) => {
-          if (mode === "create") setMembers((prev) => [...prev, m]);
-          else setMembers((prev) => prev.map((x) => (x.id === m.id ? m : x)));
-        }}
-        onRequestDelete={() => {
-          if (editingMember) setDeletingMember(editingMember);
-        }}
-      />
+      {memberDialogOpen && (
+        <FamilyMemberDialog
+          key={editingMember?.id ?? "new"}
+          clientId={clientId}
+          open={memberDialogOpen}
+          onOpenChange={setMemberDialogOpen}
+          editing={editingMember}
+          onSaved={(m, mode) => {
+            if (mode === "create") setMembers((prev) => [...prev, m]);
+            else setMembers((prev) => prev.map((x) => (x.id === m.id ? m : x)));
+          }}
+          onRequestDelete={() => {
+            if (editingMember) setDeletingMember(editingMember);
+          }}
+        />
+      )}
 
-      <EntityDialog
-        clientId={clientId}
-        open={entityDialogOpen}
-        onOpenChange={setEntityDialogOpen}
-        editing={editingEntity}
-        onSaved={(e, mode) => {
-          if (mode === "create") setEntities((prev) => [...prev, e]);
-          else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));
-        }}
-        onRequestDelete={() => {
-          if (editingEntity) setDeletingEntity(editingEntity);
-        }}
-      />
+      {entityDialogOpen && (
+        <EntityDialog
+          key={editingEntity?.id ?? "new"}
+          clientId={clientId}
+          open={entityDialogOpen}
+          onOpenChange={setEntityDialogOpen}
+          editing={editingEntity}
+          onSaved={(e, mode) => {
+            if (mode === "create") setEntities((prev) => [...prev, e]);
+            else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));
+          }}
+          onRequestDelete={() => {
+            if (editingEntity) setDeletingEntity(editingEntity);
+          }}
+        />
+      )}
 
       <ConfirmDeleteDialog
         open={!!deletingMember}
