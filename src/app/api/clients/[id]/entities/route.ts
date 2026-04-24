@@ -74,7 +74,7 @@ export async function POST(
         isGrantor: data.isGrantor ?? false,
         value: data.value != null ? String(data.value) : "0",
         owner: data.owner ?? null,
-        grantors: data.grantors ?? null,
+        grantor: data.grantor ?? null,
         beneficiaries: data.beneficiaries ?? null,
         trustSubType:
           data.entityType === "trust"

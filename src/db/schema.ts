@@ -67,6 +67,8 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
 
 export const ownerEnum = pgEnum("owner", ["client", "spouse", "joint"]);
 
+export const entityGrantorEnum = pgEnum("entity_grantor_enum", ["client", "spouse"]);
+
 export const incomeTypeEnum = pgEnum("income_type", [
   "salary",
   "social_security",
@@ -245,6 +247,12 @@ export const planSettings = pgTable("plan_settings", {
   flatStateRate: decimal("flat_state_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.05"),
+  estateAdminExpenses: decimal("estate_admin_expenses", { precision: 15, scale: 2 })
+    .notNull()
+    .default("0"),
+  flatStateEstateRate: decimal("flat_state_estate_rate", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0"),
   taxEngineMode: taxEngineModeEnum("tax_engine_mode").notNull().default("bracket"),
   taxInflationRate: decimal("tax_inflation_rate", { precision: 5, scale: 4 }),
   ssWageGrowthRate: decimal("ss_wage_growth_rate", { precision: 5, scale: 4 }),
@@ -302,8 +310,8 @@ export const entities = pgTable("entities", {
   value: decimal("value", { precision: 15, scale: 2 }).notNull().default("0"),
   // Ownership for business entities (client/spouse/joint). Null for trusts.
   owner: ownerEnum("owner"),
-  // Trust-only: list of grantors with percent ownership. Shape: { name, pct }[].
-  grantors: jsonb("grantors"),
+  // Trust-only: single grantor ('client' or 'spouse'). Null for third-party trusts.
+  grantor: entityGrantorEnum("grantor"),
   // Trust-only: list of beneficiaries with percent distribution. Shape: { name, pct }[].
   // DEPRECATED: superseded by the beneficiary_designations table. Retained for read-back
   // compatibility; item 2 will migrate and drop.

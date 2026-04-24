@@ -23,6 +23,7 @@ const namePctRowSchema = z.object({
 });
 
 const baseEntityFields = {
+  grantor: z.enum(["client", "spouse"]).nullish(),
   name: z.string().trim().min(1, "Name is required"),
   entityType: entityTypeSchema,
   notes: z.string().trim().nullish(),
@@ -30,7 +31,6 @@ const baseEntityFields = {
   isGrantor: z.boolean().optional(),
   value: z.union([z.string(), z.number()]).optional(),
   owner: z.enum(["client", "spouse", "joint"]).nullish(),
-  grantors: z.array(namePctRowSchema).nullish(),
   beneficiaries: z.array(namePctRowSchema).nullish(),
   trustSubType: trustSubTypeSchema.optional(),
   isIrrevocable: z.boolean().optional(),

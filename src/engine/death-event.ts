@@ -262,7 +262,7 @@ export interface StepResult {
 interface ExternalBeneficiarySummary {
   id: string;
   name: string;
-  kind?: string;
+  kind?: "charity" | "individual";
 }
 
 /** Step 1: Titling. Joint accounts pass 100% to the survivor via right-of-

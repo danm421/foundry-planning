@@ -52,7 +52,7 @@ export async function PUT(
       isGrantor?: boolean;
       value?: string | number;
       owner?: "client" | "spouse" | "joint" | null;
-      grantors?: Array<{ name: string; pct: number }> | null;
+      grantor?: "client" | "spouse" | null;
       beneficiaries?: Array<{ name: string; pct: number }> | null;
       trustSubType?: string;
       isIrrevocable?: boolean;
@@ -68,7 +68,7 @@ export async function PUT(
       isGrantor: patch.isGrantor ?? existing.isGrantor,
       value: patch.value ?? existing.value,
       owner: patch.owner !== undefined ? patch.owner : existing.owner,
-      grantors: patch.grantors !== undefined ? patch.grantors : existing.grantors,
+      grantor: patch.grantor !== undefined ? patch.grantor : existing.grantor,
       beneficiaries:
         patch.beneficiaries !== undefined ? patch.beneficiaries : existing.beneficiaries,
       trustSubType:
@@ -113,7 +113,7 @@ export async function PUT(
         }),
         ...(patch.value !== undefined && { value: String(patch.value) }),
         ...(patch.owner !== undefined && { owner: patch.owner ?? null }),
-        ...(patch.grantors !== undefined && { grantors: patch.grantors ?? null }),
+        ...(patch.grantor !== undefined && { grantor: patch.grantor ?? null }),
         ...(patch.beneficiaries !== undefined && {
           beneficiaries: patch.beneficiaries ?? null,
         }),

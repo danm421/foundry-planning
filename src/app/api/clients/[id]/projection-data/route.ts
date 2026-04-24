@@ -31,6 +31,7 @@ import {
   willBequests,
   willBequestRecipients,
   familyMembers,
+  externalBeneficiaries,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -88,6 +89,7 @@ export async function GET(
       assetTransactionRows,
       giftRows,
       familyMemberRows,
+      externalBeneficiaryRows,
     ] = await Promise.all([
       db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
       db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
@@ -110,6 +112,7 @@ export async function GET(
         .where(eq(gifts.clientId, id))
         .orderBy(asc(gifts.year), asc(gifts.createdAt)),
       db.select().from(familyMembers).where(eq(familyMembers.clientId, id)).orderBy(asc(familyMembers.dateOfBirth)),
+      db.select().from(externalBeneficiaries).where(eq(externalBeneficiaries.clientId, id)),
     ]);
 
     // Load schedule overrides for all incomes, expenses, and savings rules
@@ -615,6 +618,8 @@ export async function GET(
       planSettings: {
         flatFederalRate: parseFloat(settings.flatFederalRate),
         flatStateRate: parseFloat(settings.flatStateRate),
+        estateAdminExpenses: settings.estateAdminExpenses != null ? parseFloat(settings.estateAdminExpenses) : 0,
+        flatStateEstateRate: settings.flatStateEstateRate != null ? parseFloat(settings.flatStateEstateRate) : 0,
         inflationRate: parseFloat(settings.inflationRate),
         planStartYear: settings.planStartYear,
         planEndYear: settings.planEndYear,
@@ -631,6 +636,12 @@ export async function GET(
         isIrrevocable: e.isIrrevocable ?? undefined,
         trustee: e.trustee ?? undefined,
         exemptionConsumed: e.exemptionConsumed != null ? parseFloat(e.exemptionConsumed) : 0,
+        grantor: e.grantor ?? undefined,
+      })),
+      externalBeneficiaries: externalBeneficiaryRows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        kind: r.kind,
       })),
       taxYearRows: parsedTaxRows,
       deductions: parsedDeductions,

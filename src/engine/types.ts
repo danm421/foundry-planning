@@ -177,6 +177,9 @@ export interface ClientData {
    *  death-event module to resolve fallback tier 2 (even split among living children)
    *  and for recipient-label lookups. */
   familyMembers?: FamilyMember[];
+  /** External beneficiaries (charities and non-family individuals) configured on the
+   *  client. The death-event module uses these for recipient resolution. */
+  externalBeneficiaries?: Array<{ id: string; name: string; kind: "charity" | "individual" }>;
 }
 
 // Minimal entity view used by the engine to decide cash-flow treatment of entity-owned
@@ -427,6 +430,10 @@ export interface PlanSettings {
   taxInflationRate?: number;
   /** Annual rate for inflating the SS wage base (default: inflationRate + 0.005). */
   ssWageGrowthRate?: number;
+  /** Lump-sum estate administration expenses (funerals, executor fees, etc.). */
+  estateAdminExpenses?: number;
+  /** Flat state estate tax rate applied on top of federal estate tax. 0 disables. */
+  flatStateEstateRate?: number;
 }
 
 // ── Output Types ─────────────────────────────────────────────────────────────
