@@ -36,13 +36,13 @@ function req(url: string): Request {
 
 describe("GET /api/clients/search", () => {
   it("returns 401 when unauthenticated", async () => {
-    (auth as ReturnType<typeof vi.fn>).mockResolvedValue({ userId: null, orgId: null });
+    (auth as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ userId: null, orgId: null });
     const res = await GET(req("http://localhost/api/clients/search?q=casey"));
     expect(res.status).toBe(401);
   });
 
   it("returns matching clients for the authed firm", async () => {
-    (auth as ReturnType<typeof vi.fn>).mockResolvedValue({ userId: USER, orgId: FIRM });
+    (auth as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ userId: USER, orgId: FIRM });
     const res = await GET(req("http://localhost/api/clients/search?q=carver"));
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -51,7 +51,7 @@ describe("GET /api/clients/search", () => {
   });
 
   it("returns empty array for empty q", async () => {
-    (auth as ReturnType<typeof vi.fn>).mockResolvedValue({ userId: USER, orgId: FIRM });
+    (auth as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ userId: USER, orgId: FIRM });
     const res = await GET(req("http://localhost/api/clients/search?q="));
     expect(res.status).toBe(200);
     const body = await res.json();

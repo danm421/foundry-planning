@@ -17,7 +17,6 @@ export default function UserMenu({ collapsed = false }: UserMenuProps): ReactEle
       }
     >
       <UserButton
-        afterSignOutUrl="/sign-in"
         appearance={{
           elements: {
             avatarBox: "h-8 w-8 rounded-full bg-gradient-to-br from-accent/60 to-cat-portfolio/60",

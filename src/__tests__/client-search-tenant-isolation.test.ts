@@ -38,7 +38,7 @@ function req(url: string): Request {
 
 describe("client search tenant isolation", () => {
   it("Firm A sees only Firm A's matches", async () => {
-    (auth as ReturnType<typeof vi.fn>).mockResolvedValue({ userId: "a_iso", orgId: FIRM_A });
+    (auth as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ userId: "a_iso", orgId: FIRM_A });
     const res = await GET(req("http://localhost/api/clients/search?q=dana"));
     const body = await res.json();
     expect(body).toHaveLength(1);
@@ -46,7 +46,7 @@ describe("client search tenant isolation", () => {
   });
 
   it("Firm B sees only Firm B's matches", async () => {
-    (auth as ReturnType<typeof vi.fn>).mockResolvedValue({ userId: "b_iso", orgId: FIRM_B });
+    (auth as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ userId: "b_iso", orgId: FIRM_B });
     const res = await GET(req("http://localhost/api/clients/search?q=dana"));
     const body = await res.json();
     expect(body).toHaveLength(1);

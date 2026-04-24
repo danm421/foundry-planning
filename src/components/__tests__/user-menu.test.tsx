@@ -3,8 +3,8 @@ import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
 
 vi.mock("@clerk/nextjs", () => ({
-  UserButton: ({ afterSignOutUrl, appearance }: { afterSignOutUrl?: string; appearance?: unknown }) => (
-    <div data-testid="clerk-user-button" data-sign-out-url={afterSignOutUrl} data-appearance={appearance ? "yes" : "no"} />
+  UserButton: ({ appearance }: { appearance?: unknown }) => (
+    <div data-testid="clerk-user-button" data-appearance={appearance ? "yes" : "no"} />
   ),
 }));
 
@@ -20,12 +20,6 @@ describe("UserMenu", () => {
     const { container } = render(<UserMenu />);
     const btn = container.querySelector('[data-testid="clerk-user-button"]');
     expect(btn?.getAttribute("data-appearance")).toBe("yes");
-  });
-
-  it("sets afterSignOutUrl to /sign-in", () => {
-    const { container } = render(<UserMenu />);
-    const btn = container.querySelector('[data-testid="clerk-user-button"]');
-    expect(btn?.getAttribute("data-sign-out-url")).toBe("/sign-in");
   });
 
   it("hides when collapsed", () => {
