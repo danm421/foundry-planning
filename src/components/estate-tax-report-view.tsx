@@ -69,8 +69,16 @@ export default function EstateTaxReportView({
     );
   }
 
-  if (loading || !hypothetical || selectedYear == null) {
+  if (loading) {
     return <div className="text-gray-400">Loading projection…</div>;
+  }
+
+  if (projectionYears.length === 0 || !hypothetical || selectedYear == null) {
+    return (
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
+        No projection data available. Ensure plan settings and base case scenario are configured.
+      </div>
+    );
   }
 
   const activeOrdering =
