@@ -79,18 +79,13 @@ export const willBequestLiabilitySchema = z
     liabilityId: uuidSchema,
     assetMode: z.null().optional(),
     accountId: z.null().optional(),
-    percentage: z.number().default(100),
     condition: z.literal("always"),
     sortOrder: z.number().int().min(0),
     recipients: z.array(willBequestRecipientSchema).min(1),
   })
   .superRefine((b, ctx) => {
     for (const r of b.recipients) {
-      if (
-        !LIABILITY_ALLOWED_RECIPIENT_KINDS.includes(
-          r.recipientKind as "family_member" | "entity",
-        )
-      ) {
+      if (!(LIABILITY_ALLOWED_RECIPIENT_KINDS as readonly string[]).includes(r.recipientKind)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: `liability bequest recipient kind must be one of ${LIABILITY_ALLOWED_RECIPIENT_KINDS.join(", ")} (got ${r.recipientKind})`,

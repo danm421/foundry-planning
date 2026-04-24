@@ -155,7 +155,7 @@ export async function POST(
             assetMode: b.kind === "asset" ? b.assetMode : null,
             accountId: b.kind === "asset" ? (b.accountId ?? null) : null,
             liabilityId: b.kind === "liability" ? b.liabilityId : null,
-            percentage: String(b.percentage),
+            percentage: b.kind === "asset" ? String(b.percentage) : "100",
             condition: b.condition,
             sortOrder: b.sortOrder,
           })
