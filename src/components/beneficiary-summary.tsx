@@ -78,22 +78,27 @@ export default function BeneficiarySummary({
         <header className="mb-3">
           <h2 className="text-xl font-bold text-gray-100">Beneficiary Designations</h2>
         </header>
-        <p className="text-sm text-gray-400">
-          No beneficiary designations yet. Open an account or trust to add them.
-        </p>
+        <div className="rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-6 text-center">
+          <p className="text-sm text-gray-400">No beneficiary designations yet.</p>
+          <p className="mt-1 text-xs text-gray-500">
+            Open an account or trust above to add primary and contingent beneficiaries.
+          </p>
+        </div>
       </section>
     );
   }
 
   return (
     <section>
-      <header className="mb-3">
+      <header className="mb-4">
         <h2 className="text-xl font-bold text-gray-100">Beneficiary Designations</h2>
       </header>
 
       {accountRows.length > 0 && (
-        <div className="mb-4">
-          <h3 className="mb-2 text-xs uppercase tracking-wider text-gray-500">Accounts</h3>
+        <div className="mb-6">
+          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            Accounts
+          </h3>
           <div className="space-y-2">
             {accountRows.map(({ account, rows }) => {
               const isTOD = account.category === "cash" || account.category === "taxable";
@@ -102,30 +107,37 @@ export default function BeneficiarySummary({
               return (
                 <div
                   key={account.id}
-                  className="rounded-lg border border-gray-800 bg-gray-900/50 p-3"
+                  className="group rounded-lg border border-gray-800 bg-gray-900/60 p-4 transition-colors hover:border-gray-700"
                 >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="text-sm text-gray-100">
-                        <span className="font-medium">{account.name}</span>
-                        <span className="ml-2 text-xs text-gray-500">{account.category}</span>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-sm font-semibold text-gray-100">
+                          {account.name}
+                        </span>
+                        <span className="text-[11px] uppercase tracking-wide text-gray-500">
+                          {account.category}
+                        </span>
                         {isTOD && (
-                          <span className="ml-2 inline-flex items-center rounded bg-blue-900/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-blue-300">
+                          <span
+                            className="inline-flex items-center rounded border border-blue-500/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-blue-300"
+                            title="Transfer on Death"
+                          >
                             TOD
                           </span>
                         )}
                       </div>
-                      <dl className="mt-1 text-xs text-gray-300">
+                      <dl className="mt-2 space-y-1 text-xs text-gray-300">
                         {primaryLine && (
-                          <div>
-                            <dt className="inline text-gray-500">Primary:&nbsp;</dt>
-                            <dd className="inline">{primaryLine}</dd>
+                          <div className="flex gap-2">
+                            <dt className="w-20 shrink-0 text-gray-500">Primary:</dt>
+                            <dd className="min-w-0 flex-1 text-gray-200">{primaryLine}</dd>
                           </div>
                         )}
                         {contingentLine && (
-                          <div>
-                            <dt className="inline text-gray-500">Contingent:&nbsp;</dt>
-                            <dd className="inline">{contingentLine}</dd>
+                          <div className="flex gap-2">
+                            <dt className="w-20 shrink-0 text-gray-500">Contingent:</dt>
+                            <dd className="min-w-0 flex-1 text-gray-200">{contingentLine}</dd>
                           </div>
                         )}
                       </dl>
@@ -133,9 +145,9 @@ export default function BeneficiarySummary({
                     <button
                       type="button"
                       onClick={() => onEditAccount(account.id)}
-                      className="rounded-md border border-gray-700 px-2 py-1 text-xs text-gray-200 hover:bg-gray-800"
+                      className="shrink-0 rounded-md border border-gray-700 px-2.5 py-1 text-xs font-medium text-gray-300 transition-colors hover:border-gray-600 hover:bg-gray-800 hover:text-gray-100"
                     >
-                      Edit →
+                      Edit <span aria-hidden="true">→</span>
                     </button>
                   </div>
                 </div>
@@ -147,7 +159,7 @@ export default function BeneficiarySummary({
 
       {trustRows.length > 0 && (
         <div>
-          <h3 className="mb-2 text-xs uppercase tracking-wider text-gray-500">
+          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
             Trust Remainders
           </h3>
           <div className="space-y-2">
@@ -157,22 +169,22 @@ export default function BeneficiarySummary({
               return (
                 <div
                   key={entity.id}
-                  className="rounded-lg border border-gray-800 bg-gray-900/50 p-3"
+                  className="group rounded-lg border border-gray-800 bg-gray-900/60 p-4 transition-colors hover:border-gray-700"
                 >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="text-sm font-medium text-gray-100">{entity.name}</div>
-                      <dl className="mt-1 text-xs text-gray-300">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold text-gray-100">{entity.name}</div>
+                      <dl className="mt-2 space-y-1 text-xs text-gray-300">
                         {primaryLine && (
-                          <div>
-                            <dt className="inline text-gray-500">Primary:&nbsp;</dt>
-                            <dd className="inline">{primaryLine}</dd>
+                          <div className="flex gap-2">
+                            <dt className="w-20 shrink-0 text-gray-500">Primary:</dt>
+                            <dd className="min-w-0 flex-1 text-gray-200">{primaryLine}</dd>
                           </div>
                         )}
                         {contingentLine && (
-                          <div>
-                            <dt className="inline text-gray-500">Contingent:&nbsp;</dt>
-                            <dd className="inline">{contingentLine}</dd>
+                          <div className="flex gap-2">
+                            <dt className="w-20 shrink-0 text-gray-500">Contingent:</dt>
+                            <dd className="min-w-0 flex-1 text-gray-200">{contingentLine}</dd>
                           </div>
                         )}
                       </dl>
@@ -180,9 +192,9 @@ export default function BeneficiarySummary({
                     <button
                       type="button"
                       onClick={() => onEditEntity(entity.id)}
-                      className="rounded-md border border-gray-700 px-2 py-1 text-xs text-gray-200 hover:bg-gray-800"
+                      className="shrink-0 rounded-md border border-gray-700 px-2.5 py-1 text-xs font-medium text-gray-300 transition-colors hover:border-gray-600 hover:bg-gray-800 hover:text-gray-100"
                     >
-                      Edit →
+                      Edit <span aria-hidden="true">→</span>
                     </button>
                   </div>
                 </div>
