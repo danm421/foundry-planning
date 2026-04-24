@@ -28,6 +28,14 @@ interface AddAccountDialogProps {
   spouseFirstName?: string;
   existingAccountNames?: string[];
   resolvedInflationRate?: number;
+  initialTab?: "details" | "savings" | "realization" | "asset_mix" | "beneficiaries";
+  /**
+   * When true, restrict the dialog to the Beneficiaries tab: hide all other tab
+   * buttons and unmount their panels. Used by the Beneficiary Summary deep-link
+   * where `initial` is hydrated from a lite shape (zero values for basis/value/etc),
+   * so allowing the user to reach Details would silently overwrite real data on Save.
+   */
+  lockTab?: boolean;
 }
 
 export default function AddAccountDialog({
@@ -50,6 +58,8 @@ export default function AddAccountDialog({
   spouseFirstName,
   existingAccountNames,
   resolvedInflationRate,
+  initialTab,
+  lockTab,
 }: AddAccountDialogProps) {
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
@@ -107,6 +117,8 @@ export default function AddAccountDialog({
               spouseFirstName={spouseFirstName}
               existingAccountNames={existingAccountNames}
               resolvedInflationRate={resolvedInflationRate}
+              initialTab={initialTab}
+              lockTab={lockTab}
               onSuccess={close}
               onDelete={onRequestDelete}
             />

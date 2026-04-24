@@ -3,18 +3,19 @@
 import { useState } from "react";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AddClientDialog from "./add-client-dialog";
+import EntityDialog from "./entity-dialog";
+import AddEntityMenu from "./add-entity-menu";
+import BeneficiarySummary from "./beneficiary-summary";
+import AddAccountDialog from "./add-account-dialog";
+import type { AccountFormInitial } from "./forms/add-account-form";
+import type { EntityKind } from "./entity-dialog/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
-import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
-import {
-  computeGiftTaxTreatment,
-  type GiftContext,
-} from "@/lib/gifts/compute-tax-treatment";
-import { beaForYear } from "@/lib/tax/estate";
+import { type TrustSubType } from "@/lib/entities/trust";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Relationship = "child" | "grandchild" | "parent" | "sibling" | "other";
-type EntityType = "trust" | "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other";
+export type EntityType = "trust" | "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other";
 
 export interface FamilyMember {
   id: string;
@@ -46,22 +47,6 @@ export interface Entity {
   trustee: string | null;
   exemptionConsumed: string;
 }
-
-const BUSINESS_ENTITY_TYPES: EntityType[] = ["llc", "s_corp", "c_corp", "partnership", "other"];
-const TRUST_LIKE_ENTITY_TYPES: EntityType[] = ["trust", "foundation"];
-
-const TRUST_SUB_TYPE_LABELS: Record<TrustSubType, string> = {
-  revocable: "Revocable",
-  irrevocable: "Irrevocable (generic)",
-  ilit: "ILIT",
-  slat: "SLAT",
-  crt: "CRT",
-  grat: "GRAT",
-  qprt: "QPRT",
-  clat: "CLAT",
-  qtip: "QTIP",
-  bypass: "Bypass / Credit Shelter",
-};
 
 export type Gift = {
   id: string;
@@ -127,12 +112,6 @@ interface FamilyViewProps {
   initialAccounts: AccountLite[];
   initialDesignations: Designation[];
   initialGifts: Gift[];
-  /**
-   * Annual inflation rate used to grow the federal estate-tax basic exclusion
-   * amount (BEA) past the 2026 baseline. Sourced from `plan_settings.tax_inflation_rate`.
-   * Falls back to 0.03 when not provided (page does not yet fetch plan_settings here).
-   */
-  taxInflationRate?: number;
 }
 
 const RELATIONSHIP_LABELS: Record<Relationship, string> = {
@@ -143,7 +122,7 @@ const RELATIONSHIP_LABELS: Record<Relationship, string> = {
   other: "Other",
 };
 
-const ENTITY_LABELS: Record<EntityType, string> = {
+export const ENTITY_LABELS: Record<EntityType, string> = {
   trust: "Trust",
   llc: "LLC",
   s_corp: "S Corp",
@@ -163,7 +142,30 @@ function computeAge(dob: string | null): string {
   return String(Math.floor(years));
 }
 
-function TrashIcon() {
+/**
+ * Hydrate an `AccountLite` into the shape `AddAccountForm` expects. Used by
+ * the Beneficiary Summary's Edit deep-link, which always opens the dialog on
+ * the Beneficiaries tab — that tab only reads `initial.id`, so the remaining
+ * fields get safe zero-values. If the user then switches to other tabs, they
+ * will see empty/default values; the canonical edit path from Balance Sheet
+ * still provides the full `AccountFormInitial` with accurate values.
+ */
+function accountLiteToFormInitial(a: AccountLite): AccountFormInitial {
+  const category = (a.category as AccountFormInitial["category"]) ?? "taxable";
+  return {
+    id: a.id,
+    name: a.name,
+    category,
+    subType: "other",
+    owner: "client",
+    value: "0",
+    basis: "0",
+    growthRate: null,
+    ownerEntityId: a.ownerEntityId ?? null,
+  };
+}
+
+export function TrashIcon() {
   return (
     <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
       <path
@@ -341,415 +343,6 @@ function FamilyMemberDialog({
   );
 }
 
-// ── Name / Pct Row List (beneficiaries) ───────────────────────────────────────
-
-interface NamePctListProps {
-  label: string;
-  rows: NamePctRow[];
-  onChange: (rows: NamePctRow[]) => void;
-}
-
-function NamePctList({ label, rows, onChange }: NamePctListProps) {
-  const total = rows.reduce((sum, r) => sum + (Number(r.pct) || 0), 0);
-  return (
-    <div className="rounded-md border border-gray-800 bg-gray-900/60 p-3 space-y-2">
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
-        <button
-          type="button"
-          onClick={() => onChange([...rows, { name: "", pct: 0 }])}
-          className="text-xs text-blue-400 hover:text-blue-300"
-        >
-          + Add
-        </button>
-      </div>
-      {rows.length === 0 ? (
-        <p className="text-[11px] text-gray-500">None</p>
-      ) : (
-        <div className="space-y-2">
-          {rows.map((row, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input
-                type="text"
-                placeholder="Name"
-                value={row.name}
-                onChange={(e) => {
-                  const next = [...rows];
-                  next[i] = { ...next[i], name: e.target.value };
-                  onChange(next);
-                }}
-                className="flex-1 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
-              />
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                placeholder="%"
-                value={row.pct || ""}
-                onChange={(e) => {
-                  const next = [...rows];
-                  next[i] = { ...next[i], pct: Number(e.target.value) };
-                  onChange(next);
-                }}
-                className="w-20 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => onChange(rows.filter((_, idx) => idx !== i))}
-                className="text-gray-500 hover:text-red-400"
-                aria-label={`Remove ${label.toLowerCase()} row`}
-              >
-                <TrashIcon />
-              </button>
-            </div>
-          ))}
-          <p className={`text-right text-[11px] ${Math.abs(total - 100) < 0.01 || total === 0 ? "text-gray-500" : "text-amber-400"}`}>
-            Total: {total.toFixed(2)}%
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Entity Dialog ─────────────────────────────────────────────────────────────
-
-interface EntityDialogProps {
-  clientId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  editing?: Entity;
-  onSaved: (entity: Entity, mode: "create" | "edit") => void;
-  onRequestDelete?: () => void;
-}
-
-function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onRequestDelete }: EntityDialogProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [entityType, setEntityType] = useState<EntityType>(editing?.entityType ?? "trust");
-  const [includeInPortfolio, setIncludeInPortfolio] = useState<boolean>(editing?.includeInPortfolio ?? false);
-  const [isGrantor, setIsGrantor] = useState<boolean>(editing?.isGrantor ?? false);
-  const [value, setValue] = useState<string>(editing?.value ?? "0");
-  const [owner, setOwner] = useState<"client" | "spouse" | "joint" | "">(editing?.owner ?? "");
-  const [grantor, setGrantor] = useState<"client" | "spouse" | "">(editing?.grantor ?? "");
-  const [beneficiaries, setBeneficiaries] = useState<NamePctRow[]>(editing?.beneficiaries ?? []);
-  const [trustSubType, setTrustSubType] = useState<TrustSubType | "">(
-    (editing?.trustSubType as TrustSubType | null) ?? "",
-  );
-  const [trustee, setTrustee] = useState<string>(editing?.trustee ?? "");
-  const [exemptionConsumed, setExemptionConsumed] = useState<string>(
-    editing?.exemptionConsumed ?? "0",
-  );
-  const isEdit = Boolean(editing);
-  const showBusinessFields = BUSINESS_ENTITY_TYPES.includes(entityType);
-  const showTrustFields = TRUST_LIKE_ENTITY_TYPES.includes(entityType);
-
-  if (!open) return null;
-
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const data = new FormData(e.currentTarget);
-    const submittedType = data.get("entityType") as EntityType;
-    if (submittedType === "trust" && trustSubType === "") {
-      setError("Please pick a trust sub-type.");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    const submittedShowBusiness = BUSINESS_ENTITY_TYPES.includes(submittedType);
-    const submittedShowTrust = TRUST_LIKE_ENTITY_TYPES.includes(submittedType);
-    const body = {
-      name: data.get("name") as string,
-      entityType: submittedType,
-      notes: (data.get("notes") as string) || null,
-      includeInPortfolio,
-      isGrantor,
-      value: submittedShowBusiness ? value || "0" : "0",
-      owner: submittedShowBusiness && owner ? owner : null,
-      grantor: submittedShowTrust ? (grantor || null) : null,
-      beneficiaries: submittedShowTrust ? beneficiaries.filter((b) => b.name.trim().length > 0) : null,
-      trustSubType: submittedType === "trust" ? (trustSubType as TrustSubType) : undefined,
-      isIrrevocable:
-        submittedType === "trust" ? deriveIsIrrevocable(trustSubType as TrustSubType) : undefined,
-      trustee: submittedType === "trust" ? (trustee.trim() || null) : undefined,
-      exemptionConsumed:
-        submittedType === "trust" ? Number(exemptionConsumed || "0") : undefined,
-    };
-    try {
-      const url = isEdit
-        ? `/api/clients/${clientId}/entities/${editing!.id}`
-        : `/api/clients/${clientId}/entities`;
-      const res = await fetch(url, {
-        method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const json = await res.json();
-        throw new Error(json.error ?? "Failed to save");
-      }
-      const saved = (await res.json()) as Entity;
-      onSaved(saved, isEdit ? "edit" : "create");
-      onOpenChange(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 w-full max-w-lg rounded-lg bg-gray-900 border border-gray-600 p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-100">{isEdit ? "Edit Entity" : "Add Entity"}</h2>
-          <button onClick={() => onOpenChange(false)} className="text-gray-400 hover:text-gray-200">
-            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-300" htmlFor="ent-name">
-                Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="ent-name"
-                name="name"
-                type="text"
-                required
-                defaultValue={editing?.name ?? ""}
-                placeholder="e.g., Smith Family Trust"
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="ent-type">Type</label>
-              <select
-                id="ent-type"
-                name="entityType"
-                value={entityType}
-                onChange={(e) => setEntityType(e.target.value as EntityType)}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                {Object.entries(ENTITY_LABELS).map(([v, l]) => (
-                  <option key={v} value={v}>{l}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {showBusinessFields && (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="ent-value">
-                  Value ($)
-                </label>
-                <input
-                  id="ent-value"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <p className="mt-1 text-[11px] text-gray-500">
-                  Shown as an out-of-estate asset on the balance sheet.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="ent-owner">
-                  Owner
-                </label>
-                <select
-                  id="ent-owner"
-                  value={owner}
-                  onChange={(e) => setOwner(e.target.value as typeof owner)}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  <option value="">—</option>
-                  <option value="client">Client</option>
-                  <option value="spouse">Spouse</option>
-                  <option value="joint">Joint</option>
-                </select>
-              </div>
-            </div>
-          )}
-
-          {showTrustFields && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="ent-grantor">
-                  Grantor
-                </label>
-                <select
-                  id="ent-grantor"
-                  name="grantor"
-                  value={grantor}
-                  onChange={(e) => setGrantor(e.target.value as "client" | "spouse" | "")}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  <option value="">Third party (none)</option>
-                  <option value="client">Client</option>
-                  <option value="spouse">Spouse</option>
-                </select>
-                <p className="mt-1 text-[11px] text-gray-500">
-                  Whose lifetime exemption is consumed by gifts to this trust. Leave as
-                  &ldquo;Third party&rdquo; for trusts created by someone outside the household.
-                </p>
-              </div>
-              <NamePctList
-                label="Beneficiaries"
-                rows={beneficiaries}
-                onChange={setBeneficiaries}
-              />
-            </div>
-          )}
-
-          {entityType === "trust" && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="ent-subtype">
-                  Sub-type
-                </label>
-                <select
-                  id="ent-subtype"
-                  value={trustSubType}
-                  onChange={(e) => setTrustSubType(e.target.value as TrustSubType | "")}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  <option value="" disabled>— select sub-type —</option>
-                  {Object.entries(TRUST_SUB_TYPE_LABELS).map(([v, l]) => (
-                    <option key={v} value={v}>{l}</option>
-                  ))}
-                </select>
-                <p className="mt-1 text-[11px] text-gray-500">
-                  {trustSubType === ""
-                    ? "Pick a sub-type to classify this trust."
-                    : deriveIsIrrevocable(trustSubType as TrustSubType)
-                      ? "Treated as irrevocable (out-of-estate in future engine work)."
-                      : "Treated as revocable (in-estate)."}
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="ent-trustee">
-                  Trustee
-                </label>
-                <input
-                  id="ent-trustee"
-                  type="text"
-                  value={trustee}
-                  onChange={(e) => setTrustee(e.target.value)}
-                  placeholder="e.g., Linda, or Fidelity Trust Co."
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <p className="mt-1 text-[11px] text-gray-500">
-                  Free text. Separate co-trustees with commas.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="ent-exemption">
-                  Opening balance (legacy) ($)
-                </label>
-                <input
-                  id="ent-exemption"
-                  type="number"
-                  step="1000"
-                  min="0"
-                  value={exemptionConsumed}
-                  onChange={(e) => setExemptionConsumed(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                <p className="mt-1 text-[11px] text-gray-500">
-                  Historical exemption already used before you started tracking individual gifts. Gifts added below stack on top.
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300" htmlFor="ent-notes">Notes</label>
-            <textarea
-              id="ent-notes"
-              name="notes"
-              rows={2}
-              defaultValue={editing?.notes ?? ""}
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
-
-          <div className="rounded-md border border-gray-800 bg-gray-900/60 p-3 space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-              Cash-flow treatment
-            </p>
-            <label className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={includeInPortfolio}
-                onChange={(e) => setIncludeInPortfolio(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-sm text-gray-200">
-                Include this entity&apos;s accounts in portfolio assets
-                <span className="block text-[11px] text-gray-500">
-                  Balances roll into the cash-flow portfolio view even though the assets are out of estate.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isGrantor}
-                onChange={(e) => setIsGrantor(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-sm text-gray-200">
-                Grantor trust (taxes paid by household)
-                <span className="block text-[11px] text-gray-500">
-                  Income, capital gains, and RMDs from this entity&apos;s accounts are taxed at the household rate.
-                </span>
-              </span>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between pt-2">
-            {isEdit && onRequestDelete ? (
-              <button
-                type="button"
-                onClick={onRequestDelete}
-                className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/60"
-              >
-                Delete…
-              </button>
-            ) : (
-              <span />
-            )}
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? "Saving…" : isEdit ? "Save Changes" : "Add"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 // ── Main Family View ──────────────────────────────────────────────────────────
 
 export default function FamilyView({
@@ -761,13 +354,12 @@ export default function FamilyView({
   initialAccounts,
   initialDesignations,
   initialGifts,
-  taxInflationRate = 0.03,
 }: FamilyViewProps) {
   const [members, setMembers] = useState<FamilyMember[]>(initialMembers);
   const [entities, setEntities] = useState<Entity[]>(initialEntities);
   const [externals, setExternals] = useState<ExternalBeneficiary[]>(initialExternalBeneficiaries);
-  const [accts, setAccts] = useState<AccountLite[]>(initialAccounts);
-  const [designations, setDesignations] = useState<Designation[]>(initialDesignations);
+  const [accounts] = useState<AccountLite[]>(initialAccounts);
+  const [designations] = useState<Designation[]>(initialDesignations);
   const [giftsState, setGiftsState] = useState<Gift[]>(initialGifts);
 
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
@@ -776,9 +368,19 @@ export default function FamilyView({
   const [membersEdit, setMembersEdit] = useState(false);
 
   const [entityDialogOpen, setEntityDialogOpen] = useState(false);
+  const [entityCreateKind, setEntityCreateKind] = useState<EntityKind>("trust");
   const [editingEntity, setEditingEntity] = useState<Entity | undefined>();
   const [deletingEntity, setDeletingEntity] = useState<Entity | null>(null);
   const [entitiesEdit, setEntitiesEdit] = useState(false);
+  const [entityDialogInitialTab, setEntityDialogInitialTab] = useState<"details" | "beneficiaries">("details");
+  // When opened via the Beneficiary Summary deep-link, the dialog is restricted
+  // to the Beneficiaries tab so zero-value fields can't overwrite real data.
+  const [entityDialogLockTab, setEntityDialogLockTab] = useState(false);
+
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
+  const [accountDialogEditing, setAccountDialogEditing] = useState<AccountFormInitial | undefined>(undefined);
+  const [accountDialogInitialTab, setAccountDialogInitialTab] = useState<"details" | "beneficiaries">("details");
+  const [accountDialogLockTab, setAccountDialogLockTab] = useState(false);
 
   const primaryAge = computeAge(primary.dateOfBirth);
   const spouseAge = primary.spouseDob ? computeAge(primary.spouseDob) : null;
@@ -970,15 +572,13 @@ export default function FamilyView({
                 {entitiesEdit ? "Done" : "Edit"}
               </button>
             )}
-            <button
-              onClick={() => {
+            <AddEntityMenu
+              onPick={(kind) => {
                 setEditingEntity(undefined);
+                setEntityCreateKind(kind);
                 setEntityDialogOpen(true);
               }}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-            >
-              + Add
-            </button>
+            />
           </div>
         </header>
 
@@ -1047,193 +647,29 @@ export default function FamilyView({
         onChange={setGiftsState}
       />
 
-      {/* Account Beneficiaries */}
-      <section>
-        <header className="mb-3">
-          <h2 className="text-xl font-bold text-gray-100">Account Beneficiaries</h2>
-          <p className="text-xs text-gray-500">
-            Primary and contingent beneficiary designations per account. Also set optional
-            owner override for individual family members (e.g., UTMA).
-          </p>
-        </header>
-
-        {accts.length === 0 ? (
-          <EmptyState label="No accounts yet." />
-        ) : (
-          <div className="space-y-2">
-            {accts.map((a) => {
-              const rows = designations.filter(
-                (d) => d.targetKind === "account" && d.accountId === a.id,
-              );
-              return (
-                <details
-                  key={a.id}
-                  className="rounded-lg border border-gray-800 bg-gray-900/50 p-3"
-                >
-                  <summary className="cursor-pointer text-sm text-gray-100 flex items-center justify-between">
-                    <span>
-                      <span className="font-medium">{a.name}</span>
-                      <span className="ml-2 text-xs text-gray-500">{a.category}</span>
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {rows.length} designation{rows.length === 1 ? "" : "s"}
-                    </span>
-                  </summary>
-
-                  <div className="mt-3 flex items-center gap-2">
-                    <label className="text-sm text-gray-300">Owned by family member:</label>
-                    <select
-                      value={a.ownerFamilyMemberId ?? ""}
-                      disabled={!!a.ownerEntityId}
-                      onChange={async (e) => {
-                        const v = e.target.value || null;
-                        const res = await fetch(
-                          `/api/clients/${clientId}/accounts/${a.id}`,
-                          {
-                            method: "PATCH",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ ownerFamilyMemberId: v }),
-                          },
-                        );
-                        if (res.ok) {
-                          setAccts((rows) =>
-                            rows.map((r) =>
-                              r.id === a.id ? { ...r, ownerFamilyMemberId: v } : r,
-                            ),
-                          );
-                        }
-                      }}
-                      className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <option value="">— none —</option>
-                      {members.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.firstName} {m.lastName ?? ""}
-                        </option>
-                      ))}
-                    </select>
-                    {a.ownerEntityId ? (
-                      <span className="text-xs text-gray-400">Owned by an entity; clear entity owner first.</span>
-                    ) : null}
-                  </div>
-
-                  <BeneficiaryEditor
-                    target={{ kind: "account", accountId: a.id }}
-                    clientId={clientId}
-                    members={members}
-                    externals={externals}
-                    initial={rows}
-                    onSaved={(savedRows) => {
-                      setDesignations((prev) => [
-                        ...prev.filter(
-                          (d) => !(d.targetKind === "account" && d.accountId === a.id),
-                        ),
-                        ...savedRows,
-                      ]);
-                    }}
-                  />
-                </details>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* Trust Remainder Beneficiaries */}
-      <section>
-        <header className="mb-3">
-          <h2 className="text-xl font-bold text-gray-100">Trust Remainder Beneficiaries</h2>
-          <p className="text-xs text-gray-500">
-            Designations for trust remainder distributions.
-          </p>
-        </header>
-
-        {entities.filter((e) => e.entityType === "trust").length === 0 ? (
-          <EmptyState label="No trusts defined." />
-        ) : (
-          <div className="space-y-2">
-            {entities
-              .filter((e) => e.entityType === "trust")
-              .map((ent) => {
-                const rows = designations.filter(
-                  (d) => d.targetKind === "trust" && d.entityId === ent.id,
-                );
-                return (
-                  <details
-                    key={ent.id}
-                    className="rounded-lg border border-gray-800 bg-gray-900/50 p-3"
-                  >
-                    <summary className="cursor-pointer text-sm text-gray-100 flex items-center justify-between">
-                      <span>
-                        <span className="font-medium">{ent.name}</span>
-                        <span className="ml-2 text-xs text-gray-500">Trust</span>
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {rows.length} designation{rows.length === 1 ? "" : "s"}
-                      </span>
-                    </summary>
-
-                    <BeneficiaryEditor
-                      target={{ kind: "trust", entityId: ent.id }}
-                      clientId={clientId}
-                      members={members}
-                      externals={externals}
-                      initial={rows}
-                      onSaved={(savedRows) => {
-                        setDesignations((prev) => [
-                          ...prev.filter(
-                            (d) => !(d.targetKind === "trust" && d.entityId === ent.id),
-                          ),
-                          ...savedRows,
-                        ]);
-                      }}
-                    />
-                    {(() => {
-                      if (!(ent.isIrrevocable ?? false)) return null;
-                      const openingBalance = parseFloat(ent.exemptionConsumed || "0");
-                      const beneficiaryCount = designations.filter(
-                        (d) => d.targetKind === "trust" && d.entityId === ent.id && d.tier === "primary",
-                      ).length;
-                      const lifetimeFromGifts = giftsState
-                        .filter((g) => g.recipientEntityId === ent.id)
-                        .reduce((acc, g) => {
-                          try {
-                            const treatment = computeGiftTaxTreatment(
-                              {
-                                amount: g.amount,
-                                useCrummeyPowers: g.useCrummeyPowers,
-                                recipientEntityId: g.recipientEntityId,
-                                recipientFamilyMemberId: g.recipientFamilyMemberId,
-                                recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId,
-                              },
-                              {
-                                entity: {
-                                  isIrrevocable: ent.isIrrevocable ?? false,
-                                  entityType: "trust",
-                                },
-                                annualExclusionAmount: 19_000,
-                                crummeyBeneficiaryCount: beneficiaryCount,
-                              } as GiftContext,
-                            );
-                            return acc + treatment.lifetimeUsed;
-                          } catch {
-                            return acc;
-                          }
-                        }, 0);
-                      const total = openingBalance + lifetimeFromGifts;
-                      const exemptionCap = beaForYear(new Date().getFullYear(), taxInflationRate);
-                      return (
-                        <p className="mt-2 border-t border-gray-800 pt-2 text-xs text-gray-400">
-                          Uses exemption · ${(total / 1_000_000).toFixed(2)}M / ${(exemptionCap / 1_000_000).toFixed(2)}M
-                        </p>
-                      );
-                    })()}
-                  </details>
-                );
-              })}
-          </div>
-        )}
-      </section>
+      <BeneficiarySummary
+        accounts={accounts}
+        entities={entities}
+        designations={designations}
+        members={members}
+        externals={externals}
+        onEditAccount={(accountId) => {
+          const acct = accounts.find((a) => a.id === accountId);
+          if (!acct) return;
+          setAccountDialogEditing(accountLiteToFormInitial(acct));
+          setAccountDialogInitialTab("beneficiaries");
+          setAccountDialogLockTab(true);
+          setAccountDialogOpen(true);
+        }}
+        onEditEntity={(entityId) => {
+          const ent = entities.find((e) => e.id === entityId);
+          if (!ent) return;
+          setEditingEntity(ent);
+          setEntityDialogInitialTab("beneficiaries");
+          setEntityDialogLockTab(true);
+          setEntityDialogOpen(true);
+        }}
+      />
 
       {memberDialogOpen && (
         <FamilyMemberDialog
@@ -1257,8 +693,17 @@ export default function FamilyView({
           key={editingEntity?.id ?? "new"}
           clientId={clientId}
           open={entityDialogOpen}
-          onOpenChange={setEntityDialogOpen}
+          onOpenChange={(open) => {
+            setEntityDialogOpen(open);
+            if (!open) {
+              setEntityDialogInitialTab("details");
+              setEntityDialogLockTab(false);
+            }
+          }}
           editing={editingEntity}
+          createKind={entityCreateKind}
+          initialTab={entityDialogInitialTab}
+          lockTab={entityDialogLockTab}
           onSaved={(e, mode) => {
             if (mode === "create") setEntities((prev) => [...prev, e]);
             else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));
@@ -1266,6 +711,23 @@ export default function FamilyView({
           onRequestDelete={() => {
             if (editingEntity) setDeletingEntity(editingEntity);
           }}
+        />
+      )}
+
+      {accountDialogOpen && (
+        <AddAccountDialog
+          clientId={clientId}
+          open={accountDialogOpen}
+          onOpenChange={(open) => {
+            setAccountDialogOpen(open);
+            if (!open) {
+              setAccountDialogInitialTab("details");
+              setAccountDialogLockTab(false);
+            }
+          }}
+          editing={accountDialogEditing}
+          initialTab={accountDialogInitialTab}
+          lockTab={accountDialogLockTab}
         />
       )}
 
@@ -1902,199 +1364,3 @@ function ExternalBeneficiaryRowForm({
   );
 }
 
-// ── Beneficiary Editor ────────────────────────────────────────────────────────
-
-function BeneficiaryEditor(props: {
-  target: { kind: "account"; accountId: string } | { kind: "trust"; entityId: string };
-  clientId: string;
-  members: FamilyMember[];
-  externals: ExternalBeneficiary[];
-  initial: Designation[];
-  onSaved: (rows: Designation[]) => void;
-}) {
-  const [rows, setRows] = useState<Designation[]>(props.initial);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const byTier = (tier: Tier) => rows.filter((r) => r.tier === tier);
-  const sumTier = (tier: Tier) =>
-    byTier(tier).reduce((acc, r) => acc + (isFinite(r.percentage) ? r.percentage : 0), 0);
-
-  const url =
-    props.target.kind === "account"
-      ? `/api/clients/${props.clientId}/accounts/${props.target.accountId}/beneficiaries`
-      : `/api/clients/${props.clientId}/entities/${props.target.entityId}/beneficiaries`;
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      const body = rows.map((r) => ({
-        tier: r.tier,
-        percentage: r.percentage,
-        familyMemberId: r.familyMemberId ?? undefined,
-        externalBeneficiaryId: r.externalBeneficiaryId ?? undefined,
-        sortOrder: r.sortOrder,
-      }));
-      const res = await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error ?? `HTTP ${res.status}`);
-      }
-      const saved = (await res.json()) as Designation[];
-      const normalized = saved.map((d) => ({
-        ...d,
-        percentage:
-          typeof d.percentage === "string" ? parseFloat(d.percentage) : d.percentage,
-      }));
-      setRows(normalized);
-      props.onSaved(normalized);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function addRow(tier: Tier) {
-    setRows((r) => [
-      ...r,
-      {
-        id: `tmp-${Math.random()}`,
-        targetKind: props.target.kind,
-        accountId: props.target.kind === "account" ? props.target.accountId : null,
-        entityId: props.target.kind === "trust" ? props.target.entityId : null,
-        tier,
-        familyMemberId: null,
-        externalBeneficiaryId: null,
-        percentage: 0,
-        sortOrder: r.length,
-      },
-    ]);
-  }
-
-  function updateRow(id: string, patch: Partial<Designation>) {
-    setRows((r) => r.map((x) => (x.id === id ? { ...x, ...patch } : x)));
-  }
-
-  function removeRow(id: string) {
-    setRows((r) => r.filter((x) => x.id !== id));
-  }
-
-  const renderTier = (tier: Tier) => {
-    const tierRows = byTier(tier);
-    const sum = sumTier(tier);
-    const sumOk = tierRows.length === 0 || Math.abs(sum - 100) <= 0.01;
-    return (
-      <div className="mt-3">
-        <div className="flex items-center justify-between">
-          <h4 className="text-sm font-semibold capitalize text-gray-200">{tier}</h4>
-          <span
-            className={
-              sumOk ? "text-xs text-green-400" : "text-xs text-amber-400"
-            }
-          >
-            sum: {sum.toFixed(2)}%
-          </span>
-        </div>
-        <ul className="mt-1 space-y-1">
-          {tierRows.map((r) => (
-            <li key={r.id} className="flex items-center gap-2">
-              <select
-                value={
-                  r.familyMemberId
-                    ? `fm:${r.familyMemberId}`
-                    : r.externalBeneficiaryId
-                      ? `ext:${r.externalBeneficiaryId}`
-                      : ""
-                }
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v.startsWith("fm:")) {
-                    updateRow(r.id, {
-                      familyMemberId: v.slice(3),
-                      externalBeneficiaryId: null,
-                    });
-                  } else if (v.startsWith("ext:")) {
-                    updateRow(r.id, {
-                      externalBeneficiaryId: v.slice(4),
-                      familyMemberId: null,
-                    });
-                  } else {
-                    updateRow(r.id, {
-                      familyMemberId: null,
-                      externalBeneficiaryId: null,
-                    });
-                  }
-                }}
-                className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
-              >
-                <option value="">— select beneficiary —</option>
-                <optgroup label="Family">
-                  {props.members.map((m) => (
-                    <option key={m.id} value={`fm:${m.id}`}>
-                      {m.firstName} {m.lastName ?? ""} ({m.relationship})
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="External">
-                  {props.externals.map((e) => (
-                    <option key={e.id} value={`ext:${e.id}`}>
-                      {e.name} ({e.kind})
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-              <input
-                type="number"
-                step="0.01"
-                min={0}
-                max={100}
-                value={r.percentage}
-                onChange={(e) =>
-                  updateRow(r.id, { percentage: parseFloat(e.target.value) || 0 })
-                }
-                className="w-24 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
-              />
-              <span className="text-sm text-gray-400">%</span>
-              <button
-                type="button"
-                onClick={() => removeRow(r.id)}
-                className="text-xs text-red-400 hover:text-red-300"
-              >
-                remove
-              </button>
-            </li>
-          ))}
-        </ul>
-        <button
-          type="button"
-          onClick={() => addRow(tier)}
-          className="mt-1 text-xs text-blue-400 hover:text-blue-300"
-        >
-          + add {tier}
-        </button>
-      </div>
-    );
-  };
-
-  return (
-    <div className="mt-3 border-t border-gray-800 pt-3">
-      {renderTier("primary")}
-      {renderTier("contingent")}
-      {error && <div className="mt-2 text-sm text-red-400">{error}</div>}
-      <button
-        type="button"
-        disabled={saving}
-        onClick={save}
-        className="mt-3 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-      >
-        {saving ? "Saving…" : "Save beneficiaries"}
-      </button>
-    </div>
-  );
-}
