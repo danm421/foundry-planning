@@ -1,17 +1,19 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import { SentryUserContext } from "@/components/sentry-user-context";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -28,10 +30,10 @@ export default function RootLayout({
     <ClerkProvider>
       <html
         lang="en"
-        className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+        className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased dark`}
         suppressHydrationWarning
       >
-        <body className="min-h-full flex flex-col bg-gray-950 text-gray-100">
+        <body className="min-h-full flex flex-col">
           <SentryUserContext />
           {children}
         </body>

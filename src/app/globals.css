@@ -1,22 +1,100 @@
 @import "tailwindcss";
 
-:root {
-  --background: #030712;
-  --foreground: #f3f4f6;
-}
+/* ------------------------------------------------------------------ */
+/* Tokens — Foundry brand system (dark only; no light theme in v1)     */
+/* ------------------------------------------------------------------ */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Brand */
+  --color-accent: #f59e0b;
+  --color-accent-ink: #fbbf24;
+  --color-accent-deep: #b45309;
+  --color-accent-on: #1a1205;
+
+  /* Surfaces */
+  --color-paper: #0b0c0f;
+  --color-card: #151820;
+  --color-card-2: #1b1f28;
+  --color-card-hover: #1f2330;
+
+  /* Ink */
+  --color-ink: #f4f5f7;
+  --color-ink-2: #c7cbd4;
+  --color-ink-3: #8b909c;
+  --color-ink-4: #5a5f6b;
+
+  /* Hairlines */
+  --color-hair: #252a34;
+  --color-hair-2: #303642;
+
+  /* Status (solid hues; tinted backgrounds are color-mix at call site) */
+  --color-good: #34d399;
+  --color-warn: #fbbf24;
+  --color-crit: #f87171;
+
+  /* Category taxonomy */
+  --color-cat-income: #34d399;
+  --color-cat-portfolio: #60a5fa;
+  --color-cat-life: #a78bfa;
+  --color-cat-tax: #f59e0b;
+  --color-cat-insurance: #f472b6;
+  --color-cat-transactions: #22d3ee;
+
+  /* Allocation palette (semantic aliases for D — overview refit) */
+  --color-alloc-equities: var(--color-cat-income);
+  --color-alloc-fi: var(--color-cat-portfolio);
+  --color-alloc-cash: var(--color-cat-life);
+  --color-alloc-re: var(--color-cat-tax);
+  --color-alloc-alt: var(--color-cat-insurance);
+
+  /* Radii — Tailwind v4: --radius maps to `rounded`, --radius-sm to `rounded-sm` */
+  --radius-sm: 6px;
+  --radius: 10px;
+
+  /* Fonts — wired to next/font vars set on <html> by layout.tsx */
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ------------------------------------------------------------------ */
+/* Raw spacing vars — semantic aliases, not Tailwind utilities         */
+/* ------------------------------------------------------------------ */
+
+:root {
+  --pad-card: 24px;
+  --pad-card-y: 22px;
+  --gap-grid: 16px;
+  --row-h: 36px;
+
+  /* Legacy aliases — keep until B/D migrate consumers away */
+  --background: var(--color-paper);
+  --foreground: var(--color-ink);
 }
+
+/* ------------------------------------------------------------------ */
+/* Body                                                                */
+/* ------------------------------------------------------------------ */
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* ------------------------------------------------------------------ */
+/* Tabular numerics — used by MoneyText                                */
+/* ------------------------------------------------------------------ */
+
+.tabular {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum", "cv11";
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced-motion helper (pre-existing)                                */
+/* ------------------------------------------------------------------ */
 
 @keyframes timelineFadeIn {
   from { opacity: 0; transform: translateY(8px); }
