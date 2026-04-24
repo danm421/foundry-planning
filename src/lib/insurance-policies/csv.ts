@@ -1,3 +1,6 @@
+const MIN_YEAR = 1900;
+const MAX_YEAR = 2200;
+
 export interface ParsedCsvRow {
   year: number;
   cashValue: number;
@@ -35,24 +38,32 @@ export function parseCashValueCsv(csv: string): ParseCashValueCsvResult {
 
   const seenYears = new Set<number>();
   for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === "") continue;
+
     const rowNum = i + 1; // 1-indexed spreadsheet row (header is row 1)
     const cells = lines[i].split(",").map((c) => c.trim());
+
+    if (cells.length < headers.length) {
+      errors.push(`Row ${rowNum}: expected ${headers.length} columns, got ${cells.length}`);
+      continue;
+    }
+
     const yearStr = cells[yearIdx] ?? "";
     const cashStr = cells[cashIdx] ?? "";
 
     const year = Number(yearStr);
     const cashValue = Number(cashStr);
 
-    if (!Number.isInteger(year) || Number.isNaN(year)) {
-      errors.push(`Row ${rowNum}: non-numeric year "${yearStr}"`);
+    if (!Number.isInteger(year)) {
+      errors.push(`Row ${rowNum}: invalid year "${yearStr}" (must be a whole number)`);
       continue;
     }
-    if (year < 1900 || year > 2200) {
-      errors.push(`Row ${rowNum}: year ${year} out of range (1900-2200)`);
+    if (year < MIN_YEAR || year > MAX_YEAR) {
+      errors.push(`Row ${rowNum}: year ${year} out of range (${MIN_YEAR}-${MAX_YEAR})`);
       continue;
     }
     if (Number.isNaN(cashValue) || cashValue < 0) {
-      errors.push(`Row ${rowNum}: non-numeric or negative cash_value "${cashStr}"`);
+      errors.push(`Row ${rowNum}: non-numeric or negative cash value "${cashStr}"`);
       continue;
     }
     if (seenYears.has(year)) {

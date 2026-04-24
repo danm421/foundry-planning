@@ -59,4 +59,39 @@ describe("parseCashValueCsv", () => {
     const result = parseCashValueCsv("");
     expect(result.errors[0]).toMatch(/empty csv/i);
   });
+
+  it("rejects rows with fewer cells than headers", () => {
+    const csv = `year,cash_value
+2030,100000
+2031`; // missing cash_value on row 3
+    const result = parseCashValueCsv(csv);
+    expect(result.rows).toEqual([{ year: 2030, cashValue: 100000 }]);
+    expect(result.errors[0]).toMatch(/row 3.*expected 2 columns/i);
+  });
+
+  it("skips blank interior lines silently", () => {
+    const csv = `year,cash_value
+2030,100000
+
+2031,110000`;
+    const result = parseCashValueCsv(csv);
+    expect(result.rows).toEqual([
+      { year: 2030, cashValue: 100000 },
+      { year: 2031, cashValue: 110000 },
+    ]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("accumulates multiple row errors without short-circuiting", () => {
+    const csv = `year,cash_value
+2030,abc
+1700,100000
+2032,-500`;
+    const result = parseCashValueCsv(csv);
+    expect(result.rows).toEqual([]);
+    expect(result.errors).toHaveLength(3);
+    expect(result.errors[0]).toMatch(/row 2.*non-numeric/i);
+    expect(result.errors[1]).toMatch(/row 3.*out of range/i);
+    expect(result.errors[2]).toMatch(/row 4.*non-numeric or negative/i);
+  });
 });
