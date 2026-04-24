@@ -1068,7 +1068,7 @@ export default function AddAccountForm({
         {mode === "create" || !initial?.id ? (
           <p className="text-sm text-gray-400">Save the account first, then designate beneficiaries.</p>
         ) : (
-          <BeneficiariesTab clientId={clientId} accountId={initial.id} />
+          <BeneficiariesTab clientId={clientId} accountId={initial.id} active={activeTab === "beneficiaries"} />
         )}
       </div>
 

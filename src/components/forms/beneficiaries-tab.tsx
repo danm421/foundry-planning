@@ -11,9 +11,10 @@ import type {
 interface BeneficiariesTabProps {
   clientId: string;
   accountId: string;
+  active: boolean;
 }
 
-export default function BeneficiariesTab({ clientId, accountId }: BeneficiariesTabProps) {
+export default function BeneficiariesTab({ clientId, accountId, active }: BeneficiariesTabProps) {
   const [loaded, setLoaded] = useState(false);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -21,6 +22,8 @@ export default function BeneficiariesTab({ clientId, accountId }: BeneficiariesT
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!active || loaded) return;
+    setError(null);
     let cancelled = false;
     async function load() {
       try {
@@ -49,7 +52,7 @@ export default function BeneficiariesTab({ clientId, accountId }: BeneficiariesT
     return () => {
       cancelled = true;
     };
-  }, [clientId, accountId]);
+  }, [active, loaded, clientId, accountId]);
 
   if (error) return <p className="text-sm text-red-400">{error}</p>;
   if (!loaded) return <p className="text-sm text-gray-400">Loading…</p>;
