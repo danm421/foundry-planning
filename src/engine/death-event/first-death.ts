@@ -333,6 +333,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
       deathOrder: 1,
       accounts: chainResult.accounts,
       accountBalances,
+      basisMap: chainResult.basisMap,
       liabilities: pouredLiabs,
       familyMembers: input.familyMembers,
       externalBeneficiaries: input.externalBeneficiaries,

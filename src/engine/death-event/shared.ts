@@ -1006,6 +1006,7 @@ export interface RunPourOutInput {
   deathOrder: 1 | 2;
   accounts: Account[];
   accountBalances: Record<string, number>;
+  basisMap: Record<string, number>;
   liabilities: Liability[];
   familyMembers: FamilyMember[];
   externalBeneficiaries: ExternalBeneficiarySummary[];
@@ -1049,6 +1050,18 @@ export function runPourOut(input: RunPourOutInput): RunPourOutResult {
       const balance = input.accountBalances[acct.id] ?? 0;
       if (balance <= 0) continue;
 
+      // §1014 step-up at the grantor's death. Pour-out only fires for
+      // entities in the queue — which is exactly the set of revocable
+      // trusts flipping to irrevocable now, i.e., assets that were in the
+      // grantor's gross estate. Trust accounts are never joint, so
+      // isJointAtFirstDeath is always false. Retirement-in-trust is an
+      // edge case: the helper returns originalBasis unchanged.
+      const originalBasis = input.basisMap[acct.id] ?? acct.basis;
+      const steppedBasis = computeSteppedUpBasis(
+        acct.category, balance, originalBasis,
+        { isJointAtFirstDeath: false },
+      );
+
       if (bens.length === 0 || totalPct === 0) {
         transfers.push(makePourOutTransfer({
           year: input.year,
@@ -1060,7 +1073,7 @@ export function runPourOut(input: RunPourOutInput): RunPourOutResult {
           recipientId: null,
           recipientLabel: "Other Heirs",
           amount: balance,
-          basis: acct.basis,
+          basis: steppedBasis,
         }));
         warnings.push(`trust_pour_out_fallback_fired: ${q.entityId}`);
         continue;
@@ -1068,7 +1081,7 @@ export function runPourOut(input: RunPourOutInput): RunPourOutResult {
 
       for (const b of bens) {
         const share = (b.percentage / 100) * balance;
-        const shareBasis = (b.percentage / 100) * acct.basis;
+        const shareBasis = (b.percentage / 100) * steppedBasis;
         const { recipientKind, recipientId, label } = resolveTrustBeneRecipient(
           b, input.familyMembers, input.externalBeneficiaries,
         );

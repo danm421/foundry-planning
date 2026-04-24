@@ -971,6 +971,105 @@ describe("applyFirstDeath orchestrator", () => {
     expect(result.basisMap[heirAccounts[0].id]).toBeCloseTo(500_000, 2);
   });
 
+  it("step-up: revocable-trust taxable account pours out with FMV basis per beneficiary share", () => {
+    const revTrust: EntitySummary = {
+      id: "rev-trust-1", includeInPortfolio: true,
+      isGrantor: true, isIrrevocable: false,
+      grantor: "client",
+      beneficiaries: [
+        { id: "bref-1", tier: "primary", percentage: 60, familyMemberId: "child-a", sortOrder: 0 },
+        { id: "bref-2", tier: "primary", percentage: 40, familyMemberId: "child-b", sortOrder: 1 },
+      ],
+    };
+    const trustBrok: Account = {
+      id: "rev-brok", name: "Revocable Trust Brokerage",
+      category: "taxable", subType: "brokerage",
+      owner: "client", value: 1_000_000, basis: 400_000,
+      ownerEntityId: "rev-trust-1",
+      growthRate: 0.06, rmdEnabled: false,
+    };
+    const fams2: FamilyMember[] = [
+      { id: "child-a", relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" },
+      { id: "child-b", relationship: "child", firstName: "Bob",   lastName: "Smith", dateOfBirth: "2002-01-01" },
+    ];
+    const trustInput: DeathEventInput = {
+      ...input,
+      accounts: [trustBrok],
+      accountBalances: { "rev-brok": 1_000_000 },
+      basisMap: { "rev-brok": 400_000 },
+      familyMembers: fams2,
+      entities: [revTrust],
+    };
+    const result = applyFirstDeath(trustInput);
+    const pourOutTransfers = result.transfers.filter((t) => t.via === "trust_pour_out");
+    expect(pourOutTransfers).toHaveLength(2);
+    // Full step-up: each transfer's basis = FMV × percentage
+    const aliceT = pourOutTransfers.find((t) => t.recipientId === "child-a")!;
+    const bobT   = pourOutTransfers.find((t) => t.recipientId === "child-b")!;
+    expect(aliceT.basis).toBeCloseTo(600_000, 2); // 60% of $1M
+    expect(bobT.basis).toBeCloseTo(400_000, 2);   // 40% of $1M
+  });
+
+  it("step-up: revocable-trust IRA pours out with original basis (IRD — no step-up)", () => {
+    const revTrust: EntitySummary = {
+      id: "rev-trust-2", includeInPortfolio: true,
+      isGrantor: true, isIrrevocable: false,
+      grantor: "client",
+      beneficiaries: [
+        { id: "bref-1", tier: "primary", percentage: 100, familyMemberId: "child-a", sortOrder: 0 },
+      ],
+    };
+    const trustIra: Account = {
+      id: "rev-ira", name: "Trust-Owned IRA",
+      category: "retirement", subType: "traditional_ira",
+      owner: "client", value: 500_000, basis: 50_000,
+      ownerEntityId: "rev-trust-2",
+      growthRate: 0.07, rmdEnabled: true,
+    };
+    const trustInput: DeathEventInput = {
+      ...input,
+      accounts: [trustIra],
+      accountBalances: { "rev-ira": 500_000 },
+      basisMap: { "rev-ira": 50_000 },
+      entities: [revTrust],
+    };
+    const result = applyFirstDeath(trustInput);
+    const pourOutTransfers = result.transfers.filter((t) => t.via === "trust_pour_out");
+    expect(pourOutTransfers).toHaveLength(1);
+    // IRD rule: basis stays at original $50k (not stepped to FMV $500k)
+    expect(pourOutTransfers[0].basis).toBeCloseTo(50_000, 2);
+  });
+
+  it("step-up: irrevocable trust (ILIT/SLAT/IDGT) never touched — basisMap unchanged (regression guard)", () => {
+    const ilit: EntitySummary = {
+      id: "ilit-1", includeInPortfolio: true,
+      isGrantor: false, isIrrevocable: true,
+      grantor: "client",
+      beneficiaries: [
+        { id: "bref-1", tier: "primary", percentage: 100, familyMemberId: "child-a", sortOrder: 0 },
+      ],
+    };
+    const trustBrok: Account = {
+      id: "ilit-brok", name: "ILIT Brokerage",
+      category: "taxable", subType: "brokerage",
+      owner: "client", value: 2_000_000, basis: 500_000,
+      ownerEntityId: "ilit-1",
+      growthRate: 0.06, rmdEnabled: false,
+    };
+    const trustInput: DeathEventInput = {
+      ...input,
+      accounts: [trustBrok],
+      accountBalances: { "ilit-brok": 2_000_000 },
+      basisMap: { "ilit-brok": 500_000 },
+      entities: [ilit],
+    };
+    const result = applyFirstDeath(trustInput);
+    // Irrevocable trusts don't pour out; account stays inside the trust with
+    // unchanged basis.
+    expect(result.basisMap["ilit-brok"]).toBeCloseTo(500_000, 2);
+    expect(result.transfers.filter((t) => t.via === "trust_pour_out")).toHaveLength(0);
+  });
+
 });
 
 describe("distributeUnlinkedLiabilities", () => {
