@@ -272,7 +272,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // line-item breakdown and subtotal) instead of a flat `details` list. Used
     // by the consolidated Other Income drill so a single year-column cell can
     // surface all asset transactions that contributed.
-    groups?: { name: string; amount: number; details: { label: string; amount: number }[]; kind?: "sale" | "purchase" | "deficit" }[];
+    groups?: { name: string; amount: number; details: { label: string; amount: number }[]; kind?: "sale" | "purchase" | "deficit"; subtotalLabel?: string }[];
   } | null>(null);
   const [taxDrillModal, setTaxDrillModal] = useState<TaxDrillModal | null>(null);
   const [showTaxDetailModal, setShowTaxDetailModal] = useState(false);
@@ -868,42 +868,46 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   // ── Column definitions based on drill path ────────────────────────────────
 
+  // Shared line-item builders for sale and purchase breakdowns. Line items sum
+  // to the raw netProceeds / equity respectively; callers that need offset
+  // (negative) rendering negate signs themselves.
+  type LineItem = { label: string; amount: number };
+  type SaleRow = NonNullable<ProjectionYear["techniqueBreakdown"]>["sales"][number];
+  type PurchaseRow = NonNullable<ProjectionYear["techniqueBreakdown"]>["purchases"][number];
+
+  function saleLineItems(sale: SaleRow): LineItem[] {
+    const items: LineItem[] = [{ label: "Sale Value", amount: sale.saleValue }];
+    if (sale.transactionCosts > 0) items.push({ label: "Transaction Costs", amount: -sale.transactionCosts });
+    if (sale.mortgagePaidOff > 0) items.push({ label: "Mortgage Payoff", amount: -sale.mortgagePaidOff });
+    return items;
+  }
+
+  function purchaseLineItems(purchase: PurchaseRow): LineItem[] {
+    const items: LineItem[] = [{ label: "Purchase Price", amount: purchase.purchasePrice }];
+    if (purchase.mortgageAmount > 0) {
+      items.push({ label: "New Mortgage (financed)", amount: -purchase.mortgageAmount });
+    }
+    return items;
+  }
+
   function buildTechniqueDetails(
     sourceId: string,
     year: number,
     netAmount: number
-  ): { label: string; amount: number }[] {
-    // Use engine-computed breakdown when available
+  ): LineItem[] {
     const yearData = years.find((y: ProjectionYear) => y.year === year);
     const tb = yearData?.techniqueBreakdown;
 
     if (sourceId.startsWith("technique-proceeds:")) {
       const txnId = sourceId.replace("technique-proceeds:", "");
       const sale = tb?.sales.find((s) => s.transactionId === txnId);
-      if (sale) {
-        const details: { label: string; amount: number }[] = [
-          { label: "Sale Value", amount: sale.saleValue },
-        ];
-        if (sale.transactionCosts > 0) details.push({ label: "Transaction Costs", amount: -sale.transactionCosts });
-        if (sale.mortgagePaidOff > 0) details.push({ label: "Mortgage Payoff", amount: -sale.mortgagePaidOff });
-        return details;
-      }
+      if (sale) return saleLineItems(sale);
       return [{ label: "Net Proceeds", amount: netAmount }];
     }
     if (sourceId.startsWith("technique-purchase:")) {
       const txnId = sourceId.replace("technique-purchase:", "");
       const purchase = tb?.purchases.find((p) => p.transactionId === txnId);
-      if (purchase) {
-        // Sign convention for expense breakdowns: positive = cash out. The
-        // line items sum to the equity cash needed (== the column value).
-        const details: { label: string; amount: number }[] = [
-          { label: "Purchase Price", amount: purchase.purchasePrice },
-        ];
-        if (purchase.mortgageAmount > 0) {
-          details.push({ label: "New Mortgage (financed)", amount: -purchase.mortgageAmount });
-        }
-        return details;
-      }
+      if (purchase) return purchaseLineItems(purchase);
       return [{ label: "Purchase Equity", amount: netAmount }];
     }
     if (sourceId.startsWith("technique-deficit:")) {
@@ -911,26 +915,75 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       const sale = tb?.sales.find((s) => s.transactionId === txnId);
       const purchase = tb?.purchases.find((p) => p.transactionId === txnId);
       if (sale && purchase) {
-        // Same sign convention: positive = cash out, negative = cash in.
-        // Line items sum to the net shortfall (== the column value).
-        const details: { label: string; amount: number }[] = [
-          { label: "Purchase Price", amount: purchase.purchasePrice },
+        // Sign convention: positive = cash out, negative = cash in. Items sum to
+        // the net shortfall (== the column value).
+        return [
+          ...purchaseLineItems(purchase),
+          ...saleLineItems(sale).map((d) => ({ label: d.label, amount: -d.amount })),
         ];
-        if (purchase.mortgageAmount > 0) {
-          details.push({ label: "New Mortgage (financed)", amount: -purchase.mortgageAmount });
-        }
-        details.push({ label: "Sale Value", amount: -sale.saleValue });
-        if (sale.transactionCosts > 0) {
-          details.push({ label: "Transaction Costs", amount: sale.transactionCosts });
-        }
-        if (sale.mortgagePaidOff > 0) {
-          details.push({ label: "Mortgage Payoff", amount: sale.mortgagePaidOff });
-        }
-        return details;
       }
       return [{ label: "Net Deficit", amount: netAmount }];
     }
     return [{ label: "Amount", amount: netAmount }];
+  }
+
+  // Builds modal groups for a year's asset transactions — showing both sales
+  // and purchases so the advisor can see how same-year buys offset sells.
+  // `perspective` controls signs: "income" shows sales positive + purchases
+  // as negative offsets (modal total = year net proceeds); "expense" shows
+  // purchases positive + sales as negative offsets (modal total = year net cost).
+  type TechniqueGroup = {
+    name: string;
+    amount: number;
+    details: LineItem[];
+    kind?: "sale" | "purchase" | "deficit";
+    subtotalLabel?: string;
+  };
+  function buildTechniqueYearGroups(
+    year: number,
+    perspective: "income" | "expense"
+  ): TechniqueGroup[] {
+    const yearData = years.find((y: ProjectionYear) => y.year === year);
+    const tb = yearData?.techniqueBreakdown;
+    if (!tb) return [];
+
+    const groups: TechniqueGroup[] = [];
+    const negate = (items: LineItem[]) => items.map((d) => ({ label: d.label, amount: -d.amount }));
+
+    for (const sale of tb.sales) {
+      const items = saleLineItems(sale);
+      const name = sale.name ?? `Sale ${sale.transactionId}`;
+      if (perspective === "income") {
+        groups.push({ name, amount: sale.netProceeds, details: items, kind: "sale" });
+      } else {
+        groups.push({
+          name: `${name} (offsetting sale)`,
+          amount: -sale.netProceeds,
+          details: negate(items),
+          kind: "sale",
+          subtotalLabel: "Less: Sale Proceeds",
+        });
+      }
+    }
+
+    for (const purchase of tb.purchases) {
+      if (purchase.equity <= 0) continue;
+      const items = purchaseLineItems(purchase);
+      const name = purchase.name ?? `Purchase ${purchase.transactionId}`;
+      if (perspective === "expense") {
+        groups.push({ name, amount: purchase.equity, details: items, kind: "purchase" });
+      } else {
+        groups.push({
+          name: `${name} (offsetting purchase)`,
+          amount: -purchase.equity,
+          details: negate(items),
+          kind: "purchase",
+          subtotalLabel: "Less: Purchase Equity",
+        });
+      }
+    }
+
+    return groups;
   }
 
   function buildColumns(): ColumnDef<ProjectionYear>[] {
@@ -1052,9 +1105,9 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     if (level === "other_income_detail") {
       // Consolidate every surplus-producing asset transaction into a single
       // "Net Proceeds from Asset Transactions" column. Clicking a non-zero
-      // year opens a grouped modal with the name + line-item breakdown
-      // (sale value, transaction costs, mortgage payoff) for each sale that
-      // contributed that year — supports multiple sales in one year.
+      // year opens a grouped modal showing every sale AND every same-year
+      // purchase as offsets, so the advisor can see how the net cell value
+      // was computed.
       const sourceIds = techniqueIncomeIds;
       const techniqueSourceIds = sourceIds.filter((id) => id.startsWith("technique-"));
       const nonTechniqueSourceIds = sourceIds.filter((id) => !id.startsWith("technique-"));
@@ -1073,29 +1126,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             return (
               <button
                 onClick={() => {
-                  const groups = techniqueSourceIds
-                    .map((id) => {
-                      const amt = row.income.bySource[id] ?? 0;
-                      if (amt === 0) return null;
-                      const kind: "sale" | "purchase" | "deficit" | undefined =
-                        id.startsWith("technique-proceeds:") ? "sale"
-                        : id.startsWith("technique-purchase:") ? "purchase"
-                        : id.startsWith("technique-deficit:") ? "deficit"
-                        : undefined;
-                      return {
-                        name: incomeNames[id] ?? id,
-                        amount: amt,
-                        details: buildTechniqueDetails(id, row.year, amt),
-                        kind,
-                      };
-                    })
-                    .filter((g): g is NonNullable<typeof g> => g !== null);
                   setSourceDetailModal({
                     name: "Net Proceeds from Asset Transactions",
                     year: row.year,
                     amount: v,
                     details: [],
-                    groups,
+                    groups: buildTechniqueYearGroups(row.year, "income"),
                   });
                 }}
                 className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
@@ -1336,29 +1372,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                     return (
                       <button
                         onClick={() => {
-                          const groups = techniqueExpenseIds
-                            .map((id) => {
-                              const amt = row.expenses.bySource[id] ?? 0;
-                              if (amt === 0) return null;
-                              const kind: "sale" | "purchase" | "deficit" | undefined =
-                                id.startsWith("technique-proceeds:") ? "sale"
-                                : id.startsWith("technique-purchase:") ? "purchase"
-                                : id.startsWith("technique-deficit:") ? "deficit"
-                                : undefined;
-                              return {
-                                name: expenseNames[id] ?? id,
-                                amount: amt,
-                                details: buildTechniqueDetails(id, row.year, amt),
-                                kind,
-                              };
-                            })
-                            .filter((g): g is NonNullable<typeof g> => g !== null);
                           setSourceDetailModal({
                             name: "Net Cost from Asset Transactions",
                             year: row.year,
                             amount: v,
                             details: [],
-                            groups,
+                            groups: buildTechniqueYearGroups(row.year, "expense"),
                           });
                         }}
                         className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
@@ -2051,11 +2070,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                       ))}
                       <div className="flex justify-between text-sm pt-1.5 mt-1.5 border-t border-gray-800">
                         <span className="text-gray-300 font-medium">
-                          {g.kind === "purchase"
-                            ? "Net Equity Out"
-                            : g.kind === "deficit"
-                              ? "Net Shortfall"
-                              : "Net Proceeds"}
+                          {g.subtotalLabel
+                            ?? (g.kind === "purchase"
+                              ? "Net Equity Out"
+                              : g.kind === "deficit"
+                                ? "Net Shortfall"
+                                : "Net Proceeds")}
                         </span>
                         <span className={`tabular-nums font-medium ${g.amount < 0 ? "text-red-400" : "text-gray-100"}`}>
                           {fmtNum(g.amount)}

@@ -34,7 +34,7 @@ import {
   saltCap,
 } from "../lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
-import { applyContributionLimits } from "./contribution-limits";
+import { applyContributionLimits, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
 import { executeWithdrawals } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
@@ -735,9 +735,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     }
     const totalHouseholdSalary =
       salaryByOwner.client + salaryByOwner.spouse + salaryByOwner.joint;
+    const accountById = new Map(data.accounts.map((a) => [a.id, a]));
     const salaryByRuleId: Record<string, number> = {};
     for (const rule of data.savingsRules) {
-      const acct = data.accounts.find((a) => a.id === rule.accountId);
+      const acct = accountById.get(rule.accountId);
       salaryByRuleId[rule.id] =
         acct && (acct.owner === "client" || acct.owner === "spouse")
           ? salaryByOwner[acct.owner]
@@ -746,8 +747,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // Resolve each rule's pre-cap dollar contribution so we can apply IRS
     // contribution limits in one place. Respects scheduleOverrides first,
-    // then percent-mode vs annualAmount. Rules outside their year range are
-    // left out entirely (keys absent).
+    // then contributeMax (IRS limit), then percent-mode vs annualAmount.
+    // Rules outside their year range are left out entirely (keys absent).
     const resolvedByRuleId: Record<string, number> = {};
     for (const rule of data.savingsRules) {
       if (year < rule.startYear || year > rule.endYear) continue;
@@ -755,6 +756,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (override != null) {
         resolvedByRuleId[rule.id] = override;
         continue;
+      }
+      if (rule.contributeMax && resolved) {
+        const acct = accountById.get(rule.accountId);
+        if (acct) {
+          const ownerDob =
+            acct.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
+          const age = resolveAgeInYear(ownerDob, year);
+          resolvedByRuleId[rule.id] = computeMaxContribution(
+            acct.subType ?? "",
+            resolved.params,
+            age
+          );
+          continue;
+        }
       }
       const salary = salaryByRuleId[rule.id] ?? 0;
       resolvedByRuleId[rule.id] = resolveContributionAmount(rule, salary);
@@ -1378,43 +1393,45 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let techniqueExpenses = 0;
     const techniqueExpenseBySource: Record<string, number> = {};
 
-    // For each sale, compute the net P&L impact:
-    // - If paired with a purchase (same transaction), income = netProceeds - purchaseEquity
-    //   (surplus goes to income; deficit goes to expense)
-    // - If sale-only, income = netProceeds
-    // Transaction costs are NOT a separate expense line — they are already
+    // Year-level netting: when sales and purchases coexist in the same year,
+    // absorb same-year purchase equity against same-year sale netProceeds
+    // before surfacing either side in the cash flow. This matches advisor
+    // intuition for a "swap" (sell one property, buy another) — the headline
+    // cash impact is the NET of both legs, not the raw sale proceeds with the
+    // purchase equity shown in a separate column.
+    //
+    // Distribution rules:
+    //   totalAbsorption = min(Σ sale.netProceeds, Σ purchase.equity)
+    //   Each sale's surfaced income = sale.netProceeds - (sale.netProceeds / Σ netProceeds) × totalAbsorption
+    //   Each purchase's surfaced expense = purchase.equity - (purchase.equity / Σ equity) × totalAbsorption
+    // After distribution, sum of income bySource entries = max(0, yearNet);
+    // sum of purchase bySource entries = max(0, -yearNet).
+    //
+    // Transaction costs are NOT a separate expense line — they're already
     // deducted from netProceeds (in applyAssetSales) and surface in the sale
     // drill-down breakdown.
-    const purchaseByTxnId = new Map(
-      purchaseBreakdown.map((p) => [p.transactionId, p])
-    );
+    const totalNetProceeds = saleResult.breakdown.reduce((s, x) => s + x.netProceeds, 0);
+    const totalPurchaseEquity = purchaseBreakdown.reduce((s, x) => s + x.equity, 0);
+    const absorption = Math.min(totalNetProceeds, totalPurchaseEquity);
 
     for (const item of saleResult.breakdown) {
-      const pairedPurchase = purchaseByTxnId.get(item.transactionId);
-      const purchaseEquity = pairedPurchase?.equity ?? 0;
-      const netImpact = item.netProceeds - purchaseEquity;
+      const saleShare = totalNetProceeds > 0 ? item.netProceeds / totalNetProceeds : 0;
+      const netImpact = item.netProceeds - absorption * saleShare;
 
       if (netImpact > 0) {
-        // Surplus — record as income
         techniqueIncome += netImpact;
         techniqueIncomeBySource[`technique-proceeds:${item.transactionId}`] = netImpact;
-      } else if (netImpact < 0) {
-        // Deficit — record as expense
-        techniqueExpenses += Math.abs(netImpact);
-        techniqueExpenseBySource[`technique-deficit:${item.transactionId}`] = Math.abs(netImpact);
       }
     }
 
-    // Buy-only transactions (no paired sale): purchase equity is a real expense
     for (const item of purchaseBreakdown) {
-      if (item.equity > 0) {
-        const hasSaleSide = saleResult.breakdown.some(
-          (s) => s.transactionId === item.transactionId
-        );
-        if (!hasSaleSide) {
-          techniqueExpenses += item.equity;
-          techniqueExpenseBySource[`technique-purchase:${item.transactionId}`] = item.equity;
-        }
+      if (item.equity <= 0) continue;
+      const purchaseShare = totalPurchaseEquity > 0 ? item.equity / totalPurchaseEquity : 0;
+      const uncoveredEquity = item.equity - absorption * purchaseShare;
+
+      if (uncoveredEquity > 0) {
+        techniqueExpenses += uncoveredEquity;
+        techniqueExpenseBySource[`technique-purchase:${item.transactionId}`] = uncoveredEquity;
       }
     }
 

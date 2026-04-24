@@ -37,6 +37,7 @@ export default function SavingsRulesList({
   };
 
   const formatContribution = (rule: SavingsRuleRow): string => {
+    if (rule.contributeMax) return "IRS max/yr";
     if (rule.annualPercent != null && Number(rule.annualPercent) > 0) {
       return `${formatPercent(rule.annualPercent)} of salary/yr`;
     }
