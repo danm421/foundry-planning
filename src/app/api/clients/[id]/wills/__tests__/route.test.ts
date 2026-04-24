@@ -109,24 +109,18 @@ vi.mock("@/db", async () => {
     orderBy: () => makeResult(rows),
   });
 
-  // For liability lookups we need to filter by (clientId, id). We do this by
-  // storing the current "from" table and applying a filter in where() only for
-  // the liabilities table. For all other tables we return all rows (the route's
-  // where clauses rely on the mock returning the right rows — the existing
-  // pattern for clients/accounts/familyMembers is "return all rows and let the
-  // route count them").
-  let currentFromTable: unknown = null;
-
   const db = {
     select: (_cols?: unknown) => ({
       from: (t: unknown) => {
-        currentFromTable = t;
         const allRows = rowsFor(t);
         return {
           where: (_cond: unknown) => {
-            // For liabilities we need per-row filtering because each lookup is
-            // for a specific (clientId, liabilityId) pair. We filter by checking
-            // liabilityFilter if set, otherwise return all rows.
+            // For liabilities we apply an optional per-test ID filter so that
+            // tests seeding multiple liability rows can isolate which one the
+            // mock returns. For all other tables we return all rows (the route's
+            // where clauses rely on the mock returning the right rows — the
+            // existing pattern for clients/accounts/familyMembers is "return all
+            // rows and let the route count them").
             const tableName = getTableNameSafe(t);
             const isLiabTable =
               t === schema.liabilities || tableName === "liabilities";
@@ -135,7 +129,6 @@ vi.mock("@/db", async () => {
                   (row) => row.id === _liabilityWhereId,
                 )
               : allRows;
-            currentFromTable = null;
             return makeResult(result);
           },
         };
@@ -282,8 +275,9 @@ vi.mock("@/db", async () => {
   return { db };
 });
 
-// Per-test: which liability id should the mock's select → where return?
-// Set this before each test that does a liability cross-ref lookup.
+// Per-test single-liability filter the mock honors in liabilities SELECT. Tests
+// that perform two independent handler calls with different liability IDs must
+// reset this between calls (or only the last-assigned ID will be honored).
 let _liabilityWhereId: string | null = null;
 
 // ---------------------------------------------------------------------------

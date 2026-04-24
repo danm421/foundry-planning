@@ -92,28 +92,37 @@ export async function verifyCrossRefs(
     }
   }
 
-  // Liability-bequest cross-ref: validate each liability individually so we
-  // can surface granular error codes (not_found, linked, entity_owned).
+  // Liability-bequest cross-ref: batch-fetch all referenced liabilities in one
+  // query (matches the account/family/entity pattern above), then validate each
+  // in iteration order so error reporting is deterministic (first-bequest-first).
   if (bequests) {
-    for (const b of bequests) {
-      if (b.kind !== "liability") continue;
-      const liabId = b.liabilityId;
-      const [liab] = await db
+    const liabilityIds = bequests
+      .filter((b) => b.kind === "liability")
+      .map((b) => b.liabilityId!);
+
+    if (liabilityIds.length > 0) {
+      const found = await db
         .select({
           id: liabilities.id,
           linkedPropertyId: liabilities.linkedPropertyId,
           ownerEntityId: liabilities.ownerEntityId,
         })
         .from(liabilities)
-        .where(and(eq(liabilities.clientId, clientId), eq(liabilities.id, liabId)));
-      if (!liab) {
-        return { code: "liability_not_found", detail: liabId };
-      }
-      if (liab.linkedPropertyId != null) {
-        return { code: "liability_linked_not_bequestable", detail: liab.id };
-      }
-      if (liab.ownerEntityId != null) {
-        return { code: "liability_entity_owned_not_bequestable", detail: liab.id };
+        .where(and(eq(liabilities.clientId, clientId), inArray(liabilities.id, liabilityIds)));
+
+      const byId = new Map(found.map((l) => [l.id, l]));
+
+      for (const liabId of liabilityIds) {
+        const liab = byId.get(liabId);
+        if (!liab) {
+          return { code: "liability_not_found", detail: liabId };
+        }
+        if (liab.linkedPropertyId != null) {
+          return { code: "liability_linked_not_bequestable", detail: liab.id };
+        }
+        if (liab.ownerEntityId != null) {
+          return { code: "liability_entity_owned_not_bequestable", detail: liab.id };
+        }
       }
     }
   }
