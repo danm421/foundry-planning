@@ -151,8 +151,10 @@ export async function POST(
           .values({
             willId: willRow.id,
             name: b.name,
+            kind: "asset",
             assetMode: b.assetMode,
             accountId: b.accountId ?? null,
+            liabilityId: null,
             percentage: String(b.percentage),
             condition: b.condition,
             sortOrder: b.sortOrder,

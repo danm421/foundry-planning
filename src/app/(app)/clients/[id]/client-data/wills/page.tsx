@@ -14,6 +14,7 @@ import {
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import WillsPanel, {
+  type WillAssetMode,
   type WillsPanelAccount,
   type WillsPanelFamilyMember,
   type WillsPanelExternal,
@@ -95,7 +96,7 @@ export default async function WillsPage({ params }: PageProps) {
     list.push({
       id: b.id,
       name: b.name,
-      assetMode: b.assetMode,
+      assetMode: (b.assetMode ?? "all_assets") as WillAssetMode,
       accountId: b.accountId,
       percentage: parseFloat(b.percentage),
       condition: b.condition,

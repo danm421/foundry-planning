@@ -134,7 +134,7 @@ describe("4d integration — first death estate tax", () => {
       id: "w1", grantor: "client",
       bequests: [{
         id: "b1", name: "All to spouse",
-        assetMode: "all_assets", accountId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
       }],
@@ -179,7 +179,7 @@ describe("4d integration — first death estate tax", () => {
       id: "w1", grantor: "client",
       bequests: [{
         id: "b1", name: "Split 50/50 spouse + kid",
-        assetMode: "all_assets", accountId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [
           { recipientKind: "spouse", recipientId: null, percentage: 50, sortOrder: 0 },
@@ -228,7 +228,7 @@ describe("4d integration — first death estate tax", () => {
       id: "w1", grantor: "client",
       bequests: [{
         id: "b1", name: "All to kid-a",
-        assetMode: "all_assets", accountId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "family_member", recipientId: "kid-a", percentage: 100, sortOrder: 0 }],
       }],
@@ -339,7 +339,7 @@ describe("4d integration — first death estate tax", () => {
       id: "w1", grantor: "client",
       bequests: [{
         id: "b1", name: "All to spouse",
-        assetMode: "all_assets", accountId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
       }],
@@ -448,7 +448,7 @@ describe("4d integration — final death estate tax", () => {
         id: "w-client", grantor: "client",
         bequests: [{
           id: "beq-c", name: "Residual to spouse",
-          assetMode: "all_assets", accountId: null,
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
           percentage: 100, condition: "always", sortOrder: 0,
           recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
         }],
@@ -458,7 +458,7 @@ describe("4d integration — final death estate tax", () => {
         id: "w-spouse", grantor: "spouse",
         bequests: [{
           id: "beq-s", name: "Residual to kid",
-          assetMode: "all_assets", accountId: null,
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
           percentage: 100, condition: "always", sortOrder: 0,
           recipients: [{ recipientKind: "family_member", recipientId: "kid-a", percentage: 100, sortOrder: 0 }],
         }],

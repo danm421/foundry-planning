@@ -25,9 +25,16 @@ export interface WillBequestRecipient {
 export interface WillBequest {
   id: string;
   name: string;
-  assetMode: "specific" | "all_assets";
+  kind: "asset" | "liability";
+  /** Non-null iff kind === "asset". */
+  assetMode: "specific" | "all_assets" | null;
+  /** Non-null iff kind === "asset" AND assetMode === "specific". */
   accountId: string | null;
+  /** Non-null iff kind === "liability". */
+  liabilityId: string | null;
+  /** Unused for liability bequests (recipients carry the split). */
   percentage: number;
+  /** Always "always" for liability bequests. */
   condition: "if_spouse_survives" | "if_spouse_predeceased" | "always";
   sortOrder: number;
   recipients: WillBequestRecipient[];
@@ -57,6 +64,7 @@ export interface DeathTransfer {
     | "titling"
     | "beneficiary_designation"
     | "will"
+    | "will_liability_bequest"
     | "fallback_spouse"
     | "fallback_children"
     | "fallback_other_heirs"

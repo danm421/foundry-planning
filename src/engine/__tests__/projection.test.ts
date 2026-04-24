@@ -1524,8 +1524,8 @@ describe("first-death asset transfer (spec 4b)", () => {
       ],
       wills: [
         { id: "w-john", grantor: "client", bequests: [
-          { id: "beq-1", name: "Residual to Jane", assetMode: "all_assets", accountId: null, percentage: 100, condition: "always", sortOrder: 0,
-            recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }] },
+          { id: "beq-1", name: "Residual to Jane", kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null, percentage: 100, condition: "always" as const, sortOrder: 0,
+            recipients: [{ recipientKind: "spouse" as const, recipientId: null, percentage: 100, sortOrder: 0 }] },
         ]},
       ],
     };

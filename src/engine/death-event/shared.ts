@@ -494,6 +494,7 @@ export function applyWillSpecificBequests(
 ): StepResult & { warnings: string[] } {
   const specifics = will.bequests.filter(
     (b) =>
+      b.kind !== "liability" &&
       b.assetMode === "specific" &&
       b.accountId === source.id &&
       firesAtDeath(b, deathOrder),
@@ -590,7 +591,7 @@ export function applyWillAllAssetsResidual(
     return empty();
   }
   const allAssets = will.bequests.filter(
-    (b) => b.assetMode === "all_assets" && firesAtDeath(b, deathOrder),
+    (b) => b.kind !== "liability" && b.assetMode === "all_assets" && firesAtDeath(b, deathOrder),
   );
   if (allAssets.length === 0) {
     return empty();

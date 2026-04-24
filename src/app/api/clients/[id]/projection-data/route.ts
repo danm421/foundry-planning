@@ -408,8 +408,10 @@ export async function GET(
       list.push({
         id: b.id,
         name: b.name,
-        assetMode: b.assetMode,
+        kind: b.kind,
+        assetMode: b.assetMode ?? null,
         accountId: b.accountId,
+        liabilityId: b.liabilityId ?? null,
         percentage: parseFloat(b.percentage),
         condition: b.condition,
         sortOrder: b.sortOrder,
