@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
-import type { Entity, NamePctRow } from "../family-view";
+import type {
+  Designation,
+  Entity,
+  ExternalBeneficiary,
+  FamilyMember,
+  NamePctRow,
+} from "../family-view";
+import BeneficiaryEditor from "../beneficiary-editor";
 import NamePctList from "./name-pct-list";
 import type { EntityFormCommonProps } from "./types";
 
@@ -32,6 +39,7 @@ export default function TrustForm({
   onSaved,
   onRequestDelete,
   onClose,
+  initialTab,
 }: EntityFormCommonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +56,39 @@ export default function TrustForm({
   const [trustee, setTrustee] = useState<string>(editing?.trustee ?? "");
   const [exemptionConsumed, setExemptionConsumed] = useState<string>(editing?.exemptionConsumed ?? "0");
   const isEdit = Boolean(editing);
+
+  const [activeTab, setActiveTab] = useState<"details" | "beneficiaries">(
+    initialTab ?? "details",
+  );
+
+  const [designations, setDesignations] = useState<Designation[] | null>(null);
+  const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [externals, setExternals] = useState<ExternalBeneficiary[]>([]);
+  const [beneDataLoaded, setBeneDataLoaded] = useState(false);
+
+  async function loadBeneficiariesData() {
+    if (beneDataLoaded || !editing) return;
+    const [desigRes, membersRes, externalsRes] = await Promise.all([
+      fetch(`/api/clients/${clientId}/entities/${editing.id}/beneficiaries`),
+      fetch(`/api/clients/${clientId}/family-members`),
+      fetch(`/api/clients/${clientId}/external-beneficiaries`),
+    ]);
+    const [desig, mem, ext] = await Promise.all([
+      desigRes.json(),
+      membersRes.json(),
+      externalsRes.json(),
+    ]);
+    setDesignations(desig as Designation[]);
+    setMembers(mem as FamilyMember[]);
+    setExternals(ext as ExternalBeneficiary[]);
+    setBeneDataLoaded(true);
+  }
+
+  useEffect(() => {
+    if (entityType !== "trust" && activeTab === "beneficiaries") {
+      setActiveTab("details");
+    }
+  }, [entityType, activeTab]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -98,8 +139,40 @@ export default function TrustForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
+    <div>
+      {entityType === "trust" && (
+        <div className="flex border-b border-gray-700 mb-4">
+          <button
+            type="button"
+            onClick={() => setActiveTab("details")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+              activeTab === "details"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Details
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("beneficiaries");
+              void loadBeneficiariesData();
+            }}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+              activeTab === "beneficiaries"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Beneficiaries
+          </button>
+        </div>
+      )}
+
+      <div className={activeTab !== "details" ? "hidden" : ""}>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
 
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2">
@@ -289,6 +362,29 @@ export default function TrustForm({
           {loading ? "Saving…" : isEdit ? "Save Changes" : "Add"}
         </button>
       </div>
-    </form>
+        </form>
+      </div>
+
+      {entityType === "trust" && (
+        <div className={activeTab !== "beneficiaries" ? "hidden" : ""}>
+          {!editing ? (
+            <p className="text-sm text-gray-400">
+              Save the trust first, then designate remainder beneficiaries.
+            </p>
+          ) : !beneDataLoaded ? (
+            <p className="text-sm text-gray-400">Loading…</p>
+          ) : (
+            <BeneficiaryEditor
+              target={{ kind: "trust", entityId: editing.id }}
+              clientId={clientId}
+              members={members}
+              externals={externals}
+              initial={designations ?? []}
+              onSaved={(rows) => setDesignations(rows)}
+            />
+          )}
+        </div>
+      )}
+    </div>
   );
 }
