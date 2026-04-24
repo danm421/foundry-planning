@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
+import BeneficiariesTab from "./beneficiaries-tab";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
@@ -596,6 +597,17 @@ export default function AddAccountForm({
             Asset Mix
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => setActiveTab("beneficiaries")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+            activeTab === "beneficiaries"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-gray-400 hover:text-gray-200"
+          }`}
+        >
+          Beneficiaries
+        </button>
       </div>
 
       {/* Account Details */}
@@ -1050,6 +1062,15 @@ export default function AddAccountForm({
           />
         </div>
       )}
+
+      {/* Beneficiaries tab */}
+      <div className={activeTab === "beneficiaries" ? "" : "hidden"}>
+        {mode === "create" || !initial?.id ? (
+          <p className="text-sm text-gray-400">Save the account first, then designate beneficiaries.</p>
+        ) : (
+          <BeneficiariesTab clientId={clientId} accountId={initial.id} />
+        )}
+      </div>
 
       <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
         {isEdit && onDelete && !initial?.isDefaultChecking ? (
