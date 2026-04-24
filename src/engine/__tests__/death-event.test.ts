@@ -1374,4 +1374,84 @@ describe("applyFinalDeath orchestrator", () => {
     const input = mkInput({ accounts });
     expect(() => applyFinalDeath(input)).toThrow(/joint/i);
   });
+
+  it("step-up: survivor's taxable brokerage passes to heir with full step-up", () => {
+    const brok: Account = {
+      id: "surv-brok", name: "Survivor Brokerage",
+      category: "taxable", subType: "brokerage",
+      owner: "client", value: 800_000, basis: 300_000,
+      growthRate: 0.06, rmdEnabled: false,
+    };
+    const alice: FamilyMember = {
+      id: "child-a", relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01",
+    };
+    const will: Will = {
+      id: "w2", grantor: "client",
+      bequests: [{
+        id: "b1", name: "All to Alice",
+        kind: "asset", assetMode: "all_assets",
+        accountId: null, liabilityId: null,
+        percentage: 100, condition: "always", sortOrder: 0,
+        recipients: [{ recipientKind: "family_member", recipientId: "child-a", percentage: 100, sortOrder: 0 }],
+      }],
+    };
+    const input = mkInput({
+      accounts: [brok],
+      familyMembers: [alice],
+      will,
+    });
+    const result = applyFinalDeath(input);
+    const heirAccounts = result.accounts.filter((a) => a.ownerFamilyMemberId === "child-a");
+    expect(heirAccounts).toHaveLength(1);
+    // Full step-up: basis = FMV = 800k
+    expect(result.basisMap[heirAccounts[0].id]).toBeCloseTo(800_000, 2);
+  });
+
+  it("step-up: survivor's traditional IRA passes to heir with basis unchanged (IRD)", () => {
+    const ira: Account = {
+      id: "surv-ira", name: "Survivor IRA",
+      category: "retirement", subType: "traditional_ira",
+      owner: "client", value: 500_000, basis: 0,
+      growthRate: 0.07, rmdEnabled: true,
+      beneficiaries: [
+        { id: "b-1", tier: "primary", percentage: 100, familyMemberId: "child-a", sortOrder: 0 },
+      ],
+    };
+    const alice: FamilyMember = {
+      id: "child-a", relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01",
+    };
+    const input = mkInput({
+      accounts: [ira],
+      familyMembers: [alice],
+    });
+    const result = applyFinalDeath(input);
+    const heirAccounts = result.accounts.filter((a) => a.ownerFamilyMemberId === "child-a");
+    expect(heirAccounts).toHaveLength(1);
+    // No step-up for IRD: basis stays at 0
+    expect(result.basisMap[heirAccounts[0].id]).toBeCloseTo(0, 2);
+  });
+
+  it("step-up: survivor's Roth IRA passes to heir with basis unchanged (still IRD category)", () => {
+    const roth: Account = {
+      id: "surv-roth", name: "Survivor Roth",
+      category: "retirement", subType: "roth_ira",
+      owner: "client", value: 400_000, basis: 150_000,
+      growthRate: 0.07, rmdEnabled: false,
+      beneficiaries: [
+        { id: "b-1", tier: "primary", percentage: 100, familyMemberId: "child-a", sortOrder: 0 },
+      ],
+    };
+    const alice: FamilyMember = {
+      id: "child-a", relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01",
+    };
+    const input = mkInput({
+      accounts: [roth],
+      familyMembers: [alice],
+    });
+    const result = applyFinalDeath(input);
+    const heirAccounts = result.accounts.filter((a) => a.ownerFamilyMemberId === "child-a");
+    expect(heirAccounts).toHaveLength(1);
+    // Category gate blocks step-up regardless of Roth vs traditional:
+    expect(result.basisMap[heirAccounts[0].id]).toBeCloseTo(150_000, 2);
+  });
 });

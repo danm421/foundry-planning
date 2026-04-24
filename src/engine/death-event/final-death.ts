@@ -8,6 +8,7 @@ import {
   applyIncomeTermination,
   applyWillAllAssetsResidual,
   applyWillSpecificBequests,
+  computeSteppedUpBasis,
   distributeUnlinkedLiabilities,
   runPourOut,
   type DeathEventInput,
@@ -77,13 +78,19 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     const linkedLiability = liabilities.find((l) => l.linkedPropertyId === acct.id);
 
     const balance = accountBalances[acct.id];
-    const basis = basisMap[acct.id];
-    if (balance == null || basis == null) {
+    const originalBasis = basisMap[acct.id];
+    if (balance == null || originalBasis == null) {
       throw new Error(
         `applyFinalDeath: missing accountBalances/basisMap entry for ${acct.id}`,
       );
     }
-    const effectiveAcct: Account = { ...acct, value: balance, basis };
+    // §1014 step-up. No joint accounts survive into final-death (first-
+    // death titling consumed them), so isJointAtFirstDeath is always false.
+    const steppedBasis = computeSteppedUpBasis(
+      acct.category, balance, originalBasis,
+      { isJointAtFirstDeath: false },
+    );
+    const effectiveAcct: Account = { ...acct, value: balance, basis: steppedBasis };
 
     let undisposed = 1;
     let anySpecificClauseTouched = false;
