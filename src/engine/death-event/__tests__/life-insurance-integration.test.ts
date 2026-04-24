@@ -257,6 +257,10 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
     const geLine = result.estateTax.grossEstateLines.find((l) => l.accountId === "pol-3");
     expect(geLine).toBeDefined();
     expect(geLine!.amount).toBeCloseTo(1_000_000, 0);
+
+    // Warnings: no-beneficiaries warning (Phase 0) + fallback fired (applyFallback)
+    expect(result.warnings.some((w) => w === "life_insurance_no_beneficiaries:pol-3")).toBe(true);
+    expect(result.warnings.some((w) => w === "residual_fallback_fired:pol-3")).toBe(true);
   });
 
   it("ILIT-owned policy excludes face value from decedent's gross estate", () => {
@@ -351,6 +355,8 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
     // Phase 0 reclassifies the triggering policy to cash/life_insurance_proceeds
     expect(policyAcct!.category).toBe("cash");
     expect(policyAcct!.subType).toBe("life_insurance_proceeds");
+    // Phase 0 standalone mode must substitute faceValue for value
+    expect(policyAcct!.value).toBe(1_000_000);
 
     // §2042 exclusion: the transformed account owner is "client" (not deceased "spouse")
     // → computeGrossEstate skips it → face value NOT in spouse's gross estate
@@ -374,13 +380,11 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
 
     const result = applyFirstDeath(input);
 
-    // No transfer specifically for the policy (the policy itself doesn't trigger)
-    // Note: the joint account will be retitled to spouse via Step 1 (titling), but the
-    // policy's lifeInsurance definition remains intact — it hasn't paid out
-    const policyTransfer = result.transfers.find(
-      (t) => t.sourceAccountId === "pol-7" && t.via === "life_insurance_payout",
-    );
-    expect(policyTransfer).toBeUndefined();
+    // Step 1 (titling) retitles the joint account to spouse — a transfer IS emitted.
+    // The policy hasn't paid out, so via is "titling" (not a payout route).
+    const policyTransfer = result.transfers.find((t) => t.sourceAccountId === "pol-7");
+    expect(policyTransfer).toBeDefined();
+    expect(policyTransfer!.via).toBe("titling");
 
     // Policy account still in result (possibly retitled to spouse via joint titling)
     const policyAcct = result.accounts.find((a) => a.id === "pol-7");
@@ -392,13 +396,11 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
     // in the gross estate. The joint account is valued at cash value pre-payout
     // (policy didn't trigger, so balance = 50_000 @ 50%).
     const geLine = result.estateTax.grossEstateLines.find((l) => l.accountId === "pol-7");
-    // If the joint policy exists in accounts at gross-estate compute time, it appears
-    // at 50% of cashValue (50_000 * 0.5 = 25_000) — that's the estate inclusion of
-    // the pre-payout cash value, not the face value.
-    // The important assertion: face value is NOT included (no payout triggered).
-    if (geLine) {
-      expect(geLine.amount).toBeCloseTo(25_000, 0); // 50% of 50k cash value
-    }
+    // Joint accounts at first death always produce a 50% line in computeGrossEstate
+    // when balance > 0, so geLine is deterministically defined.
+    // At 50% of cashValue: 50_000 * 0.5 = 25_000. Face value is NOT included (no payout triggered).
+    expect(geLine).toBeDefined();
+    expect(geLine!.amount).toBeCloseTo(25_000, 0); // 50% of 50k cash value
     // No §2042 face-value line for untriggered joint policy.
     const faceValueLine = result.estateTax.grossEstateLines.find(
       (l) => l.accountId === "pol-7" && l.amount > 100_000,
