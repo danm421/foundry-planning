@@ -143,6 +143,42 @@ export interface EstateTaxResult {
   creditorPayoffResidual: number;
 }
 
+/**
+ * One ordering of the "both die in year N" hypothetical.
+ *
+ * - `firstDecedent` identifies whose death is first in this ordering.
+ * - `firstDeath` is always present (even for single filers — it is the sole
+ *   death event for that case).
+ * - `finalDeath` is omitted for single filers and present for married
+ *   households.
+ * - `totals` are summed across the death events represented by this
+ *   ordering (one event for single, two for married).
+ */
+export interface HypotheticalEstateTaxOrdering {
+  firstDecedent: "client" | "spouse";
+  firstDeath: EstateTaxResult;
+  finalDeath?: EstateTaxResult;
+  totals: {
+    federal: number;
+    state: number;
+    admin: number;
+    total: number;
+  };
+}
+
+/**
+ * Per-year hypothetical estate-tax snapshot — "both die in year N."
+ *
+ * - `primaryFirst` is always populated (client-dies-first ordering, or the
+ *   sole-death case for single filers).
+ * - `spouseFirst` is populated only for married households.
+ */
+export interface HypotheticalEstateTax {
+  year: number;
+  primaryFirst: HypotheticalEstateTaxOrdering;
+  spouseFirst?: HypotheticalEstateTaxOrdering;
+}
+
 export interface FamilyMember {
   id: string;
   relationship: "child" | "grandchild" | "parent" | "sibling" | "other";
@@ -562,6 +598,11 @@ export interface ProjectionYear {
   deathWarnings?: string[];
   /** Estate-tax computation result. Only present in death-event years. */
   estateTax?: EstateTaxResult;
+  /** 4d-2: hypothetical estate-tax if both spouses (or the single filer)
+   *  died in this year. Attached to every projection year, not only real
+   *  death-event years. `spouseFirst` is present only for married
+   *  households. */
+  hypotheticalEstateTax: HypotheticalEstateTax;
 }
 
 export interface AccountLedger {
