@@ -9,6 +9,7 @@ import {
   computeGiftTaxTreatment,
   type GiftContext,
 } from "@/lib/gifts/compute-tax-treatment";
+import { beaForYear } from "@/lib/tax/estate";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ export interface Entity {
   isGrantor: boolean;
   value: string;
   owner: "client" | "spouse" | "joint" | null;
-  grantors: NamePctRow[] | null;
+  grantor: "client" | "spouse" | null;
   beneficiaries: NamePctRow[] | null;
   trustSubType: TrustSubType | null;
   isIrrevocable: boolean | null;
@@ -126,10 +127,13 @@ interface FamilyViewProps {
   initialAccounts: AccountLite[];
   initialDesignations: Designation[];
   initialGifts: Gift[];
+  /**
+   * Annual inflation rate used to grow the federal estate-tax basic exclusion
+   * amount (BEA) past the 2026 baseline. Sourced from `plan_settings.tax_inflation_rate`.
+   * Falls back to 0.03 when not provided (page does not yet fetch plan_settings here).
+   */
+  taxInflationRate?: number;
 }
-
-// FUTURE_WORK: source from tax_year_parameters when portability/DSUE lands.
-const LIFETIME_EXEMPTION_CAP = 13_990_000;
 
 const RELATIONSHIP_LABELS: Record<Relationship, string> = {
   child: "Child",
@@ -337,7 +341,7 @@ function FamilyMemberDialog({
   );
 }
 
-// ── Name / Pct Row List (grantors + beneficiaries) ────────────────────────────
+// ── Name / Pct Row List (beneficiaries) ───────────────────────────────────────
 
 interface NamePctListProps {
   label: string;
@@ -428,7 +432,7 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
   const [isGrantor, setIsGrantor] = useState<boolean>(editing?.isGrantor ?? false);
   const [value, setValue] = useState<string>(editing?.value ?? "0");
   const [owner, setOwner] = useState<"client" | "spouse" | "joint" | "">(editing?.owner ?? "");
-  const [grantors, setGrantors] = useState<NamePctRow[]>(editing?.grantors ?? []);
+  const [grantor, setGrantor] = useState<"client" | "spouse" | "">(editing?.grantor ?? "");
   const [beneficiaries, setBeneficiaries] = useState<NamePctRow[]>(editing?.beneficiaries ?? []);
   const [trustSubType, setTrustSubType] = useState<TrustSubType | "">(
     (editing?.trustSubType as TrustSubType | null) ?? "",
@@ -463,7 +467,7 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
       isGrantor,
       value: submittedShowBusiness ? value || "0" : "0",
       owner: submittedShowBusiness && owner ? owner : null,
-      grantors: submittedShowTrust ? grantors.filter((g) => g.name.trim().length > 0) : null,
+      grantor: submittedShowTrust ? (grantor || null) : null,
       beneficiaries: submittedShowTrust ? beneficiaries.filter((b) => b.name.trim().length > 0) : null,
       trustSubType: submittedType === "trust" ? (trustSubType as TrustSubType) : undefined,
       isIrrevocable:
@@ -584,11 +588,26 @@ function EntityDialog({ clientId, open, onOpenChange, editing, onSaved, onReques
 
           {showTrustFields && (
             <div className="space-y-3">
-              <NamePctList
-                label="Grantors"
-                rows={grantors}
-                onChange={setGrantors}
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="ent-grantor">
+                  Grantor
+                </label>
+                <select
+                  id="ent-grantor"
+                  name="grantor"
+                  value={grantor}
+                  onChange={(e) => setGrantor(e.target.value as "client" | "spouse" | "")}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">Third party (none)</option>
+                  <option value="client">Client</option>
+                  <option value="spouse">Spouse</option>
+                </select>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Whose lifetime exemption is consumed by gifts to this trust. Leave as
+                  &ldquo;Third party&rdquo; for trusts created by someone outside the household.
+                </p>
+              </div>
               <NamePctList
                 label="Beneficiaries"
                 rows={beneficiaries}
@@ -742,6 +761,7 @@ export default function FamilyView({
   initialAccounts,
   initialDesignations,
   initialGifts,
+  taxInflationRate = 0.03,
 }: FamilyViewProps) {
   const [members, setMembers] = useState<FamilyMember[]>(initialMembers);
   const [entities, setEntities] = useState<Entity[]>(initialEntities);
@@ -1201,9 +1221,10 @@ export default function FamilyView({
                           }
                         }, 0);
                       const total = openingBalance + lifetimeFromGifts;
+                      const exemptionCap = beaForYear(new Date().getFullYear(), taxInflationRate);
                       return (
                         <p className="mt-2 border-t border-gray-800 pt-2 text-xs text-gray-400">
-                          Uses exemption · ${(total / 1_000_000).toFixed(2)}M / ${(LIFETIME_EXEMPTION_CAP / 1_000_000).toFixed(2)}M
+                          Uses exemption · ${(total / 1_000_000).toFixed(2)}M / ${(exemptionCap / 1_000_000).toFixed(2)}M
                         </p>
                       );
                     })()}

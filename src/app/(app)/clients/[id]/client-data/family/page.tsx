@@ -80,9 +80,7 @@ export default async function FamilyPage({ params }: PageProps) {
     isGrantor: e.isGrantor,
     value: String(e.value ?? "0"),
     owner: (e.owner as "client" | "spouse" | "joint" | null) ?? null,
-    // TODO(Task 11): replace family-view.tsx `grantors` array UI with single-grantor
-    // control wired to e.grantor. For now stub to null to keep this page compiling.
-    grantors: null,
+    grantor: (e.grantor as "client" | "spouse" | null) ?? null,
     beneficiaries: (e.beneficiaries as NamePctRow[] | null) ?? null,
     trustSubType: e.trustSubType ?? null,
     isIrrevocable: e.isIrrevocable ?? null,
