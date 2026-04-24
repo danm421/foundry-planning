@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AddClientDialog from "./add-client-dialog";
@@ -21,8 +21,17 @@ interface ClientRow {
   spouseDob?: string | null;
   spouseRetirementAge?: number | null;
   spouseLifeExpectancy?: number | null;
+  email?: string | null;
+  address?: string | null;
+  spouseEmail?: string | null;
+  spouseAddress?: string | null;
   createdAt: string | Date;
+  updatedAt?: string | Date;
 }
+
+type ViewMode = "recent" | "all";
+
+const RECENT_LIMIT = 10;
 
 interface ClientsTableProps {
   rows: ClientRow[];
@@ -49,6 +58,10 @@ function toInitial(c: ClientRow): ClientFormInitial {
     spouseDob: c.spouseDob ? (typeof c.spouseDob === "string" ? c.spouseDob : new Date(c.spouseDob).toISOString()) : null,
     spouseRetirementAge: c.spouseRetirementAge ?? null,
     spouseLifeExpectancy: c.spouseLifeExpectancy ?? null,
+    email: c.email ?? null,
+    address: c.address ?? null,
+    spouseEmail: c.spouseEmail ?? null,
+    spouseAddress: c.spouseAddress ?? null,
   };
 }
 
@@ -57,6 +70,33 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
   const [editMode, setEditMode] = useState(false);
   const [editing, setEditing] = useState<ClientRow | null>(null);
   const [deleting, setDeleting] = useState<ClientRow | null>(null);
+  const [search, setSearch] = useState("");
+  const [view, setView] = useState<ViewMode>("all");
+
+  const visibleRows = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const matches = rows.filter((c) => {
+      if (!query) return true;
+      const primary = `${c.firstName} ${c.lastName}`.toLowerCase();
+      const spouse = c.spouseName
+        ? `${c.spouseName} ${c.spouseLastName ?? ""}`.toLowerCase()
+        : "";
+      return primary.includes(query) || spouse.includes(query);
+    });
+    if (view === "recent") {
+      return [...matches]
+        .sort((a, b) => {
+          const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+          const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+          return tb - ta;
+        })
+        .slice(0, RECENT_LIMIT);
+    }
+    return [...matches].sort((a, b) => {
+      const byLast = a.lastName.localeCompare(b.lastName);
+      return byLast !== 0 ? byLast : a.firstName.localeCompare(b.firstName);
+    });
+  }, [rows, search, view]);
 
   async function performDelete(client: ClientRow) {
     const res = await fetch(`/api/clients/${client.id}`, { method: "DELETE" });
@@ -91,10 +131,50 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
         </div>
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-gray-700 bg-gray-900 shadow-sm">
+      {rows.length > 0 && (
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name or spouse"
+            className="w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:max-w-md"
+          />
+          <div className="flex items-center gap-4 text-sm text-gray-300">
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                name="clients-view"
+                value="recent"
+                checked={view === "recent"}
+                onChange={() => setView("recent")}
+                className="h-4 w-4 accent-blue-500"
+              />
+              Recent
+            </label>
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                name="clients-view"
+                value="all"
+                checked={view === "all"}
+                onChange={() => setView("all")}
+                className="h-4 w-4 accent-blue-500"
+              />
+              All Clients
+            </label>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 overflow-hidden rounded-lg border border-gray-700 bg-gray-900 shadow-sm">
         {rows.length === 0 ? (
           <div className="px-6 py-12 text-center">
             <p className="text-gray-400">No clients yet. Click &quot;Add Client&quot; to get started.</p>
+          </div>
+        ) : visibleRows.length === 0 ? (
+          <div className="px-6 py-12 text-center">
+            <p className="text-gray-400">No clients match &quot;{search}&quot;.</p>
           </div>
         ) : (
           <table className="min-w-full divide-y divide-gray-700">
@@ -107,7 +187,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700 bg-gray-900">
-              {rows.map((client) => {
+              {visibleRows.map((client) => {
                 const onClickName = (e: React.MouseEvent) => {
                   if (editMode) {
                     e.preventDefault();

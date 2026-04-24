@@ -39,6 +39,10 @@ export const clientCreateSchema = z
     spouseDob: z.string().max(40).optional().nullable(),
     spouseRetirementAge: z.coerce.number().int().min(18).max(100).optional().nullable(),
     spouseLifeExpectancy: z.coerce.number().int().min(40).max(130).optional().nullable(),
+    email: z.string().max(200).optional().nullable(),
+    address: z.string().max(500).optional().nullable(),
+    spouseEmail: z.string().max(200).optional().nullable(),
+    spouseAddress: z.string().max(500).optional().nullable(),
   })
   .strict();
 

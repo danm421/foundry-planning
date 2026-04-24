@@ -67,6 +67,10 @@ export async function POST(request: NextRequest) {
       spouseDob,
       spouseRetirementAge,
       spouseLifeExpectancy,
+      email,
+      address,
+      spouseEmail,
+      spouseAddress,
     } = parsed.data;
 
     // Plan horizon is the year the last spouse dies; plan_end_age is derived
@@ -98,6 +102,10 @@ export async function POST(request: NextRequest) {
         spouseDob: spouseDob ?? null,
         spouseRetirementAge: spouseRetirementAge ? Number(spouseRetirementAge) : null,
         spouseLifeExpectancy: spouseLifeExpectancy != null ? Number(spouseLifeExpectancy) : null,
+        email: email ?? null,
+        address: address ?? null,
+        spouseEmail: spouseEmail ?? null,
+        spouseAddress: spouseAddress ?? null,
       })
       .returning();
 

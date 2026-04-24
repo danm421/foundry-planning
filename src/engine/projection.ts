@@ -1134,11 +1134,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     });
 
     // Employer match — direct credit to the destination account, free cash from the
-    // employer. Does not touch household checking. Uses salaryByRuleId computed
-    // earlier in the year-loop (keyed to each rule's account owner).
+    // employer. Does not touch household checking. Unlike employee contributions,
+    // the match must be computed against *only* the account owner's salary — a
+    // spouse's salary can't ground the other spouse's 401k match. Joint-owned or
+    // orphaned-rule accounts get no match (no individual salary to base it on).
     for (const rule of data.savingsRules) {
       if (year < rule.startYear || year > rule.endYear) continue;
-      const ownerSalary = salaryByRuleId[rule.id] ?? income.salaries;
+      const acct = data.accounts.find((a) => a.id === rule.accountId);
+      const ownerSalary =
+        acct && (acct.owner === "client" || acct.owner === "spouse")
+          ? salaryByOwner[acct.owner]
+          : 0;
       const match = computeEmployerMatch(rule, ownerSalary);
       if (match === 0) continue;
       accountBalances[rule.accountId] = (accountBalances[rule.accountId] ?? 0) + match;

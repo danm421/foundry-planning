@@ -54,6 +54,32 @@ describe("runProjection", () => {
     expect(result[0].savings.byAccount["acct-401k"]).toBe(23500);
   });
 
+  it("employer match uses only the account owner's salary, not household total", () => {
+    // Fixture: John salary 150k (client), Jane salary 100k (spouse).
+    // 401k is owned by client with employerMatchPct=0.5, employerMatchCap=0.06.
+    // Correct match = 150000 * 0.5 * 0.06 = 4500 (NOT 250000 * 0.5 * 0.06 = 7500).
+    const data = buildClientData();
+    const result = runProjection(data);
+    const ledger = result[0].accountLedgers["acct-401k"];
+    const matchEntries = ledger.entries.filter((e) => e.category === "employer_match");
+    expect(matchEntries).toHaveLength(1);
+    expect(matchEntries[0].amount).toBe(4500);
+  });
+
+  it("employer match is zero when the savings account is joint-owned", () => {
+    // A joint-owned retirement account has no individual salary to base the match on,
+    // so the match should be 0 rather than falling back to household salary.
+    const data = buildClientData({
+      accounts: sampleAccounts.map((a) =>
+        a.id === "acct-401k" ? { ...a, owner: "joint" as const } : a
+      ),
+    });
+    const result = runProjection(data);
+    const ledger = result[0].accountLedgers["acct-401k"];
+    const matchEntries = ledger.entries.filter((e) => e.category === "employer_match");
+    expect(matchEntries).toHaveLength(0);
+  });
+
   it("grows account balances year over year", () => {
     const data = buildClientData();
     const result = runProjection(data);

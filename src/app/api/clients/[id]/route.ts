@@ -95,6 +95,10 @@ export async function PUT(
       "spouseRetirementAge",
       "spouseLifeExpectancy",
       "filingStatus",
+      "email",
+      "address",
+      "spouseEmail",
+      "spouseAddress",
     ] as const;
 
     const safeUpdate: Record<string, unknown> = {};

@@ -26,8 +26,14 @@ export default async function ClientsPage() {
     spouseLastName: c.spouseLastName ?? null,
     spouseDob: c.spouseDob ?? null,
     spouseRetirementAge: c.spouseRetirementAge ?? null,
+    email: c.email ?? null,
+    address: c.address ?? null,
+    spouseEmail: c.spouseEmail ?? null,
+    spouseAddress: c.spouseAddress ?? null,
     createdAt:
       c.createdAt instanceof Date ? c.createdAt.toISOString() : String(c.createdAt),
+    updatedAt:
+      c.updatedAt instanceof Date ? c.updatedAt.toISOString() : String(c.updatedAt),
   }));
 
   return <ClientsTable rows={serialized} />;

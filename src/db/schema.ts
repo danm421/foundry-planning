@@ -213,6 +213,10 @@ export const clients = pgTable("clients", {
   spouseRetirementAge: integer("spouse_retirement_age"),
   spouseLifeExpectancy: integer("spouse_life_expectancy"),
   filingStatus: filingStatusEnum("filing_status").notNull().default("single"),
+  email: text("email"),
+  address: text("address"),
+  spouseEmail: text("spouse_email"),
+  spouseAddress: text("spouse_address"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
