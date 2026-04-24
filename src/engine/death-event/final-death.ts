@@ -45,9 +45,12 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     familyMembers, externalBeneficiaries, entities,
   } = input;
 
-  // Defensive: no joint accounts can exist at 4c.
+  // Defensive: no joint accounts can exist at 4c. Entity/family-member-owned
+  // accounts are exempt — the `owner` enum is ignored when those IDs are set
+  // (see accounts schema: ownerEntityId > ownerFamilyMemberId > owner), and
+  // they're skipped by the chain below for the same reason.
   for (const a of accounts) {
-    if (a.owner === "joint") {
+    if (a.owner === "joint" && !a.ownerEntityId && !a.ownerFamilyMemberId) {
       throw new Error(
         `applyFinalDeath invariant: account ${a.id} still has owner='joint' at final death (should have been retitled at 4b)`,
       );

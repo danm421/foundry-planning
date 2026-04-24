@@ -654,6 +654,47 @@ describe("4d integration — final death estate tax", () => {
     // and personal cash.
     expect(result.estateTax.grossEstate).toBeCloseTo(1_100_000, 0);
   });
+
+  it("joint-owner account with ownerEntityId passes through 4c without tripping the invariant", () => {
+    // Regression: an account with owner="joint" AND ownerEntityId set is
+    // entity-owned per the resolver precedence (ownerEntityId > owner enum).
+    // 4b skips it because of the entity ID; 4c must do the same instead of
+    // throwing "still has owner='joint'".
+    const irrevocableTrust: EntitySummary = {
+      id: "irrev-trust", includeInPortfolio: true, isGrantor: false,
+      trustSubType: "irrevocable" as const, isIrrevocable: true,
+      beneficiaries: [{
+        id: "bref-1", tier: "primary", percentage: 100,
+        familyMemberId: "kid-a", sortOrder: 0,
+      }],
+    };
+    const accounts: Account[] = [
+      {
+        id: "joint-in-trust", name: "Joint Trust Brokerage",
+        category: "taxable", subType: "brokerage",
+        owner: "joint", value: 500_000, basis: 400_000,
+        growthRate: 0.05, rmdEnabled: false,
+        ownerEntityId: "irrev-trust",
+      },
+      {
+        id: "personal-cash", name: "Personal Cash",
+        category: "cash", subType: "savings",
+        owner: "client", value: 100_000, basis: 100_000,
+        growthRate: 0.02, rmdEnabled: false,
+      },
+    ];
+    const input = mkFinalDeathInput({
+      accounts,
+      entities: [irrevocableTrust],
+      familyMembers: [kidA],
+    });
+
+    expect(() => applyFinalDeath(input)).not.toThrow();
+    const result = applyFinalDeath(input);
+    const passthrough = result.accounts.find((a) => a.id === "joint-in-trust");
+    expect(passthrough?.owner).toBe("joint");
+    expect(passthrough?.ownerEntityId).toBe("irrev-trust");
+  });
 });
 
 // ── Describe block 3: 4d integration — state estate tax ─────────────────────
