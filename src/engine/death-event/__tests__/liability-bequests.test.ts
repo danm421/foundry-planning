@@ -173,3 +173,90 @@ describe("applyLiabilityBequests — entity recipient", () => {
     expect(result.bequestTransfers[0].recipientKind).toBe("entity");
   });
 });
+
+describe("applyLiabilityBequests — defensive skip cases", () => {
+  it("bequest target has linkedPropertyId → warning, bequest skipped", () => {
+    const liab = baseLiability({ linkedPropertyId: "acct-99" });
+    const fam = baseFam();
+    const will = baseWill([{
+      id: "beq-1", name: "Mortgage", kind: "liability", assetMode: null, accountId: null,
+      liabilityId: liab.id, percentage: 100, condition: "always", sortOrder: 0,
+      recipients: [{ recipientKind: "family_member", recipientId: fam.id, percentage: 100, sortOrder: 0 }],
+    }]);
+    const result = applyLiabilityBequests({
+      will, deceased: "client", liabilities: [liab], familyMembers: [fam], entities: [], year: 2050,
+    });
+    expect(result.warnings).toContain(`liability_bequest_ineligible:${liab.id}`);
+    expect(result.newLiabilityRows).toHaveLength(0);
+    expect(result.updatedLiabilities).toEqual([liab]);
+  });
+
+  it("bequest target has ownerEntityId → warning, bequest skipped", () => {
+    const liab = baseLiability({ ownerEntityId: "ent-99" });
+    const fam = baseFam();
+    const will = baseWill([{
+      id: "beq-1", name: "Trust debt", kind: "liability", assetMode: null, accountId: null,
+      liabilityId: liab.id, percentage: 100, condition: "always", sortOrder: 0,
+      recipients: [{ recipientKind: "family_member", recipientId: fam.id, percentage: 100, sortOrder: 0 }],
+    }]);
+    const result = applyLiabilityBequests({
+      will, deceased: "client", liabilities: [liab], familyMembers: [fam], entities: [], year: 2050,
+    });
+    expect(result.warnings).toContain(`liability_bequest_ineligible:${liab.id}`);
+    expect(result.newLiabilityRows).toHaveLength(0);
+  });
+
+  it("bequest target missing (deleted liability) → warning, bequest skipped", () => {
+    const fam = baseFam();
+    const will = baseWill([{
+      id: "beq-1", name: "Gone", kind: "liability", assetMode: null, accountId: null,
+      liabilityId: "ghost-liab", percentage: 100, condition: "always", sortOrder: 0,
+      recipients: [{ recipientKind: "family_member", recipientId: fam.id, percentage: 100, sortOrder: 0 }],
+    }]);
+    const result = applyLiabilityBequests({
+      will, deceased: "client", liabilities: [], familyMembers: [fam], entities: [], year: 2050,
+    });
+    expect(result.warnings).toContain("liability_bequest_target_missing:ghost-liab");
+  });
+
+  it("empty recipients → warning, bequest skipped", () => {
+    const liab = baseLiability();
+    const will = baseWill([{
+      id: "beq-1", name: "Visa", kind: "liability", assetMode: null, accountId: null,
+      liabilityId: liab.id, percentage: 100, condition: "always", sortOrder: 0,
+      recipients: [],
+    }]);
+    const result = applyLiabilityBequests({
+      will, deceased: "client", liabilities: [liab], familyMembers: [], entities: [], year: 2050,
+    });
+    expect(result.warnings).toContain("liability_bequest_no_recipients:beq-1");
+    expect(result.updatedLiabilities).toEqual([liab]);
+  });
+
+  it("null will → no-op empty result", () => {
+    const result = applyLiabilityBequests({
+      will: null, deceased: "client", liabilities: [baseLiability()],
+      familyMembers: [], entities: [], year: 2050,
+    });
+    expect(result.newLiabilityRows).toHaveLength(0);
+    expect(result.bequestTransfers).toHaveLength(0);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("will has asset bequests only → no-op", () => {
+    const will: Will = {
+      id: "will-1", grantor: "client",
+      bequests: [{
+        id: "beq-1", name: "Home", kind: "asset", assetMode: "specific",
+        accountId: "acct-1", liabilityId: null, percentage: 100, condition: "always",
+        sortOrder: 0, recipients: [],
+      }],
+    };
+    const result = applyLiabilityBequests({
+      will, deceased: "client", liabilities: [baseLiability()],
+      familyMembers: [], entities: [], year: 2050,
+    });
+    expect(result.newLiabilityRows).toHaveLength(0);
+    expect(result.bequestTransfers).toHaveLength(0);
+  });
+});
