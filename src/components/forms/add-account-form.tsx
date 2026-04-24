@@ -99,6 +99,7 @@ interface AddAccountFormProps {
   /** Existing account names for auto-increment default naming on create. */
   existingAccountNames?: string[];
   resolvedInflationRate?: number;
+  initialTab?: "details" | "savings" | "realization" | "asset_mix" | "beneficiaries";
   onSuccess?: () => void;
   onDelete?: () => void;
 }
@@ -187,6 +188,7 @@ export default function AddAccountForm({
   spouseFirstName,
   existingAccountNames,
   resolvedInflationRate = 0,
+  initialTab,
   onSuccess,
   onDelete,
 }: AddAccountFormProps) {
@@ -242,7 +244,9 @@ export default function AddAccountForm({
     initial?.basis != null ? String(initial.basis) : "",
   );
   const [userEditedBasis, setUserEditedBasis] = useState<boolean>(mode === "edit");
-  const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix">("details");
+  const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix" | "beneficiaries">(
+    initialTab ?? "details",
+  );
   const [subType, setSubType] = useState(
     initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
   );
