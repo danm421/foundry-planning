@@ -66,10 +66,12 @@ export default function TrustForm({
   const [externals, setExternals] = useState<ExternalBeneficiary[]>([]);
   const [beneDataLoaded, setBeneDataLoaded] = useState(false);
   const [beneDataLoading, setBeneDataLoading] = useState(false);
+  const [beneLoadError, setBeneLoadError] = useState<string | null>(null);
 
   async function loadBeneficiariesData() {
     if (beneDataLoaded || beneDataLoading || !editing) return;
     setBeneDataLoading(true);
+    setBeneLoadError(null);
     try {
       const [desigRes, membersRes, externalsRes] = await Promise.all([
         fetch(`/api/clients/${clientId}/entities/${editing.id}/beneficiaries`),
@@ -89,7 +91,7 @@ export default function TrustForm({
       setExternals(ext as ExternalBeneficiary[]);
       setBeneDataLoaded(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load beneficiaries");
+      setBeneLoadError(err instanceof Error ? err.message : "Failed to load beneficiaries");
     } finally {
       setBeneDataLoading(false);
     }
@@ -383,7 +385,11 @@ export default function TrustForm({
               Save the trust first, then designate remainder beneficiaries.
             </p>
           ) : !beneDataLoaded ? (
-            <p className="text-sm text-gray-400">Loading…</p>
+            beneLoadError ? (
+              <p className="text-sm text-red-400">{beneLoadError}</p>
+            ) : (
+              <p className="text-sm text-gray-400">Loading…</p>
+            )
           ) : (
             <BeneficiaryEditor
               target={{ kind: "trust", entityId: editing.id }}
