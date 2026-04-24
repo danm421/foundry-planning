@@ -145,7 +145,6 @@ interface DebtBequestDialogProps {
   alreadyBequeathedIds: string[];
   familyMembers: WillsPanelFamilyMember[];
   entities: WillsPanelEntity[];
-  primary: WillsPanelPrimary;
   editingIndex: number | null;
   saving: boolean;
   onCancel: () => void;
@@ -159,7 +158,6 @@ function DebtBequestDialog({
   alreadyBequeathedIds,
   familyMembers,
   entities,
-  primary,
   editingIndex,
   saving,
   onCancel,
@@ -1067,7 +1065,6 @@ export default function WillsPanel(props: WillsPanelProps) {
           }
           familyMembers={familyMembers}
           entities={entities}
-          primary={primary}
           editingIndex={editingIndex}
           saving={saving}
           onCancel={() => {
