@@ -108,5 +108,6 @@ export async function getOverviewData(clientId: string, firmId: string) {
     totalCompleted,
     alerts,
     auditRows,
+    accountCount: accountRows.length,
   };
 }
