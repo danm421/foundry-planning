@@ -15,6 +15,11 @@ export interface EntityDialogProps {
   onSaved: (entity: Entity, mode: "create" | "edit") => void;
   onRequestDelete?: () => void;
   initialTab?: EntityDialogTab;
+  /**
+   * When true, restrict the trust dialog to the Beneficiaries tab. Used by the
+   * Beneficiary Summary deep-link. Ignored for business entities (no tabs).
+   */
+  lockTab?: boolean;
 }
 
 export default function EntityDialog({
@@ -26,6 +31,7 @@ export default function EntityDialog({
   onSaved,
   onRequestDelete,
   initialTab,
+  lockTab,
 }: EntityDialogProps) {
   if (!open) return null;
 
@@ -59,6 +65,7 @@ export default function EntityDialog({
             onRequestDelete={onRequestDelete}
             onClose={() => onOpenChange(false)}
             initialTab={initialTab}
+            lockTab={lockTab}
           />
         ) : (
           <BusinessForm

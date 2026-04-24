@@ -101,6 +101,12 @@ interface AddAccountFormProps {
   existingAccountNames?: string[];
   resolvedInflationRate?: number;
   initialTab?: "details" | "savings" | "realization" | "asset_mix" | "beneficiaries";
+  /**
+   * When true, only the Beneficiaries tab button renders and all other panels
+   * are unmounted. Prevents accidental overwrite when `initial` is a lite shape
+   * (zero values) used by the Beneficiary Summary deep-link.
+   */
+  lockTab?: boolean;
   onSuccess?: () => void;
   onDelete?: () => void;
 }
@@ -190,6 +196,7 @@ export default function AddAccountForm({
   existingAccountNames,
   resolvedInflationRate = 0,
   initialTab,
+  lockTab,
   onSuccess,
   onDelete,
 }: AddAccountFormProps) {
@@ -547,18 +554,20 @@ export default function AddAccountForm({
 
       {/* Tab bar */}
       <div className="flex border-b border-gray-700">
-        <button
-          type="button"
-          onClick={() => setActiveTab("details")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-            activeTab === "details"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-gray-400 hover:text-gray-200"
-          }`}
-        >
-          Account Details
-        </button>
-        {category !== "real_estate" && category !== "business" && category !== "life_insurance" && (
+        {!lockTab && (
+          <button
+            type="button"
+            onClick={() => setActiveTab("details")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+              activeTab === "details"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            Account Details
+          </button>
+        )}
+        {!lockTab && category !== "real_estate" && category !== "business" && category !== "life_insurance" && (
           <button
             type="button"
             onClick={() => setActiveTab("savings")}
@@ -571,7 +580,7 @@ export default function AddAccountForm({
             Savings
           </button>
         )}
-        {category === "taxable" && (
+        {!lockTab && category === "taxable" && (
           <button
             type="button"
             onClick={() => setActiveTab("realization")}
@@ -584,7 +593,7 @@ export default function AddAccountForm({
             Realization
           </button>
         )}
-        {showAssetMixTab && (
+        {!lockTab && showAssetMixTab && (
           <button
             type="button"
             onClick={() => setActiveTab("asset_mix")}
@@ -611,6 +620,7 @@ export default function AddAccountForm({
       </div>
 
       {/* Account Details */}
+      {!lockTab && (
       <div className={activeTab !== "details" ? "hidden" : ""}>
         <div className="space-y-4">
           <div>
@@ -856,7 +866,10 @@ export default function AddAccountForm({
         </div>
       </div>
 
+      )}
+
       {/* Savings tab — edit mode shows rule list; create mode shows inline form */}
+      {!lockTab && (
       <div className={activeTab === "savings" ? "" : "hidden"}>
       {isEdit ? (
         <div className="space-y-3">
@@ -997,8 +1010,10 @@ export default function AddAccountForm({
       </div>
 
 
+      )}
+
       {/* Realization tab — taxable and retirement accounts */}
-      {category === "taxable" && (
+      {!lockTab && category === "taxable" && (
         <div className={activeTab === "realization" ? "" : "hidden"}>
           <div className="space-y-4">
             <p className="text-xs text-gray-500">
@@ -1046,7 +1061,7 @@ export default function AddAccountForm({
       )}
 
       {/* Asset Mix tab */}
-      {showAssetMixTab && assetClasses && (
+      {!lockTab && showAssetMixTab && assetClasses && (
         <div className={activeTab === "asset_mix" ? "" : "hidden"}>
           <AssetMixTab
             assetClasses={assetClasses}
@@ -1072,6 +1087,7 @@ export default function AddAccountForm({
         )}
       </div>
 
+      {!lockTab && (
       <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
         {isEdit && onDelete && !initial?.isDefaultChecking ? (
           <button
@@ -1092,6 +1108,7 @@ export default function AddAccountForm({
           {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Account"}
         </button>
       </div>
+      )}
     </form>
 
     {isEdit && srDialogOpen && (

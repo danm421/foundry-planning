@@ -40,6 +40,7 @@ export default function TrustForm({
   onRequestDelete,
   onClose,
   initialTab,
+  lockTab,
 }: EntityFormCommonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +59,7 @@ export default function TrustForm({
   const isEdit = Boolean(editing);
 
   const [activeTab, setActiveTab] = useState<"details" | "beneficiaries">(
-    initialTab ?? "details",
+    lockTab ? "beneficiaries" : (initialTab ?? "details"),
   );
 
   const [designations, setDesignations] = useState<Designation[] | null>(null);
@@ -102,6 +103,16 @@ export default function TrustForm({
       setActiveTab("details");
     }
   }, [entityType, activeTab]);
+
+  // When deep-linked to the Beneficiaries tab, eagerly fetch its data since
+  // the user never clicks the tab button (either because lockTab hides the
+  // Details tab, or because initialTab opens us directly on Beneficiaries).
+  useEffect(() => {
+    if (activeTab === "beneficiaries" && entityType === "trust") {
+      void loadBeneficiariesData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -155,17 +166,19 @@ export default function TrustForm({
     <div>
       {entityType === "trust" && (
         <div className="flex border-b border-gray-700 mb-4">
-          <button
-            type="button"
-            onClick={() => setActiveTab("details")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-              activeTab === "details"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            Details
-          </button>
+          {!lockTab && (
+            <button
+              type="button"
+              onClick={() => setActiveTab("details")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+                activeTab === "details"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-400 hover:text-gray-200"
+              }`}
+            >
+              Details
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -183,6 +196,7 @@ export default function TrustForm({
         </div>
       )}
 
+      {!lockTab && (
       <div className={activeTab !== "details" ? "hidden" : ""}>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
@@ -377,6 +391,7 @@ export default function TrustForm({
       </div>
         </form>
       </div>
+      )}
 
       {entityType === "trust" && (
         <div className={activeTab !== "beneficiaries" ? "hidden" : ""}>

@@ -14,4 +14,11 @@ export interface EntityFormCommonProps {
   onRequestDelete?: () => void;
   onClose: () => void;
   initialTab?: EntityDialogTab;
+  /**
+   * When true, restrict the dialog to the Beneficiaries tab: hide the Details
+   * tab button and unmount its form. Used by the Beneficiary Summary deep-link
+   * to prevent accidental overwrite of Details fields.
+   * Business entities have no tabs and ignore this prop.
+   */
+  lockTab?: boolean;
 }

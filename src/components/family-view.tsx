@@ -373,10 +373,14 @@ export default function FamilyView({
   const [deletingEntity, setDeletingEntity] = useState<Entity | null>(null);
   const [entitiesEdit, setEntitiesEdit] = useState(false);
   const [entityDialogInitialTab, setEntityDialogInitialTab] = useState<"details" | "beneficiaries">("details");
+  // When opened via the Beneficiary Summary deep-link, the dialog is restricted
+  // to the Beneficiaries tab so zero-value fields can't overwrite real data.
+  const [entityDialogLockTab, setEntityDialogLockTab] = useState(false);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [accountDialogEditing, setAccountDialogEditing] = useState<AccountFormInitial | undefined>(undefined);
   const [accountDialogInitialTab, setAccountDialogInitialTab] = useState<"details" | "beneficiaries">("details");
+  const [accountDialogLockTab, setAccountDialogLockTab] = useState(false);
 
   const primaryAge = computeAge(primary.dateOfBirth);
   const spouseAge = primary.spouseDob ? computeAge(primary.spouseDob) : null;
@@ -654,6 +658,7 @@ export default function FamilyView({
           if (!acct) return;
           setAccountDialogEditing(accountLiteToFormInitial(acct));
           setAccountDialogInitialTab("beneficiaries");
+          setAccountDialogLockTab(true);
           setAccountDialogOpen(true);
         }}
         onEditEntity={(entityId) => {
@@ -661,6 +666,7 @@ export default function FamilyView({
           if (!ent) return;
           setEditingEntity(ent);
           setEntityDialogInitialTab("beneficiaries");
+          setEntityDialogLockTab(true);
           setEntityDialogOpen(true);
         }}
       />
@@ -689,11 +695,15 @@ export default function FamilyView({
           open={entityDialogOpen}
           onOpenChange={(open) => {
             setEntityDialogOpen(open);
-            if (!open) setEntityDialogInitialTab("details");
+            if (!open) {
+              setEntityDialogInitialTab("details");
+              setEntityDialogLockTab(false);
+            }
           }}
           editing={editingEntity}
           createKind={entityCreateKind}
           initialTab={entityDialogInitialTab}
+          lockTab={entityDialogLockTab}
           onSaved={(e, mode) => {
             if (mode === "create") setEntities((prev) => [...prev, e]);
             else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));
@@ -710,10 +720,14 @@ export default function FamilyView({
           open={accountDialogOpen}
           onOpenChange={(open) => {
             setAccountDialogOpen(open);
-            if (!open) setAccountDialogInitialTab("details");
+            if (!open) {
+              setAccountDialogInitialTab("details");
+              setAccountDialogLockTab(false);
+            }
           }}
           editing={accountDialogEditing}
           initialTab={accountDialogInitialTab}
+          lockTab={accountDialogLockTab}
         />
       )}
 
