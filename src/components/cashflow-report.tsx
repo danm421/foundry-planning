@@ -467,6 +467,16 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     },
   };
 
+  // Liquid portfolio total for cash-flow framing: taxable + cash + retirement
+  // + life insurance cash value. Excludes real estate and business assets —
+  // advisors think of cash flow against the investable portfolio, not the
+  // household's outside-the-estate holdings.
+  const liquidPortfolioTotal = (y: ProjectionYear) =>
+    y.portfolioAssets.taxableTotal +
+    y.portfolioAssets.cashTotal +
+    y.portfolioAssets.retirementTotal +
+    y.portfolioAssets.lifeInsuranceTotal;
+
   // Portfolio Assets chart (area/line)
   const portfolioChartData = {
     labels: chartLabels,
@@ -513,16 +523,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   const rmdForYear = (y: ProjectionYear) =>
     Object.values(y.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0);
-
-  // Liquid portfolio total for cash-flow framing: taxable + cash + retirement
-  // + life insurance cash value. Excludes real estate and business assets —
-  // advisors think of cash flow against the investable portfolio, not the
-  // household's outside-the-estate holdings.
-  const liquidPortfolioTotal = (y: ProjectionYear) =>
-    y.portfolioAssets.taxableTotal +
-    y.portfolioAssets.cashTotal +
-    y.portfolioAssets.retirementTotal +
-    y.portfolioAssets.lifeInsuranceTotal;
 
   const cashflowChartData = {
     labels: chartLabels,
