@@ -9,6 +9,8 @@ import LifeEventsPanel from "@/components/client-overview/life-events-panel";
 import OpenItemsPreview from "@/components/client-overview/open-items-preview";
 import AlertsStrip from "@/components/client-overview/alerts-strip";
 import RecentActivityPanel from "@/components/client-overview/recent-activity-panel";
+import EmptyHouseholdBanner from "@/components/client-overview/empty-household-banner";
+import { isFreshHousehold } from "@/components/client-overview/is-fresh-household";
 
 export const dynamic = "force-dynamic";
 
@@ -23,15 +25,35 @@ export default async function ClientOverviewPage({
 
   const d = await getOverviewData(id, firmId);
 
+  const earliestRetirementYear = d.lifeEvents.length
+    ? Math.min(...d.lifeEvents.map((e) => e.year))
+    : null;
+
   return (
-    <div className="space-y-6">
-      <KpiStrip clientId={id} {...d.kpi} />
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        <RunwayPanel clientId={id} {...d.runway} />
+    <div className="flex flex-col gap-[var(--gap-grid)]">
+      {isFreshHousehold(d.accountCount) && <EmptyHouseholdBanner clientId={id} />}
+
+      <KpiStrip
+        clientId={id}
+        netWorth={d.kpi.netWorth}
+        liquidPortfolio={d.kpi.liquidPortfolio}
+        monteCarloSuccess={d.kpi.monteCarloSuccess}
+        yearsToRetirement={d.kpi.yearsToRetirement}
+        earliestRetirementYear={earliestRetirementYear}
+      />
+
+      <div className="grid grid-cols-1 gap-[var(--gap-grid)] md:grid-cols-2">
+        <RunwayPanel
+          clientId={id}
+          monteCarloSuccess={d.runway.monteCarloSuccess}
+          netWorthSeries={d.runway.netWorthSeries}
+        />
         <AllocationPanel clientId={id} rollup={d.allocation} />
       </div>
+
       <LifeEventsPanel clientId={id} events={d.lifeEvents} />
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+
+      <div className="grid grid-cols-1 gap-[var(--gap-grid)] md:grid-cols-2">
         <OpenItemsPreview
           clientId={id}
           items={d.openItemsPreview}
@@ -40,6 +62,7 @@ export default async function ClientOverviewPage({
         />
         <AlertsStrip alerts={d.alerts} />
       </div>
+
       <RecentActivityPanel rows={d.auditRows} />
     </div>
   );
