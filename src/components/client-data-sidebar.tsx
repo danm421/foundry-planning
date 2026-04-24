@@ -83,9 +83,20 @@ function WillsIcon() {
   );
 }
 
+function InsuranceIcon() {
+  return (
+    <svg className={ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2L4 6v6c0 5 3.5 9.3 8 10 4.5-.7 8-5 8-10V6l-8-4z" />
+      <path d="M12 8v6" />
+      <path d="M9 11h6" />
+    </svg>
+  );
+}
+
 const TABS: SidebarTab[] = [
   { label: "Family", href: "family", icon: <FamilyIcon /> },
   { label: "Wills", href: "wills", icon: <WillsIcon /> },
+  { label: "Insurance", href: "insurance", icon: <InsuranceIcon /> },
   { label: "Net Worth", href: "balance-sheet", icon: <BalanceSheetIcon /> },
   { label: "Inflows & Outflows", href: "income-expenses", icon: <CashflowIcon /> },
   { label: "Techniques", href: "techniques", icon: <TechniquesIcon /> },
