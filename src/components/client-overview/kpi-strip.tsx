@@ -1,38 +1,69 @@
-import Link from "next/link";
-import { KpiCard } from "@/components/monte-carlo/kpi-card";
+import type { ReactElement } from "react";
+import KpiCard from "./kpi-card";
 
-type Props = {
+interface Props {
   clientId: string;
   netWorth: number | null;
   liquidPortfolio: number | null;
   monteCarloSuccess: number | null; // 0..1
   yearsToRetirement: number | null;
-};
+  earliestRetirementYear?: number | null;
+}
 
-const fmt = (n: number | null) =>
-  n == null ? "—" : `$${Math.round(n).toLocaleString()}`;
+const todayIso = () =>
+  new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date());
 
-export default function KpiStrip(p: Props) {
+export default function KpiStrip(p: Props): ReactElement {
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-      <Link href={`/clients/${p.clientId}/balance-sheet-report`}>
-        <KpiCard label="Net worth" value={fmt(p.netWorth)} />
-      </Link>
-      <Link href={`/clients/${p.clientId}/investments`}>
-        <KpiCard label="Liquid portfolio" value={fmt(p.liquidPortfolio)} />
-      </Link>
-      <Link href={`/clients/${p.clientId}/monte-carlo`}>
-        <KpiCard
-          label="Monte Carlo success"
-          value={p.monteCarloSuccess == null ? "—" : `${Math.round(p.monteCarloSuccess * 100)}%`}
-        />
-      </Link>
-      <Link href={`/clients/${p.clientId}/timeline`}>
-        <KpiCard
-          label="Years to retirement"
-          value={p.yearsToRetirement == null ? "—" : `${p.yearsToRetirement}`}
-        />
-      </Link>
+    <div className="grid grid-cols-1 gap-[var(--gap-grid)] sm:grid-cols-2 md:grid-cols-4">
+      <KpiCard
+        href={`/clients/${p.clientId}/balance-sheet-report`}
+        num="01"
+        categoryLabel="Net worth"
+        category="portfolio"
+        label="Current net worth"
+        value={p.netWorth}
+        valueFormat="currency"
+        footnote={`As of ${todayIso()}`}
+        delta={null}
+      />
+      <KpiCard
+        href={`/clients/${p.clientId}/investments`}
+        num="02"
+        categoryLabel="Liquidity"
+        category="portfolio"
+        label="Liquid portfolio"
+        value={p.liquidPortfolio}
+        valueFormat="currency"
+        footnote="Excl. real estate, business"
+        delta={null}
+      />
+      <KpiCard
+        href={`/clients/${p.clientId}/monte-carlo`}
+        num="03"
+        categoryLabel="Resilience"
+        category="life"
+        label="Monte Carlo success"
+        value={p.monteCarloSuccess}
+        valueFormat="pct"
+        footnote="10,000 trials"
+        delta={null}
+      />
+      <KpiCard
+        href={`/clients/${p.clientId}/timeline`}
+        num="04"
+        categoryLabel="Horizon"
+        category="tax"
+        label="Years to retirement"
+        value={p.yearsToRetirement}
+        valueFormat="int"
+        footnote={p.earliestRetirementYear != null ? `${p.earliestRetirementYear}` : ""}
+        delta={null}
+      />
     </div>
   );
 }
