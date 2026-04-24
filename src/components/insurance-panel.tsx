@@ -86,6 +86,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
   useEffect(() => {
     if (hasAutoOpened.current) return;
     if (policyParam && props.policies[policyParam]) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- URL query param → dialog state is a one-shot mount effect; guarded by hasAutoOpened ref so no cascade.
       setDialogState({ mode: "edit", policyId: policyParam });
       hasAutoOpened.current = true;
     }
