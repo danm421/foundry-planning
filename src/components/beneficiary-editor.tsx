@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type {
   Designation,
   FamilyMember,
@@ -22,6 +23,7 @@ interface BeneficiaryEditorProps {
 }
 
 export default function BeneficiaryEditor(props: BeneficiaryEditorProps) {
+  const router = useRouter();
   const [rows, setRows] = useState<Designation[]>(props.initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +65,7 @@ export default function BeneficiaryEditor(props: BeneficiaryEditorProps) {
       }));
       setRows(normalized);
       props.onSaved(normalized);
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
