@@ -1,6 +1,6 @@
 {
-  "id": "4e6aab5b60589cec8586a8e5b0d880dc3894",
-  "prevId": "f4600b83-98bc-4869-aba5-13d651128a51",
+  "id": "61cb99c0-19e1-4858-a6bb-cc7efba8e8bf",
+  "prevId": "4e6aab5b60589cec8586a8e5b0d880dc3894",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1525,6 +1525,30 @@
           "notNull": true,
           "default": "'single'"
         },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spouse_email": {
+          "name": "spouse_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spouse_address": {
+          "name": "spouse_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -1607,6 +1631,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "grantor": {
+          "name": "grantor",
+          "type": "entity_grantor_enum",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
         "beneficiaries": {
           "name": "beneficiaries",
           "type": "jsonb",
@@ -1658,13 +1689,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "grantor": {
-          "name": "grantor",
-          "type": "entity_grantor_enum",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -3033,6 +3057,20 @@
           "notNull": true,
           "default": "'0.05'"
         },
+        "estate_admin_expenses": {
+          "name": "estate_admin_expenses",
+          "type": "numeric(15, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "flat_state_estate_rate": {
+          "name": "flat_state_estate_rate",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
         "tax_engine_mode": {
           "name": "tax_engine_mode",
           "type": "tax_engine_mode",
@@ -3120,7 +3158,7 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "default": "'custom'"
+          "default": "'inflation'"
         },
         "model_portfolio_id_taxable": {
           "name": "model_portfolio_id_taxable",
@@ -3134,7 +3172,7 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "default": "'custom'"
+          "default": "'inflation'"
         },
         "model_portfolio_id_cash": {
           "name": "model_portfolio_id_cash",
@@ -3148,7 +3186,7 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "default": "'custom'"
+          "default": "'inflation'"
         },
         "model_portfolio_id_retirement": {
           "name": "model_portfolio_id_retirement",
@@ -3190,20 +3228,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "estate_admin_expenses": {
-          "name": "estate_admin_expenses",
-          "type": "numeric(15, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "flat_state_estate_rate": {
-          "name": "flat_state_estate_rate",
-          "type": "numeric(5, 4)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
         }
       },
       "indexes": {},
@@ -4340,6 +4364,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "kind": {
+          "name": "kind",
+          "type": "will_bequest_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
         "asset_mode": {
           "name": "asset_mode",
           "type": "will_asset_mode",
@@ -4349,6 +4380,12 @@
         },
         "account_id": {
           "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "liability_id": {
+          "name": "liability_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -4385,19 +4422,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "kind": {
-          "name": "kind",
-          "type": "will_bequest_kind",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "liability_id": {
-          "name": "liability_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -4439,9 +4463,9 @@
             }
           ],
           "isUnique": true,
+          "where": "\"will_bequests\".\"kind\" = 'liability'",
           "concurrently": false,
           "method": "btree",
-          "where": "\"will_bequests\".\"kind\" = 'liability'",
           "with": {}
         }
       },
@@ -4476,7 +4500,6 @@
           "name": "will_bequests_liability_id_liabilities_id_fk",
           "tableFrom": "will_bequests",
           "tableTo": "liabilities",
-          "schemaTo": "public",
           "columnsFrom": [
             "liability_id"
           ],
@@ -4778,6 +4801,14 @@
         "property_tax"
       ]
     },
+    "public.entity_grantor_enum": {
+      "name": "entity_grantor_enum",
+      "schema": "public",
+      "values": [
+        "client",
+        "spouse"
+      ]
+    },
     "public.entity_type": {
       "name": "entity_type",
       "schema": "public",
@@ -4948,6 +4979,14 @@
         "all_assets"
       ]
     },
+    "public.will_bequest_kind": {
+      "name": "will_bequest_kind",
+      "schema": "public",
+      "values": [
+        "asset",
+        "liability"
+      ]
+    },
     "public.will_condition": {
       "name": "will_condition",
       "schema": "public",
@@ -4991,22 +5030,6 @@
         "spouse_ss_62",
         "spouse_ss_fra",
         "spouse_ss_70"
-      ]
-    },
-    "public.entity_grantor_enum": {
-      "name": "entity_grantor_enum",
-      "schema": "public",
-      "values": [
-        "client",
-        "spouse"
-      ]
-    },
-    "public.will_bequest_kind": {
-      "name": "will_bequest_kind",
-      "schema": "public",
-      "values": [
-        "asset",
-        "liability"
       ]
     }
   },
