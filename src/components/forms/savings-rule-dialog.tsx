@@ -14,6 +14,7 @@ import EmployerMatchFields, {
 import ContributionAmountFields, {
   type ContributionMode,
   supportsPercentContribution,
+  supportsMaxContribution,
   inferContributionMode,
 } from "./contribution-amount-fields";
 import DeductibleContributionCheckbox, {
@@ -40,6 +41,7 @@ export interface SavingsRuleRow {
   annualPercent?: string | null;
   isDeductible?: boolean;
   applyContributionLimit?: boolean;
+  contributeMax?: boolean;
   startYear: number;
   endYear: number;
   growthRate?: string | null;
@@ -143,6 +145,10 @@ export default function SavingsRuleDialog({
     selectedAccount?.category,
     selectedAccount?.subType
   );
+  const showMaxToggle = supportsMaxContribution(
+    selectedAccount?.category,
+    selectedAccount?.subType
+  );
   const showDeductibleCheckbox = supportsDeductibility(
     selectedAccount?.category,
     selectedAccount?.subType
@@ -154,7 +160,10 @@ export default function SavingsRuleDialog({
   );
   const [matchMode, setMatchMode] = useState<MatchMode>(initialMatchMode);
 
-  const initialContribMode: ContributionMode = inferContributionMode(editing?.annualPercent ?? null);
+  const initialContribMode: ContributionMode = inferContributionMode(
+    editing?.annualPercent ?? null,
+    editing?.contributeMax ?? null,
+  );
   const [contribMode, setContribMode] = useState<ContributionMode>(initialContribMode);
 
   const [isDeductible, setIsDeductible] = useState<boolean>(
@@ -188,6 +197,7 @@ export default function SavingsRuleDialog({
         contribMode === "percent" && annualPercentInput
           ? String(Number(annualPercentInput) / 100)
           : null,
+      contributeMax: contribMode === "max",
       isDeductible: showDeductibleCheckbox ? isDeductible : true,
       applyContributionLimit: showContributionCapCheckbox ? applyContributionLimit : true,
       startYear: String(startYear),
@@ -283,6 +293,7 @@ export default function SavingsRuleDialog({
                 mode={contribMode}
                 onModeChange={setContribMode}
                 showModeToggle={showContributionModeToggle}
+                showMaxToggle={showMaxToggle}
                 initialAmount={editing?.annualAmount}
                 initialPercent={editing?.annualPercent ?? null}
                 idPrefix="sr"

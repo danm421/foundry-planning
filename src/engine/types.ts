@@ -390,6 +390,11 @@ export interface SavingsRule {
   /** When non-null, contribution resolves as ownerSalary × annualPercent per year.
    *  When null, annualAmount is used. Stored as a decimal ratio (0.10 = 10%). */
   annualPercent?: number | null;
+  /** When true, the rule contributes the applicable IRS limit for the owner's
+   *  age in that year (401k/403b deferral for deferral-group accounts, IRA
+   *  base+catch-up for IRA-group accounts). Overrides annualAmount and
+   *  annualPercent. Non-retirement subtypes resolve to 0. */
+  contributeMax?: boolean;
   /** Whether this contribution counts as an above-the-line deduction.
    *  The derive-deductions logic gates on both subtype eligibility AND this flag. */
   isDeductible: boolean;

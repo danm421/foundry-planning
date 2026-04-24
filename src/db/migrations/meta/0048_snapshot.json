@@ -1,6 +1,6 @@
 {
-  "id": "a29fbc1f-cbe7-44f6-9313-53ec0066539b",
-  "prevId": "61cb99c0-19e1-4858-a6bb-cc7efba8e8bf",
+  "id": "8759b795-f9de-42d9-88f2-e73506ca557f",
+  "prevId": "a29fbc1f-cbe7-44f6-9313-53ec0066539b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1413,6 +1413,108 @@
           "tableTo": "scenarios",
           "columnsFrom": [
             "scenario_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.client_open_items": {
+      "name": "client_open_items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "priority": {
+          "name": "priority",
+          "type": "open_item_priority",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'medium'"
+        },
+        "due_date": {
+          "name": "due_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "client_open_items_client_completed_idx": {
+          "name": "client_open_items_client_completed_idx",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "completed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "client_open_items_client_id_clients_id_fk": {
+          "name": "client_open_items_client_id_clients_id_fk",
+          "tableFrom": "client_open_items",
+          "tableTo": "clients",
+          "columnsFrom": [
+            "client_id"
           ],
           "columnsTo": [
             "id"
@@ -4926,6 +5028,15 @@
       "values": [
         "custom",
         "inflation"
+      ]
+    },
+    "public.open_item_priority": {
+      "name": "open_item_priority",
+      "schema": "public",
+      "values": [
+        "low",
+        "medium",
+        "high"
       ]
     },
     "public.owner": {

@@ -89,6 +89,10 @@ interface SavingsRule {
   id: string;
   accountId: string;
   annualAmount: string;
+  annualPercent?: string | null;
+  isDeductible?: boolean;
+  applyContributionLimit?: boolean;
+  contributeMax?: boolean;
   startYear: number;
   endYear: number;
   growthRate?: string | null;

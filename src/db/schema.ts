@@ -755,6 +755,10 @@ export const savingsRules = pgTable("savings_rules", {
   // IRS limit (401k/403b deferral or IRA base+catch-up). When false, the
   // rule bypasses the cap — advisor models the contribution verbatim.
   applyContributionLimit: boolean("apply_contribution_limit").notNull().default(true),
+  // When true, the engine resolves the rule to the applicable IRS limit for
+  // the owner's age and account subtype each year, overriding annualAmount /
+  // annualPercent. Only meaningful for retirement subtypes.
+  contributeMax: boolean("contribute_max").notNull().default(false),
   annualLimit: decimal("annual_limit", { precision: 15, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
