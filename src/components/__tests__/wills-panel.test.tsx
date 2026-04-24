@@ -16,8 +16,12 @@ const baseProps = {
   accounts: [
     { id: u("a1"), name: "Fidelity Brokerage", category: "taxable" as const },
   ],
+  liabilities: [
+    { id: u("l1"), name: "Visa Card", balance: 5000, linkedPropertyId: null, ownerEntityId: null },
+    { id: u("l2"), name: "Mortgage", balance: 300000, linkedPropertyId: u("a1"), ownerEntityId: null },
+  ],
   familyMembers: [
-    { id: u("f1"), firstName: "Child", lastName: "A" },
+    { id: u("f1"), firstName: "Tom", lastName: "Jr" },
   ],
   externalBeneficiaries: [],
   entities: [],
@@ -41,17 +45,18 @@ describe("WillsPanel", () => {
             grantor: "client",
             bequests: [
               {
+                kind: "asset" as const,
                 id: u("b1"),
                 name: "Brokerage to spouse",
-                assetMode: "specific",
+                assetMode: "specific" as const,
                 accountId: u("a1"),
                 percentage: 100,
-                condition: "if_spouse_survives",
+                condition: "if_spouse_survives" as const,
                 sortOrder: 0,
                 recipients: [
                   {
                     id: u("r1"),
-                    recipientKind: "spouse",
+                    recipientKind: "spouse" as const,
                     recipientId: null,
                     percentage: 100,
                     sortOrder: 0,
@@ -126,17 +131,18 @@ describe("WillsPanel — soft warnings", () => {
             grantor: "client",
             bequests: [
               {
+                kind: "asset" as const,
                 id: u("b1"),
                 name: "60% to child A",
-                assetMode: "specific",
+                assetMode: "specific" as const,
                 accountId: u("a1"),
                 percentage: 60,
-                condition: "always",
+                condition: "always" as const,
                 sortOrder: 0,
                 recipients: [
                   {
                     id: u("r1"),
-                    recipientKind: "family_member",
+                    recipientKind: "family_member" as const,
                     recipientId: u("f1"),
                     percentage: 100,
                     sortOrder: 0,
@@ -144,17 +150,18 @@ describe("WillsPanel — soft warnings", () => {
                 ],
               },
               {
+                kind: "asset" as const,
                 id: u("b2"),
                 name: "60% to child A again",
-                assetMode: "specific",
+                assetMode: "specific" as const,
                 accountId: u("a1"),
                 percentage: 60,
-                condition: "always",
+                condition: "always" as const,
                 sortOrder: 1,
                 recipients: [
                   {
                     id: u("r2"),
-                    recipientKind: "family_member",
+                    recipientKind: "family_member" as const,
                     recipientId: u("f1"),
                     percentage: 100,
                     sortOrder: 0,
