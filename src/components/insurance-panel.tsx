@@ -175,6 +175,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
         <InsurancePolicyDialog
           clientId={props.clientId}
           accounts={props.accounts}
+          policies={props.policies}
           entities={props.entities}
           familyMembers={props.familyMembers}
           externalBeneficiaries={props.externalBeneficiaries}

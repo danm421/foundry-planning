@@ -1,0 +1,347 @@
+"use client";
+
+import type {
+  InsurancePanelAccount,
+  InsurancePanelEntity,
+} from "./insurance-panel";
+import type { PolicyFormState } from "./insurance-policy-dialog";
+
+interface InsurancePolicyDetailsTabProps {
+  state: PolicyFormState;
+  onChange: (patch: Partial<PolicyFormState>) => void;
+  accounts: InsurancePanelAccount[];
+  entities: InsurancePanelEntity[];
+  /** For edit mode — excludes self from the postPayoutMergeAccountId options. */
+  policyId?: string;
+}
+
+// Coerce a number input value → number. Empty string becomes 0.
+function toNumber(raw: string): number {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// Coerce a number input value → number | null. Empty string becomes null.
+function toNullableInt(raw: string): number | null {
+  if (raw.trim() === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.trunc(n) : null;
+}
+
+const inputCls =
+  "w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none";
+const labelCls = "mb-1 block text-xs font-medium text-gray-300";
+const helpCls = "mt-1 text-xs text-gray-500";
+const sectionCls = "border-t border-gray-800 pt-4 first:border-t-0 first:pt-0";
+const sectionTitleCls = "mb-3 text-sm font-semibold text-gray-200";
+const gridTwoCls = "grid grid-cols-1 gap-3 sm:grid-cols-2";
+
+export default function InsurancePolicyDetailsTab({
+  state,
+  onChange,
+  accounts,
+  entities,
+  policyId,
+}: InsurancePolicyDetailsTabProps) {
+  const isTerm = state.policyType === "term";
+  const trustEntities = entities.filter((e) => e.entityType === "trust");
+
+  // Post-payout options exclude life_insurance accounts and the policy itself.
+  const postPayoutOptions = accounts.filter(
+    (a) => a.category !== "life_insurance" && a.id !== policyId,
+  );
+
+  return (
+    <div className="flex flex-col gap-4 py-4">
+      {/* ── Basic info ─────────────────────────────────────────────── */}
+      <section className={sectionCls}>
+        <h3 className={sectionTitleCls}>Basic info</h3>
+        <div className={gridTwoCls}>
+          <label className="block">
+            <span className={labelCls}>Name</span>
+            <input
+              type="text"
+              required
+              value={state.name}
+              onChange={(e) => onChange({ name: e.target.value })}
+              className={inputCls}
+            />
+          </label>
+          <label className="block">
+            <span className={labelCls}>Policy type</span>
+            <select
+              value={state.policyType}
+              onChange={(e) =>
+                onChange({
+                  policyType: e.target.value as PolicyFormState["policyType"],
+                })
+              }
+              className={inputCls}
+            >
+              <option value="term">Term</option>
+              <option value="whole">Whole Life</option>
+              <option value="universal">Universal Life</option>
+              <option value="variable">Variable Life</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className={labelCls}>Insured person</span>
+            <select
+              value={state.insuredPerson}
+              onChange={(e) =>
+                onChange({
+                  insuredPerson: e.target.value as PolicyFormState["insuredPerson"],
+                })
+              }
+              className={inputCls}
+            >
+              <option value="client">Client</option>
+              <option value="spouse">Spouse</option>
+              <option value="joint">Joint</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className={labelCls}>Face value</span>
+            <input
+              type="number"
+              min={0}
+              step={1000}
+              required
+              value={state.faceValue}
+              onChange={(e) => onChange({ faceValue: toNumber(e.target.value) })}
+              className={inputCls}
+            />
+          </label>
+        </div>
+      </section>
+
+      {/* ── Ownership ──────────────────────────────────────────────── */}
+      <section className={sectionCls}>
+        <h3 className={sectionTitleCls}>Ownership</h3>
+        <div className={gridTwoCls}>
+          <label className="block">
+            <span className={labelCls}>Owner</span>
+            <select
+              value={state.owner}
+              onChange={(e) =>
+                onChange({ owner: e.target.value as PolicyFormState["owner"] })
+              }
+              className={inputCls}
+            >
+              <option value="client">Client</option>
+              <option value="spouse">Spouse</option>
+              <option value="joint">Joint</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className={labelCls}>Owning entity (trust)</span>
+            <select
+              value={state.ownerEntityId ?? ""}
+              onChange={(e) =>
+                onChange({ ownerEntityId: e.target.value || null })
+              }
+              disabled={trustEntities.length === 0}
+              className={inputCls}
+            >
+              <option value="">Individual owner</option>
+              {trustEntities.map((en) => (
+                <option key={en.id} value={en.id}>
+                  {en.name}
+                </option>
+              ))}
+            </select>
+            {trustEntities.length === 0 && (
+              <p className={helpCls}>No trusts available</p>
+            )}
+          </label>
+        </div>
+      </section>
+
+      {/* ── Premium & basis ────────────────────────────────────────── */}
+      <section className={sectionCls}>
+        <h3 className={sectionTitleCls}>Premium & basis</h3>
+        <div className={gridTwoCls}>
+          <label className="block">
+            <span className={labelCls}>Annual premium</span>
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={state.premiumAmount}
+              onChange={(e) =>
+                onChange({ premiumAmount: toNumber(e.target.value) })
+              }
+              className={inputCls}
+            />
+            <p className={helpCls}>Annual premium paid by the owner.</p>
+          </label>
+          <label className="block">
+            <span className={labelCls}>Premium payment years</span>
+            <input
+              type="number"
+              min={1}
+              value={state.premiumYears ?? ""}
+              onChange={(e) =>
+                onChange({ premiumYears: toNullableInt(e.target.value) })
+              }
+              className={inputCls}
+            />
+            <p className={helpCls}>Leave empty for ongoing.</p>
+          </label>
+          {!isTerm && (
+            <label className="block">
+              <span className={labelCls}>Cost basis</span>
+              <input
+                type="number"
+                min={0}
+                step={1000}
+                value={state.costBasis}
+                onChange={(e) =>
+                  onChange({ costBasis: toNumber(e.target.value) })
+                }
+                className={inputCls}
+              />
+              <p className={helpCls}>
+                Cumulative premiums paid (reduces taxable gain on surrender).
+              </p>
+            </label>
+          )}
+        </div>
+      </section>
+
+      {/* ── Cash value (permanent only) ────────────────────────────── */}
+      {!isTerm && (
+        <section className={sectionCls}>
+          <h3 className={sectionTitleCls}>Cash value</h3>
+          <label className="block">
+            <span className={labelCls}>Current cash value</span>
+            <input
+              type="number"
+              min={0}
+              step={1000}
+              value={state.cashValue}
+              onChange={(e) =>
+                onChange({ cashValue: toNumber(e.target.value) })
+              }
+              className={inputCls}
+            />
+            <p className={helpCls}>Current cash surrender value.</p>
+          </label>
+        </section>
+      )}
+
+      {/* ── Term fields ────────────────────────────────────────────── */}
+      {isTerm && (
+        <section className={sectionCls}>
+          <h3 className={sectionTitleCls}>Term policy</h3>
+          <div className="flex flex-col gap-3">
+            <label className="block max-w-xs">
+              <span className={labelCls}>Term issue year</span>
+              <input
+                type="number"
+                min={1900}
+                max={2200}
+                value={state.termIssueYear ?? ""}
+                onChange={(e) =>
+                  onChange({ termIssueYear: toNullableInt(e.target.value) })
+                }
+                className={inputCls}
+                required
+              />
+            </label>
+
+            <fieldset className="flex flex-col gap-2">
+              <legend className={labelCls}>Policy ends…</legend>
+              <label className="flex items-start gap-2 text-sm text-gray-200">
+                <input
+                  type="radio"
+                  name="term-end-mode"
+                  checked={state.endsAtInsuredRetirement === false}
+                  onChange={() => onChange({ endsAtInsuredRetirement: false })}
+                  className="mt-0.5"
+                />
+                <span>after a fixed number of years</span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-gray-200">
+                <input
+                  type="radio"
+                  name="term-end-mode"
+                  checked={state.endsAtInsuredRetirement === true}
+                  onChange={() =>
+                    onChange({
+                      endsAtInsuredRetirement: true,
+                      termLengthYears: null,
+                    })
+                  }
+                  className="mt-0.5"
+                />
+                <span>when the insured retires</span>
+              </label>
+            </fieldset>
+
+            {state.endsAtInsuredRetirement === false && (
+              <label className="block max-w-xs">
+                <span className={labelCls}>Term length (years)</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={state.termLengthYears ?? ""}
+                  onChange={(e) =>
+                    onChange({ termLengthYears: toNullableInt(e.target.value) })
+                  }
+                  className={inputCls}
+                />
+              </label>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ── Post-payout routing ────────────────────────────────────── */}
+      <section className={sectionCls}>
+        <h3 className={sectionTitleCls}>Post-payout routing</h3>
+        <p className="mb-3 text-xs text-gray-400">
+          When the policy pays out (death benefit for term, full surrender for
+          permanent), cash flows here.
+        </p>
+        <div className={gridTwoCls}>
+          <label className="block">
+            <span className={labelCls}>Merge into account</span>
+            <select
+              value={state.postPayoutMergeAccountId ?? ""}
+              onChange={(e) =>
+                onChange({ postPayoutMergeAccountId: e.target.value || null })
+              }
+              className={inputCls}
+            >
+              <option value="">Grow at rate below</option>
+              {postPayoutOptions.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className={labelCls}>Growth rate</span>
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.001}
+              value={state.postPayoutGrowthRate}
+              disabled={state.postPayoutMergeAccountId !== null}
+              onChange={(e) =>
+                onChange({ postPayoutGrowthRate: toNumber(e.target.value) })
+              }
+              className={inputCls}
+            />
+            <p className={helpCls}>
+              Growth rate (as a decimal — 0.06 = 6%).
+            </p>
+          </label>
+        </div>
+      </section>
+    </div>
+  );
+}
