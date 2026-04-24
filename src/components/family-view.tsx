@@ -836,6 +836,7 @@ export default function FamilyView({
           open={entityDialogOpen}
           onOpenChange={setEntityDialogOpen}
           editing={editingEntity}
+          createKind="trust"
           onSaved={(e, mode) => {
             if (mode === "create") setEntities((prev) => [...prev, e]);
             else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));
