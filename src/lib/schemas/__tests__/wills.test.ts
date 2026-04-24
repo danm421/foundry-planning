@@ -16,6 +16,7 @@ const spouseRecipient = {
 };
 
 const validBequest = {
+  kind: "asset" as const,
   name: "Brokerage to spouse",
   assetMode: "specific" as const,
   accountId: u("1"),
@@ -151,5 +152,98 @@ describe("willUpdateSchema", () => {
       bequests: [{ ...validBequest, accountId: null }],
     });
     expect(r.success).toBe(false);
+  });
+});
+
+describe("will bequest — liability kind", () => {
+  it("accepts a well-formed liability bequest", () => {
+    const input = {
+      kind: "liability",
+      name: "Visa CC",
+      liabilityId: "11111111-1111-1111-1111-111111111111",
+      condition: "always",
+      sortOrder: 0,
+      recipients: [
+        {
+          recipientKind: "family_member",
+          recipientId: "22222222-2222-2222-2222-222222222222",
+          percentage: 100,
+          sortOrder: 0,
+        },
+      ],
+    };
+    expect(willBequestSchema.parse(input)).toMatchObject({ kind: "liability" });
+  });
+
+  it("rejects external_beneficiary recipient on a liability bequest", () => {
+    const input = {
+      kind: "liability",
+      name: "Visa CC",
+      liabilityId: "11111111-1111-1111-1111-111111111111",
+      condition: "always",
+      sortOrder: 0,
+      recipients: [
+        {
+          recipientKind: "external_beneficiary",
+          recipientId: "33333333-3333-3333-3333-333333333333",
+          percentage: 100,
+          sortOrder: 0,
+        },
+      ],
+    };
+    expect(() => willBequestSchema.parse(input)).toThrow(/recipient kind must be one of/);
+  });
+
+  it("rejects condition other than 'always' on a liability bequest", () => {
+    const input = {
+      kind: "liability",
+      name: "Visa CC",
+      liabilityId: "11111111-1111-1111-1111-111111111111",
+      condition: "if_spouse_survives",
+      sortOrder: 0,
+      recipients: [
+        {
+          recipientKind: "family_member",
+          recipientId: "22222222-2222-2222-2222-222222222222",
+          percentage: 100,
+          sortOrder: 0,
+        },
+      ],
+    };
+    expect(() => willBequestSchema.parse(input)).toThrow();
+  });
+
+  it("accepts partial recipient sum (0 < Σ ≤ 100)", () => {
+    const input = {
+      kind: "liability",
+      name: "Visa CC",
+      liabilityId: "11111111-1111-1111-1111-111111111111",
+      condition: "always",
+      sortOrder: 0,
+      recipients: [
+        {
+          recipientKind: "family_member",
+          recipientId: "22222222-2222-2222-2222-222222222222",
+          percentage: 60,
+          sortOrder: 0,
+        },
+      ],
+    };
+    expect(willBequestSchema.parse(input)).toMatchObject({ kind: "liability" });
+  });
+
+  it("rejects Σ > 100", () => {
+    const input = {
+      kind: "liability",
+      name: "Visa CC",
+      liabilityId: "11111111-1111-1111-1111-111111111111",
+      condition: "always",
+      sortOrder: 0,
+      recipients: [
+        { recipientKind: "family_member", recipientId: "22222222-2222-2222-2222-222222222222", percentage: 80, sortOrder: 0 },
+        { recipientKind: "family_member", recipientId: "44444444-4444-4444-4444-444444444444", percentage: 80, sortOrder: 1 },
+      ],
+    };
+    expect(() => willBequestSchema.parse(input)).toThrow(/0 < sum ≤ 100/);
   });
 });

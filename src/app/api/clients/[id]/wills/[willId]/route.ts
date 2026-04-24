@@ -136,11 +136,10 @@ export async function PATCH(
           .values({
             willId,
             name: b.name,
-            // TODO(4e-Task3): discriminated-union Zod schema will populate this from request body.
-            kind: "asset",
-            assetMode: b.assetMode,
-            accountId: b.accountId ?? null,
-            liabilityId: null,
+            kind: b.kind,
+            assetMode: b.kind === "asset" ? b.assetMode : null,
+            accountId: b.kind === "asset" ? (b.accountId ?? null) : null,
+            liabilityId: b.kind === "liability" ? b.liabilityId : null,
             percentage: String(b.percentage),
             condition: b.condition,
             sortOrder: b.sortOrder,

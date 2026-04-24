@@ -23,7 +23,7 @@ export function gatherCrossRefs(bequests: WillBequestInput[]): CrossRefCheck {
     entityIds: [],
   };
   for (const b of bequests) {
-    if (b.accountId) check.accountIds.push(b.accountId);
+    if (b.kind === "asset" && b.accountId) check.accountIds.push(b.accountId);
     for (const r of b.recipients) {
       if (!r.recipientId) continue;
       if (r.recipientKind === "family_member") check.familyMemberIds.push(r.recipientId);
@@ -91,7 +91,7 @@ export async function verifyCrossRefs(
 export function computeSoftWarnings(bequests: WillBequestInput[]): string[] {
   const byKey = new Map<string, number>();
   for (const b of bequests) {
-    if (b.assetMode !== "specific" || !b.accountId) continue;
+    if (b.kind !== "asset" || b.assetMode !== "specific" || !b.accountId) continue;
     const key = `${b.accountId}|${b.condition}`;
     byKey.set(key, (byKey.get(key) ?? 0) + b.percentage);
   }
