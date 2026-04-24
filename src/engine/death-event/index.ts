@@ -14,6 +14,7 @@ export {
   distributeUnlinkedLiabilities,
   effectiveFilingStatus,
   firesAtDeath,
+  runPourOut,
   type DeathEventInput,
   type DeathEventResult,
   type OwnerMutation,

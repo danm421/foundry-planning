@@ -787,6 +787,18 @@ describe("applyFirstDeath orchestrator", () => {
     familyMembers: fams,
     externalBeneficiaries: [],
     entities: [],
+    planSettings: {
+      flatFederalRate: 0,
+      flatStateRate: 0,
+      inflationRate: 0.025,
+      planStartYear: 2026,
+      planEndYear: 2080,
+      estateAdminExpenses: 0,
+      flatStateEstateRate: 0,
+    },
+    gifts: [],
+    annualExclusionsByYear: {},
+    dsueReceived: 0,
   };
 
   it("joint account titles to survivor; IRA beneficiary-designates; residual sweeps to spouse", () => {
@@ -1032,6 +1044,18 @@ describe("applyFinalDeath orchestrator", () => {
       familyMembers: over.familyMembers ?? [],
       externalBeneficiaries: over.externalBeneficiaries ?? [],
       entities: over.entities ?? [],
+      planSettings: over.planSettings ?? {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0.025,
+        planStartYear: 2026,
+        planEndYear: 2080,
+        estateAdminExpenses: 0,
+        flatStateEstateRate: 0,
+      },
+      gifts: over.gifts ?? [],
+      annualExclusionsByYear: over.annualExclusionsByYear ?? {},
+      dsueReceived: over.dsueReceived ?? 0,
       ...over,
     };
   };

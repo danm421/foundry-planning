@@ -1,5 +1,6 @@
 import type {
-  Account, Liability, DeathTransfer, Will,
+  Account, Liability, DeathTransfer, Will, Income, EntitySummary,
+  EstateTaxResult,
 } from "../types";
 import {
   applyBeneficiaryDesignations,
@@ -8,15 +9,35 @@ import {
   applyTitling,
   applyWillAllAssetsResidual,
   applyWillSpecificBequests,
+  runPourOut,
   type DeathEventInput,
   type DeathEventResult,
 } from "./shared";
+import {
+  buildEstateTaxResult,
+  computeDeductions,
+  computeGrossEstate,
+} from "./estate-tax";
+import { applyGrantorSuccession } from "./grantor-succession";
+import { drainLiquidAssets } from "./creditor-payoff";
+import { beaForYear } from "@/lib/tax/estate";
+import { computeAdjustedTaxableGifts } from "@/lib/estate/adjusted-taxable-gifts";
 
-/** Orchestrator. Applies the precedence chain (titling → bene-designations →
- *  will → fallback) to every account touched by the deceased, and clips the
- *  deceased's personal income streams. Returns fully-updated engine state +
- *  a transfer ledger + any warnings. */
-export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
+interface FirstDeathChainResult {
+  accounts: Account[];
+  accountBalances: Record<string, number>;
+  basisMap: Record<string, number>;
+  incomes: Income[];
+  liabilities: Liability[];
+  transfers: DeathTransfer[];
+  warnings: string[];
+}
+
+/** Phase 1 — the 4b precedence chain (titling → bene-designations → will →
+ *  fallback) run against every account touched by the deceased. Returns the
+ *  raw post-chain state; the 4d orchestrator layers gross-estate, tax, drain,
+ *  grantor-succession, and pour-out on top. */
+function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainResult {
   const {
     year, deceased, survivor, will,
     accounts, accountBalances, basisMap,
@@ -158,7 +179,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   // Income termination
   const nextIncomes = applyIncomeTermination(incomes, deceased, survivor, year);
 
-  const result: DeathEventResult = {
+  return {
     accounts: nextAccounts,
     accountBalances: nextAccountBalances,
     basisMap: nextBasisMap,
@@ -167,18 +188,195 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     transfers,
     warnings,
   };
-
-  assertInvariants(result, input);
-
-  return result;
 }
 
-/** Post-event invariant checks. Violations indicate a routing bug. */
-function assertInvariants(result: DeathEventResult, input: DeathEventInput): void {
+/** 4d-1 orchestrator. Wraps the precedence chain with:
+ *    · grantor-succession compute (Phase 2)
+ *    · gross-estate builder (Phase 3) — reads pre-flip state
+ *    · deduction stack (Phase 4)
+ *    · estate-tax compute-then-drain (Phases 5 & 8) on non-marital residuary
+ *    · grantor-succession apply + pour-out (Phases 9-10)
+ *    · final EstateTaxResult with drain debits populated (Phase 11)
+ *  No creditor-payoff at first death. */
+export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
+  // Phase 1 — 4b precedence chain. Capture its transfer ledger + state.
+  const chainResult = runFirstDeathPrecedenceChain(input);
+
+  // Phase 2 — compute grantor-succession updates (not yet applied).
+  const succession = applyGrantorSuccession({
+    deceased: input.deceased,
+    entities: input.entities,
+  });
+
+  // Phase 3 — gross estate (reads un-mutated entities).
+  const gross = computeGrossEstate({
+    deceased: input.deceased,
+    deathOrder: 1,
+    accounts: chainResult.accounts,
+    accountBalances: chainResult.accountBalances,
+    liabilities: chainResult.liabilities,
+    entities: input.entities,
+  });
+
+  // Phase 4 — deductions (marital + charitable + admin).
+  const deductions = computeDeductions({
+    transferLedger: chainResult.transfers,
+    externalBeneficiaries: input.externalBeneficiaries,
+    planSettings: input.planSettings,
+    deathOrder: 1,
+  });
+
+  // Phase 5 — tax computation. Preview first so we know the drain amount,
+  // then rebuild after drains with the debits populated. buildEstateTaxResult
+  // is pure, so calling it twice is safe.
+  const adjustedGifts = computeAdjustedTaxableGifts(
+    input.deceased,
+    input.gifts,
+    input.entities,
+    input.annualExclusionsByYear,
+  );
+  const taxInflation =
+    input.planSettings.taxInflationRate ?? input.planSettings.inflationRate ?? 0;
+  const beaAtDeathYear = beaForYear(input.year, taxInflation);
+
+  const preview = buildEstateTaxResult({
+    year: input.year,
+    deathOrder: 1,
+    deceased: input.deceased,
+    gross,
+    deductions,
+    adjustedTaxableGifts: adjustedGifts,
+    lifetimeGiftTaxAdjustment: 0,
+    beaAtDeathYear,
+    dsueReceived: input.dsueReceived,
+    stateEstateTaxRate: input.planSettings.flatStateEstateRate ?? 0,
+    estateTaxDebits: [],
+    creditorPayoffDebits: [],
+    creditorPayoffResidual: 0,
+  });
+
+  // Phase 8 — estate-tax drain on non-marital residuary. Marital accounts
+  // (those produced by a transfer with recipientKind === "spouse") are
+  // excluded so the marital deduction isn't clawed back by the drain.
+  const maritalAccountIds = new Set(
+    chainResult.transfers
+      .filter((t) => t.recipientKind === "spouse" && t.resultingAccountId != null)
+      .map((t) => t.resultingAccountId as string),
+  );
+
+  const accountBalances = { ...chainResult.accountBalances };
+  const estateTaxDrain = drainLiquidAssets({
+    amountNeeded: preview.totalTaxesAndExpenses,
+    accounts: chainResult.accounts,
+    accountBalances,
+    eligibilityFilter: (a) => {
+      if (maritalAccountIds.has(a.id)) return false;
+      if (a.ownerFamilyMemberId) return false;
+      if (a.ownerEntityId) {
+        const ent = input.entities.find((e) => e.id === a.ownerEntityId);
+        if (!ent) return false;
+        if (ent.isIrrevocable) return false;
+        if (ent.grantor !== input.deceased) return false;
+        return true;
+      }
+      return a.owner === input.deceased;
+    },
+  });
+
+  const warnings = [...chainResult.warnings, ...succession.warnings];
+  for (const debit of estateTaxDrain.debits) {
+    accountBalances[debit.accountId] =
+      (accountBalances[debit.accountId] ?? 0) - debit.amount;
+    const a = chainResult.accounts.find((x) => x.id === debit.accountId);
+    if (a && a.category === "retirement") {
+      warnings.push(`retirement_estate_drain: ${a.id}`);
+    }
+  }
+  if (estateTaxDrain.residual > 0) {
+    warnings.push(`estate_tax_insufficient_liquid: ${estateTaxDrain.residual.toFixed(2)}`);
+  }
+
+  // Phase 9 — apply grantor-succession updates now.
+  const mutatedEntities = input.entities.map((e) => {
+    const upd = succession.entityUpdates.find((u) => u.entityId === e.id);
+    if (!upd) return e;
+    return {
+      ...e,
+      ...(upd.isGrantor !== undefined ? { isGrantor: upd.isGrantor } : {}),
+      ...(upd.isIrrevocable !== undefined ? { isIrrevocable: upd.isIrrevocable } : {}),
+      ...(upd.grantor !== undefined ? { grantor: upd.grantor ?? undefined } : {}),
+    };
+  });
+
+  // Phase 10 — pour-out distribution (stubbed; the common empty-queue path
+  // is handled inline by runPourOut).
+  let ledger = [...chainResult.transfers];
+  let pouredLiabs = [...chainResult.liabilities];
+  if (succession.pourOutQueue.length > 0) {
+    const pourOut = runPourOut({
+      queue: succession.pourOutQueue,
+      deceased: input.deceased,
+      deathOrder: 1,
+      accounts: chainResult.accounts,
+      accountBalances,
+      liabilities: pouredLiabs,
+      familyMembers: input.familyMembers,
+      externalBeneficiaries: input.externalBeneficiaries,
+      entities: mutatedEntities,
+      year: input.year,
+    });
+    ledger = ledger.concat(pourOut.transfers);
+    pouredLiabs = pourOut.liabilities;
+    warnings.push(...pourOut.warnings);
+  }
+
+  // Phase 11 — final EstateTaxResult with drain debits populated.
+  const estateTax = buildEstateTaxResult({
+    year: input.year,
+    deathOrder: 1,
+    deceased: input.deceased,
+    gross,
+    deductions,
+    adjustedTaxableGifts: adjustedGifts,
+    lifetimeGiftTaxAdjustment: 0,
+    beaAtDeathYear,
+    dsueReceived: input.dsueReceived,
+    stateEstateTaxRate: input.planSettings.flatStateEstateRate ?? 0,
+    estateTaxDebits: estateTaxDrain.debits,
+    creditorPayoffDebits: [],
+    creditorPayoffResidual: 0,
+  });
+
+  assertFirstDeathInvariants(estateTax, mutatedEntities, input.deceased);
+  assertPrecedenceChainInvariants({
+    transfers: chainResult.transfers,
+    accounts: chainResult.accounts,
+    incomes: chainResult.incomes,
+  }, input);
+
+  return {
+    accounts: chainResult.accounts,
+    accountBalances,
+    basisMap: chainResult.basisMap,
+    incomes: chainResult.incomes,
+    liabilities: pouredLiabs,
+    transfers: ledger,
+    warnings,
+    estateTax,
+    dsueGenerated: estateTax.dsueGenerated,
+  };
+}
+
+/** Post-event invariant checks on the 4b-era precedence chain output.
+ *  Carried over from the pre-4d body. Violations indicate a routing bug. */
+function assertPrecedenceChainInvariants(
+  chain: { transfers: DeathTransfer[]; accounts: Account[]; incomes: Income[] },
+  input: DeathEventInput,
+): void {
   // 1. Sum of ledger amounts grouped by source = each source's pre-death value
   //    (skip liability-only transfers which have null sourceAccountId)
   const bySource = new Map<string, number>();
-  for (const t of result.transfers) {
+  for (const t of chain.transfers) {
     if (t.sourceAccountId == null) continue;
     bySource.set(t.sourceAccountId, (bySource.get(t.sourceAccountId) ?? 0) + t.amount);
   }
@@ -192,7 +390,7 @@ function assertInvariants(result: DeathEventResult, input: DeathEventInput): voi
     }
   }
   // 2. No deceased-owner orphan accounts (no entity/family-member tag, owner = deceased)
-  for (const a of result.accounts) {
+  for (const a of chain.accounts) {
     if (
       a.owner === input.deceased &&
       !a.ownerEntityId &&
@@ -204,7 +402,7 @@ function assertInvariants(result: DeathEventResult, input: DeathEventInput): voi
     }
   }
   // 3. No personal (non-entity) deceased-owner incomes active after deathYear
-  for (const inc of result.incomes) {
+  for (const inc of chain.incomes) {
     if (
       !inc.ownerEntityId &&
       inc.owner === input.deceased &&
@@ -213,6 +411,30 @@ function assertInvariants(result: DeathEventResult, input: DeathEventInput): voi
       throw new Error(
         `applyFirstDeath invariant: income ${inc.id} still active after death year`,
       );
+    }
+  }
+}
+
+/** 4d-specific invariants on the estate-tax result + post-succession entity state. */
+function assertFirstDeathInvariants(
+  estateTax: EstateTaxResult,
+  entities: EntitySummary[],
+  deceased: "client" | "spouse",
+): void {
+  if (estateTax.grossEstate < 0) throw new Error("first-death: gross estate negative");
+  if (estateTax.taxableEstate < 0) throw new Error("first-death: taxable estate negative");
+  if (estateTax.federalEstateTax < 0) throw new Error("first-death: federal tax negative");
+  if (estateTax.stateEstateTax < 0) throw new Error("first-death: state tax negative");
+  if (estateTax.dsueGenerated < 0) throw new Error("first-death: dsue negative");
+  if (estateTax.applicableExclusion !== estateTax.beaAtDeathYear + estateTax.dsueReceived) {
+    throw new Error("first-death: applicableExclusion drift");
+  }
+  for (const e of entities) {
+    if (e.isIrrevocable && e.isGrantor && e.grantor === deceased) {
+      throw new Error(`first-death: post-event entity ${e.id} still grantor-flipped for deceased`);
+    }
+    if (!e.isIrrevocable && e.grantor === deceased) {
+      throw new Error(`first-death: revocable entity ${e.id} grantor=deceased was not flipped`);
     }
   }
 }

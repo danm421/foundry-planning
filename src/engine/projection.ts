@@ -1494,6 +1494,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         familyMembers: data.familyMembers ?? [],
         externalBeneficiaries: [], // populated once the projection-data loader includes them; see future-work
         entities: data.entities ?? [],
+        planSettings,
+        gifts: data.gifts ?? [],
+        annualExclusionsByYear: {}, // TODO(Task 11): thread per-year §2503(b) exclusions
+        dsueReceived: 0,
       });
 
       workingAccounts = deathResult.accounts;
@@ -1539,6 +1543,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         familyMembers: data.familyMembers ?? [],
         externalBeneficiaries: [],
         entities: data.entities ?? [],
+        planSettings,
+        gifts: data.gifts ?? [],
+        annualExclusionsByYear: {}, // TODO(Task 11): thread per-year §2503(b) exclusions
+        // TODO(Task 11): thread DSUE from first-death result
+        dsueReceived: 0,
       });
 
       workingAccounts = finalResult.accounts;

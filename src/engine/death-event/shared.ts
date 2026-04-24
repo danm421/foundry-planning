@@ -1,4 +1,4 @@
-import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, FamilyMember, Will, WillBequest, EntitySummary, Income } from "../types";
+import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, FamilyMember, Will, WillBequest, EntitySummary, Income, PlanSettings, Gift, BeneficiaryRef } from "../types";
 import { nextSyntheticId } from "../asset-transactions";
 import type { FilingStatus } from "../../lib/tax/types";
 
@@ -821,6 +821,13 @@ export interface DeathEventInput {
   familyMembers: FamilyMember[];
   externalBeneficiaries: ExternalBeneficiarySummary[];
   entities: EntitySummary[];
+  /** 4d-1 additions — estate-tax pipeline inputs. */
+  planSettings: PlanSettings;
+  gifts: Gift[];
+  annualExclusionsByYear: Record<number, number>;
+  /** Stashed DSUE from a prior first-death event. 0 at first death;
+   *  survivor's DSUE balance at final death. */
+  dsueReceived: number;
 }
 
 export interface DeathEventResult {
@@ -949,4 +956,35 @@ export function applyFallback(
     },
     warnings,
   };
+}
+
+export interface RunPourOutInput {
+  queue: Array<{ entityId: string; trustBeneficiaries: BeneficiaryRef[] }>;
+  deceased: "client" | "spouse";
+  deathOrder: 1 | 2;
+  accounts: Account[];
+  accountBalances: Record<string, number>;
+  liabilities: Liability[];
+  familyMembers: FamilyMember[];
+  externalBeneficiaries: ExternalBeneficiarySummary[];
+  entities: EntitySummary[];
+  year: number;
+}
+
+export interface RunPourOutResult {
+  transfers: DeathTransfer[];
+  liabilities: Liability[];
+  warnings: string[];
+}
+
+/** Stub for trust pour-out distribution. Task 10 (final-death orchestrator)
+ *  replaces this with the real implementation. At first death, the pour-out
+ *  queue is typically empty — only revocable trusts with `grantor === deceased`
+ *  produce entries, and those would be a rare edge case. Throws for any
+ *  non-empty queue so callers can't silently drop work. */
+export function runPourOut(input: RunPourOutInput): RunPourOutResult {
+  if (input.queue.length === 0) {
+    return { transfers: [], liabilities: input.liabilities, warnings: [] };
+  }
+  throw new Error("runPourOut not implemented yet — Task 10");
 }
