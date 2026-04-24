@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
-import { buildClientData, basePlanSettings, baseClient, sampleExpenses } from "./fixtures";
+import { buildClientData, basePlanSettings, baseClient, sampleExpenses, sampleAccounts } from "./fixtures";
 import type { TaxYearParameters } from "../../lib/tax/types";
 import type { ClientData, ClientInfo, Account, PlanSettings } from "../types";
 
@@ -1765,5 +1765,133 @@ describe("runProjection — final-death event (spec 4c)", () => {
     expect(liabEntries?.length).toBe(2);  // one per child
     // At most one entry per child, both with via unlinked_liability_proportional.
     expect(liabEntries?.every((t) => t.deathOrder === 2)).toBe(true);
+  });
+});
+
+describe("4d-2: hypotheticalEstateTax", () => {
+  // Married fixture: reuse the file-wide buildClientData() default, which is
+  // married_joint (John + Jane Smith) with no in-horizon death.
+  const buildMarriedInput = () => buildClientData();
+
+  // Married fixture with in-horizon deaths — needed for the coexistence test.
+  // Mirrors the shape used by the spec-4c block above.
+  const buildMarriedWithDeathsInput = (): ClientData => {
+    const twoSpouseClient: ClientInfo = {
+      firstName: "Tom", lastName: "Test",
+      dateOfBirth: "1970-01-01",
+      retirementAge: 65, planEndAge: 95,
+      filingStatus: "married_joint",
+      lifeExpectancy: 75,          // dies 2045 (first death)
+      spouseDob: "1972-01-01",
+      spouseLifeExpectancy: 80,    // dies 2052 (final death)
+    };
+    const planSettings: PlanSettings = {
+      ...basePlanSettings,
+      planStartYear: 2026,
+      planEndYear: 2066,
+      inflationRate: 0.025,
+      flatFederalRate: 0,
+      flatStateRate: 0,
+    };
+    return buildClientData({
+      client: twoSpouseClient,
+      planSettings,
+      accounts: [{
+        id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
+        owner: "client", value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+      }],
+      familyMembers: [
+        { id: "c1", relationship: "child", firstName: "Child", lastName: null, dateOfBirth: null },
+      ],
+    });
+  };
+
+  // Single-filer fixture — start from the married default and strip
+  // spouse-specific fields so filingStatus='single' is coherent.
+  const buildSingleFilerInput = (): ClientData => {
+    const soloClient: ClientInfo = {
+      firstName: "Solo",
+      lastName: "Test",
+      dateOfBirth: "1970-01-01",
+      retirementAge: 65,
+      planEndAge: 90,
+      filingStatus: "single",
+    };
+    return buildClientData({
+      client: soloClient,
+      // Drop spouse-owned accounts/incomes so single-filer is internally
+      // consistent (no "spouse" owners floating around).
+      accounts: sampleAccounts.filter((a) => a.owner !== "spouse"),
+      incomes: [
+        {
+          id: "inc-salary-solo",
+          type: "salary",
+          name: "Solo Salary",
+          annualAmount: 150000,
+          startYear: 2026,
+          endYear: 2035,
+          growthRate: 0.03,
+          owner: "client",
+        },
+      ],
+    });
+  };
+
+  it("attaches to every year of a married projection with both orderings", () => {
+    const input = buildMarriedInput();
+    const result = runProjection(input);
+
+    expect(result.length).toBeGreaterThan(5);
+    for (const year of result) {
+      expect(year.hypotheticalEstateTax).toBeDefined();
+      expect(year.hypotheticalEstateTax.year).toBe(year.year);
+      expect(year.hypotheticalEstateTax.primaryFirst).toBeDefined();
+      expect(year.hypotheticalEstateTax.primaryFirst.firstDecedent).toBe("client");
+      expect(year.hypotheticalEstateTax.spouseFirst).toBeDefined();
+      expect(year.hypotheticalEstateTax.spouseFirst!.firstDecedent).toBe("spouse");
+    }
+  });
+
+  it("attaches to every year of a single-filer projection with no spouseFirst", () => {
+    const input = buildSingleFilerInput();
+    const result = runProjection(input);
+
+    expect(result.length).toBeGreaterThan(5);
+    for (const year of result) {
+      expect(year.hypotheticalEstateTax).toBeDefined();
+      expect(year.hypotheticalEstateTax.primaryFirst).toBeDefined();
+      expect(year.hypotheticalEstateTax.primaryFirst.finalDeath).toBeUndefined();
+      expect(year.hypotheticalEstateTax.spouseFirst).toBeUndefined();
+    }
+  });
+
+  it("coexists with real estateTax on real death-event years", () => {
+    const input = buildMarriedWithDeathsInput();
+    const result = runProjection(input);
+
+    const realDeathYears = result.filter((y) => y.estateTax != null);
+    // 4d-1 emits exactly two real death-event years for a standard married
+    // fixture (first death, final death). If the fixture places only one
+    // death inside the plan horizon, relax this to >= 1.
+    expect(realDeathYears.length).toBeGreaterThanOrEqual(1);
+    for (const year of realDeathYears) {
+      expect(year.hypotheticalEstateTax).toBeDefined();
+      expect(year.estateTax).toBeDefined();
+    }
+  });
+
+  it("year-N hypothetical reflects year-N balances (growth over time)", () => {
+    const input = buildMarriedInput();
+    const result = runProjection(input);
+
+    const firstYear = result[0];
+    const midYear = result[Math.min(10, result.length - 1)];
+
+    // On a growing portfolio, gross estate should be non-decreasing between
+    // year 0 and year ~10 (growth outpaces any draws in typical fixtures).
+    // Use primaryFirst's first-death gross estate for the comparison.
+    expect(midYear.hypotheticalEstateTax.primaryFirst.firstDeath.grossEstate).toBeGreaterThanOrEqual(
+      firstYear.hypotheticalEstateTax.primaryFirst.firstDeath.grossEstate,
+    );
   });
 });
