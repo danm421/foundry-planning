@@ -25,7 +25,7 @@ npx drizzle-kit migrate    # apply migrations
 
 ### Database tooling
 
-Direct DB access via the Neon MCP (`mcp__plugin_neon_neon__*`) — prefer it over ad-hoc psql scripts:
+Direct DB access via the Neon MCP (`mcp__Neon__*`, remote server at `https://mcp.neon.tech/mcp`) — prefer it over ad-hoc psql scripts:
 
 - `run_sql` / `run_sql_transaction` — query against current branch
 - `prepare_database_migration` → `complete_database_migration` — staged migration with preview (complements `drizzle-kit`, doesn't replace it)
@@ -116,7 +116,7 @@ All specs, plans, future-work, and handoffs go to the Obsidian vault at
 - **Organization scoping.** All mutations go through `authz.ts` / `db-scoping.ts`; audit everything via `audit.ts`. Don't write ad-hoc queries that bypass org scoping.
 - **Drizzle migrations** live in `src/db/migrations/`. Numbered sequentially — the `run-migration-0020.ts` pattern is for one-offs that can't be expressed in drizzle-kit output.
 - **Dates are absolute.** Today's date comes from the session context; when you write it into plans/future-work, use `YYYY-MM-DD`, not "Tuesday" or "tomorrow".
-- **Prefer Neon MCP over psql scripts** for one-off DB inspection. `mcp__plugin_neon_neon__run_sql` against the current branch is safer and leaves a clean tool-call trail.
+- **Prefer Neon MCP over psql scripts** for one-off DB inspection. `mcp__Neon__run_sql` against the current branch is safer and leaves a clean tool-call trail.
 
 ## Tracking deferred work
 
