@@ -267,6 +267,8 @@ export default async function AssumptionsPage({ params }: PageProps) {
         settings={{
           flatFederalRate: String(settings.flatFederalRate),
           flatStateRate: String(settings.flatStateRate),
+          estateAdminExpenses: String(settings.estateAdminExpenses),
+          flatStateEstateRate: String(settings.flatStateEstateRate),
           inflationRate: String(settings.inflationRate),
           inflationRateSource: settings.inflationRateSource,
           planStartYear: settings.planStartYear,

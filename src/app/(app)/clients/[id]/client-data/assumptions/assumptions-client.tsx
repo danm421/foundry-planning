@@ -39,6 +39,8 @@ export interface DeductionsTabData {
 export interface AssumptionsSettings {
   flatFederalRate: string;
   flatStateRate: string;
+  estateAdminExpenses: string;
+  flatStateEstateRate: string;
   inflationRate: string;
   inflationRateSource: "asset_class" | "custom";
   planStartYear: number;
@@ -112,6 +114,8 @@ export default function AssumptionsClient({
             clientId={clientId}
             flatFederalRate={settings.flatFederalRate}
             flatStateRate={settings.flatStateRate}
+            estateAdminExpenses={settings.estateAdminExpenses}
+            flatStateEstateRate={settings.flatStateEstateRate}
             initialMode={settings.taxEngineMode}
           />
         )}
