@@ -17,7 +17,13 @@ export interface ClientFormInitial {
   spouseDob?: string | null;
   spouseRetirementAge?: number | null;
   spouseLifeExpectancy?: number | null;
+  email?: string | null;
+  address?: string | null;
+  spouseEmail?: string | null;
+  spouseAddress?: string | null;
 }
+
+type FormTab = "details" | "contact";
 
 interface AddClientFormProps {
   mode?: "create" | "edit";
@@ -37,6 +43,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSpouse, setShowSpouse] = useState(Boolean(initial?.spouseName || initial?.spouseDob));
+  const [activeTab, setActiveTab] = useState<FormTab>("details");
 
   const isEdit = mode === "edit" && initial;
 
@@ -55,6 +62,8 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
       retirementAge: Number(data.get("retirementAge")),
       lifeExpectancy: Number(data.get("lifeExpectancy")),
       filingStatus: data.get("filingStatus") as string,
+      email: (data.get("email") as string) || null,
+      address: (data.get("address") as string) || null,
     };
 
     if (showSpouse) {
@@ -63,18 +72,24 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
       const spouseDob = data.get("spouseDob") as string;
       const spouseRetirementAge = data.get("spouseRetirementAge") as string;
       const spouseLifeExpectancy = data.get("spouseLifeExpectancy") as string;
+      const spouseEmail = data.get("spouseEmail") as string;
+      const spouseAddress = data.get("spouseAddress") as string;
 
       body.spouseName = spouseName || null;
       body.spouseLastName = spouseLastName || null;
       body.spouseDob = spouseDob || null;
       body.spouseRetirementAge = spouseRetirementAge ? Number(spouseRetirementAge) : null;
       body.spouseLifeExpectancy = spouseLifeExpectancy ? Number(spouseLifeExpectancy) : null;
+      body.spouseEmail = spouseEmail || null;
+      body.spouseAddress = spouseAddress || null;
     } else if (isEdit) {
       body.spouseName = null;
       body.spouseLastName = null;
       body.spouseDob = null;
       body.spouseRetirementAge = null;
       body.spouseLifeExpectancy = null;
+      body.spouseEmail = null;
+      body.spouseAddress = null;
     }
 
     try {
@@ -106,6 +121,16 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
         <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
       )}
 
+      <nav className="-mt-2 flex gap-1 border-b border-gray-700" role="tablist" aria-label="Client form sections">
+        <TabButton active={activeTab === "details"} onClick={() => setActiveTab("details")}>
+          Details
+        </TabButton>
+        <TabButton active={activeTab === "contact"} onClick={() => setActiveTab("contact")}>
+          Contact
+        </TabButton>
+      </nav>
+
+      <div role="tabpanel" hidden={activeTab !== "details"} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-300" htmlFor="firstName">
@@ -290,6 +315,68 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
           </div>
         )}
       </div>
+      </div>
+
+      <div role="tabpanel" hidden={activeTab !== "contact"} className="space-y-4">
+        <div>
+          <h3 className="text-sm font-medium text-gray-300">Client</h3>
+          <div className="mt-2 space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-300" htmlFor="email">Email</label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                defaultValue={initial?.email ?? ""}
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300" htmlFor="address">Address</label>
+              <textarea
+                id="address"
+                name="address"
+                rows={2}
+                defaultValue={initial?.address ?? ""}
+                placeholder="Street, City, State ZIP"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+        </div>
+
+        {showSpouse && (
+          <div className="border-t border-gray-700 pt-4">
+            <h3 className="text-sm font-medium text-gray-300">Spouse</h3>
+            <div className="mt-2 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="spouseEmail">Spouse Email</label>
+                <input
+                  id="spouseEmail"
+                  name="spouseEmail"
+                  type="email"
+                  defaultValue={initial?.spouseEmail ?? ""}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300" htmlFor="spouseAddress">Spouse Address</label>
+                <textarea
+                  id="spouseAddress"
+                  name="spouseAddress"
+                  rows={2}
+                  defaultValue={initial?.spouseAddress ?? ""}
+                  placeholder="Leave blank if same as client"
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+        {!showSpouse && (
+          <p className="text-xs text-gray-500">Add a spouse on the Details tab to enter separate spouse contact info.</p>
+        )}
+      </div>
 
       <div className="flex items-center justify-between pt-2">
         {isEdit && onDelete ? (
@@ -312,5 +399,31 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
         </button>
       </div>
     </form>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+        active
+          ? "border-blue-500 text-gray-100"
+          : "border-transparent text-gray-400 hover:text-gray-200"
+      }`}
+    >
+      {children}
+    </button>
   );
 }

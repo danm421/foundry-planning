@@ -49,4 +49,41 @@ describe("buildTimeline", () => {
     const events = buildTimeline(data, []);
     expect(events).toEqual([]);
   });
+
+  it("dedupes multiple ss_begin income events for the same subject down to one", () => {
+    // Advisor data: two spouse SS incomes (e.g., retirement + spousal benefit),
+    // neither with claimingAge — so the Life detector does NOT fire a ss_claim
+    // event and the income detector previously emitted both rows to the timeline.
+    const base = buildClientData();
+    const data = {
+      ...base,
+      incomes: [
+        ...base.incomes,
+        {
+          id: "inc-ss-jane-retire",
+          type: "social_security" as const,
+          name: "Jane SS retirement",
+          annualAmount: 24000,
+          startYear: 2032,
+          endYear: 2055,
+          growthRate: 0.02,
+          owner: "spouse" as const,
+        },
+        {
+          id: "inc-ss-jane-spousal",
+          type: "social_security" as const,
+          name: "Jane SS spousal",
+          annualAmount: 12000,
+          startYear: 2032,
+          endYear: 2055,
+          growthRate: 0.02,
+          owner: "spouse" as const,
+        },
+      ],
+    };
+    const projection = runProjection(data);
+    const events = buildTimeline(data, projection);
+    const spouseSs = events.filter((e) => e.subject === "spouse" && e.id.startsWith("income:ss_begin:"));
+    expect(spouseSs).toHaveLength(1);
+  });
 });
