@@ -50,6 +50,10 @@ export interface AccountFormInitial {
   overridePctLtCg?: string | null;
   overridePctQdiv?: string | null;
   overridePctTaxExempt?: string | null;
+  /** When true, the account is the auto-provisioned household cash account
+   * and cannot be deleted (the projection engine uses it as the default
+   * deposit/expense target). */
+  isDefaultChecking?: boolean;
 }
 
 export interface ModelPortfolioOption {
@@ -1039,7 +1043,7 @@ export default function AddAccountForm({
       )}
 
       <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
-        {isEdit && onDelete ? (
+        {isEdit && onDelete && !initial?.isDefaultChecking ? (
           <button
             type="button"
             onClick={onDelete}

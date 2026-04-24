@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { DEFAULT_ASSET_CLASSES, DEFAULT_MODEL_PORTFOLIOS } from "../cma-seed";
 
 describe("CMA seed data", () => {
-  it("provides 14 default asset classes", () => {
-    expect(DEFAULT_ASSET_CLASSES).toHaveLength(14);
+  it("provides 15 default asset classes", () => {
+    expect(DEFAULT_ASSET_CLASSES).toHaveLength(15);
   });
 
   it("each asset class realization percentages sum to 1", () => {

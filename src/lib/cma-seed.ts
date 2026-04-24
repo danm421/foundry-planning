@@ -2,6 +2,9 @@ import type { AssetTypeId } from "./investments/asset-types";
 
 export interface SeedAssetClass {
   name: string;
+  /** Optional stable slug used to look up engine-referenced classes
+   * (e.g. "inflation") without relying on a human-edited name. */
+  slug?: string;
   geometricReturn: number;
   arithmeticMean: number;
   volatility: number;
@@ -33,6 +36,7 @@ export const DEFAULT_ASSET_CLASSES: SeedAssetClass[] = [
   { name: "Precious Metals", geometricReturn: 0.035, arithmeticMean: 0.055, volatility: 0.19, pctOrdinaryIncome: 0, pctLtCapitalGains: 1.0, pctQualifiedDividends: 0, pctTaxExempt: 0, assetType: "other" },
   { name: "Cash / Money Market", geometricReturn: 0.02, arithmeticMean: 0.02, volatility: 0.005, pctOrdinaryIncome: 1.0, pctLtCapitalGains: 0, pctQualifiedDividends: 0, pctTaxExempt: 0, assetType: "cash" },
   { name: "High Yield Bond", geometricReturn: 0.05, arithmeticMean: 0.06, volatility: 0.10, pctOrdinaryIncome: 0.85, pctLtCapitalGains: 0.15, pctQualifiedDividends: 0, pctTaxExempt: 0, assetType: "taxable_bonds" },
+  { name: "Inflation", slug: "inflation", geometricReturn: 0.025, arithmeticMean: 0.0255, volatility: 0.005, pctOrdinaryIncome: 1.0, pctLtCapitalGains: 0, pctQualifiedDividends: 0, pctTaxExempt: 0, assetType: "other" },
 ];
 
 export const DEFAULT_MODEL_PORTFOLIOS: SeedModelPortfolio[] = [

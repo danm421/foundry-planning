@@ -57,6 +57,7 @@ export async function seedCmaForFirm(firmId: string): Promise<SeedResult> {
       DEFAULT_ASSET_CLASSES.map((ac, i) => ({
         firmId,
         name: ac.name,
+        slug: ac.slug,
         geometricReturn: String(ac.geometricReturn),
         arithmeticMean: String(ac.arithmeticMean),
         volatility: String(ac.volatility),

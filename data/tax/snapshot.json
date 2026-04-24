@@ -1111,7 +1111,7 @@
       "ira401kCatchup50": 8000,
       "ira401kCatchup6063": 11250,
       "iraTradLimit": 7500,
-      "iraCatchup50": 1100,
+      "iraCatchup50": 1000,
       "simpleLimitRegular": 17000,
       "simpleCatchup50": 4000,
       "hsaLimitSelf": 4400,

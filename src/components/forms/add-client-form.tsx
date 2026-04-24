@@ -144,6 +144,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
             name="dateOfBirth"
             type="date"
             required
+            min="1910-01-01"
             defaultValue={toDateInput(initial?.dateOfBirth)}
             className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
@@ -251,6 +252,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
                 id="spouseDob"
                 name="spouseDob"
                 type="date"
+                min="1910-01-01"
                 defaultValue={toDateInput(initial?.spouseDob)}
                 className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
