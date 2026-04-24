@@ -3,7 +3,7 @@ import { clerkClient } from "@clerk/nextjs/server";
 import type { ReactElement } from "react";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import ClientHeader from "@/components/client-header";
 import ClientTabs from "@/components/client-tabs";
@@ -20,9 +20,9 @@ export default async function ClientLayout({ children, params }: Props): Promise
   const [client] = await db
     .select()
     .from(clients)
-    .where(eq(clients.id, id))
+    .where(and(eq(clients.id, id), eq(clients.firmId, firmId)))
     .limit(1);
-  if (!client || client.firmId !== firmId) notFound();
+  if (!client) notFound();
 
   const cc = await clerkClient();
   let advisorName = "Advisor";

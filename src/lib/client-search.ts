@@ -24,7 +24,6 @@ const MAX_RESULTS = 8;
 
 export async function searchClients(
   query: string,
-  _advisorId: string,
   firmId: string,
 ): Promise<ClientSearchResult[]> {
   const trimmed = query.trim().toLowerCase();

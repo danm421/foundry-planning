@@ -10,8 +10,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }): Promise<ReactElement> {
-  const { orgId } = await auth();
-  const jar = await cookies();
+  const [{ orgId }, jar] = await Promise.all([auth(), cookies()]);
   const collapsed = jar.get("sidebar-collapsed")?.value === "1";
   const clientsCount = orgId ? await countClientsForFirm(orgId) : 0;
 
@@ -23,11 +22,7 @@ export default async function AppLayout({
         transition: "grid-template-columns 0.22s ease",
       }}
     >
-      <Sidebar
-        collapsed={collapsed}
-        firmName={undefined}
-        clientsCount={clientsCount}
-      />
+      <Sidebar collapsed={collapsed} clientsCount={clientsCount} />
       <div className="flex min-h-screen flex-col">
         <Topbar />
         <main className="flex-1 bg-paper">

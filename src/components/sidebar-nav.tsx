@@ -18,7 +18,6 @@ interface NavItemSpec {
   label: string;
   href?: string;
   placeholder?: boolean;
-  countKey?: "clientsCount";
 }
 
 interface NavGroup {
@@ -31,7 +30,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "WORKSPACE",
     items: [
       { icon: <HomeIcon />, label: "Home", placeholder: true },
-      { icon: <ClientsIcon />, label: "Clients", href: "/clients", countKey: "clientsCount" },
+      { icon: <ClientsIcon />, label: "Clients", href: "/clients" },
       { icon: <FolderIcon />, label: "CMA's", href: "/cma" },
       { icon: <FileTextIcon />, label: "Presentations", placeholder: true },
       { icon: <ListCheckIcon />, label: "Tasks", placeholder: true },
@@ -58,7 +57,6 @@ interface SidebarNavProps {
 
 export default function SidebarNav({ clientsCount }: SidebarNavProps): ReactElement {
   const pathname = usePathname();
-  const counts = { clientsCount };
 
   return (
     <nav className="flex flex-col gap-4 py-4">
@@ -80,7 +78,7 @@ export default function SidebarNav({ clientsCount }: SidebarNavProps): ReactElem
                     href={item.href}
                     placeholder={item.placeholder}
                     active={active}
-                    count={item.countKey ? counts[item.countKey] : undefined}
+                    count={item.href === "/clients" ? clientsCount : undefined}
                   />
                 </li>
               );

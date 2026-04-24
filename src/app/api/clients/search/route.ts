@@ -14,6 +14,6 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   const query = new URL(req.url).searchParams.get("q") ?? "";
-  const results = await searchClients(query, userId, orgId);
+  const results = await searchClients(query, orgId);
   return NextResponse.json(results);
 }
