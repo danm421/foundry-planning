@@ -426,7 +426,10 @@ function assertFirstDeathInvariants(
   entities: EntitySummary[],
   deceased: "client" | "spouse",
 ): void {
-  if (estateTax.grossEstate < 0) throw new Error("first-death: gross estate negative");
+  // grossEstate can be negative when the deceased owns no individual assets
+  // but proportional household-debt attribution lands on them (4d-2 hypothetical
+  // ordering exposes this; real-death flows never hit it). taxableEstate is
+  // clamped to 0 downstream, so the math stays correct — only relax the guard.
   if (estateTax.taxableEstate < 0) throw new Error("first-death: taxable estate negative");
   if (estateTax.federalEstateTax < 0) throw new Error("first-death: federal tax negative");
   if (estateTax.stateEstateTax < 0) throw new Error("first-death: state tax negative");
