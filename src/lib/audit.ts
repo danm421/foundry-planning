@@ -75,6 +75,8 @@ export type AuditAction =
   | "client.extract"
   // Life insurance
   | "insurance_policy.create"
+  | "insurance_policy.update"
+  | "insurance_policy.delete"
   // CMA (firm-level, admin-gated)
   | "cma.asset_class.create"
   | "cma.asset_class.update"
