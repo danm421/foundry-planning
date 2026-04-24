@@ -744,6 +744,22 @@ export function distributeUnlinkedLiabilities(
   }
 
   const warnings: string[] = [];
+
+  // 4e: Filter out recipients whose net ledger amount is ≤ 0. Liability
+  // bequests create negative ledger entries; a recipient with only a
+  // bequest debt (no asset inheritance) must not be assigned additional
+  // residual debt.
+  for (const [key, rec] of totalsByRecipient.entries()) {
+    if (rec.amount <= 0) {
+      warnings.push(`liability_bequest_recipient_no_asset_share:${rec.id ?? rec.label}`);
+      totalsByRecipient.delete(key);
+    }
+  }
+
+  // Recompute estateTotal from only the positive-net recipients so
+  // shares stay consistent.
+  estateTotal = 0;
+  for (const rec of totalsByRecipient.values()) estateTotal += rec.amount;
   const liabilityTransfers: DeathTransfer[] = [];
   const newLiabilityRows: Liability[] = [];
   const removedLiabilityIds = new Set<string>();
