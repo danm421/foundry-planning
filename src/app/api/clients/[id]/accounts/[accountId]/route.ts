@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, accounts } from "@/db/schema";
+import { clients, accounts, familyMembers } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
@@ -84,6 +84,101 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     console.error("PUT /api/clients/[id]/accounts/[accountId] error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+// PATCH /api/clients/[id]/accounts/[accountId] — partial update
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; accountId: string }> }
+) {
+  try {
+    const firmId = await requireOrgId();
+    const { id, accountId } = await params;
+
+    // Verify client belongs to this firm
+    const [client] = await db
+      .select()
+      .from(clients)
+      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
+
+    if (!client) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const { ownerFamilyMemberId } = body;
+
+    if (
+      ownerFamilyMemberId !== undefined &&
+      ownerFamilyMemberId !== null &&
+      body.ownerEntityId
+    ) {
+      return NextResponse.json(
+        { error: "Cannot set both ownerEntityId and ownerFamilyMemberId" },
+        { status: 400 },
+      );
+    }
+
+    // Tenant-isolation: verify the family_member belongs to this client, and
+    // reject if the account already has an entity owner (owner precedence).
+    if (ownerFamilyMemberId) {
+      const [fm] = await db
+        .select({ id: familyMembers.id })
+        .from(familyMembers)
+        .where(
+          and(
+            eq(familyMembers.id, ownerFamilyMemberId),
+            eq(familyMembers.clientId, id),
+          ),
+        );
+      if (!fm) {
+        return NextResponse.json(
+          { error: "Family member not found for this client" },
+          { status: 400 },
+        );
+      }
+
+      const [account] = await db
+        .select({ ownerEntityId: accounts.ownerEntityId })
+        .from(accounts)
+        .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
+      if (!account) {
+        return NextResponse.json({ error: "Account not found" }, { status: 404 });
+      }
+      if (account.ownerEntityId) {
+        return NextResponse.json(
+          {
+            error:
+              "Cannot set ownerFamilyMemberId while the account has an entity owner. Clear ownerEntityId first.",
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    const [updated] = await db
+      .update(accounts)
+      .set({
+        ...(ownerFamilyMemberId !== undefined
+          ? { ownerFamilyMemberId: ownerFamilyMemberId || null }
+          : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)))
+      .returning();
+
+    if (!updated) {
+      return NextResponse.json({ error: "Account not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(updated);
+  } catch (err) {
+    if (err instanceof Error && err.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    console.error("PATCH /api/clients/[id]/accounts/[accountId] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

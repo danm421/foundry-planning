@@ -73,9 +73,19 @@ function TechniquesIcon() {
   );
 }
 
+function WillsIcon() {
+  return (
+    <svg className={ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+      <path d="M14 3v5h5" />
+      <path d="M9 13h6M9 17h4" />
+    </svg>
+  );
+}
 
 const TABS: SidebarTab[] = [
   { label: "Family", href: "family", icon: <FamilyIcon /> },
+  { label: "Wills", href: "wills", icon: <WillsIcon /> },
   { label: "Net Worth", href: "balance-sheet", icon: <BalanceSheetIcon /> },
   { label: "Inflows & Outflows", href: "income-expenses", icon: <CashflowIcon /> },
   { label: "Techniques", href: "techniques", icon: <TechniquesIcon /> },

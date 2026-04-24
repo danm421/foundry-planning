@@ -1,0 +1,267 @@
+import { describe, it, expect } from "vitest";
+import {
+  computeFederalEstateTax,
+  computeDeductions,
+  computeGrossEstate,
+} from "../estate-tax";
+import type {
+  Account, Liability, DeathTransfer, EntitySummary, PlanSettings,
+} from "../../types";
+
+describe("computeFederalEstateTax", () => {
+  it("reproduces the Form 706 screenshot walkthrough (zero tax, simplified DSUE)", () => {
+    const r = computeFederalEstateTax({
+      taxableEstate: 50_000,
+      adjustedTaxableGifts: 14_000_000,
+      lifetimeGiftTaxAdjustment: 0,
+      beaAtDeathYear: 15_000_000,
+      dsueReceived: 0,
+    });
+    expect(r.tentativeTaxBase).toBe(14_050_000);
+    expect(r.tentativeTax).toBeCloseTo(5_565_800, 2);
+    expect(r.applicableExclusion).toBe(15_000_000);
+    expect(r.unifiedCredit).toBeCloseTo(5_945_800, 2);
+    expect(r.federalEstateTax).toBe(0);
+  });
+
+  it("computes non-zero federal tax when tentative base exceeds applicable exclusion", () => {
+    const r = computeFederalEstateTax({
+      taxableEstate: 25_000_000,
+      adjustedTaxableGifts: 0,
+      lifetimeGiftTaxAdjustment: 0,
+      beaAtDeathYear: 15_000_000,
+      dsueReceived: 5_000_000,
+    });
+    expect(r.federalEstateTax).toBeCloseTo(2_000_000, 2);
+  });
+
+  it("clamps federal tax at zero for small estates", () => {
+    const r = computeFederalEstateTax({
+      taxableEstate: 100_000,
+      adjustedTaxableGifts: 0,
+      lifetimeGiftTaxAdjustment: 0,
+      beaAtDeathYear: 15_000_000,
+      dsueReceived: 0,
+    });
+    expect(r.federalEstateTax).toBe(0);
+  });
+
+  it("applies DSUE additively to BEA for the applicable exclusion", () => {
+    const r = computeFederalEstateTax({
+      taxableEstate: 20_000_000,
+      adjustedTaxableGifts: 0,
+      lifetimeGiftTaxAdjustment: 0,
+      beaAtDeathYear: 15_000_000,
+      dsueReceived: 10_000_000,
+    });
+    expect(r.applicableExclusion).toBe(25_000_000);
+    expect(r.federalEstateTax).toBe(0);
+  });
+});
+
+function liab(id: string, balance: number, extras: Partial<Liability> = {}): Liability {
+  return {
+    id,
+    name: `Liability ${id}`,
+    balance,
+    interestRate: 0,
+    monthlyPayment: 0,
+    startYear: 2025,
+    startMonth: 1,
+    termMonths: 0,
+    extraPayments: [],
+    ...extras,
+  };
+}
+
+function acct(id: string, value: number, extras: Partial<Account> = {}): Account {
+  return {
+    id,
+    name: `Account ${id}`,
+    category: "cash",
+    subType: "generic",
+    owner: "client",
+    value,
+    basis: value,
+    growthRate: 0,
+    rmdEnabled: false,
+    ...extras,
+  };
+}
+
+describe("computeGrossEstate", () => {
+  it("includes 100% of decedent's individually-owned accounts", () => {
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("a1", 100_000, { owner: "client" })],
+      accountBalances: { a1: 100_000 },
+      liabilities: [],
+      entities: [],
+    });
+    expect(r.total).toBeCloseTo(100_000, 2);
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0].percentage).toBe(1);
+    expect(r.lines[0].amount).toBe(100_000);
+  });
+
+  it("includes 50% of joint accounts at first death", () => {
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("j1", 200_000, { owner: "joint" })],
+      accountBalances: { j1: 200_000 },
+      liabilities: [],
+      entities: [],
+    });
+    expect(r.total).toBeCloseTo(100_000, 2);
+    expect(r.lines[0].percentage).toBe(0.5);
+    expect(r.lines[0].label).toContain("(50%)");
+  });
+
+  it("excludes spouse-owned accounts", () => {
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("s1", 100_000, { owner: "spouse" })],
+      accountBalances: { s1: 100_000 },
+      liabilities: [],
+      entities: [],
+    });
+    expect(r.total).toBe(0);
+    expect(r.lines).toEqual([]);
+  });
+
+  it("excludes accounts inside irrevocable trusts (ILIT / IDGT)", () => {
+    const entity: EntitySummary = {
+      id: "ilit",
+      includeInPortfolio: false,
+      isGrantor: false,
+      isIrrevocable: true,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("ilit-a1", 500_000, { ownerEntityId: "ilit", owner: "client" })],
+      accountBalances: { "ilit-a1": 500_000 },
+      liabilities: [],
+      entities: [entity],
+    });
+    expect(r.total).toBe(0);
+  });
+
+  it("includes 100% of accounts in revocable trust where decedent is grantor", () => {
+    const entity: EntitySummary = {
+      id: "rev",
+      includeInPortfolio: true,
+      isGrantor: true,
+      isIrrevocable: false,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("rev-a1", 300_000, { ownerEntityId: "rev", owner: "client" })],
+      accountBalances: { "rev-a1": 300_000 },
+      liabilities: [],
+      entities: [entity],
+    });
+    expect(r.total).toBeCloseTo(300_000, 2);
+  });
+
+  it("folds liabilities as negative gross-estate lines", () => {
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("a1", 100_000)],
+      accountBalances: { a1: 100_000 },
+      liabilities: [liab("d1", 20_000)],
+      entities: [],
+    });
+    expect(r.total).toBeCloseTo(100_000 - 10_000, 2);
+    const debtLine = r.lines.find((l) => l.liabilityId === "d1");
+    expect(debtLine?.amount).toBeCloseTo(-10_000, 2);
+  });
+
+  it("at final death, unlinked household liability is 100% in decedent's estate", () => {
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 2,
+      accounts: [acct("a1", 100_000)],
+      accountBalances: { a1: 100_000 },
+      liabilities: [liab("d1", 20_000)],
+      entities: [],
+    });
+    expect(r.total).toBeCloseTo(100_000 - 20_000, 2);
+  });
+});
+
+describe("computeDeductions", () => {
+  function transfer(overrides: Partial<DeathTransfer>): DeathTransfer {
+    return {
+      year: 2030,
+      deathOrder: 1,
+      deceased: "client",
+      sourceAccountId: "a1",
+      sourceAccountName: "Account a1",
+      sourceLiabilityId: null,
+      sourceLiabilityName: null,
+      via: "will",
+      recipientKind: "family_member",
+      recipientId: "fm1",
+      recipientLabel: "Child",
+      amount: 0,
+      basis: 0,
+      resultingAccountId: null,
+      resultingLiabilityId: null,
+      ...overrides,
+    };
+  }
+  const planSettings: Partial<PlanSettings> = { estateAdminExpenses: 3_900, flatStateEstateRate: 0 };
+
+  it("marital deduction = sum of spouse-routed transfer amounts at first death", () => {
+    const ledger = [
+      transfer({ recipientKind: "spouse", amount: 200_000 }),
+      transfer({ recipientKind: "family_member", amount: 50_000 }),
+    ];
+    const r = computeDeductions({
+      transferLedger: ledger,
+      externalBeneficiaries: [],
+      planSettings: planSettings as PlanSettings,
+      deathOrder: 1,
+    });
+    expect(r.maritalDeduction).toBeCloseTo(200_000, 2);
+    expect(r.charitableDeduction).toBe(0);
+    expect(r.estateAdminExpenses).toBe(3_900);
+  });
+
+  it("marital deduction is 0 at final death", () => {
+    const ledger = [transfer({ recipientKind: "spouse", amount: 200_000 })];
+    const r = computeDeductions({
+      transferLedger: ledger,
+      externalBeneficiaries: [],
+      planSettings: planSettings as PlanSettings,
+      deathOrder: 2,
+    });
+    expect(r.maritalDeduction).toBe(0);
+  });
+
+  it("charitable deduction = sum of external_beneficiary transfers whose kind is charity", () => {
+    const ledger = [
+      transfer({ recipientKind: "external_beneficiary", recipientId: "eb1", amount: 50_000 }),
+      transfer({ recipientKind: "external_beneficiary", recipientId: "eb2", amount: 25_000 }),
+    ];
+    const externals = [
+      { id: "eb1", name: "Red Cross", kind: "charity" as const },
+      { id: "eb2", name: "Nephew Bob", kind: "individual" as const },
+    ];
+    const r = computeDeductions({
+      transferLedger: ledger,
+      externalBeneficiaries: externals,
+      planSettings: planSettings as PlanSettings,
+      deathOrder: 1,
+    });
+    expect(r.charitableDeduction).toBeCloseTo(50_000, 2);
+  });
+});

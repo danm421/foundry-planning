@@ -8,12 +8,21 @@ interface TaxRatesFormProps {
   clientId: string;
   flatFederalRate: string;
   flatStateRate: string;
+  estateAdminExpenses: string;
+  flatStateEstateRate: string;
   initialMode?: "flat" | "bracket";
 }
 
 const pct = (v: string) => (Number(v) * 100).toFixed(2);
 
-export default function TaxRatesForm({ clientId, flatFederalRate, flatStateRate, initialMode = "flat" }: TaxRatesFormProps) {
+export default function TaxRatesForm({
+  clientId,
+  flatFederalRate,
+  flatStateRate,
+  estateAdminExpenses,
+  flatStateEstateRate,
+  initialMode = "flat",
+}: TaxRatesFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +41,8 @@ export default function TaxRatesForm({ clientId, flatFederalRate, flatStateRate,
     const body: Record<string, string | undefined> = {
       flatStateRate: toDec("flatStateRate"),
       taxEngineMode: mode,
+      estateAdminExpenses: String(Number(data.get("estateAdminExpenses") ?? "0")),
+      flatStateEstateRate: String(Number(data.get("flatStateEstateRate") ?? "0") / 100),
     };
 
     if (mode === "flat") {
@@ -63,7 +74,7 @@ export default function TaxRatesForm({ clientId, flatFederalRate, flatStateRate,
       {success && <p className="rounded bg-green-900/50 px-3 py-2 text-sm text-green-400">Saved.</p>}
 
       <header>
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Tax Rates</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Income Tax</h3>
         <p className="mt-1 text-xs text-gray-500">Flat rates applied across the projection.</p>
       </header>
 
@@ -100,6 +111,30 @@ export default function TaxRatesForm({ clientId, flatFederalRate, flatStateRate,
         <div>
           <label className="block text-xs font-medium text-gray-400" htmlFor="flatStateRate">State rate</label>
           <PercentInput id="flatStateRate" name="flatStateRate" defaultValue={pct(flatStateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+        </div>
+      </div>
+
+      <header className="mt-6">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Estate Tax</h3>
+        <p className="mt-1 text-xs text-gray-500">Applied at each death event in the projection.</p>
+      </header>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-400" htmlFor="estateAdminExpenses">Estate administrative expenses ($)</label>
+          <input
+            id="estateAdminExpenses"
+            name="estateAdminExpenses"
+            type="number"
+            min="0"
+            step="100"
+            defaultValue={estateAdminExpenses}
+            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-400" htmlFor="flatStateEstateRate">State estate tax rate</label>
+          <PercentInput id="flatStateEstateRate" name="flatStateEstateRate" defaultValue={pct(flatStateEstateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
       </div>
 

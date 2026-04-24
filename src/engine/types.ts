@@ -1,7 +1,155 @@
 import type { TaxResult, TaxYearParameters } from "../lib/tax/types";
 import type { ClientDeductionRow } from "../lib/tax/derive-deductions";
+import type { TrustSubType } from "@/lib/entities/trust";
 
 // ── Input Types ──────────────────────────────────────────────────────────────
+
+export interface Gift {
+  id: string;
+  year: number;
+  amount: number;
+  grantor: "client" | "spouse" | "joint";
+  recipientEntityId?: string;
+  recipientFamilyMemberId?: string;
+  recipientExternalBeneficiaryId?: string;
+  useCrummeyPowers: boolean;
+}
+
+export interface WillBequestRecipient {
+  recipientKind: "family_member" | "external_beneficiary" | "entity" | "spouse";
+  recipientId: string | null;
+  percentage: number;
+  sortOrder: number;
+}
+
+export interface WillBequest {
+  id: string;
+  name: string;
+  assetMode: "specific" | "all_assets";
+  accountId: string | null;
+  percentage: number;
+  condition: "if_spouse_survives" | "if_spouse_predeceased" | "always";
+  sortOrder: number;
+  recipients: WillBequestRecipient[];
+}
+
+export interface Will {
+  id: string;
+  grantor: "client" | "spouse";
+  bequests: WillBequest[];
+}
+
+export interface DeathTransfer {
+  year: number;
+  /** 1 = first death (4b); 2 = final death (4c). */
+  deathOrder: 1 | 2;
+  deceased: "client" | "spouse";
+  /** Source account id for asset transfers; null when this entry represents
+   *  a proportional unlinked-liability transfer (see sourceLiabilityId). */
+  sourceAccountId: string | null;
+  /** Frozen at event time. Null for liability transfers. */
+  sourceAccountName: string | null;
+  /** Source liability id for unlinked_liability_proportional entries only. */
+  sourceLiabilityId: string | null;
+  /** Frozen at event time. Null for asset transfers. */
+  sourceLiabilityName: string | null;
+  via:
+    | "titling"
+    | "beneficiary_designation"
+    | "will"
+    | "fallback_spouse"
+    | "fallback_children"
+    | "fallback_other_heirs"
+    | "unlinked_liability_proportional"
+    | "trust_pour_out";
+  recipientKind:
+    | "spouse"
+    | "family_member"
+    | "entity"
+    | "external_beneficiary"
+    | "system_default";
+  recipientId: string | null;
+  recipientLabel: string;
+  /** Positive for asset transfers; negative for liability transfers. */
+  amount: number;
+  /** Proportional basis for asset transfers. 0 for liability transfers. */
+  basis: number;
+  /** Synthetic account id when recipient kept it in household; null otherwise. */
+  resultingAccountId: string | null;
+  /** Synthetic liability id for family-member recipients of unlinked debt;
+   *  null for asset transfers and for external / system_default liability
+   *  transfers. */
+  resultingLiabilityId: string | null;
+}
+
+export interface GrossEstateLine {
+  /** Display label, e.g. "INV - Client 401k" or "Home (50%)". */
+  label: string;
+  /** Source account id; null when this line is a liability. */
+  accountId: string | null;
+  /** Source liability id; null when this line is an asset. */
+  liabilityId: string | null;
+  /** 0.5 for joint-at-first-death, 1.0 otherwise. Stored for display. */
+  percentage: number;
+  /** Positive for assets, negative for debts. */
+  amount: number;
+}
+
+export interface EstateTaxResult {
+  year: number;
+  deathOrder: 1 | 2;
+  deceased: "client" | "spouse";
+
+  // Gross Estate
+  grossEstateLines: GrossEstateLine[];
+  grossEstate: number;
+
+  // Deductions
+  estateAdminExpenses: number;
+  maritalDeduction: number;          // 0 at final death
+  charitableDeduction: number;
+  // Debts are already folded into grossEstateLines as negative entries.
+  taxableEstate: number;
+
+  // Tentative Tax Base
+  adjustedTaxableGifts: number;
+  lifetimeGiftTaxAdjustment: number; // always 0 in v1; reserved
+  tentativeTaxBase: number;
+
+  // Federal Tax
+  tentativeTax: number;
+  beaAtDeathYear: number;
+  dsueReceived: number;
+  applicableExclusion: number;       // BEA + DSUE
+  unifiedCredit: number;
+  federalEstateTax: number;
+
+  // State Tax
+  stateEstateTaxRate: number;
+  stateEstateTax: number;
+
+  // Totals
+  totalEstateTax: number;            // federal + state
+  totalTaxesAndExpenses: number;     // totalEstateTax + estateAdminExpenses
+
+  // Portability
+  dsueGenerated: number;             // first-death only; ported to survivor
+
+  // Payments
+  estateTaxDebits: Array<{ accountId: string; amount: number }>;
+
+  // Creditor-payoff (final death only; empty arrays/0 at first death)
+  creditorPayoffDebits: Array<{ accountId: string; amount: number }>;
+  creditorPayoffResidual: number;
+}
+
+export interface FamilyMember {
+  id: string;
+  relationship: "child" | "grandchild" | "parent" | "sibling" | "other";
+  firstName: string;
+  lastName: string | null;
+  dateOfBirth: string | null;
+}
 
 export interface ClientData {
   client: ClientInfo;
@@ -21,6 +169,17 @@ export interface ClientData {
   transfers?: Transfer[];
   /** Asset buy/sell transactions — acquire or dispose of assets in specific years. */
   assetTransactions?: AssetTransaction[];
+  /** Gifts made by the client or spouse. */
+  gifts?: Gift[];
+  /** Wills per grantor — spec 4a data-only. Engine consumption arrives in spec 4b. */
+  wills?: Will[];
+  /** Family members (children, grandchildren, parents, siblings). Consumed by the
+   *  death-event module to resolve fallback tier 2 (even split among living children)
+   *  and for recipient-label lookups. */
+  familyMembers?: FamilyMember[];
+  /** External beneficiaries (charities and non-family individuals) configured on the
+   *  client. The death-event module uses these for recipient resolution. */
+  externalBeneficiaries?: Array<{ id: string; name: string; kind: "charity" | "individual" }>;
 }
 
 // Minimal entity view used by the engine to decide cash-flow treatment of entity-owned
@@ -31,6 +190,16 @@ export interface EntitySummary {
   includeInPortfolio: boolean;
   // When true, taxes on the entity's income and RMDs are paid at the household rate.
   isGrantor: boolean;
+  beneficiaries?: BeneficiaryRef[];
+  // Item 2 additions (data-only; no engine rule reads these yet):
+  trustSubType?: TrustSubType;
+  isIrrevocable?: boolean;
+  trustee?: string;
+  exemptionConsumed?: number;
+  /** Single household grantor — "client" | "spouse". Undefined means the
+   *  trust was funded by a third party (e.g., parent-funded trust for the
+   *  client). 4d-1 replaces the prior `grantors: {name, pct}[]` list. */
+  grantor?: "client" | "spouse";
 }
 
 export interface ClientInfo {
@@ -47,6 +216,15 @@ export interface ClientInfo {
   filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household";
 }
 
+export interface BeneficiaryRef {
+  id: string;
+  tier: "primary" | "contingent";
+  percentage: number;
+  familyMemberId?: string;
+  externalBeneficiaryId?: string;
+  sortOrder: number;
+}
+
 export interface Account {
   id: string;
   name: string;
@@ -58,6 +236,8 @@ export interface Account {
   growthRate: number;
   rmdEnabled: boolean;
   ownerEntityId?: string;
+  ownerFamilyMemberId?: string;
+  beneficiaries?: BeneficiaryRef[];
   isDefaultChecking?: boolean;
   annualPropertyTax?: number;
   propertyTaxGrowthRate?: number;
@@ -151,6 +331,10 @@ export interface Liability {
   balanceAsOfYear?: number;
   linkedPropertyId?: string;
   ownerEntityId?: string;
+  /** Set by the final-death event (4c) when an unlinked household liability
+   *  is distributed proportionally to a family-member heir. Null / absent
+   *  for household-originated liabilities. */
+  ownerFamilyMemberId?: string;
   isInterestDeductible?: boolean;
   extraPayments: ExtraPayment[];
 }
@@ -246,6 +430,10 @@ export interface PlanSettings {
   taxInflationRate?: number;
   /** Annual rate for inflating the SS wage base (default: inflationRate + 0.005). */
   ssWageGrowthRate?: number;
+  /** Lump-sum estate administration expenses (funerals, executor fees, etc.). */
+  estateAdminExpenses?: number;
+  /** Flat state estate tax rate applied on top of federal estate tax. 0 disables. */
+  flatStateEstateRate?: number;
 }
 
 // ── Output Types ─────────────────────────────────────────────────────────────
@@ -366,6 +554,14 @@ export interface ProjectionYear {
       liabilityName?: string;
     }[];
   };
+  /** Only populated on death-event years. One entry per (source × recipient).
+   *  Same-year double death (4b + 4c in the same year) produces both
+   *  deathOrder = 1 and deathOrder = 2 entries on the same row. */
+  deathTransfers?: DeathTransfer[];
+  /** Non-fatal warnings emitted by the first-death precedence chain. */
+  deathWarnings?: string[];
+  /** Estate-tax computation result. Only present in death-event years. */
+  estateTax?: EstateTaxResult;
 }
 
 export interface AccountLedger {

@@ -267,6 +267,41 @@
       "when": 1776695760792,
       "tag": "0037_audit_log",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1776705248585,
+      "tag": "0038_beneficiaries",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1776709500948,
+      "tag": "0039_trust_data_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1776712882062,
+      "tag": "0040_gifts",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1776720979847,
+      "tag": "0041_wills",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1777665600000,
+      "tag": "0042_estate_tax_grantor_succession",
+      "breakpoints": true
     }
   ]
 }

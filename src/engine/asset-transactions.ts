@@ -16,6 +16,13 @@ export function _resetSyntheticIdCounter(): void {
   _syntheticIdCounter = 0;
 }
 
+/** Generate the next synthetic id for engine-created accounts or liabilities.
+ *  Shared across asset-transactions (technique-created assets) and death-event
+ *  (account splits) so ids remain unique within a projection run. */
+export function nextSyntheticId(prefix: string): string {
+  return `${prefix}-${++_syntheticIdCounter}`;
+}
+
 // ── applyAssetSales ───────────────────────────────────────────────────────────
 
 export interface AssetSaleBreakdown {
@@ -286,7 +293,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
     }
 
     // Create synthetic account
-    const newAccountId = `technique-acct-${++_syntheticIdCounter}`;
+    const newAccountId = nextSyntheticId("technique-acct");
     const assetBasis = purchase.basis ?? purchasePrice;
 
     const newAccount: Account = {
@@ -326,7 +333,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
 
     // Create synthetic liability for mortgage if provided
     if (mortgageAmount > 0 && purchase.mortgageRate !== undefined && purchase.mortgageTermMonths !== undefined) {
-      const newLiabilityId = `technique-liab-${++_syntheticIdCounter}`;
+      const newLiabilityId = nextSyntheticId("technique-liab");
       const termMonths = purchase.mortgageTermMonths;
       const monthlyPayment = _calcMonthlyPayment(mortgageAmount, purchase.mortgageRate, termMonths);
       const liabilityName = `Mortgage: ${newAccount.name}`;

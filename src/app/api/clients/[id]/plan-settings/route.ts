@@ -74,6 +74,8 @@ export async function PUT(
     const {
       flatFederalRate,
       flatStateRate,
+      estateAdminExpenses,
+      flatStateEstateRate,
       inflationRate,
       taxEngineMode,
       taxInflationRate,
@@ -122,11 +124,28 @@ export async function PUT(
       }
     }
 
+    if (typeof estateAdminExpenses === "number" && estateAdminExpenses < 0) {
+      return NextResponse.json(
+        { error: "estateAdminExpenses must be non-negative" },
+        { status: 400 },
+      );
+    }
+
+    if (typeof flatStateEstateRate === "number" &&
+        (flatStateEstateRate < 0 || flatStateEstateRate > 1)) {
+      return NextResponse.json(
+        { error: "flatStateEstateRate must be between 0 and 1" },
+        { status: 400 },
+      );
+    }
+
     const [updated] = await db
       .update(planSettings)
       .set({
         flatFederalRate: flatFederalRate != null ? String(flatFederalRate) : undefined,
         flatStateRate: flatStateRate != null ? String(flatStateRate) : undefined,
+        estateAdminExpenses: estateAdminExpenses != null ? String(estateAdminExpenses) : undefined,
+        flatStateEstateRate: flatStateEstateRate != null ? String(flatStateEstateRate) : undefined,
         inflationRate: inflationRate != null ? String(inflationRate) : undefined,
         taxEngineMode: taxEngineMode != null ? taxEngineMode : undefined,
         taxInflationRate: "taxInflationRate" in body

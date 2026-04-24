@@ -25,11 +25,19 @@ import {
   transferSchedules,
   assetTransactions,
   clientCmaOverrides,
+  beneficiaryDesignations,
+  gifts,
+  wills,
+  willBequests,
+  willBequestRecipients,
+  familyMembers,
+  externalBeneficiaries,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
+import type { BeneficiaryRef, Will, WillBequest } from "@/engine/types";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +87,9 @@ export async function GET(
       transferRows,
       transferScheduleRows,
       assetTransactionRows,
+      giftRows,
+      familyMemberRows,
+      externalBeneficiaryRows,
     ] = await Promise.all([
       db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
       db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
@@ -95,6 +106,13 @@ export async function GET(
       db.select().from(transfers).where(and(eq(transfers.clientId, id), eq(transfers.scenarioId, scenario.id))),
       db.select().from(transferSchedules),
       db.select().from(assetTransactions).where(and(eq(assetTransactions.clientId, id), eq(assetTransactions.scenarioId, scenario.id))),
+      db
+        .select()
+        .from(gifts)
+        .where(eq(gifts.clientId, id))
+        .orderBy(asc(gifts.year), asc(gifts.createdAt)),
+      db.select().from(familyMembers).where(eq(familyMembers.clientId, id)).orderBy(asc(familyMembers.dateOfBirth)),
+      db.select().from(externalBeneficiaries).where(eq(externalBeneficiaries.clientId, id)),
     ]);
 
     // Load schedule overrides for all incomes, expenses, and savings rules
@@ -323,6 +341,94 @@ export async function GET(
       clientInflationOverride,
     );
 
+    // ── Beneficiary designations ────────────────────────────────────────────
+    const designationRows = await db
+      .select()
+      .from(beneficiaryDesignations)
+      .where(eq(beneficiaryDesignations.clientId, id))
+      .orderBy(asc(beneficiaryDesignations.tier), asc(beneficiaryDesignations.sortOrder));
+
+    const accountBens = new Map<string, BeneficiaryRef[]>();
+    const trustBens = new Map<string, BeneficiaryRef[]>();
+    for (const d of designationRows) {
+      const ref: BeneficiaryRef = {
+        id: d.id,
+        tier: d.tier,
+        percentage: parseFloat(d.percentage),
+        familyMemberId: d.familyMemberId ?? undefined,
+        externalBeneficiaryId: d.externalBeneficiaryId ?? undefined,
+        sortOrder: d.sortOrder,
+      };
+      if (d.targetKind === "account" && d.accountId) {
+        const arr = accountBens.get(d.accountId) ?? [];
+        arr.push(ref);
+        accountBens.set(d.accountId, arr);
+      } else if (d.targetKind === "trust" && d.entityId) {
+        const arr = trustBens.get(d.entityId) ?? [];
+        arr.push(ref);
+        trustBens.set(d.entityId, arr);
+      }
+    }
+
+    // ── Wills loader ────────────────────────────────────────────────────────
+    const willRows = await db
+      .select()
+      .from(wills)
+      .where(eq(wills.clientId, id))
+      .orderBy(asc(wills.grantor));
+    const willIds = willRows.map((w) => w.id);
+    const willBequestRows = willIds.length
+      ? await db
+          .select()
+          .from(willBequests)
+          .where(inArray(willBequests.willId, willIds))
+          .orderBy(asc(willBequests.willId), asc(willBequests.sortOrder))
+      : [];
+    const bequestIds = willBequestRows.map((b) => b.id);
+    const willRecipientRows = bequestIds.length
+      ? await db
+          .select()
+          .from(willBequestRecipients)
+          .where(inArray(willBequestRecipients.bequestId, bequestIds))
+          .orderBy(
+            asc(willBequestRecipients.bequestId),
+            asc(willBequestRecipients.sortOrder),
+          )
+      : [];
+
+    const recipientsByBequest = new Map<string, typeof willRecipientRows>();
+    for (const r of willRecipientRows) {
+      const list = recipientsByBequest.get(r.bequestId) ?? [];
+      list.push(r);
+      recipientsByBequest.set(r.bequestId, list);
+    }
+    const bequestsByWill = new Map<string, WillBequest[]>();
+    for (const b of willBequestRows) {
+      const list = bequestsByWill.get(b.willId) ?? [];
+      list.push({
+        id: b.id,
+        name: b.name,
+        assetMode: b.assetMode,
+        accountId: b.accountId,
+        percentage: parseFloat(b.percentage),
+        condition: b.condition,
+        sortOrder: b.sortOrder,
+        recipients: (recipientsByBequest.get(b.id) ?? []).map((r) => ({
+          recipientKind: r.recipientKind,
+          recipientId: r.recipientId,
+          percentage: parseFloat(r.percentage),
+          sortOrder: r.sortOrder,
+        })),
+      });
+      bequestsByWill.set(b.willId, list);
+    }
+
+    const engineWills: Will[] = willRows.map((w) => ({
+      id: w.id,
+      grantor: w.grantor,
+      bequests: bequestsByWill.get(w.id) ?? [],
+    }));
+
     // ── Build response ──────────────────────────────────────────────────────
 
     // Convert Drizzle decimal strings to numbers for the engine
@@ -420,6 +526,8 @@ export async function GET(
           growthRate,
           rmdEnabled: a.rmdEnabled,
           ownerEntityId: a.ownerEntityId ?? undefined,
+          ownerFamilyMemberId: a.ownerFamilyMemberId ?? undefined,
+          beneficiaries: accountBens.get(a.id) ?? undefined,
           isDefaultChecking: a.isDefaultChecking,
           realization,
           annualPropertyTax: parseFloat(a.annualPropertyTax),
@@ -510,6 +618,8 @@ export async function GET(
       planSettings: {
         flatFederalRate: parseFloat(settings.flatFederalRate),
         flatStateRate: parseFloat(settings.flatStateRate),
+        estateAdminExpenses: settings.estateAdminExpenses != null ? parseFloat(settings.estateAdminExpenses) : 0,
+        flatStateEstateRate: settings.flatStateEstateRate != null ? parseFloat(settings.flatStateEstateRate) : 0,
         inflationRate: parseFloat(settings.inflationRate),
         planStartYear: settings.planStartYear,
         planEndYear: settings.planEndYear,
@@ -521,6 +631,17 @@ export async function GET(
         id: e.id,
         includeInPortfolio: e.includeInPortfolio,
         isGrantor: e.isGrantor,
+        beneficiaries: trustBens.get(e.id) ?? undefined,
+        trustSubType: e.trustSubType ?? undefined,
+        isIrrevocable: e.isIrrevocable ?? undefined,
+        trustee: e.trustee ?? undefined,
+        exemptionConsumed: e.exemptionConsumed != null ? parseFloat(e.exemptionConsumed) : 0,
+        grantor: e.grantor ?? undefined,
+      })),
+      externalBeneficiaries: externalBeneficiaryRows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        kind: r.kind,
       })),
       taxYearRows: parsedTaxRows,
       deductions: parsedDeductions,
@@ -563,6 +684,24 @@ export async function GET(
         mortgageAmount: t.mortgageAmount ? parseFloat(t.mortgageAmount) : undefined,
         mortgageRate: t.mortgageRate ? parseFloat(t.mortgageRate) : undefined,
         mortgageTermMonths: t.mortgageTermMonths ?? undefined,
+      })),
+      gifts: giftRows.map((g) => ({
+        id: g.id,
+        year: g.year,
+        amount: parseFloat(g.amount),
+        grantor: g.grantor,
+        recipientEntityId: g.recipientEntityId ?? undefined,
+        recipientFamilyMemberId: g.recipientFamilyMemberId ?? undefined,
+        recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? undefined,
+        useCrummeyPowers: g.useCrummeyPowers,
+      })),
+      wills: engineWills,
+      familyMembers: familyMemberRows.map((f) => ({
+        id: f.id,
+        relationship: f.relationship,
+        firstName: f.firstName,
+        lastName: f.lastName ?? null,
+        dateOfBirth: f.dateOfBirth ?? null,
       })),
     });
   } catch (err) {

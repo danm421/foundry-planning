@@ -5,6 +5,7 @@ import {
   date,
   integer,
   decimal,
+  numeric,
   boolean,
   timestamp,
   pgEnum,
@@ -66,6 +67,8 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
 
 export const ownerEnum = pgEnum("owner", ["client", "spouse", "joint"]);
 
+export const entityGrantorEnum = pgEnum("entity_grantor_enum", ["client", "spouse"]);
+
 export const incomeTypeEnum = pgEnum("income_type", [
   "salary",
   "social_security",
@@ -100,6 +103,34 @@ export const familyRelationshipEnum = pgEnum("family_relationship", [
   "parent",
   "sibling",
   "other",
+]);
+
+export const externalBeneficiaryKindEnum = pgEnum("external_beneficiary_kind", [
+  "charity",
+  "individual",
+]);
+
+export const beneficiaryTierEnum = pgEnum("beneficiary_tier", [
+  "primary",
+  "contingent",
+]);
+
+export const beneficiaryTargetKindEnum = pgEnum("beneficiary_target_kind", [
+  "account",
+  "trust",
+]);
+
+export const trustSubTypeEnum = pgEnum("trust_sub_type", [
+  "revocable",
+  "irrevocable",
+  "ilit",
+  "slat",
+  "crt",
+  "grat",
+  "qprt",
+  "clat",
+  "qtip",
+  "bypass",
 ]);
 
 export const yearRefEnum = pgEnum("year_ref", [
@@ -216,6 +247,12 @@ export const planSettings = pgTable("plan_settings", {
   flatStateRate: decimal("flat_state_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.05"),
+  estateAdminExpenses: decimal("estate_admin_expenses", { precision: 15, scale: 2 })
+    .notNull()
+    .default("0"),
+  flatStateEstateRate: decimal("flat_state_estate_rate", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0"),
   taxEngineMode: taxEngineModeEnum("tax_engine_mode").notNull().default("bracket"),
   taxInflationRate: decimal("tax_inflation_rate", { precision: 5, scale: 4 }),
   ssWageGrowthRate: decimal("ss_wage_growth_rate", { precision: 5, scale: 4 }),
@@ -273,10 +310,25 @@ export const entities = pgTable("entities", {
   value: decimal("value", { precision: 15, scale: 2 }).notNull().default("0"),
   // Ownership for business entities (client/spouse/joint). Null for trusts.
   owner: ownerEnum("owner"),
-  // Trust-only: list of grantors with percent ownership. Shape: { name, pct }[].
-  grantors: jsonb("grantors"),
+  // Trust-only: single grantor ('client' or 'spouse'). Null for third-party trusts.
+  grantor: entityGrantorEnum("grantor"),
   // Trust-only: list of beneficiaries with percent distribution. Shape: { name, pct }[].
+  // DEPRECATED: superseded by the beneficiary_designations table. Retained for read-back
+  // compatibility; item 2 will migrate and drop.
   beneficiaries: jsonb("beneficiaries"),
+  // Trust-only. Nullable on non-trust rows (LLC / S-Corp / etc.). API-level
+  // rule: required when entity_type = 'trust', forbidden otherwise.
+  trustSubType: trustSubTypeEnum("trust_sub_type"),
+  // Trust-only. Must stay consistent with trust_sub_type (revocable → false;
+  // all others → true). API-enforced via deriveIsIrrevocable.
+  isIrrevocable: boolean("is_irrevocable"),
+  // Free-text display-only field. Co-trustees as comma-separated.
+  trustee: text("trustee"),
+  // Per-trust rollup of lifetime exemption consumed. Item 3 will layer a
+  // proper per-grantor gift ledger on top.
+  exemptionConsumed: decimal("exemption_consumed", { precision: 15, scale: 2 })
+    .notNull()
+    .default("0"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -295,6 +347,90 @@ export const familyMembers = pgTable("family_members", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const externalBeneficiaries = pgTable("external_beneficiaries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  kind: externalBeneficiaryKindEnum("kind").notNull().default("charity"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const beneficiaryDesignations = pgTable(
+  "beneficiary_designations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    targetKind: beneficiaryTargetKindEnum("target_kind").notNull(),
+    accountId: uuid("account_id").references(() => accounts.id, {
+      onDelete: "cascade",
+    }),
+    entityId: uuid("entity_id").references(() => entities.id, {
+      onDelete: "cascade",
+    }),
+    tier: beneficiaryTierEnum("tier").notNull(),
+    familyMemberId: uuid("family_member_id").references(() => familyMembers.id, {
+      onDelete: "cascade",
+    }),
+    externalBeneficiaryId: uuid("external_beneficiary_id").references(
+      () => externalBeneficiaries.id,
+      { onDelete: "cascade" },
+    ),
+    percentage: decimal("percentage", { precision: 5, scale: 2 }).notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("beneficiary_designations_account_idx").on(
+      t.clientId,
+      t.targetKind,
+      t.accountId,
+    ),
+    index("beneficiary_designations_entity_idx").on(
+      t.clientId,
+      t.targetKind,
+      t.entityId,
+    ),
+  ],
+);
+
+export const gifts = pgTable(
+  "gifts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    year: integer("year").notNull(),
+    amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+    grantor: ownerEnum("grantor").notNull(),
+    recipientEntityId: uuid("recipient_entity_id").references(() => entities.id, {
+      onDelete: "cascade",
+    }),
+    recipientFamilyMemberId: uuid("recipient_family_member_id").references(
+      () => familyMembers.id,
+      { onDelete: "cascade" },
+    ),
+    recipientExternalBeneficiaryId: uuid(
+      "recipient_external_beneficiary_id",
+    ).references(() => externalBeneficiaries.id, { onDelete: "cascade" }),
+    useCrummeyPowers: boolean("use_crummey_powers").notNull().default(false),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("gifts_client_year_idx").on(t.clientId, t.year),
+    index("gifts_client_grantor_year_idx").on(t.clientId, t.grantor, t.year),
+  ],
+);
 
 export const assetClasses = pgTable("asset_classes", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -418,6 +554,12 @@ export const accounts = pgTable("accounts", {
   ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
     onDelete: "set null",
   }),
+  // Owner override for individual family members (e.g., UTMA / custodial).
+  // Resolver precedence: ownerEntityId > ownerFamilyMemberId > owner enum.
+  ownerFamilyMemberId: uuid("owner_family_member_id").references(
+    () => familyMembers.id,
+    { onDelete: "set null" },
+  ),
   growthSource: growthSourceEnum("growth_source").notNull().default("default"),
   modelPortfolioId: uuid("model_portfolio_id").references(() => modelPortfolios.id, {
     onDelete: "set null",
@@ -658,6 +800,157 @@ export const familyMembersRelations = relations(familyMembers, ({ one }) => ({
   }),
 }));
 
+export const externalBeneficiariesRelations = relations(
+  externalBeneficiaries,
+  ({ one, many }) => ({
+    client: one(clients, {
+      fields: [externalBeneficiaries.clientId],
+      references: [clients.id],
+    }),
+    designations: many(beneficiaryDesignations),
+  }),
+);
+
+export const beneficiaryDesignationsRelations = relations(
+  beneficiaryDesignations,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [beneficiaryDesignations.clientId],
+      references: [clients.id],
+    }),
+    account: one(accounts, {
+      fields: [beneficiaryDesignations.accountId],
+      references: [accounts.id],
+    }),
+    entity: one(entities, {
+      fields: [beneficiaryDesignations.entityId],
+      references: [entities.id],
+    }),
+    familyMember: one(familyMembers, {
+      fields: [beneficiaryDesignations.familyMemberId],
+      references: [familyMembers.id],
+    }),
+    externalBeneficiary: one(externalBeneficiaries, {
+      fields: [beneficiaryDesignations.externalBeneficiaryId],
+      references: [externalBeneficiaries.id],
+    }),
+  }),
+);
+
+export const giftsRelations = relations(gifts, ({ one }) => ({
+  client: one(clients, {
+    fields: [gifts.clientId],
+    references: [clients.id],
+  }),
+  recipientEntity: one(entities, {
+    fields: [gifts.recipientEntityId],
+    references: [entities.id],
+  }),
+  recipientFamilyMember: one(familyMembers, {
+    fields: [gifts.recipientFamilyMemberId],
+    references: [familyMembers.id],
+  }),
+  recipientExternalBeneficiary: one(externalBeneficiaries, {
+    fields: [gifts.recipientExternalBeneficiaryId],
+    references: [externalBeneficiaries.id],
+  }),
+}));
+
+// ── Wills (spec 4a) ──────────────────────────────────────────────────
+
+export const willGrantorEnum = pgEnum("will_grantor", ["client", "spouse"]);
+export const willAssetModeEnum = pgEnum("will_asset_mode", [
+  "specific",
+  "all_assets",
+]);
+export const willConditionEnum = pgEnum("will_condition", [
+  "if_spouse_survives",
+  "if_spouse_predeceased",
+  "always",
+]);
+export const willRecipientKindEnum = pgEnum("will_recipient_kind", [
+  "family_member",
+  "external_beneficiary",
+  "entity",
+  "spouse",
+]);
+
+export const wills = pgTable(
+  "wills",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    grantor: willGrantorEnum("grantor").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("wills_client_grantor_idx").on(t.clientId, t.grantor),
+  ],
+);
+
+export const willBequests = pgTable(
+  "will_bequests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    willId: uuid("will_id")
+      .notNull()
+      .references(() => wills.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    assetMode: willAssetModeEnum("asset_mode").notNull(),
+    accountId: uuid("account_id").references(() => accounts.id, {
+      onDelete: "cascade",
+    }),
+    percentage: numeric("percentage", { precision: 5, scale: 2 }).notNull(),
+    condition: willConditionEnum("condition").notNull(),
+    sortOrder: integer("sort_order").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("will_bequests_will_sort_idx").on(t.willId, t.sortOrder),
+  ],
+);
+
+export const willBequestRecipients = pgTable("will_bequest_recipients", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bequestId: uuid("bequest_id")
+    .notNull()
+    .references(() => willBequests.id, { onDelete: "cascade" }),
+  recipientKind: willRecipientKindEnum("recipient_kind").notNull(),
+  recipientId: uuid("recipient_id"),
+  percentage: numeric("percentage", { precision: 5, scale: 2 }).notNull(),
+  sortOrder: integer("sort_order").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const willsRelations = relations(wills, ({ one, many }) => ({
+  client: one(clients, { fields: [wills.clientId], references: [clients.id] }),
+  bequests: many(willBequests),
+}));
+
+export const willBequestsRelations = relations(willBequests, ({ one, many }) => ({
+  will: one(wills, { fields: [willBequests.willId], references: [wills.id] }),
+  account: one(accounts, {
+    fields: [willBequests.accountId],
+    references: [accounts.id],
+  }),
+  recipients: many(willBequestRecipients),
+}));
+
+export const willBequestRecipientsRelations = relations(
+  willBequestRecipients,
+  ({ one }) => ({
+    bequest: one(willBequests, {
+      fields: [willBequestRecipients.bequestId],
+      references: [willBequests.id],
+    }),
+  }),
+);
+
 export const scenariosRelations = relations(scenarios, ({ one, many }) => ({
   client: one(clients, {
     fields: [scenarios.clientId],
@@ -857,6 +1150,10 @@ export const taxYearParameters = pgTable("tax_year_parameters", {
   hsaLimitSelf: decimal("hsa_limit_self", { precision: 10, scale: 2 }).notNull(),
   hsaLimitFamily: decimal("hsa_limit_family", { precision: 10, scale: 2 }).notNull(),
   hsaCatchup55: decimal("hsa_catchup_55", { precision: 10, scale: 2 }).notNull(),
+
+  giftAnnualExclusion: decimal("gift_annual_exclusion", { precision: 10, scale: 2 })
+    .notNull()
+    .default("0"),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
