@@ -14,8 +14,7 @@ interface Props {
 }
 
 export default async function ClientLayout({ children, params }: Props): Promise<ReactElement> {
-  const { id } = await params;
-  const firmId = await requireOrgId();
+  const [{ id }, firmId] = await Promise.all([params, requireOrgId()]);
 
   const [client] = await db
     .select()
