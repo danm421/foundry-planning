@@ -51,8 +51,6 @@ function mkInput(over: Partial<DeathEventInput> = {}): DeathEventInput {
     survivor: "spouse",
     will: over.will ?? null,
     accounts,
-    accountBalances,
-    basisMap,
     incomes: over.incomes ?? [],
     liabilities: over.liabilities ?? [],
     familyMembers: over.familyMembers ?? [],
@@ -63,7 +61,8 @@ function mkInput(over: Partial<DeathEventInput> = {}): DeathEventInput {
     annualExclusionsByYear: over.annualExclusionsByYear ?? {},
     dsueReceived: over.dsueReceived ?? 0,
     ...over,
-    // Re-apply computed maps in case caller overrode accounts without balances
+    // Re-apply computed maps after the ...over spread so caller's account
+    // overrides get balance/basis auto-mirroring applied.
     accountBalances,
     basisMap,
   };
