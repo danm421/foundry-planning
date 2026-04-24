@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 
 // Mock the projection engine so the component receives pre-built fixtures
 // regardless of what the fetched input looks like. This bypasses the
@@ -146,6 +146,7 @@ function makeProjectionYear(hypothetical: HypotheticalEstateTax): ProjectionYear
 const OWNERS = { clientName: "Tom", spouseName: "Linda" };
 
 beforeEach(() => {
+  vi.mocked(runProjection).mockReset();
   // Mock fetch to return any JSON — content is irrelevant since runProjection
   // is mocked to return fixtures regardless.
   global.fetch = vi.fn(async () => ({
@@ -211,11 +212,11 @@ describe("EstateTaxReportView", () => {
     await waitFor(() =>
       expect(screen.getByText(/Grand totals/i)).toBeDefined(),
     );
-    // Grand-total federal row shows the summed $2,500,000 (also appears in
-    // the per-decedent breakdown rows — use getAllByText).
-    expect(screen.getAllByText("$2,500,000").length).toBeGreaterThan(0);
+    // Grand-total federal row shows the summed $2,500,000 (scoped to Grand totals section).
+    const grandTotals = screen.getByText(/Grand totals/i).closest("section")!;
+    expect(within(grandTotals).getByText("$2,500,000")).toBeDefined();
     // The grand-total row shows $3,000,000 as the overall total.
-    expect(screen.getByText("$3,000,000")).toBeDefined();
+    expect(within(grandTotals).getByText("$3,000,000")).toBeDefined();
   });
 
   it("hides grand totals and ordering toggle for single filer, and shows the single-filer heading", async () => {
@@ -332,5 +333,8 @@ describe("EstateTaxReportView", () => {
       expect(screen.getByText(/Linda — First to die/)).toBeDefined(),
     );
     expect(screen.getByText(/Tom — Second to die/)).toBeDefined();
+    // Assert that dollar values swap: $456,000 (Linda's) now appears, $123,000 (Tom's) is hidden.
+    await waitFor(() => expect(screen.getAllByText("$456,000").length).toBeGreaterThan(0));
+    expect(screen.queryByText("$123,000")).toBeNull();
   });
 });
