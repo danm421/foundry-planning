@@ -1,4 +1,5 @@
 import { config } from "dotenv";
+import "@testing-library/jest-dom";
 
 // Load non-VITE_ env vars (DATABASE_URL, etc.) from .env.local before any
 // test file imports modules that read process.env at import time (notably
