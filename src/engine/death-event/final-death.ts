@@ -1,5 +1,6 @@
 import type {
-  Account, Liability, DeathTransfer, Will,
+  Account, Liability, DeathTransfer, Will, Income, EntitySummary,
+  EstateTaxResult,
 } from "../types";
 import {
   applyBeneficiaryDesignations,
@@ -8,18 +9,35 @@ import {
   applyWillAllAssetsResidual,
   applyWillSpecificBequests,
   distributeUnlinkedLiabilities,
+  runPourOut,
   type DeathEventInput,
   type DeathEventResult,
 } from "./shared";
+import {
+  buildEstateTaxResult,
+  computeDeductions,
+  computeGrossEstate,
+} from "./estate-tax";
+import { applyGrantorSuccession } from "./grantor-succession";
+import { drainLiquidAssets } from "./creditor-payoff";
+import { beaForYear } from "@/lib/tax/estate";
+import { computeAdjustedTaxableGifts } from "@/lib/estate/adjusted-taxable-gifts";
 
-/** 4c orchestrator — final-death asset transfer. Runs the precedence chain
- *  (step 1 titling is inert; step 2 designations; step 3 will with
- *  deathOrder=2 condition filter; step 4 fallback with survivor=null so
- *  tier 1 is skipped and tiers 2/3 handle the residual), distributes
- *  unlinked household liabilities proportionally to final-tier recipients,
- *  terminates the deceased's personal income streams, and asserts
- *  4c-specific invariants. */
-export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
+interface FinalDeathChainResult {
+  accounts: Account[];
+  accountBalances: Record<string, number>;
+  basisMap: Record<string, number>;
+  incomes: Income[];
+  liabilities: Liability[];
+  transfers: DeathTransfer[];
+  warnings: string[];
+}
+
+/** The 4c precedence chain (no titling — no joint accounts at final death —
+ *  designations → will with deathOrder=2 → fallback with survivor=null so
+ *  tier 1 is skipped and tiers 2/3 handle the residual). Returns raw post-
+ *  chain state; the 4d orchestrator layers drain + tax + pour-out around it. */
+function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainResult {
   const {
     year, deceased, will,
     accounts, accountBalances, basisMap,
@@ -144,112 +162,286 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     }
   }
 
-  // Unlinked household liability distribution (Feature A).
-  const unlinkedResult = distributeUnlinkedLiabilities(
-    nextLiabilities, assetTransfers, year, deceased,
-  );
-  const allTransfers = [...assetTransfers, ...unlinkedResult.liabilityTransfers];
-  warnings.push(...unlinkedResult.warnings);
-
   // Income termination — reuse the 4b helper. At 4c there are no joint
   // accounts to retitle; the survivor arg to the helper is only used for
   // joint-income retitling and doesn't matter here, so we pass deceased.
   const nextIncomes = applyIncomeTermination(incomes, deceased, deceased, year);
 
-  const result: DeathEventResult = {
+  return {
     accounts: nextAccounts,
     accountBalances: nextAccountBalances,
     basisMap: nextBasisMap,
     incomes: nextIncomes,
-    liabilities: unlinkedResult.updatedLiabilities,
-    transfers: allTransfers,
+    liabilities: nextLiabilities,
+    transfers: assetTransfers,
     warnings,
   };
-
-  assertFinalDeathInvariants(result, input);
-
-  return result;
 }
 
-function assertFinalDeathInvariants(result: DeathEventResult, input: DeathEventInput): void {
-  // 1. No transfer has recipientKind === "spouse" — tier 1 is skipped at 4c,
-  //    and a will/designation routing to the deceased's already-deceased spouse
-  //    is bad data. Check this first so the error is maximally informative.
-  for (const t of result.transfers) {
-    if (t.recipientKind === "spouse") {
-      throw new Error(
-        `applyFinalDeath invariant: transfer for ${t.sourceAccountId ?? t.sourceLiabilityId} routes to spouse at final death`,
-      );
-    }
+/** 4d-1 orchestrator — final-death with pipeline inversion. Creditor-payoff
+ *  and estate-tax drains debit accounts BEFORE the 4c precedence chain
+ *  distributes the residual. Trust pour-outs fold in as a preceding step to
+ *  the chain. Residual unlinked debt falls back to the old proportional-
+ *  distribution helper post-chain. */
+export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
+  const warnings: string[] = [];
+
+  // Phase 2 — compute grantor-succession updates (not yet applied). Defer
+  // application until after gross-estate + drains read pre-flip state.
+  const succession = applyGrantorSuccession({
+    deceased: input.deceased,
+    entities: input.entities,
+  });
+  warnings.push(...succession.warnings);
+
+  // Phase 3 — gross estate (pre-drain, pre-mutate).
+  const gross = computeGrossEstate({
+    deceased: input.deceased,
+    deathOrder: 2,
+    accounts: input.accounts,
+    accountBalances: input.accountBalances,
+    liabilities: input.liabilities,
+    entities: input.entities,
+  });
+
+  // Working state for the drain passes.
+  const accountBalances = { ...input.accountBalances };
+  let workingLiabs = [...input.liabilities];
+
+  // Phase 4 — creditor-payoff drain. Pay off unlinked household debt from
+  // the deceased's liquid accounts (proportional inside each category, fixed
+  // category order cash → taxable → life_insurance → retirement).
+  const unlinkedDebt = workingLiabs
+    .filter(
+      (l) =>
+        l.linkedPropertyId == null &&
+        l.ownerEntityId == null &&
+        l.ownerFamilyMemberId == null,
+    )
+    .reduce((sum, l) => sum + l.balance, 0);
+
+  const creditorDrain = drainLiquidAssets({
+    amountNeeded: unlinkedDebt,
+    accounts: input.accounts,
+    accountBalances,
+    eligibilityFilter: (a) => {
+      if (a.ownerFamilyMemberId) return false;
+      if (a.ownerEntityId) {
+        const ent = input.entities.find((e) => e.id === a.ownerEntityId);
+        if (!ent) return false;
+        if (ent.isIrrevocable) return false;
+        if (ent.grantor !== input.deceased) return false;
+        return true;
+      }
+      return a.owner === input.deceased;
+    },
+  });
+
+  for (const debit of creditorDrain.debits) {
+    accountBalances[debit.accountId] = (accountBalances[debit.accountId] ?? 0) - debit.amount;
+    const a = input.accounts.find((x) => x.id === debit.accountId);
+    if (a && a.category === "retirement") warnings.push(`retirement_estate_drain: ${a.id}`);
   }
 
-  // 2. Sum of asset transfer amounts grouped by source = each source's pre-death balance.
-  const bySource = new Map<string, number>();
-  for (const t of result.transfers) {
-    if (t.sourceAccountId == null) continue;  // skip liability transfers
-    bySource.set(t.sourceAccountId, (bySource.get(t.sourceAccountId) ?? 0) + t.amount);
+  // Reduce each unlinked liability by the drain ratio so the residual (if
+  // any) flows to Phase 8's proportional-distribution fallback.
+  if (unlinkedDebt > 0) {
+    const ratio = creditorDrain.drainedTotal / unlinkedDebt;
+    workingLiabs = workingLiabs.map((l) => {
+      if (l.linkedPropertyId || l.ownerEntityId || l.ownerFamilyMemberId) return l;
+      return { ...l, balance: l.balance * (1 - ratio) };
+    });
   }
-  for (const [sourceId, summed] of bySource.entries()) {
-    const originalBalance = input.accountBalances[sourceId];
-    if (originalBalance == null) continue;
-    if (Math.abs(summed - originalBalance) > 0.01) {
-      throw new Error(
-        `applyFinalDeath invariant: asset ledger sum for ${sourceId} = ${summed}, expected ${originalBalance}`,
-      );
-    }
+  if (creditorDrain.residual > 0) {
+    warnings.push(`creditor_payoff_insufficient_liquid: ${creditorDrain.residual.toFixed(2)}`);
   }
 
-  // 3. Sum of liability transfer amounts grouped by source = -(liability balance).
-  const byLiability = new Map<string, number>();
-  for (const t of result.transfers) {
-    if (t.sourceLiabilityId == null) continue;
-    byLiability.set(
-      t.sourceLiabilityId,
-      (byLiability.get(t.sourceLiabilityId) ?? 0) + t.amount,
+  // Phase 5 — preliminary deductions. Charitable deduction is unknown until
+  // the chain runs (it's derived from the transfer ledger). Marital is 0 at
+  // final death. Admin is known up-front.
+  const preliminaryDeductions = {
+    maritalDeduction: 0,
+    charitableDeduction: 0,
+    estateAdminExpenses: input.planSettings.estateAdminExpenses ?? 0,
+  };
+
+  const adjustedGifts = computeAdjustedTaxableGifts(
+    input.deceased,
+    input.gifts,
+    input.entities,
+    input.annualExclusionsByYear,
+  );
+  const taxInflation =
+    input.planSettings.taxInflationRate ?? input.planSettings.inflationRate ?? 0;
+  const beaAtDeathYear = beaForYear(input.year, taxInflation);
+
+  // Phase 5/6 — preview tax result so we know how much liquidity the
+  // estate-tax drain needs. Charitable=0 here → this is an upper bound;
+  // the charitable deduction is refined in Phase 9's final build.
+  const previewResult = buildEstateTaxResult({
+    year: input.year,
+    deathOrder: 2,
+    deceased: input.deceased,
+    gross,
+    deductions: preliminaryDeductions,
+    adjustedTaxableGifts: adjustedGifts,
+    lifetimeGiftTaxAdjustment: 0,
+    beaAtDeathYear,
+    dsueReceived: input.dsueReceived,
+    stateEstateTaxRate: input.planSettings.flatStateEstateRate ?? 0,
+    estateTaxDebits: [],
+    creditorPayoffDebits: creditorDrain.debits,
+    creditorPayoffResidual: creditorDrain.residual,
+  });
+
+  // Phase 6 — estate-tax drain on deceased's + grantor-trust liquid assets.
+  const estateTaxDrain = drainLiquidAssets({
+    amountNeeded: previewResult.totalTaxesAndExpenses,
+    accounts: input.accounts,
+    accountBalances,
+    eligibilityFilter: (a) => {
+      if (a.ownerFamilyMemberId) return false;
+      if (a.ownerEntityId) {
+        const ent = input.entities.find((e) => e.id === a.ownerEntityId);
+        if (!ent) return false;
+        if (ent.isIrrevocable) return false;
+        if (ent.grantor !== input.deceased) return false;
+        return true;
+      }
+      return a.owner === input.deceased;
+    },
+  });
+
+  for (const debit of estateTaxDrain.debits) {
+    accountBalances[debit.accountId] = (accountBalances[debit.accountId] ?? 0) - debit.amount;
+    const a = input.accounts.find((x) => x.id === debit.accountId);
+    if (a && a.category === "retirement") warnings.push(`retirement_estate_drain: ${a.id}`);
+  }
+  if (estateTaxDrain.residual > 0) {
+    warnings.push(`estate_tax_insufficient_liquid: ${estateTaxDrain.residual.toFixed(2)}`);
+  }
+
+  // Phase 7 — apply grantor-succession updates now that gross estate + drains
+  // have read pre-flip state. The chain and pour-out both see mutated entities.
+  const mutatedEntities = input.entities.map((e) => {
+    const upd = succession.entityUpdates.find((u) => u.entityId === e.id);
+    if (!upd) return e;
+    return {
+      ...e,
+      ...(upd.isGrantor !== undefined ? { isGrantor: upd.isGrantor } : {}),
+      ...(upd.isIrrevocable !== undefined ? { isIrrevocable: upd.isIrrevocable } : {}),
+      ...(upd.grantor !== undefined ? { grantor: upd.grantor ?? undefined } : {}),
+    };
+  });
+
+  // Phase 8a — pour-out fold-in BEFORE the chain's will step runs. Trust
+  // accounts pour to their beneficiaries; trust liabilities have their
+  // ownerEntityId stripped so they join the unlinked-debt redistribution.
+  let ledger: DeathTransfer[] = [];
+
+  if (succession.pourOutQueue.length > 0) {
+    const pourOut = runPourOut({
+      queue: succession.pourOutQueue,
+      deceased: input.deceased,
+      deathOrder: 2,
+      accounts: input.accounts,
+      accountBalances,
+      liabilities: workingLiabs,
+      familyMembers: input.familyMembers,
+      externalBeneficiaries: input.externalBeneficiaries,
+      entities: mutatedEntities,
+      year: input.year,
+    });
+    ledger = ledger.concat(pourOut.transfers);
+    workingLiabs = pourOut.liabilities;
+    warnings.push(...pourOut.warnings);
+  }
+
+  // Phase 8b — the 4c precedence chain, now running LAST. Accounts already
+  // drained; entities already flipped; trust assets already poured.
+  const chainResult = runFinalDeathPrecedenceChain({
+    ...input,
+    accounts: input.accounts,
+    accountBalances,
+    liabilities: workingLiabs,
+    entities: mutatedEntities,
+  });
+  ledger = ledger.concat(chainResult.transfers);
+  workingLiabs = chainResult.liabilities;
+  warnings.push(...chainResult.warnings);
+
+  // Phase 8c — residual unlinked-debt distribution. Fires only if the
+  // creditor-payoff drain couldn't cover everything (e.g., illiquid estate).
+  if (creditorDrain.residual > 0) {
+    const residualDist = distributeUnlinkedLiabilities(
+      workingLiabs,
+      ledger,
+      input.year,
+      input.deceased,
     );
-  }
-  for (const [liabId, summed] of byLiability.entries()) {
-    const liab = input.liabilities.find((l) => l.id === liabId);
-    if (!liab) continue;
-    if (Math.abs(-summed - liab.balance) > 0.01) {
-      throw new Error(
-        `applyFinalDeath invariant: liability ledger sum for ${liabId} = ${summed}, expected ${-liab.balance}`,
-      );
-    }
+    ledger = ledger.concat(residualDist.liabilityTransfers);
+    workingLiabs = residualDist.updatedLiabilities;
+    warnings.push(...residualDist.warnings);
   }
 
-  // 4. No deceased-owner orphan accounts remain.
-  for (const a of result.accounts) {
-    if (
-      a.owner === input.deceased &&
-      !a.ownerEntityId &&
-      !a.ownerFamilyMemberId
-    ) {
-      throw new Error(
-        `applyFinalDeath invariant: account ${a.id} still has deceased as sole owner`,
-      );
-    }
-  }
+  // Phase 9 — final deductions (charitable now derivable from ledger).
+  const finalDeductions = computeDeductions({
+    transferLedger: ledger,
+    externalBeneficiaries: input.externalBeneficiaries,
+    planSettings: input.planSettings,
+    deathOrder: 2,
+  });
 
-  // 5. No account remains with owner='joint' (should have been caught up-front).
-  for (const a of result.accounts) {
-    if (a.owner === "joint") {
-      throw new Error(
-        `applyFinalDeath invariant: account ${a.id} owner='joint' after event`,
-      );
-    }
-  }
+  const estateTax = buildEstateTaxResult({
+    year: input.year,
+    deathOrder: 2,
+    deceased: input.deceased,
+    gross,
+    deductions: finalDeductions,
+    adjustedTaxableGifts: adjustedGifts,
+    lifetimeGiftTaxAdjustment: 0,
+    beaAtDeathYear,
+    dsueReceived: input.dsueReceived,
+    stateEstateTaxRate: input.planSettings.flatStateEstateRate ?? 0,
+    estateTaxDebits: estateTaxDrain.debits,
+    creditorPayoffDebits: creditorDrain.debits,
+    creditorPayoffResidual: creditorDrain.residual,
+  });
 
-  // 6. No personal (non-entity) deceased-owner incomes active past deathYear.
-  for (const inc of result.incomes) {
-    if (
-      !inc.ownerEntityId &&
-      inc.owner === input.deceased &&
-      inc.endYear > input.year
-    ) {
-      throw new Error(
-        `applyFinalDeath invariant: income ${inc.id} still active after final-death year`,
-      );
+  assertFinalDeathInvariants(estateTax, mutatedEntities, input.deceased);
+
+  return {
+    accounts: chainResult.accounts,
+    accountBalances,
+    basisMap: chainResult.basisMap,
+    incomes: chainResult.incomes,
+    liabilities: workingLiabs,
+    transfers: ledger,
+    warnings,
+    estateTax,
+    dsueGenerated: 0,
+  };
+}
+
+/** 4d-specific invariants on the estate-tax result + post-succession entity state. */
+function assertFinalDeathInvariants(
+  estateTax: EstateTaxResult,
+  entities: EntitySummary[],
+  deceased: "client" | "spouse",
+): void {
+  if (estateTax.grossEstate < 0) throw new Error("final-death: gross estate negative");
+  if (estateTax.taxableEstate < 0) throw new Error("final-death: taxable estate negative");
+  if (estateTax.federalEstateTax < 0) throw new Error("final-death: federal tax negative");
+  if (estateTax.stateEstateTax < 0) throw new Error("final-death: state tax negative");
+  if (estateTax.dsueGenerated !== 0) {
+    throw new Error("final-death: dsueGenerated must be 0");
+  }
+  if (estateTax.applicableExclusion !== estateTax.beaAtDeathYear + estateTax.dsueReceived) {
+    throw new Error("final-death: applicableExclusion drift");
+  }
+  for (const e of entities) {
+    if (!e.isIrrevocable && e.grantor === deceased) {
+      throw new Error(`final-death: entity ${e.id} revocable + grantor=deceased was not flipped`);
     }
   }
 }

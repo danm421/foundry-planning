@@ -977,14 +977,137 @@ export interface RunPourOutResult {
   warnings: string[];
 }
 
-/** Stub for trust pour-out distribution. Task 10 (final-death orchestrator)
- *  replaces this with the real implementation. At first death, the pour-out
- *  queue is typically empty — only revocable trusts with `grantor === deceased`
- *  produce entries, and those would be a rare edge case. Throws for any
- *  non-empty queue so callers can't silently drop work. */
+/** Trust pour-out distribution. When a grantor-revocable trust flips to
+ *  irrevocable at the grantor's death, the trust's accounts and unlinked
+ *  debts pour out to its beneficiaries per their BeneficiaryRef percentages.
+ *  Emits one ledger entry per (account, beneficiary) pair with via="trust_pour_out".
+ *  Trust liabilities have their ownerEntityId stripped so downstream
+ *  distributeUnlinkedLiabilities can redistribute them with the rest.
+ *
+ *  Fallbacks:
+ *    - bens empty or totalPct===0 → entire balance routes to "Other Heirs"
+ *      system_default sink + emits `trust_pour_out_fallback_fired`.
+ *    - 0 < totalPct < 99.99 → emits `trust_beneficiaries_incomplete`
+ *      warning and distributes per the stated pcts (no normalization). */
 export function runPourOut(input: RunPourOutInput): RunPourOutResult {
-  if (input.queue.length === 0) {
-    return { transfers: [], liabilities: input.liabilities, warnings: [] };
+  const transfers: DeathTransfer[] = [];
+  const warnings: string[] = [];
+  let workingLiabs = [...input.liabilities];
+
+  for (const q of input.queue) {
+    const trustAccounts = input.accounts.filter((a) => a.ownerEntityId === q.entityId);
+    const bens = q.trustBeneficiaries;
+    const totalPct = bens.reduce((s, b) => s + b.percentage, 0);
+
+    if (totalPct < 99.99 && totalPct > 0) {
+      warnings.push(`trust_beneficiaries_incomplete: ${q.entityId} (sum=${totalPct}%)`);
+    }
+
+    for (const acct of trustAccounts) {
+      const balance = input.accountBalances[acct.id] ?? 0;
+      if (balance <= 0) continue;
+
+      if (bens.length === 0 || totalPct === 0) {
+        transfers.push(makePourOutTransfer({
+          year: input.year,
+          deathOrder: input.deathOrder,
+          deceased: input.deceased,
+          sourceAccountId: acct.id,
+          sourceAccountName: acct.name,
+          recipientKind: "system_default",
+          recipientId: null,
+          recipientLabel: "Other Heirs",
+          amount: balance,
+          basis: acct.basis,
+        }));
+        warnings.push(`trust_pour_out_fallback_fired: ${q.entityId}`);
+        continue;
+      }
+
+      for (const b of bens) {
+        const share = (b.percentage / 100) * balance;
+        const shareBasis = (b.percentage / 100) * acct.basis;
+        const { recipientKind, recipientId, label } = resolveTrustBeneRecipient(
+          b, input.familyMembers, input.externalBeneficiaries,
+        );
+        transfers.push(makePourOutTransfer({
+          year: input.year,
+          deathOrder: input.deathOrder,
+          deceased: input.deceased,
+          sourceAccountId: acct.id,
+          sourceAccountName: acct.name,
+          recipientKind,
+          recipientId,
+          recipientLabel: label,
+          amount: share,
+          basis: shareBasis,
+        }));
+      }
+    }
+
+    workingLiabs = workingLiabs.map((l) =>
+      l.ownerEntityId === q.entityId
+        ? { ...l, ownerEntityId: undefined }
+        : l,
+    );
   }
-  throw new Error("runPourOut not implemented yet — Task 10");
+
+  return { transfers, liabilities: workingLiabs, warnings };
+}
+
+function makePourOutTransfer(input: {
+  year: number;
+  deathOrder: 1 | 2;
+  deceased: "client" | "spouse";
+  sourceAccountId: string;
+  sourceAccountName: string;
+  recipientKind: DeathTransfer["recipientKind"];
+  recipientId: string | null;
+  recipientLabel: string;
+  amount: number;
+  basis: number;
+}): DeathTransfer {
+  return {
+    year: input.year,
+    deathOrder: input.deathOrder,
+    deceased: input.deceased,
+    sourceAccountId: input.sourceAccountId,
+    sourceAccountName: input.sourceAccountName,
+    sourceLiabilityId: null,
+    sourceLiabilityName: null,
+    via: "trust_pour_out",
+    recipientKind: input.recipientKind,
+    recipientId: input.recipientId,
+    recipientLabel: input.recipientLabel,
+    amount: input.amount,
+    basis: input.basis,
+    resultingAccountId: null,
+    resultingLiabilityId: null,
+  };
+}
+
+function resolveTrustBeneRecipient(
+  b: BeneficiaryRef,
+  familyMembers: FamilyMember[],
+  externals: ExternalBeneficiarySummary[],
+): { recipientKind: DeathTransfer["recipientKind"]; recipientId: string | null; label: string } {
+  if (b.familyMemberId) {
+    const fm = familyMembers.find((m) => m.id === b.familyMemberId);
+    return {
+      recipientKind: "family_member",
+      recipientId: b.familyMemberId,
+      label: fm
+        ? `${fm.firstName}${fm.lastName ? " " + fm.lastName : ""}`
+        : "Family member",
+    };
+  }
+  if (b.externalBeneficiaryId) {
+    const ext = externals.find((e) => e.id === b.externalBeneficiaryId);
+    return {
+      recipientKind: "external_beneficiary",
+      recipientId: b.externalBeneficiaryId,
+      label: ext?.name ?? "External beneficiary",
+    };
+  }
+  return { recipientKind: "system_default", recipientId: null, label: "Other Heirs" };
 }
