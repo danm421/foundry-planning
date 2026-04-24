@@ -407,6 +407,7 @@ export default function AddAccountForm({
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (lockTab) return;
     setLoading(true);
     setError(null);
 
