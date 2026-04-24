@@ -224,20 +224,21 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   // Phase 2 — compute grantor-succession updates (not yet applied). Defer
   // application until after gross-estate + drains read pre-flip state.
   const succession = applyGrantorSuccession({
-    deceased: input.deceased,
-    entities: input.entities,
+    deceased: prepared.deceased,
+    entities: prepared.entities,
   });
   warnings.push(...succession.warnings);
+  warnings.push(...li.warnings);
 
   // Phase 3 — gross estate (pre-drain, pre-mutate). Uses PREPARED pre-chain
   // state so faceValue is included for triggering policies (§2042-equivalent).
   const gross = computeGrossEstate({
-    deceased: input.deceased,
+    deceased: prepared.deceased,
     deathOrder: 2,
     accounts: prepared.accounts,
     accountBalances: prepared.accountBalances,
     liabilities: prepared.liabilities,
-    entities: input.entities,
+    entities: prepared.entities,
   });
 
   // Working state for the drain passes.
@@ -462,8 +463,6 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     creditorPayoffDebits: creditorDrain.debits,
     creditorPayoffResidual: creditorDrain.residual,
   });
-
-  warnings.push(...li.warnings);
 
   assertFinalDeathInvariants(estateTax, mutatedEntities, input.deceased, ledger, workingLiabs, prepared.liabilities);
 
