@@ -883,6 +883,94 @@ describe("applyFirstDeath orchestrator", () => {
     expect(totalLedger).toBeCloseTo(600000 + 900000 + 120000, 2);
   });
 
+  it("step-up: joint taxable brokerage → survivor's basisMap = (FMV + originalBasis) / 2", () => {
+    // joint-brok: balance $400k, originalBasis $250k → stepped basis = $325k
+    const result = applyFirstDeath(input);
+    expect(result.basisMap["joint-brok"]).toBeCloseTo(325_000, 2);
+  });
+
+  it("step-up: single-owner cash → survivor receives basis = FMV (idempotent: basis==value)", () => {
+    const result = applyFirstDeath(input);
+    // client-cash: balance $100k, originalBasis $100k → stepped $100k
+    expect(result.basisMap["client-cash"]).toBeCloseTo(100_000, 2);
+  });
+
+  it("step-up: single-owner traditional IRA → heir's basis unchanged (IRD)", () => {
+    const result = applyFirstDeath(input);
+    // client-ira: balance $600k, originalBasis $0 → stepped $0 (no IRD step-up)
+    expect(result.basisMap["client-ira"]).toBeCloseTo(0, 2);
+  });
+
+  it("step-up: grown joint taxable → step-up uses current FMV, not plan-start .value", () => {
+    // Prove step-up reads from accountBalances (grown) not Account.value snapshot.
+    const grownInput: DeathEventInput = {
+      ...input,
+      accountBalances: {
+        "joint-brok": 600_000,     // grew from 400k
+        "client-ira": 900_000,
+        "client-cash": 120_000,
+      },
+      basisMap: {
+        "joint-brok": 250_000,
+        "client-ira": 0,
+        "client-cash": 100_000,
+      },
+    };
+    const result = applyFirstDeath(grownInput);
+    // Stepped basis = (600k + 250k) / 2 = 425k
+    expect(result.basisMap["joint-brok"]).toBeCloseTo(425_000, 2);
+  });
+
+  it("step-up: joint real-estate → half step-up using current FMV", () => {
+    const joint_re: Account = {
+      id: "joint-home", name: "Home",
+      category: "real_estate", subType: "primary_residence",
+      owner: "joint", value: 800_000, basis: 300_000,
+      growthRate: 0.04, rmdEnabled: false,
+    };
+    const homeInput: DeathEventInput = {
+      ...input,
+      accounts: [joint_re, baseAccounts[1]], // home + IRA only
+      accountBalances: { "joint-home": 800_000, "client-ira": 600_000 },
+      basisMap: { "joint-home": 300_000, "client-ira": 0 },
+    };
+    const result = applyFirstDeath(homeInput);
+    // Stepped basis = (800k + 300k) / 2 = 550k
+    expect(result.basisMap["joint-home"]).toBeCloseTo(550_000, 2);
+  });
+
+  it("step-up: single-owner taxable bequeathed to heir → full step-up in split accounts", () => {
+    const brok: Account = {
+      id: "client-brok", name: "John Brokerage",
+      category: "taxable", subType: "brokerage",
+      owner: "client", value: 500_000, basis: 200_000,
+      growthRate: 0.06, rmdEnabled: false,
+    };
+    const willToChild: Will = {
+      id: "w", grantor: "client",
+      bequests: [{
+        id: "b1", name: "All to Alice",
+        kind: "asset", assetMode: "all_assets",
+        accountId: null, liabilityId: null,
+        percentage: 100, condition: "always", sortOrder: 0,
+        recipients: [{ recipientKind: "family_member", recipientId: "child-a", percentage: 100, sortOrder: 0 }],
+      }],
+    };
+    const bequestInput: DeathEventInput = {
+      ...input,
+      will: willToChild,
+      accounts: [brok],
+      accountBalances: { "client-brok": 500_000 },
+      basisMap: { "client-brok": 200_000 },
+    };
+    const result = applyFirstDeath(bequestInput);
+    // The resulting account may have a synthetic id (non in-place split) or keep "client-brok" (in-place).
+    // Either way, exactly one account should exist with the stepped-up basis = FMV = 500k.
+    const heirAccounts = result.accounts.filter((a) => a.ownerFamilyMemberId === "child-a");
+    expect(heirAccounts).toHaveLength(1);
+    expect(result.basisMap[heirAccounts[0].id]).toBeCloseTo(500_000, 2);
+  });
+
 });
 
 describe("distributeUnlinkedLiabilities", () => {

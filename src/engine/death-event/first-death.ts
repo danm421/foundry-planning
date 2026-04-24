@@ -9,6 +9,7 @@ import {
   applyTitling,
   applyWillAllAssetsResidual,
   applyWillSpecificBequests,
+  computeSteppedUpBasis,
   runPourOut,
   type DeathEventInput,
   type DeathEventResult,
@@ -68,17 +69,25 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     // accumulator list once we know what the account split becomes.
     const linkedLiability = liabilities.find((l) => l.linkedPropertyId === acct.id);
 
-    // Build an adjusted copy that carries the current (grown) balance and basis.
-    // workingAccounts[i].value is a snapshot from plan-start and never updated
-    // year-over-year; the authoritative grown value lives in accountBalances[id].
+    // Build an adjusted copy that carries the current (grown) balance and
+    // the §1014 stepped-up basis. workingAccounts[i].value / .basis are
+    // plan-start snapshots; accountBalances[id] / basisMap[id] are
+    // authoritative year-end values. computeSteppedUpBasis returns FMV for
+    // in-estate taxable / real-estate / business / cash, half-step-up for
+    // JTWROS at first death, and the original basis for retirement / life-
+    // insurance (IRD — no step-up).
     const balance = accountBalances[acct.id];
-    const basis = basisMap[acct.id];
-    if (balance == null || basis == null) {
+    const originalBasis = basisMap[acct.id];
+    if (balance == null || originalBasis == null) {
       throw new Error(
         `applyFirstDeath: missing accountBalances/basisMap entry for ${acct.id}`,
       );
     }
-    const effectiveAcct: Account = { ...acct, value: balance, basis };
+    const steppedBasis = computeSteppedUpBasis(
+      acct.category, balance, originalBasis,
+      { isJointAtFirstDeath: acct.owner === "joint" },
+    );
+    const effectiveAcct: Account = { ...acct, value: balance, basis: steppedBasis };
 
     // Track remaining undisposed fraction for this account.
     let undisposed = acct.owner === "joint" ? 1 : 1; // either way, the account goes through steps
