@@ -90,3 +90,56 @@ describe("applyLiabilityBequests — happy path", () => {
     expect(result.warnings).toEqual([]);
   });
 });
+
+describe("applyLiabilityBequests — partial bequest", () => {
+  it("60% bequest reduces balance/payment proportionally; one transfer at -0.6*balance", () => {
+    const liab = baseLiability({ balance: 10_000, monthlyPayment: 200 });
+    const fam = baseFam();
+    const will = baseWill([{
+      id: "beq-1", name: "Visa", kind: "liability", assetMode: null, accountId: null,
+      liabilityId: liab.id, percentage: 100, condition: "always", sortOrder: 0,
+      recipients: [{ recipientKind: "family_member", recipientId: fam.id, percentage: 60, sortOrder: 0 }],
+    }]);
+
+    const result = applyLiabilityBequests({
+      will, deceased: "client", liabilities: [liab], familyMembers: [fam], entities: [], year: 2050,
+    });
+
+    expect(result.updatedLiabilities).toHaveLength(1);
+    expect(result.updatedLiabilities[0]).toMatchObject({
+      id: liab.id,
+      balance: 4_000,
+      monthlyPayment: 80,
+    });
+    expect(result.newLiabilityRows).toHaveLength(1);
+    expect(result.newLiabilityRows[0]).toMatchObject({ balance: 6_000, monthlyPayment: 120 });
+    expect(result.bequestTransfers).toHaveLength(1);
+    expect(result.bequestTransfers[0].amount).toBe(-6_000);
+  });
+});
+
+describe("applyLiabilityBequests — multi-recipient split", () => {
+  it("two family_members at 50/50: two new rows, two transfers, balances sum to original", () => {
+    const liab = baseLiability({ balance: 10_000 });
+    const fam1 = baseFam({ id: "fam-1", firstName: "Tom", lastName: "Jr." });
+    const fam2 = baseFam({ id: "fam-2", firstName: "Sarah", lastName: null });
+    const will = baseWill([{
+      id: "beq-1", name: "Visa", kind: "liability", assetMode: null, accountId: null,
+      liabilityId: liab.id, percentage: 100, condition: "always", sortOrder: 0,
+      recipients: [
+        { recipientKind: "family_member", recipientId: fam1.id, percentage: 50, sortOrder: 0 },
+        { recipientKind: "family_member", recipientId: fam2.id, percentage: 50, sortOrder: 1 },
+      ],
+    }]);
+
+    const result = applyLiabilityBequests({
+      will, deceased: "client", liabilities: [liab], familyMembers: [fam1, fam2], entities: [], year: 2050,
+    });
+
+    expect(result.updatedLiabilities).toHaveLength(0);
+    expect(result.newLiabilityRows).toHaveLength(2);
+    expect(result.newLiabilityRows.map((r) => r.balance).reduce((a, b) => a + b, 0)).toBe(10_000);
+    expect(result.bequestTransfers).toHaveLength(2);
+    expect(result.bequestTransfers.map((t) => t.amount).reduce((a, b) => a + b, 0)).toBe(-10_000);
+  });
+});
