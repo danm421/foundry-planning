@@ -1,5 +1,6 @@
 "use client";
 
+import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { LifeInsurancePolicy } from "@/engine/types";
@@ -123,7 +124,8 @@ function applyPolicyTypeTransition(
       ...patch,
       cashValue: 0,
       costBasis: 0,
-      premiumYears: null,
+      cashValueGrowthMode: "basic",
+      cashValueSchedule: [],
     };
   }
   return patch;
@@ -172,6 +174,14 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
   const [state, setState] = useState<PolicyFormState>(
     seededState ?? DEFAULT_STATE,
   );
+  // Reseed when the dialog is retargeted at a different policy without
+  // unmounting. Today the parent (`InsurancePanel`) unmounts between edits so
+  // this is defensive; `seededState` is memoized on `policyId`/`mode`/
+  // `accounts`/`policies` and the latter two are server-component props that
+  // don't mutate mid-edit, so this won't clobber in-flight changes.
+  useEffect(() => {
+    if (seededState) setState(seededState);
+  }, [seededState]);
   const [tab, setTab] = useState<TabKey>("details");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -222,7 +232,8 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
     });
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
@@ -338,61 +349,68 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
           })}
         </div>
 
-        {/* Body — scrolls when content overflows */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {tab === "details" && (
-            <InsurancePolicyDetailsTab
-              state={state}
-              onChange={handlePatch}
-              accounts={props.accounts}
-              entities={props.entities}
-              policyId={policyId}
-            />
-          )}
-          {tab === "beneficiaries" && <InsurancePolicyBeneficiariesTab />}
-          {tab === "cash_value" && <InsurancePolicyCashValueTab />}
-        </div>
-
-        {/* Error banner */}
-        {error && (
-          <div className="mt-3 rounded-md border border-red-700 bg-red-900/30 px-3 py-2 text-sm text-red-200">
-            {error}
+        {/* Body + footer wrapped in a form so native `required` validation
+            and Enter-to-submit work. Header/tabs stay outside since they
+            aren't form controls. */}
+        <form
+          onSubmit={handleSubmit}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          {/* Body — scrolls when content overflows */}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {tab === "details" && (
+              <InsurancePolicyDetailsTab
+                state={state}
+                onChange={handlePatch}
+                accounts={props.accounts}
+                entities={props.entities}
+                policyId={policyId}
+              />
+            )}
+            {tab === "beneficiaries" && <InsurancePolicyBeneficiariesTab />}
+            {tab === "cash_value" && <InsurancePolicyCashValueTab />}
           </div>
-        )}
 
-        {/* Footer */}
-        <div className="mt-4 flex items-center justify-between gap-2 border-t border-gray-700 pt-4">
-          <div>
-            {mode === "edit" && (
+          {/* Error banner */}
+          {error && (
+            <div className="mt-3 rounded-md border border-red-700 bg-red-900/30 px-3 py-2 text-sm text-red-200">
+              {error}
+            </div>
+          )}
+
+          {/* Footer */}
+          <div className="mt-4 flex items-center justify-between gap-2 border-t border-gray-700 pt-4">
+            <div>
+              {mode === "edit" && (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={submitting}
+                  className="rounded-md border border-red-800 bg-red-900/20 px-3 py-1.5 text-sm text-red-300 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Delete policy
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleDelete}
+                onClick={onClose}
                 disabled={submitting}
-                className="rounded-md border border-red-800 bg-red-900/20 px-3 py-1.5 text-sm text-red-300 hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Delete policy
+                Cancel
               </button>
-            )}
+              <button
+                type="submit"
+                disabled={submitting || state.name.trim().length === 0}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {submitting ? "Saving…" : "Save"}
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={submitting || state.name.trim().length === 0}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {submitting ? "Saving…" : "Save"}
-            </button>
-          </div>
-        </div>
+        </form>
       </div>
     </div>
   );
