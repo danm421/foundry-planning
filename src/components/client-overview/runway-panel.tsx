@@ -1,36 +1,83 @@
 import Link from "next/link";
-import { SuccessGauge } from "@/components/monte-carlo/success-gauge";
+import type { ReactElement } from "react";
+import { Card, CardBody, CardFooter, CardHeader } from "@/components/card";
+import MoneyText from "@/components/money-text";
+import SectionMarker from "@/components/section-marker";
+import { ChartLineIcon } from "@/components/icons";
+import EmptyBlock from "./empty-block";
+import MetaPill from "./meta-pill";
 import NetWorthSparkline from "./net-worth-sparkline";
+import RunwayGauge from "./runway-gauge";
 
-type Props = {
+interface Props {
   clientId: string;
-  monteCarloSuccess: number | null; // 0..1
+  monteCarloSuccess: number | null;
   netWorthSeries: number[];
-};
+  startYear?: number;
+}
 
-export default function RunwayPanel({ clientId, monteCarloSuccess, netWorthSeries }: Props) {
+export default function RunwayPanel({
+  clientId,
+  monteCarloSuccess,
+  netWorthSeries,
+  startYear,
+}: Props): ReactElement {
   if (monteCarloSuccess == null && netWorthSeries.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-800 bg-gray-950 p-6">
-        <p className="text-sm text-gray-400">No projection yet.</p>
-        <Link href={`/clients/${clientId}/cashflow`} className="text-sm text-blue-400 underline">
-          Run a projection
-        </Link>
-      </div>
+      <EmptyBlock
+        icon={<ChartLineIcon width={22} height={22} />}
+        title="No projection yet"
+        body="Run the cash-flow projection to populate this block."
+        cta={{ href: `/clients/${clientId}/cashflow`, label: "Run a projection" }}
+      />
     );
   }
+
+  const peak = netWorthSeries.length ? Math.max(...netWorthSeries) : null;
+  const planEnd = netWorthSeries.length ? netWorthSeries[netWorthSeries.length - 1] : null;
+
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-950 p-6">
-      <h3 className="mb-3 text-sm font-semibold text-gray-300">Retirement runway</h3>
-      <div className="flex items-center gap-6">
-        <Link href={`/clients/${clientId}/monte-carlo`}>
-          {monteCarloSuccess != null && <SuccessGauge value={monteCarloSuccess} />}
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-0.5">
+          <SectionMarker num="03" label="Retirement runway" />
+          <p className="text-[14px] font-semibold text-ink">
+            Retirement runway{" "}
+            <span className="text-[12.5px] font-normal text-ink-3">
+              · 30-year projection
+            </span>
+          </p>
+        </div>
+        <MetaPill label="30-yr projection" active />
+      </CardHeader>
+      <CardBody className="flex flex-col gap-4 md:flex-row md:items-center md:gap-6">
+        <RunwayGauge value={monteCarloSuccess} />
+        <div className="flex flex-1 flex-col gap-3">
+          <div className="flex gap-6">
+            <div className="flex flex-col gap-0.5">
+              <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-4">
+                Peak
+              </span>
+              <MoneyText value={peak} />
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-4">
+                Plan end
+              </span>
+              <MoneyText value={planEnd} />
+            </div>
+          </div>
+          <NetWorthSparkline values={netWorthSeries} startYear={startYear} />
+        </div>
+      </CardBody>
+      <CardFooter>
+        <span>
+          Monte Carlo · {netWorthSeries.length ? "10,000 trials" : "awaiting run"}
+        </span>
+        <Link href={`/clients/${clientId}/monte-carlo`} className="text-accent hover:text-accent-ink">
+          Open Monte Carlo →
         </Link>
-        <Link href={`/clients/${clientId}/cashflow`} className="flex-1 text-blue-300">
-          <NetWorthSparkline values={netWorthSeries} />
-          <p className="mt-1 text-xs text-gray-500">Net worth over plan</p>
-        </Link>
-      </div>
-    </div>
+      </CardFooter>
+    </Card>
   );
 }
