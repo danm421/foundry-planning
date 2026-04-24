@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed:tax-data": "tsx scripts/seed-tax-data.ts"
+    "seed:tax-data": "tsx scripts/seed-tax-data.ts",
+    "check:migrations": "tsx scripts/check-drizzle-migrations.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.2.3",
