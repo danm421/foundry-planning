@@ -272,7 +272,7 @@ describe("4d integration — first death estate tax", () => {
     // here and we assert the mechanism fires (not the marital claim).
     const trustEntity: EntitySummary = {
       id: "trust-1", includeInPortfolio: true, isGrantor: true,
-      trustSubType: "revocable_living" as const, isIrrevocable: false,
+      trustSubType: "revocable" as const, isIrrevocable: false,
       grantor: "client",
       beneficiaries: [{ ...spouseBene, familyMemberId: "kid-a" }],
     };
@@ -525,7 +525,7 @@ describe("4d integration — final death estate tax", () => {
     // via="trust_pour_out".
     const trustEntity: EntitySummary = {
       id: "trust-1", includeInPortfolio: true, isGrantor: true,
-      trustSubType: "revocable_living" as const, isIrrevocable: false,
+      trustSubType: "revocable" as const, isIrrevocable: false,
       grantor: "client",
       beneficiaries: [{
         id: "bref-1", tier: "primary", percentage: 100,
