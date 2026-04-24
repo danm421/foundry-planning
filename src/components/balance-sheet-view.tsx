@@ -257,8 +257,12 @@ export default function BalanceSheetView({
   const [deletingLiability, setDeletingLiability] = useState<LiabilityRow | null>(null);
 
   const entityMap = Object.fromEntries(entities.map((e) => [e.id, e]));
-  const inEstate = accounts.filter((a) => !a.ownerEntityId);
-  const outOfEstate = accounts.filter((a) => a.ownerEntityId);
+  // Term policies (cash_value = 0) are hidden from Net Worth — face value pays out only on
+  // death, so it's not an asset on the balance sheet. They're managed in the Insurance tab.
+  const isVisibleInNetWorth = (a: AccountRow) =>
+    !(a.category === "life_insurance" && Number(a.value) === 0);
+  const inEstate = accounts.filter((a) => !a.ownerEntityId && isVisibleInNetWorth(a));
+  const outOfEstate = accounts.filter((a) => a.ownerEntityId && isVisibleInNetWorth(a));
 
   const inEstateByCategory: Record<AccountCategory, AccountRow[]> = {
     taxable: [],
@@ -321,6 +325,15 @@ export default function BalanceSheetView({
     router.refresh();
   }
 
+  function handleAccountClick(a: AccountRow) {
+    if (assetsEdit) return; // edit mode: user is toggling delete affordances, not opening details
+    if (a.category === "life_insurance") {
+      router.push(`/clients/${clientId}/client-data/insurance?policy=${a.id}`);
+      return;
+    }
+    setEditingAccount(a);
+  }
+
   function ownerDisplay(a: AccountRow) {
     if (a.ownerEntityId && entityMap[a.ownerEntityId]) return entityMap[a.ownerEntityId].name;
     return individualOwnerLabel(a.owner as "client" | "spouse" | "joint", ownerNames);
@@ -374,7 +387,7 @@ export default function BalanceSheetView({
                   {items.map((a) => (
                     <Row
                       key={a.id}
-                      onClick={() => !assetsEdit && setEditingAccount(a)}
+                      onClick={() => handleAccountClick(a)}
                       editMode={assetsEdit}
                       onDelete={() => setDeletingAccount(a)}
                       deletable={!a.isDefaultChecking}
@@ -461,7 +474,7 @@ export default function BalanceSheetView({
                     {rows.map((a) => (
                       <div
                         key={a.id}
-                        onClick={() => !assetsEdit && setEditingAccount(a)}
+                        onClick={() => handleAccountClick(a)}
                         className="flex cursor-pointer items-center justify-between px-4 py-2 hover:bg-gray-800/60"
                       >
                         <div>

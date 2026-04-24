@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { LifeInsurancePolicy } from "@/engine/types";
 import type {
   accounts,
@@ -77,6 +78,18 @@ export default function InsurancePanel(props: InsurancePanelProps) {
   const [dialogState, setDialogState] = useState<
     { mode: "create" } | { mode: "edit"; policyId: string } | null
   >(null);
+
+  const searchParams = useSearchParams();
+  const policyParam = searchParams?.get("policy") ?? null;
+  const hasAutoOpened = useRef(false);
+
+  useEffect(() => {
+    if (hasAutoOpened.current) return;
+    if (policyParam && props.policies[policyParam]) {
+      setDialogState({ mode: "edit", policyId: policyParam });
+      hasAutoOpened.current = true;
+    }
+  }, [policyParam, props.policies]);
 
   // Type-guard filter so TS narrows `policy` to non-undefined inside .map below.
   const lifePolicies: PolicyRow[] = props.accounts
