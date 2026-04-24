@@ -1,16 +1,19 @@
 import { describe, it, expect } from "vitest";
-import { computeAlerts, MC_WARN_THRESHOLD, MC_CRIT_THRESHOLD, LIQUIDITY_RUNWAY_MIN_YEARS, STALE_CLIENT_DATA_DAYS } from "@/lib/alerts";
+import { computeAlerts, MC_WARN_THRESHOLD, STALE_CLIENT_DATA_DAYS } from "@/lib/alerts";
 
 const todayIso = new Date().toISOString();
 const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString();
 
-const baseClient = { id: "c1", updatedAt: todayIso } as any;
-const baseProjection = {
+type ClientArg = Parameters<typeof computeAlerts>[0];
+type ProjectionArg = Parameters<typeof computeAlerts>[1];
+
+const baseClient: ClientArg = { id: "c1", updatedAt: todayIso };
+const baseProjection: ProjectionArg = {
   monteCarloSuccess: 0.9,
   liquidPortfolio: 1_000_000,
   currentYearNetOutflow: 100_000,
   minNetWorth: 5_000_000,
-} as any;
+};
 
 describe("computeAlerts", () => {
   it("returns empty when all green", () => {
