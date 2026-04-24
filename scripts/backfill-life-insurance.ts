@@ -29,6 +29,11 @@ try {
   }
 } catch {}
 
+if (!process.env.DATABASE_URL) {
+  console.error("DATABASE_URL is not set. Run from the repo root with .env.local present.");
+  process.exit(1);
+}
+
 async function main() {
   const { db } = await import("../src/db");
   const { accounts, lifeInsurancePolicies } = await import("../src/db/schema");
@@ -63,6 +68,7 @@ async function main() {
 
       await tx.insert(lifeInsurancePolicies).values({
         accountId: a.id,
+        // Term policies often store cash value (often $0) here, not face — advisor must edit.
         faceValue: a.value,
         costBasis: "0",
         premiumAmount: "0",
@@ -79,6 +85,8 @@ async function main() {
 
     console.log(`Backfilled ${a.name} (${a.id})`);
   }
+
+  console.log(`Backfill complete. ${existing.length} accounts processed.`);
 }
 
 function mapSubTypeToPolicyType(
