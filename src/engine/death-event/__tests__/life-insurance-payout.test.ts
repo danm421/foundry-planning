@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { prepareLifeInsurancePayouts } from "../life-insurance-payout";
-import type { Account, EntitySummary, LifeInsurancePolicy } from "../../types";
+import type { Account, LifeInsurancePolicy } from "../../types";
 
 const mkPolicy = (over: Partial<LifeInsurancePolicy> = {}): LifeInsurancePolicy => ({
   faceValue: 1_000_000,

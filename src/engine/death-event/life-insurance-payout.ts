@@ -42,7 +42,7 @@ function triggers(
 export function prepareLifeInsurancePayouts(
   input: PreparePayoutsInput,
 ): PreparePayoutsResult {
-  const { deceased, eventKind, accounts, entities } = input;
+  const { deceased, eventKind, accounts } = input;
 
   // Build new (never mutated) copies of the maps.
   const accountBalances: Record<string, number> = { ...input.accountBalances };
@@ -75,7 +75,8 @@ export function prepareLifeInsurancePayouts(
         : null;
 
     if (mergeTargetId !== null) {
-      // Merge-target mode: credit faceValue to the target, drop the policy account.
+      // Merge-target mode: proceeds consolidate into the target account, so the
+      // policy's beneficiary designations are not consulted; no warning needed.
       accountBalances[mergeTargetId] = (accountBalances[mergeTargetId] ?? 0) + faceValue;
       basisMap[mergeTargetId] = (basisMap[mergeTargetId] ?? 0) + faceValue;
       delete accountBalances[policyId];
@@ -84,7 +85,8 @@ export function prepareLifeInsurancePayouts(
       // Policy account is NOT pushed to resultAccounts (dropped).
     } else {
       // Standalone mode: transform the account into a cash-equivalent.
-      const { lifeInsurance: _li, insuredPerson: _ip, ...rest } = account;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { lifeInsurance, insuredPerson, ...rest } = account;
       const transformed: Account = {
         ...rest,
         category: "cash",
