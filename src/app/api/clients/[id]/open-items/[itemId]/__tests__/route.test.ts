@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { clients, clientOpenItems } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -55,17 +56,17 @@ afterAll(async () => {
 
 import { PATCH, DELETE } from "../route";
 
-function req(body?: unknown) {
+function req(body?: unknown): NextRequest {
   return new Request("http://t/", {
     method: body !== undefined ? "PATCH" : "DELETE",
     body: body !== undefined ? JSON.stringify(body) : undefined,
     headers: { "content-type": "application/json" },
-  });
+  }) as unknown as NextRequest;
 }
 
 describe("PATCH /[itemId]", () => {
   it("marks the item complete", async () => {
-    const res = await PATCH(req({ completedAt: new Date().toISOString() }) as any, {
+    const res = await PATCH(req({ completedAt: new Date().toISOString() }), {
       params: Promise.resolve({ id: clientId, itemId }),
     });
     expect(res.status).toBe(200);
@@ -74,7 +75,7 @@ describe("PATCH /[itemId]", () => {
   });
 
   it("reopens the item (null completedAt)", async () => {
-    const res = await PATCH(req({ completedAt: null }) as any, {
+    const res = await PATCH(req({ completedAt: null }), {
       params: Promise.resolve({ id: clientId, itemId }),
     });
     expect(res.status).toBe(200);
@@ -83,7 +84,7 @@ describe("PATCH /[itemId]", () => {
   });
 
   it("404s across firms", async () => {
-    const res = await PATCH(req({ title: "hacked" }) as any, {
+    const res = await PATCH(req({ title: "hacked" }), {
       params: Promise.resolve({ id: clientOtherId, itemId }),
     });
     expect(res.status).toBe(404);
@@ -92,14 +93,14 @@ describe("PATCH /[itemId]", () => {
 
 describe("DELETE /[itemId]", () => {
   it("deletes the item", async () => {
-    const res = await DELETE(req() as any, {
+    const res = await DELETE(req(), {
       params: Promise.resolve({ id: clientId, itemId }),
     });
     expect(res.status).toBe(204);
   });
 
   it("second delete returns 404", async () => {
-    const res = await DELETE(req() as any, {
+    const res = await DELETE(req(), {
       params: Promise.resolve({ id: clientId, itemId }),
     });
     expect(res.status).toBe(404);

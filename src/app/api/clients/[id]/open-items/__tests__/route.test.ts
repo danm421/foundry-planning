@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { clients, clientOpenItems } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -52,17 +53,17 @@ afterAll(async () => {
 // Import AFTER mock + fixture setup
 import { GET, POST } from "../route";
 
-function makeReq(body?: unknown): Request {
+function makeReq(body?: unknown): NextRequest {
   return new Request("http://test/api", {
     method: body ? "POST" : "GET",
     body: body ? JSON.stringify(body) : undefined,
     headers: { "content-type": "application/json" },
-  });
+  }) as unknown as NextRequest;
 }
 
 describe("POST /api/clients/[id]/open-items", () => {
   it("creates an item with minimal body", async () => {
-    const res = await POST(makeReq({ title: "Collect docs" }) as any, {
+    const res = await POST(makeReq({ title: "Collect docs" }), {
       params: Promise.resolve({ id: clientA }),
     });
     expect(res.status).toBe(201);
@@ -73,14 +74,14 @@ describe("POST /api/clients/[id]/open-items", () => {
   });
 
   it("404s when the client is in a different firm", async () => {
-    const res = await POST(makeReq({ title: "hack" }) as any, {
+    const res = await POST(makeReq({ title: "hack" }), {
       params: Promise.resolve({ id: clientB }),
     });
     expect(res.status).toBe(404);
   });
 
   it("400s on invalid body", async () => {
-    const res = await POST(makeReq({ title: "" }) as any, {
+    const res = await POST(makeReq({ title: "" }), {
       params: Promise.resolve({ id: clientA }),
     });
     expect(res.status).toBe(400);
@@ -89,7 +90,7 @@ describe("POST /api/clients/[id]/open-items", () => {
 
 describe("GET /api/clients/[id]/open-items", () => {
   it("lists items for the client", async () => {
-    const res = await GET(makeReq() as any, {
+    const res = await GET(makeReq(), {
       params: Promise.resolve({ id: clientA }),
     });
     expect(res.status).toBe(200);
@@ -99,7 +100,7 @@ describe("GET /api/clients/[id]/open-items", () => {
   });
 
   it("404s on cross-firm read", async () => {
-    const res = await GET(makeReq() as any, {
+    const res = await GET(makeReq(), {
       params: Promise.resolve({ id: clientB }),
     });
     expect(res.status).toBe(404);
