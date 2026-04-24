@@ -5,6 +5,8 @@ import BeneficiaryEditor from "./beneficiary-editor";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AddClientDialog from "./add-client-dialog";
 import EntityDialog from "./entity-dialog";
+import AddEntityMenu from "./add-entity-menu";
+import type { EntityKind } from "./entity-dialog/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import { type TrustSubType } from "@/lib/entities/trust";
 import {
@@ -353,6 +355,7 @@ export default function FamilyView({
   const [membersEdit, setMembersEdit] = useState(false);
 
   const [entityDialogOpen, setEntityDialogOpen] = useState(false);
+  const [entityCreateKind, setEntityCreateKind] = useState<EntityKind>("trust");
   const [editingEntity, setEditingEntity] = useState<Entity | undefined>();
   const [deletingEntity, setDeletingEntity] = useState<Entity | null>(null);
   const [entitiesEdit, setEntitiesEdit] = useState(false);
@@ -547,15 +550,13 @@ export default function FamilyView({
                 {entitiesEdit ? "Done" : "Edit"}
               </button>
             )}
-            <button
-              onClick={() => {
+            <AddEntityMenu
+              onPick={(kind) => {
                 setEditingEntity(undefined);
+                setEntityCreateKind(kind);
                 setEntityDialogOpen(true);
               }}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-            >
-              + Add
-            </button>
+            />
           </div>
         </header>
 
@@ -836,7 +837,7 @@ export default function FamilyView({
           open={entityDialogOpen}
           onOpenChange={setEntityDialogOpen}
           editing={editingEntity}
-          createKind="trust"
+          createKind={entityCreateKind}
           onSaved={(e, mode) => {
             if (mode === "create") setEntities((prev) => [...prev, e]);
             else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));
