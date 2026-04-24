@@ -89,6 +89,7 @@ describe("computeHypotheticalEstateTax", () => {
 
     // DSUE handoff: the survivor's death should receive non-zero DSUE
     // whenever first-death generated DSUE (marital-deduction path).
+    expect(result.primaryFirst.firstDeath.dsueGenerated).toBeGreaterThan(0);
     expect(result.primaryFirst.finalDeath!.dsueReceived).toBe(
       result.primaryFirst.firstDeath.dsueGenerated,
     );
@@ -133,6 +134,7 @@ describe("computeHypotheticalEstateTax", () => {
     expect(result.spouseFirst!.firstDeath.deceased).toBe("spouse");
     expect(result.spouseFirst!.finalDeath).toBeDefined();
     expect(result.spouseFirst!.finalDeath!.deceased).toBe("client");
+    expect(result.spouseFirst!.firstDeath.dsueGenerated).toBeGreaterThan(0);
     expect(result.spouseFirst!.finalDeath!.dsueReceived).toBe(
       result.spouseFirst!.firstDeath.dsueGenerated,
     );
