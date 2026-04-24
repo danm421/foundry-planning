@@ -1090,6 +1090,14 @@ export const accountsRelations = relations(accounts, ({ one, many }) => ({
   }),
   savingsRules: many(savingsRules),
   withdrawalStrategies: many(withdrawalStrategies),
+  policy: one(lifeInsurancePolicies, {
+    fields: [accounts.id],
+    references: [lifeInsurancePolicies.accountId],
+    relationName: "policyAccount",
+  }),
+  mergingPolicies: many(lifeInsurancePolicies, {
+    relationName: "mergeTargetAccount",
+  }),
 }));
 
 export const lifeInsurancePoliciesRelations = relations(lifeInsurancePolicies, ({ one, many }) => ({
