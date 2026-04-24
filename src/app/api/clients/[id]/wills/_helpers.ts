@@ -4,6 +4,7 @@ import {
   familyMembers,
   externalBeneficiaries,
   entities,
+  liabilities,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import type { WillBequestInput } from "@/lib/schemas/wills";
@@ -13,7 +14,10 @@ type CrossRefCheck = {
   familyMemberIds: string[];
   externalIds: string[];
   entityIds: string[];
+  liabilityIds: string[];
 };
+
+export type CrossRefError = { code: string; detail?: string };
 
 export function gatherCrossRefs(bequests: WillBequestInput[]): CrossRefCheck {
   const check: CrossRefCheck = {
@@ -21,9 +25,11 @@ export function gatherCrossRefs(bequests: WillBequestInput[]): CrossRefCheck {
     familyMemberIds: [],
     externalIds: [],
     entityIds: [],
+    liabilityIds: [],
   };
   for (const b of bequests) {
-    if (b.accountId) check.accountIds.push(b.accountId);
+    if (b.kind === "asset" && b.accountId) check.accountIds.push(b.accountId);
+    if (b.kind === "liability") check.liabilityIds.push(b.liabilityId);
     for (const r of b.recipients) {
       if (!r.recipientId) continue;
       if (r.recipientKind === "family_member") check.familyMemberIds.push(r.recipientId);
@@ -37,14 +43,15 @@ export function gatherCrossRefs(bequests: WillBequestInput[]): CrossRefCheck {
 export async function verifyCrossRefs(
   clientId: string,
   check: CrossRefCheck,
-): Promise<string | null> {
+  bequests?: WillBequestInput[],
+): Promise<CrossRefError | null> {
   if (check.accountIds.length > 0) {
     const rows = await db
       .select({ id: accounts.id })
       .from(accounts)
       .where(and(eq(accounts.clientId, clientId), inArray(accounts.id, check.accountIds)));
     if (rows.length !== new Set(check.accountIds).size) {
-      return "One or more accountIds do not belong to this client";
+      return { code: "One or more accountIds do not belong to this client" };
     }
   }
   if (check.familyMemberIds.length > 0) {
@@ -58,7 +65,7 @@ export async function verifyCrossRefs(
         ),
       );
     if (rows.length !== new Set(check.familyMemberIds).size) {
-      return "One or more family-member recipientIds do not belong to this client";
+      return { code: "One or more family-member recipientIds do not belong to this client" };
     }
   }
   if (check.externalIds.length > 0) {
@@ -72,7 +79,7 @@ export async function verifyCrossRefs(
         ),
       );
     if (rows.length !== new Set(check.externalIds).size) {
-      return "One or more external-beneficiary recipientIds do not belong to this client";
+      return { code: "One or more external-beneficiary recipientIds do not belong to this client" };
     }
   }
   if (check.entityIds.length > 0) {
@@ -81,9 +88,45 @@ export async function verifyCrossRefs(
       .from(entities)
       .where(and(eq(entities.clientId, clientId), inArray(entities.id, check.entityIds)));
     if (rows.length !== new Set(check.entityIds).size) {
-      return "One or more entity recipientIds do not belong to this client";
+      return { code: "One or more entity recipientIds do not belong to this client" };
     }
   }
+
+  // Liability-bequest cross-ref: batch-fetch all referenced liabilities in one
+  // query (matches the account/family/entity pattern above), then validate each
+  // in iteration order so error reporting is deterministic (first-bequest-first).
+  if (bequests) {
+    const liabilityIds = bequests
+      .filter((b) => b.kind === "liability")
+      .map((b) => b.liabilityId!);
+
+    if (liabilityIds.length > 0) {
+      const found = await db
+        .select({
+          id: liabilities.id,
+          linkedPropertyId: liabilities.linkedPropertyId,
+          ownerEntityId: liabilities.ownerEntityId,
+        })
+        .from(liabilities)
+        .where(and(eq(liabilities.clientId, clientId), inArray(liabilities.id, liabilityIds)));
+
+      const byId = new Map(found.map((l) => [l.id, l]));
+
+      for (const liabId of liabilityIds) {
+        const liab = byId.get(liabId);
+        if (!liab) {
+          return { code: "liability_not_found", detail: liabId };
+        }
+        if (liab.linkedPropertyId != null) {
+          return { code: "liability_linked_not_bequestable", detail: liab.id };
+        }
+        if (liab.ownerEntityId != null) {
+          return { code: "liability_entity_owned_not_bequestable", detail: liab.id };
+        }
+      }
+    }
+  }
+
   return null;
 }
 
@@ -91,7 +134,7 @@ export async function verifyCrossRefs(
 export function computeSoftWarnings(bequests: WillBequestInput[]): string[] {
   const byKey = new Map<string, number>();
   for (const b of bequests) {
-    if (b.assetMode !== "specific" || !b.accountId) continue;
+    if (b.kind !== "asset" || b.assetMode !== "specific" || !b.accountId) continue;
     const key = `${b.accountId}|${b.condition}`;
     byKey.set(key, (byKey.get(key) ?? 0) + b.percentage);
   }

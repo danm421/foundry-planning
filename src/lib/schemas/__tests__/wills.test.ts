@@ -16,6 +16,7 @@ const spouseRecipient = {
 };
 
 const validBequest = {
+  kind: "asset" as const,
   name: "Brokerage to spouse",
   assetMode: "specific" as const,
   accountId: u("1"),
@@ -23,6 +24,22 @@ const validBequest = {
   condition: "always" as const,
   sortOrder: 0,
   recipients: [spouseRecipient],
+};
+
+const validLiabilityBequest = {
+  kind: "liability" as const,
+  name: "Visa CC",
+  liabilityId: "11111111-1111-1111-1111-111111111111",
+  condition: "always" as const,
+  sortOrder: 0,
+  recipients: [
+    {
+      recipientKind: "family_member" as const,
+      recipientId: "22222222-2222-2222-2222-222222222222",
+      percentage: 100,
+      sortOrder: 0,
+    },
+  ],
 };
 
 describe("willBequestSchema", () => {
@@ -151,5 +168,74 @@ describe("willUpdateSchema", () => {
       bequests: [{ ...validBequest, accountId: null }],
     });
     expect(r.success).toBe(false);
+  });
+});
+
+describe("will bequest — liability kind", () => {
+  it("accepts a well-formed liability bequest", () => {
+    const input = { ...validLiabilityBequest };
+    expect(willBequestSchema.parse(input)).toMatchObject({ kind: "liability" });
+  });
+
+  it("rejects external_beneficiary recipient on a liability bequest", () => {
+    const input = {
+      ...validLiabilityBequest,
+      recipients: [
+        {
+          recipientKind: "external_beneficiary" as const,
+          recipientId: "33333333-3333-3333-3333-333333333333",
+          percentage: 100,
+          sortOrder: 0,
+        },
+      ],
+    };
+    expect(() => willBequestSchema.parse(input)).toThrow(/recipient kind must be one of/);
+  });
+
+  it("rejects condition other than 'always' on a liability bequest", () => {
+    const input = { ...validLiabilityBequest, condition: "if_spouse_survives" };
+    expect(() => willBequestSchema.parse(input)).toThrow();
+  });
+
+  it("accepts partial recipient sum (0 < Σ ≤ 100)", () => {
+    const input = {
+      ...validLiabilityBequest,
+      recipients: [
+        {
+          recipientKind: "family_member" as const,
+          recipientId: "22222222-2222-2222-2222-222222222222",
+          percentage: 60,
+          sortOrder: 0,
+        },
+      ],
+    };
+    expect(willBequestSchema.parse(input)).toMatchObject({ kind: "liability" });
+  });
+
+  it("rejects Σ > 100", () => {
+    const input = {
+      ...validLiabilityBequest,
+      recipients: [
+        { recipientKind: "family_member" as const, recipientId: "22222222-2222-2222-2222-222222222222", percentage: 80, sortOrder: 0 },
+        { recipientKind: "family_member" as const, recipientId: "44444444-4444-4444-4444-444444444444", percentage: 80, sortOrder: 1 },
+      ],
+    };
+    expect(() => willBequestSchema.parse(input)).toThrow(/0 < sum ≤ 100/);
+  });
+
+  it("rejects liability payload carrying accountId (cross-branch contamination)", () => {
+    const input = {
+      ...validLiabilityBequest,
+      accountId: "99999999-9999-9999-9999-999999999999",
+    };
+    expect(() => willBequestSchema.parse(input)).toThrow();
+  });
+
+  it("rejects asset payload carrying liabilityId (cross-branch contamination)", () => {
+    const input = {
+      ...validBequest,
+      liabilityId: "44444444-4444-4444-4444-444444444444",
+    };
+    expect(() => willBequestSchema.parse(input)).toThrow();
   });
 });

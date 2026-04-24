@@ -270,6 +270,7 @@ d("wills tenant isolation", () => {
       .values({
         willId: willRow.id,
         name: "x",
+        kind: "asset",
         assetMode: "all_assets",
         accountId: null,
         percentage: "100",

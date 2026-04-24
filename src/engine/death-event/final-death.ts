@@ -20,6 +20,7 @@ import {
 } from "./estate-tax";
 import { applyGrantorSuccession } from "./grantor-succession";
 import { drainLiquidAssets } from "./creditor-payoff";
+import { applyLiabilityBequests } from "./liability-bequests";
 import { beaForYear } from "@/lib/tax/estate";
 import { computeAdjustedTaxableGifts } from "@/lib/estate/adjusted-taxable-gifts";
 
@@ -210,6 +211,26 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   // Working state for the drain passes.
   const accountBalances = { ...input.accountBalances };
   let workingLiabs = [...input.liabilities];
+  let ledger: DeathTransfer[] = [];
+
+  // Phase 2.5 (4e) — carve bequeathed unlinked-debt slices out of the
+  // creditor-payoff pool before the drain runs. Gross estate was already
+  // computed against the original liability list (Form 706 is agnostic
+  // about who pays), so this only affects downstream drain + chain.
+  const bequestResult = applyLiabilityBequests({
+    will: input.will,
+    deceased: input.deceased,
+    liabilities: workingLiabs,
+    familyMembers: input.familyMembers,
+    entities: input.entities,  // pre-succession snapshot
+    year: input.year,
+  });
+  workingLiabs = [
+    ...bequestResult.updatedLiabilities,
+    ...bequestResult.newLiabilityRows,
+  ];
+  ledger = ledger.concat(bequestResult.bequestTransfers);
+  warnings.push(...bequestResult.warnings);
 
   // Phase 4 — creditor-payoff drain. Pay off unlinked household debt from
   // the deceased's liquid accounts (proportional inside each category, fixed
@@ -340,8 +361,6 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   // Phase 8a — pour-out fold-in BEFORE the chain's will step runs. Trust
   // accounts pour to their beneficiaries; trust liabilities have their
   // ownerEntityId stripped so they join the unlinked-debt redistribution.
-  let ledger: DeathTransfer[] = [];
-
   if (succession.pourOutQueue.length > 0) {
     const pourOut = runPourOut({
       queue: succession.pourOutQueue,
@@ -411,7 +430,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     creditorPayoffResidual: creditorDrain.residual,
   });
 
-  assertFinalDeathInvariants(estateTax, mutatedEntities, input.deceased);
+  assertFinalDeathInvariants(estateTax, mutatedEntities, input.deceased, ledger, workingLiabs, input.liabilities);
 
   return {
     accounts: chainResult.accounts,
@@ -431,6 +450,9 @@ function assertFinalDeathInvariants(
   estateTax: EstateTaxResult,
   entities: EntitySummary[],
   deceased: "client" | "spouse",
+  ledger: DeathTransfer[],
+  workingLiabs: Liability[],
+  originalLiabilities: Liability[],
 ): void {
   // grossEstate can be negative when the decedent owns no individual assets
   // but proportional household-debt attribution lands on them (4d-2 hypothetical
@@ -448,6 +470,35 @@ function assertFinalDeathInvariants(
   for (const e of entities) {
     if (!e.isIrrevocable && e.grantor === deceased) {
       throw new Error(`final-death: entity ${e.id} revocable + grantor=deceased was not flipped`);
+    }
+  }
+
+  // 4e invariants — liability bequests
+  const bequestLedger = ledger.filter((t) => t.via === "will_liability_bequest");
+  for (const t of bequestLedger) {
+    if (t.sourceLiabilityId == null) {
+      throw new Error(`[4e] will_liability_bequest missing sourceLiabilityId`);
+    }
+  }
+  // Σ|amount| per sourceLiabilityId must not exceed the pre-bequest balance
+  const bequestTotalsBySource = new Map<string, number>();
+  for (const t of bequestLedger) {
+    const id = t.sourceLiabilityId!;
+    bequestTotalsBySource.set(id, (bequestTotalsBySource.get(id) ?? 0) + Math.abs(t.amount));
+  }
+  for (const [liabId, total] of bequestTotalsBySource.entries()) {
+    const original = originalLiabilities.find((l) => l.id === liabId);
+    if (original && total > original.balance + 0.01) {
+      throw new Error(`[4e] bequest sum ${total} exceeds pre-bequest balance ${original.balance} for ${liabId}`);
+    }
+  }
+  // New liability rows from bequests: exactly one ownership kind set
+  for (const row of workingLiabs) {
+    if (!row.id.startsWith("death-liab-bequest")) continue;
+    const fam = row.ownerFamilyMemberId != null;
+    const ent = row.ownerEntityId != null;
+    if (fam === ent) {
+      throw new Error(`[4e] bequest-derived liability ${row.id} must have exactly one of ownerFamilyMemberId / ownerEntityId set`);
     }
   }
 }

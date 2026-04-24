@@ -71,9 +71,11 @@ export async function GET(
       const list = bequestsByWill.get(b.willId) ?? [];
       list.push({
         id: b.id,
+        kind: b.kind,
         name: b.name,
         assetMode: b.assetMode,
         accountId: b.accountId,
+        liabilityId: b.liabilityId,
         percentage: parseFloat(b.percentage),
         condition: b.condition,
         sortOrder: b.sortOrder,
@@ -135,9 +137,12 @@ export async function POST(
       );
     }
 
-    const crossRefError = await verifyCrossRefs(id, gatherCrossRefs(data.bequests));
+    const crossRefError = await verifyCrossRefs(id, gatherCrossRefs(data.bequests), data.bequests);
     if (crossRefError) {
-      return NextResponse.json({ error: crossRefError }, { status: 400 });
+      return NextResponse.json(
+        { error: crossRefError.code, detail: crossRefError.detail },
+        { status: 400 },
+      );
     }
 
     const willId = await db.transaction(async (tx) => {
@@ -151,9 +156,11 @@ export async function POST(
           .values({
             willId: willRow.id,
             name: b.name,
-            assetMode: b.assetMode,
-            accountId: b.accountId ?? null,
-            percentage: String(b.percentage),
+            kind: b.kind,
+            assetMode: b.kind === "asset" ? b.assetMode : null,
+            accountId: b.kind === "asset" ? (b.accountId ?? null) : null,
+            liabilityId: b.kind === "liability" ? b.liabilityId : null,
+            percentage: b.kind === "asset" ? String(b.percentage) : "100",
             condition: b.condition,
             sortOrder: b.sortOrder,
           })
@@ -180,6 +187,21 @@ export async function POST(
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    // Unique-index violation: map 23505 on will_bequests_liability_idx → 400
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as { code: string }).code === "23505"
+    ) {
+      const constraint = (err as { constraint?: string }).constraint ?? "";
+      if (constraint.includes("will_bequests_liability_idx")) {
+        return NextResponse.json(
+          { error: "duplicate_liability_bequest" },
+          { status: 400 },
+        );
+      }
     }
     console.error("POST /api/clients/[id]/wills error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

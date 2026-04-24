@@ -26,3 +26,5 @@ export {
 } from "./shared";
 export { applyFirstDeath } from "./first-death";
 export { applyFinalDeath } from "./final-death";
+export { applyLiabilityBequests } from "./liability-bequests";
+export type { LiabilityBequestResult, LiabilityBequestsInput } from "./liability-bequests";

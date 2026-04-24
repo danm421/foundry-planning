@@ -171,8 +171,8 @@ describe("identifyFinalDeceased", () => {
 
 describe("firesAtDeath", () => {
   const mkB = (condition: WillBequest["condition"]): WillBequest => ({
-    id: "b1", name: "All assets", assetMode: "all_assets", accountId: null,
-    percentage: 100, condition, sortOrder: 0, recipients: [],
+    id: "b1", name: "All assets", kind: "asset", assetMode: "all_assets", accountId: null,
+    liabilityId: null, percentage: 100, condition, sortOrder: 0, recipients: [],
   });
 
   it("fires always-condition at both first and final death", () => {
@@ -459,7 +459,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
       grantor: "client",
       bequests: [{
         id: "beq-1", name: "Brokerage to Alice",
-        assetMode: "specific", accountId: "acct-brok",
+        kind: "asset", assetMode: "specific", accountId: "acct-brok", liabilityId: null,
         percentage: 100,
         condition: "always",
         sortOrder: 0,
@@ -482,7 +482,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
       id: "will-1", grantor: "client",
       bequests: [{
         id: "beq-1", name: "Brokerage split",
-        assetMode: "specific", accountId: "acct-brok",
+        kind: "asset", assetMode: "specific", accountId: "acct-brok", liabilityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [
           { recipientKind: "family_member", recipientId: "child-a", percentage: 50, sortOrder: 0 },
@@ -502,7 +502,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
       id: "will-1", grantor: "client",
       bequests: [{
         id: "beq-1", name: "40% to Alice",
-        assetMode: "specific", accountId: "acct-brok",
+        kind: "asset", assetMode: "specific", accountId: "acct-brok", liabilityId: null,
         percentage: 40, condition: "always", sortOrder: 0,
         recipients: [
           { recipientKind: "family_member", recipientId: "child-a", percentage: 100, sortOrder: 0 },
@@ -519,7 +519,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
       id: "will-1", grantor: "client",
       bequests: [{
         id: "beq-1", name: "Only if spouse predeceased",
-        assetMode: "specific", accountId: "acct-brok",
+        kind: "asset", assetMode: "specific", accountId: "acct-brok", liabilityId: null,
         percentage: 100, condition: "if_spouse_predeceased", sortOrder: 0,
         recipients: [
           { recipientKind: "family_member", recipientId: "child-a", percentage: 100, sortOrder: 0 },
@@ -536,15 +536,15 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
       bequests: [
         {
           id: "beq-1", name: "Sixty to A",
-          assetMode: "specific", accountId: "acct-brok",
-          percentage: 60, condition: "always", sortOrder: 0,
-          recipients: [{ recipientKind: "family_member", recipientId: "child-a", percentage: 100, sortOrder: 0 }],
+          kind: "asset" as const, assetMode: "specific" as const, accountId: "acct-brok", liabilityId: null,
+          percentage: 60, condition: "always" as const, sortOrder: 0,
+          recipients: [{ recipientKind: "family_member" as const, recipientId: "child-a", percentage: 100, sortOrder: 0 }],
         },
         {
           id: "beq-2", name: "Sixty more to B",
-          assetMode: "specific", accountId: "acct-brok",
-          percentage: 60, condition: "always", sortOrder: 1,
-          recipients: [{ recipientKind: "family_member", recipientId: "child-b", percentage: 100, sortOrder: 0 }],
+          kind: "asset" as const, assetMode: "specific" as const, accountId: "acct-brok", liabilityId: null,
+          percentage: 60, condition: "always" as const, sortOrder: 1,
+          recipients: [{ recipientKind: "family_member" as const, recipientId: "child-b", percentage: 100, sortOrder: 0 }],
         },
       ],
     };
@@ -572,7 +572,7 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
       id: "will-1", grantor: "client",
       bequests: [{
         id: "beq-1", name: "All other assets",
-        assetMode: "all_assets", accountId: null,
+        kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
       }],
@@ -596,7 +596,7 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
       id: "will-1", grantor: "client",
       bequests: [{
         id: "beq-1", name: "All other assets",
-        assetMode: "all_assets", accountId: null,
+        kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
       }],
@@ -768,7 +768,7 @@ describe("applyFirstDeath orchestrator", () => {
     id: "will-john", grantor: "client",
     bequests: [{
       id: "beq-1", name: "Residual to Jane",
-      assetMode: "all_assets", accountId: null,
+      kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null,
       percentage: 100, condition: "always", sortOrder: 0,
       recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
     }],
@@ -1014,6 +1014,56 @@ describe("distributeUnlinkedLiabilities", () => {
   });
 });
 
+describe("distributeUnlinkedLiabilities — negative-share filter (4e)", () => {
+  it("excludes recipients whose net ledger amount is ≤ 0 from proportional residual", () => {
+    // Bequest-only recipient: appears in ledger only via a negative transfer.
+    const bequestOnly: DeathTransfer = {
+      year: 2050, deathOrder: 2, deceased: "client",
+      sourceAccountId: null, sourceAccountName: null,
+      sourceLiabilityId: "liab-original", sourceLiabilityName: "Visa",
+      via: "will_liability_bequest",
+      recipientKind: "family_member", recipientId: "fam-debt-only", recipientLabel: "Bob",
+      amount: -5_000, basis: 0,
+      resultingAccountId: null, resultingLiabilityId: "death-liab-bequest-1",
+    };
+    // Normal heir with positive asset inheritance.
+    const normalHeir: DeathTransfer = {
+      year: 2050, deathOrder: 2, deceased: "client",
+      sourceAccountId: "acct-1", sourceAccountName: "Brokerage",
+      sourceLiabilityId: null, sourceLiabilityName: null,
+      via: "will",
+      recipientKind: "family_member", recipientId: "fam-heir", recipientLabel: "Alice",
+      amount: 100_000, basis: 50_000,
+      resultingAccountId: "death-acct-1", resultingLiabilityId: null,
+    };
+    const residualUnlinkedDebt: Liability = {
+      id: "liab-residual", name: "Student loan",
+      balance: 20_000, interestRate: 0.05, monthlyPayment: 200,
+      startYear: 2020, startMonth: 1, termMonths: 120, extraPayments: [],
+    };
+
+    const result = distributeUnlinkedLiabilities(
+      [residualUnlinkedDebt],
+      [bequestOnly, normalHeir],
+      2050,
+      "client",
+    );
+
+    // Bob (net -5_000) should NOT receive a share of residual debt
+    const bobShares = result.liabilityTransfers.filter(
+      (t) => t.recipientId === "fam-debt-only",
+    );
+    expect(bobShares).toHaveLength(0);
+
+    // Alice (net +100_000) should get the full residual debt
+    const aliceShares = result.liabilityTransfers.filter(
+      (t) => t.recipientId === "fam-heir",
+    );
+    expect(aliceShares).toHaveLength(1);
+    expect(aliceShares[0].amount).toBe(-20_000);
+  });
+});
+
 describe("applyFinalDeath orchestrator", () => {
   const mkAccount = (over: Partial<Account> = {}): Account => ({
     id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
@@ -1100,9 +1150,10 @@ describe("applyFinalDeath orchestrator", () => {
     const will: Will = {
       id: "w1", grantor: "client", bequests: [
         {
-          id: "b1", name: "Always bequest", assetMode: "all_assets", accountId: null,
-          percentage: 100, condition: "always", sortOrder: 0,
-          recipients: [{ recipientKind: "family_member", recipientId: "c1", percentage: 100, sortOrder: 0 }],
+          id: "b1", name: "Always bequest", kind: "asset" as const, assetMode: "all_assets" as const,
+          accountId: null, liabilityId: null,
+          percentage: 100, condition: "always" as const, sortOrder: 0,
+          recipients: [{ recipientKind: "family_member" as const, recipientId: "c1", percentage: 100, sortOrder: 0 }],
         },
       ],
     };
@@ -1123,14 +1174,16 @@ describe("applyFinalDeath orchestrator", () => {
     const will: Will = {
       id: "w1", grantor: "client", bequests: [
         {
-          id: "b1", name: "Spouse bequest", assetMode: "all_assets", accountId: null,
-          percentage: 100, condition: "if_spouse_survives", sortOrder: 0,
-          recipients: [{ recipientKind: "family_member", recipientId: "c1", percentage: 100, sortOrder: 0 }],
+          id: "b1", name: "Spouse bequest", kind: "asset" as const, assetMode: "all_assets" as const,
+          accountId: null, liabilityId: null,
+          percentage: 100, condition: "if_spouse_survives" as const, sortOrder: 0,
+          recipients: [{ recipientKind: "family_member" as const, recipientId: "c1", percentage: 100, sortOrder: 0 }],
         },
         {
-          id: "b2", name: "No-spouse bequest", assetMode: "all_assets", accountId: null,
-          percentage: 100, condition: "if_spouse_predeceased", sortOrder: 1,
-          recipients: [{ recipientKind: "family_member", recipientId: "c1", percentage: 100, sortOrder: 0 }],
+          id: "b2", name: "No-spouse bequest", kind: "asset" as const, assetMode: "all_assets" as const,
+          accountId: null, liabilityId: null,
+          percentage: 100, condition: "if_spouse_predeceased" as const, sortOrder: 1,
+          recipients: [{ recipientKind: "family_member" as const, recipientId: "c1", percentage: 100, sortOrder: 0 }],
         },
       ],
     };

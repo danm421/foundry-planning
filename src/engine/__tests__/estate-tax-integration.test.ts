@@ -12,6 +12,7 @@ import type {
   Liability,
   PlanSettings,
   Will,
+  WillBequest,
 } from "../types";
 
 /**
@@ -134,7 +135,7 @@ describe("4d integration — first death estate tax", () => {
       id: "w1", grantor: "client",
       bequests: [{
         id: "b1", name: "All to spouse",
-        assetMode: "all_assets", accountId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
       }],
@@ -179,7 +180,7 @@ describe("4d integration — first death estate tax", () => {
       id: "w1", grantor: "client",
       bequests: [{
         id: "b1", name: "Split 50/50 spouse + kid",
-        assetMode: "all_assets", accountId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [
           { recipientKind: "spouse", recipientId: null, percentage: 50, sortOrder: 0 },
@@ -228,7 +229,7 @@ describe("4d integration — first death estate tax", () => {
       id: "w1", grantor: "client",
       bequests: [{
         id: "b1", name: "All to kid-a",
-        assetMode: "all_assets", accountId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "family_member", recipientId: "kid-a", percentage: 100, sortOrder: 0 }],
       }],
@@ -339,7 +340,7 @@ describe("4d integration — first death estate tax", () => {
       id: "w1", grantor: "client",
       bequests: [{
         id: "b1", name: "All to spouse",
-        assetMode: "all_assets", accountId: null,
+        kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
         percentage: 100, condition: "always", sortOrder: 0,
         recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
       }],
@@ -448,7 +449,7 @@ describe("4d integration — final death estate tax", () => {
         id: "w-client", grantor: "client",
         bequests: [{
           id: "beq-c", name: "Residual to spouse",
-          assetMode: "all_assets", accountId: null,
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
           percentage: 100, condition: "always", sortOrder: 0,
           recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
         }],
@@ -458,7 +459,7 @@ describe("4d integration — final death estate tax", () => {
         id: "w-spouse", grantor: "spouse",
         bequests: [{
           id: "beq-s", name: "Residual to kid",
-          assetMode: "all_assets", accountId: null,
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
           percentage: 100, condition: "always", sortOrder: 0,
           recipients: [{ recipientKind: "family_member", recipientId: "kid-a", percentage: 100, sortOrder: 0 }],
         }],
@@ -744,5 +745,418 @@ describe("4d integration — state estate tax", () => {
     // Federal tax is 0 (well under BEA), so totalEstateTax = stateEstateTax.
     expect(result.estateTax.federalEstateTax).toBe(0);
     expect(result.estateTax.totalEstateTax).toBeCloseTo(160_000, 0);
+  });
+});
+
+// ── Describe block 4: 4e integration — liability bequests at final death ─────
+
+/** Shared liability bequest fixture helpers. */
+const tomJr: FamilyMember = {
+  id: "tom-jr", relationship: "child", firstName: "Tom", lastName: "Jr.",
+  dateOfBirth: "2000-01-01",
+};
+
+function mkVisaLiability(overrides: Partial<Liability> = {}): Liability {
+  return {
+    id: "visa", name: "Visa", balance: 15_000,
+    interestRate: 0.18, monthlyPayment: 300,
+    startYear: 2025, startMonth: 1, termMonths: 120, extraPayments: [],
+    ...overrides,
+  };
+}
+
+function mkVisaBequest(pct: number, recipientKind: "family_member" | "entity", recipientId: string): WillBequest {
+  return {
+    id: "beq-visa", name: "Visa bequest",
+    kind: "liability" as const, assetMode: null, accountId: null,
+    liabilityId: "visa",
+    percentage: 100, condition: "always" as const, sortOrder: 0,
+    recipients: [{ recipientKind, recipientId, percentage: pct, sortOrder: 0 }],
+  };
+}
+
+describe("4e — liability bequests at final death", () => {
+  // ── Scenario A: 100% bequest — debt absent from creditor-payoff ────────────
+  it("A: 100% bequest to family_member — Visa absent from creditorPayoffDebits; will_liability_bequest in ledger; new liability row on recipient", () => {
+    // Visa $15k bequeathed 100% to Tom Jr. → creditor-payoff pool sees $0 from
+    // Visa; no debit for Visa; one will_liability_bequest transfer; new liability
+    // row owned by tom-jr.
+    const accounts: Account[] = [
+      {
+        id: "client-cash", name: "Client Cash",
+        category: "cash", subType: "savings",
+        owner: "client", value: 200_000, basis: 200_000,
+        growthRate: 0.02, rmdEnabled: false,
+      },
+    ];
+    const liabilities = [mkVisaLiability()];
+    const will: Will = {
+      id: "w-client", grantor: "client",
+      bequests: [
+        mkVisaBequest(100, "family_member", tomJr.id),
+        {
+          id: "beq-assets", name: "All to Tom Jr.",
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          percentage: 100, condition: "always" as const, sortOrder: 1,
+          recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
+        },
+      ],
+    };
+
+    const input = mkFinalDeathInput({ accounts, liabilities, will, familyMembers: [tomJr] });
+    const result = applyFinalDeath(input);
+
+    // Visa appears as a negative gross-estate line (debt).
+    const visaLine = result.estateTax.grossEstateLines.find((l) => l.liabilityId === "visa");
+    expect(visaLine).toBeDefined();
+    expect(visaLine!.amount).toBeCloseTo(-15_000, 0);
+
+    // Visa was bequeathed — not drained by creditor-payoff.
+    const visaDebit = result.estateTax.creditorPayoffDebits.find(
+      (d) => d.accountId === "client-cash",
+    );
+    // $0 debt remains for creditor payoff (Visa fully bequeathed), so no debit.
+    expect(result.estateTax.creditorPayoffDebits.reduce((s, d) => s + d.amount, 0)).toBeCloseTo(0, 0);
+
+    // Transfer ledger: exactly one will_liability_bequest for Visa.
+    const bequestTransfers = result.transfers.filter((t) => t.via === "will_liability_bequest");
+    expect(bequestTransfers).toHaveLength(1);
+    expect(bequestTransfers[0].amount).toBeCloseTo(-15_000, 0);
+    expect(bequestTransfers[0].recipientKind).toBe("family_member");
+    expect(bequestTransfers[0].recipientId).toBe(tomJr.id);
+    expect(bequestTransfers[0].sourceLiabilityId).toBe("visa");
+
+    // Post-death liabilities: a new row owned by tom-jr.
+    const bequestRow = result.liabilities.find((l) => l.ownerFamilyMemberId === tomJr.id);
+    expect(bequestRow).toBeDefined();
+    expect(bequestRow!.balance).toBeCloseTo(15_000, 0);
+  });
+
+  // ── Scenario B: 60% partial bequest ───────────────────────────────────────
+  it("B: 60% partial bequest — 40% remainder drained from cash; grossEstateLines still shows full balance; one will_liability_bequest at -9k", () => {
+    // 60% to Tom Jr. = $9k bequeathed. 40% = $6k remains unlinked.
+    // Creditor payoff must cover $6k from client-cash.
+    const accounts: Account[] = [
+      {
+        id: "client-cash", name: "Client Cash",
+        category: "cash", subType: "savings",
+        owner: "client", value: 100_000, basis: 100_000,
+        growthRate: 0.02, rmdEnabled: false,
+      },
+    ];
+    const liabilities = [mkVisaLiability()];
+    const will: Will = {
+      id: "w-client", grantor: "client",
+      bequests: [
+        mkVisaBequest(60, "family_member", tomJr.id),
+        {
+          id: "beq-assets", name: "Residual to Tom Jr.",
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          percentage: 100, condition: "always" as const, sortOrder: 1,
+          recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
+        },
+      ],
+    };
+
+    const input = mkFinalDeathInput({ accounts, liabilities, will, familyMembers: [tomJr] });
+    const result = applyFinalDeath(input);
+
+    // grossEstateLines still shows Visa at full $-15k (pre-bequest gross).
+    const visaLine = result.estateTax.grossEstateLines.find((l) => l.liabilityId === "visa");
+    expect(visaLine).toBeDefined();
+    expect(visaLine!.amount).toBeCloseTo(-15_000, 0);
+
+    // Creditor-payoff covers the un-bequeathed 40% = $6k.
+    const totalCreditorDrain = result.estateTax.creditorPayoffDebits.reduce(
+      (s, d) => s + d.amount, 0,
+    );
+    expect(totalCreditorDrain).toBeCloseTo(6_000, 0);
+
+    // One will_liability_bequest at -$9k (60% of 15k).
+    const bequestTransfers = result.transfers.filter((t) => t.via === "will_liability_bequest");
+    expect(bequestTransfers).toHaveLength(1);
+    expect(bequestTransfers[0].amount).toBeCloseTo(-9_000, 0);
+    expect(bequestTransfers[0].recipientId).toBe(tomJr.id);
+  });
+
+  // ── Scenario C: 60% partial bequest + mostly-illiquid estate ─────────────
+  it("C: 60% partial + mostly-illiquid estate — creditor drains partial cash, creditor_payoff_insufficient_liquid fires, residual distributed proportionally to asset heirs", () => {
+    // 60% of $15k = $9k bequeathed; 40% = $6k must be paid by creditor drain.
+    // Cash = $1k (only liquid); remainder $5k → insufficient → proportional fallback fires.
+    // A real_estate account ensures Tom Jr. has a positive asset share in the ledger
+    // so distributeUnlinkedLiabilities can apportion the $5k residual to him.
+    const accounts: Account[] = [
+      {
+        id: "client-cash", name: "Client Cash",
+        category: "cash", subType: "savings",
+        owner: "client", value: 1_000, basis: 1_000,
+        growthRate: 0.02, rmdEnabled: false,
+      },
+      {
+        id: "client-home", name: "Primary Home",
+        category: "real_estate", subType: "primary_residence",
+        owner: "client", value: 200_000, basis: 150_000,
+        growthRate: 0.03, rmdEnabled: false,
+      },
+    ];
+    const liabilities = [mkVisaLiability()];
+    const will: Will = {
+      id: "w-client", grantor: "client",
+      bequests: [
+        mkVisaBequest(60, "family_member", tomJr.id),
+        {
+          id: "beq-assets", name: "Residual to Tom Jr.",
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          percentage: 100, condition: "always" as const, sortOrder: 1,
+          recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
+        },
+      ],
+    };
+
+    const input = mkFinalDeathInput({ accounts, liabilities, will, familyMembers: [tomJr] });
+    const result = applyFinalDeath(input);
+
+    // Creditor drain used the full $1k liquid.
+    const totalCreditorDrain = result.estateTax.creditorPayoffDebits.reduce(
+      (s, d) => s + d.amount, 0,
+    );
+    expect(totalCreditorDrain).toBeCloseTo(1_000, 0);
+
+    // Residual was non-zero → warning fired.
+    expect(result.warnings.some((w) => w.startsWith("creditor_payoff_insufficient_liquid"))).toBe(true);
+
+    // distributeUnlinkedLiabilities fired: at least one proportional transfer
+    // (Tom Jr. received the home, giving him a positive asset share).
+    const propTransfers = result.transfers.filter(
+      (t) => t.via === "unlinked_liability_proportional",
+    );
+    expect(propTransfers.length).toBeGreaterThan(0);
+    // The proportional transfer amount is negative (debt allocated to heir).
+    expect(propTransfers[0].amount).toBeLessThan(0);
+
+    // The bequested slice still appears in the ledger.
+    const bequestTransfers = result.transfers.filter((t) => t.via === "will_liability_bequest");
+    expect(bequestTransfers).toHaveLength(1);
+    expect(bequestTransfers[0].amount).toBeCloseTo(-9_000, 0);
+  });
+
+  // ── Scenario D: entity (trust) recipient ──────────────────────────────────
+  it("D: 100% bequest to entity (irrevocable trust) — new liability row has ownerEntityId set; transfer tagged entity", () => {
+    // Use an irrevocable trust so no pour-out fires and the bequest-derived
+    // liability row retains its ownerEntityId through the full pipeline.
+    const irrevocableTrust: EntitySummary = {
+      id: "trust-irrev", includeInPortfolio: false, isGrantor: false,
+      trustSubType: "irrevocable" as const, isIrrevocable: true,
+      beneficiaries: [{
+        id: "bref-1", tier: "primary", percentage: 100,
+        familyMemberId: tomJr.id, sortOrder: 0,
+      }],
+    };
+    const accounts: Account[] = [
+      {
+        id: "client-cash", name: "Client Cash",
+        category: "cash", subType: "savings",
+        owner: "client", value: 100_000, basis: 100_000,
+        growthRate: 0.02, rmdEnabled: false,
+      },
+    ];
+    const liabilities = [mkVisaLiability()];
+    const will: Will = {
+      id: "w-client", grantor: "client",
+      bequests: [
+        mkVisaBequest(100, "entity", irrevocableTrust.id),
+        {
+          id: "beq-assets", name: "Residual to Tom Jr.",
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          percentage: 100, condition: "always" as const, sortOrder: 1,
+          recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
+        },
+      ],
+    };
+
+    const input = mkFinalDeathInput({
+      accounts, liabilities, will,
+      entities: [irrevocableTrust],
+      familyMembers: [tomJr],
+    });
+    const result = applyFinalDeath(input);
+
+    // Transfer ledger: one will_liability_bequest to entity.
+    const bequestTransfers = result.transfers.filter((t) => t.via === "will_liability_bequest");
+    expect(bequestTransfers).toHaveLength(1);
+    expect(bequestTransfers[0].recipientKind).toBe("entity");
+    expect(bequestTransfers[0].recipientId).toBe(irrevocableTrust.id);
+
+    // Post-death liabilities: a new row with ownerEntityId set.
+    const entityRow = result.liabilities.find((l) => l.ownerEntityId === irrevocableTrust.id);
+    expect(entityRow).toBeDefined();
+    expect(entityRow!.balance).toBeCloseTo(15_000, 0);
+    expect(entityRow!.ownerFamilyMemberId).toBeUndefined();
+  });
+
+  // ── Scenario E: bequest targets entity-owned debt → skipped ───────────────
+  it("E: bequest targeting entity-owned debt → liability_bequest_ineligible warning; no will_liability_bequest transfer", () => {
+    // Liability pre-owned by an entity. Bequest references it — must be skipped.
+    const irrevTrust: EntitySummary = {
+      id: "irrev-trust", includeInPortfolio: false, isGrantor: false,
+      trustSubType: "irrevocable" as const, isIrrevocable: true,
+    };
+    const entityOwnedLiab: Liability = {
+      id: "entity-debt", name: "Entity Loan", balance: 10_000,
+      interestRate: 0.05, monthlyPayment: 200,
+      startYear: 2020, startMonth: 1, termMonths: 60, extraPayments: [],
+      ownerEntityId: irrevTrust.id,
+    };
+    const accounts: Account[] = [
+      {
+        id: "client-cash", name: "Client Cash",
+        category: "cash", subType: "savings",
+        owner: "client", value: 50_000, basis: 50_000,
+        growthRate: 0.02, rmdEnabled: false,
+      },
+    ];
+    const will: Will = {
+      id: "w-client", grantor: "client",
+      bequests: [
+        {
+          id: "beq-entity-debt", name: "Entity debt bequest",
+          kind: "liability" as const, assetMode: null, accountId: null,
+          liabilityId: entityOwnedLiab.id,
+          percentage: 100, condition: "always" as const, sortOrder: 0,
+          recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
+        },
+        {
+          id: "beq-assets", name: "Residual to Tom Jr.",
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          percentage: 100, condition: "always" as const, sortOrder: 1,
+          recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
+        },
+      ],
+    };
+
+    const input = mkFinalDeathInput({
+      accounts,
+      liabilities: [entityOwnedLiab],
+      will,
+      entities: [irrevTrust],
+      familyMembers: [tomJr],
+    });
+    const result = applyFinalDeath(input);
+
+    // liability_bequest_ineligible warning must be present.
+    expect(result.warnings).toContain(`liability_bequest_ineligible:${entityOwnedLiab.id}`);
+
+    // No will_liability_bequest transfer in the ledger.
+    const bequestTransfers = result.transfers.filter((t) => t.via === "will_liability_bequest");
+    expect(bequestTransfers).toHaveLength(0);
+
+    // Entity-owned liability survives in the post-event list unchanged.
+    const stillOwned = result.liabilities.find((l) => l.id === entityOwnedLiab.id);
+    expect(stillOwned).toBeDefined();
+    expect(stillOwned!.ownerEntityId).toBe(irrevTrust.id);
+  });
+
+  // ── Scenario F: first-death bequest ignored ────────────────────────────────
+  it("F: liability bequest in first-dying spouse's will is ignored at first death; no will_liability_bequest in first-death ledger", () => {
+    // Spouse dies first (2045). Spouse's will has a Visa bequest.
+    // At first-death, liability-bequest logic must NOT fire (it's a 4c-only
+    // phase). Visa balance must be unchanged; no will_liability_bequest in
+    // the first-death transfers.
+    const client: ClientInfo = {
+      firstName: "Jane", lastName: "Doe",
+      dateOfBirth: "1970-01-01",
+      retirementAge: 65, planEndAge: 95,
+      filingStatus: "married_joint",
+      lifeExpectancy: 85,             // survives; dies 2055 (final death)
+      spouseDob: "1972-01-01",
+      spouseLifeExpectancy: 73,       // dies 2045 (first death)
+    };
+    const planSettings: PlanSettings = {
+      flatFederalRate: 0,
+      flatStateRate: 0,
+      inflationRate: 0.025,
+      planStartYear: 2026,
+      planEndYear: 2066,
+      taxInflationRate: 0.025,
+      estateAdminExpenses: 0,
+      flatStateEstateRate: 0,
+    };
+    const accounts: Account[] = [
+      {
+        id: "client-cash", name: "Client Cash",
+        category: "cash", subType: "savings",
+        owner: "client", value: 100_000, basis: 100_000,
+        growthRate: 0, rmdEnabled: false,
+      },
+      {
+        id: "spouse-cash", name: "Spouse Cash",
+        category: "cash", subType: "savings",
+        owner: "spouse", value: 50_000, basis: 50_000,
+        growthRate: 0, rmdEnabled: false,
+      },
+    ];
+    const wills: Will[] = [
+      // Spouse's will: asset bequest to client (surviving) + Visa liability bequest.
+      {
+        id: "w-spouse", grantor: "spouse",
+        bequests: [
+          {
+            id: "beq-visa-spouse", name: "Spouse bequeaths Visa to Tom Jr.",
+            kind: "liability" as const, assetMode: null, accountId: null,
+            liabilityId: "visa",
+            percentage: 100, condition: "always" as const, sortOrder: 0,
+            recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
+          },
+          {
+            id: "beq-assets-spouse", name: "All to client",
+            kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+            percentage: 100, condition: "always" as const, sortOrder: 1,
+            recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
+          },
+        ],
+      },
+      // Client's will: simple residuary to Tom Jr. (final-death).
+      {
+        id: "w-client", grantor: "client",
+        bequests: [{
+          id: "beq-assets-client", name: "All to Tom Jr.",
+          kind: "asset" as const, assetMode: "all_assets" as const, accountId: null, liabilityId: null,
+          percentage: 100, condition: "always" as const, sortOrder: 0,
+          recipients: [{ recipientKind: "family_member", recipientId: tomJr.id, percentage: 100, sortOrder: 0 }],
+        }],
+      },
+    ];
+    const data: ClientData = {
+      client,
+      accounts,
+      incomes: [],
+      expenses: [],
+      liabilities: [mkVisaLiability()],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings,
+      familyMembers: [tomJr],
+      wills,
+    };
+
+    const years = runProjection(data);
+    // Spouse dies in 2045 (first death). deathOrder=1 transfers are in that year.
+    const firstDeathYr = years.find((y) => y.year === 2045);
+    expect(firstDeathYr).toBeDefined();
+    expect(firstDeathYr!.deathTransfers).toBeDefined();
+
+    // No will_liability_bequest in first-death ledger.
+    const firstDeathBequestTransfers = (firstDeathYr!.deathTransfers ?? []).filter(
+      (t) => t.via === "will_liability_bequest" && t.deathOrder === 1,
+    );
+    expect(firstDeathBequestTransfers).toHaveLength(0);
+
+    // Visa balance must be unchanged in first-death year output — the liability
+    // was not acted upon by the first-death pipeline. Check by ensuring no
+    // will_liability_bequest exists at deathOrder=1 for that year at all.
+    const anyFirstDeathLiabBequest = (firstDeathYr!.deathTransfers ?? []).filter(
+      (t) => t.via === "will_liability_bequest",
+    );
+    expect(anyFirstDeathLiabBequest).toHaveLength(0);
   });
 });

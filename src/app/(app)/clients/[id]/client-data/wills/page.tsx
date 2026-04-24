@@ -10,16 +10,21 @@ import {
   wills,
   willBequests,
   willBequestRecipients,
+  liabilities,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import WillsPanel, {
+  type WillAssetMode,
   type WillsPanelAccount,
   type WillsPanelFamilyMember,
   type WillsPanelExternal,
   type WillsPanelEntity,
+  type WillsPanelLiability,
   type WillsPanelWill,
   type WillsPanelPrimary,
+  type WillsPanelAssetBequest,
+  type WillsPanelLiabilityBequest,
 } from "@/components/wills-panel";
 
 interface PageProps {
@@ -49,7 +54,7 @@ export default async function WillsPage({ params }: PageProps) {
     );
   }
 
-  const [willRows, accountRows, familyRows, externalRows, entityRows] =
+  const [willRows, accountRows, familyRows, externalRows, entityRows, liabilityRows] =
     await Promise.all([
       db.select().from(wills).where(eq(wills.clientId, id)).orderBy(asc(wills.grantor)),
       db
@@ -64,6 +69,11 @@ export default async function WillsPage({ params }: PageProps) {
         .where(eq(externalBeneficiaries.clientId, id))
         .orderBy(asc(externalBeneficiaries.name)),
       db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
+      db
+        .select()
+        .from(liabilities)
+        .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id)))
+        .orderBy(asc(liabilities.name)),
     ]);
 
   const willIds = willRows.map((w) => w.id);
@@ -89,25 +99,45 @@ export default async function WillsPage({ params }: PageProps) {
     list.push(r);
     recipientsByBequest.set(r.bequestId, list);
   }
+
   const bequestsByWill = new Map<string, WillsPanelWill["bequests"]>();
   for (const b of bequestRows) {
     const list = bequestsByWill.get(b.willId) ?? [];
-    list.push({
-      id: b.id,
-      name: b.name,
-      assetMode: b.assetMode,
-      accountId: b.accountId,
-      percentage: parseFloat(b.percentage),
-      condition: b.condition,
-      sortOrder: b.sortOrder,
-      recipients: (recipientsByBequest.get(b.id) ?? []).map((r) => ({
-        id: r.id,
-        recipientKind: r.recipientKind,
-        recipientId: r.recipientId,
-        percentage: parseFloat(r.percentage),
-        sortOrder: r.sortOrder,
-      })),
-    });
+    const recipients = (recipientsByBequest.get(b.id) ?? []).map((r) => ({
+      id: r.id,
+      recipientKind: r.recipientKind,
+      recipientId: r.recipientId,
+      percentage: parseFloat(r.percentage),
+      sortOrder: r.sortOrder,
+    }));
+
+    if (b.kind === "liability") {
+      const liabilityBequest: WillsPanelLiabilityBequest = {
+        kind: "liability",
+        id: b.id,
+        name: b.name,
+        liabilityId: b.liabilityId,
+        percentage: parseFloat(b.percentage),
+        condition: "always",
+        sortOrder: b.sortOrder,
+        recipients,
+      };
+      list.push(liabilityBequest);
+    } else {
+      const assetBequest: WillsPanelAssetBequest = {
+        kind: "asset",
+        id: b.id,
+        name: b.name,
+        assetMode: (b.assetMode ?? "all_assets") as WillAssetMode,
+        accountId: b.accountId,
+        percentage: parseFloat(b.percentage),
+        condition: b.condition,
+        sortOrder: b.sortOrder,
+        recipients,
+      };
+      list.push(assetBequest);
+    }
+
     bequestsByWill.set(b.willId, list);
   }
 
@@ -141,12 +171,20 @@ export default async function WillsPage({ params }: PageProps) {
     id: e.id,
     name: e.name,
   }));
+  const liabs: WillsPanelLiability[] = liabilityRows.map((l) => ({
+    id: l.id,
+    name: l.name,
+    balance: parseFloat(l.balance),
+    linkedPropertyId: l.linkedPropertyId ?? null,
+    ownerEntityId: l.ownerEntityId ?? null,
+  }));
 
   return (
     <WillsPanel
       clientId={id}
       primary={primary}
       accounts={accts}
+      liabilities={liabs}
       familyMembers={fams}
       externalBeneficiaries={exts}
       entities={ents}
