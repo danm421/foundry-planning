@@ -27,7 +27,7 @@ Cross-referenced files:
 | 3 | Gift transaction primitive + exemption ledger            | ✅ Shipped 2026-04-20 | Gift ledger spec                                                                              |
 | 4 | Death-sequence event (first → survivor, second → heirs)  | ✅ Shipped 2026-04-21 … 2026-04-24 | Specs 4a (wills) · 4b (first death) · 4c (final death) · 4d-1 (estate tax engine) · 4d-2 (Form-706 report UI) · 4e (liability bequests) |
 | 5 | Federal estate tax + DSUE/portability + flat state rate  | ✅ Shipped 2026-04-23 | Spec 4d-1 — folded into the Item-4 chain                                                      |
-| 6 | **Step-up in basis at death**                            | ❌ Not shipped    | —                                                                                               |
+| 6 | Step-up in basis at death                                | ✅ Shipped 2026-04-24 | Spec 6 — step-up at death                                                                |
 | 7 | **Life-insurance primitives (face/cash value, ILIT)**    | ❌ Not shipped    | — (`life_insurance` account category + `insurance` entity type exist, but no face-value / death-benefit modeling) |
 | 8 | **Scenario switcher / with-plan vs without-plan**        | ❌ Not shipped    | Pre-launch brainstorm owed (Advisor Dashboard bundle)                                           |
 | 9 | UI: flowchart canvas, projection panel, Sankey           | ❌ Not shipped    | No drag-and-drop canvas, year scrubber, or Sankey anywhere in `src/components/`                |
@@ -76,28 +76,25 @@ computable.
   (now that the engine ships BEA=$15M in 2026, the hardcoded $13.99M
   is stale copy). Low-risk UI change.
 
-### 3. Step-up in basis at death — ❌ **not shipped**
+### 3. Step-up in basis at death — ✅ shipped (Spec 6)
 
-The `basisMap` is threaded through `applyFirstDeath` /
-`applyFinalDeath`, but transferred accounts **retain the decedent's
-original basis**. There is no `nextBasisMap[id] = balance` step-up
-hook at death events.
+`computeSteppedUpBasis` in
+[src/engine/death-event/shared.ts](../../src/engine/death-event/shared.ts)
+resets in-estate asset basis to date-of-death FMV inside the
+`effectiveAcct` build of the first-/final-death chains and inside
+`runPourOut`'s per-account loop. Category gate: `retirement` and
+`life_insurance` are excluded (IRD rule under §1014(c)).
+JTWROS accounts at first death receive a half step-up.
 
-This is the *core lesson* of the "with plan" vs "without plan" delta
-for anything other than ILITs and gifted-and-grown assets — without
-step-up, any taxable account passing to heirs carries a deferred
-capital-gains liability. The comparison columns in the design
-currently assume step-up implicitly.
+**Still outstanding** (tracked in `future-work/estate.md`):
 
-**Scope:**
-
-- In-estate assets passing at death get basis reset to FMV.
-- Joint accounts: half-step-up for the surviving spouse's retained
-  half (community-property states later).
-- Irrevocable-trust assets: no step-up — explicitly OUT of the death
-  event.
-- Retirement accounts (IRD): no step-up — explicitly excluded per
-  §1014(c).
+- **Community-property double step-up** — common-law JTWROS only.
+  States AZ, CA, ID, LA, NV, NM, TX, WA, WI get full step-up on the
+  survivor's half too. Requires a state flag on `plan_settings`.
+- **§2040(a) non-spouse JTWROS consideration-furnished rule** —
+  engine assumes spousal JTWROS (50/50).
+- **§1014(e) 1-year rule** on gifted-then-inherited-back assets.
+- **§754 partnership inside-basis elections.**
 
 ### 4. Death-sequence projection — ✅ shipped (Specs 4a–4e)
 
@@ -255,13 +252,7 @@ Items 1–5 are **done**. Remaining path to the full
 4. ✅ Death-sequence event (first death → survivor, second death →
    heirs).
 5. ✅ Estate-tax calc: federal + portability/DSUE + flat state rate.
-6. **Step-up in basis at death** — next data/engine task.
-   Small-to-medium: add a hook in `applyFirstDeath` /
-   `applyFinalDeath` that resets `basisMap[id]` to
-   `accountBalances[id]` for in-estate accounts, with half-step-up
-   on jointly-owned assets. Excludes retirement / IRD accounts and
-   irrevocable-trust assets. Tests: the "with plan" vs "without
-   plan" cap-gains delta on a taxable account passing to an heir.
+6. ✅ Step-up in basis at death.
 7. **Life-insurance primitives (face vs cash value, ILIT death-
    benefit payout).** Medium: schema + death-event integration +
    seed data for ILIT demos. Required to light up the ILIT
