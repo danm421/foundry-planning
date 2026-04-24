@@ -211,7 +211,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
                         </button>
                       ) : (
                         <Link
-                          href={`/clients/${client.id}/balance-sheet`}
+                          href={`/clients/${client.id}/client-data/balance-sheet`}
                           onClick={onClickName}
                           className="font-medium text-blue-500 hover:text-blue-400"
                         >

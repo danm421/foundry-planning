@@ -50,6 +50,20 @@ export function computeIraLimit(params: TaxYearParameters, age: number): number 
   return base;
 }
 
+/** Resolves a rule's "contribute the IRS max" intent to a dollar amount for
+ *  a given subtype and owner age. Non-retirement subtypes resolve to 0
+ *  (Max has no meaning for a brokerage or cash account). */
+export function computeMaxContribution(
+  subType: string,
+  params: TaxYearParameters,
+  age: number
+): number {
+  const group = groupForSubType(subType);
+  if (group === "deferral") return computeDeferralLimit(params, age);
+  if (group === "ira") return computeIraLimit(params, age);
+  return 0;
+}
+
 export interface CapAdjustment {
   ruleId: string;
   accountId: string;

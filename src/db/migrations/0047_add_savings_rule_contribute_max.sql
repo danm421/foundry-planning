@@ -1,0 +1,1 @@
+ALTER TABLE "savings_rules" ADD COLUMN "contribute_max" boolean DEFAULT false NOT NULL;

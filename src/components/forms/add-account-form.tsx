@@ -18,6 +18,7 @@ import EmployerMatchFields, {
 import ContributionAmountFields, {
   type ContributionMode,
   supportsPercentContribution,
+  supportsMaxContribution,
 } from "./contribution-amount-fields";
 import DeductibleContributionCheckbox, {
   supportsDeductibility,
@@ -351,6 +352,7 @@ export default function AddAccountForm({
   const isRetirementAccount = category === "retirement" && RETIREMENT_SUB_TYPES.has(subType);
   const showEmployerMatch = supportsEmployerMatch(category, subType);
   const showContributionModeToggle = supportsPercentContribution(category, subType);
+  const showContributionMaxToggle = supportsMaxContribution(category, subType);
   const showDeductibleCheckbox = supportsDeductibility(category, subType);
   const showContributionCapCheckbox = supportsContributionCap(category, subType);
   const showRmdCheckbox =
@@ -477,7 +479,8 @@ export default function AddAccountForm({
         const savingsPercent = data.get("annualPercent") as string;
         const hasAmount = contribMode === "amount" && savingsAmount && Number(savingsAmount) > 0;
         const hasPercent = contribMode === "percent" && savingsPercent && Number(savingsPercent) > 0;
-        if (hasAmount || hasPercent) {
+        const hasMax = contribMode === "max";
+        if (hasAmount || hasPercent || hasMax) {
           const matchPct = data.get("employerMatchPct") as string;
           const matchCap = data.get("employerMatchCap") as string;
           const matchAmount = data.get("employerMatchAmount") as string;
@@ -489,6 +492,7 @@ export default function AddAccountForm({
             accountId: account.id,
             annualAmount: hasAmount ? savingsAmount : "0",
             annualPercent: hasPercent ? String(Number(savingsPercent) / 100) : null,
+            contributeMax: hasMax,
             isDeductible: showDeductibleCheckbox ? isDeductible : true,
             applyContributionLimit: showContributionCapCheckbox ? applyContributionLimit : true,
             startYear: String(savingsStartYear),
@@ -857,6 +861,7 @@ export default function AddAccountForm({
                   mode={contribMode}
                   onModeChange={setContribMode}
                   showModeToggle={showContributionModeToggle}
+                  showMaxToggle={showContributionMaxToggle}
                   initialAmount={0}
                   idPrefix="acct-sr"
                 />

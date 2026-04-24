@@ -710,6 +710,209 @@ describe("techniques integration", () => {
     expect(year2028.income.other).toBeCloseTo(techniqueProceedsInBySource, 2);
   });
 
+  it("same-year sell + buy nets at year level in cash flow (fixes #10)", () => {
+    // Advisor reports a sale of one property and a purchase of another in the
+    // same year shouldn't surface the full sale netProceeds as "Other Inflows"
+    // — it should show the NET transaction amount (sale proceeds minus purchase
+    // equity). Engine pairs same-year sales with same-year purchases regardless
+    // of transactionId.
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Cash",
+          category: "cash",
+          subType: "checking",
+          owner: "joint",
+          value: 50_000,
+          basis: 50_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+        },
+        {
+          id: "acct-sell-home",
+          name: "Old Home",
+          category: "real_estate",
+          subType: "primary_residence",
+          owner: "joint",
+          value: 500_000,
+          basis: 400_000,
+          growthRate: 0,
+          rmdEnabled: false,
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      assetTransactions: [
+        {
+          id: "sell-home",
+          name: "Sell Old Home",
+          type: "sell" as const,
+          year: 2026,
+          accountId: "acct-sell-home",
+          qualifiesForHomeSaleExclusion: true,
+        },
+        {
+          id: "buy-home",
+          name: "Buy New Home",
+          type: "buy" as const,
+          year: 2026,
+          assetName: "New Home",
+          assetCategory: "real_estate" as const,
+          assetSubType: "primary_residence",
+          purchasePrice: 400_000,
+          growthRate: 0,
+          // No mortgage → equity = purchasePrice = 400k
+        },
+      ],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+
+    const result = runProjection(data);
+    const year = result[0];
+
+    // Sale netProceeds = 500k (no costs, no mortgage payoff).
+    // Purchase equity = 400k (all cash).
+    // Year net = +100k → income.other = 100k, expenses.other (from techniques) = 0.
+    expect(year.income.other).toBeCloseTo(100_000, 0);
+
+    // bySource technique-proceeds sums to 100k (the net), not 500k (raw proceeds).
+    const techniqueProceedsSum = Object.entries(year.income.bySource)
+      .filter(([id]) => id.startsWith("technique-proceeds:"))
+      .reduce((s, [, v]) => s + v, 0);
+    expect(techniqueProceedsSum).toBeCloseTo(100_000, 0);
+
+    // No technique-purchase expense entry since the purchase equity is fully
+    // absorbed by the sale proceeds in the same year.
+    const techniquePurchaseSum = Object.entries(year.expenses.bySource ?? {})
+      .filter(([id]) => id.startsWith("technique-purchase:"))
+      .reduce((s, [, v]) => s + v, 0);
+    expect(techniquePurchaseSum).toBeCloseTo(0, 0);
+  });
+
+  it("contributeMax on a 401k rule contributes the elective + age-50 catchup (fixes #7)", () => {
+    // John is born 1970 → age 56 in 2026, catchup-50 applies.
+    // 401k max = ira401kElective 23500 + ira401kCatchup50 7500 = 31000.
+    const data = buildClientData({
+      savingsRules: [
+        {
+          id: "sav-401k-max",
+          accountId: "acct-401k",
+          annualAmount: 0, // ignored when contributeMax=true
+          contributeMax: true,
+          isDeductible: true,
+          startYear: 2026,
+          endYear: 2030,
+        },
+      ],
+      taxYearRows: FIXTURE_TAX_PARAMS,
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const result = runProjection(data);
+    expect(result[0].savings.byAccount["acct-401k"]).toBeCloseTo(31_000, 0);
+  });
+
+  it("contributeMax on a Roth IRA rule contributes base + age-50 catchup (fixes #7)", () => {
+    // Jane is born 1972 → age 54 in 2026, catchup-50 applies.
+    // IRA max = iraTradLimit 7000 + iraCatchup50 1000 = 8000.
+    // acct-roth in the fixture is Jane's Roth IRA.
+    const data = buildClientData({
+      savingsRules: [
+        {
+          id: "sav-roth-max",
+          accountId: "acct-roth",
+          annualAmount: 0,
+          contributeMax: true,
+          isDeductible: false,
+          startYear: 2026,
+          endYear: 2030,
+        },
+      ],
+      taxYearRows: FIXTURE_TAX_PARAMS,
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const result = runProjection(data);
+    expect(result[0].savings.byAccount["acct-roth"]).toBeCloseTo(8_000, 0);
+  });
+
+  it("same-year purchase > sale shows a net expense, not a net inflow (fixes #10)", () => {
+    // Sale nets 200k, purchase equity 500k → year net = -300k. Advisor should
+    // see a 300k expense and 0 inflow, not a 200k inflow and 500k expense.
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Cash",
+          category: "cash",
+          subType: "checking",
+          owner: "joint",
+          value: 600_000,
+          basis: 600_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+        },
+        {
+          id: "acct-sell-home",
+          name: "Old Home",
+          category: "real_estate",
+          subType: "primary_residence",
+          owner: "joint",
+          value: 200_000,
+          basis: 200_000,
+          growthRate: 0,
+          rmdEnabled: false,
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      assetTransactions: [
+        {
+          id: "sell-home",
+          name: "Sell Old Home",
+          type: "sell" as const,
+          year: 2026,
+          accountId: "acct-sell-home",
+          qualifiesForHomeSaleExclusion: true,
+        },
+        {
+          id: "buy-home",
+          name: "Buy New Home",
+          type: "buy" as const,
+          year: 2026,
+          assetName: "New Home",
+          assetCategory: "real_estate" as const,
+          assetSubType: "primary_residence",
+          purchasePrice: 500_000,
+          growthRate: 0,
+        },
+      ],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+
+    const result = runProjection(data);
+    const year = result[0];
+
+    // No leftover sale income — the 200k was fully absorbed by the 500k equity.
+    const techniqueProceedsSum = Object.entries(year.income.bySource)
+      .filter(([id]) => id.startsWith("technique-proceeds:"))
+      .reduce((s, [, v]) => s + v, 0);
+    expect(techniqueProceedsSum).toBeCloseTo(0, 0);
+
+    // Uncovered purchase equity (500k - 200k = 300k) flows to expense bySource.
+    const techniquePurchaseSum = Object.entries(year.expenses.bySource ?? {})
+      .filter(([id]) => id.startsWith("technique-purchase:"))
+      .reduce((s, [, v]) => s + v, 0);
+    expect(techniquePurchaseSum).toBeCloseTo(300_000, 0);
+  });
+
   it("asset purchase creates new account visible in later years", () => {
     const data = buildClientData({
       assetTransactions: [

@@ -2,6 +2,7 @@
 
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
+import { supportsContributionCap } from "./contribution-cap-checkbox";
 
 /** Retirement subtypes on which the employee's contribution can be entered as a
  *  percent of salary (payroll-deduction accounts). Traditional / Roth IRAs are
@@ -14,7 +15,7 @@ export const PERCENT_CONTRIB_SUB_TYPES = new Set([
   "other",
 ]);
 
-export type ContributionMode = "amount" | "percent";
+export type ContributionMode = "amount" | "percent" | "max";
 
 export function pctFromDecimal(v: string | null | undefined, fallback: number): number {
   if (v === null || v === undefined || v === "") return fallback;
@@ -27,17 +28,25 @@ export function supportsPercentContribution(category: string | undefined, subTyp
   return PERCENT_CONTRIB_SUB_TYPES.has(subType ?? "");
 }
 
+/** True if the "Max (IRS limit)" mode is applicable to this account. */
+export const supportsMaxContribution = supportsContributionCap;
+
 /** Pick the initial contribution mode from stored values on an existing rule. */
-export function inferContributionMode(annualPercent: string | null | undefined): ContributionMode {
+export function inferContributionMode(
+  annualPercent: string | null | undefined,
+  contributeMax?: boolean | null,
+): ContributionMode {
+  if (contributeMax) return "max";
   return annualPercent && Number(annualPercent) > 0 ? "percent" : "amount";
 }
 
 interface Props {
   mode: ContributionMode;
   onModeChange: (mode: ContributionMode) => void;
-  /** Whether to render the mode toggle. When false, only the dollar input
-   *  renders (for subtypes that don't support percent-of-salary mode). */
+  /** Whether to render the percent-of-salary mode toggle button. */
   showModeToggle: boolean;
+  /** Whether to render the "Max (IRS limit)" mode toggle button. */
+  showMaxToggle?: boolean;
   initialAmount?: string | number | null;
   initialPercent?: string | null;
   idPrefix?: string;
@@ -57,21 +66,35 @@ export default function ContributionAmountFields({
   mode,
   onModeChange,
   showModeToggle,
+  showMaxToggle = false,
   initialAmount,
   initialPercent,
   idPrefix = "sr",
   required = false,
 }: Props) {
+  const modeOptions: ContributionMode[] = [
+    "amount",
+    ...(showModeToggle ? (["percent"] as ContributionMode[]) : []),
+    ...(showMaxToggle ? (["max"] as ContributionMode[]) : []),
+  ];
+  const showAnyToggle = modeOptions.length > 1;
+  const label =
+    mode === "percent"
+      ? "Contribution (% of salary)"
+      : mode === "max"
+        ? "Contribution"
+        : "Annual Amount ($)";
+
   return (
     <div>
       <div className="flex items-center justify-between">
         <label className="block text-sm font-medium text-gray-300" htmlFor={`${idPrefix}-amount`}>
-          {mode === "percent" ? "Contribution (% of salary)" : "Annual Amount ($)"}
-          {required && <span className="text-red-500"> *</span>}
+          {label}
+          {required && mode !== "max" && <span className="text-red-500"> *</span>}
         </label>
-        {showModeToggle && (
+        {showAnyToggle && (
           <div className="flex gap-1 text-xs">
-            {(["amount", "percent"] as const).map((m) => (
+            {modeOptions.map((m) => (
               <button
                 key={m}
                 type="button"
@@ -82,13 +105,13 @@ export default function ContributionAmountFields({
                     : "border-gray-700 bg-gray-900 text-gray-400 hover:bg-gray-800"
                 }`}
               >
-                {m === "amount" ? "Dollar amount" : "% of salary"}
+                {m === "amount" ? "Dollar amount" : m === "percent" ? "% of salary" : "Max (IRS limit)"}
               </button>
             ))}
           </div>
         )}
       </div>
-      {mode === "amount" ? (
+      {mode === "amount" && (
         <CurrencyInput
           id={`${idPrefix}-amount`}
           name="annualAmount"
@@ -96,7 +119,8 @@ export default function ContributionAmountFields({
           defaultValue={initialAmount ?? 0}
           className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
-      ) : (
+      )}
+      {mode === "percent" && (
         <>
           <PercentInput
             id={`${idPrefix}-amount`}
@@ -110,6 +134,13 @@ export default function ContributionAmountFields({
             Resolves against the account owner&rsquo;s salary each year. No salary that year → no contribution.
           </p>
         </>
+      )}
+      {mode === "max" && (
+        <div className="mt-1 rounded-md border border-blue-900/40 bg-blue-950/30 px-3 py-2 text-sm text-blue-200">
+          Contributes the IRS limit each year for the account owner&rsquo;s age
+          (base + age-50 catch-up + SECURE 2.0 60-63 super catch-up when
+          applicable).
+        </div>
       )}
     </div>
   );
