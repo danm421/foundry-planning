@@ -109,6 +109,8 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
       setSources((prev) => ({ ...prev, [category]: { source: "model_portfolio", portfolioId: value.slice(3) } }));
     } else if (value === "asset_mix") {
       setSources((prev) => ({ ...prev, [category]: { source: "asset_mix", portfolioId: "" } }));
+    } else if (value === "inflation") {
+      setSources((prev) => ({ ...prev, [category]: { source: "inflation", portfolioId: "" } }));
     } else {
       setSources((prev) => ({ ...prev, [category]: { source: "custom", portfolioId: "" } }));
     }
@@ -222,7 +224,11 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
           {/* Investable categories — dropdown for model portfolio or custom */}
           {CMA_CATEGORIES.map((cat) => {
             const s = sources[cat.category];
-            const selectVal = s.source === "model_portfolio" ? `mp:${s.portfolioId}` : s.source === "asset_mix" ? "asset_mix" : "custom";
+            const selectVal =
+              s.source === "model_portfolio" ? `mp:${s.portfolioId}` :
+              s.source === "asset_mix" ? "asset_mix" :
+              s.source === "inflation" ? "inflation" :
+              "custom";
             return (
               <div key={cat.category} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-6">
@@ -241,6 +247,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                           {mp.name} ({(mp.blendedReturn * 100).toFixed(2)}%)
                         </option>
                       ))}
+                      <option value="inflation">Inflation ({(resolvedInflationRate * 100).toFixed(2)}%)</option>
                       <option value="custom">Custom %</option>
                       {(cat.category === "taxable" || cat.category === "retirement") && (
                         <option value="asset_mix">Asset mix (per account)</option>

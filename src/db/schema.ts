@@ -280,11 +280,11 @@ export const planSettings = pgTable("plan_settings", {
   defaultGrowthLifeInsurance: decimal("default_growth_life_insurance", { precision: 5, scale: 4 })
     .notNull()
     .default("0.03"),
-  growthSourceTaxable: growthSourceEnum("growth_source_taxable").notNull().default("custom"),
+  growthSourceTaxable: growthSourceEnum("growth_source_taxable").notNull().default("inflation"),
   modelPortfolioIdTaxable: uuid("model_portfolio_id_taxable").references(() => modelPortfolios.id, { onDelete: "set null" }),
-  growthSourceCash: growthSourceEnum("growth_source_cash").notNull().default("custom"),
+  growthSourceCash: growthSourceEnum("growth_source_cash").notNull().default("inflation"),
   modelPortfolioIdCash: uuid("model_portfolio_id_cash").references(() => modelPortfolios.id, { onDelete: "set null" }),
-  growthSourceRetirement: growthSourceEnum("growth_source_retirement").notNull().default("custom"),
+  growthSourceRetirement: growthSourceEnum("growth_source_retirement").notNull().default("inflation"),
   modelPortfolioIdRetirement: uuid("model_portfolio_id_retirement").references(() => modelPortfolios.id, { onDelete: "set null" }),
   selectedBenchmarkPortfolioId: uuid("selected_benchmark_portfolio_id").references(() => modelPortfolios.id, { onDelete: "set null" }),
   inflationRateSource: inflationRateSourceEnum("inflation_rate_source").notNull().default("asset_class"),

@@ -114,6 +114,9 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
                     setEditing(client);
                   }
                 };
+                const spouseLabel = client.spouseName
+                  ? `${client.spouseName}${client.spouseLastName ? ` ${client.spouseLastName}` : ""}`
+                  : null;
                 return (
                   <tr key={client.id} className="hover:bg-gray-800">
                     <td className="whitespace-nowrap px-6 py-4">
@@ -124,6 +127,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
                           className="font-medium text-blue-500 hover:text-blue-400"
                         >
                           {client.firstName} {client.lastName}
+                          {spouseLabel && <span className="text-gray-400"> &amp; {spouseLabel}</span>}
                         </button>
                       ) : (
                         <Link
@@ -132,6 +136,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
                           className="font-medium text-blue-500 hover:text-blue-400"
                         >
                           {client.firstName} {client.lastName}
+                          {spouseLabel && <span className="text-gray-400"> &amp; {spouseLabel}</span>}
                         </Link>
                       )}
                     </td>

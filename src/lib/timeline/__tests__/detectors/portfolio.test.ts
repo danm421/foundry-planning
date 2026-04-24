@@ -29,9 +29,17 @@ describe("detectPortfolioEvents", () => {
   it("emits a threshold crossing exactly once when investable portfolio first exceeds the threshold", () => {
     const data = buildClientData();
     const projection = runProjection(data);
+    // Start below threshold and cross it in year 2 so the year-1 guard does not apply.
+    projection[0].portfolioAssets.taxableTotal = 1000;
+    projection[0].portfolioAssets.cashTotal = 0;
+    projection[0].portfolioAssets.retirementTotal = 0;
+    projection[1].portfolioAssets.taxableTotal = 2_000_000;
+    projection[1].portfolioAssets.cashTotal = 0;
+    projection[1].portfolioAssets.retirementTotal = 0;
     const events = detectPortfolioEvents(data, projection, [1_000_000]);
     const crossings = events.filter((e) => e.id === "portfolio:threshold:1000000");
     expect(crossings).toHaveLength(1);
+    expect(crossings[0].year).toBe(projection[1].year);
   });
 
   it("emits portfolio peak year based on investable portfolio", () => {
@@ -47,5 +55,17 @@ describe("detectPortfolioEvents", () => {
 
   it("defaults ship as [1M, 2M, 5M, 10M]", () => {
     expect(DEFAULT_PORTFOLIO_THRESHOLDS).toEqual([1_000_000, 2_000_000, 5_000_000, 10_000_000]);
+  });
+
+  it("does not emit a year-1 crossing for thresholds already exceeded at plan start", () => {
+    const data = buildClientData();
+    const projection = runProjection(data);
+    // Force the first-year investable value well above the low threshold.
+    projection[0].portfolioAssets.taxableTotal = 50_000;
+    projection[0].portfolioAssets.cashTotal = 0;
+    projection[0].portfolioAssets.retirementTotal = 0;
+    const events = detectPortfolioEvents(data, projection, [10_000]);
+    const crossings = events.filter((e) => e.id === "portfolio:threshold:10000");
+    expect(crossings).toHaveLength(0);
   });
 });
