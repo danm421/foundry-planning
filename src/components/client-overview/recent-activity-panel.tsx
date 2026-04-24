@@ -1,5 +1,12 @@
+import type { ReactElement } from "react";
+import { Card, CardBody, CardHeader } from "@/components/card";
+import SectionMarker from "@/components/section-marker";
 import { formatAuditRow } from "@/lib/overview/format-audit";
 import type { AuditRowSummary } from "@/lib/overview/list-audit-rows";
+
+interface Props {
+  rows: AuditRowSummary[];
+}
 
 function relativeTime(iso: string | Date): string {
   const then = typeof iso === "string" ? new Date(iso) : iso;
@@ -10,22 +17,63 @@ function relativeTime(iso: string | Date): string {
   return `${Math.floor(secs / 86400)}d ago`;
 }
 
-export default function RecentActivityPanel({ rows }: { rows: AuditRowSummary[] }) {
+const ACTION_GLYPH_CLASS: Record<string, string> = {
+  create: "bg-good/20 text-good",
+  update: "bg-cat-portfolio/20 text-cat-portfolio",
+  complete: "bg-good/20 text-good",
+  run: "bg-cat-life/20 text-cat-life",
+  delete: "bg-crit/20 text-crit",
+};
+
+const ACTION_GLYPH_CHAR: Record<string, string> = {
+  create: "+",
+  update: "↻",
+  complete: "✓",
+  run: "▶",
+  delete: "×",
+};
+
+function glyphClass(action: string | null | undefined): string {
+  if (!action) return "bg-card-2 text-ink-3";
+  return ACTION_GLYPH_CLASS[action] ?? "bg-card-2 text-ink-3";
+}
+
+function glyphChar(action: string | null | undefined): string {
+  if (!action) return "·";
+  return ACTION_GLYPH_CHAR[action] ?? "·";
+}
+
+export default function RecentActivityPanel({ rows }: Props): ReactElement {
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-950 p-6">
-      <h3 className="mb-3 text-sm font-semibold text-gray-300">Recent activity</h3>
-      {rows.length === 0 ? (
-        <p className="text-sm text-gray-400">No activity yet.</p>
-      ) : (
-        <ul className="space-y-1 text-sm">
-          {rows.map((r) => (
-            <li key={r.id} className="flex items-baseline justify-between gap-3">
-              <span className="text-gray-200">{formatAuditRow(r)}</span>
-              <span className="text-xs text-gray-500">{relativeTime(r.createdAt)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-0.5">
+          <SectionMarker num="08" label="Recent activity" />
+          <p className="text-[14px] font-semibold text-ink">Recent activity</p>
+        </div>
+      </CardHeader>
+      <CardBody>
+        {rows.length === 0 ? (
+          <p className="text-[13px] text-ink-3">No activity yet.</p>
+        ) : (
+          <ul className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-x-6">
+            {rows.map((r) => (
+              <li key={r.id} className="flex items-start gap-3 text-[13px]">
+                <span
+                  className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-sm font-mono text-[12px] ${glyphClass(r.action)}`}
+                  aria-hidden
+                >
+                  {glyphChar(r.action)}
+                </span>
+                <span className="flex-1 text-ink-2">{formatAuditRow(r)}</span>
+                <span className="tabular font-mono text-[11px] text-ink-4">
+                  {relativeTime(r.createdAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardBody>
+    </Card>
   );
 }
