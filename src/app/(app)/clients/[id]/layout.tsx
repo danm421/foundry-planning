@@ -12,6 +12,7 @@ interface ClientLayoutProps {
 }
 
 const tabs = [
+  { label: "Overview", href: "overview" },
   { label: "Details", href: "client-data" },
   { label: "Balance Sheet", href: "balance-sheet-report" },
   { label: "Cash Flow", href: "cashflow" },
