@@ -10,6 +10,23 @@ import { detectTaxEvents } from "./detectors/tax";
 
 const SUBJECT_PRIORITY = { primary: 0, spouse: 1, joint: 2 } as const;
 
+// Within category=life, events sort by kind so the biggest milestone (Retirement)
+// leads the year. Kinds are parsed from the id prefix `life:<kind>:...`. Unknown
+// kinds fall back to the max priority so they sort after the known ones, then
+// by id.
+const LIFE_KIND_PRIORITY: Record<string, number> = {
+  retire: 0,
+  ss_claim: 1,
+  ss_fra: 2,
+  medicare: 3,
+  death: 4,
+};
+
+function lifeKindPriority(id: string): number {
+  const kind = id.split(":")[1] ?? "";
+  return LIFE_KIND_PRIORITY[kind] ?? 99;
+}
+
 /**
  * When SS-claim fires as a Life event for a subject, it pre-empts any
  * `income:ss_begin:*` for the same subject (Life wins). We key on subject
@@ -75,6 +92,11 @@ export function buildTimeline(
     const ca = CATEGORY_PRIORITY[a.category];
     const cb = CATEGORY_PRIORITY[b.category];
     if (ca !== cb) return ca - cb;
+    if (a.category === "life" && b.category === "life") {
+      const ka = lifeKindPriority(a.id);
+      const kb = lifeKindPriority(b.id);
+      if (ka !== kb) return ka - kb;
+    }
     const sa = SUBJECT_PRIORITY[a.subject];
     const sb = SUBJECT_PRIORITY[b.subject];
     if (sa !== sb) return sa - sb;

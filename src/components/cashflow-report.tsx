@@ -473,7 +473,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     datasets: [
       {
         label: "Total Portfolio Assets",
-        data: visibleYears.map((y) => y.portfolioAssets.total),
+        data: visibleYears.map(liquidPortfolioTotal),
         borderColor: "#3b82f6",
         backgroundColor: "rgba(59, 130, 246, 0.15)",
         fill: true,
@@ -513,6 +513,16 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   const rmdForYear = (y: ProjectionYear) =>
     Object.values(y.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0);
+
+  // Liquid portfolio total for cash-flow framing: taxable + cash + retirement
+  // + life insurance cash value. Excludes real estate and business assets —
+  // advisors think of cash flow against the investable portfolio, not the
+  // household's outside-the-estate holdings.
+  const liquidPortfolioTotal = (y: ProjectionYear) =>
+    y.portfolioAssets.taxableTotal +
+    y.portfolioAssets.cashTotal +
+    y.portfolioAssets.retirementTotal +
+    y.portfolioAssets.lifeInsuranceTotal;
 
   const cashflowChartData = {
     labels: chartLabels,
@@ -964,27 +974,48 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       return [
         ...baseColumns,
         numCol("income_total", () => <DrillBtn segment="income" label="Income" />, (r) => r.income.total),
-        numCol(
+        col(
           "rmds_total",
           "RMDs",
-          (r) => Object.values(r.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0)
+          (r) => Object.values(r.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0),
+          (info) => {
+            const v = info.getValue() as number;
+            if (v === 0) return <span className="tabular-nums text-gray-500">&mdash;</span>;
+            const row = info.row.original;
+            return (
+              <button
+                onClick={() => {
+                  const details = Object.entries(row.accountLedgers)
+                    .filter(([, l]) => l.rmdAmount > 0)
+                    .map(([id, l]) => ({
+                      label: accountNames[id] ?? id,
+                      amount: l.rmdAmount,
+                    }))
+                    .sort((a, b) => b.amount - a.amount);
+                  setSourceDetailModal({
+                    name: "RMDs",
+                    year: row.year,
+                    amount: v,
+                    details,
+                  });
+                }}
+                className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                title="View RMDs by account"
+              >
+                {fmtNum(v)}
+              </button>
+            );
+          }
         ),
         numCol(
           "other_income_l0",
           () => <DrillBtn segment="other_income_detail" label="Other Inflows" />,
-          // Parent column reconciles with the drill's "Other Inflows Total":
-          // income.other (type=other rows) PLUS technique-income bySource
-          // entries (asset-sale net proceeds, purchase-funding deficits). The
-          // engine assigns technique-proceeds an id starting with "technique-"
-          // but doesn't bucket them into income.other, so reading the parent
-          // off income.other alone left proceeds invisible at the top level
-          // yet visible when drilled — advisors saw a discrepancy.
-          (r) => {
-            const techniqueTotal = Object.entries(r.income.bySource ?? {})
-              .filter(([id]) => id.startsWith("technique-"))
-              .reduce((sum, [, v]) => sum + v, 0);
-            return r.income.other + techniqueTotal;
-          }
+          // `income.other` already includes technique-proceeds (engine folds
+          // the sale surplus into `.other` and separately records the per-txn
+          // amount in `bySource`). Adding the bySource sum back in doubled the
+          // technique contribution. Engine-level invariant is guarded by the
+          // "sale-only surplus contributes exactly once" test in projection.test.
+          (r) => r.income.other
         ),
         numCol("totalIncome", "Total Income", (r) => r.totalIncome, true),
         numCol("expenses_total", () => <DrillBtn segment="expenses" label="Expenses" />, (r) => r.expenses.total),
@@ -1013,7 +1044,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           () => <DrillBtn segment="activity" label="Portfolio Activity" />,
           (r) => additionsTotal(r) - distributionsTotal(r)
         ),
-        numCol("portfolio_total", () => <DrillBtn segment="portfolio" label="Portfolio Assets" />, (r) => r.portfolioAssets.total),
+        numCol("portfolio_total", () => <DrillBtn segment="portfolio" label="Portfolio Assets" />, liquidPortfolioTotal),
       ];
     }
 
@@ -1647,16 +1678,17 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ];
       }
 
-      // Level 1: portfolio categories with drill buttons
+      // Level 1: portfolio categories with drill buttons. Cash-flow framing is
+      // liquid-only — real estate and business assets sit on the balance sheet
+      // report, not here. Total reconciles with the Level 0 Portfolio Assets
+      // column.
       return [
         ...baseColumns,
         numCol("portfolio_taxable_total", () => <DrillBtn segment="taxable" label="Taxable" />, (r) => r.portfolioAssets.taxableTotal),
         numCol("portfolio_cash_total", () => <DrillBtn segment="cash" label="Cash" />, (r) => r.portfolioAssets.cashTotal),
         numCol("portfolio_retirement_total", () => <DrillBtn segment="retirement" label="Retirement" />, (r) => r.portfolioAssets.retirementTotal),
-        numCol("portfolio_real_estate_total", () => <DrillBtn segment="realEstate" label="Real Estate" />, (r) => r.portfolioAssets.realEstateTotal),
-        numCol("portfolio_business_total", () => <DrillBtn segment="business_assets" label="Business" />, (r) => r.portfolioAssets.businessTotal),
         numCol("portfolio_life_insurance_total", () => <DrillBtn segment="lifeInsurance" label="Life Insurance" />, (r) => r.portfolioAssets.lifeInsuranceTotal),
-        numCol("portfolio_total", "Total", (r) => r.portfolioAssets.total, true),
+        numCol("portfolio_total", "Total", liquidPortfolioTotal, true),
       ];
     }
 

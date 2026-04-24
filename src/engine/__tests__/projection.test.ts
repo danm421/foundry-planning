@@ -677,6 +677,39 @@ describe("techniques integration", () => {
     expect(year2029.accountLedgers["acct-brokerage"]).toBeUndefined();
   });
 
+  it("sale-only surplus contributes exactly once to income.other (not doubled via bySource)", () => {
+    // Regression test for the fixes-doc #11 double-count: the engine folds
+    // technique-proceeds into income.other AND records them in income.bySource.
+    // Any UI that reads income.other + sum(bySource[technique-*]) double-counts
+    // the proceeds. Guard the invariant at the engine boundary so future UI
+    // work can rely on `income.other` as the single source of truth.
+    const data = buildClientData({
+      incomes: [], // no type=other income rows — so income.other is all technique
+      assetTransactions: [
+        {
+          id: "sale-only",
+          name: "Sell Brokerage",
+          type: "sell" as const,
+          year: 2028,
+          accountId: "acct-brokerage",
+        },
+      ],
+    });
+
+    const result = runProjection(data);
+    const year2028 = result.find((y) => y.year === 2028)!;
+
+    const techniqueProceedsInBySource = Object.entries(year2028.income.bySource)
+      .filter(([id]) => id.startsWith("technique-proceeds:"))
+      .reduce((sum, [, v]) => sum + v, 0);
+
+    // Sale surplus must be positive for this test to mean anything.
+    expect(techniqueProceedsInBySource).toBeGreaterThan(0);
+    // `income.other` should equal the technique proceeds exactly (no other rows),
+    // proving the engine folds technique income into `.other` exactly once.
+    expect(year2028.income.other).toBeCloseTo(techniqueProceedsInBySource, 2);
+  });
+
   it("asset purchase creates new account visible in later years", () => {
     const data = buildClientData({
       assetTransactions: [
