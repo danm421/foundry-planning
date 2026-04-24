@@ -199,7 +199,7 @@ function DebtBequestDialog({
               setDraft({
                 ...draft,
                 liabilityId: e.target.value || null,
-                name: liab?.name ?? "",
+                name: liab?.name?.trim() || "(unnamed liability)",
               });
             }}
             className="w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-gray-100"
@@ -221,6 +221,12 @@ function DebtBequestDialog({
               );
             })}
           </select>
+          {eligibleLiabilities.length === 0 && (
+            <p className="mt-1.5 text-xs text-amber-400/80">
+              No bequest-eligible liabilities exist. A liability must be
+              unlinked (no linked property) and not owned by an entity.
+            </p>
+          )}
         </label>
 
         <fieldset className="mb-4">
@@ -1058,10 +1064,9 @@ export default function WillsPanel(props: WillsPanelProps) {
           setDraft={setLiabilityDraft}
           liabilities={liabilities}
           alreadyBequeathedIds={
-            (wills.find((w) => w.grantor === debtModalOpen)?.bequests ?? [])
-              .filter((b): b is WillsPanelLiabilityBequest => b.kind === "liability")
-              .map((b) => b.liabilityId!)
-              .filter(Boolean)
+            (wills.find((w) => w.grantor === debtModalOpen)?.bequests ?? []).flatMap(
+              (b) => (b.kind === "liability" && b.liabilityId ? [b.liabilityId] : []),
+            )
           }
           familyMembers={familyMembers}
           entities={entities}
