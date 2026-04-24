@@ -73,6 +73,8 @@ export type AuditAction =
   | "report_comment.update"
   // Document extraction (LLM call)
   | "client.extract"
+  // Life insurance
+  | "insurance_policy.create"
   // CMA (firm-level, admin-gated)
   | "cma.asset_class.create"
   | "cma.asset_class.update"
