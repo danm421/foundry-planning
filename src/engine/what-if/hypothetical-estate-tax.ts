@@ -38,8 +38,99 @@ export interface HypotheticalEstateTaxInput {
   annualExclusionsByYear: Record<number, number>;
 }
 
+function sumTotals(results: EstateTaxResult[]) {
+  return results.reduce(
+    (acc, r) => ({
+      federal: acc.federal + r.federalEstateTax,
+      state: acc.state + r.stateEstateTax,
+      admin: acc.admin + r.estateAdminExpenses,
+      total: acc.total + r.totalTaxesAndExpenses,
+    }),
+    { federal: 0, state: 0, admin: 0, total: 0 },
+  );
+}
+
+function runOrdering(
+  firstDecedent: "client" | "spouse",
+  input: HypotheticalEstateTaxInput,
+): HypotheticalEstateTaxOrdering {
+  const survivor: "client" | "spouse" =
+    firstDecedent === "client" ? "spouse" : "client";
+
+  const firstWill = input.wills.find((w) => w.grantor === firstDecedent) ?? null;
+
+  // structuredClone isolates the hypothetical run from the caller's state
+  // (projection.ts keeps real-death state alive alongside these clones).
+  const firstResult = applyFirstDeath({
+    year: input.year,
+    deceased: firstDecedent,
+    survivor,
+    will: firstWill,
+    accounts: structuredClone(input.accounts),
+    accountBalances: structuredClone(input.accountBalances),
+    basisMap: structuredClone(input.basisMap),
+    incomes: structuredClone(input.incomes),
+    liabilities: structuredClone(input.liabilities),
+    familyMembers: input.familyMembers,
+    externalBeneficiaries: input.externalBeneficiaries,
+    entities: structuredClone(input.entities),
+    planSettings: input.planSettings,
+    gifts: input.gifts,
+    annualExclusionsByYear: input.annualExclusionsByYear,
+    dsueReceived: 0,
+  });
+
+  if (!input.isMarried) {
+    return {
+      firstDecedent,
+      firstDeath: firstResult.estateTax,
+      totals: sumTotals([firstResult.estateTax]),
+    };
+  }
+
+  const finalWill = input.wills.find((w) => w.grantor === survivor) ?? null;
+
+  const finalResult = applyFinalDeath({
+    year: input.year,
+    deceased: survivor,
+    survivor,
+    will: finalWill,
+    accounts: firstResult.accounts,
+    accountBalances: firstResult.accountBalances,
+    basisMap: firstResult.basisMap,
+    incomes: firstResult.incomes,
+    liabilities: firstResult.liabilities,
+    familyMembers: input.familyMembers,
+    externalBeneficiaries: input.externalBeneficiaries,
+    // Entities may have been mutated by grantor-succession inside first-death;
+    // pass the post-first-death entity list from firstResult if death-event
+    // returns one. Current 4d-1 does not thread entities back; re-clone the
+    // input as a safe default — this only affects survivor-owned trusts that
+    // would have succeeded from the first decedent, which is a known
+    // 4d-2 simplification documented in the spec.
+    entities: structuredClone(input.entities),
+    planSettings: input.planSettings,
+    gifts: input.gifts,
+    annualExclusionsByYear: input.annualExclusionsByYear,
+    dsueReceived: firstResult.dsueGenerated,
+  });
+
+  return {
+    firstDecedent,
+    firstDeath: firstResult.estateTax,
+    finalDeath: finalResult.estateTax,
+    totals: sumTotals([firstResult.estateTax, finalResult.estateTax]),
+  };
+}
+
 export function computeHypotheticalEstateTax(
-  _input: HypotheticalEstateTaxInput,
+  input: HypotheticalEstateTaxInput,
 ): HypotheticalEstateTax {
-  throw new Error("not implemented");
+  const primaryFirst = runOrdering("client", input);
+  const spouseFirst = input.isMarried ? runOrdering("spouse", input) : undefined;
+  return {
+    year: input.year,
+    primaryFirst,
+    spouseFirst,
+  };
 }
