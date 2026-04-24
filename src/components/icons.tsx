@@ -180,3 +180,48 @@ export function FoundryMark(props: IconProps) {
     </svg>
   );
 }
+
+export function CheckCircleIcon(props: IconProps) {
+  return (
+    <svg {...baseSvgProps} {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8 12 3 3 5-6" />
+    </svg>
+  );
+}
+
+export function ChartLineIcon(props: IconProps) {
+  return (
+    <svg {...baseSvgProps} {...props}>
+      <path d="M3 3v18h18" />
+      <path d="m7 15 4-4 3 3 5-6" />
+    </svg>
+  );
+}
+
+export function PieChartIcon(props: IconProps) {
+  return (
+    <svg {...baseSvgProps} {...props}>
+      <path d="M21 12A9 9 0 1 1 12 3v9z" />
+      <path d="M21 12A9 9 0 0 0 12 3v9z" />
+    </svg>
+  );
+}
+
+export function CalendarIcon(props: IconProps) {
+  return (
+    <svg {...baseSvgProps} {...props}>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18M8 3v4m8-4v4" />
+    </svg>
+  );
+}
+
+export function AlertCircleIcon(props: IconProps) {
+  return (
+    <svg {...baseSvgProps} {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v5m0 3h.01" />
+    </svg>
+  );
+}
