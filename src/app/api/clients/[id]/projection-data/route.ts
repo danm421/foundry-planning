@@ -37,7 +37,9 @@ import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
-import type { BeneficiaryRef, Will, WillBequest } from "@/engine/types";
+import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
+import { synthesizePremiumExpenses } from "@/lib/insurance-policies/premium-expense";
+import type { Account, BeneficiaryRef, Expense, Will, WillBequest } from "@/engine/types";
 
 export const dynamic = "force-dynamic";
 
@@ -434,24 +436,18 @@ export async function GET(
       bequests: bequestsByWill.get(w.id) ?? [],
     }));
 
+    // ── Life-insurance policies ─────────────────────────────────────────────
+    // Load policy + schedule rows for all life-insurance accounts so they can
+    // be attached to the engine-facing Account shape below.
+    const lifeInsuranceAccountIds = accountRows
+      .filter((a) => a.category === "life_insurance")
+      .map((a) => a.id);
+    const policiesByAccount = await loadPoliciesByAccountIds(lifeInsuranceAccountIds);
+
     // ── Build response ──────────────────────────────────────────────────────
 
     // Convert Drizzle decimal strings to numbers for the engine
-    return NextResponse.json({
-      client: {
-        firstName: client.firstName,
-        lastName: client.lastName,
-        dateOfBirth: client.dateOfBirth,
-        retirementAge: client.retirementAge,
-        planEndAge: client.planEndAge,
-        lifeExpectancy: client.lifeExpectancy,
-        spouseName: client.spouseName ?? undefined,
-        spouseDob: client.spouseDob ?? undefined,
-        spouseRetirementAge: client.spouseRetirementAge ?? undefined,
-        spouseLifeExpectancy: client.spouseLifeExpectancy ?? null,
-        filingStatus: client.filingStatus,
-      },
-      accounts: accountRows.map((a) => {
+    const accountsShaped: Account[] = accountRows.map((a) => {
         let growthRate: number;
         let realization: { pctOrdinaryIncome: number; pctLtCapitalGains: number; pctQualifiedDividends: number; pctTaxExempt: number; turnoverPct: number } | undefined;
 
@@ -537,8 +533,60 @@ export async function GET(
           realization,
           annualPropertyTax: parseFloat(a.annualPropertyTax),
           propertyTaxGrowthRate: parseFloat(a.propertyTaxGrowthRate),
+          insuredPerson: a.insuredPerson ?? undefined,
+          lifeInsurance: policiesByAccount[a.id], // undefined for non-LI accounts
         };
-      }),
+      });
+
+    // Shape expenses before synthesizing life-insurance premium rows so they
+    // can be merged together into the engine-facing expense list.
+    const expensesShaped: Expense[] = expenseRows.map((e) => ({
+      id: e.id,
+      type: e.type,
+      name: e.name,
+      annualAmount: parseFloat(e.annualAmount),
+      startYear: e.startYear,
+      endYear: e.endYear,
+      growthRate: e.growthSource === "inflation" ? resolvedInflationRate : parseFloat(e.growthRate),
+      ownerEntityId: e.ownerEntityId ?? undefined,
+      cashAccountId: e.cashAccountId ?? undefined,
+      inflationStartYear: e.inflationStartYear ?? undefined,
+      deductionType: e.deductionType ?? undefined,
+      scheduleOverrides: expenseOverrideMap.get(e.id),
+    }));
+
+    // Synthesize premium expenses from life-insurance policy rows and merge
+    // into the full expense list returned to the engine.
+    const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+    const spouseBirthYear = client.spouseDob
+      ? parseInt(client.spouseDob.slice(0, 4), 10)
+      : null;
+    const syntheticPremiums = synthesizePremiumExpenses({
+      currentYear: new Date().getFullYear(),
+      accounts: accountsShaped,
+      clientBirthYear,
+      spouseBirthYear,
+      lifeExpectancyClient: client.lifeExpectancy,
+      lifeExpectancySpouse: client.spouseLifeExpectancy,
+    });
+
+    const allExpenses: Expense[] = [...expensesShaped, ...syntheticPremiums];
+
+    return NextResponse.json({
+      client: {
+        firstName: client.firstName,
+        lastName: client.lastName,
+        dateOfBirth: client.dateOfBirth,
+        retirementAge: client.retirementAge,
+        planEndAge: client.planEndAge,
+        lifeExpectancy: client.lifeExpectancy,
+        spouseName: client.spouseName ?? undefined,
+        spouseDob: client.spouseDob ?? undefined,
+        spouseRetirementAge: client.spouseRetirementAge ?? undefined,
+        spouseLifeExpectancy: client.spouseLifeExpectancy ?? null,
+        filingStatus: client.filingStatus,
+      },
+      accounts: accountsShaped,
       incomes: incomeRows.map((i) => ({
         id: i.id,
         type: i.type,
@@ -560,20 +608,7 @@ export async function GET(
         claimingAgeMode: (i.claimingAgeMode as "years" | "fra" | "at_retirement" | null) ?? undefined,
         scheduleOverrides: incomeOverrideMap.get(i.id),
       })),
-      expenses: expenseRows.map((e) => ({
-        id: e.id,
-        type: e.type,
-        name: e.name,
-        annualAmount: parseFloat(e.annualAmount),
-        startYear: e.startYear,
-        endYear: e.endYear,
-        growthRate: e.growthSource === "inflation" ? resolvedInflationRate : parseFloat(e.growthRate),
-        ownerEntityId: e.ownerEntityId ?? undefined,
-        cashAccountId: e.cashAccountId ?? undefined,
-        inflationStartYear: e.inflationStartYear ?? undefined,
-        deductionType: e.deductionType ?? undefined,
-        scheduleOverrides: expenseOverrideMap.get(e.id),
-      })),
+      expenses: allExpenses,
       liabilities: liabilityRows.map((l) => ({
         id: l.id,
         name: l.name,
