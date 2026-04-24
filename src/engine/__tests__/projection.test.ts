@@ -1727,18 +1727,29 @@ describe("runProjection — final-death event (spec 4c)", () => {
     for (const y of years) expect(y.deathTransfers ?? []).toEqual([]);
   });
 
-  it("distributes unlinked household debt proportionally to heirs", () => {
+  it("distributes unlinked household debt proportionally to heirs (illiquid estate)", () => {
+    // Illiquid estate at final death: only real_estate, no liquid accounts.
+    // After Task 10's pipeline inversion the creditor-payoff drain runs
+    // before the 4c chain but can't touch real_estate, so the full $20k
+    // debt falls through to the residual proportional-distribution step.
     const data = buildClientData({
       client: twoSpouseClient,
       planSettings,
       accounts: [{
-        id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
-        owner: "client", value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+        id: "a1", name: "Primary Home", category: "real_estate",
+        subType: "primary_residence",
+        owner: "client", value: 500_000, basis: 300_000,
+        growthRate: 0.03, rmdEnabled: false,
       }],
       liabilities: [{
+        // Non-amortizing unlinked debt: zero payment + long term so the
+        // balance persists until the 2052 final-death year. (The original
+        // fixture amortized the CC before the death event and happened to
+        // pass only because Task 10's creditor-payoff pipeline didn't
+        // exist yet.)
         id: "cc1", name: "Credit Card", balance: 20_000,
-        interestRate: 0.18, monthlyPayment: 800,
-        startYear: 2025, startMonth: 1, termMonths: 36, extraPayments: [],
+        interestRate: 0, monthlyPayment: 0,
+        startYear: 2025, startMonth: 1, termMonths: 600, extraPayments: [],
       }],
       familyMembers: [
         { id: "c1", relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },

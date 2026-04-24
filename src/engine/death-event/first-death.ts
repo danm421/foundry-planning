@@ -208,13 +208,18 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     entities: input.entities,
   });
 
-  // Phase 3 — gross estate (reads un-mutated entities).
+  // Phase 3 — gross estate (reads pre-chain accounts AND un-mutated
+  // entities). Using `input.*` here is critical: the 4b precedence chain
+  // has already flipped ownership of deceased-owned accounts (e.g.
+  // `all_assets → spouse` mutates owner in-place), which would otherwise
+  // make computeGrossEstate see `owner !== deceased` and return 0. Mirrors
+  // applyFinalDeath's pre-chain-read convention.
   const gross = computeGrossEstate({
     deceased: input.deceased,
     deathOrder: 1,
-    accounts: chainResult.accounts,
-    accountBalances: chainResult.accountBalances,
-    liabilities: chainResult.liabilities,
+    accounts: input.accounts,
+    accountBalances: input.accountBalances,
+    liabilities: input.liabilities,
     entities: input.entities,
   });
 

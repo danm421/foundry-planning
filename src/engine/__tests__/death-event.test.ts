@@ -1145,10 +1145,20 @@ describe("applyFinalDeath orchestrator", () => {
     expect(result.warnings.filter((w) => w.startsWith("residual_fallback_fired"))).toHaveLength(0);
   });
 
-  it("runs the unlinked-liability proportional distribution step", () => {
+  it("runs the unlinked-liability proportional distribution step (illiquid estate)", () => {
+    // Illiquid estate: single real_estate account + $10k CC. After Task 10's
+    // pipeline inversion, creditor-drain runs BEFORE the 4c chain — but
+    // drainLiquidAssets only touches cash / taxable / life_insurance /
+    // retirement, so a real_estate-only estate has no eligible accounts.
+    // The full $10k falls through to the residual distribution helper.
     const children: FamilyMember[] = [
       { id: "c1", relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
     ];
+    const home = mkAccount({
+      id: "home", name: "Primary Home",
+      category: "real_estate", subType: "primary_residence",
+      value: 500_000, basis: 400_000, growthRate: 0.03,
+    });
     const liabilities: Liability[] = [
       {
         id: "cc1", name: "Credit Card", balance: 10_000,
@@ -1156,10 +1166,15 @@ describe("applyFinalDeath orchestrator", () => {
         startYear: 2025, startMonth: 1, termMonths: 24, extraPayments: [],
       },
     ];
-    const input = mkInput({ familyMembers: children, liabilities });
+    const input = mkInput({ accounts: [home], familyMembers: children, liabilities });
     const result = applyFinalDeath(input);
 
-    // Asset transfers: 1 ($100k → c1). Liability transfers: 1 ($10k → c1).
+    // Creditor-drain produced no debits (no eligible liquid accounts) and
+    // full $10k residual flowed through distributeUnlinkedLiabilities.
+    expect(result.estateTax.creditorPayoffDebits).toHaveLength(0);
+    expect(result.estateTax.creditorPayoffResidual).toBeCloseTo(10_000, 2);
+
+    // Asset transfers: 1 ($500k home → c1). Liability transfers: 1 ($10k → c1).
     const liabEntries = result.transfers.filter((t) => t.via === "unlinked_liability_proportional");
     expect(liabEntries).toHaveLength(1);
     expect(liabEntries[0].recipientId).toBe("c1");
@@ -1204,19 +1219,12 @@ describe("applyFinalDeath orchestrator", () => {
     expect(a1.ownerEntityId).toBe("e1");
   });
 
-  it("throws when a will clause routes 'spouse' as recipient at 4c (defensive invariant)", () => {
-    const will: Will = {
-      id: "w1", grantor: "client", bequests: [
-        {
-          id: "b1", name: "Spouse clause", assetMode: "all_assets", accountId: null,
-          percentage: 100, condition: "always", sortOrder: 0,
-          recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
-        },
-      ],
-    };
-    const input = mkInput({ will });
-    expect(() => applyFinalDeath(input)).toThrow(/spouse/i);
-  });
+  // Removed: "throws when a will clause routes 'spouse' as recipient at 4c".
+  // Plan 4d-1 Task 10 replaced `assertFinalDeathInvariants` with a new set
+  // focused on estate-tax integrity and entity grantor-succession
+  // correctness; the spouse-at-4c guard was intentionally dropped. If this
+  // guard comes back, it belongs at the will-validation layer (API
+  // schema / form validation), not inside the 4c orchestrator.
 
   it("throws when any account remains with owner='joint' post-event (defensive)", () => {
     // This is impossible in production because 4b retitles joint accounts,
