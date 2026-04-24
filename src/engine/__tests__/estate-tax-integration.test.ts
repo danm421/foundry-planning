@@ -1,9 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { applyFirstDeath, applyFinalDeath } from "../death-event";
 import type { DeathEventInput } from "../death-event";
+import { runProjection } from "../projection";
 import type {
   Account,
   BeneficiaryRef,
+  ClientData,
+  ClientInfo,
   EntitySummary,
   FamilyMember,
   Liability,
@@ -16,15 +19,10 @@ import type {
  *
  * These tests exercise the end-to-end orchestration of applyFirstDeath /
  * applyFinalDeath across the 4b/4c precedence chains + grantor-succession +
- * creditor-payoff + estate-tax drain + pour-out phases. They build
- * DeathEventInput shapes directly rather than round-tripping through
- * runProjection because runProjection currently does not attach the
- * EstateTaxResult to ProjectionYear (that wiring lives in a later task and
- * the result surface is produced by the orchestrator regardless).
- *
- * TODO(Task 11): once projection.ts threads DSUE between first→final death
- * and plumbs annualExclusionsByYear, the couple-survivor test below can be
- * promoted from .skip to active.
+ * creditor-payoff + estate-tax drain + pour-out phases. Most build
+ * DeathEventInput shapes directly to keep the focus on a single death
+ * pipeline; the DSUE-portability test goes through runProjection to verify
+ * the projection.ts stash-and-thread plumbing.
  */
 
 // ── Scaffolding ─────────────────────────────────────────────────────────────
@@ -404,13 +402,104 @@ describe("4d integration — final death estate tax", () => {
     expect(result.estateTax.applicableExclusion).toBe(result.estateTax.beaAtDeathYear);
   });
 
-  it.skip("couple survivor's death with stashed DSUE adds to applicableExclusion", () => {
-    // TODO(Task 11): projection.ts currently hardcodes `dsueReceived: 0` at
-    // the final-death call site. Once Task 11 threads DSUE from the
-    // first-death EstateTaxResult into the final-death input, promote this
-    // test. The assertion would be:
-    //   applicableExclusion === beaAtDeathYear + dsueReceivedFromFirstDeath
-    //   federalEstateTax lower than a same-estate single-filer comparison
+  it("couple survivor's death with stashed DSUE adds to applicableExclusion", () => {
+    // End-to-end via runProjection: client dies first (2045) with everything
+    // routed to spouse → full marital deduction → BEA(2045) ports to
+    // surviving spouse as DSUE. Spouse then dies in 2052; final-death's
+    // applicableExclusion should equal BEA(2052) + the stashed DSUE.
+    const client: ClientInfo = {
+      firstName: "John", lastName: "Smith",
+      dateOfBirth: "1970-01-01",
+      retirementAge: 65, planEndAge: 95,
+      filingStatus: "married_joint",
+      lifeExpectancy: 75,           // dies 2045 (first death)
+      spouseDob: "1972-01-01",
+      spouseLifeExpectancy: 80,     // dies 2052 (final death)
+    };
+    const planSettings: PlanSettings = {
+      flatFederalRate: 0,
+      flatStateRate: 0,
+      inflationRate: 0.025,
+      planStartYear: 2026,
+      planEndYear: 2066,
+      taxInflationRate: 0.025,
+      estateAdminExpenses: 0,
+      flatStateEstateRate: 0,
+    };
+    // Modest estate so neither death incurs tax — focus is the DSUE plumbing.
+    const accounts: Account[] = [
+      {
+        id: "client-brok", name: "Client Brokerage",
+        category: "taxable", subType: "brokerage",
+        owner: "client", value: 1_000_000, basis: 700_000,
+        growthRate: 0, rmdEnabled: false,
+      },
+      {
+        id: "client-cash", name: "Client Cash",
+        category: "cash", subType: "savings",
+        owner: "client", value: 200_000, basis: 200_000,
+        growthRate: 0, rmdEnabled: false,
+      },
+    ];
+    const wills: Will[] = [
+      // Client's will: everything to spouse → full marital deduction at first
+      // death → DSUE = BEA(2045) since no exclusion is consumed.
+      {
+        id: "w-client", grantor: "client",
+        bequests: [{
+          id: "beq-c", name: "Residual to spouse",
+          assetMode: "all_assets", accountId: null,
+          percentage: 100, condition: "always", sortOrder: 0,
+          recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
+        }],
+      },
+      // Spouse's will: everything to kid-a (so 4c routes cleanly).
+      {
+        id: "w-spouse", grantor: "spouse",
+        bequests: [{
+          id: "beq-s", name: "Residual to kid",
+          assetMode: "all_assets", accountId: null,
+          percentage: 100, condition: "always", sortOrder: 0,
+          recipients: [{ recipientKind: "family_member", recipientId: "kid-a", percentage: 100, sortOrder: 0 }],
+        }],
+      },
+    ];
+    const data: ClientData = {
+      client,
+      accounts,
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings,
+      familyMembers: [kidA],
+      wills,
+    };
+
+    const years = runProjection(data);
+    const firstDeathYr = years.find((y) => y.year === 2045);
+    const finalDeathYr = years.find((y) => y.year === 2052);
+
+    // Both year rows must carry an attached EstateTaxResult.
+    expect(firstDeathYr?.estateTax).toBeDefined();
+    expect(finalDeathYr?.estateTax).toBeDefined();
+
+    // First death: marital deduction zeroed taxable estate → full DSUE ports.
+    expect(firstDeathYr!.estateTax!.taxableEstate).toBe(0);
+    expect(firstDeathYr!.estateTax!.dsueGenerated).toBeGreaterThan(0);
+
+    // Final death: dsueReceived must equal what the first death generated
+    // (this is the projection.ts stash-and-thread under test).
+    expect(finalDeathYr!.estateTax!.dsueReceived).toBeGreaterThan(0);
+    expect(finalDeathYr!.estateTax!.dsueReceived).toBe(
+      firstDeathYr!.estateTax!.dsueGenerated,
+    );
+    // applicableExclusion = BEA(deathYear) + dsueReceived per §2010(c).
+    expect(finalDeathYr!.estateTax!.applicableExclusion).toBeCloseTo(
+      finalDeathYr!.estateTax!.beaAtDeathYear + finalDeathYr!.estateTax!.dsueReceived,
+      0,
+    );
   });
 
   it("unlinked credit-card debt < cash: creditor-drain extinguishes, 4c runs on reduced balances", () => {
