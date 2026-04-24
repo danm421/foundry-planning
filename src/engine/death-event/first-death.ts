@@ -21,6 +21,7 @@ import {
 } from "./estate-tax";
 import { applyGrantorSuccession } from "./grantor-succession";
 import { drainLiquidAssets } from "./creditor-payoff";
+import { prepareLifeInsurancePayouts } from "./life-insurance-payout";
 import { beaForYear } from "@/lib/tax/estate";
 import { computeAdjustedTaxableGifts } from "@/lib/estate/adjusted-taxable-gifts";
 
@@ -208,28 +209,51 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
  *    · final EstateTaxResult with drain debits populated (Phase 11)
  *  No creditor-payoff at first death. */
 export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
-  // Phase 1 — 4b precedence chain. Capture its transfer ledger + state.
-  const chainResult = runFirstDeathPrecedenceChain(input);
-
-  // Phase 2 — compute grantor-succession updates (not yet applied).
-  const succession = applyGrantorSuccession({
+  // Phase 0 — life-insurance pre-chain transform. Triggering policies have
+  // their cash value swapped for faceValue and are reclassified as cash, so
+  // the chain routes them via per-account beneficiaries / will / fallback
+  // naturally. computeGrossEstate then picks up faceValue via the existing
+  // owner / grantor-revocable rules (§2042-equivalent).
+  const li = prepareLifeInsurancePayouts({
+    year: input.year,
     deceased: input.deceased,
+    eventKind: "first_death",
+    accounts: input.accounts,
+    accountBalances: input.accountBalances,
+    basisMap: input.basisMap,
     entities: input.entities,
   });
 
+  const prepared: DeathEventInput = {
+    ...input,
+    accounts: li.accounts,
+    accountBalances: li.accountBalances,
+    basisMap: li.basisMap,
+  };
+
+  // Phase 1 — 4b precedence chain. Capture its transfer ledger + state.
+  const chainResult = runFirstDeathPrecedenceChain(prepared);
+
+  // Phase 2 — compute grantor-succession updates (not yet applied).
+  const succession = applyGrantorSuccession({
+    deceased: prepared.deceased,
+    entities: prepared.entities,
+  });
+
   // Phase 3 — gross estate (reads pre-chain accounts AND un-mutated
-  // entities). Using `input.*` here is critical: the 4b precedence chain
+  // entities). Using `prepared.*` here is critical: the 4b precedence chain
   // has already flipped ownership of deceased-owned accounts (e.g.
   // `all_assets → spouse` mutates owner in-place), which would otherwise
   // make computeGrossEstate see `owner !== deceased` and return 0. Mirrors
-  // applyFinalDeath's pre-chain-read convention.
+  // applyFinalDeath's pre-chain-read convention. The PREPARED pre-chain state
+  // has faceValue substituted on triggering policies (§2042-equivalent).
   const gross = computeGrossEstate({
-    deceased: input.deceased,
+    deceased: prepared.deceased,
     deathOrder: 1,
-    accounts: input.accounts,
-    accountBalances: input.accountBalances,
-    liabilities: input.liabilities,
-    entities: input.entities,
+    accounts: prepared.accounts,
+    accountBalances: prepared.accountBalances,
+    liabilities: prepared.liabilities,
+    entities: prepared.entities,
   });
 
   // Phase 4 — deductions (marital + charitable + admin).
@@ -297,7 +321,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     },
   });
 
-  const warnings = [...chainResult.warnings, ...succession.warnings];
+  const warnings = [...chainResult.warnings, ...succession.warnings, ...li.warnings];
   for (const debit of estateTaxDrain.debits) {
     accountBalances[debit.accountId] =
       (accountBalances[debit.accountId] ?? 0) - debit.amount;
@@ -367,7 +391,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     transfers: chainResult.transfers,
     accounts: chainResult.accounts,
     incomes: chainResult.incomes,
-  }, input);
+  }, prepared);
 
   return {
     accounts: chainResult.accounts,

@@ -21,6 +21,7 @@ import {
 } from "./estate-tax";
 import { applyGrantorSuccession } from "./grantor-succession";
 import { drainLiquidAssets } from "./creditor-payoff";
+import { prepareLifeInsurancePayouts } from "./life-insurance-payout";
 import { applyLiabilityBequests } from "./liability-bequests";
 import { beaForYear } from "@/lib/tax/estate";
 import { computeAdjustedTaxableGifts } from "@/lib/estate/adjusted-taxable-gifts";
@@ -197,6 +198,29 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
 export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   const warnings: string[] = [];
 
+  // Phase 0 — life-insurance pre-chain transform. Triggering policies have
+  // their cash value swapped for faceValue and are reclassified as cash, so
+  // the chain routes them via per-account beneficiaries / will / fallback
+  // naturally. computeGrossEstate then picks up faceValue via the existing
+  // owner / grantor-revocable rules (§2042-equivalent). Joint-insured policies
+  // fire at final death via eventKind: "final_death".
+  const li = prepareLifeInsurancePayouts({
+    year: input.year,
+    deceased: input.deceased,
+    eventKind: "final_death",
+    accounts: input.accounts,
+    accountBalances: input.accountBalances,
+    basisMap: input.basisMap,
+    entities: input.entities,
+  });
+
+  const prepared: DeathEventInput = {
+    ...input,
+    accounts: li.accounts,
+    accountBalances: li.accountBalances,
+    basisMap: li.basisMap,
+  };
+
   // Phase 2 — compute grantor-succession updates (not yet applied). Defer
   // application until after gross-estate + drains read pre-flip state.
   const succession = applyGrantorSuccession({
@@ -205,19 +229,20 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   });
   warnings.push(...succession.warnings);
 
-  // Phase 3 — gross estate (pre-drain, pre-mutate).
+  // Phase 3 — gross estate (pre-drain, pre-mutate). Uses PREPARED pre-chain
+  // state so faceValue is included for triggering policies (§2042-equivalent).
   const gross = computeGrossEstate({
     deceased: input.deceased,
     deathOrder: 2,
-    accounts: input.accounts,
-    accountBalances: input.accountBalances,
-    liabilities: input.liabilities,
+    accounts: prepared.accounts,
+    accountBalances: prepared.accountBalances,
+    liabilities: prepared.liabilities,
     entities: input.entities,
   });
 
   // Working state for the drain passes.
-  const accountBalances = { ...input.accountBalances };
-  let workingLiabs = [...input.liabilities];
+  const accountBalances = { ...prepared.accountBalances };
+  let workingLiabs = [...prepared.liabilities];
   let ledger: DeathTransfer[] = [];
 
   // Phase 2.5 (4e) — carve bequeathed unlinked-debt slices out of the
@@ -253,7 +278,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
 
   const creditorDrain = drainLiquidAssets({
     amountNeeded: unlinkedDebt,
-    accounts: input.accounts,
+    accounts: prepared.accounts,
     accountBalances,
     eligibilityFilter: (a) => {
       if (a.ownerFamilyMemberId) return false;
@@ -270,7 +295,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
 
   for (const debit of creditorDrain.debits) {
     accountBalances[debit.accountId] = (accountBalances[debit.accountId] ?? 0) - debit.amount;
-    const a = input.accounts.find((x) => x.id === debit.accountId);
+    const a = prepared.accounts.find((x) => x.id === debit.accountId);
     if (a && a.category === "retirement") warnings.push(`retirement_estate_drain: ${a.id}`);
   }
 
@@ -328,7 +353,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   // Phase 6 — estate-tax drain on deceased's + grantor-trust liquid assets.
   const estateTaxDrain = drainLiquidAssets({
     amountNeeded: previewResult.totalTaxesAndExpenses,
-    accounts: input.accounts,
+    accounts: prepared.accounts,
     accountBalances,
     eligibilityFilter: (a) => {
       if (a.ownerFamilyMemberId) return false;
@@ -345,7 +370,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
 
   for (const debit of estateTaxDrain.debits) {
     accountBalances[debit.accountId] = (accountBalances[debit.accountId] ?? 0) - debit.amount;
-    const a = input.accounts.find((x) => x.id === debit.accountId);
+    const a = prepared.accounts.find((x) => x.id === debit.accountId);
     if (a && a.category === "retirement") warnings.push(`retirement_estate_drain: ${a.id}`);
   }
   if (estateTaxDrain.residual > 0) {
@@ -373,7 +398,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
       queue: succession.pourOutQueue,
       deceased: input.deceased,
       deathOrder: 2,
-      accounts: input.accounts,
+      accounts: prepared.accounts,
       accountBalances,
       basisMap: input.basisMap,
       liabilities: workingLiabs,
@@ -390,8 +415,8 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   // Phase 8b — the 4c precedence chain, now running LAST. Accounts already
   // drained; entities already flipped; trust assets already poured.
   const chainResult = runFinalDeathPrecedenceChain({
-    ...input,
-    accounts: input.accounts,
+    ...prepared,
+    accounts: prepared.accounts,
     accountBalances,
     liabilities: workingLiabs,
     entities: mutatedEntities,
@@ -438,7 +463,9 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     creditorPayoffResidual: creditorDrain.residual,
   });
 
-  assertFinalDeathInvariants(estateTax, mutatedEntities, input.deceased, ledger, workingLiabs, input.liabilities);
+  warnings.push(...li.warnings);
+
+  assertFinalDeathInvariants(estateTax, mutatedEntities, input.deceased, ledger, workingLiabs, prepared.liabilities);
 
   return {
     accounts: chainResult.accounts,
