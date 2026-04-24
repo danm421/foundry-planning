@@ -330,6 +330,13 @@
       "when": 1778092800000,
       "tag": "0046_will_bequests_consolidate_shape_check",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1777035286469,
+      "tag": "0047_client_open_items",
+      "breakpoints": true
     }
   ]
 }
