@@ -4,12 +4,13 @@ import { runProjection } from "@/engine";
 import { buildClientData } from "@/engine/__tests__/fixtures";
 
 describe("buildTimeline", () => {
-  it("returns events sorted by (year asc, category priority, subject)", () => {
+  it("returns events sorted by (year asc, category priority, then life-kind or subject)", () => {
     const data = buildClientData();
     const projection = runProjection(data);
     const events = buildTimeline(data, projection);
     const CATEGORY_ORDER: Record<string, number> = { life: 0, income: 1, transaction: 2, portfolio: 3, insurance: 4, tax: 5 };
     const SUBJECT_ORDER: Record<string, number> = { primary: 0, spouse: 1, joint: 2 };
+    const LIFE_KIND_ORDER: Record<string, number> = { retire: 0, ss_claim: 1, ss_fra: 2, medicare: 3, death: 4 };
     for (let i = 1; i < events.length; i++) {
       const prev = events[i - 1];
       const cur = events[i];
@@ -18,8 +19,15 @@ describe("buildTimeline", () => {
         const c = CATEGORY_ORDER[prev.category] - CATEGORY_ORDER[cur.category];
         expect(c).toBeLessThanOrEqual(0);
         if (c === 0) {
-          const s = SUBJECT_ORDER[prev.subject] - SUBJECT_ORDER[cur.subject];
-          expect(s).toBeLessThanOrEqual(0);
+          if (prev.category === "life") {
+            const k = (LIFE_KIND_ORDER[prev.id.split(":")[1]] ?? 99) - (LIFE_KIND_ORDER[cur.id.split(":")[1]] ?? 99);
+            expect(k).toBeLessThanOrEqual(0);
+            if (k === 0) {
+              expect(SUBJECT_ORDER[prev.subject] - SUBJECT_ORDER[cur.subject]).toBeLessThanOrEqual(0);
+            }
+          } else {
+            expect(SUBJECT_ORDER[prev.subject] - SUBJECT_ORDER[cur.subject]).toBeLessThanOrEqual(0);
+          }
         }
       }
     }
@@ -48,6 +56,20 @@ describe("buildTimeline", () => {
     const data = buildClientData();
     const events = buildTimeline(data, []);
     expect(events).toEqual([]);
+  });
+
+  it("orders Retirement first among Life events in the same year", () => {
+    // John retires at 65 (2035) and is Medicare-eligible at 65 (2035) — same year.
+    // Retirement is the defining life milestone and must sort ahead of Medicare.
+    const data = buildClientData();
+    const projection = runProjection(data);
+    const events = buildTimeline(data, projection);
+    const lifeEventsIn2035 = events.filter((e) => e.year === 2035 && e.category === "life" && e.subject === "primary");
+    const retireIdx = lifeEventsIn2035.findIndex((e) => e.id === "life:retire:primary");
+    const medicareIdx = lifeEventsIn2035.findIndex((e) => e.id === "life:medicare:primary");
+    expect(retireIdx).toBeGreaterThanOrEqual(0);
+    expect(medicareIdx).toBeGreaterThanOrEqual(0);
+    expect(retireIdx).toBeLessThan(medicareIdx);
   });
 
   it("dedupes multiple ss_begin income events for the same subject down to one", () => {
