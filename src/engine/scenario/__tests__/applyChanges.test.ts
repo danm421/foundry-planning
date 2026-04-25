@@ -290,3 +290,57 @@ describe("applyScenarioChanges — toggle filtering", () => {
     expect(result.effectiveTree.accounts).toHaveLength(1);
   });
 });
+
+describe("applyScenarioChanges — order of operations", () => {
+  it("respects orderIndex ordering", () => {
+    const base = minimalClientData();
+    const c1: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "add", targetKind: "account",
+      targetId: "a1", payload: { id: "a1", name: "first" } as Account,
+      toggleGroupId: null, orderIndex: 1,
+    };
+    const c2: ScenarioChange = {
+      id: "ch2", scenarioId: "s1", opType: "add", targetKind: "account",
+      targetId: "a2", payload: { id: "a2", name: "second" } as Account,
+      toggleGroupId: null, orderIndex: 0,
+    };
+    const result = applyScenarioChanges(base, [c1, c2], {}, []);
+    expect(result.effectiveTree.accounts.map((a) => a.id)).toEqual(["a2", "a1"]);
+  });
+
+  it("tie-breaks add before edit when orderIndex is equal", () => {
+    const base = minimalClientData();
+    const editChange: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "edit", targetKind: "account",
+      targetId: "a-new", payload: { value: { from: 0, to: 100 } },
+      toggleGroupId: null, orderIndex: 5,
+    };
+    const addChange: ScenarioChange = {
+      id: "ch2", scenarioId: "s1", opType: "add", targetKind: "account",
+      targetId: "a-new",
+      payload: { id: "a-new", name: "Roth", value: 0 } as Account,
+      toggleGroupId: null, orderIndex: 5,
+    };
+    const result = applyScenarioChanges(base, [editChange, addChange], {}, []);
+    // add applied first; edit then no-ops because target was scenario-added
+    expect(result.effectiveTree.accounts).toHaveLength(1);
+    expect(result.effectiveTree.accounts[0].value).toBe(0);
+  });
+
+  it("tie-breaks edit before remove at equal orderIndex (defensive)", () => {
+    const base = minimalClientData();
+    base.accounts = [{ id: "a1", value: 100 } as Account];
+    const removeChange: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "remove", targetKind: "account",
+      targetId: "a1", payload: null, toggleGroupId: null, orderIndex: 5,
+    };
+    const editChange: ScenarioChange = {
+      id: "ch2", scenarioId: "s1", opType: "edit", targetKind: "account",
+      targetId: "a1", payload: { value: { from: 100, to: 200 } },
+      toggleGroupId: null, orderIndex: 5,
+    };
+    // edit applies first (sets value=200), then remove drops it
+    const result = applyScenarioChanges(base, [removeChange, editChange], {}, []);
+    expect(result.effectiveTree.accounts).toEqual([]);
+  });
+});
