@@ -61,25 +61,25 @@ scripts/       one-off TS scripts run via tsx. `*.local.ts` is gitignored
 ```
 
 **Planning docs live in the Obsidian vault, not the repo.** Specs, plans,
-future-work, and session handoffs all live at `~/Documents/foundry-finance/`.
-See [§Planning vault](#planning-vault) below for the full layout + CLI recipes.
+future-work, and session handoffs all live at `~/Documents/brain/20-projects/foundry-planning/`.
+Vault-wide conventions (frontmatter, ingest/query/lint operations, folder layout) are in `~/Documents/brain/AGENTS.md`. See [§Planning vault](#planning-vault) below for the Foundry-specific layout + CLI recipes.
 
 ## Workflow
 
 **New feature = new worktree.** Don't build features directly on `main`.
 
 All specs, plans, future-work, and handoffs go to the Obsidian vault at
-`~/Documents/foundry-finance/` — not the repo. See [§Planning vault](#planning-vault).
+`~/Documents/brain/20-projects/foundry-planning/` — not the repo. `Now.md` is brain-wide and lives at `~/Documents/brain/Now.md`. See [§Planning vault](#planning-vault).
 
-1. **Resume context.** Read `~/Documents/foundry-finance/Now.md` for what's in flight + next up. When resuming after `/clear`, read the newest file in `~/Documents/foundry-finance/handoffs/`.
+1. **Resume context.** Read `~/Documents/brain/Now.md` for what's in flight + next up (brain-wide; Foundry section). When resuming after `/clear`, read the newest file in `~/Documents/brain/20-projects/foundry-planning/handoffs/`.
 2. **Brainstorm** (`superpowers:brainstorming`) to align on scope before any code.
-3. **Write the spec** (emitted by brainstorming) → `~/Documents/foundry-finance/specs-foundry-planning/YYYY-MM-DD-<slug>-design.md`. Add frontmatter: `type: spec`, `status: proposed`, `date`, topic tag.
-4. **Write the plan** (`superpowers:writing-plans`) → `~/Documents/foundry-finance/plans/YYYY-MM-DD-<slug>.md`. Frontmatter: `type: plan`, `status: proposed`, `spec: "[[<spec>]]"`, topic tag.
+3. **Write the spec** (emitted by brainstorming) → `~/Documents/brain/20-projects/foundry-planning/specs/YYYY-MM-DD-<slug>-design.md`. Add frontmatter: `type: spec`, `status: proposed`, `date`, topic tag.
+4. **Write the plan** (`superpowers:writing-plans`) → `~/Documents/brain/20-projects/foundry-planning/plans/YYYY-MM-DD-<slug>.md`. Frontmatter: `type: plan`, `status: proposed`, `spec: "[[<spec>]]"`, topic tag.
 5. **Create a worktree** (`superpowers:using-git-worktrees`) under `.worktrees/<slug>/`. Flip the plan's `status` to `in-progress` and update `Now.md`.
 6. **Execute** via `superpowers:executing-plans` or `superpowers:subagent-driven-development`. TDD (`superpowers:test-driven-development`) for engine/lib work; frontend-design skills for UI.
 7. **Verify** with `superpowers:verification-before-completion` and `vercel:verification` for end-to-end flows. `npm test` + `npm run lint` + manual browser check.
-8. **Finish** via `superpowers:finishing-a-development-branch`. Only merge to `main` when the feature is fully done. Flip plan `status: shipped`, move to `~/Documents/foundry-finance/plans/archive/`, update `Now.md` and the relevant `future-work/*.md`.
-9. When something gets scoped out, log it in the right `~/Documents/foundry-finance/future-work/*.md` file with a one-line "why deferred" note. Delete the entry when it ships.
+8. **Finish** via `superpowers:finishing-a-development-branch`. Only merge to `main` when the feature is fully done. Flip plan `status: shipped`, move to `~/Documents/brain/20-projects/foundry-planning/plans/archive/`, update `Now.md` and the relevant `future-work/*.md`.
+9. When something gets scoped out, log it in the right `~/Documents/brain/20-projects/foundry-planning/future-work/*.md` file with a one-line "why deferred" note. Delete the entry when it ships.
 
 ### Session hygiene
 
@@ -120,31 +120,33 @@ All specs, plans, future-work, and handoffs go to the Obsidian vault at
 
 ## Tracking deferred work
 
-Future-work lives in the Obsidian vault at `~/Documents/foundry-finance/future-work/*.md` split by category (`engine.md`, `ui.md`, `reports.md`, `analytics.md`, `client-data.md`, `integrations.md`, `monte-carlo-v2.md`, `reports.md`, `schema.md`, `security-hardening.md`, `timeline-report.md`, `tooling.md`). Cross-cutting index: `~/Documents/foundry-finance/future-work/_Future Work Index.md`.
+Future-work lives in the Obsidian vault at `~/Documents/brain/20-projects/foundry-planning/future-work/*.md` split by category (`engine.md`, `ui.md`, `reports.md`, `analytics.md`, `client-data.md`, `integrations.md`, `monte-carlo-v2.md`, `reports.md`, `schema.md`, `security-hardening.md`, `timeline-report.md`, `tooling.md`). Cross-cutting index: `~/Documents/brain/20-projects/foundry-planning/future-work/_Future Work Index.md`.
 
 Items are P/E/L-scored (Priority 1-10, Ease 1-10, Leverage 1-10). When something is scoped out of a current task, add a bullet to the right category file with a one-line "Why deferred" note. When you ship something listed, delete the entry and add a link in the file's `## Related specs & references` section to the spec that shipped it.
 
 ## Planning vault
 
-The vault at `~/Documents/foundry-finance/` is the source of truth for everything non-code related to planning.
+The Foundry project's vault folder is at `~/Documents/brain/20-projects/foundry-planning/` — source of truth for everything non-code related to Foundry planning. The brain root (`~/Documents/brain/`) holds vault-wide artifacts: `AGENTS.md` (schema), `Home.md` / `Now.md` (brain-wide dashboards), `index.md` (wiki entity catalog), `log.md` (chronological record), plus brain-wide directories `00-inbox/`, `10-daily/`, `40-resources/` (e.g. `eMoney-docs/`), `50-wiki/` (synthesized entity pages), and `90-archive/`. See `~/Documents/brain/AGENTS.md` for the full brain layout and conventions.
 
 ```
-~/Documents/foundry-finance/
-├── Home.md                          entry point / dashboard
-├── Now.md                           what's in flight + next up + recent ships
+~/Documents/brain/20-projects/foundry-planning/
 ├── _Specs Index.md                  topic-grouped index of all specs
 ├── _Plans Index.md                  active + archived plans
-├── specs-foundry-planning/          35 specs (YYYY-MM-DD-<slug>-design.md)
+├── specs/                           35+ specs (YYYY-MM-DD-<slug>-design.md)
 ├── plans/                           active plans (YYYY-MM-DD-<slug>.md)
 │   └── archive/                     shipped plans
 ├── handoffs/                        session handoffs (YAML, from splitting-sessions)
 │   └── _Handoffs Index.md
 ├── future-work/                     deferred items by category
 │   └── _Future Work Index.md
-├── eMoney Docs/                     3rd-party reference material
-│   └── _eMoney Docs Index.md
-└── design_handoff_estate_planning/  HTML mockups for estate report
+├── design_handoff_estate_planning/  HTML mockups for estate report
+├── design_handoff_client_dashboard/ HTML mockups for client dashboard
+├── Foundry Planning Fixes.md        advisor-reported bug list
+├── Monte Carlo Code Review — foundry-planning vs eMoney Spec.md
+└── agents-md-handoff-prompt.md      re-runnable prompt for keeping this AGENTS.md in sync
 ```
+
+eMoney reference material lives at `~/Documents/brain/40-resources/eMoney-docs/` (moved from the project root during the brain migration).
 
 **Frontmatter convention (already applied everywhere):**
 
