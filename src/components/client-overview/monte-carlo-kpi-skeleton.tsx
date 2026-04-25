@@ -1,9 +1,9 @@
 import KpiCard from "./kpi-card";
 
-export function MonteCarloKpiSkeleton() {
+export function MonteCarloKpiSkeleton({ clientId }: { clientId: string }) {
   return (
     <KpiCard
-      href="#"
+      href={`/clients/${clientId}/monte-carlo`}
       num="03"
       categoryLabel="Resilience"
       category="life"
