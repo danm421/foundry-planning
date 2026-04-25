@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { Card, CardBody, CardFooter, CardHeader } from "@/components/card";
 import MoneyText from "@/components/money-text";
 import SectionMarker from "@/components/section-marker";
@@ -7,22 +7,21 @@ import { ChartLineIcon } from "@/components/icons";
 import EmptyBlock from "./empty-block";
 import MetaPill from "./meta-pill";
 import NetWorthSparkline from "./net-worth-sparkline";
-import RunwayGauge from "./runway-gauge";
 
 interface Props {
   clientId: string;
-  monteCarloSuccess: number | null;
+  gaugeSlot: ReactNode;
   netWorthSeries: number[];
   startYear?: number;
 }
 
 export default function RunwayPanel({
   clientId,
-  monteCarloSuccess,
+  gaugeSlot,
   netWorthSeries,
   startYear,
 }: Props): ReactElement {
-  if (monteCarloSuccess == null && netWorthSeries.length === 0) {
+  if (netWorthSeries.length === 0) {
     return (
       <EmptyBlock
         icon={<ChartLineIcon width={22} height={22} />}
@@ -51,7 +50,7 @@ export default function RunwayPanel({
         <MetaPill label="30-yr projection" active />
       </CardHeader>
       <CardBody className="flex flex-col gap-4 md:flex-row md:items-center md:gap-6">
-        <RunwayGauge value={monteCarloSuccess} />
+        {gaugeSlot}
         <div className="flex flex-1 flex-col gap-3">
           <div className="flex gap-6">
             <div className="flex flex-col gap-0.5">

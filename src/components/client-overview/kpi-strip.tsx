@@ -1,11 +1,11 @@
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import KpiCard from "./kpi-card";
 
 interface Props {
   clientId: string;
   netWorth: number | null;
   liquidPortfolio: number | null;
-  monteCarloSuccess: number | null; // 0..1
+  mcSlot: ReactNode;
   yearsToRetirement: number | null;
   earliestRetirementYear?: number | null;
 }
@@ -42,17 +42,7 @@ export default function KpiStrip(p: Props): ReactElement {
         footnote="Excl. real estate, business"
         delta={null}
       />
-      <KpiCard
-        href={`/clients/${p.clientId}/monte-carlo`}
-        num="03"
-        categoryLabel="Resilience"
-        category="life"
-        label="Monte Carlo success"
-        value={p.monteCarloSuccess}
-        valueFormat="pct"
-        footnote="10,000 trials"
-        delta={null}
-      />
+      {p.mcSlot}
       <KpiCard
         href={`/clients/${p.clientId}/timeline`}
         num="04"

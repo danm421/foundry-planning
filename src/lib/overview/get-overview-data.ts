@@ -9,7 +9,6 @@ import { deriveLifeEvents, type OverviewLifeEvent } from "./derive-life-events";
 import { loadClientData, ClientNotFoundError } from "@/lib/projection/load-client-data";
 import { runProjection } from "@/engine";
 import { buildTimeline } from "@/lib/timeline/build-timeline";
-import { computeAlerts, type Alert } from "@/lib/alerts";
 import type { ProjectionYear } from "@/engine";
 
 const LIQUID_CATEGORY_EXCLUDE = new Set([
@@ -121,29 +120,16 @@ export async function getOverviewData(clientId: string, firmId: string) {
     projectionError,
   };
 
-  // Temporary compat shim for page.tsx until Task 19 wires Suspense slots.
-  // Remove `alerts`, `kpi.monteCarloSuccess`, and `runway.monteCarloSuccess` then.
-  const alerts: Alert[] = computeAlerts(
-    { id: client.id, updatedAt: client.updatedAt },
-    {
-      monteCarloSuccess: null,
-      liquidPortfolio,
-      currentYearNetOutflow,
-      minNetWorth,
-    },
-  );
-
   return {
     client,
-    kpi: { netWorth, liquidPortfolio, yearsToRetirement, monteCarloSuccess: null },
-    runway: { netWorthSeries, minNetWorth, monteCarloSuccess: null },
+    kpi: { netWorth, liquidPortfolio, yearsToRetirement },
+    runway: { netWorthSeries, minNetWorth },
     allocation,
     lifeEvents,
     openItemsPreview,
     totalOpen,
     totalCompleted,
     alertInputs,
-    alerts,
     auditRows,
     accountCount: accountRows.length,
   };

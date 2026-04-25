@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
@@ -7,10 +8,15 @@ import RunwayPanel from "@/components/client-overview/runway-panel";
 import AllocationPanel from "@/components/client-overview/allocation-panel";
 import LifeEventsPanel from "@/components/client-overview/life-events-panel";
 import OpenItemsPreview from "@/components/client-overview/open-items-preview";
-import AlertsStrip from "@/components/client-overview/alerts-strip";
 import RecentActivityPanel from "@/components/client-overview/recent-activity-panel";
 import EmptyHouseholdBanner from "@/components/client-overview/empty-household-banner";
 import { isFreshHousehold } from "@/components/client-overview/is-fresh-household";
+import { MonteCarloKpiSlot } from "@/components/client-overview/monte-carlo-kpi-slot";
+import { MonteCarloKpiSkeleton } from "@/components/client-overview/monte-carlo-kpi-skeleton";
+import { RunwayGaugeSlot } from "@/components/client-overview/runway-gauge-slot";
+import { RunwayGaugeSkeleton } from "@/components/client-overview/runway-gauge-skeleton";
+import { AlertsStripSlot } from "@/components/client-overview/alerts-strip-slot";
+import { AlertsStripSkeleton } from "@/components/client-overview/alerts-strip-skeleton";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +43,11 @@ export default async function ClientOverviewPage({
         clientId={id}
         netWorth={d.kpi.netWorth}
         liquidPortfolio={d.kpi.liquidPortfolio}
-        monteCarloSuccess={d.kpi.monteCarloSuccess}
+        mcSlot={
+          <Suspense fallback={<MonteCarloKpiSkeleton clientId={id} />}>
+            <MonteCarloKpiSlot clientId={id} firmId={firmId} />
+          </Suspense>
+        }
         yearsToRetirement={d.kpi.yearsToRetirement}
         earliestRetirementYear={earliestRetirementYear}
       />
@@ -45,7 +55,11 @@ export default async function ClientOverviewPage({
       <div className="grid grid-cols-1 gap-[var(--gap-grid)] md:grid-cols-2">
         <RunwayPanel
           clientId={id}
-          monteCarloSuccess={d.runway.monteCarloSuccess}
+          gaugeSlot={
+            <Suspense fallback={<RunwayGaugeSkeleton />}>
+              <RunwayGaugeSlot clientId={id} firmId={firmId} />
+            </Suspense>
+          }
           netWorthSeries={d.runway.netWorthSeries}
         />
         <AllocationPanel clientId={id} rollup={d.allocation} />
@@ -60,7 +74,14 @@ export default async function ClientOverviewPage({
           totalOpen={d.totalOpen}
           totalCompleted={d.totalCompleted}
         />
-        <AlertsStrip alerts={d.alerts} />
+        <Suspense fallback={<AlertsStripSkeleton />}>
+          <AlertsStripSlot
+            clientId={id}
+            firmId={firmId}
+            alertInputs={d.alertInputs}
+            clientMeta={{ id: d.client.id, updatedAt: d.client.updatedAt }}
+          />
+        </Suspense>
       </div>
 
       <RecentActivityPanel rows={d.auditRows} />
