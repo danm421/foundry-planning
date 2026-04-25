@@ -7,7 +7,7 @@ import {
   assertEntitiesInClient,
   assertModelPortfoliosInFirm,
 } from "@/lib/db-scoping";
-import { recordAudit, recordUpdate, recordDelete } from "@/lib/audit";
+import { recordUpdate, recordDelete } from "@/lib/audit";
 import { toAccountSnapshot, ACCOUNT_FIELD_LABELS } from "@/lib/audit/snapshots/account";
 
 export const dynamic = "force-dynamic";
