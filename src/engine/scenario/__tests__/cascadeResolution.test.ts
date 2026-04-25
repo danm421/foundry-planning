@@ -111,3 +111,62 @@ describe("resolveCascades — family_member → BeneficiaryRef", () => {
     expect(benes[0].id).toBe("b1");
   });
 });
+
+describe("resolveCascades — entity → WillBequestRecipient", () => {
+  it("drops the entity recipient from a bequest and keeps remaining recipients", () => {
+    const t: ClientData = tree({
+      wills: [{
+        id: "w1",
+        grantor: "client",
+        bequests: [{
+          id: "bq1",
+          name: "test bequest",
+          kind: "asset",
+          assetMode: "all_assets",
+          accountId: null,
+          liabilityId: null,
+          percentage: 100,
+          condition: "always",
+          sortOrder: 0,
+          recipients: [
+            { recipientKind: "entity", recipientId: "e-removed", percentage: 50, sortOrder: 0 },
+            { recipientKind: "family_member", recipientId: "fm-keep", percentage: 50, sortOrder: 1 },
+          ],
+        }],
+      } as Will],
+    });
+    const removed = [{ kind: "entity" as TargetKind, id: "e-removed", causedByChangeId: "ch1" }];
+    const warnings = resolveCascades(t, removed);
+
+    const bq = t.wills![0].bequests[0];
+    expect(bq.recipients).toHaveLength(1);
+    expect(bq.recipients[0].recipientKind).toBe("family_member");
+    expect(warnings.some((w) => w.kind === "will_bequest_dropped")).toBe(true);
+  });
+
+  it("drops the bequest entirely when its sole recipient was a removed entity", () => {
+    const t: ClientData = tree({
+      wills: [{
+        id: "w1",
+        grantor: "client",
+        bequests: [{
+          id: "bq1",
+          name: "sole-recipient",
+          kind: "asset",
+          assetMode: "all_assets",
+          accountId: null,
+          liabilityId: null,
+          percentage: 100,
+          condition: "always",
+          sortOrder: 0,
+          recipients: [
+            { recipientKind: "entity", recipientId: "e-removed", percentage: 100, sortOrder: 0 },
+          ],
+        }],
+      } as Will],
+    });
+    const removed = [{ kind: "entity" as TargetKind, id: "e-removed", causedByChangeId: "ch1" }];
+    resolveCascades(t, removed);
+    expect(t.wills![0].bequests).toHaveLength(0);
+  });
+});

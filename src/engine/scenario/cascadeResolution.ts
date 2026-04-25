@@ -97,5 +97,42 @@ export function resolveCascades(
     }
   }
 
+  // entity removal — drop WillBequestRecipient entries pointing at the entity.
+  // If a bequest's recipients[] becomes empty, drop the whole bequest.
+  const removedEntityIds = new Set(
+    removed.filter((r) => r.kind === "entity").map((r) => r.id),
+  );
+  const removedEntityToCause = new Map(
+    removed.filter((r) => r.kind === "entity").map((r) => [r.id, r.causedByChangeId]),
+  );
+
+  if (tree.wills && removedEntityIds.size > 0) {
+    for (const will of tree.wills) {
+      const remainingBequests = [];
+      for (const bq of will.bequests) {
+        const remainingRecipients = [];
+        for (const rcp of bq.recipients) {
+          if (rcp.recipientKind === "entity" && rcp.recipientId && removedEntityIds.has(rcp.recipientId)) {
+            warnings.push({
+              kind: "will_bequest_dropped",
+              message: `Will bequest recipient dropped — entity ${rcp.recipientId} was removed`,
+              causedByChangeId: removedEntityToCause.get(rcp.recipientId)!,
+              affectedEntityId: bq.id,
+              affectedEntityLabel: `Will bequest · ${bq.name}`,
+            });
+          } else {
+            remainingRecipients.push(rcp);
+          }
+        }
+        bq.recipients = remainingRecipients;
+        if (bq.recipients.length > 0) {
+          remainingBequests.push(bq);
+        }
+        // else: bequest dropped entirely (no recipients left). Already warned above.
+      }
+      will.bequests = remainingBequests;
+    }
+  }
+
   return warnings;
 }
