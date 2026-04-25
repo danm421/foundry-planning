@@ -125,3 +125,18 @@ export async function recordAudit(args: Args): Promise<void> {
     console.error("[audit] failed to record:", { action: args.action, err: msg });
   }
 }
+
+export {
+  recordCreate,
+  recordUpdate,
+  recordDelete,
+} from "./audit/record-helpers";
+export type {
+  AuditMetadata,
+  EntitySnapshot,
+  FieldChange,
+  FieldLabels,
+  ReferenceValue,
+  DiffFormat,
+  AuditValue,
+} from "./audit/types";
