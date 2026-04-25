@@ -71,7 +71,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
   const [editing, setEditing] = useState<ClientRow | null>(null);
   const [deleting, setDeleting] = useState<ClientRow | null>(null);
   const [search, setSearch] = useState("");
-  const [view, setView] = useState<ViewMode>("all");
+  const [view, setView] = useState<ViewMode>("recent");
 
   const visibleRows = useMemo(() => {
     const query = search.trim().toLowerCase();

@@ -6,6 +6,7 @@ import {
   ASSET_TYPE_LABELS,
   type AssetTypeId,
 } from "@/lib/investments/asset-types";
+import { TrashIcon } from "@/components/icons";
 
 interface AssetClass {
   id: string;
@@ -37,8 +38,61 @@ interface ModelPortfolio {
 
 type Tab = "asset-classes" | "model-portfolios";
 
-const pct = (v: string) => (Number(v) * 100).toFixed(2);
+// Decimal (0.075) → display percentage ("7.5"). Round to 4dp to dodge IEEE-754
+// noise (0.075 * 100 → 7.500000000000001), then strip trailing zeros so the
+// displayed value matches what the user typed and `value` doesn't repaint
+// mid-edit.
+const pct = (v: string) => {
+  const n = Number(v) * 100;
+  if (!Number.isFinite(n)) return "0";
+  return parseFloat(n.toFixed(4)).toString();
+};
 const toDec = (v: string) => String(Number(v) / 100);
+
+// Percentage input that holds the in-progress display string in local state so
+// each parent re-render doesn't re-pad the value (which previously clobbered
+// the cursor and capped typing at one digit). We track our own committed value
+// in a ref so the sync effect ignores echoes of our own onChange, and only
+// re-derives the draft when the parent value changes for some external reason
+// (e.g., the "Est" button writing arithmeticMean).
+function PercentInput({
+  decimalValue,
+  onChange,
+  onBlur,
+  className,
+}: {
+  decimalValue: string;
+  onChange: (decimal: string) => void;
+  onBlur?: () => void;
+  className?: string;
+}) {
+  const [draft, setDraft] = useState(() => pct(decimalValue));
+  const lastCommittedRef = useRef(decimalValue);
+
+  useEffect(() => {
+    if (decimalValue !== lastCommittedRef.current) {
+      lastCommittedRef.current = decimalValue;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: external resets (e.g. the "Est" button) need to refresh the draft; our own onChange echoes are filtered via lastCommittedRef.
+      setDraft(pct(decimalValue));
+    }
+  }, [decimalValue]);
+
+  return (
+    <input
+      type="number"
+      step="0.01"
+      value={draft}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        const next = toDec(e.target.value);
+        lastCommittedRef.current = next;
+        onChange(next);
+      }}
+      onBlur={onBlur}
+      className={className}
+    />
+  );
+}
 
 export default function CmaClient() {
   const [tab, setTab] = useState<Tab>("asset-classes");
@@ -326,11 +380,9 @@ function AssetClassRow({
       {pctFields.map((field) => (
         <td key={field} className="px-3 py-2">
           <div className="flex items-center justify-end gap-1">
-            <input
-              type="number"
-              step="0.01"
-              value={pct(ac[field] as string)}
-              onChange={(e) => onUpdate(ac.id, field, toDec(e.target.value))}
+            <PercentInput
+              decimalValue={ac[field] as string}
+              onChange={(next) => onUpdate(ac.id, field, next)}
               onBlur={() => onSave(ac)}
               className="w-16 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
             />
@@ -361,10 +413,11 @@ function AssetClassRow({
       <td className="px-3 py-2">
         <button
           onClick={() => onDelete(ac.id)}
-          className="text-xs text-red-400 hover:text-red-300"
-          title="Delete"
+          className="rounded p-1 text-gray-500 hover:bg-red-500/10 hover:text-red-400"
+          title="Delete asset class"
+          aria-label="Delete asset class"
         >
-          &times;
+          <TrashIcon className="h-4 w-4" />
         </button>
       </td>
     </tr>
@@ -471,9 +524,11 @@ function ModelPortfoliosTab({ portfolios, assetClasses, onRefresh }: ModelPortfo
               <span className="truncate font-medium">{p.name}</span>
               <button
                 onClick={(e) => { e.stopPropagation(); deletePortfolio(p.id); }}
-                className="text-xs text-red-400 hover:text-red-300"
+                className="rounded p-1 text-gray-500 hover:bg-red-500/10 hover:text-red-400"
+                title="Delete portfolio"
+                aria-label="Delete portfolio"
               >
-                &times;
+                <TrashIcon className="h-4 w-4" />
               </button>
             </div>
           </div>
@@ -582,28 +637,45 @@ function PortfolioAllocationEditor({
           <thead>
             <tr className="border-b border-gray-700 bg-gray-800/60 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
               <th className="px-3 py-2">Asset Class</th>
+              <th className="px-3 py-2 text-right">Growth Rate %</th>
               <th className="px-3 py-2 text-right">Weight %</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800">
-            {allocs.map((a, idx) => (
-              <tr key={a.assetClassId} className="hover:bg-gray-800/30">
-                <td className="px-3 py-2 text-gray-200">{acMap.get(a.assetClassId)?.name ?? "Unknown"}</td>
-                <td className="px-3 py-2">
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={a.weight}
-                    onChange={(e) => updateWeight(idx, e.target.value)}
-                    className="w-24 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <button onClick={() => removeRow(idx)} className="text-xs text-red-400 hover:text-red-300">&times;</button>
-                </td>
-              </tr>
-            ))}
+            {allocs.map((a, idx) => {
+              const ac = acMap.get(a.assetClassId);
+              const growth = ac
+                ? parseFloat((Number(ac.geometricReturn) * 100).toFixed(4)).toString()
+                : "—";
+              return (
+                <tr key={a.assetClassId} className="hover:bg-gray-800/30">
+                  <td className="px-3 py-2 text-gray-200">{ac?.name ?? "Unknown"}</td>
+                  <td className="px-3 py-2 text-right text-sm text-gray-300">{growth}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex justify-end">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={a.weight}
+                        onChange={(e) => updateWeight(idx, e.target.value)}
+                        className="w-24 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                      />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <button
+                      onClick={() => removeRow(idx)}
+                      className="rounded p-1 text-gray-500 hover:bg-red-500/10 hover:text-red-400"
+                      title="Remove asset class from portfolio"
+                      aria-label="Remove asset class from portfolio"
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
