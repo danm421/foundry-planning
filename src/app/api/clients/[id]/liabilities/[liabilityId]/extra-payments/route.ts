@@ -3,7 +3,8 @@ import { db } from "@/db";
 import { clients, liabilities, extraPayments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { recordAudit } from "@/lib/audit";
+import { recordCreate } from "@/lib/audit";
+import { toExtraPaymentSnapshot } from "@/lib/audit/snapshots/extra-payment";
 
 export const dynamic = "force-dynamic";
 
@@ -73,13 +74,13 @@ export async function POST(request: NextRequest, { params }: Params) {
       })
       .returning();
 
-    await recordAudit({
+    await recordCreate({
       action: "extra_payment.create",
       resourceType: "extra_payment",
       resourceId: row.id,
       clientId: id,
       firmId,
-      metadata: { liabilityId, year: row.year, type: row.type },
+      snapshot: await toExtraPaymentSnapshot(row),
     });
 
     return NextResponse.json(row, { status: 201 });

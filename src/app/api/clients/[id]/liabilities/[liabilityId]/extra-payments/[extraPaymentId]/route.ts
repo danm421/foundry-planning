@@ -3,7 +3,8 @@ import { db } from "@/db";
 import { clients, liabilities, extraPayments } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { recordAudit } from "@/lib/audit";
+import { recordUpdate, recordDelete } from "@/lib/audit";
+import { toExtraPaymentSnapshot, EXTRA_PAYMENT_FIELD_LABELS } from "@/lib/audit/snapshots/extra-payment";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,20 @@ export async function PUT(request: NextRequest, { params }: Params) {
     void _stripId; void _stripLiabilityId;
     void _stripCreatedAt; void _stripUpdatedAt;
 
+    const [before] = await db
+      .select()
+      .from(extraPayments)
+      .where(
+        and(
+          eq(extraPayments.id, extraPaymentId),
+          eq(extraPayments.liabilityId, liabilityId)
+        )
+      );
+
+    if (!before) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     const [updated] = await db
       .update(extraPayments)
       .set({ ...safeUpdate, updatedAt: new Date() })
@@ -64,13 +79,15 @@ export async function PUT(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    await recordAudit({
+    await recordUpdate({
       action: "extra_payment.update",
       resourceType: "extra_payment",
       resourceId: extraPaymentId,
       clientId: id,
       firmId,
-      metadata: { liabilityId, year: updated.year, type: updated.type },
+      before: await toExtraPaymentSnapshot(before),
+      after: await toExtraPaymentSnapshot(updated),
+      fieldLabels: EXTRA_PAYMENT_FIELD_LABELS,
     });
 
     return NextResponse.json(updated);
@@ -92,6 +109,22 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    const [existing] = await db
+      .select()
+      .from(extraPayments)
+      .where(
+        and(
+          eq(extraPayments.id, extraPaymentId),
+          eq(extraPayments.liabilityId, liabilityId)
+        )
+      );
+
+    if (!existing) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const snapshot = await toExtraPaymentSnapshot(existing);
+
     await db
       .delete(extraPayments)
       .where(
@@ -101,13 +134,13 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
         )
       );
 
-    await recordAudit({
+    await recordDelete({
       action: "extra_payment.delete",
       resourceType: "extra_payment",
       resourceId: extraPaymentId,
       clientId: id,
       firmId,
-      metadata: { liabilityId },
+      snapshot,
     });
 
     return NextResponse.json({ success: true });
