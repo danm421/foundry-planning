@@ -5,7 +5,7 @@ import BrandHeader from "./brand-header";
 import SidebarNav from "./sidebar-nav";
 import UserMenu from "./user-menu";
 import ClientSearch from "./client-search";
-import { ChevronLeftIcon, ChevronRightIcon } from "./icons";
+import { PanelLeftIcon } from "./icons";
 
 export async function toggleSidebar(): Promise<void> {
   "use server";
@@ -32,19 +32,19 @@ export default function Sidebar({
       className="flex flex-col border-r border-hair bg-card-2"
     >
       <BrandHeader firmName={firmName} collapsed={collapsed} />
+      <form action={toggleSidebar} className="border-b border-hair">
+        <button
+          type="submit"
+          className="flex w-full items-center justify-center px-[var(--pad-card)] py-3 text-ink-3 hover:text-ink hover:bg-card-hover"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <PanelLeftIcon />
+        </button>
+      </form>
       {collapsed ? null : <ClientSearch />}
       <SidebarNav clientsCount={clientsCount} />
       <div className="mt-auto border-t border-hair">
         <UserMenu collapsed={collapsed} />
-        <form action={toggleSidebar} className="border-t border-hair">
-          <button
-            type="submit"
-            className="flex w-full items-center justify-center px-[var(--pad-card)] py-2 text-ink-4 hover:text-ink hover:bg-card-hover"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
-          </button>
-        </form>
       </div>
     </aside>
   );

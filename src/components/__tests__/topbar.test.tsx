@@ -18,19 +18,12 @@ describe("Topbar", () => {
 
   it("renders three disabled action buttons", () => {
     const { container } = render(<Topbar />);
-    const disabledButtons = Array.from(container.querySelectorAll("button")).filter(
-      (b) => b.hasAttribute("disabled"),
-    );
-    expect(disabledButtons).toHaveLength(3);
-    disabledButtons.forEach((b) => {
+    const buttons = container.querySelectorAll("button");
+    expect(buttons).toHaveLength(3);
+    buttons.forEach((b) => {
+      expect(b.hasAttribute("disabled")).toBe(true);
       expect(b.getAttribute("title")).toBe("Coming soon");
     });
-  });
-
-  it("renders a sidebar toggle button", () => {
-    const { container } = render(<Topbar />);
-    const toggle = container.querySelector('button[aria-label="Toggle sidebar"]');
-    expect(toggle).not.toBeNull();
   });
 
   it("labels the three buttons Share / Export / Prep for meeting", () => {
