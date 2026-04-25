@@ -65,5 +65,37 @@ export function resolveCascades(
     tree.savingsRules = remaining;
   }
 
+  // family_member removal — drop matching BeneficiaryRefs from each account.
+  // The engine falls back to "estate" when an account has no remaining
+  // designations, so dropping is the right cleanup (no synthetic estate ref
+  // needed). Warning kind kept as "beneficiary_reassigned" per spec §4.2.
+  const removedFamilyMemberIds = new Set(
+    removed.filter((r) => r.kind === "family_member").map((r) => r.id),
+  );
+  const removedFmToCause = new Map(
+    removed.filter((r) => r.kind === "family_member").map((r) => [r.id, r.causedByChangeId]),
+  );
+
+  if (tree.accounts && removedFamilyMemberIds.size > 0) {
+    for (const acct of tree.accounts) {
+      if (!acct.beneficiaries || acct.beneficiaries.length === 0) continue;
+      const remaining = [];
+      for (const bene of acct.beneficiaries) {
+        if (bene.familyMemberId && removedFamilyMemberIds.has(bene.familyMemberId)) {
+          warnings.push({
+            kind: "beneficiary_reassigned",
+            message: `Beneficiary ${bene.id} dropped (falls back to estate) — family_member ${bene.familyMemberId} was removed`,
+            causedByChangeId: removedFmToCause.get(bene.familyMemberId)!,
+            affectedEntityId: bene.id,
+            affectedEntityLabel: `Beneficiary on account ${acct.id}`,
+          });
+        } else {
+          remaining.push(bene);
+        }
+      }
+      acct.beneficiaries = remaining;
+    }
+  }
+
   return warnings;
 }

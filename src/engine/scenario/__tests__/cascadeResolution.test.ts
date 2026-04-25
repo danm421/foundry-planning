@@ -1,7 +1,7 @@
 // src/engine/scenario/__tests__/cascadeResolution.test.ts
 import { describe, it, expect } from "vitest";
 import { resolveCascades } from "../cascadeResolution";
-import type { ClientData, Account, Transfer, SavingsRule } from "@/engine/types";
+import type { ClientData, Account, Transfer, SavingsRule, BeneficiaryRef, Will } from "@/engine/types";
 import type { TargetKind } from "../types";
 
 const tree = (overrides: Partial<ClientData> = {}): ClientData => ({
@@ -67,5 +67,47 @@ describe("resolveCascades — accounts → savings_rules", () => {
     expect(t.savingsRules).toEqual([]);
     expect(warnings).toHaveLength(1);
     expect(warnings[0].kind).toBe("savings_rule_dropped");
+  });
+});
+
+describe("resolveCascades — family_member → BeneficiaryRef", () => {
+  it("drops a BeneficiaryRef whose familyMemberId was removed (engine falls back to estate)", () => {
+    const t: ClientData = tree({
+      accounts: [
+        {
+          id: "a1",
+          beneficiaries: [
+            { id: "b1", tier: "primary", percentage: 100, familyMemberId: "fm-removed", sortOrder: 0 } as BeneficiaryRef,
+          ],
+        } as unknown as Account,
+      ],
+    });
+    const removed = [{ kind: "family_member" as TargetKind, id: "fm-removed", causedByChangeId: "ch1" }];
+    const warnings = resolveCascades(t, removed);
+
+    const account = t.accounts[0];
+    expect(account.beneficiaries).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].kind).toBe("beneficiary_reassigned");
+    expect(warnings[0].causedByChangeId).toBe("ch1");
+  });
+
+  it("preserves BeneficiaryRefs whose familyMemberId is intact", () => {
+    const t: ClientData = tree({
+      accounts: [
+        {
+          id: "a1",
+          beneficiaries: [
+            { id: "b1", tier: "primary", percentage: 50, familyMemberId: "fm-keep", sortOrder: 0 } as BeneficiaryRef,
+            { id: "b2", tier: "primary", percentage: 50, familyMemberId: "fm-removed", sortOrder: 1 } as BeneficiaryRef,
+          ],
+        } as unknown as Account,
+      ],
+    });
+    const removed = [{ kind: "family_member" as TargetKind, id: "fm-removed", causedByChangeId: "ch1" }];
+    resolveCascades(t, removed);
+    const benes = t.accounts[0].beneficiaries!;
+    expect(benes).toHaveLength(1);
+    expect(benes[0].id).toBe("b1");
   });
 });
