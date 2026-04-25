@@ -183,13 +183,18 @@ single-scenario. Tracked in
 comparison is an additive layer that can land later without
 rework to the single-scenario report.
 
-### 10. Non-grantor trust income tax — ❌ not shipped
+### 10. Non-grantor trust income tax — ✅ Shipped 2026-04-26
 
-Irrevocable-trust earnings are projected tax-free. SLAT remainder
-growth projected 40 years is meaningfully wrong without trust /
-compressed-bracket income tax. Tracked in
-`future-work/estate.md` (IDGT income-tax treatment post-grantor-flip
-and non-grantor trust generally).
+Compressed 1041 brackets + §1(h) LTCG + 3.8% NIIT on retained
+non-grantor trust income, plus a distribution-policy system that
+routes DNI to household or out-of-household beneficiaries. Engine
+in [src/engine/trust-tax/](../../src/engine/trust-tax/); per-year
+wire-in at [src/engine/projection.ts](../../src/engine/projection.ts);
+schema fields on entities (`distribution_mode`/`amount`/`percent`,
+beneficiary FKs) and `plan_settings.out_of_household_dni_rate`. UI
+surfaces: trust entity dialog Distribution Policy section,
+plan-settings "Trust Tax" rate row, tax-detail modal Trust Tax +
+Beneficiary Tax (est) columns. Shipped at `eea8746`.
 
 ### 11. GST tax & generation-skipping exemption — ❌ not shipped
 
