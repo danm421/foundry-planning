@@ -28,8 +28,8 @@ Cross-referenced files:
 | 4 | Death-sequence event (first → survivor, second → heirs)  | ✅ Shipped 2026-04-21 … 2026-04-24 | Specs 4a (wills) · 4b (first death) · 4c (final death) · 4d-1 (estate tax engine) · 4d-2 (Form-706 report UI) · 4e (liability bequests) |
 | 5 | Federal estate tax + DSUE/portability + flat state rate  | ✅ Shipped 2026-04-23 | Spec 4d-1 — folded into the Item-4 chain                                                      |
 | 6 | Step-up in basis at death                                | ✅ Shipped 2026-04-24 | Spec 6 — step-up at death                                                                |
-| 7 | **Life-insurance primitives (face/cash value, ILIT)**    | ❌ Not shipped    | — (`life_insurance` account category + `insurance` entity type exist, but no face-value / death-benefit modeling) |
-| 8 | **Scenario switcher / with-plan vs without-plan**        | ❌ Not shipped    | Pre-launch brainstorm owed (Advisor Dashboard bundle)                                           |
+| 7 | Life-insurance primitives (face/cash value, ILIT)        | ✅ Shipped 2026-04-25 | Spec "Life-insurance primitives" — face/cash split, §2042 inclusion, ILIT payout routing, term expiry, premium cash flow, Insurance panel |
+| 8 | Scenario switcher / with-plan vs without-plan            | ⏸ Deferred post-v1 | Tracked in [future-work/ui.md](../../../Documents/foundry-finance/future-work/ui.md) ("Scenario switcher + side-panel editor") — not in estate-report v1 |
 | 9 | UI: flowchart canvas, projection panel, Sankey           | ❌ Not shipped    | No drag-and-drop canvas, year scrubber, or Sankey anywhere in `src/components/`                |
 
 ---
@@ -111,26 +111,30 @@ remainder-beneficiary fields. Legacy `entities.beneficiaries` JSON
 is still read for backwards compatibility (drop-column follow-up in
 future-work).
 
-### 6. Life insurance / ILIT primitives — ❌ **not shipped**
+### 6. Life insurance / ILIT primitives — ✅ shipped (Spec "Life-insurance primitives")
 
-`account_category` includes `life_insurance` and `entity_type`
-includes `insurance`, but no **face value vs cash value** split, no
-**death-benefit payout event**, and no ILIT-specific rule that face
-value enters heirs outside the estate at death.
+Shipped 2026-04-25. New `life_insurance_policies` (1:1 with the
+`life_insurance` account) + `life_insurance_cash_value_schedule`
+tables (migration 0049). Face-value / cash-value split, policy-type
+enum (`term` / `whole` / `universal` / `variable`), insured enum
+(`client` / `spouse` / `joint`), term-end derivation, and
+`endsAtInsuredRetirement` flag all modeled. Engine: `death-event`
+now runs a Phase 0 `prepareLifeInsurancePayouts` that routes face
+value through beneficiary designations (ILIT-owned policies go OOE;
+client/spouse-owned default to estate unless bene-designations
+override). §2042 gross-estate inclusion on client-owned policies.
+Term policies drop to zero at term end (no payout on later death).
+Premium cash flow synthesized into the expenses stream (basic mode
+or free-form cash-value schedule). UI: new Details → Insurance tab
+with grouped list + tabbed policy dialog (Details / Beneficiaries /
+Cash-Value Growth w/ CSV upload). Term policies hidden from Net
+Worth; permanent policies read-only with deep-link back to the
+Insurance panel. Timeline detector emits `insurance:term_expired`
+at `endYear + 1`.
 
-Required for the design's "ILIT · $5M policy → +$5.00M at death2"
-strategy card and the Sankey.
-
-**Scope:**
-
-- Add `face_value` + `cash_value` columns to `accounts` (or a new
-  `life_insurance_policies` table keyed off `account_id`).
-- `death-event` emits a `life_insurance_payout` transfer equal to
-  `face_value` when the insured dies; goes OOE if `ownerEntityId`
-  is an `insurance` / ILIT entity, into estate otherwise.
-- Cash value during life follows normal growth; face value is not
-  marked-to-market.
-- Policy-type enum: `term` / `whole` / `universal` / `variable`.
+**Known engine gaps** (logged in [future-work/engine.md](../../../Documents/foundry-finance/future-work/engine.md)):
+- `synthesizePremiumExpenses` ignores `endsAtInsuredRetirement` when `premiumYears` is explicit — currently latent.
+- Unused `life_insurance_payout` transfer `via` enum value — dead branch to delete.
 
 ### 7. Family members as owners / beneficiaries — ✅ shipped (Item 1)
 
@@ -155,11 +159,16 @@ tab, not a data-model gap.
 
 ## Soft blockers — report will look wrong without these
 
-### 9. Scenario switcher / "with plan" vs "without plan" — ❌ not shipped
+### 9. Scenario switcher / "with plan" vs "without plan" — ⏸ deferred post-v1
 
-The three-column comparison and dual-line growth chart are a
-scenario-diff UI. Listed in pre-launch brainstorms still owed
-(Scenario Builder/Comparison, `#4` in Need-Complete-Before-Launch).
+Scoped out of estate-report v1 (2026-04-24). The three-column
+comparison and dual-line growth chart require a scenario-diff layer
+that isn't being built for v1 — the estate report will ship
+single-scenario. Tracked in
+[~/Documents/foundry-finance/future-work/ui.md](../../../Documents/foundry-finance/future-work/ui.md)
+("Scenario switcher + side-panel editor"). The with/without-plan
+comparison is an additive layer that can land later without
+rework to the single-scenario report.
 
 ### 10. Non-grantor trust income tax — ❌ not shipped
 
@@ -235,9 +244,10 @@ that don't exist in the codebase today:
    death1Year, death2Year, exemptionPerPerson. Per-scenario override
    UI overlaps with soft-blocker 13.
 
-All nine UI pieces depend on the **token foundation** (currently in
-`feature/token-foundation`, ready-to-merge) for colors, typography,
-spacing, and the `MoneyText` / `§.NN` primitives.
+All nine UI pieces depend on the **token foundation** (merged
+2026-04 — `MoneyText`, `SectionMarker`, `Card` family, and the
+brand token system in `globals.css`) for colors, typography, spacing,
+and the `MoneyText` / `§.NN` primitives.
 
 ---
 
@@ -258,10 +268,9 @@ Items 1–5 are **done**. Remaining path to the full
    seed data for ILIT demos. Required to light up the ILIT
    strategy card and populate the beneficiary strip with a death
    benefit.
-8. **Scenario switcher ("with plan" / "without plan")** — shared
-   with Advisor Dashboard launch-blocker brainstorm. Can be
-   parallelized with 6 + 7 if scoped to the estate report's
-   two-scenario diff (full scenario-builder is a larger surface).
+8. ⏸ ~~Scenario switcher ("with plan" / "without plan")~~ —
+   **deferred post-v1.** Estate report ships single-scenario.
+   Tracked in `future-work/ui.md`.
 9. **UI: flowchart canvas, projection panel, Sankey** — lands on
    top of the shipped data layer + token foundation. Sequence:
    canvas (9.1) → spine component (9.2) → scrubber + comparison
