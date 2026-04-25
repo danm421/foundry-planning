@@ -312,6 +312,27 @@ export const scenarioChanges = pgTable("scenario_changes", {
   ),
 }));
 
+export const scenarioSnapshots = pgTable("scenario_snapshots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  // Source scenarios are nullable so snapshots survive scenario deletion.
+  // Intentionally NOT cascade-delete — see spec §3.1.
+  leftScenarioId: uuid("left_scenario_id"),
+  rightScenarioId: uuid("right_scenario_id"),
+  effectiveTreeLeft: jsonb("effective_tree_left").notNull(),
+  effectiveTreeRight: jsonb("effective_tree_right").notNull(),
+  toggleState: jsonb("toggle_state").notNull(),
+  rawChangesRight: jsonb("raw_changes_right").notNull(),
+  rawToggleGroupsRight: jsonb("raw_toggle_groups_right").notNull(),
+  frozenAt: timestamp("frozen_at").defaultNow().notNull(),
+  frozenByUserId: uuid("frozen_by_user_id").notNull(),
+  sourceKind: scenarioSnapshotSourceKindEnum("source_kind").notNull().default("manual"),
+});
+
 export const planSettings = pgTable("plan_settings", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
@@ -1150,6 +1171,13 @@ export const scenarioChangesRelations = relations(scenarioChanges, ({ one }) => 
   toggleGroup: one(scenarioToggleGroups, {
     fields: [scenarioChanges.toggleGroupId],
     references: [scenarioToggleGroups.id],
+  }),
+}));
+
+export const scenarioSnapshotsRelations = relations(scenarioSnapshots, ({ one }) => ({
+  client: one(clients, {
+    fields: [scenarioSnapshots.clientId],
+    references: [clients.id],
   }),
 }));
 
