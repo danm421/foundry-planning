@@ -7,6 +7,7 @@ import type { Alert } from "@/lib/alerts";
 
 interface Props {
   alerts: Alert[];
+  loading?: boolean;
 }
 
 const SEVERITY: Record<Alert["severity"], { border: string; chip: string; icon: string }> = {
@@ -22,7 +23,24 @@ const SEVERITY: Record<Alert["severity"], { border: string; chip: string; icon: 
   },
 };
 
-export default function AlertsStrip({ alerts }: Props): ReactElement {
+export default function AlertsStrip({ alerts, loading }: Props): ReactElement {
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-0.5">
+            <SectionMarker num="07" label="Alerts" />
+            <p className="text-[14px] font-semibold text-ink">Alerts</p>
+          </div>
+        </CardHeader>
+        <CardBody className="flex flex-col gap-2">
+          <div className="h-[18px] w-[60%] rounded-md bg-ink-4/15 animate-pulse" aria-hidden />
+          <div className="h-[14px] w-[40%] rounded-md bg-ink-4/12 animate-pulse" aria-hidden />
+        </CardBody>
+      </Card>
+    );
+  }
+
   if (alerts.length === 0) {
     return (
       <Card>
