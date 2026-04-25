@@ -4,7 +4,8 @@ import { clients, scenarios, liabilities } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
-import { recordAudit } from "@/lib/audit";
+import { recordCreate } from "@/lib/audit";
+import { toLiabilitySnapshot } from "@/lib/audit/snapshots/liability";
 
 export const dynamic = "force-dynamic";
 
@@ -121,13 +122,13 @@ export async function POST(
       })
       .returning();
 
-    await recordAudit({
+    await recordCreate({
       action: "liability.create",
       resourceType: "liability",
       resourceId: liability.id,
       clientId: id,
       firmId,
-      metadata: { name: liability.name },
+      snapshot: await toLiabilitySnapshot(liability),
     });
 
     return NextResponse.json(liability, { status: 201 });
