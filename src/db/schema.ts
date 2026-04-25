@@ -268,6 +268,21 @@ export const scenarios = pgTable("scenarios", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const scenarioToggleGroups = pgTable("scenario_toggle_groups", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  scenarioId: uuid("scenario_id")
+    .notNull()
+    .references(() => scenarios.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  defaultOn: boolean("default_on").notNull().default(true),
+  // Self-reference for one-level dependency (parent off → this group forcibly off in engine).
+  // v1 enforces single-level via UI; the schema doesn't structurally prevent chains.
+  requiresGroupId: uuid("requires_group_id"),
+  orderIndex: integer("order_index").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const planSettings = pgTable("plan_settings", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
@@ -1084,6 +1099,18 @@ export const scenariosRelations = relations(scenarios, ({ one, many }) => ({
   savingsRules: many(savingsRules),
   withdrawalStrategies: many(withdrawalStrategies),
   planSettings: many(planSettings),
+}));
+
+export const scenarioToggleGroupsRelations = relations(scenarioToggleGroups, ({ one }) => ({
+  scenario: one(scenarios, {
+    fields: [scenarioToggleGroups.scenarioId],
+    references: [scenarios.id],
+  }),
+  requiresGroup: one(scenarioToggleGroups, {
+    fields: [scenarioToggleGroups.requiresGroupId],
+    references: [scenarioToggleGroups.id],
+    relationName: "toggle_group_requires",
+  }),
 }));
 
 export const accountsRelations = relations(accounts, ({ one, many }) => ({
