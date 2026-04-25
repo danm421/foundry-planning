@@ -76,6 +76,7 @@ export async function PUT(
       flatStateRate,
       estateAdminExpenses,
       flatStateEstateRate,
+      outOfHouseholdDniRate,
       inflationRate,
       taxEngineMode,
       taxInflationRate,
@@ -139,6 +140,14 @@ export async function PUT(
       );
     }
 
+    if (typeof outOfHouseholdDniRate === "number" &&
+        (outOfHouseholdDniRate < 0 || outOfHouseholdDniRate > 1)) {
+      return NextResponse.json(
+        { error: "outOfHouseholdDniRate must be between 0 and 1" },
+        { status: 400 },
+      );
+    }
+
     const [updated] = await db
       .update(planSettings)
       .set({
@@ -146,6 +155,7 @@ export async function PUT(
         flatStateRate: flatStateRate != null ? String(flatStateRate) : undefined,
         estateAdminExpenses: estateAdminExpenses != null ? String(estateAdminExpenses) : undefined,
         flatStateEstateRate: flatStateEstateRate != null ? String(flatStateEstateRate) : undefined,
+        outOfHouseholdDniRate: outOfHouseholdDniRate != null ? String(outOfHouseholdDniRate) : undefined,
         inflationRate: inflationRate != null ? String(inflationRate) : undefined,
         taxEngineMode: taxEngineMode != null ? taxEngineMode : undefined,
         taxInflationRate: "taxInflationRate" in body

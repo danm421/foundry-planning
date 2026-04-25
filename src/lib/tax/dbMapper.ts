@@ -8,6 +8,13 @@ export function dbRowToTaxYearParameters(row: Row): TaxYearParameters {
     year: row.year,
     incomeBrackets: row.incomeBrackets as TaxYearParameters["incomeBrackets"],
     capGainsBrackets: row.capGainsBrackets as TaxYearParameters["capGainsBrackets"],
+    // TODO(non-grantor-trust-tax Task 4/5): parser + re-seed will populate these.
+    // Until then the DB columns are nullable; default to [] so the type contract
+    // stays non-optional and engine tests in later phases fail loudly on empty.
+    trustIncomeBrackets:
+      (row.trustIncomeBrackets as TaxYearParameters["trustIncomeBrackets"] | null) ?? [],
+    trustCapGainsBrackets:
+      (row.trustCapGainsBrackets as TaxYearParameters["trustCapGainsBrackets"] | null) ?? [],
     stdDeduction: {
       married_joint: parseFloat(row.stdDeductionMfj),
       single: parseFloat(row.stdDeductionSingle),

@@ -53,6 +53,8 @@ interface Column {
   tooltip?: string;
   value: (y: ProjectionYear) => number;
   formatter?: (n: number) => string;
+  /** When true, the column is hidden if all visible years have value 0. */
+  zeroSuppress?: boolean;
 }
 
 type DrillLevel = "top" | "above_line" | "below_line";
@@ -128,6 +130,29 @@ const COLUMNS: Column[] = [
     tooltip:
       "3.8% Net Investment Income Tax on investment income above the MAGI threshold.",
     value: (y) => y.taxResult?.flow.niit ?? 0,
+  },
+  {
+    key: "trustTax",
+    label: "Trust Tax",
+    tooltip:
+      "Income tax owed by non-grantor trusts on retained income (1041 compressed brackets, NIIT, and state tax). Sums all non-grantor trusts in the household.",
+    value: (y) => {
+      if (!y.trustTaxByEntity) return 0;
+      let sum = 0;
+      for (const breakdown of y.trustTaxByEntity.values()) {
+        sum += breakdown.total;
+      }
+      return sum;
+    },
+    zeroSuppress: true,
+  },
+  {
+    key: "beneficiaryTax",
+    label: "Beneficiary Tax (est)",
+    tooltip:
+      "Estimated tax owed by out-of-household beneficiaries on DNI distributed to them (rate × DNI). Informational — not paid by the household.",
+    value: (y) => y.estimatedBeneficiaryTax ?? 0,
+    zeroSuppress: true,
   },
   {
     key: "additionalMedicare",
@@ -388,12 +413,14 @@ export function TaxDetailFlowTable({
   const [drillLevel, setDrillLevel] = useState<DrillLevel>("top");
   const transitions = detectRegimeTransitions(years);
 
-  // Choose columns based on drill level
+  // Choose columns based on drill level; zero-suppress flagged columns at top level
   const activeColumns: Column[] = drillLevel === "above_line"
     ? aboveLineColumns(years)
     : drillLevel === "below_line"
       ? belowLineColumns()
-      : COLUMNS;
+      : COLUMNS.filter(
+          (col) => !col.zeroSuppress || years.some((y) => col.value(y) !== 0)
+        );
 
   // Bold column keys (totals/winners)
   const boldKeys = new Set(["al_total", "bl_tax_deductions"]);

@@ -882,6 +882,11 @@ export interface DeathEventResult {
   warnings: string[];
   estateTax: EstateTaxResult;
   dsueGenerated: number;   // first-death only; always 0 at final death
+  /** Mutated entity list after grantor-succession updates have been applied.
+   *  Caller threads this forward so trust-tax classification (grantor vs.
+   *  non-grantor) re-evaluates against post-death state in subsequent years.
+   *  When no entityUpdates fire, this is identity-equal to `input.entities`. */
+  entities: EntitySummary[];
 }
 
 /** Step 4: Fallback chain. Routes the undisposed residual to:

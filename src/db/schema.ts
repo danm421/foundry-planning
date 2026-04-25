@@ -16,6 +16,7 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
+import type { BracketTier } from "@/lib/tax/types";
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
@@ -389,6 +390,11 @@ export const planSettings = pgTable("plan_settings", {
   selectedBenchmarkPortfolioId: uuid("selected_benchmark_portfolio_id").references(() => modelPortfolios.id, { onDelete: "set null" }),
   inflationRateSource: inflationRateSourceEnum("inflation_rate_source").notNull().default("asset_class"),
   useCustomCma: boolean("use_custom_cma").notNull().default(false),
+  // Effective tax rate applied to DNI distributed to out-of-household beneficiaries
+  // (non-grantor trusts with external income beneficiaries). Defaults to top federal bracket.
+  outOfHouseholdDniRate: decimal("out_of_household_dni_rate", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0.37"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -429,6 +435,14 @@ export const entities = pgTable("entities", {
   exemptionConsumed: decimal("exemption_consumed", { precision: 15, scale: 2 })
     .notNull()
     .default("0"),
+  // Trust-only: mandatory-distribution policy. One of 'fixed' | 'pct_liquid' | 'pct_income',
+  // or null when no mandatory distribution. API enforces coherence with the amount/percent columns.
+  distributionMode: text("distribution_mode").$type<"fixed" | "pct_liquid" | "pct_income" | null>(),
+  distributionAmount: decimal("distribution_amount", { precision: 14, scale: 2 }),
+  distributionPercent: decimal("distribution_percent", { precision: 7, scale: 4 }),
+  // Income beneficiary — exactly one of family-member or external is set when distributionMode is non-null.
+  incomeBeneficiaryFamilyMemberId: uuid("income_beneficiary_family_member_id").references(() => familyMembers.id),
+  incomeBeneficiaryExternalId: uuid("income_beneficiary_external_id").references(() => externalBeneficiaries.id),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1355,6 +1369,10 @@ export const taxYearParameters = pgTable("tax_year_parameters", {
 
   incomeBrackets: jsonb("income_brackets").notNull(),
   capGainsBrackets: jsonb("cap_gains_brackets").notNull(),
+
+  // Compressed trust brackets — null rows fall back to single-status brackets in the resolver.
+  trustIncomeBrackets: jsonb("trust_income_brackets").$type<BracketTier[]>(),
+  trustCapGainsBrackets: jsonb("trust_cap_gains_brackets").$type<BracketTier[]>(),
 
   stdDeductionMfj: decimal("std_deduction_mfj", { precision: 10, scale: 2 }).notNull(),
   stdDeductionSingle: decimal("std_deduction_single", { precision: 10, scale: 2 }).notNull(),

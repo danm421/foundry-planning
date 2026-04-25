@@ -476,6 +476,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     warnings,
     estateTax,
     dsueGenerated: 0,
+    entities: mutatedEntities,
   };
 }
 

@@ -1,6 +1,7 @@
 import type { TaxResult, TaxYearParameters } from "../lib/tax/types";
 import type { ClientDeductionRow } from "../lib/tax/derive-deductions";
 import type { TrustSubType } from "@/lib/entities/trust";
+import type { TrustTaxBreakdown, TrustWarning } from "./trust-tax/types";
 
 // ── Input Types ──────────────────────────────────────────────────────────────
 
@@ -245,6 +246,13 @@ export interface EntitySummary {
    *  trust was funded by a third party (e.g., parent-funded trust for the
    *  client). 4d-1 replaces the prior `grantors: {name, pct}[]` list. */
   grantor?: "client" | "spouse";
+  // Trust distribution policy fields (non-grantor trusts only).
+  entityType?: "trust" | "llc" | "s_corp" | "c_corp" | "partnership" | "other" | "foundation";
+  distributionMode?: "fixed" | "pct_liquid" | "pct_income" | null;
+  distributionAmount?: number | null;
+  distributionPercent?: number | null;
+  incomeBeneficiaryFamilyMemberId?: string | null;
+  incomeBeneficiaryExternalId?: string | null;
 }
 
 export interface ClientInfo {
@@ -515,6 +523,9 @@ export interface PlanSettings {
   estateAdminExpenses?: number;
   /** Flat state estate tax rate applied on top of federal estate tax. 0 disables. */
   flatStateEstateRate?: number;
+  /** Effective tax rate applied to DNI distributed to out-of-household beneficiaries.
+   *  Defaults to 0.37 (top federal bracket) when absent. */
+  outOfHouseholdRate?: number;
 }
 
 // ── Output Types ─────────────────────────────────────────────────────────────
@@ -648,6 +659,12 @@ export interface ProjectionYear {
    *  death-event years. `spouseFirst` is present only for married
    *  households. */
   hypotheticalEstateTax: HypotheticalEstateTax;
+  /** Per-entity trust-tax breakdown. Populated only when non-grantor trusts exist. */
+  trustTaxByEntity?: Map<string, TrustTaxBreakdown>;
+  /** Sum of estimated beneficiary-level tax on distributed DNI to out-of-household beneficiaries. */
+  estimatedBeneficiaryTax?: number;
+  /** Non-fatal warnings emitted by the trust annual pass. */
+  trustWarnings?: TrustWarning[];
 }
 
 export interface AccountLedger {

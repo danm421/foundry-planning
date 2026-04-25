@@ -396,6 +396,8 @@ const FIXTURE_TAX_PARAMS: TaxYearParameters[] = [{
     head_of_household: { zeroPctTop: 63000, fifteenPctTop: 551350 },
     married_separate: { zeroPctTop: 47025, fifteenPctTop: 291850 },
   },
+  trustIncomeBrackets: [],
+  trustCapGainsBrackets: [],
   stdDeduction: { married_joint: 30000, single: 15000, head_of_household: 21900, married_separate: 15000 },
   amtExemption: { mfj: 137000, singleHoh: 88100, mfs: 68500 },
   amtBreakpoint2628: { mfjShoh: 239100, mfs: 119550 },

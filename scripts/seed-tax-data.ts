@@ -92,6 +92,8 @@ async function upsertYear(y: TaxYearParameters, db: any) {
       year: y.year,
       incomeBrackets: y.incomeBrackets,
       capGainsBrackets: y.capGainsBrackets,
+      trustIncomeBrackets: y.trustIncomeBrackets,
+      trustCapGainsBrackets: y.trustCapGainsBrackets,
       stdDeductionMfj: String(y.stdDeduction.married_joint),
       stdDeductionSingle: String(y.stdDeduction.single),
       stdDeductionHoh: String(y.stdDeduction.head_of_household),
@@ -135,6 +137,8 @@ async function upsertYear(y: TaxYearParameters, db: any) {
       set: {
         incomeBrackets: sql`excluded.income_brackets`,
         capGainsBrackets: sql`excluded.cap_gains_brackets`,
+        trustIncomeBrackets: sql`excluded.trust_income_brackets`,
+        trustCapGainsBrackets: sql`excluded.trust_cap_gains_brackets`,
         stdDeductionMfj: sql`excluded.std_deduction_mfj`,
         stdDeductionSingle: sql`excluded.std_deduction_single`,
         stdDeductionHoh: sql`excluded.std_deduction_hoh`,

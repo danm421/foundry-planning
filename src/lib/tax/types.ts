@@ -24,6 +24,12 @@ export interface TaxYearParameters {
   incomeBrackets: BracketsByStatus;
   capGainsBrackets: CapGainsBracketsByStatus;
 
+  /** Compressed Form 1041 ordinary brackets (10/24/35/37). */
+  trustIncomeBrackets: BracketTier[];
+
+  /** Compressed IRC §1(h) LTCG / qualified-dividend brackets (0/15/20). */
+  trustCapGainsBrackets: BracketTier[];
+
   stdDeduction: Record<FilingStatus, number>;
 
   amtExemption: { mfj: number; singleHoh: number; mfs: number };

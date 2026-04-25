@@ -55,6 +55,8 @@ export async function parseIrsUpdatesSheet(filePath: string): Promise<TaxYearPar
   const amtPhaseout = parseSection(rows, "AMT Exemption Phase-out Threshold Start", 3);
   const incomeBracketsByStatus = parseIncomeBrackets(rows);
   const capGainsByStatus = parseCapGains(rows);
+  const trustOrdinary = parseSection(rows, "Trusts & Estates", 4);
+  const trustCapGains = parseSectionUnique(rows, "Trusts & Estates", 3, "Long-Term Capital Gains");
   const estate = parseSection(rows, "Estate, Gift & Generation-Skipping", 3);
   const k401 = parseSection(rows, "401(k), 403(b), 457, TSP Contribution", 5);
   const ira = parseSection(rows, "Traditional & Roth IRA Contribution", 2);
@@ -65,7 +67,8 @@ export async function parseIrsUpdatesSheet(filePath: string): Promise<TaxYearPar
   const years = Object.keys(stdDeduction).map(Number).sort();
   return years.map((year) => buildYearParams(year, {
     ssMedicare, stdDeduction, amtExempt, amtBreakpoint, amtPhaseout,
-    incomeBracketsByStatus, capGainsByStatus, k401, ira, simple, hsa, qbi,
+    incomeBracketsByStatus, capGainsByStatus, trustOrdinary, trustCapGains,
+    k401, ira, simple, hsa, qbi,
   }));
 }
 
@@ -133,6 +136,12 @@ function parseCapGains(rows: Row[]): Record<FilingStatus, Record<number, (number
 // Federal bracket rates fixed under TCJA / OBBBA (10/12/22/24/32/35/37).
 const BRACKET_RATES = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37];
 
+// Compressed Form 1041 trust ordinary rates (workbook columns 10/24/35/37).
+const TRUST_BRACKET_RATES = [0.10, 0.24, 0.35, 0.37];
+
+// Trust LTCG / qualified dividend rates (0/15/20).
+const TRUST_CAP_GAINS_RATES = [0, 0.15, 0.20];
+
 function buildYearParams(year: number, raw: any): TaxYearParameters {
   const [ssRate, ssBase, medRate, addlMed] = raw.ssMedicare[year];
   const [stdMfj, stdSingle, stdHoh, stdMfs] = raw.stdDeduction[year];
@@ -147,6 +156,18 @@ function buildYearParams(year: number, raw: any): TaxYearParameters {
     for (let i = 0; i < BRACKET_RATES.length; i++) {
       const upper = i === BRACKET_RATES.length - 1 ? null : (uppers[i] ?? 0);
       tiers.push({ from: prev, to: upper, rate: BRACKET_RATES[i] });
+      if (upper !== null) prev = upper;
+    }
+    return tiers;
+  };
+
+  // Generic compressed-bracket builder: given N rates and N-1 thresholds (top tier open).
+  const buildBracketsFromThresholds = (rates: readonly number[], uppers: (number | null)[]) => {
+    const tiers = [];
+    let prev = 0;
+    for (let i = 0; i < rates.length; i++) {
+      const upper = i === rates.length - 1 ? null : (uppers[i] ?? 0);
+      tiers.push({ from: prev, to: upper, rate: rates[i] });
       if (upper !== null) prev = upper;
     }
     return tiers;
@@ -172,10 +193,24 @@ function buildYearParams(year: number, raw: any): TaxYearParameters {
   const [hsaSelf, hsaFam, hsaCu55] = raw.hsa[year];
   const [qbiMfj, qbiOther, qbiPiMfj, qbiPiOther] = raw.qbi[year];
 
+  // Trust ordinary brackets (4 tiers, 3 thresholds from workbook cols 1-3).
+  const trustIncomeBrackets = buildBracketsFromThresholds(
+    TRUST_BRACKET_RATES,
+    raw.trustOrdinary[year],
+  );
+
+  // Trust LTCG brackets (3 tiers, 2 thresholds: 0% top + 15% top from workbook cols 1-2).
+  const trustCapGainsBrackets = buildBracketsFromThresholds(
+    TRUST_CAP_GAINS_RATES,
+    raw.trustCapGains[year],
+  );
+
   return {
     year,
     incomeBrackets,
     capGainsBrackets,
+    trustIncomeBrackets,
+    trustCapGainsBrackets,
     stdDeduction: {
       married_joint: stdMfj,
       single: stdSingle,

@@ -11,6 +11,9 @@ import type {
 } from "../family-view";
 import BeneficiaryEditor from "../beneficiary-editor";
 import NamePctList from "./name-pct-list";
+import { BeneficiarySelect } from "./beneficiary-select";
+import { CurrencyInput } from "../currency-input";
+import { PercentInput } from "../percent-input";
 import type { EntityFormCommonProps } from "./types";
 
 const TRUST_SUB_TYPE_LABELS: Record<TrustSubType, string> = {
@@ -58,6 +61,23 @@ export default function TrustForm({
   const [exemptionConsumed, setExemptionConsumed] = useState<string>(editing?.exemptionConsumed ?? "0");
   const isEdit = Boolean(editing);
 
+  // Distribution policy (irrevocable trusts only)
+  const [distributionMode, setDistributionMode] = useState<"fixed" | "pct_liquid" | "pct_income" | null>(
+    editing?.distributionMode ?? null,
+  );
+  const [distributionAmount, setDistributionAmount] = useState<string>(
+    editing?.distributionAmount != null ? String(editing.distributionAmount) : "",
+  );
+  const [distributionPercent, setDistributionPercent] = useState<string>(() => {
+    const raw = editing?.distributionPercent;
+    return raw != null ? (Number(raw) * 100).toFixed(2) : "";
+  });
+  const [incomeBeneficiaryId, setIncomeBeneficiaryId] = useState<string | null>(() => {
+    if (editing?.incomeBeneficiaryFamilyMemberId) return `fm:${editing.incomeBeneficiaryFamilyMemberId}`;
+    if (editing?.incomeBeneficiaryExternalId) return `ext:${editing.incomeBeneficiaryExternalId}`;
+    return null;
+  });
+
   const [activeTab, setActiveTab] = useState<"details" | "beneficiaries">(
     lockTab ? "beneficiaries" : (initialTab ?? "details"),
   );
@@ -65,31 +85,52 @@ export default function TrustForm({
   const [designations, setDesignations] = useState<Designation[] | null>(null);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [externals, setExternals] = useState<ExternalBeneficiary[]>([]);
+  const [familyDataLoaded, setFamilyDataLoaded] = useState(false);
+  const [familyDataLoading, setFamilyDataLoading] = useState(false);
   const [beneDataLoaded, setBeneDataLoaded] = useState(false);
   const [beneDataLoading, setBeneDataLoading] = useState(false);
   const [beneLoadError, setBeneLoadError] = useState<string | null>(null);
+
+  async function loadFamilyAndExternals() {
+    if (familyDataLoaded || familyDataLoading) return;
+    setFamilyDataLoading(true);
+    try {
+      const [membersRes, externalsRes] = await Promise.all([
+        fetch(`/api/clients/${clientId}/family-members`),
+        fetch(`/api/clients/${clientId}/external-beneficiaries`),
+      ]);
+      if (!membersRes.ok || !externalsRes.ok) {
+        throw new Error("Failed to load family/externals data");
+      }
+      const [mem, ext] = await Promise.all([membersRes.json(), externalsRes.json()]);
+      setMembers(mem as FamilyMember[]);
+      setExternals(ext as ExternalBeneficiary[]);
+      setFamilyDataLoaded(true);
+    } catch {
+      // Silently fail — the Distribution Policy section shows an empty select
+      setFamilyDataLoaded(false);
+    } finally {
+      setFamilyDataLoading(false);
+    }
+  }
 
   async function loadBeneficiariesData() {
     if (beneDataLoaded || beneDataLoading || !editing) return;
     setBeneDataLoading(true);
     setBeneLoadError(null);
     try {
-      const [desigRes, membersRes, externalsRes] = await Promise.all([
+      const [desigRes] = await Promise.all([
         fetch(`/api/clients/${clientId}/entities/${editing.id}/beneficiaries`),
-        fetch(`/api/clients/${clientId}/family-members`),
-        fetch(`/api/clients/${clientId}/external-beneficiaries`),
+        // Re-fetch members/externals in case the eager mount fetch is still
+        // in flight or failed silently (loadFamilyAndExternals already
+        // sets members/externals state, so this is idempotent).
+        loadFamilyAndExternals(),
       ]);
-      if (!desigRes.ok || !membersRes.ok || !externalsRes.ok) {
+      if (!desigRes.ok) {
         throw new Error("Failed to load beneficiaries data");
       }
-      const [desig, mem, ext] = await Promise.all([
-        desigRes.json(),
-        membersRes.json(),
-        externalsRes.json(),
-      ]);
+      const desig = await desigRes.json();
       setDesignations(desig as Designation[]);
-      setMembers(mem as FamilyMember[]);
-      setExternals(ext as ExternalBeneficiary[]);
       setBeneDataLoaded(true);
     } catch (err) {
       setBeneLoadError(err instanceof Error ? err.message : "Failed to load beneficiaries");
@@ -97,6 +138,19 @@ export default function TrustForm({
       setBeneDataLoading(false);
     }
   }
+
+  // Eagerly load family members + externals so the Distribution Policy
+  // beneficiary selector is populated on the Details tab without needing
+  // the user to click over to the Beneficiaries tab first.
+  // Deps include entityType so switching from foundation → trust re-fires
+  // the fetch; the caching guard in loadFamilyAndExternals prevents
+  // redundant network calls when the same type re-renders.
+  useEffect(() => {
+    if (entityType === "trust") {
+      void loadFamilyAndExternals();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityType]);
 
   useEffect(() => {
     if (entityType !== "trust" && activeTab === "beneficiaries") {
@@ -123,6 +177,38 @@ export default function TrustForm({
     const data = new FormData(e.currentTarget);
     setLoading(true);
     setError(null);
+
+    const trustIsIrrevocable =
+      entityType === "trust" &&
+      trustSubType !== "" &&
+      deriveIsIrrevocable(trustSubType as TrustSubType);
+
+    const fmId = incomeBeneficiaryId?.startsWith("fm:") ? incomeBeneficiaryId.slice(3) : null;
+    const extId = incomeBeneficiaryId?.startsWith("ext:") ? incomeBeneficiaryId.slice(4) : null;
+    const distributionFields =
+      trustIsIrrevocable && distributionMode != null
+        ? {
+            distributionMode,
+            distributionAmount:
+              distributionMode === "fixed" && distributionAmount.trim() !== ""
+                ? Number(distributionAmount)
+                : null,
+            distributionPercent:
+              (distributionMode === "pct_liquid" || distributionMode === "pct_income") &&
+              distributionPercent.trim() !== ""
+                ? Number(distributionPercent) / 100
+                : null,
+            incomeBeneficiaryFamilyMemberId: fmId,
+            incomeBeneficiaryExternalId: extId,
+          }
+        : {
+            distributionMode: null,
+            distributionAmount: null,
+            distributionPercent: null,
+            incomeBeneficiaryFamilyMemberId: null,
+            incomeBeneficiaryExternalId: null,
+          };
+
     const body = {
       name: data.get("name") as string,
       entityType,
@@ -138,6 +224,7 @@ export default function TrustForm({
         entityType === "trust" ? deriveIsIrrevocable(trustSubType as TrustSubType) : undefined,
       trustee: entityType === "trust" ? (trustee.trim() || null) : undefined,
       exemptionConsumed: entityType === "trust" ? Number(exemptionConsumed || "0") : undefined,
+      ...distributionFields,
     };
     try {
       const url = isEdit
@@ -368,6 +455,99 @@ export default function TrustForm({
           </span>
         </label>
       </div>
+
+      {entityType === "trust" &&
+        trustSubType !== "" &&
+        deriveIsIrrevocable(trustSubType as TrustSubType) && (
+          <div className="rounded-md border border-gray-800 bg-gray-900/60 p-3 space-y-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                Distribution Policy
+              </p>
+              <p className="mt-1 text-[11px] text-gray-500">
+                Optional. When set, the trust distributes annually to a named beneficiary.
+                Leave unset to accumulate 100% of income in the trust.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              {(
+                [
+                  ["none", "No distribution (accumulate)"],
+                  ["fixed", "Fixed amount per year"],
+                  ["pct_liquid", "% of liquid assets per year"],
+                  ["pct_income", "% of income per year"],
+                ] as const
+              ).map(([val, label]) => (
+                <label key={val} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="distributionMode"
+                    value={val}
+                    checked={
+                      val === "none" ? distributionMode === null : distributionMode === val
+                    }
+                    onChange={() => setDistributionMode(val === "none" ? null : val)}
+                    className="mt-0.5 h-4 w-4 rounded-full border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-200">{label}</span>
+                </label>
+              ))}
+            </div>
+
+            {distributionMode === "fixed" && (
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-300"
+                  htmlFor="dist-amount"
+                >
+                  Annual amount
+                </label>
+                <CurrencyInput
+                  id="dist-amount"
+                  value={distributionAmount}
+                  onChange={setDistributionAmount}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            )}
+
+            {(distributionMode === "pct_liquid" || distributionMode === "pct_income") && (
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-300"
+                  htmlFor="dist-percent"
+                >
+                  Annual percent
+                </label>
+                <PercentInput
+                  id="dist-percent"
+                  value={distributionPercent}
+                  onChange={setDistributionPercent}
+                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            )}
+
+            {distributionMode !== null && (
+              <div>
+                <label
+                  className="block text-sm font-medium text-gray-300"
+                  htmlFor="dist-beneficiary"
+                >
+                  Beneficiary
+                </label>
+                <BeneficiarySelect
+                  id="dist-beneficiary"
+                  familyMembers={members}
+                  externalBeneficiaries={externals}
+                  value={incomeBeneficiaryId}
+                  onChange={setIncomeBeneficiaryId}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
       <div className="flex items-center justify-between pt-2">
         {isEdit && onRequestDelete ? (

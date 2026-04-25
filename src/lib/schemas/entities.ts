@@ -22,6 +22,83 @@ const namePctRowSchema = z.object({
   pct: z.number(),
 });
 
+/**
+ * Validates XOR beneficiary and mode-amount coherence rules for distribution
+ * policy fields. Does NOT check the irrevocability gate — that differs between
+ * create and update paths and is handled inline at each call site.
+ */
+function validateDistributionInvariants(
+  data: {
+    distributionMode?: "fixed" | "pct_liquid" | "pct_income" | null | undefined;
+    distributionAmount?: number | null | undefined;
+    distributionPercent?: number | null | undefined;
+    incomeBeneficiaryFamilyMemberId?: string | null | undefined;
+    incomeBeneficiaryExternalId?: string | null | undefined;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (!data.distributionMode) return;
+
+  // XOR beneficiary
+  const bothBenes =
+    data.incomeBeneficiaryFamilyMemberId && data.incomeBeneficiaryExternalId;
+  const neitherBene =
+    !data.incomeBeneficiaryFamilyMemberId && !data.incomeBeneficiaryExternalId;
+  if (bothBenes) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["incomeBeneficiaryFamilyMemberId"],
+      message:
+        "Exactly one of incomeBeneficiaryFamilyMemberId or incomeBeneficiaryExternalId must be set when distributionMode is set",
+    });
+  }
+  if (neitherBene) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["incomeBeneficiaryFamilyMemberId"],
+      message:
+        "incomeBeneficiaryFamilyMemberId or incomeBeneficiaryExternalId is required when distributionMode is set",
+    });
+  }
+
+  // Mode-amount coherence
+  if (data.distributionMode === "fixed") {
+    if (data.distributionAmount == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["distributionAmount"],
+        message: "distributionAmount is required when distributionMode = 'fixed'",
+      });
+    }
+    if (data.distributionPercent != null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["distributionPercent"],
+        message: "distributionPercent must be null when distributionMode = 'fixed'",
+      });
+    }
+  }
+  if (
+    data.distributionMode === "pct_liquid" ||
+    data.distributionMode === "pct_income"
+  ) {
+    if (data.distributionPercent == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["distributionPercent"],
+        message: `distributionPercent is required when distributionMode = '${data.distributionMode}'`,
+      });
+    }
+    if (data.distributionAmount != null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["distributionAmount"],
+        message: `distributionAmount must be null when distributionMode = '${data.distributionMode}'`,
+      });
+    }
+  }
+}
+
 const baseEntityFields = {
   grantor: z.enum(["client", "spouse"]).nullish(),
   name: z.string().trim().min(1, "Name is required"),
@@ -36,6 +113,11 @@ const baseEntityFields = {
   isIrrevocable: z.boolean().optional(),
   trustee: z.string().trim().nullish(),
   exemptionConsumed: z.number().nonnegative().optional(),
+  distributionMode: z.enum(["fixed", "pct_liquid", "pct_income"]).nullish(),
+  distributionAmount: z.number().nonnegative().nullish(),
+  distributionPercent: z.number().min(0).max(1).nullish(),
+  incomeBeneficiaryFamilyMemberId: z.string().uuid().nullish(),
+  incomeBeneficiaryExternalId: z.string().uuid().nullish(),
 };
 
 export const entityCreateSchema = z
@@ -76,6 +158,41 @@ export const entityCreateSchema = z
             "exemptionConsumed must be 0 when entityType != 'trust'",
         });
       }
+      if (data.distributionMode !== undefined && data.distributionMode !== null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["distributionMode"],
+          message: "distributionMode is only allowed when entityType = 'trust'",
+        });
+      }
+      if (data.distributionAmount !== undefined && data.distributionAmount !== null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["distributionAmount"],
+          message: "distributionAmount is only allowed when entityType = 'trust'",
+        });
+      }
+      if (data.distributionPercent !== undefined && data.distributionPercent !== null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["distributionPercent"],
+          message: "distributionPercent is only allowed when entityType = 'trust'",
+        });
+      }
+      if (data.incomeBeneficiaryFamilyMemberId !== undefined && data.incomeBeneficiaryFamilyMemberId !== null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["incomeBeneficiaryFamilyMemberId"],
+          message: "incomeBeneficiaryFamilyMemberId is only allowed when entityType = 'trust'",
+        });
+      }
+      if (data.incomeBeneficiaryExternalId !== undefined && data.incomeBeneficiaryExternalId !== null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["incomeBeneficiaryExternalId"],
+          message: "incomeBeneficiaryExternalId is only allowed when entityType = 'trust'",
+        });
+      }
       return;
     }
 
@@ -106,6 +223,18 @@ export const entityCreateSchema = z
           "isIrrevocable must match trustSubType (revocable → false; all others → true)",
       });
     }
+
+    // Irrevocability gate: create path fires when distributionMode is present but
+    // trust is not irrevocable (undefined or false).
+    if (!data.isIrrevocable && data.distributionMode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["distributionMode"],
+        message: "distributionMode is only allowed on irrevocable trusts",
+      });
+    }
+
+    validateDistributionInvariants(data, ctx);
   });
 
 export const entityUpdateSchema = z
@@ -121,7 +250,13 @@ export const entityUpdateSchema = z
     const d = data as {
       trustSubType?: string;
       isIrrevocable?: boolean;
+      distributionMode?: "fixed" | "pct_liquid" | "pct_income" | null;
+      distributionAmount?: number | null;
+      distributionPercent?: number | null;
+      incomeBeneficiaryFamilyMemberId?: string | null;
+      incomeBeneficiaryExternalId?: string | null;
     };
+
     if (
       d.trustSubType !== undefined &&
       d.isIrrevocable !== undefined &&
@@ -133,6 +268,21 @@ export const entityUpdateSchema = z
         message:
           "isIrrevocable must match trustSubType (revocable → false; all others → true)",
       });
+    }
+
+    // Distribution validations: only when distributionMode is present in the patch.
+    if (d.distributionMode) {
+      // Irrevocability gate: update path fires only when this patch is explicitly
+      // flipping isIrrevocable to false (strict equality — not undefined).
+      if (d.isIrrevocable === false) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["distributionMode"],
+          message: "distributionMode is only allowed on irrevocable trusts",
+        });
+      }
+
+      validateDistributionInvariants(d, ctx);
     }
   });
 

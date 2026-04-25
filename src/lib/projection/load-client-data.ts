@@ -599,6 +599,7 @@ export const loadClientData = cache(
       taxEngineMode: settings.taxEngineMode,
       taxInflationRate: settings.taxInflationRate != null ? parseFloat(settings.taxInflationRate) : null,
       ssWageGrowthRate: settings.ssWageGrowthRate != null ? parseFloat(settings.ssWageGrowthRate) : null,
+      outOfHouseholdRate: settings.outOfHouseholdDniRate != null ? parseFloat(settings.outOfHouseholdDniRate) : undefined,
     };
 
     const mappedEntities = entityRows.map((e) => ({
@@ -611,6 +612,11 @@ export const loadClientData = cache(
       trustee: e.trustee ?? undefined,
       exemptionConsumed: e.exemptionConsumed != null ? parseFloat(e.exemptionConsumed) : 0,
       grantor: e.grantor ?? undefined,
+      distributionMode: e.distributionMode ?? undefined,
+      distributionAmount: e.distributionAmount != null ? parseFloat(e.distributionAmount) : undefined,
+      distributionPercent: e.distributionPercent != null ? parseFloat(e.distributionPercent) : undefined,
+      incomeBeneficiaryFamilyMemberId: e.incomeBeneficiaryFamilyMemberId ?? undefined,
+      incomeBeneficiaryExternalId: e.incomeBeneficiaryExternalId ?? undefined,
     }));
 
     const mappedExternalBeneficiaries = externalBeneficiaryRows.map((r) => ({

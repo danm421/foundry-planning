@@ -46,6 +46,12 @@ export interface Entity {
   isIrrevocable: boolean | null;
   trustee: string | null;
   exemptionConsumed: string;
+  // Distribution policy (irrevocable trusts only)
+  distributionMode: "fixed" | "pct_liquid" | "pct_income" | null;
+  distributionAmount: number | null;
+  distributionPercent: number | null;
+  incomeBeneficiaryFamilyMemberId: string | null;
+  incomeBeneficiaryExternalId: string | null;
 }
 
 export type Gift = {

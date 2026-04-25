@@ -87,6 +87,26 @@ export async function POST(
           data.entityType === "trust" && data.exemptionConsumed != null
             ? String(data.exemptionConsumed)
             : "0",
+        distributionMode:
+          data.entityType === "trust"
+            ? (data.distributionMode ?? null)
+            : null,
+        distributionAmount:
+          data.entityType === "trust" && data.distributionAmount != null
+            ? String(data.distributionAmount)
+            : null,
+        distributionPercent:
+          data.entityType === "trust" && data.distributionPercent != null
+            ? String(data.distributionPercent)
+            : null,
+        incomeBeneficiaryFamilyMemberId:
+          data.entityType === "trust"
+            ? (data.incomeBeneficiaryFamilyMemberId ?? null)
+            : null,
+        incomeBeneficiaryExternalId:
+          data.entityType === "trust"
+            ? (data.incomeBeneficiaryExternalId ?? null)
+            : null,
       })
       .returning();
 

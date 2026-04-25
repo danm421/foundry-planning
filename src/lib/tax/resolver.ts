@@ -105,6 +105,9 @@ function inflateParams(base: TaxYearParameters, generalFactor: number, ssFactor:
         fifteenPctTop: floorToStep(base.capGainsBrackets.married_separate.fifteenPctTop * generalFactor, ROUNDING_STEPS.capGainsBrackets),
       },
     },
+    // TODO(Task 4/5): inflate trust brackets once real values flow through.
+    trustIncomeBrackets: base.trustIncomeBrackets,
+    trustCapGainsBrackets: base.trustCapGainsBrackets,
     stdDeduction: {
       married_joint: inf(base.stdDeduction.married_joint, "stdDeductionMfj"),
       single: inf(base.stdDeduction.single, "stdDeductionSingle"),

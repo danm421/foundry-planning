@@ -112,6 +112,11 @@ const trustEntity: Entity = {
   isIrrevocable: true,
   trustee: "Bank Corp",
   exemptionConsumed: "0",
+  distributionMode: null,
+  distributionAmount: null,
+  distributionPercent: null,
+  incomeBeneficiaryFamilyMemberId: null,
+  incomeBeneficiaryExternalId: null,
 };
 
 const trustDesignation: Designation = {

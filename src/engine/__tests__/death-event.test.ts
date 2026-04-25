@@ -1070,6 +1070,54 @@ describe("applyFirstDeath orchestrator", () => {
     expect(result.transfers.filter((t) => t.via === "trust_pour_out")).toHaveLength(0);
   });
 
+  it("returns mutated entities reflecting grantor-flip when an IDGT's grantor dies", () => {
+    // IDGT — irrevocable + isGrantor=true + grantor=client. At client's death
+    // grantor-succession flips isGrantor:true→false; the projection layer
+    // threads result.entities forward so subsequent years reclassify this
+    // trust into the non-grantor trust-tax pass.
+    const idgt: EntitySummary = {
+      id: "idgt-1", includeInPortfolio: true,
+      isGrantor: true, isIrrevocable: true,
+      grantor: "client",
+    };
+    const trustInput: DeathEventInput = {
+      ...input,
+      accounts: [],
+      accountBalances: {},
+      basisMap: {},
+      entities: [idgt],
+    };
+    const result = applyFirstDeath(trustInput);
+    expect(result.entities).toBeDefined();
+    const post = result.entities.find((e) => e.id === "idgt-1");
+    expect(post).toBeDefined();
+    expect(post!.isGrantor).toBe(false);
+    expect(post!.grantor).toBeUndefined();
+    // Warning emitted for downstream observability.
+    expect(result.warnings).toContain("idgt_grantor_flipped: idgt-1");
+  });
+
+  it("returns entities unchanged when no grantor-succession applies (skip case)", () => {
+    // Spouse-grantor IDGT + client dies → no flip. Returned entities are
+    // identity-equal-by-content to input (no spurious mutations).
+    const spouseIdgt: EntitySummary = {
+      id: "spouse-idgt", includeInPortfolio: true,
+      isGrantor: true, isIrrevocable: true,
+      grantor: "spouse",
+    };
+    const trustInput: DeathEventInput = {
+      ...input,
+      accounts: [],
+      accountBalances: {},
+      basisMap: {},
+      entities: [spouseIdgt],
+    };
+    const result = applyFirstDeath(trustInput);
+    expect(result.entities).toHaveLength(1);
+    expect(result.entities[0].isGrantor).toBe(true);
+    expect(result.entities[0].grantor).toBe("spouse");
+  });
+
 });
 
 describe("distributeUnlinkedLiabilities", () => {
@@ -1552,5 +1600,24 @@ describe("applyFinalDeath orchestrator", () => {
     expect(heirAccounts).toHaveLength(1);
     // Category gate blocks step-up regardless of Roth vs traditional:
     expect(result.basisMap[heirAccounts[0].id]).toBeCloseTo(150_000, 2);
+  });
+
+  it("returns mutated entities reflecting grantor-flip when an IDGT's grantor dies at final death", () => {
+    // Symmetric to the first-death case: a survivor-as-grantor IDGT must
+    // also flip at final death so any post-loop reads (and the hypothetical-
+    // estate-tax pipeline) see the correct classification.
+    const idgt: EntitySummary = {
+      id: "idgt-final", includeInPortfolio: true,
+      isGrantor: true, isIrrevocable: true,
+      grantor: "client",
+    };
+    const input = mkInput({ entities: [idgt] });
+    const result = applyFinalDeath(input);
+    expect(result.entities).toBeDefined();
+    const post = result.entities.find((e) => e.id === "idgt-final");
+    expect(post).toBeDefined();
+    expect(post!.isGrantor).toBe(false);
+    expect(post!.grantor).toBeUndefined();
+    expect(result.warnings).toContain("idgt_grantor_flipped: idgt-final");
   });
 });

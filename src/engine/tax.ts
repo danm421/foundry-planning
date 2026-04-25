@@ -106,6 +106,8 @@ export function makeEmptyTaxParams(year: number): TaxYearParameters {
       head_of_household: ZERO_CG,
       married_separate: ZERO_CG,
     },
+    trustIncomeBrackets: [],
+    trustCapGainsBrackets: [],
     stdDeduction: { married_joint: 0, single: 0, head_of_household: 0, married_separate: 0 },
     amtExemption: { mfj: 0, singleHoh: 0, mfs: 0 },
     amtBreakpoint2628: { mfjShoh: 0, mfs: 0 },

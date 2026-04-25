@@ -102,13 +102,11 @@ function runOrdering(
     liabilities: firstResult.liabilities,
     familyMembers: input.familyMembers,
     externalBeneficiaries: input.externalBeneficiaries,
-    // Entities may have been mutated by grantor-succession inside first-death;
-    // pass the post-first-death entity list from firstResult if death-event
-    // returns one. Current 4d-1 does not thread entities back; re-clone the
-    // input as a safe default — this only affects survivor-owned trusts that
-    // would have succeeded from the first decedent, which is a known
-    // 4d-2 simplification documented in the spec.
-    entities: structuredClone(input.entities),
+    // Adopt the post-first-death entity list (grantor-succession may have
+    // flipped an IDGT/SLAT or revocable trust). applyFirstDeath now returns
+    // the mutated entities so the survivor's final-death pass classifies
+    // trusts against the true post-flip state.
+    entities: firstResult.entities,
     planSettings: input.planSettings,
     gifts: input.gifts,
     annualExclusionsByYear: input.annualExclusionsByYear,

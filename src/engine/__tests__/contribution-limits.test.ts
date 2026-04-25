@@ -14,6 +14,8 @@ const PARAMS_2025: TaxYearParameters = {
   year: 2025,
   incomeBrackets: {} as TaxYearParameters["incomeBrackets"],
   capGainsBrackets: {} as TaxYearParameters["capGainsBrackets"],
+  trustIncomeBrackets: [],
+  trustCapGainsBrackets: [],
   stdDeduction: { married_joint: 30000, single: 15000, head_of_household: 22500, married_separate: 15000 },
   amtExemption: {} as TaxYearParameters["amtExemption"],
   amtBreakpoint2628: {} as TaxYearParameters["amtBreakpoint2628"],

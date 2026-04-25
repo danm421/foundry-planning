@@ -60,6 +60,7 @@ export interface AssumptionsSettings {
   taxEngineMode: "flat" | "bracket";
   taxInflationRate: string;
   ssWageGrowthRate: string;
+  outOfHouseholdDniRate: string;
 }
 
 interface ModelPortfolioOption {
@@ -116,6 +117,7 @@ export default function AssumptionsClient({
             flatStateRate={settings.flatStateRate}
             estateAdminExpenses={settings.estateAdminExpenses}
             flatStateEstateRate={settings.flatStateEstateRate}
+            outOfHouseholdDniRate={settings.outOfHouseholdDniRate}
             initialMode={settings.taxEngineMode}
           />
         )}

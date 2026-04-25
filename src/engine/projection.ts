@@ -52,6 +52,10 @@ import { computeHypotheticalEstateTax } from "./what-if/hypothetical-estate-tax"
 import { calcSeca } from "../lib/tax/fica";
 import { resolveCashValueForYear } from "./life-insurance-schedule";
 import { computeTermEndYear } from "./life-insurance-expiry";
+import { applyTrustAnnualPass, type NonGrantorTrustInput } from "./trust-tax/index";
+import type { AccountYearRealization, AssetTransactionGain } from "./trust-tax/collect-trust-income";
+import type { TrustLiquidityPool, TrustIncomeBuckets, TrustWarning, DistributionPolicy } from "./trust-tax/types";
+import { computeDistribution } from "./trust-tax/compute-distribution";
 
 // Map legacy income type to the new tax type categories.
 function legacyTaxType(
@@ -163,9 +167,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       })
     : null;
 
-  // Entity lookup for out-of-estate treatment rules.
-  const entityMap: Record<string, EntitySummary> = {};
-  for (const e of data.entities ?? []) entityMap[e.id] = e;
+  // Mutable working list of entities. Death-event grantor-succession can flip
+  // an irrevocable grantor trust (IDGT/SLAT) to non-grantor at IRC §671 when
+  // its grantor dies; downstream year-loop reads must see the post-flip
+  // classification. `currentEntities` is reassigned after each death event;
+  // the lookup map is rebuilt to match.
+  let currentEntities: EntitySummary[] = data.entities ?? [];
+  let entityMap: Record<string, EntitySummary> = {};
+  const rebuildEntityMap = () => {
+    entityMap = {};
+    for (const e of currentEntities) entityMap[e.id] = e;
+  };
+  rebuildEntityMap();
 
   const isGrantorEntity = (entityId: string | undefined): boolean =>
     entityId != null && entityMap[entityId]?.isGrantor === true;
@@ -194,6 +207,78 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     }
   }
 
+  // Trust classification builders. Re-run each year against `currentEntities`
+  // so a grantor-succession flip at first/final death (IDGT post-grantor-death,
+  // revocable-on-grantor-death) propagates into the trust-tax pass starting the
+  // year after the death event.
+  const familyMemberMap = new Map(
+    (data.familyMembers ?? []).map((fm) => [fm.id, fm])
+  );
+  const deriveBeneficiaryKind = (
+    e: import("./types").EntitySummary
+  ): "household" | "non_household" | null => {
+    if (e.incomeBeneficiaryFamilyMemberId != null) {
+      // All family members in the engine are non-client/spouse (child, grandchild, etc.)
+      // They live in the same household umbrella for DNI purposes.
+      const fm = familyMemberMap.get(e.incomeBeneficiaryFamilyMemberId);
+      if (fm) return "household";
+    }
+    if (e.incomeBeneficiaryExternalId != null) return "non_household";
+    return null;
+  };
+  // Irrevocable, non-grantor trusts → their own annual tax pass (compressed 1041).
+  const buildNonGrantorTrusts = (entities: EntitySummary[]): NonGrantorTrustInput[] =>
+    entities
+      .filter(
+        (e) =>
+          e.entityType === "trust" &&
+          e.isIrrevocable === true &&
+          e.isGrantor === false
+      )
+      .map((e) => ({
+        entityId: e.id,
+        isGrantorTrust: false,
+        distributionPolicy: {
+          mode: (e.distributionMode ?? null) as "fixed" | "pct_liquid" | "pct_income" | null,
+          amount: e.distributionAmount ?? null,
+          percent: e.distributionPercent ?? null,
+          beneficiaryKind: deriveBeneficiaryKind(e),
+          beneficiaryFamilyMemberId: e.incomeBeneficiaryFamilyMemberId ?? null,
+          beneficiaryExternalId: e.incomeBeneficiaryExternalId ?? null,
+        },
+        trustCashStart: 0, // not used by orchestrator yet — kept for future expansion
+      }));
+
+  // Grantor irrevocable trusts (IDGT/SLAT) — income already flows through the
+  // household 1040 (isGrantor=true), so there is no trust-level tax. The only
+  // mechanic here is an optional cash distribution: trust checking → household
+  // (or out of scope).
+  interface GrantorTrustEntry {
+    entityId: string;
+    policy: DistributionPolicy;
+  }
+  const buildGrantorTrusts = (entities: EntitySummary[]): GrantorTrustEntry[] =>
+    entities
+      .filter(
+        (e) =>
+          e.entityType === "trust" &&
+          e.isIrrevocable === true &&
+          e.isGrantor === true &&
+          e.distributionMode != null &&
+          deriveBeneficiaryKind(e) !== null
+      )
+      .map((e) => ({
+        entityId: e.id,
+        policy: {
+          mode: e.distributionMode as "fixed" | "pct_liquid" | "pct_income",
+          amount: e.distributionAmount ?? null,
+          percent: e.distributionPercent ?? null,
+          beneficiaryKind: deriveBeneficiaryKind(e),
+          beneficiaryFamilyMemberId: e.incomeBeneficiaryFamilyMemberId ?? null,
+          beneficiaryExternalId: e.incomeBeneficiaryExternalId ?? null,
+        },
+      }));
+
   // Resolve the cash account that an income/expense/liability should settle against:
   // an explicit override wins, otherwise fall back to the default checking for the
   // appropriate owner.
@@ -220,6 +305,25 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
   // Mutable accounts list — techniques can add/remove accounts
   let workingAccounts = [...data.accounts];
+
+  // Invariant account-id → Account map for ownership lookups that must
+  // survive the BoY sale step's account removal. Trust-tax routing for
+  // asset-transaction sales needs `ownerEntityId` for accounts that were
+  // removed from `workingAccounts` earlier in the same year, so we source
+  // from `data.accounts` (which never changes). Synthetic accounts created
+  // by BoY purchases are always household-owned (no ownerEntityId) — see
+  // asset-transactions.ts applyAssetPurchases — so omitting them preserves
+  // correct fall-through behavior for household sales.
+  //
+  // Unlike `entityMap` (which is rebuilt after each death event), this map
+  // is built once and never refreshed. CAVEAT: the death-event paths below
+  // can reassign `workingAccounts` from `applyFirstDeath` / `applyFinalDeath`
+  // results, which may include new trust-owned accounts (e.g., testamentary
+  // trust funding). Sales of those death-spawned accounts in subsequent
+  // projection years would not resolve here and would misroute to household.
+  // Tracked in future-work/engine.md ("Death-spawned trust-owned accounts
+  // misroute on subsequent asset-transaction sales") until addressed.
+  const accountById = new Map(data.accounts.map((a) => [a.id, a]));
 
   // Reset synthetic ID counter for technique-created assets
   _resetSyntheticIdCounter();
@@ -287,6 +391,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       client: year - clientBirthYear,
       spouse: spouseBirthYear != null ? year - spouseBirthYear : undefined,
     };
+
+    // Re-classify trust lists each year against `currentEntities`. After a
+    // grantor's death, an IDGT/SLAT flips isGrantor:true→false and migrates
+    // from `grantorTrusts` to `nonGrantorTrusts`; a revocable trust likewise
+    // gets reclassified. Recomputed inside the loop so the year following a
+    // death event picks up the post-flip classification.
+    const nonGrantorTrusts: NonGrantorTrustInput[] = buildNonGrantorTrusts(currentEntities);
+    const grantorTrusts: GrantorTrustEntry[] = buildGrantorTrusts(currentEntities);
 
     // 1. Compute income breakdowns. Household and grantor-trust streams are kept
     // separate because grantor income flows to the entity checking but is still
@@ -510,6 +622,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let realizationQDiv = 0;
     let realizationSTCG = 0;
     const realizationBySource: Record<string, { type: string; amount: number }> = {};
+    // Per-account realization entries for the trust-tax pass. Populated for
+    // non-grantor trust accounts only; the orchestrator aggregates by ownerEntityId.
+    const yearRealizations: AccountYearRealization[] = [];
+
+    // Per-entity income buckets for grantor irrevocable trusts. Grantor-trust
+    // income already flows through the household 1040 (handled below), but for
+    // pct_income distribution mode we still need the trust's total income so
+    // computeDistribution can derive the target amount.
+    const grantorTrustIncomeByEntity = new Map<string, TrustIncomeBuckets>();
+    for (const gt of grantorTrusts) {
+      grantorTrustIncomeByEntity.set(gt.entityId, { ordinary: 0, dividends: 0, taxExempt: 0, recognizedCapGains: 0 });
+    }
 
     for (const acct of workingAccounts) {
       const currentBalance = accountBalances[acct.id] ?? 0;
@@ -557,12 +681,34 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // Retirement accounts defer all tax until withdrawal; cash accounts
         // are always 100% OI but that's baked into the realization model.
         if (acct.category === "taxable" || acct.category === "cash") {
-          realizationOI += oi;
-          realizationQDiv += qdiv;
-          realizationSTCG += stcg;
-          if (oi > 0) realizationBySource[`${acct.id}:oi`] = { type: "ordinary_income", amount: oi };
-          if (qdiv > 0) realizationBySource[`${acct.id}:qdiv`] = { type: "dividends", amount: qdiv };
-          if (stcg > 0) realizationBySource[`${acct.id}:stcg`] = { type: "stcg", amount: stcg };
+          if (acct.ownerEntityId == null || isGrantorEntity(acct.ownerEntityId)) {
+            // Household or grantor-trust income → standard household scalars
+            realizationOI += oi;
+            realizationQDiv += qdiv;
+            realizationSTCG += stcg;
+            if (oi > 0) realizationBySource[`${acct.id}:oi`] = { type: "ordinary_income", amount: oi };
+            if (qdiv > 0) realizationBySource[`${acct.id}:qdiv`] = { type: "dividends", amount: qdiv };
+            if (stcg > 0) realizationBySource[`${acct.id}:stcg`] = { type: "stcg", amount: stcg };
+            // Also track per-entity income for grantor-trust distribution (pct_income mode).
+            if (acct.ownerEntityId != null) {
+              const bucket = grantorTrustIncomeByEntity.get(acct.ownerEntityId);
+              if (bucket) {
+                bucket.ordinary += oi;
+                bucket.dividends += qdiv;
+                bucket.taxExempt += taxExempt;
+              }
+            }
+          } else {
+            // Non-grantor trust account → per-account realization entry for the trust-tax pass
+            yearRealizations.push({
+              accountId: acct.id,
+              ownerEntityId: acct.ownerEntityId,
+              ordinary: oi,
+              dividends: qdiv,
+              taxExempt,
+              capGains: stcg, // ambient — collect-trust-income ignores this field per convention
+            });
+          }
         }
       }
 
@@ -749,6 +895,178 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // ── Non-grantor trust annual pass ────────────────────────────────────────
+    // Runs after taxDetail is fully assembled. Results feed:
+    //   (a) householdIncomeDelta → adjusts taxDetail before bracket calc
+    //   (b) trustTaxByEntity / trustWarnings → attached to the ProjectionYear
+    //   (c) cash debits for tax + distributions → applied to accountBalances
+    let trustPassResult: ReturnType<typeof applyTrustAnnualPass> | null = null;
+    if (nonGrantorTrusts.length > 0) {
+      // Build AssetTransactionGain[] from sale breakdown, mapping accountId →
+      // ownerEntityId. Source from the invariant `accountById` (built from
+      // `data.accounts` outside the year loop) because the BoY sale step
+      // removes sold accounts from `workingAccounts` BEFORE this lookup runs
+      // — using `workingAccounts` here would silently miss every sold trust
+      // account and route the gain to household taxDetail.capitalGains.
+      const assetTransactionGains: AssetTransactionGain[] = [];
+      for (const item of saleResult.breakdown) {
+        const ownerEntityId = accountById.get(item.accountId)?.ownerEntityId;
+        if (ownerEntityId != null && !isGrantorEntity(ownerEntityId)) {
+          assetTransactionGains.push({ ownerEntityId, gain: item.capitalGain });
+        }
+      }
+
+      // Subtract trust-owned recognized gains from household taxDetail.capitalGains so
+      // the bracket engine doesn't tax them again (trust pays its own cap-gains tax).
+      const trustCapGainsTotal = assetTransactionGains.reduce((s, g) => s + g.gain, 0);
+      if (trustCapGainsTotal > 0) {
+        taxDetail.capitalGains = Math.max(0, taxDetail.capitalGains - trustCapGainsTotal);
+      }
+
+      // Build trustLiquidity from current accountBalances for each trust.
+      const trustLiquidity = new Map<string, TrustLiquidityPool>();
+      for (const trust of nonGrantorTrusts) {
+        const checkingId = entityCheckingByEntityId[trust.entityId];
+        const cash = checkingId != null ? (accountBalances[checkingId] ?? 0) : 0;
+        // Aggregate taxable brokerage balances for this trust
+        let taxableBrokerage = 0;
+        let retirementInRmdPhase = 0;
+        for (const acct of workingAccounts) {
+          if (acct.ownerEntityId !== trust.entityId) continue;
+          if (acct.id === checkingId) continue;
+          if (acct.category === "taxable") taxableBrokerage += accountBalances[acct.id] ?? 0;
+          if (acct.category === "retirement" && acct.rmdEnabled) {
+            retirementInRmdPhase += accountBalances[acct.id] ?? 0;
+          }
+        }
+        trustLiquidity.set(trust.entityId, { cash, taxableBrokerage, retirementInRmdPhase });
+      }
+
+      // Resolve trust-bracket params — requires tax year data (bracket mode).
+      const trustYearParams = taxResolver ? taxResolver.getYear(year) : null;
+      const tp = trustYearParams?.params;
+      const trustIncomeBrackets = tp?.trustIncomeBrackets ?? [];
+      const trustCapGainsBrackets = tp?.trustCapGainsBrackets ?? [];
+      const niitRate = tp?.niitRate ?? 0;
+      // NIIT threshold for trusts uses the compressed 37% bracket floor per the brief.
+      const niitThreshold = trustIncomeBrackets.length >= 4
+        ? trustIncomeBrackets[3].from
+        : (tp?.niitThreshold?.single ?? 0);
+
+      trustPassResult = applyTrustAnnualPass({
+        year,
+        nonGrantorTrusts,
+        yearRealizations,
+        assetTransactionGains,
+        trustLiquidity,
+        trustIncomeBrackets,
+        trustCapGainsBrackets,
+        niitRate,
+        niitThreshold,
+        flatStateRate: planSettings.flatStateRate,
+        outOfHouseholdRate: planSettings.outOfHouseholdRate ?? 0.37,
+      });
+
+      // Apply household income delta BEFORE the bracket calc sees it.
+      taxDetail.ordinaryIncome += trustPassResult.householdIncomeDelta.ordinary;
+      taxDetail.dividends += trustPassResult.householdIncomeDelta.dividends;
+      taxDetail.taxExempt += trustPassResult.householdIncomeDelta.taxExempt;
+
+      // Apply trust cash debits (distributions drawn from cash + trust tax paid).
+      for (const trust of nonGrantorTrusts) {
+        const checkingId = entityCheckingByEntityId[trust.entityId];
+        if (!checkingId) continue;
+        const dist = trustPassResult.distributionsByEntity.get(trust.entityId);
+        const tax = trustPassResult.taxByEntity.get(trust.entityId);
+        const debit = (dist?.drawFromCash ?? 0) + (tax?.total ?? 0);
+        if (debit <= 0) continue;
+        const currentCash = accountBalances[checkingId] ?? 0;
+        accountBalances[checkingId] = currentCash - debit;
+        if (accountBalances[checkingId] < 0) {
+          // Push a warning if the trust runs short on cash for its own tax bill.
+          // (Distribution shortfall is already pushed by computeDistribution.)
+          const shortfall = -accountBalances[checkingId];
+          accountBalances[checkingId] = 0;
+          trustPassResult.warnings.push({
+            code: "trust_tax_insufficient_cash",
+            entityId: trust.entityId,
+            shortfall,
+          });
+        }
+      }
+    }
+
+    // ── Grantor irrevocable trust distribution pass ───────────────────────────
+    // For grantor trusts (e.g. IDGT/SLAT), income already flows through the
+    // household 1040 via the existing pipeline — no DNI routing, no trust-level
+    // tax. This pass handles the optional cash movement: trust checking → household
+    // (or out-of-household, which exits the projection).
+    // Runs AFTER the non-grantor pass so both passes see consistent year-start
+    // accountBalances, and BEFORE the household tax engine.
+    const grantorDistributionWarnings: TrustWarning[] = [];
+    if (grantorTrusts.length > 0) {
+      // Collect asset-transaction gains for grantor entities (needed for
+      // pct_income mode). Same caveat as the non-grantor lookup above:
+      // `workingAccounts` no longer contains sold accounts at this point in
+      // the year loop, so we resolve ownership against the invariant
+      // `accountById` map.
+      for (const item of saleResult.breakdown) {
+        const ownerEntityId = accountById.get(item.accountId)?.ownerEntityId;
+        if (ownerEntityId != null && isGrantorEntity(ownerEntityId)) {
+          const bucket = grantorTrustIncomeByEntity.get(ownerEntityId);
+          if (bucket) bucket.recognizedCapGains += item.capitalGain;
+        }
+      }
+
+      for (const gt of grantorTrusts) {
+        const checkingId = entityCheckingByEntityId[gt.entityId];
+        if (!checkingId) continue; // no checking account — cannot distribute
+
+        const cash = accountBalances[checkingId] ?? 0;
+        // Aggregate taxable brokerage for this grantor trust
+        let taxableBrokerage = 0;
+        let retirementInRmdPhase = 0;
+        for (const acct of workingAccounts) {
+          if (acct.ownerEntityId !== gt.entityId) continue;
+          if (acct.id === checkingId) continue;
+          if (acct.category === "taxable") taxableBrokerage += accountBalances[acct.id] ?? 0;
+          if (acct.category === "retirement" && acct.rmdEnabled) {
+            retirementInRmdPhase += accountBalances[acct.id] ?? 0;
+          }
+        }
+        const liquid: TrustLiquidityPool = { cash, taxableBrokerage, retirementInRmdPhase };
+        const income = grantorTrustIncomeByEntity.get(gt.entityId) ?? {
+          ordinary: 0, dividends: 0, taxExempt: 0, recognizedCapGains: 0,
+        };
+
+        const dist = computeDistribution({ entityId: gt.entityId, policy: gt.policy, income, liquid });
+        grantorDistributionWarnings.push(...dist.warnings);
+
+        if (dist.actualAmount <= 0) continue;
+
+        // Debit from trust checking via creditCash (negative amount) so that
+        // the ledger endingValue and cashDelta are updated consistently at step 11.
+        // The full actualAmount is drawn from checking (drawFromCash covers what
+        // was liquid in cash; drawFromTaxable is approximated as a settlement into
+        // checking, consistent with how non-grantor trust liquidations settle).
+        creditCash(checkingId, -dist.actualAmount, {
+          category: "expense",
+          label: `Grantor trust distribution out`,
+          sourceId: gt.entityId,
+        });
+
+        // Credit to household only when beneficiary is household; otherwise the
+        // cash exits the projection (non-household beneficiary lives outside scope).
+        if (gt.policy.beneficiaryKind === "household") {
+          creditCash(defaultChecking?.id, dist.actualAmount, {
+            category: "income",
+            label: `Grantor trust distribution`,
+            sourceId: gt.entityId,
+          });
+        }
+      }
+    }
+
     // 5. Taxes on household + grantor-trust income/RMDs. Routes to bracket or flat
     // engine depending on planSettings.taxEngineMode and whether tax year data is loaded.
     const resolved = taxResolver ? taxResolver.getYear(year) : null;
@@ -778,7 +1096,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     }
     const totalHouseholdSalary =
       salaryByOwner.client + salaryByOwner.spouse + salaryByOwner.joint;
-    const accountById = new Map(data.accounts.map((a) => [a.id, a]));
+    // `accountById` is declared once at function scope above the year loop.
     const salaryByRuleId: Record<string, number> = {};
     for (const rule of data.savingsRules) {
       const acct = accountById.get(rule.accountId);
@@ -1534,7 +1852,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       liabilities: currentLiabilities,
       familyMembers: data.familyMembers ?? [],
       externalBeneficiaries: data.externalBeneficiaries ?? [],
-      entities: data.entities ?? [],
+      entities: currentEntities,
       wills: data.wills ?? [],
       planSettings,
       gifts: data.gifts ?? [],
@@ -1584,6 +1902,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             },
           }
         : {}),
+      ...(trustPassResult != null || grantorDistributionWarnings.length > 0
+        ? {
+            ...(trustPassResult != null ? {
+              trustTaxByEntity: trustPassResult.taxByEntity,
+              estimatedBeneficiaryTax: trustPassResult.estimatedBeneficiaryTax,
+            } : {}),
+            trustWarnings: (() => {
+              const all = [
+                ...(trustPassResult?.warnings ?? []),
+                ...grantorDistributionWarnings,
+              ];
+              return all.length > 0 ? all : undefined;
+            })(),
+          }
+        : {}),
     });
 
     // Death event (spec 4b) — fires exactly once at the first death year.
@@ -1609,7 +1942,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         liabilities: currentLiabilities,
         familyMembers: data.familyMembers ?? [],
         externalBeneficiaries: data.externalBeneficiaries ?? [],
-        entities: data.entities ?? [],
+        entities: currentEntities,
         planSettings,
         gifts: data.gifts ?? [],
         annualExclusionsByYear,
@@ -1624,6 +1957,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       Object.assign(basisMap, deathResult.basisMap);
       currentIncomes = deathResult.incomes;
       currentLiabilities = deathResult.liabilities;
+      // Adopt grantor-succession entity flips (e.g. IDGT post-grantor-death).
+      // Trust-tax classification reads `currentEntities` at the top of each
+      // subsequent year, so the next iteration picks up the flipped state.
+      currentEntities = deathResult.entities;
+      rebuildEntityMap();
 
       // Stash DSUE for the final-death call (portability per §2010(c)(4)).
       stashedDSUE = deathResult.dsueGenerated;
@@ -1662,7 +2000,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         liabilities: currentLiabilities,
         familyMembers: data.familyMembers ?? [],
         externalBeneficiaries: data.externalBeneficiaries ?? [],
-        entities: data.entities ?? [],
+        entities: currentEntities,
         planSettings,
         gifts: data.gifts ?? [],
         annualExclusionsByYear,
@@ -1676,6 +2014,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       Object.assign(basisMap, finalResult.basisMap);
       currentIncomes = finalResult.incomes;
       currentLiabilities = finalResult.liabilities;
+      // Adopt grantor-succession entity flips at final death. The loop breaks
+      // immediately after, but keep the map in sync for any post-loop reads.
+      currentEntities = finalResult.entities;
+      rebuildEntityMap();
 
       const thisYear = years[years.length - 1];
       thisYear.deathTransfers = [

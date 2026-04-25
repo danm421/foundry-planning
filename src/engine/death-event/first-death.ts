@@ -403,6 +403,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     warnings,
     estateTax,
     dsueGenerated: estateTax.dsueGenerated,
+    entities: mutatedEntities,
   };
 }
 

@@ -21,6 +21,8 @@ function makeRow(year: number): TaxYearParameters {
       head_of_household: { zeroPctTop: 66450, fifteenPctTop: 581550 },
       married_separate: { zeroPctTop: 49600, fifteenPctTop: 307950 },
     },
+    trustIncomeBrackets: [],
+    trustCapGainsBrackets: [],
     stdDeduction: { married_joint: 32200, single: 16100, head_of_household: 24150, married_separate: 16100 },
     amtExemption: { mfj: 140200, singleHoh: 90100, mfs: 70100 },
     amtBreakpoint2628: { mfjShoh: 244500, mfs: 122250 },

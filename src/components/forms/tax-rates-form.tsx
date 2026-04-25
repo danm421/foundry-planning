@@ -10,6 +10,7 @@ interface TaxRatesFormProps {
   flatStateRate: string;
   estateAdminExpenses: string;
   flatStateEstateRate: string;
+  outOfHouseholdDniRate: string;
   initialMode?: "flat" | "bracket";
 }
 
@@ -21,6 +22,7 @@ export default function TaxRatesForm({
   flatStateRate,
   estateAdminExpenses,
   flatStateEstateRate,
+  outOfHouseholdDniRate,
   initialMode = "flat",
 }: TaxRatesFormProps) {
   const router = useRouter();
@@ -43,6 +45,7 @@ export default function TaxRatesForm({
       taxEngineMode: mode,
       estateAdminExpenses: String(Number(data.get("estateAdminExpenses") ?? "0")),
       flatStateEstateRate: String(Number(data.get("flatStateEstateRate") ?? "0") / 100),
+      outOfHouseholdDniRate: String(Number(data.get("outOfHouseholdDniRate") ?? "0") / 100),
     };
 
     if (mode === "flat") {
@@ -135,6 +138,24 @@ export default function TaxRatesForm({
         <div>
           <label className="block text-xs font-medium text-gray-400" htmlFor="flatStateEstateRate">State estate tax rate</label>
           <PercentInput id="flatStateEstateRate" name="flatStateEstateRate" defaultValue={pct(flatStateEstateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+        </div>
+      </div>
+
+      <header className="mt-6">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Trust Tax</h3>
+        <p className="mt-1 text-xs text-gray-500">Applied when a non-grantor trust distributes income to a beneficiary outside the household.</p>
+      </header>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-400" htmlFor="outOfHouseholdDniRate">Out-of-household DNI tax rate</label>
+          <PercentInput
+            id="outOfHouseholdDniRate"
+            name="outOfHouseholdDniRate"
+            defaultValue={pct(outOfHouseholdDniRate)}
+            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <p className="mt-1 text-xs text-gray-500">Records an estimated recipient-side tax in the plan&apos;s tax summary. Defaults to top federal bracket (37%).</p>
         </div>
       </div>
 
