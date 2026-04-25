@@ -7,7 +7,8 @@ import {
   assertAccountsInClient,
   assertModelPortfoliosInFirm,
 } from "@/lib/db-scoping";
-import { recordAudit } from "@/lib/audit";
+import { recordCreate, recordUpdate, recordDelete } from "@/lib/audit";
+import { toAssetTransactionSnapshot, ASSET_TRANSACTION_FIELD_LABELS } from "@/lib/audit/snapshots/asset-transaction";
 
 export const dynamic = "force-dynamic";
 
@@ -149,13 +150,13 @@ export async function POST(
       })
       .returning();
 
-    await recordAudit({
+    await recordCreate({
       action: "asset_transaction.create",
       resourceType: "asset_transaction",
       resourceId: created.id,
       clientId: id,
       firmId,
-      metadata: { name: created.name, type: created.type, year: created.year },
+      snapshot: await toAssetTransactionSnapshot(created),
     });
 
     return NextResponse.json(created, { status: 201 });
@@ -273,13 +274,15 @@ export async function PUT(
       .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)))
       .returning();
 
-    await recordAudit({
+    await recordUpdate({
       action: "asset_transaction.update",
       resourceType: "asset_transaction",
       resourceId: transactionId,
       clientId: id,
       firmId,
-      metadata: { name: updated.name, type: updated.type, year: updated.year },
+      before: await toAssetTransactionSnapshot(existing),
+      after: await toAssetTransactionSnapshot(updated),
+      fieldLabels: ASSET_TRANSACTION_FIELD_LABELS,
     });
 
     return NextResponse.json(updated);
@@ -324,17 +327,19 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    const snapshot = await toAssetTransactionSnapshot(existing);
+
     await db
       .delete(assetTransactions)
       .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)));
 
-    await recordAudit({
+    await recordDelete({
       action: "asset_transaction.delete",
       resourceType: "asset_transaction",
       resourceId: transactionId,
       clientId: id,
       firmId,
-      metadata: { name: existing.name, type: existing.type },
+      snapshot,
     });
 
     return NextResponse.json({ ok: true });
