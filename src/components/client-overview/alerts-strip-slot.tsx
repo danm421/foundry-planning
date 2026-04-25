@@ -12,19 +12,16 @@ export async function AlertsStripSlot({
   clientId: string;
   firmId: string;
   alertInputs: OverviewAlertInputs;
-  clientMeta: { id: string; updatedAt: Date | string | null };
+  clientMeta: { id: string; updatedAt: Date | string };
 }) {
   const mc = await getMonteCarloResult(clientId, firmId);
 
-  const alerts: Alert[] = computeAlerts(
-    { id: clientMeta.id, updatedAt: clientMeta.updatedAt ?? new Date(0) },
-    {
-      monteCarloSuccess: mc?.successRate ?? null,
-      liquidPortfolio: alertInputs.liquidPortfolio,
-      currentYearNetOutflow: alertInputs.currentYearNetOutflow,
-      minNetWorth: alertInputs.minNetWorth,
-    },
-  );
+  const alerts: Alert[] = computeAlerts(clientMeta, {
+    monteCarloSuccess: mc?.successRate ?? null,
+    liquidPortfolio: alertInputs.liquidPortfolio,
+    currentYearNetOutflow: alertInputs.currentYearNetOutflow,
+    minNetWorth: alertInputs.minNetWorth,
+  });
 
   if (alertInputs.projectionError) {
     alerts.push({
