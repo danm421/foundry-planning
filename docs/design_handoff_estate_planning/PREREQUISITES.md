@@ -5,7 +5,9 @@ Gap analysis between the design in this folder (`Estate Planning v2.html`,
 `foundry-planning` codebase.
 
 **Last reconciled:** 2026-04-25. Reflects everything through life-
-insurance follow-ups (premium retirement-cap + dead enum cleanup).
+insurance follow-ups (premium retirement-cap + dead enum cleanup) and
+the Hard Blocker 2 stale-bullet correction (no UI exemption-cap
+hardcodes shipped — was design-mockup copy only).
 
 Cross-referenced files:
 - Engine: [src/engine/](../../src/engine/) — projection, tax,
@@ -66,15 +68,20 @@ returns `BEA_2026 = $15M` and inflates forward from there.
 ### 2. Gift-tax / exemption-usage ledger — ✅ shipped (Item 3)
 
 Gift ledger + per-grantor `lifetime_exemption_used` rollup implemented.
-Trust-card footer value ("Uses exemption $2.40M / $13.99M") is
-computable.
+Trust-card footer value ("Uses exemption $X / $Y") is computable from
+engine output when the estate-report UI is built.
 
-**Still outstanding:**
-
-- UI still hardcodes `LIFETIME_EXEMPTION_CAP = 13_990_000` and
-  `annualExclusionAmount = 19_000`. Move to `tax_year_parameters`
-  (now that the engine ships BEA=$15M in 2026, the hardcoded $13.99M
-  is stale copy). Low-risk UI change.
+The "UI hardcodes `LIFETIME_EXEMPTION_CAP` / `annualExclusionAmount`"
+note that previously sat here was **stale** — those constants existed
+only as design-mockup copy in `Estate Planning v2.html` ($13.99M
+predates OBBBA; 2026 BEA = $15M); they were never shipped to the
+actual UI. The shipped code reads BEA from
+[src/lib/tax/estate.ts:35-45](../../src/lib/tax/estate.ts#L35-L45) and
+the annual exclusion from `tax_year_parameters` via
+[`resolveAnnualExclusion`](../../src/lib/gifts/resolve-annual-exclusion.ts).
+The gift dialog and trust form do not display either value as a "cap"
+today — that copy lands when the estate-report UI builds the
+trust-card footer.
 
 ### 3. Step-up in basis at death — ✅ shipped (Spec 6)
 
