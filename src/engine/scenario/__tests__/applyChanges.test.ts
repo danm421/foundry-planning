@@ -236,3 +236,57 @@ describe("applyScenarioChanges — remove", () => {
     expect(result.effectiveTree.accounts).toHaveLength(1);
   });
 });
+
+describe("applyScenarioChanges — toggle filtering", () => {
+  const groupParent: ToggleGroup = {
+    id: "g-parent", scenarioId: "s1", name: "parent",
+    defaultOn: true, requiresGroupId: null, orderIndex: 0,
+  };
+  const groupChild: ToggleGroup = {
+    id: "g-child", scenarioId: "s1", name: "child",
+    defaultOn: true, requiresGroupId: "g-parent", orderIndex: 1,
+  };
+
+  it("skips changes whose toggle group is off", () => {
+    const base = minimalClientData();
+    const change: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "add", targetKind: "account",
+      targetId: "a-new", payload: { id: "a-new", name: "Roth" } as Account,
+      toggleGroupId: "g-parent", orderIndex: 0,
+    };
+    const result = applyScenarioChanges(base, [change], { "g-parent": false }, [groupParent]);
+    expect(result.effectiveTree.accounts).toEqual([]);
+  });
+
+  it("skips child group changes when parent is off", () => {
+    const base = minimalClientData();
+    const change: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "add", targetKind: "account",
+      targetId: "a-new", payload: { id: "a-new", name: "Roth" } as Account,
+      toggleGroupId: "g-child", orderIndex: 0,
+    };
+    const result = applyScenarioChanges(
+      base,
+      [change],
+      { "g-parent": false, "g-child": true },
+      [groupParent, groupChild],
+    );
+    expect(result.effectiveTree.accounts).toEqual([]);
+  });
+
+  it("ungrouped changes apply even when all toggle groups are off", () => {
+    const base = minimalClientData();
+    const change: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "add", targetKind: "account",
+      targetId: "a-new", payload: { id: "a-new", name: "Roth" } as Account,
+      toggleGroupId: null, orderIndex: 0,
+    };
+    const result = applyScenarioChanges(
+      base,
+      [change],
+      { "g-parent": false },
+      [groupParent],
+    );
+    expect(result.effectiveTree.accounts).toHaveLength(1);
+  });
+});
