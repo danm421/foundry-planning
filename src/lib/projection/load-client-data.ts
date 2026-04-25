@@ -37,6 +37,8 @@ import {
 import type { BeneficiaryRef, ClientData, Will, WillBequest } from "@/engine/types";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
+import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
+import { synthesizePremiumExpenses } from "@/lib/insurance-policies/premium-expense";
 import { createGrowthSourceResolver } from "./resolve-growth-source";
 
 export class ClientNotFoundError extends Error {
@@ -373,6 +375,12 @@ export const loadClientData = cache(
       bequests: bequestsByWill.get(w.id) ?? [],
     }));
 
+    // ── Life-insurance policies ────────────────────────────────────────────
+    const lifeInsuranceAccountIds = accountRows
+      .filter((a) => a.category === "life_insurance")
+      .map((a) => a.id);
+    const policiesByAccount = await loadPoliciesByAccountIds(lifeInsuranceAccountIds);
+
     // ── Build ClientData ────────────────────────────────────────────────────
 
     // Convert Drizzle decimal strings to numbers for the engine
@@ -471,6 +479,8 @@ export const loadClientData = cache(
         realization,
         annualPropertyTax: parseFloat(a.annualPropertyTax),
         propertyTaxGrowthRate: parseFloat(a.propertyTaxGrowthRate),
+        insuredPerson: a.insuredPerson ?? undefined,
+        lifeInsurance: policiesByAccount[a.id],
       };
     });
 
@@ -510,6 +520,23 @@ export const loadClientData = cache(
       deductionType: e.deductionType ?? undefined,
       scheduleOverrides: expenseOverrideMap.get(e.id),
     }));
+
+    // Synthesize life-insurance premium expenses and merge with the mapped list.
+    const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+    const spouseBirthYear = client.spouseDob
+      ? parseInt(client.spouseDob.slice(0, 4), 10)
+      : null;
+    const syntheticPremiums = synthesizePremiumExpenses({
+      currentYear: new Date().getFullYear(),
+      accounts: mappedAccounts,
+      clientBirthYear,
+      spouseBirthYear,
+      clientRetirementAge: client.retirementAge,
+      spouseRetirementAge: client.spouseRetirementAge ?? null,
+      lifeExpectancyClient: client.lifeExpectancy,
+      lifeExpectancySpouse: client.spouseLifeExpectancy,
+    });
+    const allExpenses = [...mappedExpenses, ...syntheticPremiums];
 
     const mappedLiabilities = liabilityRows.map((l) => ({
       id: l.id,
@@ -671,7 +698,7 @@ export const loadClientData = cache(
       client: clientInfo,
       accounts: mappedAccounts,
       incomes: mappedIncomes,
-      expenses: mappedExpenses,
+      expenses: allExpenses,
       liabilities: mappedLiabilities,
       savingsRules: mappedSavingsRules,
       withdrawalStrategy: mappedWithdrawalStrategy,
