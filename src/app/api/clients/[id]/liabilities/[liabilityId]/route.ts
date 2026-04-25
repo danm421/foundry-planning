@@ -3,7 +3,8 @@ import { db } from "@/db";
 import { clients, liabilities } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { recordAudit } from "@/lib/audit";
+import { recordUpdate, recordDelete } from "@/lib/audit";
+import { toLiabilitySnapshot, LIABILITY_FIELD_LABELS } from "@/lib/audit/snapshots/liability";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,15 @@ export async function PUT(
     void _stripId; void _stripClientId;
     void _stripCreatedAt; void _stripUpdatedAt;
 
+    const [before] = await db
+      .select()
+      .from(liabilities)
+      .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)));
+
+    if (!before) {
+      return NextResponse.json({ error: "Liability not found" }, { status: 404 });
+    }
+
     const [updated] = await db
       .update(liabilities)
       .set({
@@ -52,13 +62,15 @@ export async function PUT(
       return NextResponse.json({ error: "Liability not found" }, { status: 404 });
     }
 
-    await recordAudit({
+    await recordUpdate({
       action: "liability.update",
       resourceType: "liability",
       resourceId: liabilityId,
       clientId: id,
       firmId,
-      metadata: { name: updated.name ?? null },
+      before: await toLiabilitySnapshot(before),
+      after: await toLiabilitySnapshot(updated),
+      fieldLabels: LIABILITY_FIELD_LABELS,
     });
 
     return NextResponse.json(updated);
@@ -90,16 +102,28 @@ export async function DELETE(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
+    const [existing] = await db
+      .select()
+      .from(liabilities)
+      .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)));
+
+    if (!existing) {
+      return NextResponse.json({ error: "Liability not found" }, { status: 404 });
+    }
+
+    const snapshot = await toLiabilitySnapshot(existing);
+
     await db
       .delete(liabilities)
       .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)));
 
-    await recordAudit({
+    await recordDelete({
       action: "liability.delete",
       resourceType: "liability",
       resourceId: liabilityId,
       clientId: id,
       firmId,
+      snapshot,
     });
 
     return NextResponse.json({ success: true });
