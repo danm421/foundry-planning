@@ -147,9 +147,7 @@ describe("life insurance — term expiry before death", () => {
       expect(y.accountLedgers["pol-term"]).toBeUndefined();
     }
 
-    // No projection year has a deathTransfer via="life_insurance_payout" for
-    // the retired policy, and no year's accounts show the §1035-style
-    // "life_insurance_proceeds" cash-equivalent subtype.
+    // No deathTransfer ever sources from the expired term policy.
     for (const y of years) {
       for (const t of y.deathTransfers ?? []) {
         expect(t.sourceAccountId).not.toBe("pol-term");
@@ -219,17 +217,10 @@ describe("life insurance — endsAtInsuredRetirement", () => {
   });
 
   it("endsAtInsuredRetirement still bills premiums every year the synthesized expense is active", () => {
-    // Documents the current engine wiring: the projection's expense loop
-    // consults each Expense's startYear/endYear, NOT the underlying
-    // policy's endsAtInsuredRetirement flag.  The synthesizer
-    // (premium-expense.ts) does not inspect endsAtInsuredRetirement either —
-    // a term policy with termLengthYears=null falls back to a 20-year
-    // horizon (endYear = startYear + 20 - 1).  That fallback happens to end
-    // before the retirement year in this fixture, so the premium naturally
-    // stops before retirement; but the projection itself does not enforce
-    // retirement-based expiry on premium expenses.  If a caller supplies
-    // an explicit premiumYears that outlives the retirement year, the
-    // engine will continue billing — future work for the synthesizer.
+    // 20-year term fallback (termLengthYears: null) coincidentally ends in
+    // 2044, before the 2045 retirement year, so the retirement cap doesn't
+    // change anything in this fixture. The next test exercises the cap
+    // directly with an explicit premiumYears value.
     const client: ClientInfo = {
       ...SINGLE_CLIENT,
       dateOfBirth: "1980-01-01",
@@ -254,6 +245,8 @@ describe("life insurance — endsAtInsuredRetirement", () => {
       accounts: [policy],
       clientBirthYear: 1980,
       spouseBirthYear: null,
+      clientRetirementAge: 65,
+      spouseRetirementAge: null,
       lifeExpectancyClient: 95,
       lifeExpectancySpouse: null,
     });
@@ -278,6 +271,65 @@ describe("life insurance — endsAtInsuredRetirement", () => {
     }
     // After the synthesized expense's endYear — no more premium.
     for (let yr = 2045; yr <= 2050; yr++) {
+      expect(byYear.get(yr)!.expenses.bySource[expenseId] ?? 0).toBe(0);
+    }
+  });
+
+  it("caps premium billing at the insured's retirement year when endsAtInsuredRetirement is set, even with an explicit premiumYears that outlives retirement", () => {
+    // Client born 1980, retires at 65 → retires 2045. Term policy with
+    // endsAtInsuredRetirement AND explicit premiumYears=30 would otherwise
+    // bill 2025..2054 (9 years past retirement). The retirement cap should
+    // win: bill 2025..2045.
+    const client: ClientInfo = {
+      ...SINGLE_CLIENT,
+      dateOfBirth: "1980-01-01",
+      retirementAge: 65,
+      lifeExpectancy: 95,
+    };
+    const policy = mkPolicyAccount(
+      "pol-ret-cap",
+      {
+        policyType: "term",
+        termIssueYear: 2025,
+        termLengthYears: null,
+        endsAtInsuredRetirement: true,
+        premiumYears: 30,
+        faceValue: 500_000,
+        premiumAmount: 2_000,
+      },
+      { insuredPerson: "client", value: 0 },
+    );
+
+    const synthesized = synthesizePremiumExpenses({
+      currentYear: 2025,
+      accounts: [policy],
+      clientBirthYear: 1980,
+      spouseBirthYear: null,
+      clientRetirementAge: 65,
+      spouseRetirementAge: null,
+      lifeExpectancyClient: 95,
+      lifeExpectancySpouse: null,
+    });
+    expect(synthesized).toHaveLength(1);
+    expect(synthesized[0].startYear).toBe(2025);
+    // Capped at retirement year 2045 — NOT 2054 (= startYear + 30 - 1).
+    expect(synthesized[0].endYear).toBe(2045);
+
+    const data = mkClientData({
+      client,
+      accounts: [policy],
+      expenses: synthesized,
+      planSettings: { ...BASE_PLAN, planStartYear: 2025, planEndYear: 2055 },
+    });
+    const years = runProjection(data);
+    const byYear = new Map(years.map((y) => [y.year, y]));
+    const expenseId = `premium-${policy.id}`;
+
+    for (let yr = 2025; yr <= 2045; yr++) {
+      expect(byYear.get(yr)!.expenses.bySource[expenseId]).toBeCloseTo(2_000, 6);
+    }
+    // Past retirement — no premium.
+    for (let yr = 2046; yr <= 2055; yr++) {
       expect(byYear.get(yr)!.expenses.bySource[expenseId] ?? 0).toBe(0);
     }
   });
@@ -366,6 +418,8 @@ describe("life insurance — premium expenses", () => {
       accounts: [policy],
       clientBirthYear: 1980,
       spouseBirthYear: null,
+      clientRetirementAge: 65,
+      spouseRetirementAge: null,
       lifeExpectancyClient: 95,
       lifeExpectancySpouse: null,
     });
@@ -427,6 +481,8 @@ describe("life insurance — premium expenses", () => {
       accounts: [policy],
       clientBirthYear: 1980,
       spouseBirthYear: null,
+      clientRetirementAge: 65,
+      spouseRetirementAge: null,
       lifeExpectancyClient: 95,
       lifeExpectancySpouse: null,
     });

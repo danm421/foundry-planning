@@ -69,8 +69,7 @@ export interface DeathTransfer {
     | "fallback_children"
     | "fallback_other_heirs"
     | "unlinked_liability_proportional"
-    | "trust_pour_out"
-    | "life_insurance_payout";
+    | "trust_pour_out";
   recipientKind:
     | "spouse"
     | "family_member"

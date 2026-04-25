@@ -16,6 +16,12 @@ export interface SynthesizePremiumsInput {
   /** Spouse's assumed life expectancy in years. Falls back to the client's
    *  when absent — matches how the engine reports solo-spouse lifespan. */
   lifeExpectancySpouse: number | null;
+  /** Client's retirement age. Used to cap premium billing on term policies
+   *  with `endsAtInsuredRetirement: true`. */
+  clientRetirementAge: number;
+  /** Spouse's retirement age. Required when any policy with
+   *  `endsAtInsuredRetirement: true` is spouse- or joint-insured. */
+  spouseRetirementAge: number | null;
 }
 
 /**
@@ -33,6 +39,9 @@ export interface SynthesizePremiumsInput {
  *   3. Permanent policies with no paid-up years: the insured's projected
  *      lifespan year (birthYear + lifeExpectancy). Joint uses the later
  *      of the two lifespans.
+ *
+ * Then capped at the insured's retirement year when the policy's
+ * `endsAtInsuredRetirement` flag is set (term-only).
  */
 export function synthesizePremiumExpenses(
   input: SynthesizePremiumsInput,
@@ -59,6 +68,14 @@ export function synthesizePremiumExpenses(
     } else {
       // Permanent, no paid-up horizon → pay until insured's lifespan.
       endYear = resolvePermanentLifespanYear(acct, input);
+    }
+
+    // endsAtInsuredRetirement is term-only (validated in the policy schema)
+    // and means the policy stops at the insured's retirement year — cap
+    // billing there even if premiumYears or the term-length fallback would
+    // otherwise outlive retirement.
+    if (policy.endsAtInsuredRetirement) {
+      endYear = Math.min(endYear, resolveRetirementEndYear(acct, input));
     }
 
     // Guard against nonsensical ranges (e.g., endYear < startYear from a
@@ -102,5 +119,27 @@ function resolvePermanentLifespanYear(
   const clientEnd = clientBirthYear + lifeExpectancyClient;
   const spouseEnd =
     (spouseBirthYear ?? clientBirthYear) + lifeExpectancySpouse;
+  return Math.max(clientEnd, spouseEnd);
+}
+
+function resolveRetirementEndYear(
+  acct: Account,
+  input: SynthesizePremiumsInput,
+): number {
+  const insured = acct.insuredPerson ?? "client";
+  const { clientBirthYear, spouseBirthYear, clientRetirementAge } = input;
+  const spouseRetirementAge =
+    input.spouseRetirementAge ?? input.clientRetirementAge;
+
+  if (insured === "client") {
+    return clientBirthYear + clientRetirementAge;
+  }
+  if (insured === "spouse") {
+    return (spouseBirthYear ?? clientBirthYear) + spouseRetirementAge;
+  }
+  // joint — bill until the later of the two retirement years.
+  const clientEnd = clientBirthYear + clientRetirementAge;
+  const spouseEnd =
+    (spouseBirthYear ?? clientBirthYear) + spouseRetirementAge;
   return Math.max(clientEnd, spouseEnd);
 }

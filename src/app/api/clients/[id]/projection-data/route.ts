@@ -566,6 +566,8 @@ export async function GET(
       accounts: accountsShaped,
       clientBirthYear,
       spouseBirthYear,
+      clientRetirementAge: client.retirementAge,
+      spouseRetirementAge: client.spouseRetirementAge ?? null,
       lifeExpectancyClient: client.lifeExpectancy,
       lifeExpectancySpouse: client.spouseLifeExpectancy,
     });

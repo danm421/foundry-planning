@@ -4,8 +4,8 @@ Gap analysis between the design in this folder (`Estate Planning v2.html`,
 `Estate Planning v1 (other states).html`) and the current state of the
 `foundry-planning` codebase.
 
-**Last reconciled:** 2026-04-24. Reflects everything through Spec 4e
-(liability bequests).
+**Last reconciled:** 2026-04-25. Reflects everything through life-
+insurance follow-ups (premium retirement-cap + dead enum cleanup).
 
 Cross-referenced files:
 - Engine: [src/engine/](../../src/engine/) — projection, tax,
@@ -132,9 +132,15 @@ Worth; permanent policies read-only with deep-link back to the
 Insurance panel. Timeline detector emits `insurance:term_expired`
 at `endYear + 1`.
 
-**Known engine gaps** (logged in [future-work/engine.md](../../../Documents/foundry-finance/future-work/engine.md)):
-- `synthesizePremiumExpenses` ignores `endsAtInsuredRetirement` when `premiumYears` is explicit — currently latent.
-- Unused `life_insurance_payout` transfer `via` enum value — dead branch to delete.
+**Follow-up engine gaps cleared 2026-04-25:**
+- ✅ `synthesizePremiumExpenses` now caps the billing horizon at the
+  insured's retirement year when `endsAtInsuredRetirement` is set
+  (was latent — explicit `premiumYears` could outlive retirement).
+- ✅ Unused `life_insurance_payout` transfer `via` enum value deleted.
+
+The remaining open §2042 corner (merge-target attribution under
+`postPayoutMergeAccountId`) is logged in
+[future-work/engine.md](../../../Documents/foundry-finance/future-work/engine.md).
 
 ### 7. Family members as owners / beneficiaries — ✅ shipped (Item 1)
 
