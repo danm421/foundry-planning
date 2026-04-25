@@ -92,7 +92,7 @@ export default function InsurancePolicyBeneficiariesTab({
   if (isCreate) {
     return (
       <div className="py-6">
-        <div className="rounded-md border border-gray-700 bg-gray-800/40 px-4 py-3 text-sm text-gray-400">
+        <div className="rounded-md border border-hair bg-card-2 px-4 py-3 text-sm text-ink-3">
           Save the policy first. Beneficiaries can be set after the policy has
           been created.
         </div>
@@ -101,11 +101,11 @@ export default function InsurancePolicyBeneficiariesTab({
   }
 
   if (loading) {
-    return <p className="py-6 text-sm text-gray-400">Loading…</p>;
+    return <p className="py-6 text-sm text-ink-3">Loading…</p>;
   }
 
   if (error) {
-    return <p className="py-6 text-sm text-red-400">{error}</p>;
+    return <p className="py-6 text-sm text-crit">{error}</p>;
   }
 
   return (

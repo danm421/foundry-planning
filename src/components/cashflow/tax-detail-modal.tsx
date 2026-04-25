@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ProjectionYear } from "@/engine";
 import { TaxDetailIncomeTable } from "./tax-detail-income-table";
 import { TaxDetailFlowTable } from "./tax-detail-flow-table";
 import { YearRangeSlider } from "./year-range-slider";
+import DialogShell from "@/components/dialog-shell";
 
 type Tab = "income" | "federal";
 
@@ -36,110 +37,49 @@ export function TaxDetailModal({
 }: TaxDetailModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>("income");
 
-  useEffect(() => {
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
+    <DialogShell
+      open={true}
+      onOpenChange={(open) => { if (!open) onClose(); }}
+      title="Tax Detail — All Years"
+      size="xl"
+      tabs={[
+        { id: "income", label: "Income Breakdown" },
+        { id: "federal", label: "Federal Tax Breakdown" },
+      ]}
+      activeTab={activeTab}
+      onTabChange={(id) => setActiveTab(id as Tab)}
+      secondaryAction={{ label: "Close", onClick: onClose }}
     >
-      <div
-        className="flex h-[90vh] w-[90vw] max-w-[1600px] flex-col overflow-hidden rounded-xl border border-gray-700 bg-gray-900 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header with tabs */}
-        <div className="flex items-start justify-between border-b border-gray-800 px-6 pt-4">
-          <div className="flex-1">
-            <h2 className="text-lg font-semibold text-gray-100">Tax Detail — All Years</h2>
-            <p className="mt-1 text-xs text-gray-500">
-              Hover column headers for explanations. Click a year to see that year&apos;s per-source breakdown.
-            </p>
-            <nav className="mt-4 flex gap-1 border-b border-transparent" role="tablist">
-              <TabButton
-                active={activeTab === "income"}
-                onClick={() => setActiveTab("income")}
-              >
-                Income Breakdown
-              </TabButton>
-              <TabButton
-                active={activeTab === "federal"}
-                onClick={() => setActiveTab("federal")}
-              >
-                Federal Tax Breakdown
-              </TabButton>
-            </nav>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="-mr-2 text-xl text-gray-400 hover:text-gray-200"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
+      <p className="text-[12px] text-ink-3 mb-4">
+        Hover column headers for explanations. Click a year to see that year&apos;s per-source breakdown.
+      </p>
 
-        {/* Body */}
-        <div className="flex-1 overflow-auto p-6">
-          <div className="mb-4">
-            <YearRangeSlider
-              min={planStartYear}
-              max={planEndYear}
-              value={yearRange}
-              onChange={onYearRangeChange}
-              clientRetirementYear={clientRetirementYear}
-            />
-          </div>
-
-          {activeTab === "income" ? (
-            <TaxDetailIncomeTable
-              years={years}
-              onYearClick={onYearClick}
-              clientLifeExpectancy={clientLifeExpectancy}
-              spouseLifeExpectancy={spouseLifeExpectancy}
-            />
-          ) : (
-            <TaxDetailFlowTable
-              years={years}
-              onYearClick={onYearClick}
-              clientLifeExpectancy={clientLifeExpectancy}
-              spouseLifeExpectancy={spouseLifeExpectancy}
-            />
-          )}
-        </div>
+      <div className="mb-4">
+        <YearRangeSlider
+          min={planStartYear}
+          max={planEndYear}
+          value={yearRange}
+          onChange={onYearRangeChange}
+          clientRetirementYear={clientRetirementYear}
+        />
       </div>
-    </div>
-  );
-}
 
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-        active
-          ? "border-blue-500 text-gray-100"
-          : "border-transparent text-gray-400 hover:text-gray-200"
-      }`}
-    >
-      {children}
-    </button>
+      {activeTab === "income" ? (
+        <TaxDetailIncomeTable
+          years={years}
+          onYearClick={onYearClick}
+          clientLifeExpectancy={clientLifeExpectancy}
+          spouseLifeExpectancy={spouseLifeExpectancy}
+        />
+      ) : (
+        <TaxDetailFlowTable
+          years={years}
+          onYearClick={onYearClick}
+          clientLifeExpectancy={clientLifeExpectancy}
+          spouseLifeExpectancy={spouseLifeExpectancy}
+        />
+      )}
+    </DialogShell>
   );
 }

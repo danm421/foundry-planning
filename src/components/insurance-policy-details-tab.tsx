@@ -5,6 +5,11 @@ import type {
   InsurancePanelEntity,
 } from "./insurance-panel";
 import type { PolicyFormState } from "./insurance-policy-dialog";
+import {
+  inputClassName,
+  selectClassName,
+  fieldLabelClassName,
+} from "./forms/input-styles";
 
 interface InsurancePolicyDetailsTabProps {
   state: PolicyFormState;
@@ -28,12 +33,9 @@ function toNullableInt(raw: string): number | null {
   return Number.isFinite(n) ? Math.trunc(n) : null;
 }
 
-const inputCls =
-  "w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none";
-const labelCls = "mb-1 block text-xs font-medium text-gray-300";
-const helpCls = "mt-1 text-xs text-gray-500";
-const sectionCls = "border-t border-gray-800 pt-4 first:border-t-0 first:pt-0";
-const sectionTitleCls = "mb-3 text-sm font-semibold text-gray-200";
+const helpCls = "mt-1 text-xs text-ink-4";
+const sectionCls = "border-t border-hair pt-4 first:border-t-0 first:pt-0";
+const sectionTitleCls = "mb-3 text-sm font-semibold text-ink-2";
 const gridTwoCls = "grid grid-cols-1 gap-3 sm:grid-cols-2";
 
 export default function InsurancePolicyDetailsTab({
@@ -58,17 +60,17 @@ export default function InsurancePolicyDetailsTab({
         <h3 className={sectionTitleCls}>Basic info</h3>
         <div className={gridTwoCls}>
           <label className="block">
-            <span className={labelCls}>Name</span>
+            <span className={fieldLabelClassName}>Name</span>
             <input
               type="text"
               required
               value={state.name}
               onChange={(e) => onChange({ name: e.target.value })}
-              className={inputCls}
+              className={inputClassName}
             />
           </label>
           <label className="block">
-            <span className={labelCls}>Policy type</span>
+            <span className={fieldLabelClassName}>Policy type</span>
             <select
               value={state.policyType}
               onChange={(e) =>
@@ -76,7 +78,7 @@ export default function InsurancePolicyDetailsTab({
                   policyType: e.target.value as PolicyFormState["policyType"],
                 })
               }
-              className={inputCls}
+              className={selectClassName}
             >
               <option value="term">Term</option>
               <option value="whole">Whole Life</option>
@@ -85,7 +87,7 @@ export default function InsurancePolicyDetailsTab({
             </select>
           </label>
           <label className="block">
-            <span className={labelCls}>Insured person</span>
+            <span className={fieldLabelClassName}>Insured person</span>
             <select
               value={state.insuredPerson}
               onChange={(e) =>
@@ -93,7 +95,7 @@ export default function InsurancePolicyDetailsTab({
                   insuredPerson: e.target.value as PolicyFormState["insuredPerson"],
                 })
               }
-              className={inputCls}
+              className={selectClassName}
             >
               <option value="client">Client</option>
               <option value="spouse">Spouse</option>
@@ -101,7 +103,7 @@ export default function InsurancePolicyDetailsTab({
             </select>
           </label>
           <label className="block">
-            <span className={labelCls}>Face value</span>
+            <span className={fieldLabelClassName}>Face value</span>
             <input
               type="number"
               min={0}
@@ -109,7 +111,7 @@ export default function InsurancePolicyDetailsTab({
               required
               value={state.faceValue}
               onChange={(e) => onChange({ faceValue: toNumber(e.target.value) })}
-              className={inputCls}
+              className={inputClassName}
             />
           </label>
         </div>
@@ -120,13 +122,13 @@ export default function InsurancePolicyDetailsTab({
         <h3 className={sectionTitleCls}>Ownership</h3>
         <div className={gridTwoCls}>
           <label className="block">
-            <span className={labelCls}>Owner</span>
+            <span className={fieldLabelClassName}>Owner</span>
             <select
               value={state.owner}
               onChange={(e) =>
                 onChange({ owner: e.target.value as PolicyFormState["owner"] })
               }
-              className={inputCls}
+              className={selectClassName}
             >
               <option value="client">Client</option>
               <option value="spouse">Spouse</option>
@@ -134,14 +136,14 @@ export default function InsurancePolicyDetailsTab({
             </select>
           </label>
           <label className="block">
-            <span className={labelCls}>Owning entity (trust)</span>
+            <span className={fieldLabelClassName}>Owning entity (trust)</span>
             <select
               value={state.ownerEntityId ?? ""}
               onChange={(e) =>
                 onChange({ ownerEntityId: e.target.value || null })
               }
               disabled={trustEntities.length === 0}
-              className={inputCls}
+              className={selectClassName}
             >
               <option value="">Individual owner</option>
               {trustEntities.map((en) => (
@@ -162,7 +164,7 @@ export default function InsurancePolicyDetailsTab({
         <h3 className={sectionTitleCls}>Premium & basis</h3>
         <div className={gridTwoCls}>
           <label className="block">
-            <span className={labelCls}>Annual premium</span>
+            <span className={fieldLabelClassName}>Annual premium</span>
             <input
               type="number"
               min={0}
@@ -171,12 +173,12 @@ export default function InsurancePolicyDetailsTab({
               onChange={(e) =>
                 onChange({ premiumAmount: toNumber(e.target.value) })
               }
-              className={inputCls}
+              className={inputClassName}
             />
             <p className={helpCls}>Annual premium paid by the owner.</p>
           </label>
           <label className="block">
-            <span className={labelCls}>Premium payment years</span>
+            <span className={fieldLabelClassName}>Premium payment years</span>
             <input
               type="number"
               min={1}
@@ -184,13 +186,13 @@ export default function InsurancePolicyDetailsTab({
               onChange={(e) =>
                 onChange({ premiumYears: toNullableInt(e.target.value) })
               }
-              className={inputCls}
+              className={inputClassName}
             />
             <p className={helpCls}>Leave empty for ongoing.</p>
           </label>
           {!isTerm && (
             <label className="block">
-              <span className={labelCls}>Cost basis</span>
+              <span className={fieldLabelClassName}>Cost basis</span>
               <input
                 type="number"
                 min={0}
@@ -199,7 +201,7 @@ export default function InsurancePolicyDetailsTab({
                 onChange={(e) =>
                   onChange({ costBasis: toNumber(e.target.value) })
                 }
-                className={inputCls}
+                className={inputClassName}
               />
               <p className={helpCls}>
                 Cumulative premiums paid (reduces taxable gain on surrender).
@@ -214,7 +216,7 @@ export default function InsurancePolicyDetailsTab({
         <section className={sectionCls}>
           <h3 className={sectionTitleCls}>Cash value</h3>
           <label className="block">
-            <span className={labelCls}>Current cash value</span>
+            <span className={fieldLabelClassName}>Current cash value</span>
             <input
               type="number"
               min={0}
@@ -223,7 +225,7 @@ export default function InsurancePolicyDetailsTab({
               onChange={(e) =>
                 onChange({ cashValue: toNumber(e.target.value) })
               }
-              className={inputCls}
+              className={inputClassName}
             />
             <p className={helpCls}>Current cash surrender value.</p>
           </label>
@@ -236,7 +238,7 @@ export default function InsurancePolicyDetailsTab({
           <h3 className={sectionTitleCls}>Term policy</h3>
           <div className="flex flex-col gap-3">
             <label className="block max-w-xs">
-              <span className={labelCls}>Term issue year</span>
+              <span className={fieldLabelClassName}>Term issue year</span>
               <input
                 type="number"
                 min={1900}
@@ -245,14 +247,14 @@ export default function InsurancePolicyDetailsTab({
                 onChange={(e) =>
                   onChange({ termIssueYear: toNullableInt(e.target.value) })
                 }
-                className={inputCls}
+                className={inputClassName}
                 required
               />
             </label>
 
             <fieldset className="flex flex-col gap-2">
-              <legend className={labelCls}>Policy ends…</legend>
-              <label className="flex items-start gap-2 text-sm text-gray-200">
+              <legend className={fieldLabelClassName}>Policy ends…</legend>
+              <label className="flex items-start gap-2 text-sm text-ink-2">
                 <input
                   type="radio"
                   name="term-end-mode"
@@ -262,7 +264,7 @@ export default function InsurancePolicyDetailsTab({
                 />
                 <span>after a fixed number of years</span>
               </label>
-              <label className="flex items-start gap-2 text-sm text-gray-200">
+              <label className="flex items-start gap-2 text-sm text-ink-2">
                 <input
                   type="radio"
                   name="term-end-mode"
@@ -281,7 +283,7 @@ export default function InsurancePolicyDetailsTab({
 
             {state.endsAtInsuredRetirement === false && (
               <label className="block max-w-xs">
-                <span className={labelCls}>Term length (years)</span>
+                <span className={fieldLabelClassName}>Term length (years)</span>
                 <input
                   type="number"
                   min={1}
@@ -289,7 +291,7 @@ export default function InsurancePolicyDetailsTab({
                   onChange={(e) =>
                     onChange({ termLengthYears: toNullableInt(e.target.value) })
                   }
-                  className={inputCls}
+                  className={inputClassName}
                 />
               </label>
             )}
@@ -300,19 +302,19 @@ export default function InsurancePolicyDetailsTab({
       {/* ── Post-payout routing ────────────────────────────────────── */}
       <section className={sectionCls}>
         <h3 className={sectionTitleCls}>Post-payout routing</h3>
-        <p className="mb-3 text-xs text-gray-400">
+        <p className="mb-3 text-xs text-ink-3">
           When the policy pays out (death benefit for term, full surrender for
           permanent), cash flows here.
         </p>
         <div className={gridTwoCls}>
           <label className="block">
-            <span className={labelCls}>Merge into account</span>
+            <span className={fieldLabelClassName}>Merge into account</span>
             <select
               value={state.postPayoutMergeAccountId ?? ""}
               onChange={(e) =>
                 onChange({ postPayoutMergeAccountId: e.target.value || null })
               }
-              className={inputCls}
+              className={selectClassName}
             >
               <option value="">Grow at rate below</option>
               {postPayoutOptions.map((a) => (
@@ -323,7 +325,7 @@ export default function InsurancePolicyDetailsTab({
             </select>
           </label>
           <label className="block">
-            <span className={labelCls}>Growth rate</span>
+            <span className={fieldLabelClassName}>Growth rate</span>
             <input
               type="number"
               min={0}
@@ -334,7 +336,7 @@ export default function InsurancePolicyDetailsTab({
               onChange={(e) =>
                 onChange({ postPayoutGrowthRate: toNumber(e.target.value) })
               }
-              className={inputCls}
+              className={inputClassName}
             />
             <p className={helpCls}>
               Growth rate (as a decimal — 0.06 = 6%).

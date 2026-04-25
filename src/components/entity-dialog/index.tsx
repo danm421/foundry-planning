@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import TrustForm from "./trust-form";
 import BusinessForm from "./business-form";
 import { getEntityKind, type EntityDialogTab, type EntityKind } from "./types";
 import type { Entity } from "../family-view";
+import DialogShell from "../dialog-shell";
 
 export interface EntityDialogProps {
   clientId: string;
@@ -33,6 +35,11 @@ export default function EntityDialog({
   initialTab,
   lockTab,
 }: EntityDialogProps) {
+  const [submitState, setSubmitState] = useState<{ canSubmit: boolean; loading: boolean }>({
+    canSubmit: true,
+    loading: false,
+  });
+
   if (!open) return null;
 
   const kind: EntityKind = editing ? getEntityKind(editing.entityType) : (createKind ?? "trust");
@@ -42,41 +49,44 @@ export default function EntityDialog({
     : kind === "trust" ? "Add Trust" : "Add Business";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 w-full max-w-lg rounded-lg bg-gray-900 border border-gray-600 p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-100">{title}</h2>
-          <button
-            onClick={() => onOpenChange(false)}
-            className="text-gray-400 hover:text-gray-200"
-            aria-label="Close"
-          >
-            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-        {kind === "trust" ? (
-          <TrustForm
-            clientId={clientId}
-            editing={editing}
-            onSaved={onSaved}
-            onRequestDelete={onRequestDelete}
-            onClose={() => onOpenChange(false)}
-            initialTab={initialTab}
-            lockTab={lockTab}
-          />
-        ) : (
-          <BusinessForm
-            clientId={clientId}
-            editing={editing}
-            onSaved={onSaved}
-            onRequestDelete={onRequestDelete}
-            onClose={() => onOpenChange(false)}
-          />
-        )}
-      </div>
-    </div>
+    <DialogShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title={title}
+      size="md"
+      primaryAction={{
+        label: isEdit ? "Save Changes" : kind === "trust" ? "Add Trust" : "Add Business",
+        form: kind === "trust" ? "entity-trust-form" : "entity-business-form",
+        disabled: !submitState.canSubmit,
+        loading: submitState.loading,
+      }}
+      destructiveAction={
+        isEdit && onRequestDelete
+          ? { label: "Delete", onClick: onRequestDelete }
+          : undefined
+      }
+    >
+      {kind === "trust" ? (
+        <TrustForm
+          clientId={clientId}
+          editing={editing}
+          onSaved={onSaved}
+          onRequestDelete={onRequestDelete}
+          onClose={() => onOpenChange(false)}
+          initialTab={initialTab}
+          lockTab={lockTab}
+          onSubmitStateChange={setSubmitState}
+        />
+      ) : (
+        <BusinessForm
+          clientId={clientId}
+          editing={editing}
+          onSaved={onSaved}
+          onRequestDelete={onRequestDelete}
+          onClose={() => onOpenChange(false)}
+          onSubmitStateChange={setSubmitState}
+        />
+      )}
+    </DialogShell>
   );
 }

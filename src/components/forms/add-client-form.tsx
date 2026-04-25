@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName } from "./input-styles";
 
 export interface ClientFormInitial {
   id: string;
@@ -30,6 +31,7 @@ interface AddClientFormProps {
   initial?: ClientFormInitial;
   onSuccess?: () => void;
   onDelete?: () => void;
+  onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
 }
 
 function toDateInput(v: string | null | undefined): string {
@@ -38,12 +40,16 @@ function toDateInput(v: string | null | undefined): string {
   return String(v).slice(0, 10);
 }
 
-export default function AddClientForm({ mode = "create", initial, onSuccess, onDelete }: AddClientFormProps) {
+export default function AddClientForm({ mode = "create", initial, onSuccess, onSubmitStateChange }: AddClientFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSpouse, setShowSpouse] = useState(Boolean(initial?.spouseName || initial?.spouseDob));
   const [activeTab, setActiveTab] = useState<FormTab>("details");
+
+  useEffect(() => {
+    onSubmitStateChange?.({ canSubmit: !loading, loading });
+  }, [loading, onSubmitStateChange]);
 
   const isEdit = mode === "edit" && initial;
 
@@ -116,7 +122,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form id="add-client-form" onSubmit={handleSubmit} className="space-y-4">
       {error && (
         <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
       )}
@@ -133,7 +139,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
       <div role="tabpanel" hidden={activeTab !== "details"} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="firstName">
+          <label className={fieldLabelClassName} htmlFor="firstName">
             First Name <span className="text-red-500">*</span>
           </label>
           <input
@@ -142,12 +148,12 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
             type="text"
             required
             defaultValue={initial?.firstName ?? ""}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={`mt-1 ${inputClassName}`}
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="lastName">
+          <label className={fieldLabelClassName} htmlFor="lastName">
             Last Name <span className="text-red-500">*</span>
           </label>
           <input
@@ -156,12 +162,12 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
             type="text"
             required
             defaultValue={initial?.lastName ?? ""}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={`mt-1 ${inputClassName}`}
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="dateOfBirth">
+          <label className={fieldLabelClassName} htmlFor="dateOfBirth">
             Date of Birth <span className="text-red-500">*</span>
           </label>
           <input
@@ -171,12 +177,12 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
             required
             min="1910-01-01"
             defaultValue={toDateInput(initial?.dateOfBirth)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={`mt-1 ${inputClassName}`}
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="filingStatus">
+          <label className={fieldLabelClassName} htmlFor="filingStatus">
             Filing Status <span className="text-red-500">*</span>
           </label>
           <select
@@ -184,7 +190,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
             name="filingStatus"
             required
             defaultValue={initial?.filingStatus ?? "single"}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={`mt-1 ${selectClassName}`}
           >
             <option value="single">Single</option>
             <option value="married_joint">Married Filing Jointly</option>
@@ -194,7 +200,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="retirementAge">
+          <label className={fieldLabelClassName} htmlFor="retirementAge">
             Retirement Age <span className="text-red-500">*</span>
           </label>
           <input
@@ -205,12 +211,12 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
             max={85}
             defaultValue={initial?.retirementAge ?? 65}
             required
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={`mt-1 ${inputClassName}`}
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="lifeExpectancy">
+          <label className={fieldLabelClassName} htmlFor="lifeExpectancy">
             Life Expectancy <span className="text-red-500">*</span>
           </label>
           <input
@@ -221,7 +227,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
             max={120}
             defaultValue={initial?.lifeExpectancy ?? 95}
             required
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={`mt-1 ${inputClassName}`}
           />
           <p className="mt-1 text-[11px] text-gray-500">
             Plan horizon ends the year of the last spouse to die.
@@ -243,7 +249,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
         {showSpouse && (
           <div className="mt-3 grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="spouseName">
+              <label className={fieldLabelClassName} htmlFor="spouseName">
                 Spouse First Name
               </label>
               <input
@@ -251,12 +257,12 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
                 name="spouseName"
                 type="text"
                 defaultValue={initial?.spouseName ?? ""}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`mt-1 ${inputClassName}`}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="spouseLastName">
+              <label className={fieldLabelClassName} htmlFor="spouseLastName">
                 Spouse Last Name
               </label>
               <input
@@ -265,12 +271,12 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
                 type="text"
                 placeholder="Leave blank to inherit client's"
                 defaultValue={initial?.spouseLastName ?? ""}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`mt-1 ${inputClassName}`}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="spouseDob">
+              <label className={fieldLabelClassName} htmlFor="spouseDob">
                 Spouse Date of Birth
               </label>
               <input
@@ -279,12 +285,12 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
                 type="date"
                 min="1910-01-01"
                 defaultValue={toDateInput(initial?.spouseDob)}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`mt-1 ${inputClassName}`}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="spouseRetirementAge">
+              <label className={fieldLabelClassName} htmlFor="spouseRetirementAge">
                 Spouse Retirement Age
               </label>
               <input
@@ -294,12 +300,12 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
                 min={50}
                 max={85}
                 defaultValue={initial?.spouseRetirementAge ?? ""}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`mt-1 ${inputClassName}`}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="spouseLifeExpectancy">
+              <label className={fieldLabelClassName} htmlFor="spouseLifeExpectancy">
                 Spouse Life Expectancy
               </label>
               <input
@@ -309,7 +315,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
                 min={70}
                 max={120}
                 defaultValue={initial?.spouseLifeExpectancy ?? 95}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`mt-1 ${inputClassName}`}
               />
             </div>
           </div>
@@ -322,24 +328,24 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
           <h3 className="text-sm font-medium text-gray-300">Client</h3>
           <div className="mt-2 space-y-3">
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="email">Email</label>
+              <label className={fieldLabelClassName} htmlFor="email">Email</label>
               <input
                 id="email"
                 name="email"
                 type="email"
                 defaultValue={initial?.email ?? ""}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`mt-1 ${inputClassName}`}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="address">Address</label>
+              <label className={fieldLabelClassName} htmlFor="address">Address</label>
               <textarea
                 id="address"
                 name="address"
                 rows={2}
                 defaultValue={initial?.address ?? ""}
                 placeholder="Street, City, State ZIP"
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={`mt-1 ${textareaClassName}`}
               />
             </div>
           </div>
@@ -350,24 +356,24 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
             <h3 className="text-sm font-medium text-gray-300">Spouse</h3>
             <div className="mt-2 space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="spouseEmail">Spouse Email</label>
+                <label className={fieldLabelClassName} htmlFor="spouseEmail">Spouse Email</label>
                 <input
                   id="spouseEmail"
                   name="spouseEmail"
                   type="email"
                   defaultValue={initial?.spouseEmail ?? ""}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className={`mt-1 ${inputClassName}`}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="spouseAddress">Spouse Address</label>
+                <label className={fieldLabelClassName} htmlFor="spouseAddress">Spouse Address</label>
                 <textarea
                   id="spouseAddress"
                   name="spouseAddress"
                   rows={2}
                   defaultValue={initial?.spouseAddress ?? ""}
                   placeholder="Leave blank if same as client"
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className={`mt-1 ${textareaClassName}`}
                 />
               </div>
             </div>
@@ -378,26 +384,6 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onD
         )}
       </div>
 
-      <div className="flex items-center justify-between pt-2">
-        {isEdit && onDelete ? (
-          <button
-            type="button"
-            onClick={onDelete}
-            className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/60"
-          >
-            Delete Client…
-          </button>
-        ) : (
-          <span />
-        )}
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {loading ? "Saving…" : isEdit ? "Save Changes" : "Create Client"}
-        </button>
-      </div>
     </form>
   );
 }

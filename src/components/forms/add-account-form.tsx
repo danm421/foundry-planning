@@ -28,6 +28,7 @@ import DeductibleContributionCheckbox, {
 import ContributionCapCheckbox, {
   supportsContributionCap,
 } from "./contribution-cap-checkbox";
+import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -109,6 +110,9 @@ interface AddAccountFormProps {
   lockTab?: boolean;
   onSuccess?: () => void;
   onDelete?: () => void;
+  /** Called whenever submit-button state changes. Used by DialogShell to drive
+   *  the footer button's disabled / loading visuals. */
+  onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
 }
 
 const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
@@ -198,7 +202,8 @@ export default function AddAccountForm({
   initialTab,
   lockTab,
   onSuccess,
-  onDelete,
+  onDelete, // eslint-disable-line @typescript-eslint/no-unused-vars -- used by parent shell (Task 6)
+  onSubmitStateChange,
 }: AddAccountFormProps) {
   const clientLabel = ownerNames?.clientName ?? "Client";
   const spouseLabel = ownerNames?.spouseName ?? null;
@@ -226,6 +231,16 @@ export default function AddAccountForm({
   }, [clientId, initial?.id, isEdit]);
 
   const [loading, setLoading] = useState(false);
+
+  // Lift submit-button state into the parent dialog so DialogShell can drive
+  // the footer primary button's disabled/loading visuals.
+  useEffect(() => {
+    onSubmitStateChange?.({
+      canSubmit: !loading,
+      loading,
+    });
+  }, [loading, onSubmitStateChange]);
+
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState<AccountCategory>(
     initial?.category ?? defaultCategory ?? "taxable"
@@ -548,7 +563,7 @@ export default function AddAccountForm({
 
   return (
     <>
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form id="add-account-form" onSubmit={handleSubmit} className="space-y-4">
       {error && (
         <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
       )}
@@ -625,7 +640,7 @@ export default function AddAccountForm({
       <div className={activeTab !== "details" ? "hidden" : ""}>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300" htmlFor="name">
+            <label className={fieldLabelClassName} htmlFor="name">
               Account Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -639,13 +654,13 @@ export default function AddAccountForm({
                 setUserEditedName(true);
               }}
               placeholder="e.g., Fidelity Brokerage"
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={inputClassName}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="category">
+              <label className={fieldLabelClassName} htmlFor="category">
                 Category <span className="text-red-500">*</span>
               </label>
               <select
@@ -668,7 +683,7 @@ export default function AddAccountForm({
                     setActiveTab("details");
                   }
                 }}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={selectClassName}
               >
                 {(Object.keys(CATEGORY_LABELS) as AccountCategory[]).map((cat) => (
                   <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>
@@ -677,7 +692,7 @@ export default function AddAccountForm({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="subType">
+              <label className={fieldLabelClassName} htmlFor="subType">
                 Account Type
               </label>
               <select
@@ -689,7 +704,7 @@ export default function AddAccountForm({
                   setSubType(newSub);
                   setRmdEnabled(RMD_ELIGIBLE_SUB_TYPES.has(newSub));
                 }}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={selectClassName}
               >
                 {subTypes.map((t) => (
                   <option key={t} value={t}>
@@ -700,7 +715,7 @@ export default function AddAccountForm({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="owner">
+              <label className={fieldLabelClassName} htmlFor="owner">
                 Owner
               </label>
               <select
@@ -711,7 +726,7 @@ export default function AddAccountForm({
                   if (v.startsWith("ind:")) setOwnerChoice({ kind: "individual", value: v.slice(4) });
                   else if (v.startsWith("ent:")) setOwnerChoice({ kind: "entity", value: v.slice(4) });
                 }}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={selectClassName}
               >
                 <option value="ind:client">{clientLabel}</option>
                 <option value="ind:spouse" disabled={!spouseLabel}>
@@ -733,11 +748,11 @@ export default function AddAccountForm({
 
             {isInvestable ? (
               <div>
-                <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
+                <label className={fieldLabelClassName}>Growth Rate</label>
                 <select
                   value={growthSource === "model_portfolio" ? `mp:${modelPortfolioId}` : growthSource}
                   onChange={(e) => handleGrowthSourceChange(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className={selectClassName}
                 >
                   <option value="default">
                     Use category default{catDefaultSource?.portfolioName ? ` — ${catDefaultSource.portfolioName}` : ""}{defaultPctForCategory !== null ? ` (${defaultPctForCategory}%)` : ""}
@@ -768,27 +783,27 @@ export default function AddAccountForm({
                       id="growthRate"
                       name="growthRate"
                       defaultValue={hasExplicitGrowth ? initialGrowthPct : 7}
-                      className="block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className={inputClassName}
                     />
                   </div>
                 )}
               </div>
             ) : (
               <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="growthRate">
+                <label className={fieldLabelClassName} htmlFor="growthRate">
                   Growth Rate (%)
                 </label>
                 <PercentInput
                   id="growthRate"
                   name="growthRate"
                   defaultValue={initialGrowthPct}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className={inputClassName}
                 />
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="value">
+              <label className={fieldLabelClassName} htmlFor="value">
                 Current Value ($)
               </label>
               <CurrencyInput
@@ -799,12 +814,12 @@ export default function AddAccountForm({
                   setAccountValue(raw);
                   if (!userEditedBasis) setAccountBasis(raw);
                 }}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={inputClassName}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="basis">
+              <label className={fieldLabelClassName} htmlFor="basis">
                 Cost Basis ($)
               </label>
               <CurrencyInput
@@ -815,7 +830,7 @@ export default function AddAccountForm({
                   setAccountBasis(raw);
                   setUserEditedBasis(true);
                 }}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={inputClassName}
               />
             </div>
           </div>
@@ -824,25 +839,25 @@ export default function AddAccountForm({
             <>
               <h4 className="col-span-2 mt-2 text-sm font-medium text-gray-400">Real Estate Details</h4>
               <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="annualPropertyTax">
+                <label className={fieldLabelClassName} htmlFor="annualPropertyTax">
                   Annual Property Tax ($)
                 </label>
                 <CurrencyInput
                   id="annualPropertyTax"
                   value={annualPropertyTax}
                   onChange={(raw) => setAnnualPropertyTax(raw)}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className={inputClassName}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="propertyTaxGrowthRate">
+                <label className={fieldLabelClassName} htmlFor="propertyTaxGrowthRate">
                   Property Tax Growth Rate (%)
                 </label>
                 <PercentInput
                   id="propertyTaxGrowthRate"
                   value={propertyTaxGrowthRate}
                   onChange={(raw) => setPropertyTaxGrowthRate(raw)}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className={inputClassName}
                 />
               </div>
             </>
@@ -914,7 +929,7 @@ export default function AddAccountForm({
                 />
               ) : (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="savingsStartYear">
+                  <label className={fieldLabelClassName} htmlFor="savingsStartYear">
                     Start Year
                   </label>
                   <input
@@ -926,7 +941,7 @@ export default function AddAccountForm({
                       setSavingsStartYear(Number(e.target.value));
                       setSavingsStartYearRef(null);
                     }}
-                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className={inputClassName}
                   />
                 </div>
               )}
@@ -949,7 +964,7 @@ export default function AddAccountForm({
                 />
               ) : (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="savingsEndYear">
+                  <label className={fieldLabelClassName} htmlFor="savingsEndYear">
                     End Year
                   </label>
                   <input
@@ -961,13 +976,13 @@ export default function AddAccountForm({
                       setSavingsEndYear(Number(e.target.value));
                       setSavingsEndYearRef(null);
                     }}
-                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className={inputClassName}
                   />
                 </div>
               )}
 
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-300">Growth</label>
+                <label className={fieldLabelClassName}>Growth</label>
                 <div className="mt-1">
                   <GrowthSourceRadio
                     value={savingsGrowthSource}
@@ -1022,38 +1037,38 @@ export default function AddAccountForm({
             </p>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300">Ordinary Income %</label>
+                <label className={fieldLabelClassName}>Ordinary Income %</label>
                 <PercentInput name="overridePctOi"
                   defaultValue={initial?.overridePctOi ? (Number(initial.overridePctOi) * 100).toFixed(2) : ""}
                   placeholder="From portfolio"
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  className={inputClassName} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300">LT Capital Gains %</label>
+                <label className={fieldLabelClassName}>LT Capital Gains %</label>
                 <PercentInput name="overridePctLtCg"
                   defaultValue={initial?.overridePctLtCg ? (Number(initial.overridePctLtCg) * 100).toFixed(2) : ""}
                   placeholder="From portfolio"
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  className={inputClassName} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300">Qualified Dividends %</label>
+                <label className={fieldLabelClassName}>Qualified Dividends %</label>
                 <PercentInput name="overridePctQdiv"
                   defaultValue={initial?.overridePctQdiv ? (Number(initial.overridePctQdiv) * 100).toFixed(2) : ""}
                   placeholder="From portfolio"
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  className={inputClassName} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300">Tax-Exempt %</label>
+                <label className={fieldLabelClassName}>Tax-Exempt %</label>
                 <PercentInput name="overridePctTaxExempt"
                   defaultValue={initial?.overridePctTaxExempt ? (Number(initial.overridePctTaxExempt) * 100).toFixed(2) : ""}
                   placeholder="From portfolio"
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  className={inputClassName} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300">Turnover %</label>
+                <label className={fieldLabelClassName}>Turnover %</label>
                 <PercentInput name="turnoverPct"
                   defaultValue={initial?.turnoverPct ? (Number(initial.turnoverPct) * 100).toFixed(2) : "0"}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  className={inputClassName} />
                 <p className="mt-1 text-xs text-gray-500">Portion of LT CG realized as short-term each year.</p>
               </div>
             </div>
@@ -1088,28 +1103,6 @@ export default function AddAccountForm({
         )}
       </div>
 
-      {!lockTab && (
-      <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
-        {isEdit && onDelete && !initial?.isDefaultChecking ? (
-          <button
-            type="button"
-            onClick={onDelete}
-            className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/60"
-          >
-            Delete…
-          </button>
-        ) : (
-          <span />
-        )}
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Account"}
-        </button>
-      </div>
-      )}
     </form>
 
     {isEdit && srDialogOpen && (

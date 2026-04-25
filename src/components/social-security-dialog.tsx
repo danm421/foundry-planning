@@ -5,6 +5,8 @@ import type { Income, ClientInfo, PlanSettings } from "@/engine/types";
 import { fraForBirthDate } from "@/engine/socialSecurity/fra";
 import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
+import DialogShell from "./dialog-shell";
+import { inputClassName, selectClassName, fieldLabelClassName } from "./forms/input-styles";
 
 type SsBenefitMode = "pia_at_fra" | "manual_amount" | "no_benefit";
 type ClaimAgeMode = "fra" | "at_retirement" | "years";
@@ -160,31 +162,30 @@ export function SocialSecurityDialog({
   const fraDisabled = !ownerDob;
   const retirementDisabled = ownerRetirementAge == null;
 
-  const inputClass = "w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
-  const selectClass = "rounded border border-gray-700 bg-gray-800 px-2 py-1 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg rounded-lg bg-gray-900 border border-gray-600 p-6 shadow-xl">
-        <h2 className="text-lg font-semibold text-gray-100 mb-4">Edit {firstName}&apos;s Social Security</h2>
-
+    <DialogShell
+      open={true}
+      onOpenChange={(o) => { if (!o) onClose(); }}
+      title={`Edit ${firstName}'s Social Security`}
+      size="md"
+      primaryAction={{ label: "Save", onClick: handleSave }}
+    >
         {fraDisplay && (
-          <p className="text-xs text-gray-400 mb-4">{fraDisplay}</p>
+          <p className="text-[12px] text-ink-3 mb-4">{fraDisplay}</p>
         )}
 
         {/* Benefit mode */}
         <fieldset className="mb-4">
-          <legend className="text-sm font-medium text-gray-200 mb-2">Benefit mode</legend>
-          <label className="block text-sm text-gray-200 mb-1">
+          <legend className="text-[12px] font-medium text-ink-2 mb-2">Benefit mode</legend>
+          <label className="block text-[14px] text-ink-2 mb-1">
             <input type="radio" checked={ssBenefitMode === "pia_at_fra"} onChange={() => setSsBenefitMode("pia_at_fra")} className="mr-2" />
             Primary Insurance Amount (PIA)
           </label>
-          <label className="block text-sm text-gray-200 mb-1">
+          <label className="block text-[14px] text-ink-2 mb-1">
             <input type="radio" checked={ssBenefitMode === "manual_amount"} onChange={() => setSsBenefitMode("manual_amount")} className="mr-2" />
             Annual benefit amount
           </label>
-          <label className="block text-sm text-gray-200 mb-1">
+          <label className="block text-[14px] text-ink-2 mb-1">
             <input type="radio" checked={ssBenefitMode === "no_benefit"} onChange={() => setSsBenefitMode("no_benefit")} className="mr-2" />
             No Benefit
           </label>
@@ -193,30 +194,30 @@ export function SocialSecurityDialog({
         {/* Conditional amount input */}
         {ssBenefitMode === "pia_at_fra" && (
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-300 mb-1">Monthly PIA</label>
+            <label className={fieldLabelClassName}>Monthly PIA</label>
             <input
               type="number"
               value={piaMonthly}
               onChange={(e) => setPiaMonthly(e.target.value)}
               placeholder="e.g. 2800"
-              className={inputClass}
+              className={inputClassName}
             />
-            <p className="text-xs text-gray-400 mt-1">From your SSA statement — monthly benefit at FRA.</p>
+            <p className="text-[12px] text-ink-3 mt-1">From your SSA statement — monthly benefit at FRA.</p>
           </div>
         )}
         {ssBenefitMode === "manual_amount" && (
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-300 mb-1">Annual benefit amount</label>
+            <label className={fieldLabelClassName}>Annual benefit amount</label>
             <input
               type="number"
               value={annualAmount}
               onChange={(e) => setAnnualAmount(e.target.value)}
-              className={inputClass}
+              className={inputClassName}
             />
           </div>
         )}
         {ssBenefitMode === "no_benefit" && (
-          <p className="text-sm text-gray-400 italic mb-4">
+          <p className="text-[14px] text-ink-3 italic mb-4">
             This person will receive no Social Security benefit in the projection.
           </p>
         )}
@@ -224,8 +225,8 @@ export function SocialSecurityDialog({
         {/* Claim age mode */}
         {ssBenefitMode !== "no_benefit" && (
           <fieldset className="mb-4">
-            <legend className="text-sm font-medium text-gray-200 mb-2">Claim age</legend>
-            <label className="block text-sm text-gray-200 mb-1" title={fraDisabled ? "Set date of birth to use FRA" : undefined}>
+            <legend className="text-[12px] font-medium text-ink-2 mb-2">Claim age</legend>
+            <label className="block text-[14px] text-ink-2 mb-1" title={fraDisabled ? "Set date of birth to use FRA" : undefined}>
               <input
                 type="radio"
                 disabled={fraDisabled}
@@ -235,7 +236,7 @@ export function SocialSecurityDialog({
               />
               Full Retirement Age
             </label>
-            <label className="block text-sm text-gray-200 mb-1" title={retirementDisabled ? "Set retirement age to use this option" : undefined}>
+            <label className="block text-[14px] text-ink-2 mb-1" title={retirementDisabled ? "Set retirement age to use this option" : undefined}>
               <input
                 type="radio"
                 disabled={retirementDisabled}
@@ -245,7 +246,7 @@ export function SocialSecurityDialog({
               />
               At Retirement{ownerRetirementAge != null ? ` (${ownerRetirementAge})` : ""}
             </label>
-            <label className="block text-sm text-gray-200 mb-1">
+            <label className="block text-[14px] text-ink-2 mb-1">
               <input
                 type="radio"
                 checked={claimingAgeMode === "years"}
@@ -259,7 +260,7 @@ export function SocialSecurityDialog({
                 <select
                   value={claimingAge}
                   onChange={(e) => setClaimingAge(parseInt(e.target.value, 10))}
-                  className={selectClass}
+                  className={selectClassName}
                 >
                   {[62, 63, 64, 65, 66, 67, 68, 69, 70].map((y) => (
                     <option key={y} value={y}>{y} years</option>
@@ -268,7 +269,7 @@ export function SocialSecurityDialog({
                 <select
                   value={claimingAgeMonths}
                   onChange={(e) => setClaimingAgeMonths(parseInt(e.target.value, 10))}
-                  className={selectClass}
+                  className={selectClassName}
                 >
                   {Array.from({ length: 12 }, (_, i) => (
                     <option key={i} value={i}>{i} months</option>
@@ -282,30 +283,23 @@ export function SocialSecurityDialog({
         {/* COLA */}
         {ssBenefitMode !== "no_benefit" && (
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-300 mb-1">Annual COLA %</label>
+            <label className={fieldLabelClassName}>Annual COLA %</label>
             <input
               type="number"
               step="0.5"
               value={growthRate}
               onChange={(e) => setGrowthRate(e.target.value)}
-              className={`${inputClass} w-32`}
+              className={`${inputClassName} w-32`}
             />
           </div>
         )}
 
         {/* Preview */}
         {preview != null && (
-          <p className="text-sm text-gray-300 mb-4">
+          <p className="text-[14px] text-ink-2 mb-4">
             Estimated first-year benefit: ${preview.toLocaleString()}
           </p>
         )}
-
-        {/* Buttons */}
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="rounded border border-gray-600 bg-gray-800 px-3 py-1 text-sm text-gray-200 hover:bg-gray-700">Cancel</button>
-          <button onClick={handleSave} className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-500">Save</button>
-        </div>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

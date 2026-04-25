@@ -15,6 +15,7 @@ import { BeneficiarySelect } from "./beneficiary-select";
 import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
 import type { EntityFormCommonProps } from "./types";
+import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName } from "../forms/input-styles";
 
 const TRUST_SUB_TYPE_LABELS: Record<TrustSubType, string> = {
   revocable: "Revocable",
@@ -36,17 +37,25 @@ const TRUST_ENTITY_TYPE_LABELS: Record<TrustEntityType, string> = {
   foundation: "Foundation",
 };
 
+interface TrustFormProps extends EntityFormCommonProps {
+  onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
+}
+
 export default function TrustForm({
   clientId,
   editing,
   onSaved,
-  onRequestDelete,
   onClose,
   initialTab,
   lockTab,
-}: EntityFormCommonProps) {
+  onSubmitStateChange,
+}: TrustFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onSubmitStateChange?.({ canSubmit: !loading, loading });
+  }, [loading, onSubmitStateChange]);
   const [entityType, setEntityType] = useState<TrustEntityType>(
     (editing?.entityType as TrustEntityType | undefined) ?? "trust",
   );
@@ -252,15 +261,15 @@ export default function TrustForm({
   return (
     <div>
       {entityType === "trust" && (
-        <div className="flex border-b border-gray-700 mb-4">
+        <div className="flex border-b border-hair mb-4">
           {!lockTab && (
             <button
               type="button"
               onClick={() => setActiveTab("details")}
-              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+              className={`px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] border-b-2 -mb-px transition-colors ${
                 activeTab === "details"
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-400 hover:text-gray-200"
+                  ? "text-accent-ink border-accent"
+                  : "text-ink-3 hover:text-ink-2 border-transparent"
               }`}
             >
               Details
@@ -272,10 +281,10 @@ export default function TrustForm({
               setActiveTab("beneficiaries");
               void loadBeneficiariesData();
             }}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+            className={`px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] border-b-2 -mb-px transition-colors ${
               activeTab === "beneficiaries"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-400 hover:text-gray-200"
+                ? "text-accent-ink border-accent"
+                : "text-ink-3 hover:text-ink-2 border-transparent"
             }`}
           >
             Beneficiaries
@@ -285,12 +294,12 @@ export default function TrustForm({
 
       {!lockTab && (
       <div className={activeTab !== "details" ? "hidden" : ""}>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id="entity-trust-form" onSubmit={handleSubmit} className="space-y-4">
           {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
 
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2">
-          <label className="block text-sm font-medium text-gray-300" htmlFor="ent-name">
+          <label className={fieldLabelClassName} htmlFor="ent-name">
             Name <span className="text-red-500">*</span>
           </label>
           <input
@@ -300,18 +309,18 @@ export default function TrustForm({
             required
             defaultValue={editing?.name ?? ""}
             placeholder="e.g., Smith Family Trust"
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={inputClassName}
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="ent-type">Type</label>
+          <label className={fieldLabelClassName} htmlFor="ent-type">Type</label>
           <select
             id="ent-type"
             name="entityType"
             value={entityType}
             onChange={(e) => setEntityType(e.target.value as TrustEntityType)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={selectClassName}
           >
             {Object.entries(TRUST_ENTITY_TYPE_LABELS).map(([v, l]) => (
               <option key={v} value={v}>{l}</option>
@@ -322,7 +331,7 @@ export default function TrustForm({
 
       <div className="space-y-3">
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="ent-grantor">
+          <label className={fieldLabelClassName} htmlFor="ent-grantor">
             Grantor
           </label>
           <select
@@ -330,7 +339,7 @@ export default function TrustForm({
             name="grantor"
             value={grantor}
             onChange={(e) => setGrantor(e.target.value as "client" | "spouse" | "")}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={selectClassName}
           >
             <option value="">Third party (none)</option>
             <option value="client">Client</option>
@@ -351,14 +360,14 @@ export default function TrustForm({
       {entityType === "trust" && (
         <div className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-300" htmlFor="ent-subtype">
+            <label className={fieldLabelClassName} htmlFor="ent-subtype">
               Sub-type
             </label>
             <select
               id="ent-subtype"
               value={trustSubType}
               onChange={(e) => setTrustSubType(e.target.value as TrustSubType | "")}
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={selectClassName}
             >
               <option value="" disabled>— select sub-type —</option>
               {Object.entries(TRUST_SUB_TYPE_LABELS).map(([v, l]) => (
@@ -375,7 +384,7 @@ export default function TrustForm({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300" htmlFor="ent-trustee">
+            <label className={fieldLabelClassName} htmlFor="ent-trustee">
               Trustee
             </label>
             <input
@@ -384,7 +393,7 @@ export default function TrustForm({
               value={trustee}
               onChange={(e) => setTrustee(e.target.value)}
               placeholder="e.g., Linda, or Fidelity Trust Co."
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={inputClassName}
             />
             <p className="mt-1 text-[11px] text-gray-500">
               Free text. Separate co-trustees with commas.
@@ -392,7 +401,7 @@ export default function TrustForm({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300" htmlFor="ent-exemption">
+            <label className={fieldLabelClassName} htmlFor="ent-exemption">
               Opening balance (legacy) ($)
             </label>
             <input
@@ -402,7 +411,7 @@ export default function TrustForm({
               min="0"
               value={exemptionConsumed}
               onChange={(e) => setExemptionConsumed(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={inputClassName}
             />
             <p className="mt-1 text-[11px] text-gray-500">
               Historical exemption already used before you started tracking individual gifts. Gifts added below stack on top.
@@ -412,13 +421,13 @@ export default function TrustForm({
       )}
 
       <div>
-        <label className="block text-sm font-medium text-gray-300" htmlFor="ent-notes">Notes</label>
+        <label className={fieldLabelClassName} htmlFor="ent-notes">Notes</label>
         <textarea
           id="ent-notes"
           name="notes"
           rows={2}
           defaultValue={editing?.notes ?? ""}
-          className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className={textareaClassName}
         />
       </div>
 
@@ -498,7 +507,7 @@ export default function TrustForm({
             {distributionMode === "fixed" && (
               <div>
                 <label
-                  className="block text-sm font-medium text-gray-300"
+                  className={fieldLabelClassName}
                   htmlFor="dist-amount"
                 >
                   Annual amount
@@ -507,7 +516,6 @@ export default function TrustForm({
                   id="dist-amount"
                   value={distributionAmount}
                   onChange={setDistributionAmount}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
             )}
@@ -515,7 +523,7 @@ export default function TrustForm({
             {(distributionMode === "pct_liquid" || distributionMode === "pct_income") && (
               <div>
                 <label
-                  className="block text-sm font-medium text-gray-300"
+                  className={fieldLabelClassName}
                   htmlFor="dist-percent"
                 >
                   Annual percent
@@ -524,7 +532,6 @@ export default function TrustForm({
                   id="dist-percent"
                   value={distributionPercent}
                   onChange={setDistributionPercent}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
             )}
@@ -532,7 +539,7 @@ export default function TrustForm({
             {distributionMode !== null && (
               <div>
                 <label
-                  className="block text-sm font-medium text-gray-300"
+                  className={fieldLabelClassName}
                   htmlFor="dist-beneficiary"
                 >
                   Beneficiary
@@ -549,26 +556,6 @@ export default function TrustForm({
           </div>
         )}
 
-      <div className="flex items-center justify-between pt-2">
-        {isEdit && onRequestDelete ? (
-          <button
-            type="button"
-            onClick={onRequestDelete}
-            className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/60"
-          >
-            Delete…
-          </button>
-        ) : (
-          <span />
-        )}
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {loading ? "Saving…" : isEdit ? "Save Changes" : "Add"}
-        </button>
-      </div>
         </form>
       </div>
       )}

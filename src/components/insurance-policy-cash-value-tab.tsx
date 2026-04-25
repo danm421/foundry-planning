@@ -20,7 +20,7 @@ export default function InsurancePolicyCashValueTab({
   if (policyType === "term") {
     return (
       <div className="py-6">
-        <div className="rounded-md border border-gray-700 bg-gray-800/40 px-4 py-3 text-sm text-gray-400">
+        <div className="rounded-md border border-hair bg-card-2 px-4 py-3 text-sm text-ink-3">
           Term policies have no cash value.
         </div>
       </div>
@@ -30,11 +30,11 @@ export default function InsurancePolicyCashValueTab({
   return (
     <div className="space-y-4 py-4">
       <fieldset>
-        <legend className="mb-2 text-xs font-medium text-gray-300">
+        <legend className="mb-2 text-xs font-medium text-ink-3">
           Cash value growth
         </legend>
         <div className="space-y-2">
-          <label className="flex items-start gap-2 text-sm text-gray-200">
+          <label className="flex items-start gap-2 text-sm text-ink-2">
             <input
               type="radio"
               name="cashValueGrowthMode"
@@ -47,7 +47,7 @@ export default function InsurancePolicyCashValueTab({
               <span className="block">Basic (default growth rate)</span>
             </span>
           </label>
-          <label className="flex items-start gap-2 text-sm text-gray-200">
+          <label className="flex items-start gap-2 text-sm text-ink-2">
             <input
               type="radio"
               name="cashValueGrowthMode"
@@ -64,7 +64,7 @@ export default function InsurancePolicyCashValueTab({
       </fieldset>
 
       {mode === "basic" ? (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-ink-4">
           Cash value grows at the default life-insurance growth rate configured
           in plan settings. Switch to free-form mode if you need to specify
           exact values per year.

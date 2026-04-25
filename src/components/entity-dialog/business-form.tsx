@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Entity } from "../family-view";
 import type { EntityFormCommonProps } from "./types";
+import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName } from "../forms/input-styles";
 
 type BusinessEntityType = "llc" | "s_corp" | "c_corp" | "partnership" | "other";
 
@@ -14,15 +15,23 @@ const BUSINESS_ENTITY_TYPE_LABELS: Record<BusinessEntityType, string> = {
   other: "Other",
 };
 
+interface BusinessFormProps extends EntityFormCommonProps {
+  onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
+}
+
 export default function BusinessForm({
   clientId,
   editing,
   onSaved,
-  onRequestDelete,
   onClose,
-}: EntityFormCommonProps) {
+  onSubmitStateChange,
+}: BusinessFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onSubmitStateChange?.({ canSubmit: !loading, loading });
+  }, [loading, onSubmitStateChange]);
   const [entityType, setEntityType] = useState<BusinessEntityType>(
     (editing?.entityType as BusinessEntityType | undefined) ?? "llc",
   );
@@ -76,12 +85,12 @@ export default function BusinessForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form id="entity-business-form" onSubmit={handleSubmit} className="space-y-4">
       {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
 
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2">
-          <label className="block text-sm font-medium text-gray-300" htmlFor="ent-name">
+          <label className={fieldLabelClassName} htmlFor="ent-name">
             Name <span className="text-red-500">*</span>
           </label>
           <input
@@ -91,18 +100,18 @@ export default function BusinessForm({
             required
             defaultValue={editing?.name ?? ""}
             placeholder="e.g., Smith Family Trust"
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={inputClassName}
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="ent-type">Type</label>
+          <label className={fieldLabelClassName} htmlFor="ent-type">Type</label>
           <select
             id="ent-type"
             name="entityType"
             value={entityType}
             onChange={(e) => setEntityType(e.target.value as BusinessEntityType)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={selectClassName}
           >
             {Object.entries(BUSINESS_ENTITY_TYPE_LABELS).map(([v, l]) => (
               <option key={v} value={v}>{l}</option>
@@ -113,7 +122,7 @@ export default function BusinessForm({
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="ent-value">
+          <label className={fieldLabelClassName} htmlFor="ent-value">
             Value ($)
           </label>
           <input
@@ -123,7 +132,7 @@ export default function BusinessForm({
             min="0"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={inputClassName}
           />
           <p className="mt-1 text-[11px] text-gray-500">
             Shown as an out-of-estate asset on the balance sheet.
@@ -131,14 +140,14 @@ export default function BusinessForm({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="ent-owner">
+          <label className={fieldLabelClassName} htmlFor="ent-owner">
             Owner
           </label>
           <select
             id="ent-owner"
             value={owner}
             onChange={(e) => setOwner(e.target.value as typeof owner)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={selectClassName}
           >
             <option value="">—</option>
             <option value="client">Client</option>
@@ -149,13 +158,13 @@ export default function BusinessForm({
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-300" htmlFor="ent-notes">Notes</label>
+        <label className={fieldLabelClassName} htmlFor="ent-notes">Notes</label>
         <textarea
           id="ent-notes"
           name="notes"
           rows={2}
           defaultValue={editing?.notes ?? ""}
-          className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className={textareaClassName}
         />
       </div>
 
@@ -193,26 +202,6 @@ export default function BusinessForm({
         </label>
       </div>
 
-      <div className="flex items-center justify-between pt-2">
-        {isEdit && onRequestDelete ? (
-          <button
-            type="button"
-            onClick={onRequestDelete}
-            className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/60"
-          >
-            Delete…
-          </button>
-        ) : (
-          <span />
-        )}
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {loading ? "Saving…" : isEdit ? "Save Changes" : "Add"}
-        </button>
-      </div>
     </form>
   );
 }

@@ -2,6 +2,7 @@
 
 import { forwardRef, useState, useEffect, useRef } from "react";
 import type { InputHTMLAttributes } from "react";
+import { inputClassName } from "./forms/input-styles";
 
 interface CurrencyInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "defaultValue" | "onChange"> {
@@ -61,11 +62,10 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
     };
 
     const display = formatDisplay(raw);
-    const leftPad = display ? "pl-6" : "pl-3";
 
     return (
       <div className="relative">
-        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
           $
         </span>
         <input
@@ -80,7 +80,7 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
           value={display}
           onChange={handleChange}
           placeholder={placeholder}
-          className={`${className ?? ""} ${leftPad}`}
+          className={`${inputClassName} pl-7 ${className ?? ""}`}
         />
         {name && <input type="hidden" name={name} value={raw} />}
       </div>

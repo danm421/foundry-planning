@@ -24,6 +24,8 @@ import DeductibleContributionCheckbox, {
 import ContributionCapCheckbox, {
   supportsContributionCap,
 } from "./contribution-cap-checkbox";
+import DialogShell from "@/components/dialog-shell";
+import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -178,8 +180,6 @@ export default function SavingsRuleDialog({
     editing?.applyContributionLimit ?? true
   );
 
-  if (!open) return null;
-
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
@@ -249,28 +249,38 @@ export default function SavingsRuleDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg border border-gray-600 bg-gray-900 p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-100">{isEdit ? "Edit Savings Rule" : "Add Savings Rule"}</h2>
-          <button onClick={() => onOpenChange(false)} className="text-gray-400 hover:text-gray-200">
-            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="mb-4 flex border-b border-gray-700">
-          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Details</button>
-          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Schedule</button>
-        </div>
-
-        {activeTab === "details" && (<form onSubmit={handleSubmit} className="space-y-4">
-          {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
+    <DialogShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isEdit ? "Edit Savings Rule" : "Add Savings Rule"}
+      size="md"
+      tabs={[
+        { id: "details", label: "Details" },
+        { id: "schedule", label: "Schedule" },
+      ]}
+      activeTab={activeTab}
+      onTabChange={(id) => setActiveTab(id as SavTabId)}
+      primaryAction={activeTab === "details" ? {
+        label: isEdit ? "Save Changes" : "Add Rule",
+        form: "savings-rule-form",
+        loading: loading,
+        disabled: loading,
+      } : undefined}
+      destructiveAction={activeTab === "details" && isEdit && onRequestDelete ? {
+        label: "Delete…",
+        onClick: onRequestDelete,
+      } : undefined}
+    >
+      {activeTab === "details" && (
+        <form id="savings-rule-form" onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <p className="rounded border border-crit/40 bg-crit/10 px-3 py-2 text-[13px] text-crit">
+              {error}
+            </p>
+          )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-300" htmlFor="sr-account">
+            <label className={fieldLabelClassName} htmlFor="sr-account">
               Account <span className="text-red-500">*</span>
             </label>
             <select
@@ -279,7 +289,7 @@ export default function SavingsRuleDialog({
               required
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={selectClassName}
             >
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>{a.name}</option>
@@ -322,7 +332,7 @@ export default function SavingsRuleDialog({
               </div>
             )}
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
+              <label className={fieldLabelClassName}>Growth Rate</label>
               <div className="mt-1">
                 <GrowthSourceRadio
                   value={growthSource}
@@ -361,7 +371,7 @@ export default function SavingsRuleDialog({
               />
             ) : (
               <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="sr-start">
+                <label className={fieldLabelClassName} htmlFor="sr-start">
                   Start Year <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -374,7 +384,7 @@ export default function SavingsRuleDialog({
                     setStartYear(Number(e.target.value));
                     setStartYearRef(null);
                   }}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className={inputClassName}
                 />
               </div>
             )}
@@ -396,7 +406,7 @@ export default function SavingsRuleDialog({
               />
             ) : (
               <div>
-                <label className="block text-sm font-medium text-gray-300" htmlFor="sr-end">
+                <label className={fieldLabelClassName} htmlFor="sr-end">
                   End Year <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -409,60 +419,39 @@ export default function SavingsRuleDialog({
                     setEndYear(Number(e.target.value));
                     setEndYearRef(null);
                   }}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className={inputClassName}
                 />
               </div>
             )}
           </div>
+        </form>
+      )}
 
-          <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
-            {isEdit && onRequestDelete ? (
-              <button
-                type="button"
-                onClick={onRequestDelete}
-                className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/60"
-              >
-                Delete…
-              </button>
-            ) : (
-              <span />
-            )}
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Rule"}
-            </button>
-          </div>
-        </form>)}
-
-        {activeTab === "schedule" && (
-          <ScheduleTab
-            startYear={startYear}
-            endYear={endYear}
-            initialOverrides={stagedSchedule}
-            onSave={async (overrides) => {
-              if (editing) {
-                await fetch(`/api/clients/${clientId}/savings-rules/${editing.id}/schedule`, {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ overrides }),
-                });
-              }
-              setStagedSchedule(overrides);
-              setHasSchedule(overrides.length > 0);
-            }}
-            onClear={async () => {
-              if (editing) {
-                await fetch(`/api/clients/${clientId}/savings-rules/${editing.id}/schedule`, { method: "DELETE" });
-              }
-              setStagedSchedule([]);
-              setHasSchedule(false);
-            }}
-          />
-        )}
-      </div>
-    </div>
+      {activeTab === "schedule" && (
+        <ScheduleTab
+          startYear={startYear}
+          endYear={endYear}
+          initialOverrides={stagedSchedule}
+          onSave={async (overrides) => {
+            if (editing) {
+              await fetch(`/api/clients/${clientId}/savings-rules/${editing.id}/schedule`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ overrides }),
+              });
+            }
+            setStagedSchedule(overrides);
+            setHasSchedule(overrides.length > 0);
+          }}
+          onClear={async () => {
+            if (editing) {
+              await fetch(`/api/clients/${clientId}/savings-rules/${editing.id}/schedule`, { method: "DELETE" });
+            }
+            setStagedSchedule([]);
+            setHasSchedule(false);
+          }}
+        />
+      )}
+    </DialogShell>
   );
 }

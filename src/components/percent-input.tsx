@@ -2,6 +2,7 @@
 
 import { forwardRef, useState, useEffect, useRef } from "react";
 import type { InputHTMLAttributes } from "react";
+import { inputClassName } from "./forms/input-styles";
 
 interface PercentInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "defaultValue" | "onChange"> {
@@ -64,9 +65,9 @@ export const PercentInput = forwardRef<HTMLInputElement, PercentInputProps>(
           value={raw}
           onChange={handleChange}
           placeholder={placeholder}
-          className={`${className ?? ""} pr-7`}
+          className={`${inputClassName} pr-7 ${className ?? ""}`}
         />
-        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-gray-400">
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
           %
         </span>
         {name && <input type="hidden" name={name} value={raw} />}

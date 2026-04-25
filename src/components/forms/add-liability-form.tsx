@@ -8,6 +8,7 @@ import { resolveMilestone } from "@/lib/milestones";
 import { calcPayment, calcTerm, calcRate } from "@/lib/loan-math";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
+import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 
 const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -55,6 +56,7 @@ interface AddLiabilityFormProps {
   onSuccess?: () => void;
   onDelete?: () => void;
   onValuesChange?: (values: LiabilityFormValues) => void;
+  onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
 }
 
 export default function AddLiabilityForm({
@@ -67,11 +69,15 @@ export default function AddLiabilityForm({
   mode = "create",
   initial,
   onSuccess,
-  onDelete,
+  onDelete, // eslint-disable-line @typescript-eslint/no-unused-vars
   onValuesChange,
+  onSubmitStateChange,
 }: AddLiabilityFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    onSubmitStateChange?.({ canSubmit: !loading, loading });
+  }, [loading, onSubmitStateChange]);
   const [error, setError] = useState<string | null>(null);
   const [ownerEntityId, setOwnerEntityId] = useState<string>(initial?.ownerEntityId ?? "");
   const [isInterestDeductible, setIsInterestDeductible] = useState(initial?.isInterestDeductible ?? false);
@@ -263,14 +269,14 @@ export default function AddLiabilityForm({
   // ============================================================================
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form id="add-liability-form" onSubmit={handleSubmit} className="space-y-4">
       {error && (
         <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
       )}
 
       {/* Row 1: Name (full width) */}
       <div>
-        <label className="block text-sm font-medium text-gray-300" htmlFor="name">
+        <label className={fieldLabelClassName} htmlFor="name">
           Liability Name <span className="text-red-500">*</span>
         </label>
         <input
@@ -280,14 +286,14 @@ export default function AddLiabilityForm({
           required
           defaultValue={initial?.name ?? ""}
           placeholder="e.g., Primary Mortgage"
-          className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className={inputClassName}
         />
       </div>
 
       {/* Row 2: Balance + Balance as of */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="balance">
+          <label className={fieldLabelClassName} htmlFor="balance">
             Outstanding Balance ($)
           </label>
           <CurrencyInput
@@ -295,17 +301,17 @@ export default function AddLiabilityForm({
             name="balance"
             value={balance}
             onChange={(raw) => setBalance(raw)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={inputClassName}
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300">Balance as of</label>
+          <label className={fieldLabelClassName}>Balance as of</label>
           <div className="mt-1 flex gap-2">
             <select
               value={balanceAsOfMonth}
               onChange={(e) => setBalanceAsOfMonth(Number(e.target.value))}
-              className="w-24 rounded-md border border-gray-600 bg-gray-800 px-2 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={selectClassName + " w-24"}
             >
               {MONTH_NAMES.map((m, i) => (
                 <option key={i + 1} value={i + 1}>{m}</option>
@@ -315,7 +321,7 @@ export default function AddLiabilityForm({
               type="number"
               value={balanceAsOfYear}
               onChange={(e) => setBalanceAsOfYear(Number(e.target.value))}
-              className="block flex-1 rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={inputClassName + " flex-1"}
               min={1900}
               max={2100}
             />
@@ -326,12 +332,12 @@ export default function AddLiabilityForm({
       {/* Row 2b: Start Month + Start Year */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-300">Loan Start</label>
+          <label className={fieldLabelClassName}>Loan Start</label>
           <div className="mt-1 flex gap-2">
             <select
               value={startMonth}
               onChange={(e) => setStartMonth(Number(e.target.value))}
-              className="w-24 rounded-md border border-gray-600 bg-gray-800 px-2 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={selectClassName + " w-24"}
             >
               {MONTH_NAMES.map((m, i) => (
                 <option key={i + 1} value={i + 1}>{m}</option>
@@ -360,7 +366,7 @@ export default function AddLiabilityForm({
                 required
                 value={startYear}
                 onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
-                className="block flex-1 rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={inputClassName + " flex-1"}
               />
             )}
           </div>
@@ -371,7 +377,7 @@ export default function AddLiabilityForm({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <div className="flex items-center gap-1">
-            <label className="block text-sm font-medium text-gray-300">Term</label>
+            <label className={fieldLabelClassName}>Term</label>
             <CalcButton onClick={handleCalcTerm} title="Calculate from balance, rate, and payment" />
           </div>
           <div className="mt-1 flex gap-2">
@@ -379,14 +385,14 @@ export default function AddLiabilityForm({
               type="number"
               value={termValue}
               onChange={(e) => setTermValue(e.target.value)}
-              className="block flex-1 rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={inputClassName + " flex-1"}
               min="1"
               required
             />
             <select
               value={termUnit}
               onChange={(e) => setTermUnit(e.target.value as "monthly" | "annual")}
-              className="rounded-md border border-gray-600 bg-gray-800 px-2 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={selectClassName}
             >
               <option value="annual">Years</option>
               <option value="monthly">Months</option>
@@ -396,7 +402,7 @@ export default function AddLiabilityForm({
 
         <div>
           <div className="flex items-center gap-1">
-            <label className="block text-sm font-medium text-gray-300" htmlFor="interestRate">
+            <label className={fieldLabelClassName} htmlFor="interestRate">
               Interest Rate (%)
             </label>
             <CalcButton onClick={handleCalcRate} title="Calculate from balance, term, and payment" />
@@ -406,7 +412,7 @@ export default function AddLiabilityForm({
             name="interestRate"
             value={interestRatePct}
             onChange={(raw) => setInterestRatePct(raw)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={inputClassName}
           />
         </div>
       </div>
@@ -415,7 +421,7 @@ export default function AddLiabilityForm({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <div className="flex items-center gap-1">
-            <label className="block text-sm font-medium text-gray-300" htmlFor="monthlyPayment">
+            <label className={fieldLabelClassName} htmlFor="monthlyPayment">
               Monthly Payment ($)
             </label>
             <CalcButton onClick={handleCalcPayment} title="Calculate from balance, rate, and term" />
@@ -425,7 +431,7 @@ export default function AddLiabilityForm({
             name="monthlyPayment"
             value={monthlyPayment}
             onChange={(raw) => setMonthlyPayment(raw)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 pr-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={inputClassName}
           />
         </div>
       </div>
@@ -433,14 +439,14 @@ export default function AddLiabilityForm({
       {/* Row 5: Linked property (if applicable) */}
       {realEstateAccounts && realEstateAccounts.length > 0 && (
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="linkedPropertyId">
+          <label className={fieldLabelClassName} htmlFor="linkedPropertyId">
             Linked Property
           </label>
           <select
             id="linkedPropertyId"
             name="linkedPropertyId"
             defaultValue={initial?.linkedPropertyId ?? ""}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={selectClassName}
           >
             <option value="">None</option>
             {realEstateAccounts.map((a) => (
@@ -453,14 +459,14 @@ export default function AddLiabilityForm({
       {/* Row 6: Owner entity (if applicable) */}
       {entities && entities.length > 0 && (
         <div>
-          <label className="block text-sm font-medium text-gray-300" htmlFor="ownerEntityId">
+          <label className={fieldLabelClassName} htmlFor="ownerEntityId">
             Owed by entity (out of estate)
           </label>
           <select
             id="ownerEntityId"
             value={ownerEntityId}
             onChange={(e) => setOwnerEntityId(e.target.value)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={selectClassName}
           >
             <option value="">Household (client/spouse)</option>
             {entities.map((ent) => (
@@ -489,27 +495,6 @@ export default function AddLiabilityForm({
         </p>
       </div>
 
-      {/* Submit / Delete buttons */}
-      <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-between border-t border-gray-800 bg-gray-900 px-6 py-4">
-        {isEdit && onDelete ? (
-          <button
-            type="button"
-            onClick={onDelete}
-            className="rounded-md border border-red-700 bg-red-900/30 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-900/60"
-          >
-            Delete...
-          </button>
-        ) : (
-          <span />
-        )}
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {loading ? "Saving..." : isEdit ? "Save Changes" : "Add Liability"}
-        </button>
-      </div>
     </form>
   );
 }
