@@ -16,6 +16,7 @@ interface KpiCardProps {
   footnote: string;
   delta?: number | null;
   deltaSuffix?: string;
+  loading?: boolean;
 }
 
 export default function KpiCard(p: KpiCardProps): ReactElement {
@@ -33,7 +34,14 @@ export default function KpiCard(p: KpiCardProps): ReactElement {
               <p className="text-[12.5px] text-ink-3">{p.label}</p>
             </div>
           </div>
-          <MoneyText value={p.value} format={p.valueFormat} size="kpi" />
+          {p.loading ? (
+            <div
+              className="h-[28px] w-[88px] rounded-md bg-ink-4/15 animate-pulse"
+              aria-hidden
+            />
+          ) : (
+            <MoneyText value={p.value} format={p.valueFormat} size="kpi" />
+          )}
           <div className="flex items-center gap-2">
             <DeltaPill delta={p.delta ?? null} suffix={p.deltaSuffix} />
             <p className="text-[11px] text-ink-3">{p.footnote}</p>
