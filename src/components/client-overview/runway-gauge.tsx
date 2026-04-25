@@ -4,6 +4,7 @@ interface RunwayGaugeProps {
   value: number | null; // 0..1
   width?: number;
   height?: number;
+  loading?: boolean;
 }
 
 const RADIUS = 70;
@@ -20,7 +21,17 @@ export default function RunwayGauge({
   value,
   width = 180,
   height = 110,
+  loading,
 }: RunwayGaugeProps): ReactElement {
+  if (loading) {
+    return (
+      <div
+        style={{ width, height }}
+        className="rounded-md bg-ink-4/15 animate-pulse"
+        aria-hidden
+      />
+    );
+  }
   const pct = value == null ? 0 : Math.max(0, Math.min(1, value));
   const dash = ARC_LENGTH * pct;
   const centerText = value == null ? "—" : `${Math.round(value * 100)}%`;
