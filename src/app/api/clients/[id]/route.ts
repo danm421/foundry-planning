@@ -4,7 +4,8 @@ import { clients, planSettings } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { computePlanEndAge } from "@/lib/plan-horizon";
-import { recordAudit } from "@/lib/audit";
+import { recordUpdate, recordDelete } from "@/lib/audit";
+import { toClientSnapshot, CLIENT_FIELD_LABELS } from "@/lib/audit/snapshots/client";
 
 export const dynamic = "force-dynamic";
 
@@ -128,16 +129,15 @@ export async function PUT(
         .where(eq(planSettings.clientId, id));
     }
 
-    await recordAudit({
+    await recordUpdate({
       action: "client.update",
       resourceType: "client",
       resourceId: id,
       clientId: id,
       firmId,
-      metadata: {
-        firstName: updated.firstName,
-        lastName: updated.lastName,
-      },
+      before: toClientSnapshot(existing),
+      after: toClientSnapshot(updated),
+      fieldLabels: CLIENT_FIELD_LABELS,
     });
 
     return NextResponse.json(updated);
@@ -168,20 +168,19 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    const snapshot = toClientSnapshot(existing);
+
     await db
       .delete(clients)
       .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
 
-    await recordAudit({
+    await recordDelete({
       action: "client.delete",
       resourceType: "client",
       resourceId: id,
       clientId: id,
       firmId,
-      metadata: {
-        firstName: existing.firstName,
-        lastName: existing.lastName,
-      },
+      snapshot,
     });
 
     return NextResponse.json({ success: true });
