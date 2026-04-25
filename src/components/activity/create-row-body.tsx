@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import type { EntitySnapshot } from "@/lib/audit";
+import { humanizeFieldName } from "@/lib/audit/labels";
 import { formatDiffValue } from "@/lib/activity/format-helpers";
 import { getFieldLabels } from "./field-label-registry";
 
@@ -26,7 +27,7 @@ export function SnapshotList({
     <div className="text-sm text-ink">
       <ul className="flex flex-col gap-0.5">
         {shown.map(([field, value]) => {
-          const desc = labels[field] ?? { label: humanize(field), format: "text" as const };
+          const desc = labels[field] ?? { label: humanizeFieldName(field), format: "text" as const };
           return (
             <li key={field}>
               <span className="text-ink-3">{desc.label}: </span>
@@ -42,7 +43,7 @@ export function SnapshotList({
           </summary>
           <ul className="mt-1 flex flex-col gap-0.5">
             {entries.slice(initiallyShown).map(([field, value]) => {
-              const desc = labels[field] ?? { label: humanize(field), format: "text" as const };
+              const desc = labels[field] ?? { label: humanizeFieldName(field), format: "text" as const };
               return (
                 <li key={field}>
                   <span className="text-ink-3">{desc.label}: </span>
@@ -57,9 +58,3 @@ export function SnapshotList({
   );
 }
 
-function humanize(key: string): string {
-  return key
-    .replace(/[._]/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/^./, (c) => c.toUpperCase());
-}

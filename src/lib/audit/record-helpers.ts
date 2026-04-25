@@ -1,5 +1,6 @@
 import { recordAudit, type AuditAction } from "@/lib/audit";
 import { isAuditValueEqual } from "./equality";
+import { humanizeFieldName } from "./labels";
 import type {
   AuditValue,
   EntitySnapshot,
@@ -50,7 +51,7 @@ export async function recordUpdate(
     if (isAuditValueEqual(fromValue, toValue)) continue;
 
     const descriptor = fieldLabels[key] ?? {
-      label: humanizeKey(key),
+      label: humanizeFieldName(key),
       format: "text" as const,
     };
 
@@ -66,9 +67,4 @@ export async function recordUpdate(
   if (changes.length === 0) return;
 
   await recordAudit({ ...rest, metadata: { kind: "update", changes } });
-}
-
-function humanizeKey(key: string): string {
-  const spaced = key.replace(/[._]/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2");
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }

@@ -13,3 +13,12 @@ export const SHARED_FIELD_LABELS = {
   endYear: { label: "End year", format: "text" },
   growthRate: { label: "Growth rate", format: "percent" },
 } as const satisfies FieldLabels;
+
+/** Fallback display label for a field key with no explicit FIELD_LABELS entry.
+ *  Splits camelCase, replaces `.`/`_` with spaces, capitalizes first letter. */
+export function humanizeFieldName(key: string): string {
+  return key
+    .replace(/[._]/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/^./, (c) => c.toUpperCase());
+}

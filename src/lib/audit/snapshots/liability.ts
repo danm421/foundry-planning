@@ -26,31 +26,32 @@ type LiabilityRow = typeof liabilities.$inferSelect;
 export async function toLiabilitySnapshot(
   row: LiabilityRow,
 ): Promise<EntitySnapshot> {
-  const linkedProperty = row.linkedPropertyId
-    ? await db
-        .select({ id: accounts.id, name: accounts.name })
-        .from(accounts)
-        .where(inArray(accounts.id, [row.linkedPropertyId]))
-        .then(
-          (rs): ReferenceValue => ({
-            id: row.linkedPropertyId!,
-            display: rs[0]?.name ?? "(deleted)",
-          }),
-        )
-    : null;
-
-  const ownerEntity = row.ownerEntityId
-    ? await db
-        .select({ id: entities.id, name: entities.name })
-        .from(entities)
-        .where(inArray(entities.id, [row.ownerEntityId]))
-        .then(
-          (rs): ReferenceValue => ({
-            id: row.ownerEntityId!,
-            display: rs[0]?.name ?? "(deleted)",
-          }),
-        )
-    : null;
+  const [linkedProperty, ownerEntity] = await Promise.all([
+    row.linkedPropertyId
+      ? db
+          .select({ id: accounts.id, name: accounts.name })
+          .from(accounts)
+          .where(inArray(accounts.id, [row.linkedPropertyId]))
+          .then(
+            (rs): ReferenceValue => ({
+              id: row.linkedPropertyId!,
+              display: rs[0]?.name ?? "(deleted)",
+            }),
+          )
+      : null,
+    row.ownerEntityId
+      ? db
+          .select({ id: entities.id, name: entities.name })
+          .from(entities)
+          .where(inArray(entities.id, [row.ownerEntityId]))
+          .then(
+            (rs): ReferenceValue => ({
+              id: row.ownerEntityId!,
+              display: rs[0]?.name ?? "(deleted)",
+            }),
+          )
+      : null,
+  ]);
 
   return {
     name: row.name,
