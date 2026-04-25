@@ -35,7 +35,7 @@ export default function Sidebar({
       <form action={toggleSidebar} className="border-b border-hair">
         <button
           type="submit"
-          className="flex w-full items-center justify-center px-[var(--pad-card)] py-3 text-ink-3 hover:text-ink hover:bg-card-hover"
+          className={`flex w-full items-center ${collapsed ? "justify-center" : "justify-end"} px-[var(--pad-card)] py-3 text-ink-3 hover:text-ink hover:bg-card-hover`}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           <PanelLeftIcon />
