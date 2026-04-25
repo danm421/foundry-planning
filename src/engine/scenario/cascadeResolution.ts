@@ -21,12 +21,12 @@ export function resolveCascades(
     removed.filter((r) => r.kind === "account").map((r) => [r.id, r.causedByChangeId]),
   );
 
-  // Transfers — drop if either fromAccountId or toAccountId was removed
+  // Transfers — drop if either sourceAccountId or targetAccountId was removed
   if (tree.transfers && removedAccountIds.size > 0) {
     const remaining = [];
     for (const tr of tree.transfers) {
-      const src = (tr as unknown as { fromAccountId?: string }).fromAccountId;
-      const dst = (tr as unknown as { toAccountId?: string }).toAccountId;
+      const src = tr.sourceAccountId;
+      const dst = tr.targetAccountId;
       const hitId = src && removedAccountIds.has(src) ? src
                   : dst && removedAccountIds.has(dst) ? dst
                   : null;
@@ -36,7 +36,7 @@ export function resolveCascades(
           message: `Transfer ${tr.id} dropped — account ${hitId} was removed`,
           causedByChangeId: removedAccountToCause.get(hitId)!,
           affectedEntityId: tr.id,
-          affectedEntityLabel: `Transfer · ${(tr as unknown as { name?: string }).name ?? tr.id}`,
+          affectedEntityLabel: `Transfer · ${tr.name ?? tr.id}`,
         });
       } else {
         remaining.push(tr);

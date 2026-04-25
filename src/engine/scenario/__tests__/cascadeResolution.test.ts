@@ -20,7 +20,7 @@ describe("resolveCascades — accounts → transfers", () => {
   it("drops a transfer that points at a removed source account", () => {
     const t: ClientData = tree({
       transfers: [
-        { id: "tr1", fromAccountId: "a-removed", toAccountId: "a-keep" } as unknown as Transfer,
+        { id: "tr1", sourceAccountId: "a-removed", targetAccountId: "a-keep" } as unknown as Transfer,
       ],
     });
     const removed = [{ kind: "account" as TargetKind, id: "a-removed", causedByChangeId: "ch1" }];
@@ -34,7 +34,7 @@ describe("resolveCascades — accounts → transfers", () => {
   it("drops a transfer that points at a removed destination account", () => {
     const t: ClientData = tree({
       transfers: [
-        { id: "tr1", fromAccountId: "a-keep", toAccountId: "a-removed" } as unknown as Transfer,
+        { id: "tr1", sourceAccountId: "a-keep", targetAccountId: "a-removed" } as unknown as Transfer,
       ],
     });
     const removed = [{ kind: "account" as TargetKind, id: "a-removed", causedByChangeId: "ch1" }];
@@ -46,7 +46,7 @@ describe("resolveCascades — accounts → transfers", () => {
   it("does not drop unrelated transfers", () => {
     const t: ClientData = tree({
       transfers: [
-        { id: "tr1", fromAccountId: "a-keep", toAccountId: "a-other" } as unknown as Transfer,
+        { id: "tr1", sourceAccountId: "a-keep", targetAccountId: "a-other" } as unknown as Transfer,
       ],
     });
     const removed = [{ kind: "account" as TargetKind, id: "a-removed", causedByChangeId: "ch1" }];
