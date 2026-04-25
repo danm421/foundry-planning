@@ -10,7 +10,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from "./icons";
 export async function toggleSidebar(): Promise<void> {
   "use server";
   const jar = await cookies();
-  const current = jar.get("sidebar-collapsed")?.value === "1";
+  const current = jar.get("sidebar-collapsed")?.value !== "0";
   jar.set("sidebar-collapsed", current ? "0" : "1", { path: "/" });
   revalidatePath("/", "layout");
 }

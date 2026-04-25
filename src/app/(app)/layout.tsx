@@ -11,7 +11,7 @@ export default async function AppLayout({
   children: React.ReactNode;
 }): Promise<ReactElement> {
   const [{ orgId }, jar] = await Promise.all([auth(), cookies()]);
-  const collapsed = jar.get("sidebar-collapsed")?.value === "1";
+  const collapsed = jar.get("sidebar-collapsed")?.value !== "0";
   const clientsCount = orgId ? await countClientsForFirm(orgId) : 0;
 
   return (
