@@ -8,6 +8,7 @@ import type {
   ToggleGroup,
   ToggleState,
 } from "./types";
+import { resolveCascades, type RemovedRef } from "./cascadeResolution";
 
 export function resolveEffectiveToggleState(
   toggleState: ToggleState,
@@ -99,7 +100,6 @@ export function applyScenarioChanges(
   // them no-op (the add payload was already kept current).
   const addedIds: Record<TargetKind, Set<string>> = {} as Record<TargetKind, Set<string>>;
 
-  type RemovedRef = { kind: TargetKind; id: string; causedByChangeId: string };
   const removed: RemovedRef[] = [];
 
   for (const change of sorted) {
@@ -122,6 +122,9 @@ export function applyScenarioChanges(
       }
     }
   }
+
+  const cascadeWarnings = resolveCascades(tree, removed);
+  warnings.push(...cascadeWarnings);
 
   return { effectiveTree: tree, warnings };
 }
