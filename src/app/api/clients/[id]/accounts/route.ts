@@ -7,7 +7,8 @@ import {
   assertEntitiesInClient,
   assertModelPortfoliosInFirm,
 } from "@/lib/db-scoping";
-import { recordAudit } from "@/lib/audit";
+import { recordCreate } from "@/lib/audit";
+import { toAccountSnapshot } from "@/lib/audit/snapshots/account";
 
 export const dynamic = "force-dynamic";
 
@@ -130,13 +131,13 @@ export async function POST(
       })
       .returning();
 
-    await recordAudit({
+    await recordCreate({
       action: "account.create",
       resourceType: "account",
       resourceId: account.id,
       clientId: id,
       firmId,
-      metadata: { name: account.name, category: account.category },
+      snapshot: await toAccountSnapshot(account),
     });
 
     return NextResponse.json(account, { status: 201 });
