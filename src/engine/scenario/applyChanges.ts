@@ -99,6 +99,9 @@ export function applyScenarioChanges(
   // them no-op (the add payload was already kept current).
   const addedIds: Record<TargetKind, Set<string>> = {} as Record<TargetKind, Set<string>>;
 
+  type RemovedRef = { kind: TargetKind; id: string; causedByChangeId: string };
+  const removed: RemovedRef[] = [];
+
   for (const change of sorted) {
     if (change.opType === "add") {
       applyAdd(tree, change);
@@ -108,8 +111,16 @@ export function applyScenarioChanges(
       const wasAdded = addedIds[change.targetKind]?.has(change.targetId) ?? false;
       if (wasAdded) continue;
       applyEdit(tree, change);
+    } else if (change.opType === "remove") {
+      const didRemove = applyRemove(tree, change);
+      if (didRemove) {
+        removed.push({
+          kind: change.targetKind,
+          id: change.targetId,
+          causedByChangeId: change.id,
+        });
+      }
     }
-    // remove handled in next task
   }
 
   return { effectiveTree: tree, warnings };
@@ -163,4 +174,20 @@ function applyEdit(tree: ClientData, change: ScenarioChange): void {
     target[k] = to;
   }
   arr[idx] = target as { id: string };
+}
+
+function applyRemove(tree: ClientData, change: ScenarioChange): boolean {
+  const field = TARGET_KIND_TO_FIELD[change.targetKind];
+  if (field == null) {
+    throw new Error(
+      `applyScenarioChanges: cannot 'remove' for targetKind=${change.targetKind} ` +
+        `(not a top-level list)`,
+    );
+  }
+  const arr = tree[field] as unknown as Array<{ id: string }> | undefined;
+  if (arr == null) return false;
+  const idx = arr.findIndex((e) => e.id === change.targetId);
+  if (idx === -1) return false;
+  arr.splice(idx, 1);
+  return true;
 }

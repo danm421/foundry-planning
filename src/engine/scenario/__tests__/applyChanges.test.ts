@@ -204,3 +204,35 @@ describe("applyScenarioChanges — edit", () => {
     expect((result.effectiveTree.planSettings as unknown as { taxBracketCap: number }).taxBracketCap).toBe(0.22);
   });
 });
+
+describe("applyScenarioChanges — remove", () => {
+  it("removes a base account from the effective tree", () => {
+    const base = minimalClientData();
+    base.accounts = [
+      { id: "a1", name: "Keep" } as unknown as Account,
+      { id: "a2", name: "Remove me" } as unknown as Account,
+    ];
+
+    const change: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "remove", targetKind: "account",
+      targetId: "a2", payload: null, toggleGroupId: null, orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    expect(result.effectiveTree.accounts).toHaveLength(1);
+    expect(result.effectiveTree.accounts[0].id).toBe("a1");
+  });
+
+  it("removing a non-existent target is a no-op", () => {
+    const base = minimalClientData();
+    base.accounts = [{ id: "a1", name: "Keep" } as unknown as Account];
+
+    const change: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "remove", targetKind: "account",
+      targetId: "a-missing", payload: null, toggleGroupId: null, orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    expect(result.effectiveTree.accounts).toHaveLength(1);
+  });
+});
