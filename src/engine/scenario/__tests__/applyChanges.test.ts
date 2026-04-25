@@ -128,3 +128,79 @@ describe("applyScenarioChanges — add", () => {
     expect(base.accounts).toEqual([]);
   });
 });
+
+describe("applyScenarioChanges — edit", () => {
+  it("applies field diff to a base entity", () => {
+    const base = minimalClientData();
+    base.accounts = [{
+      id: "a-base",
+      clientId: "c1",
+      scenarioId: "s-base",
+      name: "401(k) — Client",
+      category: "retirement",
+      subType: "traditional_401k",
+      owner: "client",
+      value: 250000,
+      basis: 0,
+    } as unknown as Account];
+
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "edit",
+      targetKind: "account",
+      targetId: "a-base",
+      payload: { value: { from: 250000, to: 350000 } },
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    expect(result.effectiveTree.accounts[0].value).toBe(350000);
+  });
+
+  it("no-ops when target was added by an earlier add change in same scenario", () => {
+    const base = minimalClientData();
+    const addedAccount: Account = {
+      id: "a-new",
+      clientId: "c1",
+      scenarioId: "s-base",
+      name: "Roth IRA",
+      category: "retirement",
+      subType: "roth_ira",
+      owner: "client",
+      value: 100000,
+      basis: 0,
+    } as unknown as Account;
+
+    const addChange: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "add", targetKind: "account",
+      targetId: "a-new", payload: addedAccount, toggleGroupId: null, orderIndex: 0,
+    };
+    const editChange: ScenarioChange = {
+      id: "ch2", scenarioId: "s1", opType: "edit", targetKind: "account",
+      targetId: "a-new", payload: { value: { from: 100000, to: 200000 } },
+      toggleGroupId: null, orderIndex: 1,
+    };
+
+    const result = applyScenarioChanges(base, [addChange, editChange], {}, []);
+    // The add payload reflects whatever the UI saved; the edit should not
+    // double-apply on top of an already-added entity.
+    expect(result.effectiveTree.accounts).toHaveLength(1);
+    expect(result.effectiveTree.accounts[0].value).toBe(100000);
+  });
+
+  it("applies edit to plan_settings (singleton)", () => {
+    const base = minimalClientData();
+    base.planSettings = { taxBracketCap: 0.24 } as unknown as ClientData["planSettings"];
+
+    const change: ScenarioChange = {
+      id: "ch1", scenarioId: "s1", opType: "edit", targetKind: "plan_settings",
+      targetId: "ps-1", payload: { taxBracketCap: { from: 0.24, to: 0.22 } },
+      toggleGroupId: null, orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    expect((result.effectiveTree.planSettings as unknown as { taxBracketCap: number }).taxBracketCap).toBe(0.22);
+  });
+});

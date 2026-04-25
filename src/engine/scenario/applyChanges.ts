@@ -95,11 +95,21 @@ export function applyScenarioChanges(
     return opOrder[a.opType] - opOrder[b.opType];
   });
 
+  // Track scenario-added entity ids per targetKind so edits referencing
+  // them no-op (the add payload was already kept current).
+  const addedIds: Record<TargetKind, Set<string>> = {} as Record<TargetKind, Set<string>>;
+
   for (const change of sorted) {
     if (change.opType === "add") {
       applyAdd(tree, change);
+      addedIds[change.targetKind] ??= new Set();
+      addedIds[change.targetKind].add(change.targetId);
+    } else if (change.opType === "edit") {
+      const wasAdded = addedIds[change.targetKind]?.has(change.targetId) ?? false;
+      if (wasAdded) continue;
+      applyEdit(tree, change);
     }
-    // edit and remove handled in subsequent tasks
+    // remove handled in next task
   }
 
   return { effectiveTree: tree, warnings };
@@ -115,4 +125,42 @@ function applyAdd(tree: ClientData, change: ScenarioChange): void {
   }
   const arr = (tree[field] as unknown[]) ?? [];
   (tree[field] as unknown) = [...arr, change.payload];
+}
+
+function applyEdit(tree: ClientData, change: ScenarioChange): void {
+  const diff = change.payload as Record<string, { from: unknown; to: unknown }>;
+
+  if (change.targetKind === "client") {
+    for (const [k, { to }] of Object.entries(diff)) {
+      (tree.client as unknown as Record<string, unknown>)[k] = to;
+    }
+    return;
+  }
+  if (change.targetKind === "plan_settings") {
+    for (const [k, { to }] of Object.entries(diff)) {
+      (tree.planSettings as unknown as Record<string, unknown>)[k] = to;
+    }
+    return;
+  }
+
+  const field = TARGET_KIND_TO_FIELD[change.targetKind];
+  if (field == null) {
+    // Nested entity (e.g., beneficiary_designation lives on a parent) —
+    // these edit paths are added in subsequent cascade-resolution tasks if needed.
+    throw new Error(
+      `applyScenarioChanges: cannot 'edit' for targetKind=${change.targetKind} ` +
+        `(nested entity; see TARGET_KIND_TO_FIELD)`,
+    );
+  }
+
+  const arr = tree[field] as unknown as Array<{ id: string }>;
+  if (arr == null) return;
+  const idx = arr.findIndex((e) => e.id === change.targetId);
+  if (idx === -1) return;
+
+  const target = { ...arr[idx] } as Record<string, unknown>;
+  for (const [k, { to }] of Object.entries(diff)) {
+    target[k] = to;
+  }
+  arr[idx] = target as { id: string };
 }
