@@ -30,6 +30,9 @@ export const FIXTURE_BEQUEST_ID = "00000000-0000-0000-0000-000000000121";
 export const FIXTURE_BEQUEST_RECIPIENT_ID = "00000000-0000-0000-0000-000000000122";
 export const FIXTURE_TAX_YEAR_ID = "00000000-0000-0000-0000-000000000200";
 export const FIXTURE_TRANSFER_ID = "00000000-0000-0000-0000-000000000300";
+export const FIXTURE_ACCOUNT_ID_3 = "00000000-0000-0000-0000-000000000022";
+export const FIXTURE_ACCOUNT_ASSET_ALLOC_ID = "00000000-0000-0000-0000-000000000092";
+export const FIXTURE_CORRELATION_ID = "00000000-0000-0000-0000-000000000400";
 export const WRONG_FIRM_ID = "wrong-firm-999";
 
 // ── clients ──────────────────────────────────────────────────────────────────
@@ -469,4 +472,68 @@ export const taxYearParameterRow = {
   hsaCatchup55: "1000.00",
   giftAnnualExclusion: "18000.00",
   createdAt: NOW,
+};
+
+// ── Monte Carlo additional fixtures ──────────────────────────────────────────
+// These rows are only used by load-monte-carlo-data.test.ts and are never
+// seeded by load-client-data.test.ts, so they cannot disturb that snapshot.
+
+/** A retirement account whose growth is driven by the model portfolio. */
+export const mcAccountRow = {
+  id: FIXTURE_ACCOUNT_ID_3,
+  clientId: FIXTURE_CLIENT_ID,
+  scenarioId: FIXTURE_SCENARIO_ID,
+  name: "IRA (Model Portfolio)",
+  category: "retirement" as const,
+  subType: "ira_traditional" as const,
+  owner: "client" as const,
+  value: "100000.00",
+  basis: "0.00",
+  growthRate: "0.0700",
+  rmdEnabled: true,
+  isDefaultChecking: false,
+  ownerEntityId: null,
+  ownerFamilyMemberId: null,
+  growthSource: "model_portfolio" as const,
+  modelPortfolioId: FIXTURE_PORTFOLIO_ID,
+  turnoverPct: "0.0000",
+  overridePctOi: null,
+  overridePctLtCg: null,
+  overridePctQdiv: null,
+  overridePctTaxExempt: null,
+  annualPropertyTax: "0.00",
+  propertyTaxGrowthRate: "0.0300",
+  source: "manual" as const,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
+/** An account-level asset allocation tying FIXTURE_ACCOUNT_ID_3 to US Equity. */
+export const accountAssetAllocationRow = {
+  id: FIXTURE_ACCOUNT_ASSET_ALLOC_ID,
+  accountId: FIXTURE_ACCOUNT_ID_3,
+  assetClassId: FIXTURE_ASSET_CLASS_ID,
+  weight: "1.0000",
+};
+
+/**
+ * A pairwise correlation row (canonical form: idA ≤ idB).
+ * Uses FIXTURE_ASSET_CLASS_ID as both A and B so the self-correlation row
+ * exercises the code path without needing a second asset class. The matrix
+ * builder handles self-references via the diagonal-fill logic anyway, but
+ * having at least one DB row ensures the JOIN + WHERE branch is exercised.
+ *
+ * The mock returns this row under the innerJoin shape:
+ *   { asset_class_correlations: { assetClassIdA, assetClassIdB, correlation }, asset_classes: {...} }
+ */
+export const assetClassCorrelationRow = {
+  asset_class_correlations: {
+    id: FIXTURE_CORRELATION_ID,
+    assetClassIdA: FIXTURE_ASSET_CLASS_ID,
+    assetClassIdB: FIXTURE_ASSET_CLASS_ID,
+    correlation: "1.00000",
+    createdAt: NOW,
+    updatedAt: NOW,
+  },
+  asset_classes: assetClassRow,
 };

@@ -1,0 +1,32 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`loadMonteCarloData > returns indices, correlation, accountMixes, and seed 1`] = `
+{
+  "accountMixes": [
+    {
+      "accountId": "00000000-0000-0000-0000-000000000022",
+      "mix": [
+        {
+          "assetClassId": "00000000-0000-0000-0000-000000000080",
+          "weight": 1,
+        },
+      ],
+    },
+  ],
+  "correlation": [
+    [
+      1,
+    ],
+  ],
+  "indices": [
+    {
+      "arithMean": 0.085,
+      "id": "00000000-0000-0000-0000-000000000080",
+      "stdDev": 0.15,
+    },
+  ],
+  "requiredMinimumAssetLevel": 0,
+  "seed": Any<Number>,
+  "startingLiquidBalance": 380000,
+}
+`;
