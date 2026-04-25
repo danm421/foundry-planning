@@ -283,6 +283,35 @@ export const scenarioToggleGroups = pgTable("scenario_toggle_groups", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const scenarioChanges = pgTable("scenario_changes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  scenarioId: uuid("scenario_id")
+    .notNull()
+    .references(() => scenarios.id, { onDelete: "cascade" }),
+  opType: scenarioOpTypeEnum("op_type").notNull(),
+  // target_kind is text (not pgEnum) because the value list grows whenever a
+  // new overlayable entity lands. CHECK can be added later if value drift
+  // becomes a problem; v1 relies on TypeScript types for correctness.
+  targetKind: text("target_kind").notNull(),
+  targetId: uuid("target_id").notNull(),
+  // payload shape depends on op_type:
+  //  add    -> full entity object
+  //  edit   -> { fieldName: { from, to } }
+  //  remove -> null (column allows null only for remove)
+  payload: jsonb("payload"),
+  toggleGroupId: uuid("toggle_group_id")
+    .references(() => scenarioToggleGroups.id, { onDelete: "set null" }),
+  orderIndex: integer("order_index").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  // Uniqueness: one row per (scenario, target entity, op-type). Editing the
+  // same entity twice updates the existing row's payload; UI does upsert.
+  uniqueChange: uniqueIndex("scenario_changes_unique").on(
+    table.scenarioId, table.targetKind, table.targetId, table.opType,
+  ),
+}));
+
 export const planSettings = pgTable("plan_settings", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
@@ -1110,6 +1139,17 @@ export const scenarioToggleGroupsRelations = relations(scenarioToggleGroups, ({ 
     fields: [scenarioToggleGroups.requiresGroupId],
     references: [scenarioToggleGroups.id],
     relationName: "toggle_group_requires",
+  }),
+}));
+
+export const scenarioChangesRelations = relations(scenarioChanges, ({ one }) => ({
+  scenario: one(scenarios, {
+    fields: [scenarioChanges.scenarioId],
+    references: [scenarios.id],
+  }),
+  toggleGroup: one(scenarioToggleGroups, {
+    fields: [scenarioChanges.toggleGroupId],
+    references: [scenarioToggleGroups.id],
   }),
 }));
 
