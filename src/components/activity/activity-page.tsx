@@ -27,7 +27,7 @@ export default function ActivityPage({
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold text-ink">Activity</h1>
-        <p className="text-sm text-ink-muted">All changes for this client.</p>
+        <p className="text-sm text-ink-3">All changes for this client.</p>
       </header>
 
       <ActivityFilterBar filters={filters} />

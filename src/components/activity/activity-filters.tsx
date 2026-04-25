@@ -58,7 +58,7 @@ export default function ActivityFiltersComponent({ filters }: Props) {
     <div className="flex flex-wrap items-center gap-2">
       <select
         aria-label="Filter by entity type"
-        className="rounded-md border border-ink-border bg-card px-3 py-1.5 text-sm text-ink"
+        className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm text-ink"
         value={filters.resourceType ?? ""}
         onChange={(e) => setParam("entity", e.target.value || null)}
       >
@@ -71,7 +71,7 @@ export default function ActivityFiltersComponent({ filters }: Props) {
 
       <select
         aria-label="Filter by action kind"
-        className="rounded-md border border-ink-border bg-card px-3 py-1.5 text-sm text-ink"
+        className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm text-ink"
         value={filters.actionKind ?? ""}
         onChange={(e) => setParam("kind", e.target.value || null)}
       >
@@ -84,7 +84,7 @@ export default function ActivityFiltersComponent({ filters }: Props) {
 
       <select
         aria-label="Filter by date range"
-        className="rounded-md border border-ink-border bg-card px-3 py-1.5 text-sm text-ink"
+        className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm text-ink"
         value={filters.range}
         onChange={(e) => setParam("range", e.target.value)}
       >
@@ -98,7 +98,7 @@ export default function ActivityFiltersComponent({ filters }: Props) {
       {hasFilters && (
         <button
           type="button"
-          className="text-sm text-ink-muted underline-offset-2 hover:underline"
+          className="text-sm text-ink-3 underline-offset-2 hover:underline"
           onClick={reset}
         >
           Reset
