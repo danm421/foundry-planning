@@ -7,7 +7,8 @@ import {
   assertEntitiesInClient,
   assertModelPortfoliosInFirm,
 } from "@/lib/db-scoping";
-import { recordAudit } from "@/lib/audit";
+import { recordAudit, recordUpdate, recordDelete } from "@/lib/audit";
+import { toAccountSnapshot, ACCOUNT_FIELD_LABELS } from "@/lib/audit/snapshots/account";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,15 @@ export async function PUT(
       if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
     }
 
+    const [before] = await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
+
+    if (!before) {
+      return NextResponse.json({ error: "Account not found" }, { status: 404 });
+    }
+
     const [updated] = await db
       .update(accounts)
       .set({
@@ -69,13 +79,15 @@ export async function PUT(
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
     }
 
-    await recordAudit({
+    await recordUpdate({
       action: "account.update",
       resourceType: "account",
       resourceId: accountId,
       clientId: id,
       firmId,
-      metadata: { name: updated.name, category: updated.category },
+      before: await toAccountSnapshot(before),
+      after: await toAccountSnapshot(updated),
+      fieldLabels: ACCOUNT_FIELD_LABELS,
     });
 
     return NextResponse.json(updated);
@@ -214,17 +226,23 @@ export async function DELETE(
       );
     }
 
+    if (!target) {
+      return NextResponse.json({ error: "Account not found" }, { status: 404 });
+    }
+
+    const snapshot = await toAccountSnapshot(target);
+
     await db
       .delete(accounts)
       .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
 
-    await recordAudit({
+    await recordDelete({
       action: "account.delete",
       resourceType: "account",
       resourceId: accountId,
       clientId: id,
       firmId,
-      metadata: { name: target?.name ?? null },
+      snapshot,
     });
 
     return NextResponse.json({ success: true });
