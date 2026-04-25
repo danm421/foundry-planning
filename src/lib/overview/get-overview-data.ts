@@ -4,7 +4,13 @@ import { and, eq } from "drizzle-orm";
 import { listOpenItems } from "./list-open-items";
 import { listAuditRows } from "./list-audit-rows";
 import { getAssetAllocationByType } from "./get-asset-allocation-by-type";
+import { deriveNetWorthSeries } from "./derive-net-worth-series";
+import { deriveLifeEvents, type OverviewLifeEvent } from "./derive-life-events";
+import { loadClientData, ClientNotFoundError } from "@/lib/projection/load-client-data";
+import { runProjection } from "@/engine";
+import { buildTimeline } from "@/lib/timeline/build-timeline";
 import { computeAlerts, type Alert } from "@/lib/alerts";
+import type { ProjectionYear } from "@/engine";
 
 const LIQUID_CATEGORY_EXCLUDE = new Set([
   "real_estate",
@@ -12,13 +18,20 @@ const LIQUID_CATEGORY_EXCLUDE = new Set([
   "life_insurance",
 ]);
 
+export type OverviewAlertInputs = {
+  liquidPortfolio: number;
+  currentYearNetOutflow: number;
+  minNetWorth: number;
+  projectionError: string | null;
+};
+
 export async function getOverviewData(clientId: string, firmId: string) {
   const [client] = await db
     .select()
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
 
-  if (!client) throw new Error("Client not found");
+  if (!client) throw new ClientNotFoundError(clientId);
 
   const [allocation, openItemsAll, openItemsPreview, auditRows, accountRows] =
     await Promise.all([
@@ -36,32 +49,24 @@ export async function getOverviewData(clientId: string, firmId: string) {
         .where(eq(accounts.clientId, clientId)),
     ]);
 
-  // Net worth: sum of all account values. NOTE: liabilities are NOT subtracted
-  // here — this is a crude proxy. Real NW requires subtracting liability balances.
-  // Tracked in future-work/ui.md.
-  const netWorth = accountRows.reduce(
-    (sum, a) => sum + Number(a.value ?? 0),
-    0,
-  );
-
+  const netWorth = accountRows.reduce((sum, a) => sum + Number(a.value ?? 0), 0);
   const liquidPortfolio = accountRows
     .filter((a) => !LIQUID_CATEGORY_EXCLUDE.has(String(a.category)))
     .reduce((sum, a) => sum + Number(a.value ?? 0), 0);
 
-  // Years to retirement — schema uses retirementAge (integer) + dateOfBirth (date).
-  // Derive retirement year as birthYear + retirementAge, then compute delta from today.
+  // Years-to-retirement — unchanged from before
   const currentYear = new Date().getFullYear();
   const retirementYears: number[] = [];
-
   if (client.retirementAge != null && client.dateOfBirth) {
-    const clientBirthYear = new Date(client.dateOfBirth).getFullYear();
-    retirementYears.push(clientBirthYear + client.retirementAge);
+    retirementYears.push(
+      new Date(client.dateOfBirth).getFullYear() + client.retirementAge,
+    );
   }
   if (client.spouseRetirementAge != null && client.spouseDob) {
-    const spouseBirthYear = new Date(client.spouseDob).getFullYear();
-    retirementYears.push(spouseBirthYear + client.spouseRetirementAge);
+    retirementYears.push(
+      new Date(client.spouseDob).getFullYear() + client.spouseRetirementAge,
+    );
   }
-
   const earliestRetirementYear = retirementYears.length
     ? Math.min(...retirementYears)
     : null;
@@ -70,42 +75,74 @@ export async function getOverviewData(clientId: string, firmId: string) {
       ? Math.max(earliestRetirementYear - currentYear, 0)
       : null;
 
-  // TODO: wire to runProjection + runMonteCarlo once a server-side loadClientData
-  //       helper exists. Tracked in future-work/ui.md.
-  const monteCarloSuccess: number | null = null;
-  const netWorthSeries: number[] = [];
-  const lifeEvents: { year: number; label: string }[] = [];
+  // Projection-derived fields — fail-soft
+  let projection: ProjectionYear[] | null = null;
+  let projectionError: string | null = null;
+  try {
+    const clientData = await loadClientData(clientId, firmId);
+    projection = runProjection(clientData);
+  } catch (err) {
+    if (err instanceof ClientNotFoundError) throw err;
+    projectionError = err instanceof Error ? err.message : "Projection failed";
+    console.error(
+      `[overview-pipeline] projection failed for clientId=${clientId}`,
+      err,
+    );
+  }
 
-  const alerts: Alert[] = computeAlerts(
-    { id: client.id, updatedAt: client.updatedAt },
-    {
-      monteCarloSuccess,
-      liquidPortfolio,
-      currentYearNetOutflow: 0, // placeholder until projection exists
-      minNetWorth: netWorth, // use current NW as floor proxy
-    },
-  );
+  const netWorthSeries = projection ? deriveNetWorthSeries(projection) : [];
+
+  let lifeEvents: OverviewLifeEvent[] = [];
+  if (projection) {
+    try {
+      const clientData = await loadClientData(clientId, firmId); // cached — free
+      lifeEvents = deriveLifeEvents(buildTimeline(clientData, projection));
+    } catch {
+      // already logged above — keep lifeEvents empty
+    }
+  }
+
+  const minNetWorth =
+    netWorthSeries.length > 0 ? Math.min(...netWorthSeries) : netWorth;
+
+  const currentYearNetOutflow = (() => {
+    if (!projection || projection.length === 0) return 0;
+    const y0 = projection[0];
+    return Math.max(y0.expenses.total - y0.income.total, 0);
+  })();
 
   const totalOpen = openItemsAll.filter((i) => !i.completedAt).length;
   const totalCompleted = openItemsAll.filter((i) => !!i.completedAt).length;
 
+  const alertInputs: OverviewAlertInputs = {
+    liquidPortfolio,
+    currentYearNetOutflow,
+    minNetWorth,
+    projectionError,
+  };
+
+  // Temporary compat shim for page.tsx until Task 19 wires Suspense slots.
+  // Remove `alerts`, `kpi.monteCarloSuccess`, and `runway.monteCarloSuccess` then.
+  const alerts: Alert[] = computeAlerts(
+    { id: client.id, updatedAt: client.updatedAt },
+    {
+      monteCarloSuccess: null,
+      liquidPortfolio,
+      currentYearNetOutflow,
+      minNetWorth,
+    },
+  );
+
   return {
     client,
-    kpi: {
-      netWorth,
-      liquidPortfolio,
-      monteCarloSuccess,
-      yearsToRetirement,
-    },
-    runway: {
-      monteCarloSuccess,
-      netWorthSeries,
-    },
+    kpi: { netWorth, liquidPortfolio, yearsToRetirement, monteCarloSuccess: null },
+    runway: { netWorthSeries, minNetWorth, monteCarloSuccess: null },
     allocation,
     lifeEvents,
     openItemsPreview,
     totalOpen,
     totalCompleted,
+    alertInputs,
     alerts,
     auditRows,
     accountCount: accountRows.length,
