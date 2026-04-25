@@ -4,7 +4,8 @@ import { clients, scenarios, transfers, transferSchedules } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient } from "@/lib/db-scoping";
-import { recordAudit } from "@/lib/audit";
+import { recordCreate, recordUpdate, recordDelete } from "@/lib/audit";
+import { toTransferSnapshot, TRANSFER_FIELD_LABELS } from "@/lib/audit/snapshots/transfer";
 
 export const dynamic = "force-dynamic";
 
@@ -138,13 +139,13 @@ export async function POST(
       .from(transferSchedules)
       .where(eq(transferSchedules.transferId, created.id));
 
-    await recordAudit({
+    await recordCreate({
       action: "transfer.create",
       resourceType: "transfer",
       resourceId: created.id,
       clientId: id,
       firmId,
-      metadata: { name: created.name, mode: created.mode },
+      snapshot: await toTransferSnapshot(created),
     });
 
     return NextResponse.json({ ...created, schedules: insertedSchedules }, { status: 201 });
@@ -196,6 +197,15 @@ export async function PUT(
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
 
+    const [before] = await db
+      .select()
+      .from(transfers)
+      .where(and(eq(transfers.id, transferId), eq(transfers.clientId, id)));
+
+    if (!before) {
+      return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
+    }
+
     const [updated] = await db
       .update(transfers)
       .set({
@@ -239,13 +249,15 @@ export async function PUT(
       .from(transferSchedules)
       .where(eq(transferSchedules.transferId, transferId));
 
-    await recordAudit({
+    await recordUpdate({
       action: "transfer.update",
       resourceType: "transfer",
       resourceId: transferId,
       clientId: id,
       firmId,
-      metadata: { name: updated.name, mode: updated.mode },
+      before: await toTransferSnapshot(before),
+      after: await toTransferSnapshot(updated),
+      fieldLabels: TRANSFER_FIELD_LABELS,
     });
 
     return NextResponse.json({ ...updated, schedules: updatedSchedules });
@@ -279,16 +291,28 @@ export async function DELETE(
       return NextResponse.json({ error: "Missing transferId" }, { status: 400 });
     }
 
+    const [existing] = await db
+      .select()
+      .from(transfers)
+      .where(and(eq(transfers.id, transferId), eq(transfers.clientId, id)));
+
+    if (!existing) {
+      return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
+    }
+
+    const snapshot = await toTransferSnapshot(existing);
+
     await db
       .delete(transfers)
       .where(and(eq(transfers.id, transferId), eq(transfers.clientId, id)));
 
-    await recordAudit({
+    await recordDelete({
       action: "transfer.delete",
       resourceType: "transfer",
       resourceId: transferId,
       clientId: id,
       firmId,
+      snapshot,
     });
 
     return new NextResponse(null, { status: 204 });
