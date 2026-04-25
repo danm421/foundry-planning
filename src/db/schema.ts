@@ -174,6 +174,13 @@ export const growthSourceEnum = pgEnum("growth_source", [
   "inflation",
 ]);
 
+export const scenarioOpTypeEnum = pgEnum("scenario_op_type", ["add", "edit", "remove"]);
+
+export const scenarioSnapshotSourceKindEnum = pgEnum("scenario_snapshot_source_kind", [
+  "manual",
+  "pdf_export",
+]);
+
 export const incomeTaxTypeEnum = pgEnum("income_tax_type", [
   "earned_income",
   "ordinary_income",
