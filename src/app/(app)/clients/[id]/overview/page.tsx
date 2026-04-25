@@ -84,7 +84,7 @@ export default async function ClientOverviewPage({
         </Suspense>
       </div>
 
-      <RecentActivityPanel rows={d.auditRows} />
+      <RecentActivityPanel clientId={id} rows={d.auditRows} />
     </div>
   );
 }

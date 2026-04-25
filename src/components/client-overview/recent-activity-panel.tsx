@@ -1,10 +1,12 @@
 import type { ReactElement } from "react";
+import Link from "next/link";
 import { Card, CardBody, CardHeader } from "@/components/card";
 import SectionMarker from "@/components/section-marker";
 import { formatAuditRow } from "@/lib/overview/format-audit";
 import type { AuditRowSummary } from "@/lib/overview/list-audit-rows";
 
 interface Props {
+  clientId: string;
   rows: AuditRowSummary[];
 }
 
@@ -43,13 +45,18 @@ function glyphChar(action: string | null | undefined): string {
   return ACTION_GLYPH_CHAR[action] ?? "·";
 }
 
-export default function RecentActivityPanel({ rows }: Props): ReactElement {
+export default function RecentActivityPanel({ clientId, rows }: Props): ReactElement {
   return (
     <Card>
       <CardHeader>
         <div className="flex flex-col gap-0.5">
           <SectionMarker num="08" label="Recent activity" />
-          <p className="text-[14px] font-semibold text-ink">Recent activity</p>
+          <Link
+            href={`/clients/${clientId}/activity`}
+            className="text-[14px] font-semibold text-ink underline-offset-2 hover:underline"
+          >
+            Recent activity
+          </Link>
         </div>
       </CardHeader>
       <CardBody>
