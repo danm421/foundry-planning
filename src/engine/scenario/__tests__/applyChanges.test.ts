@@ -344,3 +344,28 @@ describe("applyScenarioChanges — order of operations", () => {
     expect(result.effectiveTree.accounts).toEqual([]);
   });
 });
+
+describe("applyScenarioChanges — idempotency", () => {
+  it("applying the same change set twice yields identical results", () => {
+    const base = minimalClientData();
+    base.accounts = [{ id: "a1", value: 100 } as Account];
+
+    const changes: ScenarioChange[] = [
+      {
+        id: "ch1", scenarioId: "s1", opType: "add", targetKind: "account",
+        targetId: "a-new", payload: { id: "a-new", value: 50 } as Account,
+        toggleGroupId: null, orderIndex: 0,
+      },
+      {
+        id: "ch2", scenarioId: "s1", opType: "edit", targetKind: "account",
+        targetId: "a1", payload: { value: { from: 100, to: 150 } },
+        toggleGroupId: null, orderIndex: 1,
+      },
+    ];
+
+    const r1 = applyScenarioChanges(base, changes, {}, []);
+    const r2 = applyScenarioChanges(base, changes, {}, []);
+    expect(r2.effectiveTree).toEqual(r1.effectiveTree);
+    expect(r2.warnings).toEqual(r1.warnings);
+  });
+});
