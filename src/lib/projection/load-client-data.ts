@@ -546,6 +546,7 @@ export const loadClientData = cache(
       contributeMax: s.contributeMax,
       startYear: s.startYear,
       endYear: s.endYear,
+      growthRate: s.growthSource === "inflation" ? resolvedInflationRate : Number(s.growthRate ?? 0),
       employerMatchPct: s.employerMatchPct != null ? parseFloat(s.employerMatchPct) : undefined,
       employerMatchCap: s.employerMatchCap != null ? parseFloat(s.employerMatchCap) : undefined,
       employerMatchAmount:
@@ -569,8 +570,8 @@ export const loadClientData = cache(
       planStartYear: settings.planStartYear,
       planEndYear: settings.planEndYear,
       taxEngineMode: settings.taxEngineMode,
-      taxInflationRate: settings.taxInflationRate != null ? parseFloat(settings.taxInflationRate) : undefined,
-      ssWageGrowthRate: settings.ssWageGrowthRate != null ? parseFloat(settings.ssWageGrowthRate) : undefined,
+      taxInflationRate: settings.taxInflationRate != null ? parseFloat(settings.taxInflationRate) : null,
+      ssWageGrowthRate: settings.ssWageGrowthRate != null ? parseFloat(settings.ssWageGrowthRate) : null,
     };
 
     const mappedEntities = entityRows.map((e) => ({

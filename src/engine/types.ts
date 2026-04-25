@@ -434,6 +434,8 @@ export interface SavingsRule {
   applyContributionLimit?: boolean;
   startYear: number;
   endYear: number;
+  /** Resolved growth rate for this savings rule (inflation-linked or explicit). */
+  growthRate?: number;
   employerMatchPct?: number;
   employerMatchCap?: number;
   /** Flat annual dollar amount. When set, overrides the percentage/cap style. */
@@ -506,9 +508,9 @@ export interface PlanSettings {
   /** "flat" (default) uses flatFederalRate; "bracket" routes through the bracket engine. */
   taxEngineMode?: "flat" | "bracket";
   /** Annual rate for inflating tax brackets/thresholds beyond the last seeded year. */
-  taxInflationRate?: number;
+  taxInflationRate?: number | null;
   /** Annual rate for inflating the SS wage base (default: inflationRate + 0.005). */
-  ssWageGrowthRate?: number;
+  ssWageGrowthRate?: number | null;
   /** Lump-sum estate administration expenses (funerals, executor fees, etc.). */
   estateAdminExpenses?: number;
   /** Flat state estate tax rate applied on top of federal estate tax. 0 disables. */
