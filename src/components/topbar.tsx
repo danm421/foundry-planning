@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import Breadcrumb from "./breadcrumb";
-import { ShareIcon, DownloadIcon, SparkleIcon } from "./icons";
+import { toggleSidebar } from "./sidebar";
+import { ShareIcon, DownloadIcon, SparkleIcon, PanelLeftIcon } from "./icons";
 
 interface TopbarProps {
   clientHouseholdTitle?: string;
@@ -9,7 +10,18 @@ interface TopbarProps {
 export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElement {
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-hair bg-paper px-[var(--pad-card)]">
-      <Breadcrumb clientHouseholdTitle={clientHouseholdTitle} />
+      <div className="flex items-center gap-2">
+        <form action={toggleSidebar}>
+          <button
+            type="submit"
+            aria-label="Toggle sidebar"
+            className="flex h-8 w-8 items-center justify-center rounded text-ink-3 hover:bg-card-hover hover:text-ink"
+          >
+            <PanelLeftIcon />
+          </button>
+        </form>
+        <Breadcrumb clientHouseholdTitle={clientHouseholdTitle} />
+      </div>
       <div className="flex items-center gap-2">
         <button
           type="button"
