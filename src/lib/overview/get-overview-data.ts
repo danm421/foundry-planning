@@ -6,7 +6,8 @@ import { listAuditRows } from "./list-audit-rows";
 import { getAssetAllocationByType } from "./get-asset-allocation-by-type";
 import { deriveNetWorthSeries } from "./derive-net-worth-series";
 import { deriveLifeEvents, type OverviewLifeEvent } from "./derive-life-events";
-import { loadClientData, ClientNotFoundError } from "@/lib/projection/load-client-data";
+import { ClientNotFoundError } from "@/lib/projection/load-client-data";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
 import { buildTimeline } from "@/lib/timeline/build-timeline";
 import type { ProjectionYear } from "@/engine";
@@ -77,8 +78,9 @@ export async function getOverviewData(clientId: string, firmId: string) {
   // Projection-derived fields — fail-soft
   let projection: ProjectionYear[] | null = null;
   let projectionError: string | null = null;
+  let clientData;
   try {
-    const clientData = await loadClientData(clientId, firmId);
+    ({ effectiveTree: clientData } = await loadEffectiveTree(clientId, firmId, "base", {}));
     projection = runProjection(clientData);
   } catch (err) {
     if (err instanceof ClientNotFoundError) throw err;
@@ -92,9 +94,8 @@ export async function getOverviewData(clientId: string, firmId: string) {
   const netWorthSeries = projection ? deriveNetWorthSeries(projection) : [];
 
   let lifeEvents: OverviewLifeEvent[] = [];
-  if (projection) {
+  if (projection && clientData) {
     try {
-      const clientData = await loadClientData(clientId, firmId); // cached — free
       lifeEvents = deriveLifeEvents(buildTimeline(clientData, projection));
     } catch {
       // already logged above — keep lifeEvents empty

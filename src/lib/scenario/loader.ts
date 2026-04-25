@@ -23,29 +23,37 @@ export const loadEffectiveTree = cache(
   async (
     clientId: string,
     firmId: string,
-    scenarioId: string,
+    scenarioId: string | "base",
     toggleState: ToggleState,
   ): Promise<LoadEffectiveTreeResult> => {
     const baseTree = await loadClientData(clientId, firmId);
 
-    // Fast path: when scenarioId is the client's base case AND no toggles are
-    // explicitly set, we can return baseTree directly.
-    const [scenario] = await db
-      .select()
-      .from(scenarios)
-      .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, clientId)));
-
-    if (!scenario) {
-      throw new Error(`Scenario ${scenarioId} not found for client ${clientId}`);
+    let resolvedScenario;
+    if (scenarioId === "base") {
+      const [s] = await db
+        .select()
+        .from(scenarios)
+        .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
+      if (!s) throw new Error(`Client ${clientId} has no base case scenario`);
+      resolvedScenario = s;
+    } else {
+      const [s] = await db
+        .select()
+        .from(scenarios)
+        .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, clientId)));
+      if (!s) throw new Error(`Scenario ${scenarioId} not found for client ${clientId}`);
+      resolvedScenario = s;
     }
 
-    if (scenario.isBaseCase && Object.keys(toggleState).length === 0) {
+    // Fast path: when scenarioId resolves to the client's base case AND no
+    // toggles are explicitly set, we can return baseTree directly.
+    if (resolvedScenario.isBaseCase && Object.keys(toggleState).length === 0) {
       return { effectiveTree: baseTree, warnings: [] };
     }
 
     const [changes, groups] = await Promise.all([
-      loadScenarioChanges(scenarioId),
-      loadScenarioToggleGroups(scenarioId),
+      loadScenarioChanges(resolvedScenario.id),
+      loadScenarioToggleGroups(resolvedScenario.id),
     ]);
 
     return applyScenarioChanges(baseTree, changes, toggleState, groups);
