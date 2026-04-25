@@ -2,7 +2,7 @@ import { cache } from "react";
 import type { MonteCarloResult } from "@/engine/monteCarlo/run";
 import { runMonteCarlo } from "@/engine/monteCarlo/run";
 import { createReturnEngine } from "@/engine/monteCarlo/returns";
-import { loadClientData } from "./load-client-data";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { loadMonteCarloData } from "./load-monte-carlo-data";
 
 export const getMonteCarloResult = cache(
@@ -12,7 +12,7 @@ export const getMonteCarloResult = cache(
   ): Promise<MonteCarloResult | null> => {
     try {
       const [clientData, mcPayload] = await Promise.all([
-        loadClientData(clientId, firmId),
+        loadEffectiveTree(clientId, firmId, "base", {}).then((r) => r.effectiveTree),
         loadMonteCarloData(clientId, firmId),
       ]);
       const returnEngine = createReturnEngine({
