@@ -1,5 +1,7 @@
 "use client";
 
+import { PercentInput } from "@/components/percent-input";
+
 interface Props {
   value: "custom" | "inflation";
   customRate: string; // percent string as the input displays, e.g., "3.00"
@@ -17,36 +19,50 @@ export default function GrowthSourceRadio({
   customRateName,
   disabled = false,
 }: Props) {
+  const inflationLabel = `Inflation (${(resolvedInflationRate * 100).toFixed(2)}%)`;
   return (
-    <div className="flex items-center gap-4">
-      <label className="flex items-center gap-2 text-sm text-gray-200">
-        <input
-          type="radio"
-          checked={value === "custom"}
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex gap-1 text-xs">
+        <button
+          type="button"
           disabled={disabled}
-          onChange={() => onChange({ value: "custom", customRate })}
-        />
-        Custom
-        <input
-          type="number"
-          step="0.01"
-          value={customRate}
-          name={customRateName}
-          disabled={disabled || value !== "custom"}
-          onChange={(e) => onChange({ value: "custom", customRate: e.target.value })}
-          className="ml-1 w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100 disabled:opacity-50"
-        />
-        <span className="text-xs text-gray-300">%</span>
-      </label>
-      <label className="flex items-center gap-2 text-sm text-gray-200">
-        <input
-          type="radio"
-          checked={value === "inflation"}
+          onClick={() => onChange({ value: "inflation", customRate })}
+          className={
+            "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors " +
+            (value === "inflation"
+              ? "border-blue-600 bg-blue-900/40 text-blue-300"
+              : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800") +
+            (disabled ? " opacity-50" : "")
+          }
+        >
+          {inflationLabel}
+        </button>
+        <button
+          type="button"
           disabled={disabled}
-          onChange={() => onChange({ value: "inflation", customRate })}
-        />
-        Inflation ({(resolvedInflationRate * 100).toFixed(2)}%)
-      </label>
+          onClick={() => onChange({ value: "custom", customRate })}
+          className={
+            "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors " +
+            (value === "custom"
+              ? "border-blue-600 bg-blue-900/40 text-blue-300"
+              : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800") +
+            (disabled ? " opacity-50" : "")
+          }
+        >
+          Custom %
+        </button>
+      </div>
+      {value === "custom" && (
+        <div className="flex items-center gap-1">
+          <PercentInput
+            value={customRate}
+            name={customRateName}
+            disabled={disabled}
+            onChange={(v) => onChange({ value: "custom", customRate: v })}
+            className="w-24 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100 disabled:opacity-50"
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import { CurrencyInput } from "./currency-input";
 import type {
   InsurancePanelAccount,
   InsurancePanelEntity,
@@ -18,6 +20,9 @@ interface InsurancePolicyDetailsTabProps {
   entities: InsurancePanelEntity[];
   /** For edit mode — excludes self from the postPayoutMergeAccountId options. */
   policyId?: string;
+  mode: "create" | "edit";
+  clientFirstName: string;
+  spouseFirstName: string | null;
 }
 
 // Coerce a number input value → number. Empty string becomes 0.
@@ -44,9 +49,24 @@ export default function InsurancePolicyDetailsTab({
   accounts,
   entities,
   policyId,
+  mode,
+  clientFirstName,
+  spouseFirstName,
 }: InsurancePolicyDetailsTabProps) {
   const isTerm = state.policyType === "term";
   const trustEntities = entities.filter((e) => e.entityType === "trust");
+  const spouseLabel = spouseFirstName ?? "Spouse";
+
+  // Auto-focus + select-all the Name input on create so the advisor can start
+  // typing to replace the auto-default ("{Owner} - {Type}") immediately.
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (mode !== "create") return;
+    const el = nameInputRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [mode]);
 
   // Post-payout options exclude life_insurance accounts and the policy itself.
   const postPayoutOptions = accounts.filter(
@@ -62,6 +82,7 @@ export default function InsurancePolicyDetailsTab({
           <label className="block">
             <span className={fieldLabelClassName}>Name</span>
             <input
+              ref={nameInputRef}
               type="text"
               required
               value={state.name}
@@ -97,21 +118,18 @@ export default function InsurancePolicyDetailsTab({
               }
               className={selectClassName}
             >
-              <option value="client">Client</option>
-              <option value="spouse">Spouse</option>
+              <option value="client">{clientFirstName}</option>
+              <option value="spouse" disabled={!spouseFirstName}>{spouseLabel}</option>
               <option value="joint">Joint</option>
             </select>
           </label>
           <label className="block">
             <span className={fieldLabelClassName}>Face value</span>
-            <input
-              type="number"
-              min={0}
-              step={1000}
-              required
+            <CurrencyInput
               value={state.faceValue}
-              onChange={(e) => onChange({ faceValue: toNumber(e.target.value) })}
+              onChange={(raw) => onChange({ faceValue: toNumber(raw) })}
               className={inputClassName}
+              required
             />
           </label>
         </div>
@@ -130,8 +148,8 @@ export default function InsurancePolicyDetailsTab({
               }
               className={selectClassName}
             >
-              <option value="client">Client</option>
-              <option value="spouse">Spouse</option>
+              <option value="client">{clientFirstName}</option>
+              <option value="spouse" disabled={!spouseFirstName}>{spouseLabel}</option>
               <option value="joint">Joint</option>
             </select>
           </label>
@@ -165,14 +183,9 @@ export default function InsurancePolicyDetailsTab({
         <div className={gridTwoCls}>
           <label className="block">
             <span className={fieldLabelClassName}>Annual premium</span>
-            <input
-              type="number"
-              min={0}
-              step={100}
+            <CurrencyInput
               value={state.premiumAmount}
-              onChange={(e) =>
-                onChange({ premiumAmount: toNumber(e.target.value) })
-              }
+              onChange={(raw) => onChange({ premiumAmount: toNumber(raw) })}
               className={inputClassName}
             />
             <p className={helpCls}>Annual premium paid by the owner.</p>
@@ -193,14 +206,9 @@ export default function InsurancePolicyDetailsTab({
           {!isTerm && (
             <label className="block">
               <span className={fieldLabelClassName}>Cost basis</span>
-              <input
-                type="number"
-                min={0}
-                step={1000}
+              <CurrencyInput
                 value={state.costBasis}
-                onChange={(e) =>
-                  onChange({ costBasis: toNumber(e.target.value) })
-                }
+                onChange={(raw) => onChange({ costBasis: toNumber(raw) })}
                 className={inputClassName}
               />
               <p className={helpCls}>
@@ -217,14 +225,9 @@ export default function InsurancePolicyDetailsTab({
           <h3 className={sectionTitleCls}>Cash value</h3>
           <label className="block">
             <span className={fieldLabelClassName}>Current cash value</span>
-            <input
-              type="number"
-              min={0}
-              step={1000}
+            <CurrencyInput
               value={state.cashValue}
-              onChange={(e) =>
-                onChange({ cashValue: toNumber(e.target.value) })
-              }
+              onChange={(raw) => onChange({ cashValue: toNumber(raw) })}
               className={inputClassName}
             />
             <p className={helpCls}>Current cash surrender value.</p>

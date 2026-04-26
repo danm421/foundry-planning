@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import MilestoneYearPicker from "../milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
@@ -80,6 +80,17 @@ export default function AddLiabilityForm({
   const [ownerEntityId, setOwnerEntityId] = useState<string>(initial?.ownerEntityId ?? "");
   const [isInterestDeductible, setIsInterestDeductible] = useState(initial?.isInterestDeductible ?? false);
   const isEdit = mode === "edit" && !!initial;
+
+  // Auto-focus + select-all the Name input on create so the advisor can start
+  // typing to replace the default name immediately.
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (isEdit) return;
+    const el = nameInputRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [isEdit]);
 
   const currentYear = new Date().getFullYear();
   const initialInterestPct = initial
@@ -278,6 +289,7 @@ export default function AddLiabilityForm({
           Liability Name <span className="text-red-500">*</span>
         </label>
         <input
+          ref={nameInputRef}
           id="name"
           name="name"
           type="text"

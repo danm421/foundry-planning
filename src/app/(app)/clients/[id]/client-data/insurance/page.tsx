@@ -106,6 +106,8 @@ export default async function InsurancePage({ params }: PageProps) {
   return (
     <InsurancePanel
       clientId={id}
+      clientFirstName={client.firstName}
+      spouseFirstName={client.spouseName ?? null}
       accounts={accts}
       policies={policies}
       entities={ents}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
 import BeneficiariesTab from "./beneficiaries-tab";
@@ -207,6 +207,20 @@ export default function AddAccountForm({
   const spouseLabel = ownerNames?.spouseName ?? null;
   const router = useRouter();
   const isEdit = mode === "edit" && !!initial;
+
+  // Auto-focus + select-all the Name input on create so the advisor can start
+  // typing to replace any default. Skipped on edit and when the dialog is
+  // deep-linked to a non-Details tab (`lockTab`), since the input isn't
+  // visible in that case.
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (isEdit || lockTab) return;
+    const el = nameInputRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [isEdit, lockTab]);
+
   const [accountSavingsRules, setAccountSavingsRules] = useState<SavingsRuleRow[]>([]);
   const [srDialogOpen, setSrDialogOpen] = useState(false);
   const [srDialogEditing, setSrDialogEditing] = useState<SavingsRuleRow | undefined>(undefined);
@@ -642,6 +656,7 @@ export default function AddAccountForm({
               Account Name <span className="text-red-500">*</span>
             </label>
             <input
+              ref={nameInputRef}
               id="name"
               name="name"
               type="text"

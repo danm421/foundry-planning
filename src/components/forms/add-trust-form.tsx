@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
 import type { Designation, Entity, ExternalBeneficiary, FamilyMember } from "../family-view";
 import BeneficiaryRowList, { type BeneficiaryRow } from "./beneficiary-row-list";
@@ -44,12 +44,32 @@ export default function AddTrustForm({
   const [error, setError] = useState<string | null>(null);
   useEffect(() => onSubmitStateChange?.({ canSubmit: !loading, loading }), [loading, onSubmitStateChange]);
 
-  // Form state
-  const [name, setName] = useState(editing?.name ?? "");
-  const [trustSubType, setTrustSubType] = useState<TrustSubType | "">(editing?.trustSubType ?? "");
+  // Form state — create-mode defaults follow the most-common shape:
+  //   * irrevocable trust (revocable trusts are typically already wired to the
+  //     household and don't need separate planning)
+  //   * survivorship (trust ends at the second death)
+  //   * a placeholder name the advisor types over immediately on first focus
+  const isCreate = !editing;
+  const [name, setName] = useState(editing?.name ?? "New Trust");
+  const [trustSubType, setTrustSubType] = useState<TrustSubType | "">(
+    editing?.trustSubType ?? (isCreate ? "irrevocable" : "")
+  );
   const [trustee, setTrustee] = useState(editing?.trustee ?? "");
   const [grantor, setGrantor] = useState<"client" | "spouse" | "">(editing?.grantor ?? "");
-  const [trustEnds, setTrustEnds] = useState<TrustEnds | null>((editing as Entity & { trustEnds?: TrustEnds | null })?.trustEnds ?? null);
+  const [trustEnds, setTrustEnds] = useState<TrustEnds | null>(
+    (editing as Entity & { trustEnds?: TrustEnds | null })?.trustEnds ?? (isCreate ? "survivorship" : null)
+  );
+
+  // Auto-focus + select-all the name field on create so the advisor can replace
+  // the "New Trust" placeholder by just typing.
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (!isCreate) return;
+    const el = nameInputRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [isCreate]);
   const [includeInPortfolio, setIncludeInPortfolio] = useState(editing?.includeInPortfolio ?? false);
   const [isGrantor, setIsGrantor] = useState(editing?.isGrantor ?? false);
   const [notes, setNotes] = useState(editing?.notes ?? "");
@@ -142,7 +162,16 @@ export default function AddTrustForm({
         {/* Name */}
         <div>
           <label className={fieldLabelClassName} htmlFor="trust-name">Name <span className="text-red-500">*</span></label>
-          <input id="trust-name" type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Smith Family Trust" className={inputClassName} />
+          <input
+            ref={nameInputRef}
+            id="trust-name"
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g., Smith Family Trust"
+            className={inputClassName}
+          />
         </div>
 
         {/* Type + Trustee */}

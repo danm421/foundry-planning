@@ -49,6 +49,8 @@ export interface InsurancePanelExternal {
 
 export interface InsurancePanelProps {
   clientId: string;
+  clientFirstName: string;
+  spouseFirstName: string | null;
   accounts: InsurancePanelAccount[];
   policies: Record<string, LifeInsurancePolicy>;
   entities: InsurancePanelEntity[];
@@ -192,6 +194,8 @@ export default function InsurancePanel(props: InsurancePanelProps) {
       {dialogState && (
         <InsurancePolicyDialog
           clientId={props.clientId}
+          clientFirstName={props.clientFirstName}
+          spouseFirstName={props.spouseFirstName}
           accounts={props.accounts}
           policies={props.policies}
           entities={props.entities}

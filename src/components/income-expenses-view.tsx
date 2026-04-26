@@ -399,8 +399,10 @@ function IncomeDialog({
       ? editing.inflationStartYear != null && editing.inflationStartYear < editing.startYear
       : true
   );
+  // New incomes default to inflation growth (advisor convention — most income
+  // streams are modeled to inflate with cost of living unless explicitly set).
   const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
-    editing?.growthSource === "inflation" ? "inflation" : "custom"
+    editing ? (editing.growthSource === "inflation" ? "inflation" : "custom") : "inflation"
   );
   const [growthRateDisplay, setGrowthRateDisplay] = useState<string>(
     String(pctFromDecimal(editing?.growthRate, 3))
