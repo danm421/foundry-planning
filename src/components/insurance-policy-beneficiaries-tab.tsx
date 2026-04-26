@@ -8,6 +8,7 @@ import type {
   ExternalBeneficiary,
   Tier,
 } from "./family-view";
+import { redistribute, splitEvenly } from "./forms/auto-split-percentages";
 
 interface InsurancePolicyBeneficiariesTabProps {
   clientId: string;
@@ -48,12 +49,23 @@ function AccountBeneficiaryEditor({
   const [rows, setRows] = useState<Designation[]>(initial);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [lockedKeys, setLockedKeys] = useState<ReadonlySet<string>>(() => new Set());
 
   const url = `/api/clients/${clientId}/accounts/${accountId}/beneficiaries`;
 
   const byTier = (tier: Tier) => rows.filter((r) => r.tier === tier);
   const sumTier = (tier: Tier) =>
     byTier(tier).reduce((acc, r) => acc + (isFinite(r.percentage) ? r.percentage : 0), 0);
+
+  const setRowPct = (r: Designation, percentage: number): Designation => ({ ...r, percentage });
+  const getRowKey = (r: Designation): string => r.id;
+
+  function applyToTier(allRows: Designation[], tier: Tier, locked: ReadonlySet<string>): Designation[] {
+    const tierRows = allRows.filter((r) => r.tier === tier);
+    const balanced = redistribute(tierRows, locked, getRowKey, setRowPct);
+    const balancedById = new Map(balanced.map((r) => [r.id, r]));
+    return allRows.map((r) => balancedById.get(r.id) ?? r);
+  }
 
   async function save() {
     setSaving(true);
@@ -91,9 +103,8 @@ function AccountBeneficiaryEditor({
   }
 
   function addRow(tier: Tier) {
-    setRows((r) => [
-      ...r,
-      {
+    setRows((r) => {
+      const newRow: Designation = {
         id: `tmp-${Math.random()}`,
         targetKind: "account",
         accountId,
@@ -105,16 +116,71 @@ function AccountBeneficiaryEditor({
         householdRole: null,
         percentage: 0,
         sortOrder: r.length,
-      },
-    ]);
+      };
+      const tierWasEmpty = r.filter((x) => x.tier === tier).length === 0;
+      if (tierWasEmpty) {
+        return [...r, { ...newRow, percentage: splitEvenly(1)[0] }];
+      }
+      return applyToTier([...r, newRow], tier, lockedKeys);
+    });
   }
 
   function updateRow(id: string, patch: Partial<Designation>) {
     setRows((r) => r.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   }
 
+  function changePercentage(id: string, tier: Tier, pct: number) {
+    const nextLocked = new Set(lockedKeys);
+    nextLocked.add(id);
+    setLockedKeys(nextLocked);
+    setRows((r) => {
+      const updated = r.map((x) => (x.id === id ? { ...x, percentage: pct } : x));
+      return applyToTier(updated, tier, nextLocked);
+    });
+  }
+
   function removeRow(id: string) {
-    setRows((r) => r.filter((x) => x.id !== id));
+    const removedRow = rows.find((r) => r.id === id);
+    const tier =
+      removedRow?.tier === "primary" || removedRow?.tier === "contingent"
+        ? removedRow.tier
+        : null;
+    const nextLocked = new Set(lockedKeys);
+    nextLocked.delete(id);
+    setLockedKeys(nextLocked);
+    setRows((r) => {
+      const remaining = r.filter((x) => x.id !== id);
+      return tier ? applyToTier(remaining, tier, nextLocked) : remaining;
+    });
+  }
+
+  const children = members.filter((m) => m.relationship === "child");
+
+  function splitAmongChildren(tier: Tier) {
+    if (children.length === 0) return;
+    const pcts = splitEvenly(children.length);
+    const childRows: Designation[] = children.map((child, i) => ({
+      id: `tmp-${Math.random()}`,
+      targetKind: "account",
+      accountId,
+      entityId: null,
+      tier,
+      familyMemberId: child.id,
+      externalBeneficiaryId: null,
+      entityIdRef: null,
+      householdRole: null,
+      percentage: pcts[i],
+      sortOrder: i,
+    }));
+    setRows((r) => [...r.filter((x) => x.tier !== tier), ...childRows]);
+    setLockedKeys((prev) => {
+      const next = new Set<string>();
+      for (const key of prev) {
+        const row = rows.find((r) => r.id === key);
+        if (row && row.tier !== tier) next.add(key);
+      }
+      return next;
+    });
   }
 
   const renderTier = (tier: Tier) => {
@@ -174,7 +240,7 @@ function AccountBeneficiaryEditor({
                 min={0}
                 max={100}
                 value={r.percentage}
-                onChange={(e) => updateRow(r.id, { percentage: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => changePercentage(r.id, tier, parseFloat(e.target.value) || 0)}
                 className="w-24 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
               />
               <span className="text-sm text-gray-300">%</span>
@@ -188,13 +254,25 @@ function AccountBeneficiaryEditor({
             </li>
           ))}
         </ul>
-        <button
-          type="button"
-          onClick={() => addRow(tier)}
-          className="mt-1 text-xs text-blue-400 hover:text-blue-300"
-        >
-          + add {tier}
-        </button>
+        <div className="mt-1 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => addRow(tier)}
+            className="text-xs text-blue-400 hover:text-blue-300"
+          >
+            + add {tier}
+          </button>
+          {children.length > 0 && (
+            <button
+              type="button"
+              onClick={() => splitAmongChildren(tier)}
+              className="text-xs text-gray-400 hover:text-gray-200"
+              title={`Replace with ${children.length} child${children.length === 1 ? "" : "ren"}, split evenly`}
+            >
+              Split among children
+            </button>
+          )}
+        </div>
       </div>
     );
   };

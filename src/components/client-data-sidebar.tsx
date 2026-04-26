@@ -16,7 +16,7 @@ interface SidebarTab {
 
 const ICON_CLASS = "h-[18px] w-[18px] flex-shrink-0";
 
-function FamilyIcon() {
+function ProfileIcon() {
   return (
     <svg className={ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="9" cy="7" r="3.2" />
@@ -95,40 +95,46 @@ function InsuranceIcon() {
 }
 
 const TABS: SidebarTab[] = [
-  { label: "Family", href: "family", icon: <FamilyIcon /> },
-  { label: "Wills", href: "wills", icon: <WillsIcon /> },
-  { label: "Insurance", href: "insurance", icon: <InsuranceIcon /> },
+  { label: "Profile", href: "family", icon: <ProfileIcon /> },
   { label: "Net Worth", href: "balance-sheet", icon: <BalanceSheetIcon /> },
   { label: "Inflows & Outflows", href: "income-expenses", icon: <CashflowIcon /> },
+  { label: "Insurance", href: "insurance", icon: <InsuranceIcon /> },
   { label: "Techniques", href: "techniques", icon: <TechniquesIcon /> },
+  { label: "Wills", href: "wills", icon: <WillsIcon /> },
   { label: "Assumptions", href: "assumptions", icon: <AssumptionsIcon /> },
-  { label: "Import", href: "import", icon: <ImportIcon /> },
 ];
+
+const IMPORT_TAB: SidebarTab = { label: "Import", href: "import", icon: <ImportIcon /> };
 
 export default function ClientDataSidebar({ clientId }: ClientDataSidebarProps) {
   const pathname = usePathname();
   const withScenario = useScenarioPreservingHref();
 
+  function renderLink(tab: SidebarTab) {
+    const href = `/clients/${clientId}/client-data/${tab.href}`;
+    const isActive = pathname === href || pathname.startsWith(href + "/");
+    return (
+      <Link
+        key={tab.href}
+        href={withScenario(href)}
+        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+          isActive
+            ? "bg-gray-800 text-gray-100"
+            : "text-gray-300 hover:bg-gray-800/50 hover:text-gray-200"
+        }`}
+      >
+        <span className={isActive ? "text-blue-400" : "text-gray-400"}>{tab.icon}</span>
+        <span>{tab.label}</span>
+      </Link>
+    );
+  }
+
   return (
-    <nav className="flex flex-col gap-1">
-      {TABS.map((tab) => {
-        const href = `/clients/${clientId}/client-data/${tab.href}`;
-        const isActive = pathname === href || pathname.startsWith(href + "/");
-        return (
-          <Link
-            key={tab.href}
-            href={withScenario(href)}
-            className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-              isActive
-                ? "bg-gray-800 text-gray-100"
-                : "text-gray-300 hover:bg-gray-800/50 hover:text-gray-200"
-            }`}
-          >
-            <span className={isActive ? "text-blue-400" : "text-gray-400"}>{tab.icon}</span>
-            <span>{tab.label}</span>
-          </Link>
-        );
-      })}
+    <nav className="flex h-full flex-col gap-1">
+      {TABS.map(renderLink)}
+      <div className="mt-auto pt-4">
+        <div className="border-t border-gray-800 pt-3">{renderLink(IMPORT_TAB)}</div>
+      </div>
     </nav>
   );
 }

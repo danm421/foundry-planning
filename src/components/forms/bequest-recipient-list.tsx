@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { fieldLabelClassName } from "./input-styles";
+import { redistribute, splitEvenly } from "./auto-split-percentages";
 import type {
   WillsPanelEntity,
   WillsPanelExternal,
@@ -64,6 +66,9 @@ function spouseLabel(p: WillsPanelPrimary): string {
   return p.spouseName ? `${p.spouseName} (spouse)` : "Spouse";
 }
 
+const setRowPercentage = (r: BequestRecipient, percentage: number): BequestRecipient => ({ ...r, percentage });
+const newKey = () => `tmp-${Math.random().toString(36).slice(2)}`;
+
 export default function BequestRecipientList({
   mode,
   rows,
@@ -73,15 +78,43 @@ export default function BequestRecipientList({
   externalBeneficiaries,
   entities,
 }: BequestRecipientListProps) {
+  // Stable client-side keys, parallel to `rows`. Kept in sync inside the
+  // handlers below; resynced if the parent ever swaps `rows` out from under us
+  // (e.g., dialog reopens with a different editing target).
+  const [rowKeys, setRowKeys] = useState<string[]>(() => rows.map(newKey));
+  const [lockedKeys, setLockedKeys] = useState<ReadonlySet<string>>(() => new Set());
+  if (rowKeys.length !== rows.length) {
+    setRowKeys(rows.map(newKey));
+    setLockedKeys(new Set());
+  }
+
   const sum = rows.reduce((acc, r) => acc + (Number.isFinite(r.percentage) ? r.percentage : 0), 0);
   const sumOk = rows.length === 0 || Math.abs(sum - 100) <= 0.01;
 
   function update(idx: number, patch: Partial<BequestRecipient>) {
     onChange(rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
   }
-  function remove(idx: number) {
-    onChange(rows.filter((_, i) => i !== idx).map((r, i) => ({ ...r, sortOrder: i })));
+
+  function changePercentage(idx: number, pct: number) {
+    const key = rowKeys[idx];
+    const nextLocked = new Set(lockedKeys);
+    nextLocked.add(key);
+    setLockedKeys(nextLocked);
+    const updated = rows.map((r, i) => (i === idx ? setRowPercentage(r, pct) : r));
+    onChange(redistribute(updated, nextLocked, (r) => rowKeys[updated.indexOf(r)] ?? key, setRowPercentage));
   }
+
+  function remove(idx: number) {
+    const removedKey = rowKeys[idx];
+    const nextKeys = rowKeys.filter((_, i) => i !== idx);
+    const nextLocked = new Set(lockedKeys);
+    nextLocked.delete(removedKey);
+    setRowKeys(nextKeys);
+    setLockedKeys(nextLocked);
+    const remaining = rows.filter((_, i) => i !== idx).map((r, i) => ({ ...r, sortOrder: i }));
+    onChange(redistribute(remaining, nextLocked, (r) => nextKeys[remaining.indexOf(r)] ?? "", setRowPercentage));
+  }
+
   function add() {
     const next: BequestRecipient = mode === "asset"
       ? { recipientKind: "spouse", recipientId: null, percentage: 0, sortOrder: rows.length }
@@ -90,7 +123,15 @@ export default function BequestRecipientList({
         : entities.length > 0
           ? { recipientKind: "entity", recipientId: entities[0].id, percentage: 0, sortOrder: rows.length }
           : { recipientKind: "family_member", recipientId: null, percentage: 0, sortOrder: rows.length };
-    onChange([...rows, next]);
+    const addedKey = newKey();
+    setRowKeys([...rowKeys, addedKey]);
+    if (rows.length === 0) {
+      onChange([{ ...next, percentage: splitEvenly(1)[0] }]);
+      return;
+    }
+    const combined = [...rows, next];
+    const combinedKeys = [...rowKeys, addedKey];
+    onChange(redistribute(combined, lockedKeys, (r) => combinedKeys[combined.indexOf(r)] ?? addedKey, setRowPercentage));
   }
 
   const showSpouse = mode === "asset" && primary.spouseName != null;
@@ -151,7 +192,7 @@ export default function BequestRecipientList({
               max={100}
               step={0.01}
               value={r.percentage}
-              onChange={(e) => update(idx, { percentage: parseFloat(e.target.value) || 0 })}
+              onChange={(e) => changePercentage(idx, parseFloat(e.target.value) || 0)}
               className={rowFieldBase + " w-20 text-right"}
             />
             <span className="text-xs text-ink-3">%</span>

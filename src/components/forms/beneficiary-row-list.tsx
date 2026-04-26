@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import type { FamilyMember, ExternalBeneficiary } from "../family-view";
 import { fieldLabelClassName } from "./input-styles";
+import { redistribute, splitEvenly } from "./auto-split-percentages";
 
 // Visual styling for inline-row fields — same look as inputClassName/selectClassName
 // but without `w-full` so flex-1 / explicit widths can take over.
@@ -57,20 +59,73 @@ function valueToRowSource(v: string): BeneficiaryRow["source"] {
   return { kind: "empty" };
 }
 
+// Helper for use across this file's handlers — applied after add/remove and
+// after every user percentage change so unlocked rows always sum to 100%.
+const setRowPercentage = (r: BeneficiaryRow, percentage: number): BeneficiaryRow => ({ ...r, percentage });
+const getRowKey = (r: BeneficiaryRow): string => r.id;
+
 export default function BeneficiaryRowList({
   tier, allowEntities, rows, onChange, members, externals, entities, household,
 }: BeneficiaryRowListProps) {
+  // Tracks which rows the user has manually edited in this dialog session.
+  // Locked rows keep their percentage on add/remove; unlocked rows split the
+  // remainder evenly. Rows loaded from initial props start unlocked, so the
+  // first add inside an existing list still triggers an even split.
+  const [lockedKeys, setLockedKeys] = useState<ReadonlySet<string>>(() => new Set());
+
   const sum = rows.reduce((acc, r) => acc + (Number.isFinite(r.percentage) ? r.percentage : 0), 0);
   const sumOk = rows.length === 0 || Math.abs(sum - 100) <= 0.01;
 
   function update(idx: number, patch: Partial<BeneficiaryRow>) {
     onChange(rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
   }
-  function remove(idx: number) {
-    onChange(rows.filter((_, i) => i !== idx));
+
+  function changePercentage(idx: number, pct: number) {
+    const key = getRowKey(rows[idx]);
+    const nextLocked = new Set(lockedKeys);
+    nextLocked.add(key);
+    setLockedKeys(nextLocked);
+    const updated = rows.map((r, i) => (i === idx ? setRowPercentage(r, pct) : r));
+    onChange(redistribute(updated, nextLocked, getRowKey, setRowPercentage));
   }
+
+  function remove(idx: number) {
+    const removedKey = getRowKey(rows[idx]);
+    const nextLocked = new Set(lockedKeys);
+    nextLocked.delete(removedKey);
+    setLockedKeys(nextLocked);
+    const remaining = rows.filter((_, i) => i !== idx);
+    onChange(redistribute(remaining, nextLocked, getRowKey, setRowPercentage));
+  }
+
   function add() {
-    onChange([...rows, { id: `tmp-${Math.random().toString(36).slice(2)}`, source: { kind: "empty" }, percentage: 0 }]);
+    const newRow: BeneficiaryRow = {
+      id: `tmp-${Math.random().toString(36).slice(2)}`,
+      source: { kind: "empty" },
+      percentage: 0,
+    };
+    // First-add convenience: if list was empty, default the row to 100% so the
+    // user doesn't have to type it. Subsequent adds redistribute over unlocked.
+    if (rows.length === 0) {
+      onChange([{ ...newRow, percentage: splitEvenly(1)[0] }]);
+      return;
+    }
+    onChange(redistribute([...rows, newRow], lockedKeys, getRowKey, setRowPercentage));
+  }
+
+  // #8: replace the list with one row per child family member, evenly split.
+  // Resets the locked-set since this is a fresh auto allocation.
+  const children = members.filter((m) => m.relationship === "child");
+  function splitAmongChildren() {
+    if (children.length === 0) return;
+    const pcts = splitEvenly(children.length);
+    const newRows: BeneficiaryRow[] = children.map((child, i) => ({
+      id: `tmp-${Math.random().toString(36).slice(2)}`,
+      source: { kind: "family", familyMemberId: child.id },
+      percentage: pcts[i],
+    }));
+    setLockedKeys(new Set());
+    onChange(newRows);
   }
 
   return (
@@ -123,7 +178,7 @@ export default function BeneficiaryRowList({
               min={0}
               max={100}
               value={r.percentage}
-              onChange={(e) => update(idx, { percentage: parseFloat(e.target.value) || 0 })}
+              onChange={(e) => changePercentage(idx, parseFloat(e.target.value) || 0)}
               className={rowFieldBase + " w-20 text-right"}
               aria-label={`Percent ${idx + 1}`}
             />
@@ -139,9 +194,21 @@ export default function BeneficiaryRowList({
           </li>
         ))}
       </ul>
-      <button type="button" onClick={add} className="mt-2 text-xs text-blue-400 hover:text-blue-300">
-        + Add beneficiary
-      </button>
+      <div className="mt-2 flex items-center gap-3">
+        <button type="button" onClick={add} className="text-xs text-blue-400 hover:text-blue-300">
+          + Add beneficiary
+        </button>
+        {children.length > 0 && (
+          <button
+            type="button"
+            onClick={splitAmongChildren}
+            className="text-xs text-ink-3 hover:text-ink"
+            title={`Replace with ${children.length} child${children.length === 1 ? "" : "ren"}, split evenly`}
+          >
+            Split among children
+          </button>
+        )}
+      </div>
     </div>
   );
 }

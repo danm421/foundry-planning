@@ -151,7 +151,7 @@ describe("BequestRecipientList — onChange", () => {
     ]);
   });
 
-  it("appends a recipient when + Add recipient is clicked", () => {
+  it("first add seeds the row at 100% (auto-default)", () => {
     const onChange = vi.fn();
     render(
       <BequestRecipientList
@@ -166,8 +166,32 @@ describe("BequestRecipientList — onChange", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /Add recipient/i }));
     expect(onChange).toHaveBeenCalledWith([
-      expect.objectContaining({ recipientKind: "spouse", percentage: 0, sortOrder: 0 }),
+      expect.objectContaining({ recipientKind: "spouse", percentage: 100, sortOrder: 0 }),
     ]);
+  });
+
+  it("second add splits 50/50 across unlocked rows", () => {
+    const onChange = vi.fn();
+    const rows: BequestRecipient[] = [
+      { recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 },
+    ];
+    render(
+      <BequestRecipientList
+        mode="asset"
+        rows={rows}
+        onChange={onChange}
+        primary={primary}
+        familyMembers={familyMembers}
+        externalBeneficiaries={externals}
+        entities={entities}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Add recipient/i }));
+    const next = onChange.mock.calls[0][0] as BequestRecipient[];
+    expect(next).toHaveLength(2);
+    expect(next.map((r) => r.percentage).reduce((a, b) => a + b, 0)).toBeCloseTo(100, 2);
+    expect(next[0].percentage).toBe(50);
+    expect(next[1].percentage).toBe(50);
   });
 
   it("appends a family-member default in debt mode (spouse not allowed)", () => {
