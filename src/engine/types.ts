@@ -232,6 +232,10 @@ export interface ClientData {
 // accounts, incomes, expenses, and liabilities.
 export interface EntitySummary {
   id: string;
+  // Display name for UI surfaces. Optional because some engine call sites build
+  // EntitySummary arrays directly (death-event, projection, adjusted-taxable-gifts)
+  // and don't need to surface a name.
+  name?: string;
   // When true, the entity's accounts are rolled into the household's portfolio assets view.
   includeInPortfolio: boolean;
   // When true, taxes on the entity's income and RMDs are paid at the household rate.

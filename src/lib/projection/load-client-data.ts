@@ -604,6 +604,8 @@ export const loadClientData = cache(
 
     const mappedEntities = entityRows.map((e) => ({
       id: e.id,
+      name: e.name,
+      entityType: e.entityType ?? undefined,
       includeInPortfolio: e.includeInPortfolio,
       isGrantor: e.isGrantor,
       beneficiaries: trustBens.get(e.id) ?? undefined,
