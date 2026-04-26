@@ -324,14 +324,14 @@ function DebtBequestDialog({
           >
             + Add recipient
           </button>
-          <p className="mt-2 text-xs text-gray-400">
+          <p className="mt-2 text-xs text-gray-300">
             Total:{" "}
             <span className={recipientSumOk ? "text-green-400" : "text-red-400"}>
               {recipientSum.toFixed(2)}%
             </span>
           </p>
           {recipientSumOk && remainder > 0.009 && (
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-gray-400">
               Recipients sum to {recipientSum.toFixed(2)}% — remainder ({remainder.toFixed(2)}%) falls
               to estate creditor-payoff
             </p>
@@ -517,7 +517,7 @@ export default function WillsPanel(props: WillsPanelProps) {
 
   return (
     <div className="space-y-8">
-      {saving && <div className="text-xs text-gray-400">Saving…</div>}
+      {saving && <div className="text-xs text-gray-300">Saving…</div>}
       {error && <div className="text-xs text-red-400">{error}</div>}
       {(["client", "spouse"] as const).map((g) => {
         if (g === "spouse" && !primary.spouseName) return null;
@@ -590,9 +590,9 @@ export default function WillsPanel(props: WillsPanelProps) {
 
             {/* Asset bequests section */}
             <div className="mb-4">
-              <h3 className="mb-2 text-sm font-medium text-gray-400">Asset bequests</h3>
+              <h3 className="mb-2 text-sm font-medium text-gray-300">Asset bequests</h3>
               {assetBequests.length === 0 ? (
-                <p className="text-sm text-gray-500">No bequests yet.</p>
+                <p className="text-sm text-gray-400">No bequests yet.</p>
               ) : (
                 <ol className="space-y-2">
                   {assetBequests.map((b, idx) => {
@@ -611,13 +611,13 @@ export default function WillsPanel(props: WillsPanelProps) {
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="font-medium text-gray-100">{b.name}</p>
-                            <p className="text-sm text-gray-400">
+                            <p className="text-sm text-gray-300">
                               {b.percentage}% of {assetLabel}
                             </p>
-                            <p className="mt-1 text-xs text-gray-500">
+                            <p className="mt-1 text-xs text-gray-400">
                               {CONDITION_LABEL[b.condition]}
                             </p>
-                            <p className="mt-1 text-xs text-gray-400">
+                            <p className="mt-1 text-xs text-gray-300">
                               {b.recipients
                                 .map(
                                   (r) =>
@@ -694,7 +694,7 @@ export default function WillsPanel(props: WillsPanelProps) {
             {/* Debt bequests section */}
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-sm font-medium text-gray-400">Debt bequests</h3>
+                <h3 className="text-sm font-medium text-gray-300">Debt bequests</h3>
                 <button
                   type="button"
                   disabled={saving}
@@ -723,7 +723,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                 </button>
               </div>
               {liabilityBequests.length === 0 ? (
-                <p className="text-sm text-gray-500">No debt bequests yet.</p>
+                <p className="text-sm text-gray-400">No debt bequests yet.</p>
               ) : (
                 <ol className="space-y-2">
                   {liabilityBequests.map((b, idx) => {
@@ -741,11 +741,11 @@ export default function WillsPanel(props: WillsPanelProps) {
                           <div>
                             <p className="font-medium text-gray-100">{b.name}</p>
                             {liab && (
-                              <p className="text-sm text-gray-400">
+                              <p className="text-sm text-gray-300">
                                 Balance: ${liab.balance.toLocaleString()}
                               </p>
                             )}
-                            <p className="mt-1 text-xs text-gray-400">
+                            <p className="mt-1 text-xs text-gray-300">
                               {b.recipients
                                 .map(
                                   (r) =>
@@ -753,7 +753,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                                 )
                                 .join(", ")}
                               {isPartial && (
-                                <span className="ml-1 text-gray-500">
+                                <span className="ml-1 text-gray-400">
                                   · {remainder.toFixed(2)}% to estate creditor-payoff
                                 </span>
                               )}
@@ -1006,7 +1006,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                 >
                   + Add recipient
                 </button>
-                <p className="mt-2 text-xs text-gray-400">
+                <p className="mt-2 text-xs text-gray-300">
                   Total:{" "}
                   <span className={recipientSumOk ? "text-green-400" : "text-red-400"}>
                     {recipientSum.toFixed(2)}%

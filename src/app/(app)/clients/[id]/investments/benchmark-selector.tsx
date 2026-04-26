@@ -33,7 +33,7 @@ export default function BenchmarkSelector({ clientId, modelPortfolios, selectedB
   }
 
   return (
-    <label className="flex items-center gap-2 text-sm text-gray-400">
+    <label className="flex items-center gap-2 text-sm text-gray-300">
       <span>Target Portfolio:</span>
       <select
         value={value}

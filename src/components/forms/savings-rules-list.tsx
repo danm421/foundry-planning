@@ -61,7 +61,7 @@ export default function SavingsRulesList({
   return (
     <div className="flex flex-col gap-2">
       {rules.length === 0 ? (
-        <p className="text-sm text-gray-500">{emptyMessage}</p>
+        <p className="text-sm text-gray-400">{emptyMessage}</p>
       ) : (
         <div className="divide-y divide-gray-800 rounded-md border border-gray-800">
           {rules.map((rule) => {
@@ -72,10 +72,10 @@ export default function SavingsRulesList({
                 <div className="text-sm font-medium text-gray-100">
                   {formatContribution(rule)}
                   {showAccountColumn && accountsById[rule.accountId] && (
-                    <span className="ml-2 text-gray-500">→ {accountsById[rule.accountId].name}</span>
+                    <span className="ml-2 text-gray-400">→ {accountsById[rule.accountId].name}</span>
                   )}
                 </div>
-                <div className="text-[11px] text-gray-500">
+                <div className="text-xs text-gray-400">
                   {rule.startYear}–{rule.endYear}
                   {matchSummary && <span> · {matchSummary}</span>}
                 </div>
@@ -105,7 +105,7 @@ export default function SavingsRulesList({
         <button
           type="button"
           onClick={onAdd}
-          className="w-full rounded-md border border-dashed border-gray-700 py-2 text-sm text-gray-400 hover:border-gray-500 hover:text-gray-200"
+          className="w-full rounded-md border border-dashed border-gray-700 py-2 text-sm text-gray-300 hover:border-gray-500 hover:text-gray-200"
         >
           + Add savings rule
         </button>

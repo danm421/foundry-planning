@@ -137,8 +137,8 @@ const CLASSIFICATION_STYLES: Record<TaxClassification, string> = {
   roth_conversion: "bg-amber-900/40 text-amber-300 border border-amber-700/50",
   tax_free_rollover: "bg-green-900/40 text-green-300 border border-green-700/50",
   distribution: "bg-red-900/40 text-red-300 border border-red-700/50",
-  liquidation: "bg-gray-800 text-gray-400 border border-gray-700",
-  transfer: "bg-gray-800 text-gray-400 border border-gray-700",
+  liquidation: "bg-gray-800 text-gray-300 border border-gray-700",
+  transfer: "bg-gray-800 text-gray-300 border border-gray-700",
 };
 
 const MODE_LABELS: Record<TransferRow["mode"], string> = {
@@ -162,7 +162,7 @@ function SectionHeader({
     <div className="flex items-center justify-between border-b border-gray-700 bg-gray-900 px-4 py-3">
       <div>
         <h2 className="text-sm font-semibold text-gray-100">{title}</h2>
-        <p className="text-xs text-gray-500">{count} item{count !== 1 ? "s" : ""}</p>
+        <p className="text-xs text-gray-400">{count} item{count !== 1 ? "s" : ""}</p>
       </div>
       {action}
     </div>
@@ -171,7 +171,7 @@ function SectionHeader({
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="px-4 py-10 text-center text-sm text-gray-500">{message}</div>
+    <div className="px-4 py-10 text-center text-sm text-gray-400">{message}</div>
   );
 }
 
@@ -195,7 +195,7 @@ function ActionButton({
   const base = "rounded px-2 py-1 text-xs font-medium transition-colors";
   const styles =
     variant === "edit"
-      ? `${base} border border-gray-600 text-gray-400 hover:border-gray-500 hover:text-gray-200`
+      ? `${base} border border-gray-600 text-gray-300 hover:border-gray-500 hover:text-gray-200`
       : `${base} border border-red-900/50 text-red-400 hover:border-red-700 hover:text-red-300`;
   return (
     <button onClick={onClick} className={styles} aria-label={label}>
@@ -237,19 +237,19 @@ function TransferCard({
           <span className="text-sm font-medium text-gray-100">{transfer.name}</span>
           <Badge
             label={MODE_LABELS[transfer.mode]}
-            className="bg-gray-800 text-gray-400 border border-gray-700"
+            className="bg-gray-800 text-gray-300 border border-gray-700"
           />
           <Badge
             label={CLASSIFICATION_LABELS[classification]}
             className={CLASSIFICATION_STYLES[classification]}
           />
         </div>
-        <div className="text-xs text-gray-400">
+        <div className="text-xs text-gray-300">
           <span className="text-gray-300">{sourceName}</span>
           <span className="mx-1.5 text-gray-600">→</span>
           <span className="text-gray-300">{targetName}</span>
         </div>
-        <div className="text-xs text-gray-500">
+        <div className="text-xs text-gray-400">
           {formatCurrency(transfer.amount)} · {yearRange}
         </div>
       </div>
@@ -414,12 +414,12 @@ function AssetTransactionCard({
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-gray-100">{transaction.name}</span>
           <Badge label={badgeLabel} className={badgeClass} />
-          <span className="text-xs text-gray-500">{transaction.year}</span>
+          <span className="text-xs text-gray-400">{transaction.year}</span>
         </div>
 
-        <div className="text-xs text-gray-400">{description}</div>
+        <div className="text-xs text-gray-300">{description}</div>
 
-        <div className="space-y-0.5 text-xs text-gray-400">
+        <div className="space-y-0.5 text-xs text-gray-300">
           {/* Sell details */}
           {hasSell && linkedAccount && saleBreakdown && (
             <>
@@ -429,7 +429,7 @@ function AssetTransactionCard({
                   {formatCurrency(saleBreakdown.saleValue)}
                 </span>
                 {saleBreakdown.saleValueIsProjected && (
-                  <span className="ml-1 text-gray-500">(projected)</span>
+                  <span className="ml-1 text-gray-400">(projected)</span>
                 )}
               </div>
               {saleBreakdown.transactionCosts > 0 && (
@@ -447,7 +447,7 @@ function AssetTransactionCard({
                     −{formatCurrency(saleBreakdown.mortgagePayoff)}
                   </span>
                   {saleBreakdown.mortgagePayoffIsProjected && (
-                    <span className="ml-1 text-gray-500">(projected)</span>
+                    <span className="ml-1 text-gray-400">(projected)</span>
                   )}
                 </div>
               )}
@@ -488,7 +488,7 @@ function AssetTransactionCard({
                   Mortgage:{" "}
                   <span className="text-gray-300">{formatCurrency(transaction.mortgageAmount)}</span>
                   {transaction.mortgageRate && (
-                    <span className="ml-1 text-gray-500">
+                    <span className="ml-1 text-gray-400">
                       @ {(parseFloat(transaction.mortgageRate) * 100).toFixed(2)}%
                     </span>
                   )}

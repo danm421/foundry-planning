@@ -13,7 +13,7 @@ export default function NamePctList({ label, rows, onChange }: NamePctListProps)
   return (
     <div className="rounded-md border border-gray-800 bg-gray-900/60 p-3 space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-300">{label}</p>
         <button
           type="button"
           onClick={() => onChange([...rows, { name: "", pct: 0 }])}
@@ -23,7 +23,7 @@ export default function NamePctList({ label, rows, onChange }: NamePctListProps)
         </button>
       </div>
       {rows.length === 0 ? (
-        <p className="text-[11px] text-gray-500">None</p>
+        <p className="text-xs text-gray-400">None</p>
       ) : (
         <div className="space-y-2">
           {rows.map((row, i) => (
@@ -56,14 +56,14 @@ export default function NamePctList({ label, rows, onChange }: NamePctListProps)
               <button
                 type="button"
                 onClick={() => onChange(rows.filter((_, idx) => idx !== i))}
-                className="text-gray-500 hover:text-red-400"
+                className="text-gray-400 hover:text-red-400"
                 aria-label={`Remove ${label.toLowerCase()} row`}
               >
                 <TrashIcon />
               </button>
             </div>
           ))}
-          <p className={`text-right text-[11px] ${Math.abs(total - 100) < 0.01 || total === 0 ? "text-gray-500" : "text-amber-400"}`}>
+          <p className={`text-right text-xs ${Math.abs(total - 100) < 0.01 || total === 0 ? "text-gray-400" : "text-amber-400"}`}>
             Total: {total.toFixed(2)}%
           </p>
         </div>

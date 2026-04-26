@@ -173,7 +173,7 @@ export default function BeneficiaryEditor(props: BeneficiaryEditorProps) {
                 }
                 className="w-24 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
               />
-              <span className="text-sm text-gray-400">%</span>
+              <span className="text-sm text-gray-300">%</span>
               <button
                 type="button"
                 onClick={() => removeRow(r.id)}

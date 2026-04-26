@@ -119,7 +119,7 @@ export function TaxDetailIncomeTable({
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-800 bg-gray-900/60">
       <table className="min-w-full border-separate border-spacing-0 text-sm">
-        <thead className="bg-gray-900 text-xs uppercase text-gray-400">
+        <thead className="bg-gray-900 text-xs uppercase text-gray-300">
           <tr>
             <th className="sticky left-0 z-20 w-20 min-w-[5rem] border-b border-gray-800 bg-gray-900 px-3 py-2 text-left">
               Year
@@ -163,7 +163,7 @@ export function TaxDetailIncomeTable({
                 >
                   {y.year}
                 </td>
-                <td className="sticky left-20 z-10 border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left text-gray-400 group-hover:bg-gray-800/40">
+                <td className="sticky left-20 z-10 border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left text-gray-300 group-hover:bg-gray-800/40">
                   {formatAge(y.ages, clientLifeExpectancy, spouseLifeExpectancy)}
                 </td>
                 {COLUMNS.map((col, idx) => {

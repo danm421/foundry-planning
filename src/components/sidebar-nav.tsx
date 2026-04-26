@@ -62,7 +62,7 @@ export default function SidebarNav({ clientsCount }: SidebarNavProps): ReactElem
     <nav className="flex flex-col gap-4 py-4">
       {NAV_GROUPS.map((group) => (
         <div key={group.label} className="flex flex-col">
-          <div className="px-[var(--pad-card)] pb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-4">
+          <div className="px-[var(--pad-card)] pb-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink-4">
             {group.label}
           </div>
           <ul className="flex flex-col">

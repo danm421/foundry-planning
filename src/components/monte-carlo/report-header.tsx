@@ -9,7 +9,7 @@ export function ReportHeader({ clientDisplayName }: ReportHeaderProps) {
         <h1 className="text-2xl font-semibold text-slate-100">
           Monte Carlo Simulation: Retirement Forecast
         </h1>
-        <p className="text-sm text-slate-400">Client: {clientDisplayName}</p>
+        <p className="text-sm text-slate-300">Client: {clientDisplayName}</p>
       </div>
       <button
         type="button"

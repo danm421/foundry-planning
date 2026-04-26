@@ -64,7 +64,7 @@ export function TerminalHistogram({ endingValues, trialsRun }: TerminalHistogram
     return (
       <section className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4">
         <h3 className="text-sm font-semibold text-slate-100 mb-3">Ending Portfolio Distribution</h3>
-        <p className="text-sm text-slate-500">No trial data available.</p>
+        <p className="text-sm text-slate-400">No trial data available.</p>
       </section>
     );
   }
@@ -139,7 +139,7 @@ export function TerminalHistogram({ endingValues, trialsRun }: TerminalHistogram
     <section className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4">
       <div className="flex items-baseline justify-between mb-3">
         <h3 className="text-sm font-semibold text-slate-100">Ending Portfolio Distribution</h3>
-        <span className="text-[11px] text-slate-500">N = {formatInteger(trialsRun)} trials</span>
+        <span className="text-xs text-slate-400">N = {formatInteger(trialsRun)} trials</span>
       </div>
       <div className="h-[220px]">
         <Bar data={data} options={options} />

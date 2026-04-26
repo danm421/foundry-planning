@@ -31,7 +31,7 @@ export default function CategoryChip({
   className,
 }: CategoryChipProps): ReactElement {
   const classes = [
-    "font-mono text-[10px] font-semibold uppercase tracking-[0.08em]",
+    "font-mono text-xs font-semibold uppercase tracking-[0.08em]",
     className,
   ]
     .filter(Boolean)

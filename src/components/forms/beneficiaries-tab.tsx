@@ -55,7 +55,7 @@ export default function BeneficiariesTab({ clientId, accountId, active }: Benefi
   }, [active, loaded, clientId, accountId]);
 
   if (error) return <p className="text-sm text-red-400">{error}</p>;
-  if (!loaded) return <p className="text-sm text-gray-400">Loading…</p>;
+  if (!loaded) return <p className="text-sm text-gray-300">Loading…</p>;
 
   return (
     <BeneficiaryEditor

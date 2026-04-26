@@ -85,7 +85,7 @@ export default function TimelineEventCard({
       >
         <div className="flex items-center justify-between gap-2">
           <TimelineCategoryPill category={event.category} />
-          <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-[10px] tabular-nums text-gray-400 font-[family-name:var(--font-display)]">
+          <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-xs tabular-nums text-gray-300 font-[family-name:var(--font-display)]">
             {event.year}
             {event.age != null ? ` · age ${event.age}` : ""}
           </span>
@@ -98,13 +98,13 @@ export default function TimelineEventCard({
             {event.title}
           </div>
           {subjectLabel && (
-            <div className="text-[11px] uppercase tracking-[0.08em] text-gray-500">
+            <div className="text-xs uppercase tracking-[0.08em] text-gray-400">
               {subjectLabel}
             </div>
           )}
         </div>
         {event.supportingFigure && (
-          <div className="mt-1 text-xs tabular-nums text-gray-400">{event.supportingFigure}</div>
+          <div className="mt-1 text-xs tabular-nums text-gray-300">{event.supportingFigure}</div>
         )}
       </button>
 
@@ -113,7 +113,7 @@ export default function TimelineEventCard({
           <dl className="grid grid-cols-2 gap-y-1.5 gap-x-3">
             {event.details.map((d) => (
               <div key={d.label} className="contents">
-                <dt className="text-gray-500">{d.label}</dt>
+                <dt className="text-gray-400">{d.label}</dt>
                 <dd className="tabular-nums text-gray-200">{d.value}</dd>
               </div>
             ))}
@@ -124,7 +124,7 @@ export default function TimelineEventCard({
                 <Link
                   key={l.href}
                   href={l.href}
-                  className="text-[11px] text-sky-300 hover:text-sky-200"
+                  className="text-xs text-sky-300 hover:text-sky-200"
                 >
                   {l.label} →
                 </Link>

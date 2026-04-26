@@ -54,7 +54,7 @@ function LiabilityRowView({
       <div className="flex items-center gap-2 text-sm text-gray-300">
         <span>{row.liabilityName}</span>
         {showOwnerChip && ownerLabel && (
-          <span className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-400">
+          <span className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-300">
             {ownerLabel}
           </span>
         )}
@@ -73,11 +73,11 @@ export default function LiabilitiesPanel({
   const hasRows = viewModel.liabilityRows.length > 0;
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Liabilities &amp; Net Worth</h2>
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-300">Liabilities &amp; Net Worth</h2>
 
       <div className={SCREEN_THEME.surface.panel}>
         <div className={`${SCREEN_THEME.surface.panelHeader} flex items-center justify-between`}>
-          <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-300">
             Total Liabilities
           </span>
           <div className="flex items-center gap-2">
@@ -99,14 +99,14 @@ export default function LiabilitiesPanel({
               />
             ))
           ) : (
-            <div className="py-2 text-center text-sm text-gray-500">No liabilities.</div>
+            <div className="py-2 text-center text-sm text-gray-400">No liabilities.</div>
           )}
         </div>
       </div>
 
       {viewModel.realEstateEquity > 0 && (
         <div className={`${SCREEN_THEME.surface.panel} p-4`}>
-          <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-300">
             Real Estate Equity
           </div>
           <div className="mt-1 text-xl font-bold text-gray-100">

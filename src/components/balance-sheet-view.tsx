@@ -479,7 +479,7 @@ export default function BalanceSheetView({
                       >
                         <div>
                           <div className="text-sm font-medium text-gray-100">{a.name}</div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-400">
                             {CATEGORY_LABELS[a.category]} · {growthDisplay(a)}
                           </div>
                         </div>
@@ -508,7 +508,7 @@ export default function BalanceSheetView({
                     >
                       <div>
                         <div className="text-sm font-medium text-gray-100">{e.name}</div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-gray-400">
                           {ENTITY_TYPE_LABELS[e.entityType ?? "other"] ?? "Entity"} · edit in Family
                         </div>
                       </div>
@@ -621,9 +621,9 @@ function Kpi({
 }) {
   return (
     <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3">
-      <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500">{label}</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-gray-400">{label}</p>
       <p className={`mt-1 text-lg font-bold ${accent}`}>{value}</p>
-      {subtitle && <p className="text-[11px] text-gray-500">{subtitle}</p>}
+      {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
     </div>
   );
 }
@@ -646,7 +646,7 @@ function Panel({
       <div className="flex items-center justify-between border-b border-gray-800 bg-gray-900 px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold text-gray-100">{title}</h2>
-          <p className={`text-xs ${totalClassName ?? "text-gray-500"}`}>{totalLabel}</p>
+          <p className={`text-xs ${totalClassName ?? "text-gray-400"}`}>{totalLabel}</p>
         </div>
         {actions}
       </div>
@@ -716,7 +716,7 @@ function Row({
     >
       <div className="min-w-0">
         <div className="truncate text-sm font-medium text-gray-100">{label}</div>
-        {subLabel && <div className="truncate text-xs text-gray-500">{subLabel}</div>}
+        {subLabel && <div className="truncate text-xs text-gray-400">{subLabel}</div>}
       </div>
       <div className="flex items-center gap-3">
         <span className={`text-sm font-medium ${valueClassName ?? "text-gray-100"}`}>{value}</span>
@@ -726,7 +726,7 @@ function Row({
               e.stopPropagation();
               onDelete();
             }}
-            className="text-gray-500 hover:text-red-400"
+            className="text-gray-400 hover:text-red-400"
             aria-label={`Delete ${label}`}
           >
             <TrashIcon />
@@ -738,5 +738,5 @@ function Row({
 }
 
 function EmptyRow({ message }: { message: string }) {
-  return <div className="px-4 py-8 text-center text-sm text-gray-500">{message}</div>;
+  return <div className="px-4 py-8 text-center text-sm text-gray-400">{message}</div>;
 }

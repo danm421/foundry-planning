@@ -79,7 +79,7 @@ export default function AlertsStrip({ alerts, loading }: Props): ReactElement {
               <div className="flex items-center gap-2">
                 <p className="text-[13px] font-semibold text-ink">{a.title}</p>
                 <span
-                  className={`rounded-sm px-1.5 py-[2px] font-mono text-[10px] uppercase ${s.chip}`}
+                  className={`rounded-sm px-1.5 py-[2px] font-mono text-xs uppercase ${s.chip}`}
                 >
                   {a.severity}
                 </span>

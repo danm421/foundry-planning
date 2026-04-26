@@ -134,7 +134,7 @@ export default function BusinessForm({
             onChange={(e) => setValue(e.target.value)}
             className={inputClassName}
           />
-          <p className="mt-1 text-[11px] text-gray-500">
+          <p className="mt-1 text-xs text-gray-400">
             Shown as an out-of-estate asset on the balance sheet.
           </p>
         </div>
@@ -169,7 +169,7 @@ export default function BusinessForm({
       </div>
 
       <div className="rounded-md border border-gray-800 bg-gray-900/60 p-3 space-y-2">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-300">
           Cash-flow treatment
         </p>
         <label className="flex items-start gap-2 cursor-pointer">
@@ -181,7 +181,7 @@ export default function BusinessForm({
           />
           <span className="text-sm text-gray-200">
             Include this entity&apos;s accounts in portfolio assets
-            <span className="block text-[11px] text-gray-500">
+            <span className="block text-xs text-gray-400">
               Balances roll into the cash-flow portfolio view even though the assets are out of estate.
             </span>
           </span>
@@ -195,7 +195,7 @@ export default function BusinessForm({
           />
           <span className="text-sm text-gray-200">
             Grantor trust (taxes paid by household)
-            <span className="block text-[11px] text-gray-500">
+            <span className="block text-xs text-gray-400">
               Income, capital gains, and RMDs from this entity&apos;s accounts are taxed at the household rate.
             </span>
           </span>

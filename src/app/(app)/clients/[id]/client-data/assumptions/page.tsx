@@ -44,7 +44,7 @@ export default async function AssumptionsPage({ params }: PageProps) {
 
   if (!scenario) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
         No base case scenario found.
       </div>
     );
@@ -103,7 +103,7 @@ export default async function AssumptionsPage({ params }: PageProps) {
   const settings = settingsRows[0];
   if (!settings) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
         No plan settings found.
       </div>
     );
@@ -257,7 +257,7 @@ export default async function AssumptionsPage({ params }: PageProps) {
     <div className="max-w-3xl space-y-6">
       <div>
         <h2 className="text-xl font-bold text-gray-100">Assumptions</h2>
-        <p className="mt-1 text-sm text-gray-400">
+        <p className="mt-1 text-sm text-gray-300">
           Plan horizon, tax rates, growth assumptions, and withdrawal order.
         </p>
       </div>

@@ -26,7 +26,7 @@ export function RecommendationsCard() {
       <h3 className="text-sm font-semibold text-slate-100 mb-2">Recommendations</h3>
       {/* TODO: advisor-generated content */}
       <p className="text-sm text-slate-300">AI-generated recommendations coming soon.</p>
-      <p className="text-[12px] text-slate-500 mt-1">
+      <p className="text-[12px] text-slate-400 mt-1">
         Advisor insights will appear here based on your plan&apos;s risk profile.
       </p>
       <div className="absolute bottom-3 right-3 text-emerald-300/70">

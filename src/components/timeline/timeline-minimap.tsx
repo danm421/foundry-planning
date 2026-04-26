@@ -98,7 +98,7 @@ export default function TimelineMinimap({
           })}
         </div>
       </div>
-      <div className="mt-1 flex justify-between text-[10px] tabular-nums text-gray-500">
+      <div className="mt-1 flex justify-between text-xs tabular-nums text-gray-400">
         <span>{firstYear}</span>
         <span>{lastYear}</span>
       </div>

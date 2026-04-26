@@ -125,7 +125,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
       </header>
 
       {!hasAny && (
-        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-gray-400">
+        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-gray-300">
           <p className="text-sm">
             No insurance policies yet. Click + Add policy to get started.
           </p>
@@ -139,10 +139,10 @@ export default function InsurancePanel(props: InsurancePanelProps) {
         if (items.length === 0) return null;
         return (
           <section key={group.key} className="flex flex-col gap-2">
-            <h2 className="text-sm font-semibold text-gray-400">{group.label}</h2>
+            <h2 className="text-sm font-semibold text-gray-300">{group.label}</h2>
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-gray-500">
+                <tr className="text-left text-gray-400">
                   <th className="py-2 font-medium">Name</th>
                   <th className="font-medium">Insured</th>
                   <th className="font-medium">Owner</th>

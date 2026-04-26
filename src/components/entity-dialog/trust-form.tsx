@@ -272,7 +272,7 @@ export default function TrustForm({
             <button
               type="button"
               onClick={() => setActiveTab("details")}
-              className={`px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] border-b-2 -mb-px transition-colors ${
+              className={`px-4 py-3 text-xs font-medium uppercase tracking-[0.08em] border-b-2 -mb-px transition-colors ${
                 activeTab === "details"
                   ? "text-accent-ink border-accent"
                   : "text-ink-3 hover:text-ink-2 border-transparent"
@@ -287,7 +287,7 @@ export default function TrustForm({
               setActiveTab("beneficiaries");
               void loadBeneficiariesData();
             }}
-            className={`px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] border-b-2 -mb-px transition-colors ${
+            className={`px-4 py-3 text-xs font-medium uppercase tracking-[0.08em] border-b-2 -mb-px transition-colors ${
               activeTab === "beneficiaries"
                 ? "text-accent-ink border-accent"
                 : "text-ink-3 hover:text-ink-2 border-transparent"
@@ -351,7 +351,7 @@ export default function TrustForm({
             <option value="client">Client</option>
             <option value="spouse">Spouse</option>
           </select>
-          <p className="mt-1 text-[11px] text-gray-500">
+          <p className="mt-1 text-xs text-gray-400">
             Whose lifetime exemption is consumed by gifts to this trust. Leave as
             &ldquo;Third party&rdquo; for trusts created by someone outside the household.
           </p>
@@ -380,7 +380,7 @@ export default function TrustForm({
                 <option key={v} value={v}>{l}</option>
               ))}
             </select>
-            <p className="mt-1 text-[11px] text-gray-500">
+            <p className="mt-1 text-xs text-gray-400">
               {trustSubType === ""
                 ? "Pick a sub-type to classify this trust."
                 : deriveIsIrrevocable(trustSubType as TrustSubType)
@@ -401,7 +401,7 @@ export default function TrustForm({
               placeholder="e.g., Linda, or Fidelity Trust Co."
               className={inputClassName}
             />
-            <p className="mt-1 text-[11px] text-gray-500">
+            <p className="mt-1 text-xs text-gray-400">
               Free text. Separate co-trustees with commas.
             </p>
           </div>
@@ -419,7 +419,7 @@ export default function TrustForm({
               onChange={(e) => setExemptionConsumed(e.target.value)}
               className={inputClassName}
             />
-            <p className="mt-1 text-[11px] text-gray-500">
+            <p className="mt-1 text-xs text-gray-400">
               Historical exemption already used before you started tracking individual gifts. Gifts added below stack on top.
             </p>
           </div>
@@ -438,7 +438,7 @@ export default function TrustForm({
       </div>
 
       <div className="rounded-md border border-gray-800 bg-gray-900/60 p-3 space-y-2">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-300">
           Cash-flow treatment
         </p>
         <label className="flex items-start gap-2 cursor-pointer">
@@ -450,7 +450,7 @@ export default function TrustForm({
           />
           <span className="text-sm text-gray-200">
             Include this entity&apos;s accounts in portfolio assets
-            <span className="block text-[11px] text-gray-500">
+            <span className="block text-xs text-gray-400">
               Balances roll into the cash-flow portfolio view even though the assets are out of estate.
             </span>
           </span>
@@ -464,7 +464,7 @@ export default function TrustForm({
           />
           <span className="text-sm text-gray-200">
             Grantor trust (taxes paid by household)
-            <span className="block text-[11px] text-gray-500">
+            <span className="block text-xs text-gray-400">
               Income, capital gains, and RMDs from this entity&apos;s accounts are taxed at the household rate.
             </span>
           </span>
@@ -476,10 +476,10 @@ export default function TrustForm({
         deriveIsIrrevocable(trustSubType as TrustSubType) && (
           <div className="rounded-md border border-gray-800 bg-gray-900/60 p-3 space-y-3">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-300">
                 Distribution Policy
               </p>
-              <p className="mt-1 text-[11px] text-gray-500">
+              <p className="mt-1 text-xs text-gray-400">
                 Optional. When set, the trust distributes annually to a named beneficiary.
                 Leave unset to accumulate 100% of income in the trust.
               </p>
@@ -569,14 +569,14 @@ export default function TrustForm({
       {entityType === "trust" && (
         <div className={activeTab !== "beneficiaries" ? "hidden" : ""}>
           {!editing ? (
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-gray-300">
               Save the trust first, then designate remainder beneficiaries.
             </p>
           ) : !beneDataLoaded ? (
             beneLoadError ? (
               <p className="text-sm text-red-400">{beneLoadError}</p>
             ) : (
-              <p className="text-sm text-gray-400">Loading…</p>
+              <p className="text-sm text-gray-300">Loading…</p>
             )
           ) : (
             <BeneficiaryEditor

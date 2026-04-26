@@ -204,7 +204,7 @@ export default function ReviewWizard({
                 ? "bg-blue-600 text-white"
                 : i < currentStepIndex
                   ? "bg-gray-700 text-gray-300"
-                  : "bg-gray-800 text-gray-500"
+                  : "bg-gray-800 text-gray-400"
             }`}
           >
             {step.label}

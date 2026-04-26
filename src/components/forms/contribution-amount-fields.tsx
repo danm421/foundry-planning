@@ -99,10 +99,10 @@ export default function ContributionAmountFields({
                 key={m}
                 type="button"
                 onClick={() => onModeChange(m)}
-                className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${
+                className={`rounded-md border px-2 py-0.5 text-xs font-medium ${
                   mode === m
                     ? "border-blue-600 bg-blue-900/40 text-blue-300"
-                    : "border-gray-700 bg-gray-900 text-gray-400 hover:bg-gray-800"
+                    : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800"
                 }`}
               >
                 {m === "amount" ? "Dollar amount" : m === "percent" ? "% of salary" : "Max (IRS limit)"}
@@ -130,7 +130,7 @@ export default function ContributionAmountFields({
             defaultValue={initialPercent ? pctFromDecimal(initialPercent, 0) : ""}
             className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
-          <p className="mt-1 text-[11px] text-gray-500">
+          <p className="mt-1 text-xs text-gray-400">
             Resolves against the account owner&rsquo;s salary each year. No salary that year → no contribution.
           </p>
         </>

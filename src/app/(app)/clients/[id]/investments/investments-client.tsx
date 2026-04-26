@@ -82,7 +82,7 @@ export default function InvestmentsClient({
       <header className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div>
-            <nav className="mb-1 text-xs uppercase tracking-wide text-gray-500">
+            <nav className="mb-1 text-xs uppercase tracking-wide text-gray-400">
               Reports / Investments / Asset Allocation
             </nav>
             <h2 className="text-xl font-bold uppercase tracking-wide text-gray-100">
@@ -118,7 +118,7 @@ export default function InvestmentsClient({
               className={`rounded px-3 py-1.5 font-medium transition-colors ${
                 view === opt.id
                   ? "bg-gray-700 text-white"
-                  : "text-gray-400 hover:text-gray-200"
+                  : "text-gray-300 hover:text-gray-200"
               }`}
             >
               {opt.label}
@@ -184,7 +184,7 @@ export default function InvestmentsClient({
 
         <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
           <AllocationDonut household={household} mode={view} />
-          <p className="mt-3 text-center text-xs text-gray-500">{disclosure}</p>
+          <p className="mt-3 text-center text-xs text-gray-400">{disclosure}</p>
         </section>
 
         <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">

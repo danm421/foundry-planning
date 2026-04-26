@@ -252,7 +252,7 @@ export default function AddLiabilityForm({
       <button
         type="button"
         onClick={onClick}
-        className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded text-gray-400 hover:bg-gray-700 hover:text-blue-400"
+        className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded text-gray-300 hover:bg-gray-700 hover:text-blue-400"
         title={title}
       >
         <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -488,7 +488,7 @@ export default function AddLiabilityForm({
           />
           Interest is tax-deductible
         </label>
-        <p className="mt-1 ml-6 text-xs text-gray-500">
+        <p className="mt-1 ml-6 text-xs text-gray-400">
           When checked, the annual interest portion flows into your itemized deductions (e.g., mortgage interest).
         </p>
       </div>

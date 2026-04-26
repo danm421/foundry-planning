@@ -102,7 +102,7 @@ export function DeductionsDerivedSummary({
         <h2 className="text-base font-semibold text-gray-200">
           Auto-derived deductions
         </h2>
-        <p className="mt-1 text-xs text-gray-500">
+        <p className="mt-1 text-xs text-gray-400">
           These deductions are pulled automatically from your savings, expenses,
           mortgages, and real-estate data. Edit them on their respective tabs.
         </p>
@@ -121,7 +121,7 @@ export function DeductionsDerivedSummary({
               <Item key={r.id}>
                 <div className="flex flex-col">
                   <span className="text-gray-200">{r.accountName}</span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-400">
                     {SUBTYPE_LABELS[r.subType] ?? r.subType} ·{" "}
                     {OWNER_LABELS[r.owner]} · {r.startYear}-{r.endYear}
                   </span>
@@ -146,7 +146,7 @@ export function DeductionsDerivedSummary({
               <Item key={r.id}>
                 <div className="flex flex-col">
                   <span className="text-gray-200">{r.name}</span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-400">
                     {DEDUCTION_TYPE_LABELS[r.deductionType] ?? r.deductionType}
                   </span>
                 </div>
@@ -189,7 +189,7 @@ export function DeductionsDerivedSummary({
               <Item key={r.id}>
                 <div className="flex flex-col">
                   <span className="text-gray-200">{r.name}</span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-400">
                     Base {fmt.format(r.annualPropertyTax)} → {currentYear}{" "}
                     {fmt.format(r.currentYearInflated)}
                   </span>
@@ -204,7 +204,7 @@ export function DeductionsDerivedSummary({
       {/* ── Footer totals ────────────────────────────────────────────────── */}
       <div className="rounded-lg border border-gray-800 bg-gray-900/40 p-4 space-y-2 text-sm">
         <div className="flex justify-between">
-          <span className="text-gray-400">
+          <span className="text-gray-300">
             Total above-line for {currentYear}:
           </span>
           <span className="tabular-nums font-semibold text-gray-100">
@@ -212,13 +212,13 @@ export function DeductionsDerivedSummary({
           </span>
         </div>
         <div className="flex justify-between">
-          <span className="text-gray-400">
+          <span className="text-gray-300">
             Total itemized for {currentYear}:
           </span>
           <span className="tabular-nums font-semibold text-gray-100">
             {fmt.format(totalItemized)}
             {rawSalt > saltCap && (
-              <span className="ml-2 text-xs font-normal text-gray-500">
+              <span className="ml-2 text-xs font-normal text-gray-400">
                 (SALT: {fmt.format(rawSalt)} → capped at{" "}
                 {fmt.format(saltCap)})
               </span>
@@ -269,7 +269,7 @@ function Amount({ children }: { children: React.ReactNode }) {
 
 function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-gray-800 bg-gray-900/60 px-4 py-6 text-center text-sm text-gray-400">
+    <div className="rounded-md border border-gray-800 bg-gray-900/60 px-4 py-6 text-center text-sm text-gray-300">
       {children}
     </div>
   );

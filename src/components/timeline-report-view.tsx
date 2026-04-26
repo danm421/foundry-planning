@@ -139,7 +139,7 @@ export default function TimelineReportView({ clientId }: Props) {
   }
   if (!clientData || !projection) {
     return (
-      <div className="min-h-screen bg-[#0B0F1A] p-6 text-sm text-gray-400 font-[family-name:var(--font-body)]">
+      <div className="min-h-screen bg-[#0B0F1A] p-6 text-sm text-gray-300 font-[family-name:var(--font-body)]">
         Loading timeline…
       </div>
     );
@@ -155,7 +155,7 @@ export default function TimelineReportView({ clientId }: Props) {
         <h1 className="bg-gradient-to-r from-sky-300 via-white to-fuchsia-300 bg-clip-text text-4xl font-semibold tracking-tight text-transparent font-[family-name:var(--font-display)]">
           Timeline
         </h1>
-        <p className="mt-2 text-xs uppercase tracking-[0.18em] text-gray-400 font-[family-name:var(--font-body)]">
+        <p className="mt-2 text-xs uppercase tracking-[0.18em] text-gray-300 font-[family-name:var(--font-body)]">
           <span className="tabular-nums">{projection.length}</span> years ·{" "}
           <span className="tabular-nums">{events.length}</span> events
         </p>
@@ -201,7 +201,7 @@ export default function TimelineReportView({ clientId }: Props) {
           registerSegmentRef={registerSegmentRef}
         />
 
-        <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-white/[0.06] pt-4 text-[11px] text-gray-500">
+        <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-white/[0.06] pt-4 text-xs text-gray-400">
           <span>
             Sparkline:{" "}
             <span className="text-gray-300">

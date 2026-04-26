@@ -151,7 +151,7 @@ export default function ScheduleTab({
 
         <div className="flex items-end gap-2">
           {fillMode === "flat" && (
-            <label className="flex-1 text-xs text-gray-400">
+            <label className="flex-1 text-xs text-gray-300">
               Amount
               <input
                 type="number"
@@ -166,7 +166,7 @@ export default function ScheduleTab({
           )}
           {fillMode === "growth" && (
             <>
-              <label className="flex-1 text-xs text-gray-400">
+              <label className="flex-1 text-xs text-gray-300">
                 Start
                 <input
                   type="number"
@@ -178,7 +178,7 @@ export default function ScheduleTab({
                   placeholder="$100,000"
                 />
               </label>
-              <label className="w-20 text-xs text-gray-400">
+              <label className="w-20 text-xs text-gray-300">
                 Rate %
                 <input
                   type="number"
@@ -195,7 +195,7 @@ export default function ScheduleTab({
           )}
           {fillMode === "step" && (
             <>
-              <label className="w-20 text-xs text-gray-400">
+              <label className="w-20 text-xs text-gray-300">
                 From
                 <input
                   type="number"
@@ -204,7 +204,7 @@ export default function ScheduleTab({
                   className={inputClass}
                 />
               </label>
-              <label className="w-20 text-xs text-gray-400">
+              <label className="w-20 text-xs text-gray-300">
                 To
                 <input
                   type="number"
@@ -213,7 +213,7 @@ export default function ScheduleTab({
                   className={inputClass}
                 />
               </label>
-              <label className="flex-1 text-xs text-gray-400">
+              <label className="flex-1 text-xs text-gray-300">
                 Amount
                 <input
                   type="number"
@@ -240,7 +240,7 @@ export default function ScheduleTab({
       {/* Year grid */}
       <div className="max-h-72 overflow-y-auto rounded-md border border-gray-700">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-gray-800 text-gray-400">
+          <thead className="sticky top-0 bg-gray-800 text-gray-300">
             <tr>
               <th className="px-3 py-1.5 text-left font-medium">Year</th>
               <th className="px-3 py-1.5 text-right font-medium">Amount</th>

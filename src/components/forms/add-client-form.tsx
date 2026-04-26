@@ -228,7 +228,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onS
             required
             className={`mt-1 ${inputClassName}`}
           />
-          <p className="mt-1 text-[11px] text-gray-500">
+          <p className="mt-1 text-xs text-gray-400">
             Plan horizon ends the year of the last spouse to die.
           </p>
         </div>
@@ -379,7 +379,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onS
           </div>
         )}
         {!showSpouse && (
-          <p className="text-xs text-gray-500">Add a spouse on the Details tab to enter separate spouse contact info.</p>
+          <p className="text-xs text-gray-400">Add a spouse on the Details tab to enter separate spouse contact info.</p>
         )}
       </div>
 
@@ -405,7 +405,7 @@ function TabButton({
       className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
         active
           ? "border-blue-500 text-gray-100"
-          : "border-transparent text-gray-400 hover:text-gray-200"
+          : "border-transparent text-gray-300 hover:text-gray-200"
       }`}
     >
       {children}

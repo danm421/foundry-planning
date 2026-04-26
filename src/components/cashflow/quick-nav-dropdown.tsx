@@ -37,7 +37,7 @@ export function QuickNavDropdown({
 
   return (
     <label className="inline-flex items-center gap-2 text-sm text-gray-300">
-      <span className="text-gray-400">Jump to</span>
+      <span className="text-gray-300">Jump to</span>
       <select
         value={activeView}
         onChange={handleChange}

@@ -455,7 +455,7 @@ export default function AddAssetTransactionForm({
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-300"
+            className="text-gray-400 hover:text-gray-300"
             aria-label="Close"
           >
             ✕
@@ -559,9 +559,9 @@ export default function AddAssetTransactionForm({
                     className={INPUT_CLASS.replace("px-3", "pr-3")}
                   />
                   {projectedSellInfo && projectedSellInfo.projectedValue > 0 && (
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-gray-400">
                       Projected value in {year}:{" "}
-                      <span className="text-gray-400">
+                      <span className="text-gray-300">
                         {formatCurrency(projectedSellInfo.projectedValue)}
                       </span>
                     </p>
@@ -580,9 +580,9 @@ export default function AddAssetTransactionForm({
                     className={INPUT_CLASS.replace("px-3", "pr-3")}
                   />
                   {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-gray-400">
                       Projected basis in {year}:{" "}
-                      <span className="text-gray-400">
+                      <span className="text-gray-300">
                         {formatCurrency(projectedSellInfo.projectedBasis)}
                       </span>
                     </p>
@@ -650,7 +650,7 @@ export default function AddAssetTransactionForm({
                     <span className="font-medium text-gray-200">
                       Qualifies for home-sale gain exclusion (§121)
                     </span>
-                    <span className="block text-[11px] text-gray-500">
+                    <span className="block text-xs text-gray-400">
                       Excludes up to $250k single / $500k married-joint of capital gain on this sale. Advisor confirms 2-of-5-year eligibility.
                     </span>
                   </span>
@@ -794,7 +794,7 @@ export default function AddAssetTransactionForm({
                 <button
                   type="button"
                   onClick={() => setShowMortgage((v) => !v)}
-                  className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200"
+                  className="flex items-center gap-1.5 text-sm text-gray-300 hover:text-gray-200"
                 >
                   <span
                     className={`inline-block transition-transform text-xs ${showMortgage ? "rotate-90" : ""}`}
@@ -853,7 +853,7 @@ export default function AddAssetTransactionForm({
           {/* ── Net Summary ─────────────────────────────────────────────── */}
           {(netSummary.hasSell || netSummary.hasBuy) && (
             <div className="rounded-md border border-gray-700 bg-gray-800/50 px-4 py-3">
-              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-300">
                 Net Summary
               </h4>
               <div className="space-y-1 text-sm">
@@ -864,13 +864,13 @@ export default function AddAssetTransactionForm({
                       <span>{formatCurrency(netSummary.saleValue)}</span>
                     </div>
                     {netSummary.transactionCosts > 0 && (
-                      <div className="flex justify-between text-gray-400">
+                      <div className="flex justify-between text-gray-300">
                         <span className="pl-3">- Transaction Costs</span>
                         <span>{formatCurrency(netSummary.transactionCosts)}</span>
                       </div>
                     )}
                     {netSummary.mortgagePayoff > 0 && (
-                      <div className="flex justify-between text-gray-400">
+                      <div className="flex justify-between text-gray-300">
                         <span className="pl-3">- Mortgage Payoff</span>
                         <span>{formatCurrency(netSummary.mortgagePayoff)}</span>
                       </div>
@@ -891,7 +891,7 @@ export default function AddAssetTransactionForm({
                       <span>{formatCurrency(netSummary.purchasePrice)}</span>
                     </div>
                     {netSummary.purchaseMortgage > 0 && (
-                      <div className="flex justify-between text-gray-400">
+                      <div className="flex justify-between text-gray-300">
                         <span className="pl-3">- Mortgage</span>
                         <span>{formatCurrency(netSummary.purchaseMortgage)}</span>
                       </div>
@@ -917,7 +917,7 @@ export default function AddAssetTransactionForm({
                       </span>
                     </div>
                     {netSummary.net < 0 && fundingAccountId && (
-                      <p className="mt-1 text-xs text-gray-500">
+                      <p className="mt-1 text-xs text-gray-400">
                         Deficit will be funded from{" "}
                         {fundingAccountId === "__from_sale_proceeds__"
                           ? "sale proceeds"
@@ -925,7 +925,7 @@ export default function AddAssetTransactionForm({
                       </p>
                     )}
                     {netSummary.net > 0 && (
-                      <p className="mt-1 text-xs text-gray-500">
+                      <p className="mt-1 text-xs text-gray-400">
                         Surplus will go to{" "}
                         {proceedsAccountId
                           ? accounts.find((a) => a.id === proceedsAccountId)?.name ?? "selected account"

@@ -64,7 +64,7 @@ function HighLevelTable({
     <div className="overflow-x-auto">
       <table className="w-full text-left text-xs">
         <thead>
-          <tr className="border-b border-gray-800 text-gray-500">
+          <tr className="border-b border-gray-800 text-gray-400">
             <th className="px-2 py-2 font-medium">Asset Type</th>
             <th className="px-2 py-2 text-right font-medium">$</th>
             <th className="px-2 py-2 text-right font-medium">Current</th>
@@ -146,7 +146,7 @@ function DetailedTable({
     <div className="overflow-x-auto">
       <table className="w-full text-left text-xs">
         <thead>
-          <tr className="border-b border-gray-800 text-gray-500">
+          <tr className="border-b border-gray-800 text-gray-400">
             <th className="px-2 py-2 font-medium">Asset Class</th>
             <th className="px-2 py-2 text-right font-medium">$</th>
             <th className="px-2 py-2 text-right font-medium">Current</th>
@@ -216,7 +216,7 @@ function CombinedTable({
     <div className="overflow-x-auto">
       <table className="w-full text-left text-xs">
         <thead>
-          <tr className="border-b border-gray-800 text-gray-500">
+          <tr className="border-b border-gray-800 text-gray-400">
             <th className="px-2 py-2 font-medium">Asset Class</th>
             <th className="px-2 py-2 text-right font-medium">$</th>
             <th className="px-2 py-2 text-right font-medium">Current</th>
@@ -321,7 +321,7 @@ function UnallocatedRow({
           onRowClick("__unallocated__");
         }
       }}
-      className="cursor-pointer italic text-gray-500 hover:bg-gray-800/60"
+      className="cursor-pointer italic text-gray-400 hover:bg-gray-800/60"
     >
       <td className="px-2 py-2">
         <span className="mr-2 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: UNALLOCATED_COLOR }} />

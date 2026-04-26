@@ -15,7 +15,7 @@ export default function NetWorthSparkline({
 }: Props): ReactElement {
   if (values.length < 2) {
     return (
-      <div className="flex h-[90px] items-end text-[11px] text-ink-4">
+      <div className="flex h-[90px] items-end text-xs text-ink-4">
         Not enough data
       </div>
     );

@@ -85,7 +85,7 @@ export default function ReviewStepSummary({
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-gray-400">
+          <p className="mt-2 text-xs text-gray-300">
             You can go back to fix these, or commit as-is (defaults will be applied).
           </p>
         </div>
@@ -100,7 +100,7 @@ export default function ReviewStepSummary({
       </button>
 
       {!hasData && (
-        <p className="text-center text-sm text-gray-500">
+        <p className="text-center text-sm text-gray-400">
           No data to commit. Go back and add items, or upload more documents.
         </p>
       )}
@@ -119,9 +119,9 @@ function StatCard({
 }) {
   return (
     <div className="rounded-md border border-gray-700 bg-gray-900 p-3">
-      <p className="text-xs text-gray-400">{label}</p>
+      <p className="text-xs text-gray-300">{label}</p>
       <p className="mt-1 text-xl font-semibold text-gray-100">{count}</p>
-      <p className="text-xs text-gray-400">{total}</p>
+      <p className="text-xs text-gray-300">{total}</p>
     </div>
   );
 }

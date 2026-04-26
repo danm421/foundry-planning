@@ -106,13 +106,13 @@ export default function InsurancePolicyCashValueGrid({
       <InsurancePolicyCsvUpload onParsed={handleCsvParsed} />
 
       {gridRows.length === 0 ? (
-        <p className="mb-3 text-xs text-gray-500">
+        <p className="mb-3 text-xs text-gray-400">
           No schedule rows yet. Add rows manually or upload a CSV.
         </p>
       ) : (
         <table className="mb-3 w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase text-gray-400">
+            <tr className="text-left text-xs uppercase text-gray-300">
               <th className="py-1 pr-2 font-medium">Year</th>
               <th className="py-1 pr-2 text-right font-medium">Cash value</th>
               <th className="py-1" />
@@ -151,7 +151,7 @@ export default function InsurancePolicyCashValueGrid({
                     type="button"
                     onClick={() => removeRow(i)}
                     aria-label={`Remove year ${row.year}`}
-                    className="px-2 text-gray-500 hover:text-red-400"
+                    className="px-2 text-gray-400 hover:text-red-400"
                   >
                     ×
                   </button>

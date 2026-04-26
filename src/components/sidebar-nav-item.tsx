@@ -23,7 +23,7 @@ export default function SidebarNavItem({
       <div className="relative flex items-center gap-3 px-[var(--pad-card)] py-2 text-[13px] text-ink-4 cursor-default">
         <span className="flex h-5 w-5 items-center justify-center">{icon}</span>
         <span className="flex-1 truncate">{label}</span>
-        <span className="rounded-sm bg-hair px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-4">
+        <span className="rounded-sm bg-hair px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-ink-4">
           Soon
         </span>
       </div>
@@ -42,7 +42,7 @@ export default function SidebarNavItem({
       <span className="flex h-5 w-5 items-center justify-center">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
       {typeof count === "number" ? (
-        <span className="text-[11px] text-ink-4">{count}</span>
+        <span className="text-xs text-ink-4">{count}</span>
       ) : null}
     </>
   );

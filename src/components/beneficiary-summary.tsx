@@ -79,8 +79,8 @@ export default function BeneficiarySummary({
           <h2 className="text-xl font-bold text-gray-100">Beneficiary Designations</h2>
         </header>
         <div className="rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-6 text-center">
-          <p className="text-sm text-gray-400">No beneficiary designations yet.</p>
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="text-sm text-gray-300">No beneficiary designations yet.</p>
+          <p className="mt-1 text-xs text-gray-400">
             Open an account or trust above to add primary and contingent beneficiaries.
           </p>
         </div>
@@ -96,7 +96,7 @@ export default function BeneficiarySummary({
 
       {accountRows.length > 0 && (
         <div className="mb-6">
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
             Accounts
           </h3>
           <div className="space-y-2">
@@ -115,12 +115,12 @@ export default function BeneficiarySummary({
                         <span className="text-sm font-semibold text-gray-100">
                           {account.name}
                         </span>
-                        <span className="text-[11px] uppercase tracking-wide text-gray-500">
+                        <span className="text-xs uppercase tracking-wide text-gray-400">
                           {account.category}
                         </span>
                         {isTOD && (
                           <span
-                            className="inline-flex items-center rounded border border-blue-500/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-blue-300"
+                            className="inline-flex items-center rounded border border-blue-500/40 bg-blue-500/10 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-blue-300"
                             title="Transfer on Death"
                           >
                             TOD
@@ -130,13 +130,13 @@ export default function BeneficiarySummary({
                       <dl className="mt-2 space-y-1 text-xs text-gray-300">
                         {primaryLine && (
                           <div className="flex gap-2">
-                            <dt className="w-20 shrink-0 text-gray-500">Primary:</dt>
+                            <dt className="w-20 shrink-0 text-gray-400">Primary:</dt>
                             <dd className="min-w-0 flex-1 text-gray-200">{primaryLine}</dd>
                           </div>
                         )}
                         {contingentLine && (
                           <div className="flex gap-2">
-                            <dt className="w-20 shrink-0 text-gray-500">Contingent:</dt>
+                            <dt className="w-20 shrink-0 text-gray-400">Contingent:</dt>
                             <dd className="min-w-0 flex-1 text-gray-200">{contingentLine}</dd>
                           </div>
                         )}
@@ -159,7 +159,7 @@ export default function BeneficiarySummary({
 
       {trustRows.length > 0 && (
         <div>
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
             Trust Remainders
           </h3>
           <div className="space-y-2">
@@ -177,13 +177,13 @@ export default function BeneficiarySummary({
                       <dl className="mt-2 space-y-1 text-xs text-gray-300">
                         {primaryLine && (
                           <div className="flex gap-2">
-                            <dt className="w-20 shrink-0 text-gray-500">Primary:</dt>
+                            <dt className="w-20 shrink-0 text-gray-400">Primary:</dt>
                             <dd className="min-w-0 flex-1 text-gray-200">{primaryLine}</dd>
                           </div>
                         )}
                         {contingentLine && (
                           <div className="flex gap-2">
-                            <dt className="w-20 shrink-0 text-gray-500">Contingent:</dt>
+                            <dt className="w-20 shrink-0 text-gray-400">Contingent:</dt>
                             <dd className="min-w-0 flex-1 text-gray-200">{contingentLine}</dd>
                           </div>
                         )}

@@ -152,7 +152,7 @@ export default function ImportPageClient({
           {queuedFiles.length > 0 && (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <label className="text-sm text-gray-400">Model:</label>
+                <label className="text-sm text-gray-300">Model:</label>
                 <select
                   value={model}
                   onChange={(e) => setModel(e.target.value as "mini" | "full")}

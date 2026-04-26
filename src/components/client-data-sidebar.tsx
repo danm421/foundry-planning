@@ -119,10 +119,10 @@ export default function ClientDataSidebar({ clientId }: ClientDataSidebarProps) 
             className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               isActive
                 ? "bg-gray-800 text-gray-100"
-                : "text-gray-400 hover:bg-gray-800/50 hover:text-gray-200"
+                : "text-gray-300 hover:bg-gray-800/50 hover:text-gray-200"
             }`}
           >
-            <span className={isActive ? "text-blue-400" : "text-gray-500"}>{tab.icon}</span>
+            <span className={isActive ? "text-blue-400" : "text-gray-400"}>{tab.icon}</span>
             <span>{tab.label}</span>
           </Link>
         );

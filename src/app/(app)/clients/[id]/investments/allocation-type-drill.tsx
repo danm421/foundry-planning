@@ -33,7 +33,7 @@ export default function AllocationTypeDrill({
       <button
         type="button"
         onClick={onBack}
-        className="self-start text-xs text-gray-400 hover:text-gray-200"
+        className="self-start text-xs text-gray-300 hover:text-gray-200"
       >
         ← All asset types
       </button>
@@ -46,13 +46,13 @@ export default function AllocationTypeDrill({
           />
           {typeLabel}
         </div>
-        <div className="mt-1 text-xs text-gray-500">
+        <div className="mt-1 text-xs text-gray-400">
           {dollars(typeValue)} · {pct(typePctOfClassified)} of classified
         </div>
       </div>
 
       {classes.length === 0 ? (
-        <div className="text-xs text-gray-500">No classes contribute to this type.</div>
+        <div className="text-xs text-gray-400">No classes contribute to this type.</div>
       ) : (
         <div className="flex flex-col gap-4">
           {classes.map((cls, idx) => {
@@ -84,11 +84,11 @@ function ClassSection({ cls, color }: { cls: import("@/lib/investments/allocatio
         <span className="tabular-nums text-gray-300">{dollars(cls.subtotal)}</span>
       </div>
       {cls.contributions.length === 0 ? (
-        <div className="ml-4 text-xs text-gray-500">No accounts.</div>
+        <div className="ml-4 text-xs text-gray-400">No accounts.</div>
       ) : (
         <table className="w-full text-left text-xs">
           <thead>
-            <tr className="border-b border-gray-800 text-gray-500">
+            <tr className="border-b border-gray-800 text-gray-400">
               <th className="px-2 py-1 font-medium">Account</th>
               <th className="px-2 py-1 text-right font-medium">$ in class</th>
               <th className="px-2 py-1 text-right font-medium">% of class</th>
@@ -105,7 +105,7 @@ function ClassSection({ cls, color }: { cls: import("@/lib/investments/allocatio
                 </tr>
               );
             })}
-            <tr className="border-t border-gray-800 text-xs text-gray-400">
+            <tr className="border-t border-gray-800 text-xs text-gray-300">
               <td className="px-2 py-1">Subtotal</td>
               <td className="px-2 py-1 text-right tabular-nums">{dollars(cls.subtotal)}</td>
               <td className="px-2 py-1 text-right">—</td>

@@ -7,7 +7,7 @@ export default function Home() {
         <h1 className="text-4xl font-bold tracking-tight text-gray-100">
           Foundry Planning
         </h1>
-        <p className="mt-4 text-lg text-gray-400">
+        <p className="mt-4 text-lg text-gray-300">
           Cash flow-based financial planning for advisors
         </p>
         <div className="mt-8 flex gap-4 justify-center">

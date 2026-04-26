@@ -22,7 +22,7 @@ export default function DialogTabs({ tabs, activeTab, onTabChange }: DialogTabsP
             type="button"
             onClick={() => onTabChange(tab.id)}
             className={
-              "px-4 py-3 text-[11px] font-medium uppercase tracking-[0.08em] border-b-2 -mb-px transition-colors " +
+              "px-4 py-3 text-xs font-medium uppercase tracking-[0.08em] border-b-2 -mb-px transition-colors " +
               (isActive
                 ? "text-accent-ink border-accent"
                 : "text-ink-3 hover:text-ink-2 border-transparent")

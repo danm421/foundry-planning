@@ -46,7 +46,7 @@ export default function ContributionCapCheckbox({
       />
       <span>
         <span className="font-medium text-gray-200">Apply IRS contribution limit</span>
-        <span className="block text-[11px] text-gray-500">
+        <span className="block text-xs text-gray-400">
           When on, the engine caps this contribution at the applicable IRS limit (401(k)/403(b) deferral or IRA, including age-50+ catch-up and age 60–63 super catch-up). Uncheck to let the entered amount pass through uncapped.
         </span>
       </span>

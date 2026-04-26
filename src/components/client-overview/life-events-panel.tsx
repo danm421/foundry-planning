@@ -42,10 +42,10 @@ export default function LifeEventsPanel({ clientId, events }: Props): ReactEleme
           {/* Axis line */}
           <div className="absolute left-0 right-0 top-1/2 h-px bg-hair" />
           {/* End-year pills */}
-          <div className="absolute left-0 top-1/2 -translate-y-1/2 rounded-sm border border-hair bg-card-2 px-2 py-0.5 font-mono text-[10px] text-ink-3">
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 rounded-sm border border-hair bg-card-2 px-2 py-0.5 font-mono text-xs text-ink-3">
             {minYear}
           </div>
-          <div className="absolute right-0 top-1/2 -translate-y-1/2 rounded-sm border border-hair bg-card-2 px-2 py-0.5 font-mono text-[10px] text-ink-3">
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 rounded-sm border border-hair bg-card-2 px-2 py-0.5 font-mono text-xs text-ink-3">
             {maxYear}
           </div>
           {/* Events */}
@@ -62,7 +62,7 @@ export default function LifeEventsPanel({ clientId, events }: Props): ReactEleme
               >
                 <span className="block h-2.5 w-2.5 rounded-full bg-ink-3" />
                 <span
-                  className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] ${
+                  className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-xs ${
                     above
                       ? "-top-8 rounded-sm border border-hair bg-card-2 px-1.5 py-0.5 text-ink-2"
                       : "top-4 text-ink-4 italic"
@@ -77,7 +77,7 @@ export default function LifeEventsPanel({ clientId, events }: Props): ReactEleme
         {/* Legend */}
         <div className="flex items-center gap-2 border-t border-hair pt-3">
           <span className="inline-block h-2 w-2 rounded-full bg-ink-3" />
-          <span className="text-[11px] text-ink-4">Life event</span>
+          <span className="text-xs text-ink-4">Life event</span>
         </div>
       </CardBody>
     </Card>

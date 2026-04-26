@@ -75,7 +75,7 @@ export default function OpenItemsList({
       </div>
 
       {open.length === 0 ? (
-        <p className="text-sm text-gray-400">No open items.</p>
+        <p className="text-sm text-gray-300">No open items.</p>
       ) : (
         <ul className="space-y-2">
           {open.map((i) => (
@@ -98,12 +98,12 @@ export default function OpenItemsList({
                 {i.priority}
               </span>
               {i.dueDate && (
-                <span className={`text-xs ${isOverdue(i) ? "text-red-300" : "text-gray-400"}`}>
+                <span className={`text-xs ${isOverdue(i) ? "text-red-300" : "text-gray-300"}`}>
                   {i.dueDate}
                 </span>
               )}
               <button
-                className="text-sm text-gray-400 hover:text-gray-200"
+                className="text-sm text-gray-300 hover:text-gray-200"
                 onClick={() => { setEditing(i); setDialogOpen(true); }}
               >
                 Edit
@@ -115,7 +115,7 @@ export default function OpenItemsList({
 
       {done.length > 0 && (
         <details className="mt-4">
-          <summary className="cursor-pointer text-sm text-gray-400">
+          <summary className="cursor-pointer text-sm text-gray-300">
             Completed ({done.length})
           </summary>
           <ul className="mt-2 space-y-2">
@@ -127,9 +127,9 @@ export default function OpenItemsList({
                   onChange={() => update(i.id, { completedAt: null })}
                   aria-label={`Reopen ${i.title}`}
                 />
-                <span className="flex-1 text-gray-400 line-through">{i.title}</span>
+                <span className="flex-1 text-gray-300 line-through">{i.title}</span>
                 <button
-                  className="text-sm text-gray-500 hover:text-gray-200"
+                  className="text-sm text-gray-400 hover:text-gray-200"
                   onClick={() => remove(i.id)}
                 >
                   Delete

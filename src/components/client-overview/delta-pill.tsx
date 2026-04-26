@@ -26,7 +26,7 @@ export default function DeltaPill({
   const text = suffix ? `${arrow} ${magnitude}${suffix}` : `${arrow} ${magnitude}`;
   return (
     <span
-      className={`tabular inline-flex items-center rounded-sm px-1.5 py-[2px] font-mono text-[11px] ${TONE_CLASS[inferredTone]}`}
+      className={`tabular inline-flex items-center rounded-sm px-1.5 py-[2px] font-mono text-xs ${TONE_CLASS[inferredTone]}`}
     >
       {text}
     </span>

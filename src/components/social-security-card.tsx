@@ -80,9 +80,9 @@ export function SocialSecurityCard({ clientId, clientInfo, planSettings, incomes
         >
           <span className="text-sm">
             <span className="font-medium">{clientInfo.firstName}</span>
-            <span className="text-slate-500 ml-2">{summaryLabel(clientRow, clientInfo, "client")}</span>
+            <span className="text-slate-400 ml-2">{summaryLabel(clientRow, clientInfo, "client")}</span>
           </span>
-          <span className="text-slate-400">›</span>
+          <span className="text-slate-300">›</span>
         </button>
         {hasSpouse && (
           <button
@@ -92,9 +92,9 @@ export function SocialSecurityCard({ clientId, clientInfo, planSettings, incomes
           >
             <span className="text-sm">
               <span className="font-medium">{clientInfo.spouseName ?? "Spouse"}</span>
-              <span className="text-slate-500 ml-2">{summaryLabel(spouseRow, clientInfo, "spouse")}</span>
+              <span className="text-slate-400 ml-2">{summaryLabel(spouseRow, clientInfo, "spouse")}</span>
             </span>
-            <span className="text-slate-400">›</span>
+            <span className="text-slate-300">›</span>
           </button>
         )}
       </div>

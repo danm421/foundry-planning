@@ -56,7 +56,7 @@ export function YearRangeSlider({
           disabledReason="Set client DOB and retirement age to enable"
           onClick={() => applyPreset(presets.retirement)}
         />
-        <span className="ml-auto text-xs tabular-nums text-gray-400">
+        <span className="ml-auto text-xs tabular-nums text-gray-300">
           {value[0]}{value[0] !== value[1] ? ` – ${value[1]}` : ""}
         </span>
       </div>
@@ -106,7 +106,7 @@ export function YearRangeSlider({
           return (
             <span
               key={label}
-              className="absolute top-0 text-xs text-gray-500 tabular-nums"
+              className="absolute top-0 text-xs text-gray-400 tabular-nums"
               style={{ left: `${leftPct}%`, transform }}
             >
               {label}
@@ -142,7 +142,7 @@ function PresetButton({
           ? "cursor-not-allowed text-gray-600"
           : active
             ? "bg-gray-700 text-white"
-            : "text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+            : "text-gray-300 hover:bg-gray-800 hover:text-gray-200"
       }`}
     >
       {label}

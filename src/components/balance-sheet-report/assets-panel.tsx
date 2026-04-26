@@ -48,7 +48,7 @@ function OwnerChip({
     ? entityLabelById.get(ownerEntityId) ?? "Entity"
     : individualOwnerLabel(owner, names);
   return (
-    <span className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-400">
+    <span className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-300">
       {label}
     </span>
   );
@@ -71,7 +71,7 @@ function AccountRow({
         <span>{row.accountName}</span>
         {row.hasLinkedMortgage && (
           <span
-            className="rounded border border-amber-800 bg-amber-950/50 px-1 text-[10px] font-medium uppercase text-amber-400"
+            className="rounded border border-amber-800 bg-amber-950/50 px-1 text-xs font-medium uppercase text-amber-400"
             title="Has linked mortgage — see Liabilities"
           >
             M
@@ -145,10 +145,10 @@ export default function AssetsPanel({
 }: AssetsPanelProps) {
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Assets</h2>
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-300">Assets</h2>
 
       {viewModel.assetCategories.length === 0 && (
-        <div className={`${SCREEN_THEME.surface.panel} p-6 text-center text-sm text-gray-500`}>
+        <div className={`${SCREEN_THEME.surface.panel} p-6 text-center text-sm text-gray-400`}>
           No assets in this view.
         </div>
       )}

@@ -144,7 +144,7 @@ export default function MilestoneYearPicker({
 
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-400" htmlFor={id}>
+      <label className="block text-xs font-medium text-gray-300" htmlFor={id}>
         {label}
       </label>
 
@@ -173,7 +173,7 @@ export default function MilestoneYearPicker({
             onChange={(e) => setDuration(Math.max(1, Number(e.target.value) || 1))}
             className={INPUT_CLASS}
           />
-          <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
+          <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-300">
             years → {currentYear}
           </span>
           {/* Hidden input carries the computed year for FormData */}
@@ -190,11 +190,11 @@ export default function MilestoneYearPicker({
             value={currentYear}
             readOnly={currentRef !== null}
             onChange={(e) => handleYearChange(Number(e.target.value))}
-            className={`${INPUT_CLASS} ${currentRef ? "text-gray-400" : ""}`}
+            className={`${INPUT_CLASS} ${currentRef ? "text-gray-300" : ""}`}
           />
           {currentRef && (
             <span className="absolute inset-y-0 right-2 flex items-center">
-              <span className="rounded bg-blue-900/50 px-1.5 py-0.5 text-[10px] text-blue-400">
+              <span className="rounded bg-blue-900/50 px-1.5 py-0.5 text-xs text-blue-400">
                 {labels[currentRef]}
               </span>
             </span>

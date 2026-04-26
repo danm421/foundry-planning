@@ -53,12 +53,12 @@ export const SCREEN_THEME = {
   text: {
     primary: "text-gray-100",
     secondary: "text-gray-300",
-    muted: "text-gray-500",
+    muted: "text-gray-400",
   },
   status: {
     up: "text-emerald-400 bg-emerald-950/50 border border-emerald-900",
     down: "text-rose-400 bg-rose-950/50 border border-rose-900",
-    flat: "text-gray-400 bg-gray-800 border border-gray-700",
+    flat: "text-gray-300 bg-gray-800 border border-gray-700",
   },
 } as const;
 

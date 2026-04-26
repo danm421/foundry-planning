@@ -77,29 +77,29 @@ export default function TaxRatesForm({
       {success && <p className="rounded bg-green-900/50 px-3 py-2 text-sm text-green-400">Saved.</p>}
 
       <header>
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Income Tax</h3>
-        <p className="mt-1 text-xs text-gray-500">Flat rates applied across the projection.</p>
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Income Tax</h3>
+        <p className="mt-1 text-xs text-gray-400">Flat rates applied across the projection.</p>
       </header>
 
       <div className="mb-4">
-        <label className="block text-xs font-medium text-gray-400 mb-2">Tax calculation method</label>
+        <label className="block text-xs font-medium text-gray-300 mb-2">Tax calculation method</label>
         <div className="inline-flex rounded-md bg-gray-800 p-1">
           <button
             type="button"
             onClick={() => setMode("flat")}
-            className={`px-3 py-1.5 text-sm rounded ${mode === "flat" ? "bg-gray-700 text-white" : "text-gray-400"}`}
+            className={`px-3 py-1.5 text-sm rounded ${mode === "flat" ? "bg-gray-700 text-white" : "text-gray-300"}`}
           >
             Flat rate
           </button>
           <button
             type="button"
             onClick={() => setMode("bracket")}
-            className={`px-3 py-1.5 text-sm rounded ${mode === "bracket" ? "bg-gray-700 text-white" : "text-gray-400"}`}
+            className={`px-3 py-1.5 text-sm rounded ${mode === "bracket" ? "bg-gray-700 text-white" : "text-gray-300"}`}
           >
             Bracket-based
           </button>
         </div>
-        <p className="mt-1 text-xs text-gray-500">
+        <p className="mt-1 text-xs text-gray-400">
           Bracket mode uses progressive federal brackets, AMT, NIIT, and FICA based on filing status. Flat mode multiplies taxable income by your federal rate.
         </p>
       </div>
@@ -107,24 +107,24 @@ export default function TaxRatesForm({
       <div className="grid grid-cols-3 gap-4">
         {mode === "flat" && (
           <div>
-            <label className="block text-xs font-medium text-gray-400" htmlFor="flatFederalRate">Federal rate</label>
+            <label className="block text-xs font-medium text-gray-300" htmlFor="flatFederalRate">Federal rate</label>
             <PercentInput id="flatFederalRate" name="flatFederalRate" defaultValue={pct(flatFederalRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
           </div>
         )}
         <div>
-          <label className="block text-xs font-medium text-gray-400" htmlFor="flatStateRate">State rate</label>
+          <label className="block text-xs font-medium text-gray-300" htmlFor="flatStateRate">State rate</label>
           <PercentInput id="flatStateRate" name="flatStateRate" defaultValue={pct(flatStateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
       </div>
 
       <header className="mt-6">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Estate Tax</h3>
-        <p className="mt-1 text-xs text-gray-500">Applied at each death event in the projection.</p>
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Estate Tax</h3>
+        <p className="mt-1 text-xs text-gray-400">Applied at each death event in the projection.</p>
       </header>
 
       <div className="grid grid-cols-3 gap-4">
         <div>
-          <label className="block text-xs font-medium text-gray-400" htmlFor="estateAdminExpenses">Estate administrative expenses ($)</label>
+          <label className="block text-xs font-medium text-gray-300" htmlFor="estateAdminExpenses">Estate administrative expenses ($)</label>
           <input
             id="estateAdminExpenses"
             name="estateAdminExpenses"
@@ -136,26 +136,26 @@ export default function TaxRatesForm({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-400" htmlFor="flatStateEstateRate">State estate tax rate</label>
+          <label className="block text-xs font-medium text-gray-300" htmlFor="flatStateEstateRate">State estate tax rate</label>
           <PercentInput id="flatStateEstateRate" name="flatStateEstateRate" defaultValue={pct(flatStateEstateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
       </div>
 
       <header className="mt-6">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Trust Tax</h3>
-        <p className="mt-1 text-xs text-gray-500">Applied when a non-grantor trust distributes income to a beneficiary outside the household.</p>
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Trust Tax</h3>
+        <p className="mt-1 text-xs text-gray-400">Applied when a non-grantor trust distributes income to a beneficiary outside the household.</p>
       </header>
 
       <div className="grid grid-cols-3 gap-4">
         <div>
-          <label className="block text-xs font-medium text-gray-400" htmlFor="outOfHouseholdDniRate">Out-of-household DNI tax rate</label>
+          <label className="block text-xs font-medium text-gray-300" htmlFor="outOfHouseholdDniRate">Out-of-household DNI tax rate</label>
           <PercentInput
             id="outOfHouseholdDniRate"
             name="outOfHouseholdDniRate"
             defaultValue={pct(outOfHouseholdDniRate)}
             className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
-          <p className="mt-1 text-xs text-gray-500">Records an estimated recipient-side tax in the plan&apos;s tax summary. Defaults to top federal bracket (37%).</p>
+          <p className="mt-1 text-xs text-gray-400">Records an estimated recipient-side tax in the plan&apos;s tax summary. Defaults to top federal bracket (37%).</p>
         </div>
       </div>
 

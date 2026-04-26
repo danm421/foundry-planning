@@ -27,7 +27,7 @@ export function TaxDetailTooltip({ text, label }: TaxDetailTooltipProps) {
         <button
           type="button"
           aria-label="Show column explanation"
-          className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-700 text-[10px] text-gray-300 hover:bg-gray-600 focus:bg-gray-600 focus:outline-none"
+          className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-700 text-xs text-gray-300 hover:bg-gray-600 focus:bg-gray-600 focus:outline-none"
           onFocus={() => setOpen(true)}
           onBlur={() => setOpen(false)}
         >

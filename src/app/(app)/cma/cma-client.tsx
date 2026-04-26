@@ -209,7 +209,7 @@ export default function CmaClient() {
   }
 
   if (loading) {
-    return <div className="py-12 text-center text-gray-400">Loading CMA data...</div>;
+    return <div className="py-12 text-center text-gray-300">Loading CMA data...</div>;
   }
 
   return (
@@ -243,7 +243,7 @@ export default function CmaClient() {
         <button
           onClick={() => setTab("asset-classes")}
           className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            tab === "asset-classes" ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200"
+            tab === "asset-classes" ? "bg-gray-700 text-white" : "text-gray-300 hover:text-gray-200"
           }`}
         >
           Asset Classes
@@ -251,7 +251,7 @@ export default function CmaClient() {
         <button
           onClick={() => setTab("model-portfolios")}
           className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            tab === "model-portfolios" ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200"
+            tab === "model-portfolios" ? "bg-gray-700 text-white" : "text-gray-300 hover:text-gray-200"
           }`}
         >
           Model Portfolios
@@ -297,7 +297,7 @@ function AssetClassesTab({ assetClasses, onUpdate, onSave, onAdd, onDelete, savi
       <div className="overflow-x-auto rounded-lg border border-gray-700">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-700 bg-gray-800/60 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
+            <tr className="border-b border-gray-700 bg-gray-800/60 text-left text-xs font-medium uppercase tracking-wider text-gray-300">
               <th className="min-w-[14rem] px-3 py-2">Name</th>
               <th className="px-3 py-2">Type</th>
               <th className="px-3 py-2 text-right">Geo Return %</th>
@@ -402,7 +402,7 @@ function AssetClassRow({
                   onSave({ ...ac, arithmeticMean: next });
                 }}
                 title="Estimate from Geometric Return and Standard Deviation (Arith ≈ Geo + SD²/2)"
-                className="rounded border border-gray-700 px-1.5 py-0.5 text-[10px] text-gray-400 hover:border-blue-500 hover:text-gray-100"
+                className="rounded border border-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:border-blue-500 hover:text-gray-100"
               >
                 Est
               </button>
@@ -413,7 +413,7 @@ function AssetClassRow({
       <td className="px-3 py-2">
         <button
           onClick={() => onDelete(ac.id)}
-          className="rounded p-1 text-gray-500 hover:bg-red-500/10 hover:text-red-400"
+          className="rounded p-1 text-gray-400 hover:bg-red-500/10 hover:text-red-400"
           title="Delete asset class"
           aria-label="Delete asset class"
         >
@@ -524,7 +524,7 @@ function ModelPortfoliosTab({ portfolios, assetClasses, onRefresh }: ModelPortfo
               <span className="truncate font-medium">{p.name}</span>
               <button
                 onClick={(e) => { e.stopPropagation(); deletePortfolio(p.id); }}
-                className="rounded p-1 text-gray-500 hover:bg-red-500/10 hover:text-red-400"
+                className="rounded p-1 text-gray-400 hover:bg-red-500/10 hover:text-red-400"
                 title="Delete portfolio"
                 aria-label="Delete portfolio"
               >
@@ -535,7 +535,7 @@ function ModelPortfoliosTab({ portfolios, assetClasses, onRefresh }: ModelPortfo
         ))}
         <button
           onClick={addPortfolio}
-          className="w-full rounded-lg border border-dashed border-gray-600 px-3 py-2 text-sm text-gray-400 hover:border-gray-500 hover:text-gray-300"
+          className="w-full rounded-lg border border-dashed border-gray-600 px-3 py-2 text-sm text-gray-300 hover:border-gray-500 hover:text-gray-300"
         >
           + New Portfolio
         </button>
@@ -550,19 +550,19 @@ function ModelPortfoliosTab({ portfolios, assetClasses, onRefresh }: ModelPortfo
           {blended && totalWeight > 0 && (
             <div className="grid grid-cols-4 gap-3 rounded-lg border border-gray-700 bg-gray-800/40 p-4">
               <div>
-                <p className="text-xs text-gray-500">Blended Geo Return</p>
+                <p className="text-xs text-gray-400">Blended Geo Return</p>
                 <p className="text-lg font-semibold text-gray-100">{(blended.geoReturn * 100).toFixed(2)}%</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">Arith Mean</p>
+                <p className="text-xs text-gray-400">Arith Mean</p>
                 <p className="text-lg font-semibold text-gray-100">{(blended.arithMean * 100).toFixed(2)}%</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">Volatility</p>
+                <p className="text-xs text-gray-400">Volatility</p>
                 <p className="text-lg font-semibold text-gray-100">{(blended.vol * 100).toFixed(2)}%</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">Realization</p>
+                <p className="text-xs text-gray-400">Realization</p>
                 <p className="text-xs text-gray-300">
                   OI {(blended.oi * 100).toFixed(0)}% | CG {(blended.ltcg * 100).toFixed(0)}% | Div {(blended.qdiv * 100).toFixed(0)}% | Ex {(blended.taxEx * 100).toFixed(0)}%
                 </p>
@@ -635,7 +635,7 @@ function PortfolioAllocationEditor({
       <div className="overflow-x-auto rounded-lg border border-gray-700">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-700 bg-gray-800/60 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
+            <tr className="border-b border-gray-700 bg-gray-800/60 text-left text-xs font-medium uppercase tracking-wider text-gray-300">
               <th className="px-3 py-2">Asset Class</th>
               <th className="px-3 py-2 text-right">Growth Rate %</th>
               <th className="px-3 py-2 text-right">Weight %</th>
@@ -666,7 +666,7 @@ function PortfolioAllocationEditor({
                   <td className="px-3 py-2">
                     <button
                       onClick={() => removeRow(idx)}
-                      className="rounded p-1 text-gray-500 hover:bg-red-500/10 hover:text-red-400"
+                      className="rounded p-1 text-gray-400 hover:bg-red-500/10 hover:text-red-400"
                       title="Remove asset class from portfolio"
                       aria-label="Remove asset class from portfolio"
                     >

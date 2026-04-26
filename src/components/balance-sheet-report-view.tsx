@@ -126,7 +126,7 @@ export default function BalanceSheetReportView({
     }
   }
 
-  if (loading) return <div className="text-gray-400">Loading projection...</div>;
+  if (loading) return <div className="text-gray-300">Loading projection...</div>;
   if (error) {
     return (
       <div className="rounded-lg border border-red-800 bg-red-900/50 p-6 text-red-400">
@@ -136,7 +136,7 @@ export default function BalanceSheetReportView({
   }
   if (!viewModel || projectionYears.length === 0 || selectedAsOf == null) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
         No projection data available. Ensure plan settings and base case scenario are configured.
       </div>
     );

@@ -62,7 +62,7 @@ export default function ReviewStepEntities({
           <div key={i} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="mb-1 block text-xs text-gray-400">Name</label>
+                <label className="mb-1 block text-xs text-gray-300">Name</label>
                 <input
                   value={entity.name}
                   onChange={(e) => updateField(i, "name", e.target.value)}
@@ -71,7 +71,7 @@ export default function ReviewStepEntities({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-400">Type</label>
+                <label className="mb-1 block text-xs text-gray-300">Type</label>
                 <select
                   value={entity.entityType ?? ""}
                   onChange={(e) => updateField(i, "entityType", e.target.value || undefined)}
@@ -86,7 +86,7 @@ export default function ReviewStepEntities({
               <div className="flex items-end">
                 <button
                   onClick={() => removeRow(i)}
-                  className="pb-1 text-gray-500 hover:text-red-400"
+                  className="pb-1 text-gray-400 hover:text-red-400"
                   title="Remove"
                 >
                   <TrashIcon />

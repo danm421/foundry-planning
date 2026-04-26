@@ -21,7 +21,7 @@ export function TopRisksCard({ risks }: TopRisksCardProps) {
     <section className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4">
       <h3 className="text-sm font-semibold text-slate-100 mb-3">Top Risks</h3>
       {risks.length === 0 ? (
-        <p className="text-[13px] text-slate-500">No elevated risks detected.</p>
+        <p className="text-[13px] text-slate-400">No elevated risks detected.</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {risks.map((r) => (

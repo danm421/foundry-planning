@@ -73,7 +73,7 @@ export default function RecentActivityPanel({ clientId, rows }: Props): ReactEle
                   {glyphChar(r.action)}
                 </span>
                 <span className="flex-1 text-ink-2">{formatAuditRow(r)}</span>
-                <span className="tabular font-mono text-[11px] text-ink-4">
+                <span className="tabular font-mono text-xs text-ink-4">
                   {relativeTime(r.createdAt)}
                 </span>
               </li>

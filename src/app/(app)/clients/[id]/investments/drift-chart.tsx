@@ -15,7 +15,7 @@ function pct(v: number) {
 
 export default function DriftChart({ drift, assetClasses }: Props) {
   if (drift.length === 0) {
-    return <div className="text-xs text-gray-500">Select a target portfolio to see drift.</div>;
+    return <div className="text-xs text-gray-400">Select a target portfolio to see drift.</div>;
   }
 
   const sortOrderById = new Map(assetClasses.map((c) => [c.id, c.sortOrder]));
@@ -52,7 +52,7 @@ export default function DriftChart({ drift, assetClasses }: Props) {
           const sortOrder = sortOrderById.get(r.assetClassId) ?? 0;
           const color = colorForAssetClass({ sortOrder });
           return (
-            <div key={`legend-${r.assetClassId}`} className="flex items-center justify-between text-xs text-gray-400">
+            <div key={`legend-${r.assetClassId}`} className="flex items-center justify-between text-xs text-gray-300">
               <span className="flex items-center gap-2">
                 <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: color }} />
                 {r.name}

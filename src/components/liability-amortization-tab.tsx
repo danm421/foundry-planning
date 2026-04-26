@@ -270,7 +270,7 @@ export default function LiabilityAmortizationTab({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12 text-gray-400">
+      <div className="flex items-center justify-center py-12 text-gray-300">
         Loading amortization data...
       </div>
     );
@@ -278,7 +278,7 @@ export default function LiabilityAmortizationTab({
 
   if (schedule.length === 0) {
     return (
-      <div className="flex items-center justify-center py-12 text-gray-400">
+      <div className="flex items-center justify-center py-12 text-gray-300">
         Unable to generate amortization schedule. Ensure balance and monthly payment are set.
       </div>
     );
@@ -295,7 +295,7 @@ export default function LiabilityAmortizationTab({
       <div className="w-full overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-700 text-left text-gray-400">
+            <tr className="border-b border-gray-700 text-left text-gray-300">
               <th className="px-3 py-2 font-medium">Year</th>
               <th className="px-3 py-2 font-medium text-right">Payment</th>
               <th className="px-3 py-2 font-medium text-right">Interest</th>
@@ -366,7 +366,7 @@ export default function LiabilityAmortizationTab({
                             setEditingYear(null);
                             setEpAmount("");
                           }}
-                          className="text-gray-400 hover:text-gray-200"
+                          className="text-gray-300 hover:text-gray-200"
                           title="Cancel"
                         >
                           &#x2717;
@@ -398,7 +398,7 @@ export default function LiabilityAmortizationTab({
                         + add
                       </button>
                     ) : (
-                      <span className="text-gray-500">-</span>
+                      <span className="text-gray-400">-</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">{fmt(row.endingBalance)}</td>

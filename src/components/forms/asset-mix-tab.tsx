@@ -114,7 +114,7 @@ export function AssetMixTab({
               className="flex items-center justify-between gap-2"
             >
               <span className="text-sm flex-1 truncate text-gray-200">{ac.name}</span>
-              <span className="text-xs text-gray-500 w-14 text-right shrink-0">
+              <span className="text-xs text-gray-400 w-14 text-right shrink-0">
                 {(ac.geometricReturn * 100).toFixed(2)}%
               </span>
               <div className="flex items-center gap-1 w-20 shrink-0">
@@ -128,7 +128,7 @@ export function AssetMixTab({
                   onChange={(e) => handleWeightChange(ac.id, e.target.value)}
                   className="h-7 w-full rounded-md border border-gray-600 bg-gray-800 px-2 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
-                <span className="text-sm text-gray-500">%</span>
+                <span className="text-sm text-gray-400">%</span>
               </div>
             </div>
           );
@@ -138,10 +138,10 @@ export function AssetMixTab({
       {/* Unclassified row */}
       {unclassified > 0.0001 && (
         <div className="flex items-center justify-between gap-3 border-t border-gray-700 pt-2">
-          <span className="text-sm flex-1 text-gray-500 italic">
+          <span className="text-sm flex-1 text-gray-400 italic">
             Unclassified
           </span>
-          <span className="text-xs text-gray-500 w-16 text-right">
+          <span className="text-xs text-gray-400 w-16 text-right">
             {inflationClass
               ? `${(inflationClass.geometricReturn * 100).toFixed(2)}%`
               : "—"}
@@ -153,7 +153,7 @@ export function AssetMixTab({
       )}
 
       {unclassified > 0.0001 && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-gray-400">
           Unclassified portion grows at the Inflation rate
           {inflationClass
             ? ` (${(inflationClass.geometricReturn * 100).toFixed(2)}%)`

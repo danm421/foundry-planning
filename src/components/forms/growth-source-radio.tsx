@@ -36,7 +36,7 @@ export default function GrowthSourceRadio({
           onChange={(e) => onChange({ value: "custom", customRate: e.target.value })}
           className="ml-1 w-20 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100 disabled:opacity-50"
         />
-        <span className="text-xs text-gray-400">%</span>
+        <span className="text-xs text-gray-300">%</span>
       </label>
       <label className="flex items-center gap-2 text-sm text-gray-200">
         <input

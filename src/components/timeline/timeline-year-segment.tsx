@@ -91,13 +91,13 @@ export default function TimelineYearSegment({
             <span className="text-xs tabular-nums text-gray-200 font-[family-name:var(--font-display)]">
               {year}
             </span>
-            <span className="text-[9px] uppercase tracking-[0.08em] text-gray-500 font-[family-name:var(--font-body)]">
+            <span className="text-[9px] uppercase tracking-[0.08em] text-gray-400 font-[family-name:var(--font-body)]">
               {ageWithoutPrefix}
             </span>
           </div>
         ) : (
           <div className="flex items-center gap-0.5 rounded-full border border-white/5 bg-black/20 px-2 py-0.5">
-            <span className="text-[10px] tabular-nums text-gray-600 font-[family-name:var(--font-display)]">
+            <span className="text-xs tabular-nums text-gray-600 font-[family-name:var(--font-display)]">
               {year}
             </span>
           </div>

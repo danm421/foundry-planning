@@ -205,7 +205,7 @@ export function FanChart({ summary, deterministic, ageMarkers }: FanChartProps) 
     <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-base font-semibold text-slate-100">Retirement Success Probability</h2>
-        <div className="flex items-center gap-3 text-[11px] text-slate-400">
+        <div className="flex items-center gap-3 text-xs text-slate-300">
           <span className="flex items-center gap-1.5">
             <span className="h-[2px] w-4 bg-emerald-400" /> Above average (80th)
           </span>

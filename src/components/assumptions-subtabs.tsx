@@ -21,7 +21,7 @@ export default function AssumptionsSubtabs({ tabs, activeTab, onTabChange }: Ass
           className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
             activeTab === tab.id
               ? "bg-gray-800 text-gray-100"
-              : "text-gray-400 hover:bg-gray-800/50 hover:text-gray-200"
+              : "text-gray-300 hover:bg-gray-800/50 hover:text-gray-200"
           }`}
         >
           {tab.label}

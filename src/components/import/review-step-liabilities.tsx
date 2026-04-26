@@ -57,7 +57,7 @@ export default function ReviewStepLiabilities({
           <div key={i} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
             <div className="grid grid-cols-6 gap-2">
               <div className="col-span-2">
-                <label className="mb-1 block text-xs text-gray-400">Name</label>
+                <label className="mb-1 block text-xs text-gray-300">Name</label>
                 <input
                   value={liability.name}
                   onChange={(e) => updateField(i, "name", e.target.value)}
@@ -66,7 +66,7 @@ export default function ReviewStepLiabilities({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-400">Balance</label>
+                <label className="mb-1 block text-xs text-gray-300">Balance</label>
                 <input
                   type="number"
                   value={liability.balance ?? ""}
@@ -76,7 +76,7 @@ export default function ReviewStepLiabilities({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-400">Interest Rate</label>
+                <label className="mb-1 block text-xs text-gray-300">Interest Rate</label>
                 <input
                   type="number"
                   step="0.001"
@@ -87,7 +87,7 @@ export default function ReviewStepLiabilities({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-400">Monthly Payment</label>
+                <label className="mb-1 block text-xs text-gray-300">Monthly Payment</label>
                 <input
                   type="number"
                   value={liability.monthlyPayment ?? ""}
@@ -98,7 +98,7 @@ export default function ReviewStepLiabilities({
               </div>
               <div className="flex items-end gap-4">
                 <div className="flex-1">
-                  <label className="mb-1 block text-xs text-gray-400">Start</label>
+                  <label className="mb-1 block text-xs text-gray-300">Start</label>
                   <input
                     type="number"
                     value={liability.startYear ?? ""}
@@ -108,7 +108,7 @@ export default function ReviewStepLiabilities({
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="mb-1 block text-xs text-gray-400">End</label>
+                  <label className="mb-1 block text-xs text-gray-300">End</label>
                   <input
                     type="number"
                     value={liability.endYear ?? ""}
@@ -119,7 +119,7 @@ export default function ReviewStepLiabilities({
                 </div>
                 <button
                   onClick={() => removeRow(i)}
-                  className="pb-1 text-gray-500 hover:text-red-400"
+                  className="pb-1 text-gray-400 hover:text-red-400"
                   title="Remove"
                 >
                   <TrashIcon />

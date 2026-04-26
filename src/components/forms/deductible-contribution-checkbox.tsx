@@ -47,7 +47,7 @@ export default function DeductibleContributionCheckbox({
       />
       <span>
         <span className="font-medium text-gray-200">Contribution is tax-deductible (pre-tax)</span>
-        <span className="block text-[11px] text-gray-500">
+        <span className="block text-xs text-gray-400">
           Uncheck for after-tax / non-deductible contributions (e.g., non-deductible traditional IRA, after-tax 401(k) for a backdoor Roth).
         </span>
       </span>

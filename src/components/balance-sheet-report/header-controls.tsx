@@ -47,7 +47,7 @@ export default function HeaderControls({
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h1 className="text-2xl font-bold tracking-tight text-gray-100">Balance Sheet</h1>
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-sm text-gray-400">
+        <label className="flex items-center gap-2 text-sm text-gray-300">
           AS OF
           <select
             value={asOfValue}
@@ -65,7 +65,7 @@ export default function HeaderControls({
         </label>
 
         {showViewSelector && (
-          <label className="flex items-center gap-2 text-sm text-gray-400">
+          <label className="flex items-center gap-2 text-sm text-gray-300">
             View
             <select
               value={view}

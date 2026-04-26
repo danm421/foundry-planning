@@ -64,7 +64,7 @@ export default function OpenItemsPreview({
                 />
                 <span className="flex-1 text-ink-2">{i.title}</span>
                 <span
-                  className={`rounded-sm px-1.5 py-[2px] font-mono text-[10px] uppercase ${
+                  className={`rounded-sm px-1.5 py-[2px] font-mono text-xs uppercase ${
                     PRIORITY_CHIP[i.priority] ?? PRIORITY_CHIP.low
                   }`}
                 >
@@ -72,7 +72,7 @@ export default function OpenItemsPreview({
                 </span>
                 {i.dueDate && (
                   <span
-                    className={`tabular font-mono text-[11px] ${
+                    className={`tabular font-mono text-xs ${
                       overdue ? "font-semibold text-crit" : "text-ink-4"
                     }`}
                   >

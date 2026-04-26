@@ -31,10 +31,10 @@ export default function EntityBreakdownPanel({ viewModel }: EntityBreakdownPanel
   if (groups.length === 0) {
     return (
       <div className="flex flex-col gap-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-300">
           Entities
         </h2>
-        <div className={`${SCREEN_THEME.surface.panel} p-6 text-center text-sm text-gray-500`}>
+        <div className={`${SCREEN_THEME.surface.panel} p-6 text-center text-sm text-gray-400`}>
           No entity-owned positions.
         </div>
       </div>
@@ -43,7 +43,7 @@ export default function EntityBreakdownPanel({ viewModel }: EntityBreakdownPanel
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-300">
         Entities
       </h2>
 
@@ -54,12 +54,12 @@ export default function EntityBreakdownPanel({ viewModel }: EntityBreakdownPanel
               <span className={`text-sm font-semibold ${SCREEN_THEME.text.primary}`}>
                 {group.entityName}
               </span>
-              <span className="rounded bg-gray-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-400">
+              <span className="rounded bg-gray-800 px-1.5 py-0.5 text-xs uppercase tracking-wide text-gray-300">
                 {ENTITY_TYPE_LABEL[group.entityType] ?? group.entityType}
               </span>
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-[10px] uppercase tracking-wide text-blue-300">
+              <span className="text-xs uppercase tracking-wide text-blue-300">
                 Net Worth
               </span>
               <span className="text-base font-bold text-gray-100">
@@ -71,7 +71,7 @@ export default function EntityBreakdownPanel({ viewModel }: EntityBreakdownPanel
           {group.assetRows.length > 0 && (
             <div className="px-4 pb-2 pt-2">
               <div className="flex items-center justify-between pb-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
                   Assets
                 </span>
                 <span className="text-xs font-semibold text-emerald-400">
@@ -93,7 +93,7 @@ export default function EntityBreakdownPanel({ viewModel }: EntityBreakdownPanel
           {group.liabilityRows.length > 0 && (
             <div className="border-t border-gray-800 px-4 pb-3 pt-2">
               <div className="flex items-center justify-between pb-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
                   Liabilities
                 </span>
                 <span className="text-xs font-semibold text-rose-400">

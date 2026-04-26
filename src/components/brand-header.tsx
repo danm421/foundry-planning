@@ -22,7 +22,7 @@ export default function BrandHeader({
         </span>
         <span
           data-testid="brand-subtitle"
-          className="text-[11px] text-ink-3 leading-none mt-1"
+          className="text-xs text-ink-3 leading-none mt-1"
         >
           Planning{firmName ? ` · ${firmName}` : ""}
         </span>

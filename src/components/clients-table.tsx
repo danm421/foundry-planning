@@ -170,19 +170,19 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
       <div className="mt-4 overflow-hidden rounded-lg border border-gray-700 bg-gray-900 shadow-sm">
         {rows.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <p className="text-gray-400">No clients yet. Click &quot;Add Client&quot; to get started.</p>
+            <p className="text-gray-300">No clients yet. Click &quot;Add Client&quot; to get started.</p>
           </div>
         ) : visibleRows.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <p className="text-gray-400">No clients match &quot;{search}&quot;.</p>
+            <p className="text-gray-300">No clients match &quot;{search}&quot;.</p>
           </div>
         ) : (
           <table className="min-w-full divide-y divide-gray-700">
             <thead className="bg-gray-800">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">Filing Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">Date Added</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-300">Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-300">Filing Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-300">Date Added</th>
                 {editMode && <th className="px-6 py-3" />}
               </tr>
             </thead>
@@ -207,7 +207,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
                           className="font-medium text-blue-500 hover:text-blue-400"
                         >
                           {client.firstName} {client.lastName}
-                          {spouseLabel && <span className="text-gray-400"> &amp; {spouseLabel}</span>}
+                          {spouseLabel && <span className="text-gray-300"> &amp; {spouseLabel}</span>}
                         </button>
                       ) : (
                         <Link
@@ -216,14 +216,14 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
                           className="font-medium text-blue-500 hover:text-blue-400"
                         >
                           {client.firstName} {client.lastName}
-                          {spouseLabel && <span className="text-gray-400"> &amp; {spouseLabel}</span>}
+                          {spouseLabel && <span className="text-gray-300"> &amp; {spouseLabel}</span>}
                         </Link>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-400">
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-300">
                       {FILING_LABELS[client.filingStatus] ?? client.filingStatus}
                     </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-400">
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-300">
                       {new Date(client.createdAt).toLocaleDateString("en-US", {
                         year: "numeric",
                         month: "short",
@@ -234,7 +234,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
                       <td className="whitespace-nowrap px-6 py-4 text-right">
                         <button
                           onClick={() => setDeleting(client)}
-                          className="text-gray-500 hover:text-red-400"
+                          className="text-gray-400 hover:text-red-400"
                           aria-label={`Delete ${client.firstName} ${client.lastName}`}
                           title="Delete client"
                         >

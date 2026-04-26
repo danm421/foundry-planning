@@ -43,7 +43,7 @@ export default function AllocationDonut({ household, mode }: Props) {
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <div className="text-xs uppercase tracking-wide text-gray-500">Investable Total</div>
+      <div className="text-xs uppercase tracking-wide text-gray-400">Investable Total</div>
       <div className="text-2xl font-bold text-gray-100">
         ${household.totalInvestableValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
       </div>
@@ -157,7 +157,7 @@ function LegendView({ household, mode }: { household: HouseholdAllocation; mode:
               style={{ backgroundColor: colorForAssetType(t.id) }}
             />
             <span className="text-gray-200">{t.label}</span>
-            <span className="ml-auto tabular-nums text-gray-500">
+            <span className="ml-auto tabular-nums text-gray-400">
               {(t.pctOfClassified * 100).toFixed(1)}%
             </span>
           </li>
@@ -176,7 +176,7 @@ function LegendView({ household, mode }: { household: HouseholdAllocation; mode:
               style={{ backgroundColor: colorForAssetClass({ sortOrder: b.sortOrder }) }}
             />
             <span className="text-gray-200">{b.name}</span>
-            <span className="ml-auto tabular-nums text-gray-500">
+            <span className="ml-auto tabular-nums text-gray-400">
               {(b.pctOfClassified * 100).toFixed(1)}%
             </span>
           </li>
@@ -201,7 +201,7 @@ function LegendView({ household, mode }: { household: HouseholdAllocation; mode:
                   style={{ backgroundColor: colorForAssetType(t.id) }}
                 />
                 <span>{t.label}</span>
-                <span className="ml-auto tabular-nums text-gray-500">
+                <span className="ml-auto tabular-nums text-gray-400">
                   {(t.pctOfClassified * 100).toFixed(1)}%
                 </span>
               </div>
@@ -213,7 +213,7 @@ function LegendView({ household, mode }: { household: HouseholdAllocation; mode:
                       style={{ backgroundColor: shadeForClassInType(t.id, idx, classes.length) }}
                     />
                     <span className="text-gray-300">{c.name}</span>
-                    <span className="ml-auto tabular-nums text-gray-500">
+                    <span className="ml-auto tabular-nums text-gray-400">
                       {(c.pctOfClassified * 100).toFixed(1)}%
                     </span>
                   </li>

@@ -54,13 +54,13 @@ export default function RunwayPanel({
         <div className="flex flex-1 flex-col gap-3">
           <div className="flex gap-6">
             <div className="flex flex-col gap-0.5">
-              <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-4">
+              <span className="font-mono text-xs uppercase tracking-[0.08em] text-ink-4">
                 Peak
               </span>
               <MoneyText value={peak} />
             </div>
             <div className="flex flex-col gap-0.5">
-              <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-4">
+              <span className="font-mono text-xs uppercase tracking-[0.08em] text-ink-4">
                 Plan end
               </span>
               <MoneyText value={planEnd} />

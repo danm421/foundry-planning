@@ -81,12 +81,12 @@ export default function EstateTaxReportView({
   }
 
   if (loading) {
-    return <div className="text-gray-400">Loading projection…</div>;
+    return <div className="text-gray-300">Loading projection…</div>;
   }
 
   if (projectionYears.length === 0 || !hypothetical || selectedYear == null) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
         No projection data available. Ensure plan settings and base case scenario are configured.
       </div>
     );
@@ -110,7 +110,7 @@ export default function EstateTaxReportView({
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <label className="text-xs uppercase tracking-wide text-gray-400">
+          <label className="text-xs uppercase tracking-wide text-gray-300">
             As of
           </label>
           <select
@@ -132,7 +132,7 @@ export default function EstateTaxReportView({
               className={
                 ordering === "primaryFirst"
                   ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                  : "rounded px-3 py-1 text-gray-400 hover:text-gray-200"
+                  : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
               }
               onClick={() => setOrdering("primaryFirst")}
             >
@@ -143,7 +143,7 @@ export default function EstateTaxReportView({
               className={
                 ordering === "spouseFirst"
                   ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                  : "rounded px-3 py-1 text-gray-400 hover:text-gray-200"
+                  : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
               }
               onClick={() => setOrdering("spouseFirst")}
             >
@@ -153,7 +153,7 @@ export default function EstateTaxReportView({
         )}
       </div>
 
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-gray-400">
         {isMarried
           ? `Assumes both clients die in ${selectedYear}. Hypothetical only.`
           : `Assumes ${firstDecedentName} dies in ${selectedYear}. Hypothetical only.`}
@@ -194,7 +194,7 @@ function Row({
     <div
       className={
         "flex items-center justify-between border-b border-gray-800 py-1.5 text-sm " +
-        (bold ? "font-semibold text-gray-100" : muted ? "text-gray-500" : "text-gray-200")
+        (bold ? "font-semibold text-gray-100" : muted ? "text-gray-400" : "text-gray-200")
       }
     >
       <span>{label}</span>
@@ -207,7 +207,7 @@ function Row({
 
 function GroupHeading({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+    <div className="mt-4 text-xs font-semibold uppercase tracking-wider text-gray-300">
       {children}
     </div>
   );
@@ -241,7 +241,7 @@ function DecedentBreakdown({
           <span>
             {line.label}
             {line.percentage !== 1 && (
-              <span className="ml-2 text-xs text-gray-500">
+              <span className="ml-2 text-xs text-gray-400">
                 {pct.format(line.percentage)}
               </span>
             )}
@@ -274,7 +274,7 @@ function DecedentBreakdown({
       <Row label="Federal estate tax" amount={tax.federalEstateTax} bold />
 
       <GroupHeading>State estate tax</GroupHeading>
-      <div className="flex items-center justify-between border-b border-gray-800 py-1.5 text-sm text-gray-500">
+      <div className="flex items-center justify-between border-b border-gray-800 py-1.5 text-sm text-gray-400">
         <span>State rate</span>
         <span className="font-mono tabular-nums">{pct.format(tax.stateEstateTaxRate)}</span>
       </div>

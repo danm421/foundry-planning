@@ -173,13 +173,13 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
 
       <section>
         <header className="mb-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Inflation</h3>
-          <p className="mt-1 text-xs text-gray-500">Annual inflation rate applied to expenses and incomes.</p>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Inflation</h3>
+          <p className="mt-1 text-xs text-gray-400">Annual inflation rate applied to expenses and incomes.</p>
         </header>
         <div>
-          <label className="block text-xs font-medium text-gray-400">Inflation rate</label>
+          <label className="block text-xs font-medium text-gray-300">Inflation rate</label>
           <div className="mt-1 flex flex-col gap-2 rounded border border-gray-700 bg-gray-900 p-3">
-            <label className={`flex items-center gap-2 text-sm ${hasInflationAssetClass ? "text-gray-200" : "text-gray-500"}`}>
+            <label className={`flex items-center gap-2 text-sm ${hasInflationAssetClass ? "text-gray-200" : "text-gray-400"}`}>
               <input
                 type="radio"
                 name="inflationRateSource"
@@ -191,7 +191,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
               Asset class — {(resolvedInflationRate * 100).toFixed(2)}%
             </label>
             {!hasInflationAssetClass && (
-              <p className="pl-6 text-xs text-gray-500">No Inflation asset class configured for this firm.</p>
+              <p className="pl-6 text-xs text-gray-400">No Inflation asset class configured for this firm.</p>
             )}
             <label className="flex items-center gap-2 text-sm text-gray-200">
               <input
@@ -216,8 +216,8 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
 
       <section>
         <header className="mb-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Default Growth Rates</h3>
-          <p className="mt-1 text-xs text-gray-500">Applied to every account of the given category unless that account specifies its own growth rate.</p>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Default Growth Rates</h3>
+          <p className="mt-1 text-xs text-gray-400">Applied to every account of the given category unless that account specifies its own growth rate.</p>
         </header>
 
         <div className="divide-y divide-gray-800 rounded-md border border-gray-800 bg-gray-900/60">
@@ -234,7 +234,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                 <div className="flex items-center justify-between gap-6">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-100">{cat.label}</p>
-                    <p className="text-xs text-gray-500">{cat.description}</p>
+                    <p className="text-xs text-gray-400">{cat.description}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <select
@@ -269,7 +269,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                   </div>
                 </div>
                 {s.source === "asset_mix" && (
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-400 mt-1">
                     Each account uses its own asset mix. Accounts without a defined mix grow at the Inflation rate.
                   </p>
                 )}
@@ -282,7 +282,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
             <div key={field.key} className="flex items-center justify-between gap-6 px-4 py-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-gray-100">{field.label}</p>
-                <p className="text-xs text-gray-500">{field.description}</p>
+                <p className="text-xs text-gray-400">{field.description}</p>
               </div>
               <div className="w-28 flex-shrink-0">
                 <PercentInput
@@ -306,7 +306,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
 
         <div className="mt-3 space-y-3">
           <div>
-            <label className="block text-xs font-medium text-gray-400" htmlFor="taxInflationRate">
+            <label className="block text-xs font-medium text-gray-300" htmlFor="taxInflationRate">
               Tax bracket inflation rate (% per year)
             </label>
             <PercentInput
@@ -316,13 +316,13 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
               placeholder={`Defaults to ${pct(rates.inflationRate)} (general)`}
               className="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100"
             />
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-gray-400">
               Used to inflate IRS-published thresholds (brackets, deductions, AMT, contribution limits) into future projection years.
             </p>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-400" htmlFor="ssWageGrowthRate">
+            <label className="block text-xs font-medium text-gray-300" htmlFor="ssWageGrowthRate">
               SS wage base growth rate (% per year)
             </label>
             <PercentInput

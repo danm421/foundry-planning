@@ -96,12 +96,12 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
       {/* Tax & Inflation */}
       <section>
         <header className="mb-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Tax &amp; Inflation</h3>
-          <p className="mt-1 text-xs text-gray-500">Rates applied across the projection.</p>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Tax &amp; Inflation</h3>
+          <p className="mt-1 text-xs text-gray-400">Rates applied across the projection.</p>
         </header>
         <div className="grid grid-cols-3 gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-400" htmlFor="flatFederalRate">
+            <label className="block text-xs font-medium text-gray-300" htmlFor="flatFederalRate">
               Federal rate
             </label>
             <PercentInput
@@ -113,7 +113,7 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-400" htmlFor="flatStateRate">
+            <label className="block text-xs font-medium text-gray-300" htmlFor="flatStateRate">
               State rate
             </label>
             <PercentInput
@@ -125,7 +125,7 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-400" htmlFor="inflationRate">
+            <label className="block text-xs font-medium text-gray-300" htmlFor="inflationRate">
               Inflation
             </label>
             <PercentInput
@@ -141,11 +141,11 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
       {/* Plan Window */}
       <section>
         <header className="mb-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Plan Window</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Plan Window</h3>
         </header>
         <div className="grid grid-cols-3 gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-400" htmlFor="planStartYear">
+            <label className="block text-xs font-medium text-gray-300" htmlFor="planStartYear">
               Start year
             </label>
             <input
@@ -159,7 +159,7 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-400" htmlFor="planEndYear">
+            <label className="block text-xs font-medium text-gray-300" htmlFor="planEndYear">
               End year
             </label>
             <input
@@ -178,8 +178,8 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
       {/* Default growth rates */}
       <section>
         <header className="mb-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Default Growth Rates</h3>
-          <p className="mt-1 text-xs text-gray-500">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Default Growth Rates</h3>
+          <p className="mt-1 text-xs text-gray-400">
             Applied to every account of the given category unless that account specifies its own growth rate.
           </p>
         </header>
@@ -189,7 +189,7 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
             <div key={field.key} className="flex items-center justify-between gap-6 px-4 py-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-gray-100">{field.label}</p>
-                <p className="text-xs text-gray-500">{field.description}</p>
+                <p className="text-xs text-gray-400">{field.description}</p>
               </div>
               <div className="w-28 flex-shrink-0">
                 <PercentInput

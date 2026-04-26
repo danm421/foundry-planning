@@ -65,7 +65,7 @@ export default function ReviewStepExpenses({
           <div key={i} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
             <div className="grid grid-cols-6 gap-2">
               <div className="col-span-2">
-                <label className="mb-1 block text-xs text-gray-400">Name</label>
+                <label className="mb-1 block text-xs text-gray-300">Name</label>
                 <input
                   value={expense.name}
                   onChange={(e) => updateField(i, "name", e.target.value)}
@@ -74,7 +74,7 @@ export default function ReviewStepExpenses({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-400">Type</label>
+                <label className="mb-1 block text-xs text-gray-300">Type</label>
                 <select
                   value={expense.type ?? ""}
                   onChange={(e) => updateField(i, "type", e.target.value || undefined)}
@@ -87,7 +87,7 @@ export default function ReviewStepExpenses({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-400">Annual Amount</label>
+                <label className="mb-1 block text-xs text-gray-300">Annual Amount</label>
                 <input
                   type="number"
                   value={expense.annualAmount ?? ""}
@@ -97,7 +97,7 @@ export default function ReviewStepExpenses({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-400">Start Year</label>
+                <label className="mb-1 block text-xs text-gray-300">Start Year</label>
                 <input
                   type="number"
                   value={expense.startYear ?? ""}
@@ -107,7 +107,7 @@ export default function ReviewStepExpenses({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-400">End Year</label>
+                <label className="mb-1 block text-xs text-gray-300">End Year</label>
                 <input
                   type="number"
                   value={expense.endYear ?? ""}
@@ -117,7 +117,7 @@ export default function ReviewStepExpenses({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-gray-400">Growth Rate</label>
+                <label className="mb-1 block text-xs text-gray-300">Growth Rate</label>
                 <input
                   type="number"
                   step="0.01"
@@ -130,7 +130,7 @@ export default function ReviewStepExpenses({
               <div className="flex items-end">
                 <button
                   onClick={() => removeRow(i)}
-                  className="pb-1 text-gray-500 hover:text-red-400"
+                  className="pb-1 text-gray-400 hover:text-red-400"
                   title="Remove"
                 >
                   <TrashIcon />

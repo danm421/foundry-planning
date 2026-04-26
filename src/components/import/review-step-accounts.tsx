@@ -135,7 +135,7 @@ export default function ReviewStepAccounts({
                 </div>
               )}
               {isExcluded && (
-                <div className="mb-2 flex items-center gap-2 text-xs text-gray-500">
+                <div className="mb-2 flex items-center gap-2 text-xs text-gray-400">
                   <span>Skipped</span>
                   <button
                     onClick={() => toggleExclude(i)}
@@ -148,7 +148,7 @@ export default function ReviewStepAccounts({
 
               <div className="grid grid-cols-6 gap-2">
                 <div className="col-span-2">
-                  <label className="mb-1 block text-xs text-gray-400">Name</label>
+                  <label className="mb-1 block text-xs text-gray-300">Name</label>
                   <input
                     value={account.name}
                     onChange={(e) => updateField(i, "name", e.target.value)}
@@ -157,7 +157,7 @@ export default function ReviewStepAccounts({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-400">Category</label>
+                  <label className="mb-1 block text-xs text-gray-300">Category</label>
                   <select
                     value={account.category ?? ""}
                     onChange={(e) => updateField(i, "category", e.target.value || undefined)}
@@ -170,7 +170,7 @@ export default function ReviewStepAccounts({
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-400">Type</label>
+                  <label className="mb-1 block text-xs text-gray-300">Type</label>
                   <select
                     value={account.subType ?? ""}
                     onChange={(e) => updateField(i, "subType", e.target.value || undefined)}
@@ -183,7 +183,7 @@ export default function ReviewStepAccounts({
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-400">Owner</label>
+                  <label className="mb-1 block text-xs text-gray-300">Owner</label>
                   <select
                     value={account.owner ?? "client"}
                     onChange={(e) => updateField(i, "owner", e.target.value)}
@@ -195,7 +195,7 @@ export default function ReviewStepAccounts({
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-400">Value</label>
+                  <label className="mb-1 block text-xs text-gray-300">Value</label>
                   <input
                     type="number"
                     value={account.value ?? ""}
@@ -205,7 +205,7 @@ export default function ReviewStepAccounts({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-400">Cost Basis</label>
+                  <label className="mb-1 block text-xs text-gray-300">Cost Basis</label>
                   <input
                     type="number"
                     value={account.basis ?? ""}
@@ -215,7 +215,7 @@ export default function ReviewStepAccounts({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-400">Growth Rate</label>
+                  <label className="mb-1 block text-xs text-gray-300">Growth Rate</label>
                   <input
                     type="number"
                     step="0.01"
@@ -226,7 +226,7 @@ export default function ReviewStepAccounts({
                   />
                 </div>
                 <div className="col-span-2 flex items-end gap-2">
-                  <label className="flex items-center gap-1.5 pb-1.5 text-xs text-gray-400">
+                  <label className="flex items-center gap-1.5 pb-1.5 text-xs text-gray-300">
                     <input
                       type="checkbox"
                       checked={account.rmdEnabled ?? false}
@@ -237,7 +237,7 @@ export default function ReviewStepAccounts({
                   </label>
                   <button
                     onClick={() => removeRow(i)}
-                    className="ml-auto pb-1 text-gray-500 hover:text-red-400"
+                    className="ml-auto pb-1 text-gray-400 hover:text-red-400"
                     title="Remove"
                   >
                     <TrashIcon />

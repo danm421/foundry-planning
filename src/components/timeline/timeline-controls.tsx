@@ -57,7 +57,7 @@ export default function TimelineControls({
               className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
                 active
                   ? "bg-sky-400/15 text-sky-300 ring-1 ring-sky-400/40 shadow-[0_0_10px_rgba(56,189,248,0.2)]"
-                  : "text-gray-400 hover:text-gray-200"
+                  : "text-gray-300 hover:text-gray-200"
               }`}
             >
               {opt.label}
@@ -78,7 +78,7 @@ export default function TimelineControls({
               className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
                 active
                   ? CHIP_ACTIVE[c.id]
-                  : "border-white/10 text-gray-400 hover:border-white/25 hover:text-gray-300"
+                  : "border-white/10 text-gray-300 hover:border-white/25 hover:text-gray-300"
               }`}
             >
               {c.label}

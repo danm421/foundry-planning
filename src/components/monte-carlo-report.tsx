@@ -210,7 +210,7 @@ export default function MonteCarloReport({ clientId }: Props) {
     return (
       <div className="p-8">
         <h1 className="text-xl font-semibold mb-2">Monte Carlo Simulation</h1>
-        <div className="text-gray-500">Loading plan data…</div>
+        <div className="text-gray-400">Loading plan data…</div>
       </div>
     );
   }

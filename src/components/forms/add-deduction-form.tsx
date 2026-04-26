@@ -112,13 +112,13 @@ export function AddDeductionForm({
       >
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-gray-100">{existing ? "Edit deduction" : "Add deduction"}</h3>
-          <button type="button" onClick={onClose} className="text-xl text-gray-400 hover:text-gray-200" aria-label="Close">
+          <button type="button" onClick={onClose} className="text-xl text-gray-300 hover:text-gray-200" aria-label="Close">
             ×
           </button>
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-400">Type</label>
+          <label className="block text-xs font-medium text-gray-300">Type</label>
           <select
             value={type}
             onChange={(e) => setType(e.target.value as DeductionRow["type"])}
@@ -138,7 +138,7 @@ export function AddDeductionForm({
         )}
 
         <div>
-          <label className="block text-xs font-medium text-gray-400">Name (optional)</label>
+          <label className="block text-xs font-medium text-gray-300">Name (optional)</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -148,7 +148,7 @@ export function AddDeductionForm({
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-400">Owner</label>
+          <label className="block text-xs font-medium text-gray-300">Owner</label>
           <select
             value={owner}
             onChange={(e) => setOwner(e.target.value as DeductionRow["owner"])}
@@ -162,7 +162,7 @@ export function AddDeductionForm({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-400">Annual amount ($)</label>
+            <label className="block text-xs font-medium text-gray-300">Annual amount ($)</label>
             <input
               type="number"
               step="100"
@@ -174,7 +174,7 @@ export function AddDeductionForm({
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-400">Growth rate (% / yr)</label>
+            <label className="block text-xs font-medium text-gray-300">Growth rate (% / yr)</label>
             <PercentInput
               value={growthRate}
               onChange={(raw) => setGrowthRate(raw)}
@@ -201,7 +201,7 @@ export function AddDeductionForm({
             />
           ) : (
             <div>
-              <label className="block text-xs font-medium text-gray-400">Start year</label>
+              <label className="block text-xs font-medium text-gray-300">Start year</label>
               <input
                 type="number"
                 min={2000}
@@ -234,7 +234,7 @@ export function AddDeductionForm({
             />
           ) : (
             <div>
-              <label className="block text-xs font-medium text-gray-400">End year</label>
+              <label className="block text-xs font-medium text-gray-300">End year</label>
               <input
                 type="number"
                 min={2000}
@@ -255,7 +255,7 @@ export function AddDeductionForm({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-sm text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+            className="rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-gray-200"
           >
             Cancel
           </button>

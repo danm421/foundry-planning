@@ -93,7 +93,7 @@ export default function CenterColumn({
   return (
     <div className="flex flex-col gap-4">
       <div className={`${SCREEN_THEME.surface.panel} p-5`}>
-        <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+        <div className="text-xs font-semibold uppercase tracking-wide text-gray-300">
           Total Assets
         </div>
         <div className="mt-2 flex items-center gap-3">
@@ -123,7 +123,7 @@ export default function CenterColumn({
       </div>
 
       <div className={`${SCREEN_THEME.surface.panel} p-5`}>
-        <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+        <div className="text-xs font-semibold uppercase tracking-wide text-gray-300">
           Assets vs Liabilities
         </div>
         <div className="mt-3 h-48">
@@ -157,11 +157,11 @@ export default function CenterColumn({
         viewModel.outOfEstateLiabilityRows.length > 0) && (
         <div className={SCREEN_THEME.surface.panel}>
           <div className={`${SCREEN_THEME.surface.panelHeader} flex items-center justify-between`}>
-            <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-300">
               Out of Estate
             </span>
             <div className="flex items-baseline gap-2">
-              <span className="text-[10px] uppercase tracking-wide text-gray-500">
+              <span className="text-xs uppercase tracking-wide text-gray-400">
                 Net
               </span>
               <span className="text-sm font-semibold text-gray-100">
@@ -172,7 +172,7 @@ export default function CenterColumn({
           {viewModel.outOfEstateRows.length > 0 && (
             <div className="px-4 pb-2 pt-2">
               <div className="flex items-center justify-between pb-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
                   Assets
                 </span>
                 <span className="text-xs font-semibold text-emerald-400">
@@ -195,7 +195,7 @@ export default function CenterColumn({
           {viewModel.outOfEstateLiabilityRows.length > 0 && (
             <div className="border-t border-gray-800 px-4 pb-3 pt-2">
               <div className="flex items-center justify-between pb-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
                   Liabilities
                 </span>
                 <span className="text-xs font-semibold text-rose-400">

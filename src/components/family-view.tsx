@@ -251,7 +251,7 @@ function FamilyMemberDialog({
           <h2 className="text-lg font-semibold text-gray-100">
             {isEdit ? "Edit Family Member" : "Add Family Member"}
           </h2>
-          <button onClick={() => onOpenChange(false)} className="text-gray-400 hover:text-gray-200">
+          <button onClick={() => onOpenChange(false)} className="text-gray-300 hover:text-gray-200">
             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
             </svg>
@@ -425,7 +425,7 @@ export default function FamilyView({
         <header className="mb-3 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-gray-100">Household</h2>
-            <p className="text-xs text-gray-500">Client and spouse. Edit from the Clients list.</p>
+            <p className="text-xs text-gray-400">Client and spouse. Edit from the Clients list.</p>
           </div>
           <button
             onClick={() => setEditProfileOpen(true)}
@@ -456,7 +456,7 @@ export default function FamilyView({
               ]}
             />
           ) : (
-            <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-6 text-sm text-gray-500">
+            <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-6 text-sm text-gray-400">
               No spouse on file
             </div>
           )}
@@ -474,7 +474,7 @@ export default function FamilyView({
         <header className="mb-3 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-gray-100">Family Members</h2>
-            <p className="text-xs text-gray-500">Children, grandchildren, parents, and others.</p>
+            <p className="text-xs text-gray-400">Children, grandchildren, parents, and others.</p>
           </div>
           <div className="flex items-center gap-2">
             {members.length > 0 && (
@@ -507,7 +507,7 @@ export default function FamilyView({
           <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">
             <table className="min-w-full divide-y divide-gray-800">
               <thead className="bg-gray-800/60">
-                <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-400">
+                <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-300">
                   <th className="px-4 py-2">Name</th>
                   <th className="px-4 py-2">Relationship</th>
                   <th className="px-4 py-2">Age</th>
@@ -530,9 +530,9 @@ export default function FamilyView({
                       <td className="px-4 py-2 text-sm text-gray-100">
                         {m.firstName} {m.lastName ?? ""}
                       </td>
-                      <td className="px-4 py-2 text-sm text-gray-400">{RELATIONSHIP_LABELS[m.relationship]}</td>
-                      <td className="px-4 py-2 text-sm text-gray-400">{computeAge(m.dateOfBirth)}</td>
-                      <td className="px-4 py-2 text-sm text-gray-500 truncate max-w-[260px]">{m.notes ?? ""}</td>
+                      <td className="px-4 py-2 text-sm text-gray-300">{RELATIONSHIP_LABELS[m.relationship]}</td>
+                      <td className="px-4 py-2 text-sm text-gray-300">{computeAge(m.dateOfBirth)}</td>
+                      <td className="px-4 py-2 text-sm text-gray-400 truncate max-w-[260px]">{m.notes ?? ""}</td>
                       <td className="px-4 py-2 text-right">
                         {membersEdit && (
                           <button
@@ -540,7 +540,7 @@ export default function FamilyView({
                               e.stopPropagation();
                               setDeletingMember(m);
                             }}
-                            className="text-gray-500 hover:text-red-400"
+                            className="text-gray-400 hover:text-red-400"
                             aria-label={`Delete ${m.firstName}`}
                           >
                             <TrashIcon />
@@ -561,7 +561,7 @@ export default function FamilyView({
         <header className="mb-3 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-gray-100">Entities</h2>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-400">
               Trusts, LLCs, and other entities that can own accounts, incomes, or expenses.
             </p>
           </div>
@@ -594,7 +594,7 @@ export default function FamilyView({
           <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">
             <table className="min-w-full divide-y divide-gray-800">
               <thead className="bg-gray-800/60">
-                <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-400">
+                <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-300">
                   <th className="px-4 py-2">Name</th>
                   <th className="px-4 py-2">Type</th>
                   <th className="px-4 py-2">Notes</th>
@@ -613,8 +613,8 @@ export default function FamilyView({
                     }}
                   >
                     <td className="px-4 py-2 text-sm text-gray-100">{e.name}</td>
-                    <td className="px-4 py-2 text-sm text-gray-400">{ENTITY_LABELS[e.entityType]}</td>
-                    <td className="px-4 py-2 text-sm text-gray-500 truncate max-w-[260px]">{e.notes ?? ""}</td>
+                    <td className="px-4 py-2 text-sm text-gray-300">{ENTITY_LABELS[e.entityType]}</td>
+                    <td className="px-4 py-2 text-sm text-gray-400 truncate max-w-[260px]">{e.notes ?? ""}</td>
                     <td className="px-4 py-2 text-right">
                       {entitiesEdit && (
                         <button
@@ -622,7 +622,7 @@ export default function FamilyView({
                             ev.stopPropagation();
                             setDeletingEntity(e);
                           }}
-                          className="text-gray-500 hover:text-red-400"
+                          className="text-gray-400 hover:text-red-400"
                           aria-label={`Delete ${e.name}`}
                         >
                           <TrashIcon />
@@ -783,14 +783,14 @@ function PersonCard({ name, badge, fields }: { name: string; badge: string; fiel
     <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-100">{name}</h3>
-        <span className="rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">
+        <span className="rounded bg-gray-800 px-2 py-0.5 text-xs font-medium uppercase tracking-wider text-gray-300">
           {badge}
         </span>
       </div>
       <dl className="mt-3 space-y-1.5 text-sm">
         {fields.map(([k, v]) => (
           <div key={k} className="flex justify-between gap-4">
-            <dt className="text-gray-500">{k}</dt>
+            <dt className="text-gray-400">{k}</dt>
             <dd className="text-gray-200">{v}</dd>
           </div>
         ))}
@@ -868,11 +868,11 @@ function GiftsSection(props: {
       )}
 
       {props.gifts.length === 0 ? (
-        <p className="text-sm text-gray-500">No gifts recorded.</p>
+        <p className="text-sm text-gray-400">No gifts recorded.</p>
       ) : (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase text-gray-400">
+            <tr className="text-left text-xs uppercase text-gray-300">
               <th className="px-2 py-1">Year</th>
               <th className="px-2 py-1">Grantor</th>
               <th className="px-2 py-1 text-right">Amount</th>
@@ -894,7 +894,7 @@ function GiftsSection(props: {
                   </td>
                   <td className="px-2 py-1">{r?.label ?? "—"}</td>
                   <td className="px-2 py-1">{g.useCrummeyPowers ? "✓" : ""}</td>
-                  <td className="px-2 py-1 text-gray-400">{g.notes ?? ""}</td>
+                  <td className="px-2 py-1 text-gray-300">{g.notes ?? ""}</td>
                   <td className="px-2 py-1 text-right">
                     <button
                       type="button"
@@ -985,7 +985,7 @@ function GiftRowForm(props: {
     <div className="mb-3 space-y-2 rounded border border-gray-700 bg-gray-800 p-3">
       <div className="grid grid-cols-4 gap-2">
         <div>
-          <label className="text-xs text-gray-400">Year</label>
+          <label className="text-xs text-gray-300">Year</label>
           <input
             type="number"
             min={1900}
@@ -996,7 +996,7 @@ function GiftRowForm(props: {
           />
         </div>
         <div>
-          <label className="text-xs text-gray-400">Grantor</label>
+          <label className="text-xs text-gray-300">Grantor</label>
           <select
             value={grantor}
             onChange={(e) =>
@@ -1010,7 +1010,7 @@ function GiftRowForm(props: {
           </select>
         </div>
         <div>
-          <label className="text-xs text-gray-400">Amount ($)</label>
+          <label className="text-xs text-gray-300">Amount ($)</label>
           <input
             type="number"
             min={0}
@@ -1021,7 +1021,7 @@ function GiftRowForm(props: {
           />
         </div>
         <div>
-          <label className="text-xs text-gray-400">Recipient kind</label>
+          <label className="text-xs text-gray-300">Recipient kind</label>
           <select
             value={kind}
             onChange={(e) => {
@@ -1039,7 +1039,7 @@ function GiftRowForm(props: {
       </div>
 
       <div>
-        <label className="text-xs text-gray-400">Recipient</label>
+        <label className="text-xs text-gray-300">Recipient</label>
         <select
           value={recipientId}
           onChange={(e) => setRecipientId(e.target.value)}
@@ -1079,7 +1079,7 @@ function GiftRowForm(props: {
       )}
 
       <div>
-        <label className="text-xs text-gray-400">Notes</label>
+        <label className="text-xs text-gray-300">Notes</label>
         <input
           type="text"
           value={notes}
@@ -1113,7 +1113,7 @@ function GiftRowForm(props: {
 
 function EmptyState({ label }: { label: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-8 text-center text-sm text-gray-500">
+    <div className="rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-8 text-center text-sm text-gray-400">
       {label}
     </div>
   );
@@ -1141,7 +1141,7 @@ function ExternalBeneficiariesSection({
       <header className="mb-3 flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-gray-100">External Beneficiaries</h2>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-400">
             Charities or individuals outside the immediate household.
           </p>
         </div>
@@ -1180,7 +1180,7 @@ function ExternalBeneficiariesSection({
         <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">
           <table className="min-w-full divide-y divide-gray-800">
             <thead className="bg-gray-800/60">
-              <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-400">
+              <tr className="text-left text-xs font-medium uppercase tracking-wider text-gray-300">
                 <th className="px-4 py-2">Name</th>
                 <th className="px-4 py-2">Kind</th>
                 <th className="px-4 py-2">Notes</th>
@@ -1213,8 +1213,8 @@ function ExternalBeneficiariesSection({
                     }}
                   >
                     <td className="px-4 py-2 text-sm text-gray-100">{x.name}</td>
-                    <td className="px-4 py-2 text-sm text-gray-400 capitalize">{x.kind}</td>
-                    <td className="px-4 py-2 text-sm text-gray-500 truncate max-w-[260px]">
+                    <td className="px-4 py-2 text-sm text-gray-300 capitalize">{x.kind}</td>
+                    <td className="px-4 py-2 text-sm text-gray-400 truncate max-w-[260px]">
                       {x.notes ?? ""}
                     </td>
                     <td className="px-4 py-2 text-right">
@@ -1224,7 +1224,7 @@ function ExternalBeneficiariesSection({
                             e.stopPropagation();
                             setDeleting(x);
                           }}
-                          className="text-gray-500 hover:text-red-400"
+                          className="text-gray-400 hover:text-red-400"
                           aria-label={`Delete ${x.name}`}
                         >
                           <TrashIcon />

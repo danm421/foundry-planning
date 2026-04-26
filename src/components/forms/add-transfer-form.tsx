@@ -60,9 +60,9 @@ function getTransferTaxLabel(
     return { label: "Distribution — Taxable", color: "text-red-400" };
   }
   if (sourceCategory === "taxable" || sourceCategory === "cash") {
-    return { label: "Liquidation", color: "text-gray-400" };
+    return { label: "Liquidation", color: "text-gray-300" };
   }
-  return { label: "Transfer", color: "text-gray-400" };
+  return { label: "Transfer", color: "text-gray-300" };
 }
 
 function makeId(): string {
@@ -221,7 +221,7 @@ export default function AddTransferForm({
           <button
             type="button"
             onClick={onClose}
-            className="text-xl text-gray-400 hover:text-gray-200"
+            className="text-xl text-gray-300 hover:text-gray-200"
             aria-label="Close"
           >
             ×
@@ -230,7 +230,7 @@ export default function AddTransferForm({
 
         {/* Name */}
         <div>
-          <label className="block text-xs font-medium text-gray-400">Name</label>
+          <label className="block text-xs font-medium text-gray-300">Name</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -243,7 +243,7 @@ export default function AddTransferForm({
         {/* Source / Target accounts */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-400">Source account</label>
+            <label className="block text-xs font-medium text-gray-300">Source account</label>
             <select
               value={sourceAccountId}
               onChange={(e) => setSourceAccountId(e.target.value)}
@@ -257,7 +257,7 @@ export default function AddTransferForm({
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-400">Target account</label>
+            <label className="block text-xs font-medium text-gray-300">Target account</label>
             <select
               value={targetAccountId}
               onChange={(e) => setTargetAccountId(e.target.value)}
@@ -281,7 +281,7 @@ export default function AddTransferForm({
 
         {/* Amount */}
         <div>
-          <label className="block text-xs font-medium text-gray-400">Amount ($)</label>
+          <label className="block text-xs font-medium text-gray-300">Amount ($)</label>
           <CurrencyInput
             value={amount}
             onChange={(raw) => setAmount(raw)}
@@ -292,7 +292,7 @@ export default function AddTransferForm({
 
         {/* Mode */}
         <div>
-          <label className="block text-xs font-medium text-gray-400">Mode</label>
+          <label className="block text-xs font-medium text-gray-300">Mode</label>
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value as "one_time" | "recurring" | "scheduled")}
@@ -321,7 +321,7 @@ export default function AddTransferForm({
               />
             ) : (
               <>
-                <label className="block text-xs font-medium text-gray-400">Start year</label>
+                <label className="block text-xs font-medium text-gray-300">Start year</label>
                 <input
                   type="number"
                   min={2000}
@@ -353,7 +353,7 @@ export default function AddTransferForm({
                 />
               ) : (
                 <>
-                  <label className="block text-xs font-medium text-gray-400">End year</label>
+                  <label className="block text-xs font-medium text-gray-300">End year</label>
                   <input
                     type="number"
                     min={2000}
@@ -372,7 +372,7 @@ export default function AddTransferForm({
         {/* Growth rate — recurring only */}
         {mode === "recurring" && (
           <div>
-            <label className="block text-xs font-medium text-gray-400">
+            <label className="block text-xs font-medium text-gray-300">
               Growth rate (% / yr)
             </label>
             <PercentInput
@@ -387,7 +387,7 @@ export default function AddTransferForm({
         {mode === "scheduled" && (
           <div>
             <div className="mb-1 flex items-center justify-between">
-              <label className="block text-xs font-medium text-gray-400">Schedule</label>
+              <label className="block text-xs font-medium text-gray-300">Schedule</label>
               <button
                 type="button"
                 onClick={addScheduleRow}
@@ -397,11 +397,11 @@ export default function AddTransferForm({
               </button>
             </div>
             {scheduleRows.length === 0 ? (
-              <p className="text-xs text-gray-500">No rows yet. Click Add row to add one.</p>
+              <p className="text-xs text-gray-400">No rows yet. Click Add row to add one.</p>
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-xs text-gray-500">
+                  <tr className="text-left text-xs text-gray-400">
                     <th className="pb-1 pr-2 font-medium">Year</th>
                     <th className="pb-1 pr-2 font-medium">Amount ($)</th>
                     <th className="pb-1 font-medium"></th>
@@ -449,7 +449,7 @@ export default function AddTransferForm({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-sm text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+            className="rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-gray-200"
           >
             Cancel
           </button>

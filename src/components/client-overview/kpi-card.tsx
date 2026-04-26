@@ -44,7 +44,7 @@ export default function KpiCard(p: KpiCardProps): ReactElement {
           )}
           <div className="flex items-center gap-2">
             <DeltaPill delta={p.delta ?? null} suffix={p.deltaSuffix} />
-            <p className="text-[11px] text-ink-3">{p.footnote}</p>
+            <p className="text-xs text-ink-3">{p.footnote}</p>
           </div>
         </CardBody>
       </Card>

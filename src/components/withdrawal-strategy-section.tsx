@@ -156,7 +156,7 @@ function WithdrawalDialog({
           <h2 className="text-lg font-semibold text-gray-100">
             {isEdit ? "Edit Withdrawal Entry" : "Add Withdrawal Entry"}
           </h2>
-          <button onClick={() => onOpenChange(false)} className="text-gray-400 hover:text-gray-200">
+          <button onClick={() => onOpenChange(false)} className="text-gray-300 hover:text-gray-200">
             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path
                 fillRule="evenodd"
@@ -236,7 +236,7 @@ function WithdrawalDialog({
             ) : (
               <>
                 <div>
-                  <label className="block text-xs font-medium text-gray-400" htmlFor="ws-start">
+                  <label className="block text-xs font-medium text-gray-300" htmlFor="ws-start">
                     Start Year
                   </label>
                   <input
@@ -250,7 +250,7 @@ function WithdrawalDialog({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-400" htmlFor="ws-end">
+                  <label className="block text-xs font-medium text-gray-300" htmlFor="ws-end">
                     End Year
                   </label>
                   <input
@@ -330,13 +330,13 @@ export default function WithdrawalStrategySection({
     <section>
       <header className="mb-3 flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">
             Withdrawal Strategy
           </h3>
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-gray-400">
             When household income can&apos;t cover expenses and savings, the projection pulls from
             these accounts in priority order. If left empty, the default order is{" "}
-            <span className="font-medium text-gray-400">
+            <span className="font-medium text-gray-300">
               Cash → Taxable → Tax-Deferred → Roth
             </span>{" "}
             (illiquid accounts are skipped).
@@ -346,10 +346,10 @@ export default function WithdrawalStrategySection({
           {list.length > 0 && (
             <button
               onClick={() => setEditMode((v) => !v)}
-              className={`rounded-md border px-2.5 py-1 text-[11px] font-medium ${
+              className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
                 editMode
                   ? "border-blue-600 bg-blue-900/40 text-blue-300"
-                  : "border-gray-700 bg-gray-900 text-gray-400 hover:bg-gray-800"
+                  : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800"
               }`}
             >
               {editMode ? "Done" : "Edit"}
@@ -358,7 +358,7 @@ export default function WithdrawalStrategySection({
           <button
             onClick={() => setDialog({ open: true })}
             disabled={accounts.length === 0}
-            className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+            className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
           >
             + Add
           </button>
@@ -367,7 +367,7 @@ export default function WithdrawalStrategySection({
 
       <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/50">
         {sorted.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-gray-500">
+          <div className="px-4 py-8 text-center text-sm text-gray-400">
             No custom order set — the default tax-efficient order applies.
           </div>
         ) : (
@@ -378,14 +378,14 @@ export default function WithdrawalStrategySection({
                 onClick={() => !editMode && setDialog({ open: true, editing: ws })}
                 className="flex cursor-pointer items-center gap-3 px-4 py-2 hover:bg-gray-800/60"
               >
-                <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-gray-800 text-[11px] font-bold text-gray-200">
+                <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-gray-800 text-xs font-bold text-gray-200">
                   {ws.priorityOrder}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-gray-100">
                     {accountMap[ws.accountId]?.name ?? ws.accountId}
                   </div>
-                  <div className="truncate text-xs text-gray-500">
+                  <div className="truncate text-xs text-gray-400">
                     {yearsDescriptor(ws.startYear, ws.endYear)}
                   </div>
                 </div>
@@ -395,7 +395,7 @@ export default function WithdrawalStrategySection({
                       e.stopPropagation();
                       setDeleting(ws);
                     }}
-                    className="text-gray-500 hover:text-red-400"
+                    className="text-gray-400 hover:text-red-400"
                     aria-label={`Delete ${accountMap[ws.accountId]?.name ?? ws.accountId}`}
                   >
                     <TrashIcon />

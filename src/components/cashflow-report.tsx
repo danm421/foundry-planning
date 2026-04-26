@@ -1033,7 +1033,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           (r) => Object.values(r.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0),
           (info) => {
             const v = info.getValue() as number;
-            if (v === 0) return <span className="tabular-nums text-gray-500">&mdash;</span>;
+            if (v === 0) return <span className="tabular-nums text-gray-400">&mdash;</span>;
             const row = info.row.original;
             return (
               <button
@@ -1121,7 +1121,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           yearTotal,
           (info) => {
             const v = info.getValue() as number;
-            if (v === 0) return <span className="tabular-nums text-gray-500">&mdash;</span>;
+            if (v === 0) return <span className="tabular-nums text-gray-400">&mdash;</span>;
             const row = info.row.original;
             return (
               <button
@@ -1170,7 +1170,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           (y) => y.socialSecurityDetail?.spouse != null
         );
         const fmtSS = (v: number) =>
-          v === 0 ? <span className="tabular-nums text-gray-500">&mdash;</span> : fmtNum(v);
+          v === 0 ? <span className="tabular-nums text-gray-400">&mdash;</span> : fmtNum(v);
         const ssDetailColsActive = {
           clientRetirement: visibleYears.some((y) => (y.socialSecurityDetail?.client.retirement ?? 0) > 0),
           clientSpousal:    visibleYears.some((y) => (y.socialSecurityDetail?.client.spousal    ?? 0) > 0),
@@ -1258,7 +1258,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 (r) => r.income.bySource[id] ?? 0,
                 (info) => {
                   const v = info.getValue() as number;
-                  if (v === 0) return <span className="tabular-nums text-gray-500">&mdash;</span>;
+                  if (v === 0) return <span className="tabular-nums text-gray-400">&mdash;</span>;
                   const row = info.row.original;
                   return (
                     <button
@@ -1367,7 +1367,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   techniqueYearTotal,
                   (info) => {
                     const v = info.getValue() as number;
-                    if (v === 0) return <span className="tabular-nums text-gray-500">&mdash;</span>;
+                    if (v === 0) return <span className="tabular-nums text-gray-400">&mdash;</span>;
                     const row = info.row.original;
                     return (
                       <button
@@ -1730,7 +1730,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20 text-gray-400">
+      <div className="flex items-center justify-center py-20 text-gray-300">
         Loading projection...
       </div>
     );
@@ -1746,7 +1746,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   if (years.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
         No projection data available. Ensure plan settings and base case scenario are configured.
       </div>
     );
@@ -1764,7 +1764,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         >
           <option value="base">Base Case</option>
         </select>
-        <span className="text-xs text-gray-500">(Multi-scenario support coming soon)</span>
+        <span className="text-xs text-gray-400">(Multi-scenario support coming soon)</span>
       </div>
 
       {/* Year-range slider */}
@@ -1783,7 +1783,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-300">
             {chartView === "portfolio" ? "Total Portfolio Assets" : "Cash Flow Analysis"}
-            <span className="ml-2 text-xs font-normal text-gray-500">— click a point to jump to that year</span>
+            <span className="ml-2 text-xs font-normal text-gray-400">— click a point to jump to that year</span>
           </h2>
           <div className="flex rounded-md border border-gray-600 bg-gray-800 text-xs">
             <button
@@ -1791,7 +1791,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               className={`px-3 py-1.5 rounded-l-md ${
                 chartView === "portfolio"
                   ? "bg-blue-600 text-white"
-                  : "text-gray-400 hover:text-gray-200"
+                  : "text-gray-300 hover:text-gray-200"
               }`}
             >
               Portfolio
@@ -1801,7 +1801,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               className={`px-3 py-1.5 rounded-r-md ${
                 chartView === "cashflow"
                   ? "bg-blue-600 text-white"
-                  : "text-gray-400 hover:text-gray-200"
+                  : "text-gray-300 hover:text-gray-200"
               }`}
             >
               Cash Flow
@@ -1834,7 +1834,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             </button>
             {drillPath.map((segment, i) => (
               <span key={i} className="flex items-center gap-1">
-                <span className="text-gray-500">/</span>
+                <span className="text-gray-400">/</span>
                 {i < drillPath.length - 1 ? (
                   <button
                     onClick={() => drillTo(i + 1)}
@@ -1930,11 +1930,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 <h3 className="text-base font-semibold text-gray-100">
                   {ledgerModal.accountName}
                 </h3>
-                <p className="text-sm text-gray-400">Year {ledgerModal.year} Ledger</p>
+                <p className="text-sm text-gray-300">Year {ledgerModal.year} Ledger</p>
               </div>
               <button
                 onClick={() => setLedgerModal(null)}
-                className="ml-4 text-gray-400 hover:text-gray-200 focus:outline-none"
+                className="ml-4 text-gray-300 hover:text-gray-200 focus:outline-none"
                 aria-label="Close"
               >
                 ✕
@@ -1944,14 +1944,14 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
               <div className="flex items-center justify-between rounded-md bg-gray-800/60 px-4 py-3">
                 <div>
-                  <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Beginning</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Beginning</p>
                   <p className="text-sm font-semibold tabular-nums text-gray-200">
                     {fmtNum(ledgerModal.ledger.beginningValue)}
                   </p>
                 </div>
                 <div className="text-gray-600">→</div>
                 <div className="text-right">
-                  <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Ending</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Ending</p>
                   <p className="text-sm font-semibold tabular-nums text-gray-100">
                     {fmtNum(ledgerModal.ledger.endingValue)}
                   </p>
@@ -1959,11 +1959,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               </div>
 
               <div>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
                   Activity
                 </p>
                 {ledgerModal.ledger.entries.length === 0 ? (
-                  <p className="px-1 py-2 text-sm text-gray-500 italic">
+                  <p className="px-1 py-2 text-sm text-gray-400 italic">
                     No activity this year.
                   </p>
                 ) : (
@@ -1974,7 +1974,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                         <li key={i} className="flex items-start justify-between gap-4 px-3 py-2">
                           <div className="min-w-0">
                             <p className="truncate text-sm text-gray-200">{entry.label}</p>
-                            <p className="text-[11px] uppercase tracking-wider text-gray-500">
+                            <p className="text-xs uppercase tracking-wider text-gray-400">
                               {entry.category.replace(/_/g, " ")}
                             </p>
                           </div>
@@ -1995,7 +1995,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
               {ledgerModal.ledger.growthDetail && (
                 <div className="rounded-md border border-gray-800 bg-gray-800/30 px-3 py-2">
-                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Growth Realization</p>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-400">Growth Realization</p>
                   <div className="space-y-1 text-sm">
                     {[
                       { label: "Ordinary Income", amount: ledgerModal.ledger.growthDetail.ordinaryIncome, note: "taxed, +basis" },
@@ -2005,12 +2005,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                       { label: "Tax-Exempt", amount: ledgerModal.ledger.growthDetail.taxExempt, note: "+basis" },
                     ].filter((r) => r.amount > 0).map((r) => (
                       <div key={r.label} className="flex justify-between">
-                        <span className="text-gray-400">{r.label} <span className="text-gray-600 text-xs">({r.note})</span></span>
+                        <span className="text-gray-300">{r.label} <span className="text-gray-600 text-xs">({r.note})</span></span>
                         <span className="tabular-nums text-gray-300">{fmtNum(r.amount)}</span>
                       </div>
                     ))}
                     <div className="flex justify-between border-t border-gray-700 pt-1">
-                      <span className="text-gray-400">Basis increase</span>
+                      <span className="text-gray-300">Basis increase</span>
                       <span className="tabular-nums font-medium text-gray-200">{fmtNum(ledgerModal.ledger.growthDetail.basisIncrease)}</span>
                     </div>
                   </div>
@@ -2018,7 +2018,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               )}
 
               <div className="flex justify-between border-t border-gray-800 pt-3 text-sm">
-                <span className="text-gray-400">Net change</span>
+                <span className="text-gray-300">Net change</span>
                 <span
                   className={`tabular-nums font-semibold ${
                     ledgerModal.ledger.endingValue - ledgerModal.ledger.beginningValue >= 0
@@ -2049,11 +2049,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           <div className="w-full max-w-md rounded-lg border border-gray-700 bg-gray-900 p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-100">{sourceDetailModal.name}</h3>
-              <button onClick={() => setSourceDetailModal(null)} className="text-gray-400 hover:text-gray-200 focus:outline-none" aria-label="Close">
+              <button onClick={() => setSourceDetailModal(null)} className="text-gray-300 hover:text-gray-200 focus:outline-none" aria-label="Close">
                 ✕
               </button>
             </div>
-            <p className="text-sm text-gray-400 mb-3">Year: {sourceDetailModal.year}</p>
+            <p className="text-sm text-gray-300 mb-3">Year: {sourceDetailModal.year}</p>
             {sourceDetailModal.groups && sourceDetailModal.groups.length > 0 ? (
               <div className="space-y-4">
                 {sourceDetailModal.groups.map((g, gi) => (
@@ -2062,7 +2062,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                     <div className="space-y-1.5 pl-2 border-l border-gray-800">
                       {g.details.map((d, i) => (
                         <div key={i} className="flex justify-between text-sm">
-                          <span className="text-gray-400">{d.label}</span>
+                          <span className="text-gray-300">{d.label}</span>
                           <span className={`tabular-nums ${d.amount < 0 ? "text-red-400" : "text-gray-200"}`}>
                             {fmtNum(d.amount)}
                           </span>
@@ -2141,10 +2141,10 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           >
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-base font-semibold text-gray-100">Tax Detail — {taxDrillModal.year}</h3>
-              <button onClick={() => { setTaxDrillModal(null); setTaxDrillExpanded(new Set()); }} className="text-gray-400 hover:text-gray-200">✕</button>
+              <button onClick={() => { setTaxDrillModal(null); setTaxDrillExpanded(new Set()); }} className="text-gray-300 hover:text-gray-200">✕</button>
             </div>
 
-            <p className="mb-3 text-xs text-gray-500">Click a category to see the sources.</p>
+            <p className="mb-3 text-xs text-gray-400">Click a category to see the sources.</p>
 
             <div className="space-y-2">
               {[
@@ -2197,7 +2197,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                         disabled={sources.length === 0}
                       >
                         <span className="flex items-center gap-2">
-                          <span className="text-xs text-gray-500">{sources.length > 0 ? (isExpanded ? "▾" : "▸") : " "}</span>
+                          <span className="text-xs text-gray-400">{sources.length > 0 ? (isExpanded ? "▾" : "▸") : " "}</span>
                           <span className="font-medium text-gray-200">{row.label}</span>
                         </span>
                         <span className="tabular-nums text-gray-300">{fmtNum(taxDrillModal.detail[row.key])}</span>
@@ -2206,8 +2206,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                         <ul className="divide-y divide-gray-800 border-t border-gray-800">
                           {sources.map((s) => (
                             <li key={s.id} className="flex items-center justify-between px-3 py-1.5 pl-8 text-xs">
-                              <span className="truncate text-gray-400">{s.label}</span>
-                              <span className="tabular-nums text-gray-400">{fmtNum(s.amount)}</span>
+                              <span className="truncate text-gray-300">{s.label}</span>
+                              <span className="tabular-nums text-gray-300">{fmtNum(s.amount)}</span>
                             </li>
                           ))}
                         </ul>

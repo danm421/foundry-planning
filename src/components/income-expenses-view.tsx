@@ -236,7 +236,7 @@ function SectionHeader({
     <div className="flex items-center justify-between border-b border-gray-800 bg-gray-900 px-4 py-3">
       <div>
         <h2 className="text-sm font-semibold text-gray-100">{title}</h2>
-        {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
+        {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
@@ -247,10 +247,10 @@ function EditToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
     <button
       onClick={onToggle}
-      className={`rounded-md border px-2.5 py-1 text-[11px] font-medium ${
+      className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
         on
           ? "border-blue-600 bg-blue-900/40 text-blue-300"
-          : "border-gray-700 bg-gray-900 text-gray-400 hover:bg-gray-800"
+          : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800"
       }`}
     >
       {on ? "Done" : "Edit"}
@@ -262,7 +262,7 @@ function AddGroupButton({ onClick, label = "Add" }: { onClick: () => void; label
   return (
     <button
       onClick={onClick}
-      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-gray-500 hover:bg-blue-900 hover:text-blue-400"
+      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:bg-blue-900 hover:text-blue-400"
       aria-label={label}
       title={label}
     >
@@ -533,7 +533,7 @@ function IncomeDialog({
       <div className="relative z-10 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg border border-gray-600 bg-gray-900 p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-100">{isEdit ? "Edit Income" : "Add Income"}</h2>
-          <button onClick={() => onOpenChange(false)} className="text-gray-400 hover:text-gray-200">
+          <button onClick={() => onOpenChange(false)} className="text-gray-300 hover:text-gray-200">
             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
             </svg>
@@ -541,8 +541,8 @@ function IncomeDialog({
         </div>
 
         <div className="mb-4 flex border-b border-gray-700">
-          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Details</button>
-          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Schedule</button>
+          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Details</button>
+          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Schedule</button>
         </div>
 
         {activeTab === "details" && (<form onSubmit={handleSubmit} className="space-y-4">
@@ -643,7 +643,7 @@ function IncomeDialog({
                     onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
                   />
                 </div>
-                <label className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-400">
+                <label className="mt-2 flex items-center gap-1.5 text-xs text-gray-300">
                   <input
                     type="checkbox"
                     checked={todaysDollars}
@@ -686,7 +686,7 @@ function IncomeDialog({
             ) : (
               <>
                 <div>
-                  <label className="block text-xs font-medium text-gray-400" htmlFor="inc-start">
+                  <label className="block text-xs font-medium text-gray-300" htmlFor="inc-start">
                     Start Year
                   </label>
                   <input
@@ -700,7 +700,7 @@ function IncomeDialog({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-400" htmlFor="inc-end">
+                  <label className="block text-xs font-medium text-gray-300" htmlFor="inc-end">
                     End Year
                   </label>
                   <input
@@ -955,7 +955,7 @@ function ExpenseDialog({
       <div className="relative z-10 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg border border-gray-600 bg-gray-900 p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-100">{isEdit ? "Edit Expense" : "Add Expense"}</h2>
-          <button onClick={() => onOpenChange(false)} className="text-gray-400 hover:text-gray-200">
+          <button onClick={() => onOpenChange(false)} className="text-gray-300 hover:text-gray-200">
             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
             </svg>
@@ -963,8 +963,8 @@ function ExpenseDialog({
         </div>
 
         <div className="mb-4 flex border-b border-gray-700">
-          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Details</button>
-          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}>Schedule</button>
+          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Details</button>
+          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Schedule</button>
         </div>
 
         {activeTab === "details" && (<form onSubmit={handleSubmit} className="space-y-4">
@@ -1029,7 +1029,7 @@ function ExpenseDialog({
                     onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
                   />
                 </div>
-                <label className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-400">
+                <label className="mt-2 flex items-center gap-1.5 text-xs text-gray-300">
                   <input
                     type="checkbox"
                     checked={todaysDollars}
@@ -1072,7 +1072,7 @@ function ExpenseDialog({
             ) : (
               <>
                 <div>
-                  <label className="block text-xs font-medium text-gray-400" htmlFor="exp-start">
+                  <label className="block text-xs font-medium text-gray-300" htmlFor="exp-start">
                     Start Year
                   </label>
                   <input
@@ -1086,7 +1086,7 @@ function ExpenseDialog({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-400" htmlFor="exp-end">
+                  <label className="block text-xs font-medium text-gray-300" htmlFor="exp-end">
                     End Year
                   </label>
                   <input
@@ -1324,7 +1324,7 @@ export default function IncomeExpensesView({
                 {nonSsIncomeList.length > 0 && <EditToggle on={incomeEdit} onToggle={() => setIncomeEdit((v) => !v)} />}
                 <button
                   onClick={() => setIncomeDialog({ open: true, defaultType: "salary" })}
-                  className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
+                  className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700"
                 >
                   + Add
                 </button>
@@ -1396,7 +1396,7 @@ export default function IncomeExpensesView({
                 {expenseList.length > 0 && <EditToggle on={expenseEdit} onToggle={() => setExpenseEdit((v) => !v)} />}
                 <button
                   onClick={() => setExpenseDialog({ open: true, defaultType: "living" })}
-                  className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
+                  className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700"
                 >
                   + Add
                 </button>
@@ -1602,9 +1602,9 @@ function Kpi({
 }) {
   return (
     <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3">
-      <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500">{label}</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-gray-400">{label}</p>
       <p className={`mt-1 text-lg font-bold ${accent}`}>{value}</p>
-      {subtitle && <p className="text-[11px] text-gray-500">{subtitle}</p>}
+      {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
     </div>
   );
 }
@@ -1628,10 +1628,10 @@ function Group({
     <div className="border-b border-gray-800 last:border-0">
       <div className="flex items-center justify-between bg-gray-900/70 px-4 py-2">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-300">{label}</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-gray-300">{label}</span>
           <AddGroupButton onClick={onAdd} label={`Add to ${label}`} />
         </div>
-        <span className="text-[11px] text-gray-500">{total}</span>
+        <span className="text-xs text-gray-400">{total}</span>
       </div>
       <div className="divide-y divide-gray-800">{children}</div>
     </div>
@@ -1669,16 +1669,16 @@ function Row({
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium text-gray-100">{label}</span>
           {outOfEstate && (
-            <span className="rounded-sm bg-amber-900/30 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+            <span className="rounded-sm bg-amber-900/30 px-1.5 py-0.5 text-xs font-medium text-amber-300">
               OOE
             </span>
           )}
         </div>
-        {metaLine && <div className="truncate text-[11px] text-gray-500">{metaLine}</div>}
+        {metaLine && <div className="truncate text-xs text-gray-400">{metaLine}</div>}
       </div>
       <div className="flex items-center gap-3 flex-shrink-0">
         {starts && (
-          <span className="min-w-[72px] text-right text-[11px] text-gray-500">{starts}</span>
+          <span className="min-w-[72px] text-right text-xs text-gray-400">{starts}</span>
         )}
         <span className="min-w-[88px] text-right text-sm font-medium text-gray-100">{value}</span>
         {editMode && (
@@ -1687,7 +1687,7 @@ function Row({
               e.stopPropagation();
               onDelete();
             }}
-            className="text-gray-500 hover:text-red-400"
+            className="text-gray-400 hover:text-red-400"
             aria-label={`Delete ${label}`}
           >
             <TrashIcon />
@@ -1699,5 +1699,5 @@ function Row({
 }
 
 function EmptyRow({ message }: { message: string }) {
-  return <div className="px-4 py-8 text-center text-sm text-gray-500">{message}</div>;
+  return <div className="px-4 py-8 text-center text-sm text-gray-400">{message}</div>;
 }

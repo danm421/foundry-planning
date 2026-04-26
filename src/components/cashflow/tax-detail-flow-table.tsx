@@ -347,11 +347,11 @@ function SourcePopover({ sources, onClose }: {
   return (
     <div className="absolute right-0 top-full z-50 mt-1 min-w-[200px] rounded-md border border-gray-700 bg-gray-900 p-2 shadow-xl">
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-xs font-medium text-gray-400">Sources</span>
+        <span className="text-xs font-medium text-gray-300">Sources</span>
         <button
           type="button"
           onClick={onClose}
-          className="text-xs text-gray-500 hover:text-gray-300"
+          className="text-xs text-gray-400 hover:text-gray-300"
         >
           ×
         </button>
@@ -459,7 +459,7 @@ export function TaxDetailFlowTable({
   return (
     <div>
       {drillLabel && (
-        <nav className="mb-2 text-xs text-gray-400">
+        <nav className="mb-2 text-xs text-gray-300">
           <button
             type="button"
             onClick={() => setDrillLevel("top")}
@@ -473,7 +473,7 @@ export function TaxDetailFlowTable({
       )}
       <div className="overflow-x-auto rounded-lg border border-gray-800 bg-gray-900/60">
         <table className="min-w-full border-separate border-spacing-0 text-sm">
-          <thead className="bg-gray-900 text-xs uppercase text-gray-400">
+          <thead className="bg-gray-900 text-xs uppercase text-gray-300">
             <tr>
               <th className="sticky left-0 z-20 w-20 min-w-[5rem] border-b border-gray-800 bg-gray-900 px-3 py-2 text-left">
                 Year
@@ -513,7 +513,7 @@ export function TaxDetailFlowTable({
                   >
                     {y.year}
                   </td>
-                  <td className="sticky left-20 z-10 border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left text-gray-400 group-hover:bg-gray-800/40">
+                  <td className="sticky left-20 z-10 border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left text-gray-300 group-hover:bg-gray-800/40">
                     {formatAge(y.ages, clientLifeExpectancy, spouseLifeExpectancy)}
                   </td>
                   {activeColumns.map((col, idx) => {

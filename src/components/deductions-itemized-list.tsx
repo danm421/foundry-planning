@@ -85,7 +85,7 @@ export function DeductionsItemizedList({
       </div>
 
       {rows.length === 0 ? (
-        <div className="rounded-md border border-gray-800 bg-gray-900/60 px-4 py-6 text-center text-sm text-gray-400">
+        <div className="rounded-md border border-gray-800 bg-gray-900/60 px-4 py-6 text-center text-sm text-gray-300">
           No itemized deductions yet. Click <span className="text-gray-300">Add deduction</span> to start.
         </div>
       ) : (
@@ -98,19 +98,19 @@ export function DeductionsItemizedList({
                   <span className="text-gray-200">
                     {TYPE_LABELS[r.type]} {r.name ? `· ${r.name}` : ""}
                   </span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-400">
                     {OWNER_LABELS[r.owner]} · {r.startYear}-{r.endYear} · {fmt.format(r.annualAmount)}/yr
                     {r.growthRate > 0 ? ` · ${(r.growthRate * 100).toFixed(1)}%/yr` : ""}
                   </span>
                   {isSaltType && (
-                    <span className="mt-0.5 text-xs text-gray-500">Subject to SALT cap</span>
+                    <span className="mt-0.5 text-xs text-gray-400">Subject to SALT cap</span>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setEditing(r)}
-                    className="rounded px-2 py-1 text-xs text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+                    className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-800 hover:text-gray-200"
                     aria-label="Edit"
                   >
                     Edit
@@ -118,7 +118,7 @@ export function DeductionsItemizedList({
                   <button
                     type="button"
                     onClick={() => handleDelete(r.id)}
-                    className="rounded px-2 py-1 text-xs text-gray-400 hover:bg-gray-800 hover:text-red-400"
+                    className="rounded px-2 py-1 text-xs text-gray-300 hover:bg-gray-800 hover:text-red-400"
                     aria-label="Delete"
                   >
                     Delete
@@ -132,10 +132,10 @@ export function DeductionsItemizedList({
 
       <div className="mt-3 space-y-1 text-sm">
         <div className="flex justify-between">
-          <span className="text-gray-400">Total itemized for {currentYear}:</span>
+          <span className="text-gray-300">Total itemized for {currentYear}:</span>
           <span className="tabular-nums font-semibold text-gray-100">{fmt.format(itemizedTotal)}</span>
         </div>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-gray-400">
           The bracket engine compares this to your standard deduction and uses whichever is larger.
         </p>
       </div>
