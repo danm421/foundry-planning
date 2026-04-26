@@ -599,6 +599,12 @@ export function CanvasDndProvider({
           <BequestDialog
             open
             onOpenChange={(open) => { if (!open) setEditing(null); }}
+            primary={{
+              firstName: clientFirstName,
+              lastName: "",
+              spouseName: spouseFirstName,
+              spouseLastName: null,
+            }}
             accounts={(tree.accounts ?? []).map((a) => ({ id: a.id, name: a.name, category: a.category }))}
             familyMembers={(tree.familyMembers ?? []).map((m) => ({
               id: m.id,

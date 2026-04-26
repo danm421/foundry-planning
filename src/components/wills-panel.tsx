@@ -1,7 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
+import DialogShell from "@/components/dialog-shell";
+import {
+  selectClassName,
+  fieldLabelClassName,
+} from "@/components/forms/input-styles";
+import BequestRecipientList from "@/components/forms/bequest-recipient-list";
 
 export type WillGrantor = "client" | "spouse";
 export type WillAssetMode = "specific" | "all_assets";
@@ -139,29 +145,37 @@ type LiabilityDraft = Omit<WillsPanelLiabilityBequest, "kind">;
 
 // ─── Debt bequest dialog ──────────────────────────────────────────────────────
 
+const DEBT_FORM_ID = "debt-bequest-dialog-form";
+
 interface DebtBequestDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   draft: LiabilityDraft;
   setDraft: (d: LiabilityDraft) => void;
   liabilities: WillsPanelLiability[];
   alreadyBequeathedIds: string[];
+  primary: WillsPanelPrimary;
   familyMembers: WillsPanelFamilyMember[];
+  externalBeneficiaries: WillsPanelExternal[];
   entities: WillsPanelEntity[];
-  editingIndex: number | null;
+  isEdit: boolean;
   saving: boolean;
-  onCancel: () => void;
   onSave: () => void;
 }
 
 function DebtBequestDialog({
+  open,
+  onOpenChange,
   draft,
   setDraft,
   liabilities,
   alreadyBequeathedIds,
+  primary,
   familyMembers,
+  externalBeneficiaries,
   entities,
-  editingIndex,
+  isEdit,
   saving,
-  onCancel,
   onSave,
 }: DebtBequestDialogProps) {
   const recipientSum = draft.recipients.reduce((s, x) => s + x.percentage, 0);
@@ -173,27 +187,33 @@ function DebtBequestDialog({
     (l) => l.linkedPropertyId == null && l.ownerEntityId == null,
   );
 
-  const canSave = !!draft.liabilityId && recipientSumOk && !saving;
+  const recipientsHaveIds = draft.recipients.every((r) => r.recipientId != null);
+  const canSave = !!draft.liabilityId && recipientSumOk && recipientsHaveIds && !saving;
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!canSave) return;
+    onSave();
+  }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={editingIndex != null ? "Edit debt bequest" : "New debt bequest"}
-      onClick={onCancel}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+    <DialogShell
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isEdit ? "Edit debt bequest" : "New debt bequest"}
+      size="md"
+      primaryAction={{
+        label: saving ? "Saving…" : "Save",
+        form: DEBT_FORM_ID,
+        disabled: !canSave,
+        loading: saving,
+      }}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-lg border border-gray-700 bg-gray-900 p-5"
-      >
-        <h3 className="mb-4 text-base font-semibold text-gray-100">
-          {editingIndex != null ? "Edit debt bequest" : "New debt bequest"}
-        </h3>
-
-        <label className="mb-3 block text-sm">
-          <span className="mb-1 block text-gray-300">Liability</span>
+      <form id={DEBT_FORM_ID} onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className={fieldLabelClassName}>Liability</label>
           <select
+            aria-label="Liability"
             value={draft.liabilityId ?? ""}
             onChange={(e) => {
               const liab = liabilities.find((l) => l.id === e.target.value);
@@ -203,7 +223,7 @@ function DebtBequestDialog({
                 name: liab?.name?.trim() || "(unnamed liability)",
               });
             }}
-            className="w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-gray-100"
+            className={selectClassName}
           >
             <option value="">— select a liability —</option>
             {eligibleLiabilities.map((l) => {
@@ -228,136 +248,26 @@ function DebtBequestDialog({
               unlinked (no linked property) and not owned by an entity.
             </p>
           )}
-        </label>
-
-        <fieldset className="mb-4">
-          <legend className="mb-2 text-sm text-gray-300">Recipients</legend>
-          {draft.recipients.map((r, i) => (
-            <div key={i} className="mb-2 flex items-center gap-2">
-              <select
-                value={r.recipientKind}
-                aria-label="Recipient kind"
-                onChange={(e) => {
-                  const nextKind = e.target.value as "family_member" | "entity";
-                  const next = [...draft.recipients];
-                  next[i] = {
-                    ...r,
-                    recipientKind: nextKind,
-                    recipientId:
-                      nextKind === "family_member"
-                        ? familyMembers[0]?.id ?? null
-                        : entities[0]?.id ?? null,
-                  };
-                  setDraft({ ...draft, recipients: next });
-                }}
-                className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100"
-              >
-                <option value="family_member">Family member</option>
-                <option value="entity">Entity / Trust</option>
-              </select>
-              <select
-                value={r.recipientId ?? ""}
-                aria-label="Recipient name"
-                onChange={(e) => {
-                  const next = [...draft.recipients];
-                  next[i] = { ...r, recipientId: e.target.value };
-                  setDraft({ ...draft, recipients: next });
-                }}
-                className="flex-1 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100"
-              >
-                {r.recipientKind === "family_member" &&
-                  familyMembers.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.firstName} {f.lastName ?? ""}
-                    </option>
-                  ))}
-                {r.recipientKind === "entity" &&
-                  entities.map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.name}
-                    </option>
-                  ))}
-              </select>
-              <input
-                type="number"
-                min={0.01}
-                max={100}
-                step={0.01}
-                aria-label="Recipient percentage"
-                value={r.percentage}
-                onChange={(e) => {
-                  const next = [...draft.recipients];
-                  next[i] = { ...r, percentage: parseFloat(e.target.value) || 0 };
-                  setDraft({ ...draft, recipients: next });
-                }}
-                className="w-20 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const next = draft.recipients.filter((_, j) => j !== i);
-                  setDraft({ ...draft, recipients: next });
-                }}
-                className="rounded-md border border-gray-700 px-2 py-1 text-sm text-gray-300 hover:bg-gray-800"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={() => {
-              const sortOrder = draft.recipients.length;
-              setDraft({
-                ...draft,
-                recipients: [
-                  ...draft.recipients,
-                  {
-                    recipientKind: "family_member",
-                    recipientId: familyMembers[0]?.id ?? null,
-                    percentage: 0,
-                    sortOrder,
-                  },
-                ],
-              });
-            }}
-            className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-gray-100 hover:bg-gray-700"
-          >
-            + Add recipient
-          </button>
-          <p className="mt-2 text-xs text-gray-300">
-            Total:{" "}
-            <span className={recipientSumOk ? "text-green-400" : "text-red-400"}>
-              {recipientSum.toFixed(2)}%
-            </span>
-          </p>
-          {recipientSumOk && remainder > 0.009 && (
-            <p className="mt-1 text-xs text-gray-400">
-              Recipients sum to {recipientSum.toFixed(2)}% — remainder ({remainder.toFixed(2)}%) falls
-              to estate creditor-payoff
-            </p>
-          )}
-        </fieldset>
-
-        <div className="flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={!canSave}
-            onClick={onSave}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Save
-          </button>
         </div>
-      </div>
-    </div>
+
+        <BequestRecipientList
+          mode="debt"
+          rows={draft.recipients}
+          onChange={(recipients) => setDraft({ ...draft, recipients })}
+          primary={primary}
+          familyMembers={familyMembers}
+          externalBeneficiaries={externalBeneficiaries}
+          entities={entities}
+        />
+
+        {recipientSumOk && remainder > 0.009 && (
+          <p className="text-xs text-ink-3">
+            Recipients sum to {recipientSum.toFixed(2)}% — remainder ({remainder.toFixed(2)}%) falls
+            to estate creditor-payoff
+          </p>
+        )}
+      </form>
+    </DialogShell>
   );
 }
 
@@ -382,21 +292,6 @@ export default function WillsPanel(props: WillsPanelProps) {
   const [assetModalOpen, setAssetModalOpen] = useState<WillGrantor | null>(null);
   // "liability" dialog state
   const [debtModalOpen, setDebtModalOpen] = useState<WillGrantor | null>(null);
-
-  // ESC-to-close
-  useEffect(() => {
-    const anyOpen = assetModalOpen ?? debtModalOpen;
-    if (!anyOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setAssetModalOpen(null);
-        setDebtModalOpen(null);
-        setEditingIndex(null);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [assetModalOpen, debtModalOpen]);
 
   const [assetDraft, setAssetDraft] = useState<AssetDraft>({
     name: "",
@@ -829,83 +724,86 @@ export default function WillsPanel(props: WillsPanelProps) {
       })}
 
       {/* Asset bequest modal */}
-      {assetModalOpen && (
-        <BequestDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) {
-              setAssetModalOpen(null);
-              setEditingIndex(null);
-            }
-          }}
-          accounts={accounts}
-          familyMembers={familyMembers}
-          externalBeneficiaries={externalBeneficiaries}
-          entities={entities}
-          editing={editingIndex != null ? assetDraft : undefined}
-          saving={saving}
-          onSave={async (draft: BequestDraft) => {
-            if (!assetModalOpen) return;
-            const g = assetModalOpen;
-            const existing = wills.find((w) => w.grantor === g)?.bequests ?? [];
-            const assetBequest: WillsPanelAssetBequest = { kind: "asset", ...draft };
-            const next: WillsPanelBequest[] = editingIndex != null
-              ? existing.map((b, i) =>
-                  i === editingIndex
-                    ? { ...assetBequest, sortOrder: i, id: b.id }
-                    : b,
-                )
-              : [...existing, { ...assetBequest, sortOrder: existing.length }];
-            await saveWill(g, next);
+      <BequestDialog
+        open={assetModalOpen != null}
+        onOpenChange={(open) => {
+          if (!open) {
             setAssetModalOpen(null);
             setEditingIndex(null);
-          }}
-        />
-      )}
+          }
+        }}
+        primary={primary}
+        accounts={accounts}
+        familyMembers={familyMembers}
+        externalBeneficiaries={externalBeneficiaries}
+        entities={entities}
+        editing={editingIndex != null ? assetDraft : undefined}
+        saving={saving}
+        onSave={async (draft: BequestDraft) => {
+          if (!assetModalOpen) return;
+          const g = assetModalOpen;
+          const existing = wills.find((w) => w.grantor === g)?.bequests ?? [];
+          const assetBequest: WillsPanelAssetBequest = { kind: "asset", ...draft };
+          const next: WillsPanelBequest[] = editingIndex != null
+            ? existing.map((b, i) =>
+                i === editingIndex
+                  ? { ...assetBequest, sortOrder: i, id: b.id }
+                  : b,
+              )
+            : [...existing, { ...assetBequest, sortOrder: existing.length }];
+          await saveWill(g, next);
+          setAssetModalOpen(null);
+          setEditingIndex(null);
+        }}
+      />
 
       {/* Debt bequest modal */}
-      {debtModalOpen && (
-        <DebtBequestDialog
-          draft={liabilityDraft}
-          setDraft={setLiabilityDraft}
-          liabilities={liabilities}
-          alreadyBequeathedIds={
-            (wills.find((w) => w.grantor === debtModalOpen)?.bequests ?? []).flatMap(
-              (b) => (b.kind === "liability" && b.liabilityId ? [b.liabilityId] : []),
-            )
+      <DebtBequestDialog
+        open={debtModalOpen != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDebtModalOpen(null);
+            setEditingIndex(null);
           }
-          familyMembers={familyMembers}
-          entities={entities}
-          editingIndex={editingIndex}
-          saving={saving}
-          onCancel={() => {
-            setDebtModalOpen(null);
-            setEditingIndex(null);
-          }}
-          onSave={async () => {
-            if (!debtModalOpen) return;
-            const g = debtModalOpen;
-            const existing = wills.find((w) => w.grantor === g)?.bequests ?? [];
-            const liabilityBequest: WillsPanelLiabilityBequest = {
-              kind: "liability",
-              ...liabilityDraft,
-            };
-            let next: WillsPanelBequest[];
-            if (editingIndex != null) {
-              next = existing.map((b, i) =>
-                i === editingIndex
-                  ? { ...liabilityBequest, sortOrder: i, id: b.id }
-                  : b,
-              );
-            } else {
-              next = [...existing, { ...liabilityBequest, sortOrder: existing.length }];
-            }
-            await saveWill(g, next);
-            setDebtModalOpen(null);
-            setEditingIndex(null);
-          }}
-        />
-      )}
+        }}
+        draft={liabilityDraft}
+        setDraft={setLiabilityDraft}
+        liabilities={liabilities}
+        alreadyBequeathedIds={
+          (wills.find((w) => w.grantor === debtModalOpen)?.bequests ?? []).flatMap(
+            (b) => (b.kind === "liability" && b.liabilityId ? [b.liabilityId] : []),
+          )
+        }
+        primary={primary}
+        familyMembers={familyMembers}
+        externalBeneficiaries={externalBeneficiaries}
+        entities={entities}
+        isEdit={editingIndex != null}
+        saving={saving}
+        onSave={async () => {
+          if (!debtModalOpen) return;
+          const g = debtModalOpen;
+          const existing = wills.find((w) => w.grantor === g)?.bequests ?? [];
+          const liabilityBequest: WillsPanelLiabilityBequest = {
+            kind: "liability",
+            ...liabilityDraft,
+          };
+          let next: WillsPanelBequest[];
+          if (editingIndex != null) {
+            next = existing.map((b, i) =>
+              i === editingIndex
+                ? { ...liabilityBequest, sortOrder: i, id: b.id }
+                : b,
+            );
+          } else {
+            next = [...existing, { ...liabilityBequest, sortOrder: existing.length }];
+          }
+          await saveWill(g, next);
+          setDebtModalOpen(null);
+          setEditingIndex(null);
+        }}
+      />
+
     </div>
   );
 }

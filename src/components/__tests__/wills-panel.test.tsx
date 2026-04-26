@@ -93,27 +93,25 @@ describe("WillsPanel — add bequest modal", () => {
     const addButtons = screen.getAllByRole("button", { name: /Add bequest/i });
     fireEvent.click(addButtons[0]);
     expect(screen.getByText(/New bequest/i)).toBeDefined();
-    expect(screen.getByLabelText(/^Name$/i)).toBeDefined();
     expect(screen.getByLabelText(/^Asset$/i)).toBeDefined();
     expect(screen.getByLabelText(/^Percentage$/i)).toBeDefined();
-    expect(screen.getByLabelText(/^Condition$/i)).toBeDefined();
+    // Name field is gone — auto-derived from the chosen asset on save.
+    expect(screen.queryByLabelText(/^Name$/i)).toBeNull();
   });
 
-  it("enables Save when name is filled, an account is picked, and default spouse recipient is at 100%", () => {
+  it("enables Save once an account is picked (default spouse recipient is at 100%)", () => {
     render(<WillsPanel {...baseProps} initialWills={[]} />);
     fireEvent.click(screen.getAllByRole("button", { name: /Add bequest/i })[0]);
     const save = screen.getByRole("button", { name: /^Save$/i });
-    expect((save as HTMLButtonElement).disabled).toBe(true); // name empty + accountId null
-    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Test" } });
-    expect((save as HTMLButtonElement).disabled).toBe(true); // accountId still null (assetMode 'specific')
+    expect((save as HTMLButtonElement).disabled).toBe(true); // accountId null (assetMode 'specific')
     fireEvent.change(screen.getByLabelText(/^Asset$/i), { target: { value: u("a1") } });
-    expect((save as HTMLButtonElement).disabled).toBe(false); // name filled, account picked, spouse default at 100%
+    expect((save as HTMLButtonElement).disabled).toBe(false); // account picked, spouse default at 100%
   });
 
   it("disables Save when recipient percentages drift from 100", () => {
     render(<WillsPanel {...baseProps} initialWills={[]} />);
     fireEvent.click(screen.getAllByRole("button", { name: /Add bequest/i })[0]);
-    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Test" } });
+    fireEvent.change(screen.getByLabelText(/^Asset$/i), { target: { value: u("a1") } });
     const pctInputs = screen.getAllByRole("spinbutton");
     // Recipient percentage input is the second spinbutton (first is bequest-percentage).
     fireEvent.change(pctInputs[1], { target: { value: "50" } });
@@ -265,28 +263,29 @@ describe("WillsPanel — Debt bequests section", () => {
     expect(container.textContent).toMatch(/40\.00% to estate creditor-payoff/);
   });
 
-  it("add-debt-bequest dialog restricts recipient-kind picker to family_member + entity", () => {
-    render(<WillsPanel {...baseProps} initialWills={[]} />);
+  it("add-debt-bequest dialog restricts recipient picker to family + entity (no spouse, no external)", () => {
+    const propsWithExternals = {
+      ...baseProps,
+      externalBeneficiaries: [{ id: u("ext1"), name: "Red Cross" }],
+      entities: [{ id: u("ent1"), name: "Family ILIT" }],
+    };
+    render(<WillsPanel {...propsWithExternals} initialWills={[]} />);
     // Click the first "+ Add debt bequest" button (Tom Smith's section)
     const addDebtButtons = screen.getAllByRole("button", { name: /Add debt bequest/i });
     fireEvent.click(addDebtButtons[0]);
 
-    // The dialog should be open
     const dialog = screen.getByRole("dialog");
     expect(dialog).toBeDefined();
 
-    // Find all "Recipient kind" selects in the dialog
-    const kindSelects = within(dialog).getAllByRole("combobox", { name: /Recipient kind/i });
-    expect(kindSelects.length).toBeGreaterThanOrEqual(1);
-
-    // Collect all available option values
-    const optionValues = Array.from(kindSelects[0].querySelectorAll("option")).map(
-      (o) => (o as HTMLOptionElement).value,
+    // Single combined recipient picker (matches BeneficiaryRowList pattern).
+    const recipientSelect = within(dialog).getByRole("combobox", { name: /Recipient 1/i });
+    const optgroupLabels = Array.from(recipientSelect.querySelectorAll("optgroup")).map(
+      (g) => (g as HTMLOptGroupElement).label,
     );
-    expect(optionValues).toContain("family_member");
-    expect(optionValues).toContain("entity");
-    expect(optionValues).not.toContain("spouse");
-    expect(optionValues).not.toContain("external_beneficiary");
+    expect(optgroupLabels).toContain("Family");
+    expect(optgroupLabels).toContain("Entity");
+    expect(optgroupLabels).not.toContain("Household");
+    expect(optgroupLabels).not.toContain("External");
   });
 
   it("liability picker excludes liabilities with linkedPropertyId or ownerEntityId set", () => {
