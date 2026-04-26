@@ -39,6 +39,9 @@ export default function EntityDialog({
     canSubmit: true,
     loading: false,
   });
+  const [trustTab, setTrustTab] = useState<"details" | "beneficiaries">(
+    lockTab ? "beneficiaries" : (initialTab ?? "details"),
+  );
 
   if (!open) return null;
 
@@ -54,12 +57,16 @@ export default function EntityDialog({
       onOpenChange={onOpenChange}
       title={title}
       size="md"
-      primaryAction={{
-        label: isEdit ? "Save Changes" : kind === "trust" ? "Add Trust" : "Add Business",
-        form: kind === "trust" ? "entity-trust-form" : "entity-business-form",
-        disabled: !submitState.canSubmit,
-        loading: submitState.loading,
-      }}
+      primaryAction={
+        kind === "trust" && trustTab === "beneficiaries"
+          ? undefined
+          : {
+              label: isEdit ? "Save Changes" : kind === "trust" ? "Add Trust" : "Add Business",
+              form: kind === "trust" ? "entity-trust-form" : "entity-business-form",
+              disabled: !submitState.canSubmit,
+              loading: submitState.loading,
+            }
+      }
       destructiveAction={
         isEdit && onRequestDelete
           ? { label: "Delete", onClick: onRequestDelete }
@@ -71,18 +78,17 @@ export default function EntityDialog({
           clientId={clientId}
           editing={editing}
           onSaved={onSaved}
-          onRequestDelete={onRequestDelete}
           onClose={() => onOpenChange(false)}
           initialTab={initialTab}
           lockTab={lockTab}
           onSubmitStateChange={setSubmitState}
+          onTabChange={setTrustTab}
         />
       ) : (
         <BusinessForm
           clientId={clientId}
           editing={editing}
           onSaved={onSaved}
-          onRequestDelete={onRequestDelete}
           onClose={() => onOpenChange(false)}
           onSubmitStateChange={setSubmitState}
         />

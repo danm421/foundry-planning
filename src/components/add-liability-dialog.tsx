@@ -108,7 +108,6 @@ export default function AddLiabilityDialog({
             mode={isEdit ? "edit" : "create"}
             initial={editing}
             onSuccess={close}
-            onDelete={onRequestDelete}
             onValuesChange={handleValuesChange}
             onSubmitStateChange={setSubmitState}
           />

@@ -30,7 +30,6 @@ interface AddClientFormProps {
   mode?: "create" | "edit";
   initial?: ClientFormInitial;
   onSuccess?: () => void;
-  onDelete?: () => void;
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
 }
 

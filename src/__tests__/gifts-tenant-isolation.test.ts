@@ -113,18 +113,15 @@ d("gifts tenant isolation", () => {
         planEndAge: 90,
         lifeExpectancy: 90,
         filingStatus: "married_joint",
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any)
+      })
       .returning();
     const [scenario] = await db
       .insert(scenarios)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .values({ clientId: client.id, name: "base", isDefault: true } as any)
+      .values({ clientId: client.id, name: "base", isBaseCase: true })
       .returning();
     const [fm] = await db
       .insert(familyMembers)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .values({ clientId: client.id, firstName: "Kid" } as any)
+      .values({ clientId: client.id, firstName: "Kid" })
       .returning();
     const [account] = await db
       .insert(accounts)
@@ -135,8 +132,7 @@ d("gifts tenant isolation", () => {
         category: "taxable",
         subType: "brokerage",
         owner: "client",
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any)
+      })
       .returning();
     const [irrevTrust] = await db
       .insert(entities)

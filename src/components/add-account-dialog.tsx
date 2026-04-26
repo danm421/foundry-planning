@@ -131,7 +131,6 @@ export default function AddAccountDialog({
             initialTab={initialTab}
             lockTab={lockTab}
             onSuccess={close}
-            onDelete={onRequestDelete}
             onSubmitStateChange={setSubmitState}
           />
         </DialogShell>

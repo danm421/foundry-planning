@@ -39,6 +39,7 @@ const TRUST_ENTITY_TYPE_LABELS: Record<TrustEntityType, string> = {
 
 interface TrustFormProps extends EntityFormCommonProps {
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
+  onTabChange?: (tab: "details" | "beneficiaries") => void;
 }
 
 export default function TrustForm({
@@ -49,6 +50,7 @@ export default function TrustForm({
   initialTab,
   lockTab,
   onSubmitStateChange,
+  onTabChange,
 }: TrustFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +92,10 @@ export default function TrustForm({
   const [activeTab, setActiveTab] = useState<"details" | "beneficiaries">(
     lockTab ? "beneficiaries" : (initialTab ?? "details"),
   );
+
+  useEffect(() => {
+    onTabChange?.(activeTab);
+  }, [activeTab, onTabChange]);
 
   const [designations, setDesignations] = useState<Designation[] | null>(null);
   const [members, setMembers] = useState<FamilyMember[]>([]);

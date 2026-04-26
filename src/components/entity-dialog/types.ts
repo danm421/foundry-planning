@@ -11,7 +11,6 @@ export interface EntityFormCommonProps {
   clientId: string;
   editing?: Entity;
   onSaved: (entity: Entity, mode: "create" | "edit") => void;
-  onRequestDelete?: () => void;
   onClose: () => void;
   initialTab?: EntityDialogTab;
   /**

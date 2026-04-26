@@ -109,7 +109,6 @@ interface AddAccountFormProps {
    */
   lockTab?: boolean;
   onSuccess?: () => void;
-  onDelete?: () => void;
   /** Called whenever submit-button state changes. Used by DialogShell to drive
    *  the footer button's disabled / loading visuals. */
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
@@ -202,7 +201,6 @@ export default function AddAccountForm({
   initialTab,
   lockTab,
   onSuccess,
-  onDelete, // eslint-disable-line @typescript-eslint/no-unused-vars -- used by parent shell (Task 6)
   onSubmitStateChange,
 }: AddAccountFormProps) {
   const clientLabel = ownerNames?.clientName ?? "Client";

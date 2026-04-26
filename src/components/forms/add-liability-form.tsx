@@ -54,7 +54,6 @@ interface AddLiabilityFormProps {
   mode?: "create" | "edit";
   initial?: LiabilityFormInitial;
   onSuccess?: () => void;
-  onDelete?: () => void;
   onValuesChange?: (values: LiabilityFormValues) => void;
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
 }
@@ -69,7 +68,6 @@ export default function AddLiabilityForm({
   mode = "create",
   initial,
   onSuccess,
-  onDelete, // eslint-disable-line @typescript-eslint/no-unused-vars
   onValuesChange,
   onSubmitStateChange,
 }: AddLiabilityFormProps) {

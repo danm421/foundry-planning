@@ -62,7 +62,6 @@ export default function AddClientDialog({ open, onOpenChange, editing, onRequest
             mode={isEdit ? "edit" : "create"}
             initial={editing}
             onSuccess={close}
-            onDelete={onRequestDelete}
             onSubmitStateChange={setSubmitState}
           />
         </DialogShell>
