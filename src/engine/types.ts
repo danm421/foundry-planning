@@ -255,8 +255,14 @@ export interface EntitySummary {
   distributionMode?: "fixed" | "pct_liquid" | "pct_income" | null;
   distributionAmount?: number | null;
   distributionPercent?: number | null;
-  incomeBeneficiaryFamilyMemberId?: string | null;
-  incomeBeneficiaryExternalId?: string | null;
+  incomeBeneficiaries?: Array<{
+    familyMemberId?: string;
+    externalBeneficiaryId?: string;
+    entityId?: string;
+    householdRole?: "client" | "spouse";
+    percentage: number;
+  }>;
+  trustEnds?: "client_death" | "spouse_death" | "survivorship" | null;
 }
 
 export interface ClientInfo {

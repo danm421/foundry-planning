@@ -83,10 +83,7 @@ export async function POST(
         isIrrevocable:
           data.entityType === "trust" ? data.isIrrevocable ?? null : null,
         trustee: data.entityType === "trust" ? data.trustee ?? null : null,
-        exemptionConsumed:
-          data.entityType === "trust" && data.exemptionConsumed != null
-            ? String(data.exemptionConsumed)
-            : "0",
+        trustEnds: data.entityType === "trust" ? (data.trustEnds ?? null) : null,
         distributionMode:
           data.entityType === "trust"
             ? (data.distributionMode ?? null)
@@ -98,14 +95,6 @@ export async function POST(
         distributionPercent:
           data.entityType === "trust" && data.distributionPercent != null
             ? String(data.distributionPercent)
-            : null,
-        incomeBeneficiaryFamilyMemberId:
-          data.entityType === "trust"
-            ? (data.incomeBeneficiaryFamilyMemberId ?? null)
-            : null,
-        incomeBeneficiaryExternalId:
-          data.entityType === "trust"
-            ? (data.incomeBeneficiaryExternalId ?? null)
             : null,
       })
       .returning();

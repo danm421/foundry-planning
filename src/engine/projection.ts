@@ -217,13 +217,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   const deriveBeneficiaryKind = (
     e: import("./types").EntitySummary
   ): "household" | "non_household" | null => {
-    if (e.incomeBeneficiaryFamilyMemberId != null) {
-      // All family members in the engine are non-client/spouse (child, grandchild, etc.)
-      // They live in the same household umbrella for DNI purposes.
-      const fm = familyMemberMap.get(e.incomeBeneficiaryFamilyMemberId);
-      if (fm) return "household";
-    }
-    if (e.incomeBeneficiaryExternalId != null) return "non_household";
+    const list = e.incomeBeneficiaries ?? [];
+    // householdRole (client/spouse) and familyMemberId entries are all treated
+    // as household for distribution routing (same umbrella as the 1040 pass).
+    const hasHousehold = list.some(
+      (b) =>
+        b.householdRole === "client" ||
+        b.householdRole === "spouse" ||
+        (b.familyMemberId != null && familyMemberMap.has(b.familyMemberId))
+    );
+    if (hasHousehold) return "household";
+    const hasExternal = list.some((b) => b.externalBeneficiaryId != null);
+    if (hasExternal) return "non_household";
     return null;
   };
   // Irrevocable, non-grantor trusts → their own annual tax pass (compressed 1041).
@@ -243,9 +248,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           amount: e.distributionAmount ?? null,
           percent: e.distributionPercent ?? null,
           beneficiaryKind: deriveBeneficiaryKind(e),
-          beneficiaryFamilyMemberId: e.incomeBeneficiaryFamilyMemberId ?? null,
-          beneficiaryExternalId: e.incomeBeneficiaryExternalId ?? null,
+          beneficiaryFamilyMemberId: null,
+          beneficiaryExternalId: null,
         },
+        incomeBeneficiaries: e.incomeBeneficiaries ?? [],
         trustCashStart: 0, // not used by orchestrator yet — kept for future expansion
       }));
 
@@ -274,8 +280,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           amount: e.distributionAmount ?? null,
           percent: e.distributionPercent ?? null,
           beneficiaryKind: deriveBeneficiaryKind(e),
-          beneficiaryFamilyMemberId: e.incomeBeneficiaryFamilyMemberId ?? null,
-          beneficiaryExternalId: e.incomeBeneficiaryExternalId ?? null,
+          beneficiaryFamilyMemberId: null,
+          beneficiaryExternalId: null,
         },
       }));
 

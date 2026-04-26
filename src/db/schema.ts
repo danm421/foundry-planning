@@ -132,11 +132,24 @@ export const externalBeneficiaryKindEnum = pgEnum("external_beneficiary_kind", [
 export const beneficiaryTierEnum = pgEnum("beneficiary_tier", [
   "primary",
   "contingent",
+  "income",
+  "remainder",
 ]);
 
 export const beneficiaryTargetKindEnum = pgEnum("beneficiary_target_kind", [
   "account",
   "trust",
+]);
+
+export const householdRoleEnum = pgEnum("household_role", [
+  "client",
+  "spouse",
+]);
+
+export const trustEndsEnum = pgEnum("trust_ends", [
+  "client_death",
+  "spouse_death",
+  "survivorship",
 ]);
 
 export const trustSubTypeEnum = pgEnum("trust_sub_type", [
@@ -430,19 +443,14 @@ export const entities = pgTable("entities", {
   isIrrevocable: boolean("is_irrevocable"),
   // Free-text display-only field. Co-trustees as comma-separated.
   trustee: text("trustee"),
-  // Per-trust rollup of lifetime exemption consumed. Item 3 will layer a
-  // proper per-grantor gift ledger on top.
-  exemptionConsumed: decimal("exemption_consumed", { precision: 15, scale: 2 })
-    .notNull()
-    .default("0"),
+  // Trust-only: when does the trust terminate? Drives engine logic for
+  // when remainder beneficiaries take over. Null on non-trust rows.
+  trustEnds: trustEndsEnum("trust_ends"),
   // Trust-only: mandatory-distribution policy. One of 'fixed' | 'pct_liquid' | 'pct_income',
   // or null when no mandatory distribution. API enforces coherence with the amount/percent columns.
   distributionMode: text("distribution_mode").$type<"fixed" | "pct_liquid" | "pct_income" | null>(),
   distributionAmount: decimal("distribution_amount", { precision: 14, scale: 2 }),
   distributionPercent: decimal("distribution_percent", { precision: 7, scale: 4 }),
-  // Income beneficiary — exactly one of family-member or external is set when distributionMode is non-null.
-  incomeBeneficiaryFamilyMemberId: uuid("income_beneficiary_family_member_id").references(() => familyMembers.id),
-  incomeBeneficiaryExternalId: uuid("income_beneficiary_external_id").references(() => externalBeneficiaries.id),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -496,6 +504,15 @@ export const beneficiaryDesignations = pgTable(
       () => externalBeneficiaries.id,
       { onDelete: "cascade" },
     ),
+    // When a designation NAMES another entity (e.g. trust → trust) as a
+    // beneficiary, this points at that entity. Distinct from `entity_id`
+    // above, which identifies the trust the designation BELONGS TO.
+    entityIdRef: uuid("entity_id_ref").references(() => entities.id, {
+      onDelete: "set null",
+    }),
+    // When the named beneficiary is the household principal — 'client' or
+    // 'spouse'. Mutually exclusive with the other named-beneficiary FKs.
+    householdRole: householdRoleEnum("household_role"),
     percentage: decimal("percentage", { precision: 5, scale: 2 }).notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),

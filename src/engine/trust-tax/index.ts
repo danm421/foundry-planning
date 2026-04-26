@@ -11,11 +11,13 @@ import type {
   DistributionResult,
   TrustTaxBreakdown,
 } from "./types";
+import type { EntitySummary } from "@/engine/types";
 
 export interface NonGrantorTrustInput {
   entityId: string;
   isGrantorTrust: boolean; // always false for this pass; included for caller convenience
   distributionPolicy: DistributionPolicy;
+  incomeBeneficiaries: EntitySummary["incomeBeneficiaries"];
   trustCashStart: number;
 }
 
@@ -63,15 +65,21 @@ export function applyTrustAnnualPass(
     distributionsByEntity.set(trust.entityId, distribution);
     warnings.push(...distribution.warnings);
 
-    const routing = routeDni({
-      distributionResult: distribution,
-      policy: trust.distributionPolicy,
-      outOfHouseholdRate: inp.outOfHouseholdRate,
-    });
-    householdIncomeDelta.ordinary += routing.householdIncomeDelta.ordinary;
-    householdIncomeDelta.dividends += routing.householdIncomeDelta.dividends;
-    householdIncomeDelta.taxExempt += routing.householdIncomeDelta.taxExempt;
-    estimatedBeneficiaryTax += routing.estimatedBeneficiaryTax;
+    const totalDni = distribution.dniOrdinary + distribution.dniDividends + distribution.dniTaxExempt;
+    const routing = routeDni(trust.incomeBeneficiaries, totalDni);
+
+    const householdSharePct = (trust.incomeBeneficiaries ?? [])
+      .filter((b) => b.householdRole === "client" || b.householdRole === "spouse")
+      .reduce((sum, b) => sum + b.percentage, 0);
+
+    householdIncomeDelta.ordinary  += distribution.dniOrdinary  * householdSharePct / 100;
+    householdIncomeDelta.dividends += distribution.dniDividends * householdSharePct / 100;
+    householdIncomeDelta.taxExempt += distribution.dniTaxExempt * householdSharePct / 100;
+
+    const nonHouseholdTotal =
+      Object.values(routing.toFamilyMember).reduce((s, v) => s + v, 0) +
+      Object.values(routing.toExternal).reduce((s, v) => s + v, 0);
+    estimatedBeneficiaryTax += nonHouseholdTotal * inp.outOfHouseholdRate;
 
     const retainedOrdinary = income.ordinary - distribution.dniOrdinary;
     const retainedDividends = income.dividends - distribution.dniDividends;

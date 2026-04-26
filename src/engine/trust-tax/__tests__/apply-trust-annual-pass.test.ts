@@ -22,6 +22,7 @@ const SLAT = {
     beneficiaryKind: "household" as const,
     beneficiaryFamilyMemberId: "fm-spouse", beneficiaryExternalId: null,
   },
+  incomeBeneficiaries: [{ familyMemberId: "fm-spouse", householdRole: "spouse" as const, percentage: 100 }],
   trustCashStart: 0,
 };
 

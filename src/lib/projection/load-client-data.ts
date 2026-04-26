@@ -295,6 +295,8 @@ export const loadClientData = cache(
     const accountBens = new Map<string, BeneficiaryRef[]>();
     const trustBens = new Map<string, BeneficiaryRef[]>();
     for (const d of designationRows) {
+      // income/remainder tiers are handled separately via incomeBeneficiaryRows
+      if (d.tier !== "primary" && d.tier !== "contingent") continue;
       const ref: BeneficiaryRef = {
         id: d.id,
         tier: d.tier,
@@ -602,6 +604,51 @@ export const loadClientData = cache(
       outOfHouseholdRate: settings.outOfHouseholdDniRate != null ? parseFloat(settings.outOfHouseholdDniRate) : undefined,
     };
 
+    // ── Income-tier beneficiary designations grouped by entity ──────────────
+    const incomeBeneficiaryRows = entityRows.length > 0
+      ? await db
+          .select({
+            entityId: beneficiaryDesignations.entityId,
+            familyMemberId: beneficiaryDesignations.familyMemberId,
+            externalBeneficiaryId: beneficiaryDesignations.externalBeneficiaryId,
+            entityIdRef: beneficiaryDesignations.entityIdRef,
+            householdRole: beneficiaryDesignations.householdRole,
+            percentage: beneficiaryDesignations.percentage,
+          })
+          .from(beneficiaryDesignations)
+          .where(
+            and(
+              eq(beneficiaryDesignations.tier, "income"),
+              inArray(beneficiaryDesignations.entityId, entityRows.map((e) => e.id)),
+            ),
+          )
+      : [];
+
+    type IncomeBeneficiary = NonNullable<import("@/engine/types").EntitySummary["incomeBeneficiaries"]>[number];
+    const incomeByEntity = new Map<string, IncomeBeneficiary[]>();
+    for (const row of incomeBeneficiaryRows) {
+      if (!row.entityId) continue;
+      const list = incomeByEntity.get(row.entityId) ?? [];
+      list.push({
+        familyMemberId: row.familyMemberId ?? undefined,
+        externalBeneficiaryId: row.externalBeneficiaryId ?? undefined,
+        entityId: row.entityIdRef ?? undefined,
+        householdRole: (row.householdRole as "client" | "spouse" | null) ?? undefined,
+        percentage: Number(row.percentage),
+      });
+      incomeByEntity.set(row.entityId, list);
+    }
+
+    // ── exemptionConsumed derived from gifts to each entity ──────────────────
+    const exemptionByEntity = new Map<string, number>();
+    for (const g of giftRows) {
+      if (!g.recipientEntityId) continue;
+      exemptionByEntity.set(
+        g.recipientEntityId,
+        (exemptionByEntity.get(g.recipientEntityId) ?? 0) + Number(g.amount),
+      );
+    }
+
     const mappedEntities = entityRows.map((e) => ({
       id: e.id,
       name: e.name,
@@ -612,13 +659,13 @@ export const loadClientData = cache(
       trustSubType: e.trustSubType ?? undefined,
       isIrrevocable: e.isIrrevocable ?? undefined,
       trustee: e.trustee ?? undefined,
-      exemptionConsumed: e.exemptionConsumed != null ? parseFloat(e.exemptionConsumed) : 0,
+      exemptionConsumed: exemptionByEntity.get(e.id) ?? 0,
       grantor: e.grantor ?? undefined,
       distributionMode: e.distributionMode ?? undefined,
       distributionAmount: e.distributionAmount != null ? parseFloat(e.distributionAmount) : undefined,
       distributionPercent: e.distributionPercent != null ? parseFloat(e.distributionPercent) : undefined,
-      incomeBeneficiaryFamilyMemberId: e.incomeBeneficiaryFamilyMemberId ?? undefined,
-      incomeBeneficiaryExternalId: e.incomeBeneficiaryExternalId ?? undefined,
+      incomeBeneficiaries: incomeByEntity.get(e.id) ?? [],
+      trustEnds: e.trustEnds ?? null,
     }));
 
     const mappedExternalBeneficiaries = externalBeneficiaryRows.map((r) => ({

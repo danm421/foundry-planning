@@ -1,48 +1,108 @@
 import { describe, it, expect } from "vitest";
 import { routeDni } from "../route-dni";
-import type { DistributionResult, DistributionPolicy } from "../types";
-
-const DR: DistributionResult = {
-  targetAmount: 50_000,
-  actualAmount: 50_000,
-  drawFromCash: 50_000,
-  drawFromTaxable: 0,
-  dniOrdinary: 30_000,
-  dniDividends: 15_000,
-  dniTaxExempt: 5_000,
-  warnings: [],
-};
-
-const HOUSEHOLD: DistributionPolicy = {
-  mode: "fixed", amount: 50_000, percent: null,
-  beneficiaryKind: "household",
-  beneficiaryFamilyMemberId: "fm-spouse", beneficiaryExternalId: null,
-};
-
-const NON_HOUSEHOLD: DistributionPolicy = { ...HOUSEHOLD, beneficiaryKind: "non_household" };
+import type { EntitySummary } from "../../types";
 
 describe("routeDni", () => {
-  it("adds household DNI to household income buckets", () => {
-    const r = routeDni({ distributionResult: DR, policy: HOUSEHOLD, outOfHouseholdRate: 0.37 });
-    expect(r.householdIncomeDelta).toEqual({ ordinary: 30_000, dividends: 15_000, taxExempt: 5_000 });
-    expect(r.estimatedBeneficiaryTax).toBe(0);
+  it("splits DNI across multiple income beneficiaries by percentage", () => {
+    const trust: EntitySummary = {
+      id: "t1",
+      includeInPortfolio: false,
+      isGrantor: false,
+      isIrrevocable: true,
+      distributionMode: "fixed",
+      distributionAmount: 100_000,
+      incomeBeneficiaries: [
+        { familyMemberId: "fm-spouse", percentage: 60 },
+        { externalBeneficiaryId: "ext-charity", percentage: 40 },
+      ],
+    };
+    const dniAmount = 80_000;
+    const result = routeDni(trust.incomeBeneficiaries, dniAmount);
+
+    expect(result.toFamilyMember).toEqual({ "fm-spouse": 48_000 });
+    expect(result.toExternal).toEqual({ "ext-charity": 32_000 });
+    expect(result.toHousehold).toBe(0);
   });
 
-  it("applies flat rate to out-of-household DNI (ordinary + divs only; taxExempt is exempt)", () => {
-    const r = routeDni({ distributionResult: DR, policy: NON_HOUSEHOLD, outOfHouseholdRate: 0.37 });
-    expect(r.householdIncomeDelta).toEqual({ ordinary: 0, dividends: 0, taxExempt: 0 });
-    // flat tax applies to taxable DNI only (ordinary + dividends), not tax-exempt
-    expect(r.estimatedBeneficiaryTax).toBeCloseTo((30_000 + 15_000) * 0.37, 1);
+  it("routes household-role income beneficiaries back to household tax pass", () => {
+    const trust: EntitySummary = {
+      id: "t1",
+      includeInPortfolio: false,
+      isGrantor: false,
+      isIrrevocable: true,
+      distributionMode: "fixed",
+      distributionAmount: 100_000,
+      incomeBeneficiaries: [
+        { householdRole: "spouse", percentage: 100 },
+      ],
+    };
+    const result = routeDni(trust.incomeBeneficiaries, 50_000);
+    expect(result.toHousehold).toBe(50_000);
+    expect(result.toFamilyMember).toEqual({});
   });
 
-  it("null policy → no routing, zero everywhere", () => {
-    const empty = { ...DR, actualAmount: 0, dniOrdinary: 0, dniDividends: 0, dniTaxExempt: 0 };
-    const r = routeDni({
-      distributionResult: empty,
-      policy: { ...HOUSEHOLD, mode: null, beneficiaryKind: null },
-      outOfHouseholdRate: 0.37,
-    });
-    expect(r.householdIncomeDelta).toEqual({ ordinary: 0, dividends: 0, taxExempt: 0 });
-    expect(r.estimatedBeneficiaryTax).toBe(0);
+  it("returns zeroes when incomeBeneficiaries is empty", () => {
+    const trust: EntitySummary = {
+      id: "t1",
+      includeInPortfolio: false,
+      isGrantor: false,
+      distributionMode: "fixed",
+      distributionAmount: 0,
+      incomeBeneficiaries: [],
+    };
+    const result = routeDni(trust.incomeBeneficiaries, 10_000);
+    expect(result.toFamilyMember).toEqual({});
+    expect(result.toExternal).toEqual({});
+    expect(result.toHousehold).toBe(0);
+  });
+
+  it("returns zeroes when dniAmount is zero", () => {
+    const trust: EntitySummary = {
+      id: "t1",
+      includeInPortfolio: false,
+      isGrantor: false,
+      distributionMode: "fixed",
+      distributionAmount: 100_000,
+      incomeBeneficiaries: [
+        { familyMemberId: "fm-spouse", percentage: 100 },
+      ],
+    };
+    const result = routeDni(trust.incomeBeneficiaries, 0);
+    expect(result.toFamilyMember).toEqual({});
+    expect(result.toExternal).toEqual({});
+    expect(result.toHousehold).toBe(0);
+  });
+
+  it("accumulates shares when the same familyMemberId appears more than once", () => {
+    const trust: EntitySummary = {
+      id: "t1",
+      includeInPortfolio: false,
+      isGrantor: false,
+      distributionMode: "fixed",
+      distributionAmount: 100_000,
+      incomeBeneficiaries: [
+        { familyMemberId: "fm-child", percentage: 30 },
+        { familyMemberId: "fm-child", percentage: 20 },
+      ],
+    };
+    const result = routeDni(trust.incomeBeneficiaries, 100_000);
+    expect(result.toFamilyMember).toEqual({ "fm-child": 50_000 });
+  });
+
+  it("routes client householdRole to household", () => {
+    const trust: EntitySummary = {
+      id: "t1",
+      includeInPortfolio: false,
+      isGrantor: false,
+      distributionMode: "fixed",
+      distributionAmount: 100_000,
+      incomeBeneficiaries: [
+        { householdRole: "client", percentage: 100 },
+      ],
+    };
+    const result = routeDni(trust.incomeBeneficiaries, 20_000);
+    expect(result.toHousehold).toBe(20_000);
+    expect(result.toFamilyMember).toEqual({});
+    expect(result.toExternal).toEqual({});
   });
 });

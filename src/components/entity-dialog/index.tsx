@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import TrustForm from "./trust-form";
+import AddTrustForm from "../forms/add-trust-form";
 import BusinessForm from "./business-form";
-import { getEntityKind, type EntityDialogTab, type EntityKind } from "./types";
-import type { Entity } from "../family-view";
+import { getEntityKind, type EntityKind } from "./types";
+import type { Entity, FamilyMember, ExternalBeneficiary, Designation } from "../family-view";
 import DialogShell from "../dialog-shell";
 
 export interface EntityDialogProps {
@@ -16,12 +16,14 @@ export interface EntityDialogProps {
   editing?: Entity;
   onSaved: (entity: Entity, mode: "create" | "edit") => void;
   onRequestDelete?: () => void;
-  initialTab?: EntityDialogTab;
-  /**
-   * When true, restrict the trust dialog to the Beneficiaries tab. Used by the
-   * Beneficiary Summary deep-link. Ignored for business entities (no tabs).
-   */
-  lockTab?: boolean;
+  /** Required for trust dialogs — caller supplies household/member data */
+  household: { client: { firstName: string }; spouse: { firstName: string } | null };
+  members: FamilyMember[];
+  externals: ExternalBeneficiary[];
+  /** Other entities for the remainder picker (excludes self) */
+  otherEntities: { id: string; name: string }[];
+  /** Pre-loaded designations for edit mode */
+  initialDesignations?: Designation[];
 }
 
 export default function EntityDialog({
@@ -32,16 +34,17 @@ export default function EntityDialog({
   editing,
   onSaved,
   onRequestDelete,
-  initialTab,
-  lockTab,
+  household,
+  members,
+  externals,
+  otherEntities,
+  initialDesignations,
 }: EntityDialogProps) {
   const [submitState, setSubmitState] = useState<{ canSubmit: boolean; loading: boolean }>({
     canSubmit: true,
     loading: false,
   });
-  const [trustTab, setTrustTab] = useState<"details" | "beneficiaries">(
-    lockTab ? "beneficiaries" : (initialTab ?? "details"),
-  );
+  const [trustTab, setTrustTab] = useState<"details" | "notes">("details");
 
   if (!open) return null;
 
@@ -57,16 +60,19 @@ export default function EntityDialog({
       onOpenChange={onOpenChange}
       title={title}
       size="md"
-      primaryAction={
-        kind === "trust" && trustTab === "beneficiaries"
-          ? undefined
-          : {
-              label: isEdit ? "Save Changes" : kind === "trust" ? "Add Trust" : "Add Business",
-              form: kind === "trust" ? "entity-trust-form" : "entity-business-form",
-              disabled: !submitState.canSubmit,
-              loading: submitState.loading,
-            }
+      tabs={
+        kind === "trust"
+          ? [{ id: "details", label: "Details" }, { id: "notes", label: "Notes" }]
+          : undefined
       }
+      activeTab={kind === "trust" ? trustTab : undefined}
+      onTabChange={kind === "trust" ? (tab) => setTrustTab(tab as "details" | "notes") : undefined}
+      primaryAction={{
+        label: isEdit ? "Save Changes" : kind === "trust" ? "Add Trust" : "Add Business",
+        form: kind === "trust" ? "add-trust-form" : "entity-business-form",
+        disabled: !submitState.canSubmit,
+        loading: submitState.loading,
+      }}
       destructiveAction={
         isEdit && onRequestDelete
           ? { label: "Delete", onClick: onRequestDelete }
@@ -74,15 +80,18 @@ export default function EntityDialog({
       }
     >
       {kind === "trust" ? (
-        <TrustForm
+        <AddTrustForm
           clientId={clientId}
           editing={editing}
+          household={household}
+          members={members}
+          externals={externals}
+          entities={otherEntities}
+          initialDesignations={initialDesignations}
+          activeTab={trustTab}
           onSaved={onSaved}
           onClose={() => onOpenChange(false)}
-          initialTab={initialTab}
-          lockTab={lockTab}
           onSubmitStateChange={setSubmitState}
-          onTabChange={setTrustTab}
         />
       ) : (
         <BusinessForm

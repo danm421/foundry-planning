@@ -57,12 +57,10 @@ export async function PUT(
       trustSubType?: string;
       isIrrevocable?: boolean;
       trustee?: string | null;
-      exemptionConsumed?: number;
+      trustEnds?: "client_death" | "spouse_death" | "survivorship" | null;
       distributionMode?: "fixed" | "pct_liquid" | "pct_income" | null;
       distributionAmount?: number | null;
       distributionPercent?: number | null;
-      incomeBeneficiaryFamilyMemberId?: string | null;
-      incomeBeneficiaryExternalId?: string | null;
     };
 
     const merged = {
@@ -85,10 +83,7 @@ export async function PUT(
           ? patch.isIrrevocable
           : existing.isIrrevocable ?? undefined,
       trustee: patch.trustee !== undefined ? patch.trustee : existing.trustee,
-      exemptionConsumed:
-        patch.exemptionConsumed !== undefined
-          ? patch.exemptionConsumed
-          : Number(existing.exemptionConsumed ?? 0),
+      trustEnds: patch.trustEnds !== undefined ? patch.trustEnds : existing.trustEnds,
       distributionMode:
         patch.distributionMode !== undefined
           ? patch.distributionMode
@@ -105,14 +100,6 @@ export async function PUT(
           : existing.distributionPercent != null
             ? Number(existing.distributionPercent)
             : null,
-      incomeBeneficiaryFamilyMemberId:
-        patch.incomeBeneficiaryFamilyMemberId !== undefined
-          ? patch.incomeBeneficiaryFamilyMemberId
-          : existing.incomeBeneficiaryFamilyMemberId,
-      incomeBeneficiaryExternalId:
-        patch.incomeBeneficiaryExternalId !== undefined
-          ? patch.incomeBeneficiaryExternalId
-          : existing.incomeBeneficiaryExternalId,
     };
 
     const mergedCheck = entityCreateSchema.safeParse(merged);
@@ -153,9 +140,7 @@ export async function PUT(
           isIrrevocable: patch.isIrrevocable,
         }),
         ...(patch.trustee !== undefined && { trustee: patch.trustee ?? null }),
-        ...(patch.exemptionConsumed !== undefined && {
-          exemptionConsumed: String(patch.exemptionConsumed),
-        }),
+        ...(patch.trustEnds !== undefined && { trustEnds: patch.trustEnds ?? null }),
         ...(patch.distributionMode !== undefined && {
           distributionMode: patch.distributionMode,
         }),
@@ -171,23 +156,14 @@ export async function PUT(
               ? String(patch.distributionPercent)
               : null,
         }),
-        ...(patch.incomeBeneficiaryFamilyMemberId !== undefined && {
-          incomeBeneficiaryFamilyMemberId:
-            patch.incomeBeneficiaryFamilyMemberId,
-        }),
-        ...(patch.incomeBeneficiaryExternalId !== undefined && {
-          incomeBeneficiaryExternalId: patch.incomeBeneficiaryExternalId,
-        }),
         ...(typeSwitchedAwayFromTrust && {
           trustSubType: null,
           isIrrevocable: null,
           trustee: null,
-          exemptionConsumed: "0",
+          trustEnds: null,
           distributionMode: null,
           distributionAmount: null,
           distributionPercent: null,
-          incomeBeneficiaryFamilyMemberId: null,
-          incomeBeneficiaryExternalId: null,
         }),
         updatedAt: new Date(),
       })

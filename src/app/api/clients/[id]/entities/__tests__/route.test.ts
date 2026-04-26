@@ -11,7 +11,6 @@ vi.mock("@clerk/nextjs/server", () => ({
 const FIRM_A = "firm_test_entities";
 
 let clientId: string;
-let familyMemberId: string;
 let scenarioId: string;
 
 beforeAll(async () => {
@@ -29,16 +28,16 @@ beforeAll(async () => {
     .returning();
   clientId = client.id;
 
-  const [fm] = await db
+  // Insert a dummy family member row so beforeAll mirrors prior structure;
+  // no longer used in assertions (legacy fields dropped).
+  await db
     .insert(familyMembers)
     .values({
       clientId,
       firstName: "Beneficiary",
       lastName: "Child",
       relationship: "child",
-    })
-    .returning();
-  familyMemberId = fm.id;
+    });
 
   // The POST handler inserts a default checking account per scenario.
   // Create a scenario fixture so that path exercises correctly.
@@ -100,7 +99,7 @@ function makePutReq(body: unknown): NextRequest {
 // ── POST tests ────────────────────────────────────────────────────────────────
 
 describe("POST /api/clients/[id]/entities — distribution policy", () => {
-  it("creates an irrevocable SLAT with fixed distribution to family member", async () => {
+  it("creates an irrevocable SLAT with fixed distribution", async () => {
     const res = await POST(
       makePostReq({
         name: "SLAT for Spouse",
@@ -109,7 +108,6 @@ describe("POST /api/clients/[id]/entities — distribution policy", () => {
         isIrrevocable: true,
         distributionMode: "fixed",
         distributionAmount: 50000,
-        incomeBeneficiaryFamilyMemberId: familyMemberId,
       }),
       { params: Promise.resolve({ id: clientId }) }
     );
@@ -117,9 +115,7 @@ describe("POST /api/clients/[id]/entities — distribution policy", () => {
     const body = await res.json();
     expect(body.distributionMode).toBe("fixed");
     expect(body.distributionAmount).toBe("50000.00");
-    expect(body.incomeBeneficiaryFamilyMemberId).toBe(familyMemberId);
     expect(body.distributionPercent).toBeNull();
-    expect(body.incomeBeneficiaryExternalId).toBeNull();
   });
 
   // Schema gap closed: entityCreateSchema !isTrust block now rejects distributionMode
@@ -132,7 +128,6 @@ describe("POST /api/clients/[id]/entities — distribution policy", () => {
         entityType: "llc",
         distributionMode: "fixed",
         distributionAmount: 1000,
-        incomeBeneficiaryFamilyMemberId: familyMemberId,
       }),
       { params: Promise.resolve({ id: clientId }) }
     );
@@ -140,6 +135,96 @@ describe("POST /api/clients/[id]/entities — distribution policy", () => {
     const body = await res.json();
     expect(body.error).toBe("Invalid body");
     expect(body.issues.some((i: { path: string[] }) => i.path.includes("distributionMode"))).toBe(true);
+  });
+});
+
+// ── trustEnds POST tests ──────────────────────────────────────────────────────
+
+describe("POST /api/clients/[id]/entities — trustEnds round-trip", () => {
+  it("persists trustEnds on a trust entity", async () => {
+    const res = await POST(
+      makePostReq({
+        name: "ILIT With TrustEnds",
+        entityType: "trust",
+        trustSubType: "ilit",
+        isIrrevocable: true,
+        trustEnds: "spouse_death",
+      }),
+      { params: Promise.resolve({ id: clientId }) }
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.trustEnds).toBe("spouse_death");
+  });
+
+  it("forces trustEnds to null for a non-trust entity even if client sends it", async () => {
+    // Zod's entityCreateSchema does not explicitly reject trustEnds on non-trust
+    // entities (it's an optional field in baseEntityFields), so the route handler
+    // must coerce it to null via the conditional write.
+    const res = await POST(
+      makePostReq({
+        name: "Family Partnership",
+        entityType: "partnership",
+        trustEnds: "client_death",
+      }),
+      { params: Promise.resolve({ id: clientId }) }
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.trustEnds).toBeNull();
+  });
+});
+
+// ── trustEnds PUT tests ───────────────────────────────────────────────────────
+
+describe("PUT /api/clients/[id]/entities/[entityId] — trustEnds round-trip", () => {
+  it("sets trustEnds on a trust that did not previously have it", async () => {
+    const [trustRow] = await db
+      .insert(entities)
+      .values({
+        clientId,
+        name: "ILIT No TrustEnds",
+        entityType: "trust",
+        trustSubType: "ilit",
+        isIrrevocable: true,
+        isGrantor: false,
+        includeInPortfolio: false,
+        value: "0",
+      })
+      .returning();
+
+    const res = await PUT(
+      makePutReq({ trustEnds: "client_death" }),
+      { params: Promise.resolve({ id: clientId, entityId: trustRow.id }) }
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.trustEnds).toBe("client_death");
+  });
+
+  it("clears trustEnds by sending explicit null", async () => {
+    const [trustRow] = await db
+      .insert(entities)
+      .values({
+        clientId,
+        name: "ILIT With TrustEnds Set",
+        entityType: "trust",
+        trustSubType: "ilit",
+        isIrrevocable: true,
+        isGrantor: false,
+        includeInPortfolio: false,
+        value: "0",
+        trustEnds: "survivorship",
+      })
+      .returning();
+
+    const res = await PUT(
+      makePutReq({ trustEnds: null }),
+      { params: Promise.resolve({ id: clientId, entityId: trustRow.id }) }
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.trustEnds).toBeNull();
   });
 });
 
@@ -159,7 +244,6 @@ describe("PUT /api/clients/[id]/entities/[entityId] — distribution policy", ()
         isGrantor: false,
         includeInPortfolio: false,
         value: "0",
-        exemptionConsumed: "0",
       })
       .returning();
 
@@ -167,7 +251,6 @@ describe("PUT /api/clients/[id]/entities/[entityId] — distribution policy", ()
       makePutReq({
         distributionMode: "fixed",
         distributionAmount: 50000,
-        incomeBeneficiaryFamilyMemberId: familyMemberId,
       }),
       { params: Promise.resolve({ id: clientId, entityId: trustRow.id }) }
     );
@@ -175,7 +258,6 @@ describe("PUT /api/clients/[id]/entities/[entityId] — distribution policy", ()
     const body = await res.json();
     expect(body.distributionMode).toBe("fixed");
     expect(body.distributionAmount).toBe("50000.00");
-    expect(body.incomeBeneficiaryFamilyMemberId).toBe(familyMemberId);
     expect(body.distributionPercent).toBeNull();
   });
 
@@ -192,10 +274,8 @@ describe("PUT /api/clients/[id]/entities/[entityId] — distribution policy", ()
         isGrantor: false,
         includeInPortfolio: false,
         value: "0",
-        exemptionConsumed: "0",
         distributionMode: "fixed",
         distributionAmount: "75000.00",
-        incomeBeneficiaryFamilyMemberId: familyMemberId,
       })
       .returning();
 
@@ -204,8 +284,6 @@ describe("PUT /api/clients/[id]/entities/[entityId] — distribution policy", ()
         distributionMode: null,
         distributionAmount: null,
         distributionPercent: null,
-        incomeBeneficiaryFamilyMemberId: null,
-        incomeBeneficiaryExternalId: null,
       }),
       { params: Promise.resolve({ id: clientId, entityId: trustRow.id }) }
     );
@@ -214,8 +292,6 @@ describe("PUT /api/clients/[id]/entities/[entityId] — distribution policy", ()
     expect(body.distributionMode).toBeNull();
     expect(body.distributionAmount).toBeNull();
     expect(body.distributionPercent).toBeNull();
-    expect(body.incomeBeneficiaryFamilyMemberId).toBeNull();
-    expect(body.incomeBeneficiaryExternalId).toBeNull();
   });
 
   it("rejects distributionMode on a revocable trust via merged-row gate (I1 fix)", async () => {
@@ -231,7 +307,6 @@ describe("PUT /api/clients/[id]/entities/[entityId] — distribution policy", ()
         isGrantor: true,
         includeInPortfolio: false,
         value: "0",
-        exemptionConsumed: "0",
       })
       .returning();
 
@@ -239,7 +314,6 @@ describe("PUT /api/clients/[id]/entities/[entityId] — distribution policy", ()
       makePutReq({
         distributionMode: "fixed",
         distributionAmount: 50000,
-        incomeBeneficiaryFamilyMemberId: familyMemberId,
       }),
       { params: Promise.resolve({ id: clientId, entityId: trustRow.id }) }
     );
@@ -254,7 +328,7 @@ describe("PUT /api/clients/[id]/entities/[entityId] — distribution policy", ()
 // ── GET tests ─────────────────────────────────────────────────────────────────
 
 describe("GET /api/clients/[id]/entities", () => {
-  it("returns all entities including distribution columns", async () => {
+  it("returns all entities including trustEnds and distribution columns", async () => {
     const res = await GET(makeGetReq(), {
       params: Promise.resolve({ id: clientId }),
     });
@@ -263,12 +337,11 @@ describe("GET /api/clients/[id]/entities", () => {
     expect(Array.isArray(body)).toBe(true);
     // At least the entities created above should be present
     expect(body.length).toBeGreaterThan(0);
-    // Each row should include the new distribution columns (even if null)
+    // Each row should include the new columns (even if null)
     const first = body[0];
+    expect("trustEnds" in first).toBe(true);
     expect("distributionMode" in first).toBe(true);
     expect("distributionAmount" in first).toBe(true);
     expect("distributionPercent" in first).toBe(true);
-    expect("incomeBeneficiaryFamilyMemberId" in first).toBe(true);
-    expect("incomeBeneficiaryExternalId" in first).toBe(true);
   });
 });

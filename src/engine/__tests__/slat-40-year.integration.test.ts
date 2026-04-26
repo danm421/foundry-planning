@@ -220,8 +220,7 @@ describe("SLAT 40-year projection", () => {
       distributionMode: "pct_income",
       distributionAmount: null,
       distributionPercent: 1.0,
-      incomeBeneficiaryFamilyMemberId: "fm-spouse",
-      incomeBeneficiaryExternalId: null,
+      incomeBeneficiaries: [{ familyMemberId: "fm-spouse", householdRole: "spouse", percentage: 100 }],
     };
     const data = emptyClientData(
       [
@@ -264,8 +263,7 @@ describe("SLAT 40-year projection", () => {
       distributionMode: null,
       distributionAmount: null,
       distributionPercent: null,
-      incomeBeneficiaryFamilyMemberId: null,
-      incomeBeneficiaryExternalId: null,
+      incomeBeneficiaries: [],
     };
     const data = emptyClientData(
       [

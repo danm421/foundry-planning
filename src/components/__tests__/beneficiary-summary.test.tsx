@@ -69,6 +69,8 @@ const retirementDesignation: Designation = {
   percentage: 100,
   familyMemberId: spouse.id,
   externalBeneficiaryId: null,
+  entityIdRef: null,
+  householdRole: null,
   sortOrder: 0,
   targetKind: "account",
 };
@@ -81,6 +83,8 @@ const brokeragePrimary1: Designation = {
   percentage: 50,
   familyMemberId: daughter.id,
   externalBeneficiaryId: null,
+  entityIdRef: null,
+  householdRole: null,
   sortOrder: 0,
   targetKind: "account",
 };
@@ -93,6 +97,8 @@ const brokerageContingent: Designation = {
   percentage: 100,
   familyMemberId: null,
   externalBeneficiaryId: charity.id,
+  entityIdRef: null,
+  householdRole: null,
   sortOrder: 0,
   targetKind: "account",
 };
@@ -111,12 +117,10 @@ const trustEntity: Entity = {
   trustSubType: "bypass",
   isIrrevocable: true,
   trustee: "Bank Corp",
-  exemptionConsumed: "0",
+  trustEnds: null,
   distributionMode: null,
   distributionAmount: null,
   distributionPercent: null,
-  incomeBeneficiaryFamilyMemberId: null,
-  incomeBeneficiaryExternalId: null,
 };
 
 const trustDesignation: Designation = {
@@ -127,6 +131,8 @@ const trustDesignation: Designation = {
   percentage: 100,
   familyMemberId: daughter.id,
   externalBeneficiaryId: null,
+  entityIdRef: null,
+  householdRole: null,
   sortOrder: 0,
   targetKind: "trust",
 };

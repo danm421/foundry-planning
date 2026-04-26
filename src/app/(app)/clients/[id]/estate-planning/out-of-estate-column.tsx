@@ -58,6 +58,19 @@ export function OutOfEstateColumn({ tree, asOfYear }: { tree: ClientData; asOfYe
         open={trustDialogOpen}
         onOpenChange={setTrustDialogOpen}
         createKind="trust"
+        household={{
+          client: { firstName: tree.client.firstName },
+          spouse: tree.client.spouseName ? { firstName: tree.client.spouseName } : null,
+        }}
+        members={(tree.familyMembers ?? []).map((m) => ({
+          ...m,
+          notes: null,
+        }))}
+        externals={(tree.externalBeneficiaries ?? []).map((e) => ({
+          ...e,
+          notes: null,
+        }))}
+        otherEntities={(tree.entities ?? []).filter((e) => e.name != null).map((e) => ({ id: e.id, name: e.name! }))}
         onSaved={() => {
           setTrustDialogOpen(false);
           router.refresh();

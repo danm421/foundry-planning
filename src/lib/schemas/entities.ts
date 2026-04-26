@@ -23,43 +23,25 @@ const namePctRowSchema = z.object({
 });
 
 /**
- * Validates XOR beneficiary and mode-amount coherence rules for distribution
- * policy fields. Does NOT check the irrevocability gate — that differs between
- * create and update paths and is handled inline at each call site.
+ * Validates mode-amount coherence rules for distribution policy fields. Does
+ * NOT check the irrevocability gate — that differs between create and update
+ * paths and is handled inline at each call site.
+ *
+ * NOTE: The "at least one income beneficiary required when mode is set"
+ * invariant is intentionally NOT enforced here. Income-beneficiary designations
+ * are saved in a separate request (via the designations endpoint), so the
+ * entity payload never contains them. That invariant is enforced on the
+ * form side instead.
  */
 function validateDistributionInvariants(
   data: {
     distributionMode?: "fixed" | "pct_liquid" | "pct_income" | null | undefined;
     distributionAmount?: number | null | undefined;
     distributionPercent?: number | null | undefined;
-    incomeBeneficiaryFamilyMemberId?: string | null | undefined;
-    incomeBeneficiaryExternalId?: string | null | undefined;
   },
   ctx: z.RefinementCtx,
 ): void {
   if (!data.distributionMode) return;
-
-  // XOR beneficiary
-  const bothBenes =
-    data.incomeBeneficiaryFamilyMemberId && data.incomeBeneficiaryExternalId;
-  const neitherBene =
-    !data.incomeBeneficiaryFamilyMemberId && !data.incomeBeneficiaryExternalId;
-  if (bothBenes) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["incomeBeneficiaryFamilyMemberId"],
-      message:
-        "Exactly one of incomeBeneficiaryFamilyMemberId or incomeBeneficiaryExternalId must be set when distributionMode is set",
-    });
-  }
-  if (neitherBene) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["incomeBeneficiaryFamilyMemberId"],
-      message:
-        "incomeBeneficiaryFamilyMemberId or incomeBeneficiaryExternalId is required when distributionMode is set",
-    });
-  }
 
   // Mode-amount coherence
   if (data.distributionMode === "fixed") {
@@ -112,12 +94,10 @@ const baseEntityFields = {
   trustSubType: trustSubTypeSchema.optional(),
   isIrrevocable: z.boolean().optional(),
   trustee: z.string().trim().nullish(),
-  exemptionConsumed: z.number().nonnegative().optional(),
+  trustEnds: z.enum(["client_death", "spouse_death", "survivorship"]).nullable().optional(),
   distributionMode: z.enum(["fixed", "pct_liquid", "pct_income"]).nullish(),
   distributionAmount: z.number().nonnegative().nullish(),
   distributionPercent: z.number().min(0).max(1).nullish(),
-  incomeBeneficiaryFamilyMemberId: z.string().uuid().nullish(),
-  incomeBeneficiaryExternalId: z.string().uuid().nullish(),
 };
 
 export const entityCreateSchema = z
@@ -147,17 +127,6 @@ export const entityCreateSchema = z
           message: "trustee is only allowed when entityType = 'trust'",
         });
       }
-      if (
-        data.exemptionConsumed !== undefined &&
-        data.exemptionConsumed !== 0
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["exemptionConsumed"],
-          message:
-            "exemptionConsumed must be 0 when entityType != 'trust'",
-        });
-      }
       if (data.distributionMode !== undefined && data.distributionMode !== null) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -177,20 +146,6 @@ export const entityCreateSchema = z
           code: z.ZodIssueCode.custom,
           path: ["distributionPercent"],
           message: "distributionPercent is only allowed when entityType = 'trust'",
-        });
-      }
-      if (data.incomeBeneficiaryFamilyMemberId !== undefined && data.incomeBeneficiaryFamilyMemberId !== null) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["incomeBeneficiaryFamilyMemberId"],
-          message: "incomeBeneficiaryFamilyMemberId is only allowed when entityType = 'trust'",
-        });
-      }
-      if (data.incomeBeneficiaryExternalId !== undefined && data.incomeBeneficiaryExternalId !== null) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["incomeBeneficiaryExternalId"],
-          message: "incomeBeneficiaryExternalId is only allowed when entityType = 'trust'",
         });
       }
       return;
@@ -253,8 +208,6 @@ export const entityUpdateSchema = z
       distributionMode?: "fixed" | "pct_liquid" | "pct_income" | null;
       distributionAmount?: number | null;
       distributionPercent?: number | null;
-      incomeBeneficiaryFamilyMemberId?: string | null;
-      incomeBeneficiaryExternalId?: string | null;
     };
 
     if (

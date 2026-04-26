@@ -103,9 +103,8 @@ const idgtEntity: EntitySummary = {
   distributionMode: "fixed",
   distributionAmount: 20_000,
   distributionPercent: null,
-  // Point to spouseFm so deriveBeneficiaryKind returns "household".
-  incomeBeneficiaryFamilyMemberId: "fm-spouse",
-  incomeBeneficiaryExternalId: null,
+  // Point to spouseFm so the engine routes DNI to household.
+  incomeBeneficiaries: [{ familyMemberId: "fm-spouse", householdRole: "spouse", percentage: 100 }],
 };
 
 /** Build minimal ClientData with a grantor irrevocable trust. */
@@ -183,8 +182,7 @@ describe("grantor trust distribution pass", () => {
       entity: {
         distributionMode: "fixed",
         distributionAmount: 15_000,
-        incomeBeneficiaryFamilyMemberId: null, // clear household FM
-        incomeBeneficiaryExternalId: "ext-charity",
+        incomeBeneficiaries: [{ externalBeneficiaryId: "ext-charity", percentage: 100 }],
       },
     });
     const years = runProjection(data);
@@ -378,8 +376,7 @@ describe("grantor-flip propagation through projection year loop", () => {
       distributionMode: null,
       distributionAmount: null,
       distributionPercent: null,
-      incomeBeneficiaryFamilyMemberId: null,
-      incomeBeneficiaryExternalId: null,
+      incomeBeneficiaries: [],
     };
 
     const data: ClientData = {
@@ -494,8 +491,7 @@ describe("asset-transaction sale routing for trust-owned accounts", () => {
     distributionMode: null,
     distributionAmount: null,
     distributionPercent: null,
-    incomeBeneficiaryFamilyMemberId: null,
-    incomeBeneficiaryExternalId: null,
+    incomeBeneficiaries: [],
   };
 
   // Trust-owned business asset: $5M value, $1M basis → $4M gain on full sale.

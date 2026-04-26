@@ -45,13 +45,11 @@ export interface Entity {
   trustSubType: TrustSubType | null;
   isIrrevocable: boolean | null;
   trustee: string | null;
-  exemptionConsumed: string;
+  trustEnds: "client_death" | "spouse_death" | "survivorship" | null;
   // Distribution policy (irrevocable trusts only)
   distributionMode: "fixed" | "pct_liquid" | "pct_income" | null;
   distributionAmount: number | null;
   distributionPercent: number | null;
-  incomeBeneficiaryFamilyMemberId: string | null;
-  incomeBeneficiaryExternalId: string | null;
 }
 
 export type Gift = {
@@ -88,9 +86,11 @@ export type Designation = {
   targetKind: "account" | "trust";
   accountId: string | null;
   entityId: string | null;
-  tier: Tier;
+  tier: "primary" | "contingent" | "income" | "remainder";
   familyMemberId: string | null;
   externalBeneficiaryId: string | null;
+  entityIdRef: string | null;
+  householdRole: "client" | "spouse" | null;
   percentage: number;
   sortOrder: number;
 };
@@ -378,10 +378,6 @@ export default function FamilyView({
   const [editingEntity, setEditingEntity] = useState<Entity | undefined>();
   const [deletingEntity, setDeletingEntity] = useState<Entity | null>(null);
   const [entitiesEdit, setEntitiesEdit] = useState(false);
-  const [entityDialogInitialTab, setEntityDialogInitialTab] = useState<"details" | "beneficiaries">("details");
-  // When opened via the Beneficiary Summary deep-link, the dialog is restricted
-  // to the Beneficiaries tab so zero-value fields can't overwrite real data.
-  const [entityDialogLockTab, setEntityDialogLockTab] = useState(false);
 
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [accountDialogEditing, setAccountDialogEditing] = useState<AccountFormInitial | undefined>(undefined);
@@ -671,8 +667,6 @@ export default function FamilyView({
           const ent = entities.find((e) => e.id === entityId);
           if (!ent) return;
           setEditingEntity(ent);
-          setEntityDialogInitialTab("beneficiaries");
-          setEntityDialogLockTab(true);
           setEntityDialogOpen(true);
         }}
       />
@@ -699,17 +693,19 @@ export default function FamilyView({
           key={editingEntity?.id ?? "new"}
           clientId={clientId}
           open={entityDialogOpen}
-          onOpenChange={(open) => {
-            setEntityDialogOpen(open);
-            if (!open) {
-              setEntityDialogInitialTab("details");
-              setEntityDialogLockTab(false);
-            }
-          }}
+          onOpenChange={setEntityDialogOpen}
           editing={editingEntity}
           createKind={entityCreateKind}
-          initialTab={entityDialogInitialTab}
-          lockTab={entityDialogLockTab}
+          household={{
+            client: { firstName: primary.firstName },
+            spouse: primary.spouseName ? { firstName: primary.spouseName } : null,
+          }}
+          members={members}
+          externals={externals}
+          otherEntities={entities
+            .filter((e) => e.id !== editingEntity?.id)
+            .map((e) => ({ id: e.id, name: e.name }))}
+          initialDesignations={designations}
           onSaved={(e, mode) => {
             if (mode === "create") setEntities((prev) => [...prev, e]);
             else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));

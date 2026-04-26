@@ -177,8 +177,7 @@ describe("Trust tax — edge cases", () => {
       distributionMode: "pct_income",
       distributionAmount: null,
       distributionPercent: 0.5,
-      incomeBeneficiaryFamilyMemberId: "fm-spouse",
-      incomeBeneficiaryExternalId: null,
+      incomeBeneficiaries: [{ familyMemberId: "fm-spouse", householdRole: "spouse", percentage: 100 }],
     };
     const data: ClientData = {
       client,
@@ -239,8 +238,7 @@ describe("Trust tax — edge cases", () => {
       distributionMode: "fixed",
       distributionAmount: 1_000_000,
       distributionPercent: null,
-      incomeBeneficiaryFamilyMemberId: "fm-spouse",
-      incomeBeneficiaryExternalId: null,
+      incomeBeneficiaries: [{ familyMemberId: "fm-spouse", householdRole: "spouse", percentage: 100 }],
     };
     const data: ClientData = {
       client,
@@ -318,8 +316,7 @@ describe("Trust tax — edge cases", () => {
       distributionMode: "pct_income",
       distributionAmount: null,
       distributionPercent: 1.0,
-      incomeBeneficiaryFamilyMemberId: null,
-      incomeBeneficiaryExternalId: "child-ext-id",
+      incomeBeneficiaries: [{ externalBeneficiaryId: "child-ext-id", percentage: 100 }],
     };
     const data: ClientData = {
       client,

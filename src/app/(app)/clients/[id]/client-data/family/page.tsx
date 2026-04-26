@@ -86,12 +86,10 @@ export default async function FamilyPage({ params }: PageProps) {
     trustSubType: e.trustSubType ?? null,
     isIrrevocable: e.isIrrevocable ?? null,
     trustee: e.trustee ?? null,
-    exemptionConsumed: String(e.exemptionConsumed ?? "0"),
+    trustEnds: (e.trustEnds as "client_death" | "spouse_death" | "survivorship" | null) ?? null,
     distributionMode: (e.distributionMode as "fixed" | "pct_liquid" | "pct_income" | null) ?? null,
     distributionAmount: e.distributionAmount != null ? parseFloat(String(e.distributionAmount)) : null,
     distributionPercent: e.distributionPercent != null ? parseFloat(String(e.distributionPercent)) : null,
-    incomeBeneficiaryFamilyMemberId: e.incomeBeneficiaryFamilyMemberId ?? null,
-    incomeBeneficiaryExternalId: e.incomeBeneficiaryExternalId ?? null,
   }));
 
   const externals: ExternalBeneficiary[] = externalRows.map((e) => ({
@@ -117,6 +115,8 @@ export default async function FamilyPage({ params }: PageProps) {
     tier: d.tier,
     familyMemberId: d.familyMemberId,
     externalBeneficiaryId: d.externalBeneficiaryId,
+    entityIdRef: d.entityIdRef ?? null,
+    householdRole: (d.householdRole as "client" | "spouse" | null) ?? null,
     percentage: parseFloat(d.percentage),
     sortOrder: d.sortOrder,
   }));

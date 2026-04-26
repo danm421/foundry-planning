@@ -1,51 +1,39 @@
-import type { DistributionPolicy, DistributionResult } from "./types";
+import type { EntitySummary } from "../types";
 
-export interface RouteDniInputs {
-  distributionResult: DistributionResult;
-  policy: DistributionPolicy;
-  outOfHouseholdRate: number;
-}
-
-export interface RouteDniResult {
-  householdIncomeDelta: {
-    ordinary: number;
-    dividends: number;
-    taxExempt: number;
-  };
-  estimatedBeneficiaryTax: number;
+export interface DniRoutingResult {
+  toFamilyMember: Record<string, number>;
+  toExternal: Record<string, number>;
+  toHousehold: number;
 }
 
 /**
- * Route DNI to the correct tax bucket. Household beneficiary → additions
- * to the household 1040 (pass-through). Out-of-household → flat-rate
- * informational line (tax-exempt DNI is excluded from the flat-rate base;
- * it's exempt all the way through).
+ * Route DNI across the trust's income-beneficiary list by percentage.
+ *
+ * - `householdRole` entries ("client" | "spouse") add to `toHousehold` so the
+ *   caller can fold them into the household 1040 pass-through buckets.
+ * - `familyMemberId` entries go into `toFamilyMember` keyed by id.
+ * - `externalBeneficiaryId` entries go into `toExternal` keyed by id.
+ * - `entityId` entries on income beneficiaries are disallowed by the UI but
+ *   silently ignored here.
  */
-export function routeDni(inp: RouteDniInputs): RouteDniResult {
-  const { dniOrdinary, dniDividends, dniTaxExempt } = inp.distributionResult;
+export function routeDni(
+  incomeBeneficiaries: EntitySummary["incomeBeneficiaries"],
+  dniAmount: number,
+): DniRoutingResult {
+  const result: DniRoutingResult = { toFamilyMember: {}, toExternal: {}, toHousehold: 0 };
+  const list = incomeBeneficiaries ?? [];
+  if (list.length === 0 || dniAmount <= 0) return result;
 
-  if (inp.policy.mode === null || inp.policy.beneficiaryKind === null) {
-    return {
-      householdIncomeDelta: { ordinary: 0, dividends: 0, taxExempt: 0 },
-      estimatedBeneficiaryTax: 0,
-    };
+  for (const b of list) {
+    const share = (dniAmount * b.percentage) / 100;
+    if (b.householdRole === "client" || b.householdRole === "spouse") {
+      result.toHousehold += share;
+    } else if (b.familyMemberId) {
+      result.toFamilyMember[b.familyMemberId] = (result.toFamilyMember[b.familyMemberId] ?? 0) + share;
+    } else if (b.externalBeneficiaryId) {
+      result.toExternal[b.externalBeneficiaryId] = (result.toExternal[b.externalBeneficiaryId] ?? 0) + share;
+    }
+    // entityId on income beneficiaries is disallowed by UI but ignored silently if present
   }
-
-  if (inp.policy.beneficiaryKind === "household") {
-    return {
-      householdIncomeDelta: {
-        ordinary: dniOrdinary,
-        dividends: dniDividends,
-        taxExempt: dniTaxExempt,
-      },
-      estimatedBeneficiaryTax: 0,
-    };
-  }
-
-  // out-of-household
-  const taxableDni = dniOrdinary + dniDividends;
-  return {
-    householdIncomeDelta: { ordinary: 0, dividends: 0, taxExempt: 0 },
-    estimatedBeneficiaryTax: taxableDni * inp.outOfHouseholdRate,
-  };
+  return result;
 }

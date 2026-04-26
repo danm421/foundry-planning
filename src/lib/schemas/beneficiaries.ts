@@ -19,17 +19,24 @@ export const externalBeneficiaryUpdateSchema =
 
 export const beneficiaryDesignationSchema = z
   .object({
-    tier: z.enum(["primary", "contingent"]),
+    tier: z.enum(["primary", "contingent", "income", "remainder"]),
     percentage: z.number().gt(0).lte(100),
-    familyMemberId: z.string().regex(uuidRegex, "Invalid UUID format").optional(),
-    externalBeneficiaryId: z.string().regex(uuidRegex, "Invalid UUID format").optional(),
+    familyMemberId: z.string().regex(uuidRegex, "Invalid UUID format").nullable().optional(),
+    externalBeneficiaryId: z.string().regex(uuidRegex, "Invalid UUID format").nullable().optional(),
+    entityIdRef: z.string().uuid().nullable().optional(),
+    householdRole: z.enum(["client", "spouse"]).nullable().optional(),
     sortOrder: z.number().int().nonnegative().optional().default(0),
   })
   .refine(
-    (d) =>
-      (!!d.familyMemberId && !d.externalBeneficiaryId) ||
-      (!d.familyMemberId && !!d.externalBeneficiaryId),
-    { message: "Exactly one of familyMemberId or externalBeneficiaryId must be set." },
+    (d) => {
+      const sources = [d.familyMemberId, d.externalBeneficiaryId, d.entityIdRef, d.householdRole];
+      const nonNull = sources.filter((s) => s != null && s !== "");
+      return nonNull.length === 1;
+    },
+    {
+      message:
+        "Exactly one of familyMemberId, externalBeneficiaryId, entityIdRef, or householdRole must be set.",
+    },
   );
 
 export const beneficiarySetSchema = z
@@ -38,8 +45,10 @@ export const beneficiarySetSchema = z
     const inputs: DesignationInput[] = list.map((d) => ({
       tier: d.tier,
       percentage: d.percentage,
-      familyMemberId: d.familyMemberId,
-      externalBeneficiaryId: d.externalBeneficiaryId,
+      familyMemberId: d.familyMemberId ?? undefined,
+      externalBeneficiaryId: d.externalBeneficiaryId ?? undefined,
+      entityIdRef: d.entityIdRef,
+      householdRole: d.householdRole,
     }));
     const r = validateBeneficiarySplit(inputs);
     if (!r.ok) {

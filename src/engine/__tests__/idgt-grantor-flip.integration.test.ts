@@ -196,8 +196,7 @@ describe("IDGT grantor flip", () => {
       distributionMode: null, // full accumulation
       distributionAmount: null,
       distributionPercent: null,
-      incomeBeneficiaryFamilyMemberId: null,
-      incomeBeneficiaryExternalId: null,
+      incomeBeneficiaries: [],
     };
 
     const data: ClientData = {

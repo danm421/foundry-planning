@@ -178,8 +178,7 @@ describe("Trust-owned business sale", () => {
       distributionMode: null, // accumulate so the gain hits the trust directly
       distributionAmount: null,
       distributionPercent: null,
-      incomeBeneficiaryFamilyMemberId: null,
-      incomeBeneficiaryExternalId: null,
+      incomeBeneficiaries: [],
     };
 
     const data: ClientData = {

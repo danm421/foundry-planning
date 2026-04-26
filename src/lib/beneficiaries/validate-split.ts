@@ -1,15 +1,17 @@
-export type Tier = "primary" | "contingent";
+export type Tier = "primary" | "contingent" | "income" | "remainder";
 
 export type DesignationInput = {
   tier: Tier;
   percentage: number;
   familyMemberId?: string;
   externalBeneficiaryId?: string;
+  entityIdRef?: string | null;
+  householdRole?: string | null;
 };
 
 type Result = { ok: true } | { ok: false; errors: string[] };
 
-const TIERS: Tier[] = ["primary", "contingent"];
+const TIERS: Tier[] = ["primary", "contingent", "income", "remainder"];
 const SUM_TOLERANCE = 0.01;
 
 export function validateBeneficiarySplit(ds: DesignationInput[]): Result {
@@ -33,7 +35,11 @@ export function validateBeneficiarySplit(ds: DesignationInput[]): Result {
         ? `fm:${d.familyMemberId}`
         : d.externalBeneficiaryId
           ? `ext:${d.externalBeneficiaryId}`
-          : null;
+          : d.entityIdRef
+            ? `entity:${d.entityIdRef}`
+            : d.householdRole
+              ? `role:${d.householdRole}`
+              : null;
       if (key === null) continue; // Zod layer enforces "exactly one" ref.
       if (seen.has(key)) {
         errors.push(`Duplicate beneficiary in ${tier} tier.`);
