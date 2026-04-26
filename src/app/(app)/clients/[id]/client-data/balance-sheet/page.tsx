@@ -17,14 +17,18 @@ import { getOrgId } from "@/lib/db-helpers";
 import BalanceSheetView, { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
 import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
+import ClientDataPageShell from "@/components/client-data-page-shell";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function BalanceSheetPage({ params }: PageProps) {
+export default async function BalanceSheetPage({ params, searchParams }: PageProps) {
   const firmId = await getOrgId();
   const { id } = await params;
+  const sp = await searchParams;
 
   const [client] = await db
     .select()
@@ -40,19 +44,42 @@ export default async function BalanceSheetPage({ params }: PageProps) {
 
   if (!scenario) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-        No base case scenario found.
-      </div>
+      <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+          No base case scenario found.
+        </div>
+      </ClientDataPageShell>
     );
   }
 
-  const [accountRows, liabilityRows, entityRows, settingsRows, portfolioRows, allocationRows, assetClassRows] = await Promise.all([
+  const [
+    accountMetaRows,
+    liabilityMetaRows,
+    entityRows,
+    settingsRows,
+    portfolioRows,
+    allocationRows,
+    assetClassRows,
+    { effectiveTree },
+  ] = await Promise.all([
     db
-      .select()
+      .select({
+        id: accounts.id,
+        growthSource: accounts.growthSource,
+        modelPortfolioId: accounts.modelPortfolioId,
+        turnoverPct: accounts.turnoverPct,
+        overridePctOi: accounts.overridePctOi,
+        overridePctLtCg: accounts.overridePctLtCg,
+        overridePctQdiv: accounts.overridePctQdiv,
+        overridePctTaxExempt: accounts.overridePctTaxExempt,
+      })
       .from(accounts)
       .where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
     db
-      .select()
+      .select({
+        id: liabilities.id,
+        termUnit: liabilities.termUnit,
+      })
       .from(liabilities)
       .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id))),
     db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
@@ -63,7 +90,11 @@ export default async function BalanceSheetPage({ params }: PageProps) {
     db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
     db.select().from(modelPortfolioAllocations),
     db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
+    loadEffectiveTree(id, firmId, sp.scenario ?? "base", {}),
   ]);
+
+  const accountMetaById = new Map(accountMetaRows.map((r) => [r.id, r]));
+  const liabilityMetaById = new Map(liabilityMetaRows.map((r) => [r.id, r]));
 
   // Compute blended returns for each model portfolio
   const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
@@ -121,43 +152,50 @@ export default async function BalanceSheetPage({ params }: PageProps) {
   const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
   const milestones = buildClientMilestones(client, planStartYear, planEndYear);
 
-  const accountProps: AccountRow[] = accountRows.map((a) => ({
-    id: a.id,
-    name: a.name,
-    category: a.category as AccountRow["category"],
-    subType: a.subType,
-    owner: a.owner,
-    value: String(a.value),
-    basis: String(a.basis),
-    growthRate: a.growthRate == null ? null : String(a.growthRate),
-    rmdEnabled: a.rmdEnabled ?? null,
-    ownerEntityId: a.ownerEntityId ?? null,
-    growthSource: a.growthSource ?? "default",
-    modelPortfolioId: a.modelPortfolioId ?? null,
-    turnoverPct: a.turnoverPct == null ? null : String(a.turnoverPct),
-    overridePctOi: a.overridePctOi == null ? null : String(a.overridePctOi),
-    overridePctLtCg: a.overridePctLtCg == null ? null : String(a.overridePctLtCg),
-    overridePctQdiv: a.overridePctQdiv == null ? null : String(a.overridePctQdiv),
-    overridePctTaxExempt: a.overridePctTaxExempt == null ? null : String(a.overridePctTaxExempt),
-    isDefaultChecking: a.isDefaultChecking ?? false,
-  }));
+  const accountProps: AccountRow[] = effectiveTree.accounts.map((a) => {
+    const meta = accountMetaById.get(a.id);
+    return {
+      id: a.id,
+      name: a.name,
+      category: a.category as AccountRow["category"],
+      subType: a.subType,
+      owner: a.owner,
+      value: String(a.value),
+      basis: String(a.basis),
+      growthRate: a.growthRate == null ? null : String(a.growthRate),
+      rmdEnabled: a.rmdEnabled ?? null,
+      ownerEntityId: a.ownerEntityId ?? null,
+      growthSource: meta?.growthSource ?? "default",
+      modelPortfolioId: meta?.modelPortfolioId ?? null,
+      turnoverPct: meta?.turnoverPct == null ? null : String(meta.turnoverPct),
+      overridePctOi: meta?.overridePctOi == null ? null : String(meta.overridePctOi),
+      overridePctLtCg: meta?.overridePctLtCg == null ? null : String(meta.overridePctLtCg),
+      overridePctQdiv: meta?.overridePctQdiv == null ? null : String(meta.overridePctQdiv),
+      overridePctTaxExempt:
+        meta?.overridePctTaxExempt == null ? null : String(meta.overridePctTaxExempt),
+      isDefaultChecking: a.isDefaultChecking ?? false,
+    };
+  });
 
-  const liabilityProps: LiabilityRow[] = liabilityRows.map((l) => ({
-    id: l.id,
-    name: l.name,
-    balance: String(l.balance),
-    interestRate: String(l.interestRate),
-    monthlyPayment: String(l.monthlyPayment),
-    startYear: l.startYear,
-    startMonth: l.startMonth,
-    termMonths: l.termMonths,
-    termUnit: l.termUnit,
-    balanceAsOfMonth: l.balanceAsOfMonth ?? null,
-    balanceAsOfYear: l.balanceAsOfYear ?? null,
-    linkedPropertyId: l.linkedPropertyId ?? null,
-    ownerEntityId: l.ownerEntityId ?? null,
-    isInterestDeductible: l.isInterestDeductible,
-  }));
+  const liabilityProps: LiabilityRow[] = effectiveTree.liabilities.map((l) => {
+    const meta = liabilityMetaById.get(l.id);
+    return {
+      id: l.id,
+      name: l.name,
+      balance: String(l.balance),
+      interestRate: String(l.interestRate),
+      monthlyPayment: String(l.monthlyPayment),
+      startYear: l.startYear,
+      startMonth: l.startMonth,
+      termMonths: l.termMonths,
+      termUnit: meta?.termUnit ?? "annual",
+      balanceAsOfMonth: l.balanceAsOfMonth ?? null,
+      balanceAsOfYear: l.balanceAsOfYear ?? null,
+      linkedPropertyId: l.linkedPropertyId ?? null,
+      ownerEntityId: l.ownerEntityId ?? null,
+      isInterestDeductible: l.isInterestDeductible ?? false,
+    };
+  });
 
   const entityOptions = entityRows.map((e) => ({
     id: e.id,
@@ -205,24 +243,26 @@ export default async function BalanceSheetPage({ params }: PageProps) {
       };
 
   return (
-    <BalanceSheetView
-      clientId={id}
-      accounts={accountProps}
-      liabilities={liabilityProps}
-      entities={entityOptions}
-      categoryDefaults={categoryDefaults}
-      modelPortfolios={modelPortfolioOptions}
-      ownerNames={{
-        clientName: `${client.firstName} ${client.lastName}`,
-        spouseName: client.spouseName
-          ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
-          : null,
-      }}
-      assetClasses={assetClassOptions}
-      portfolioAllocationsMap={portfolioAllocationsMap}
-      categoryDefaultSources={categoryDefaultSources}
-      milestones={milestones}
-      resolvedInflationRate={resolvedInflationRate}
-    />
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <BalanceSheetView
+        clientId={id}
+        accounts={accountProps}
+        liabilities={liabilityProps}
+        entities={entityOptions}
+        categoryDefaults={categoryDefaults}
+        modelPortfolios={modelPortfolioOptions}
+        ownerNames={{
+          clientName: `${client.firstName} ${client.lastName}`,
+          spouseName: client.spouseName
+            ? `${client.spouseName} ${client.spouseLastName ?? client.lastName}`.trim()
+            : null,
+        }}
+        assetClasses={assetClassOptions}
+        portfolioAllocationsMap={portfolioAllocationsMap}
+        categoryDefaultSources={categoryDefaultSources}
+        milestones={milestones}
+        resolvedInflationRate={resolvedInflationRate}
+      />
+    </ClientDataPageShell>
   );
 }

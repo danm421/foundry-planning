@@ -4,16 +4,12 @@ import {
   clients,
   scenarios,
   planSettings,
-  accounts,
   withdrawalStrategies,
   modelPortfolios,
   modelPortfolioAllocations,
   assetClasses,
   clientCmaOverrides,
   clientDeductions,
-  savingsRules,
-  expenses,
-  liabilities,
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -21,14 +17,18 @@ import AssumptionsClient from "./assumptions-client";
 import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import { amortizeLiability } from "@/engine/liabilities";
+import ClientDataPageShell from "@/components/client-data-page-shell";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function AssumptionsPage({ params }: PageProps) {
+export default async function AssumptionsPage({ params, searchParams }: PageProps) {
   const firmId = await getOrgId();
   const { id } = await params;
+  const sp = await searchParams;
 
   const [client] = await db
     .select()
@@ -44,32 +44,27 @@ export default async function AssumptionsPage({ params }: PageProps) {
 
   if (!scenario) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-        No base case scenario found.
-      </div>
+      <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+          No base case scenario found.
+        </div>
+      </ClientDataPageShell>
     );
   }
 
   const [
     settingsRows,
-    accountRows,
     withdrawalRows,
     portfolioRows,
     allocationRows,
     assetClassRows,
     deductionRows,
-    savingsRows,
-    expenseRows,
-    liabilityRows,
+    { effectiveTree },
   ] = await Promise.all([
     db
       .select()
       .from(planSettings)
       .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
-    db
-      .select()
-      .from(accounts)
-      .where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
     db
       .select()
       .from(withdrawalStrategies)
@@ -86,26 +81,22 @@ export default async function AssumptionsPage({ params }: PageProps) {
       .select()
       .from(clientDeductions)
       .where(and(eq(clientDeductions.clientId, id), eq(clientDeductions.scenarioId, scenario.id))),
-    db
-      .select()
-      .from(savingsRules)
-      .where(and(eq(savingsRules.clientId, id), eq(savingsRules.scenarioId, scenario.id))),
-    db
-      .select()
-      .from(expenses)
-      .where(and(eq(expenses.clientId, id), eq(expenses.scenarioId, scenario.id))),
-    db
-      .select()
-      .from(liabilities)
-      .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id))),
+    loadEffectiveTree(id, firmId, sp.scenario ?? "base", {}),
   ]);
+
+  const accountRows = effectiveTree.accounts;
+  const savingsRows = effectiveTree.savingsRules;
+  const expenseRows = effectiveTree.expenses;
+  const liabilityRows = effectiveTree.liabilities;
 
   const settings = settingsRows[0];
   if (!settings) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-        No plan settings found.
-      </div>
+      <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+          No plan settings found.
+        </div>
+      </ClientDataPageShell>
     );
   }
 
@@ -185,7 +176,7 @@ export default async function AssumptionsPage({ params }: PageProps) {
         id: r.id,
         accountName: acct.name,
         subType: acct.subType ?? "",
-        annualAmount: parseFloat(r.annualAmount),
+        annualAmount: r.annualAmount,
         owner: acct.owner,
         startYear: r.startYear,
         endYear: r.endYear,
@@ -193,31 +184,18 @@ export default async function AssumptionsPage({ params }: PageProps) {
     });
 
   const expenseDeductionRows = expenseRows
-    .filter((e) => e.deductionType !== null)
+    .filter((e) => e.deductionType != null)
     .map((e) => ({
       id: e.id,
       name: e.name,
       deductionType: e.deductionType!,
-      annualAmount: parseFloat(e.annualAmount),
+      annualAmount: e.annualAmount,
     }));
 
   const mortgageRows = liabilityRows
     .filter((l) => l.isInterestDeductible)
     .map((l) => {
-      const result = amortizeLiability(
-        {
-          id: l.id,
-          name: l.name,
-          balance: parseFloat(l.balance),
-          interestRate: parseFloat(l.interestRate),
-          monthlyPayment: parseFloat(l.monthlyPayment),
-          startYear: l.startYear,
-          startMonth: l.startMonth,
-          termMonths: l.termMonths,
-          extraPayments: [],
-        },
-        currentYear,
-      );
+      const result = amortizeLiability(l, currentYear);
       return {
         id: l.id,
         name: l.name,
@@ -227,10 +205,10 @@ export default async function AssumptionsPage({ params }: PageProps) {
     .filter((r) => r.estimatedInterest > 0);
 
   const propertyTaxRows = accountRows
-    .filter((a) => parseFloat(a.annualPropertyTax) > 0)
+    .filter((a) => (a.annualPropertyTax ?? 0) > 0)
     .map((a) => {
-      const baseTax = parseFloat(a.annualPropertyTax);
-      const growthRate = parseFloat(a.propertyTaxGrowthRate);
+      const baseTax = a.annualPropertyTax ?? 0;
+      const growthRate = a.propertyTaxGrowthRate ?? 0;
       const currentYearInflated = baseTax * Math.pow(1 + growthRate, 0);
       return {
         id: a.id,
@@ -254,15 +232,16 @@ export default async function AssumptionsPage({ params }: PageProps) {
   }));
 
   return (
-    <div className="max-w-3xl space-y-6">
-      <div>
-        <h2 className="text-xl font-bold text-gray-100">Assumptions</h2>
-        <p className="mt-1 text-sm text-gray-300">
-          Plan horizon, tax rates, growth assumptions, and withdrawal order.
-        </p>
-      </div>
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <div className="max-w-3xl space-y-6">
+        <div>
+          <h2 className="text-xl font-bold text-gray-100">Assumptions</h2>
+          <p className="mt-1 text-sm text-gray-300">
+            Plan horizon, tax rates, growth assumptions, and withdrawal order.
+          </p>
+        </div>
 
-      <AssumptionsClient
+        <AssumptionsClient
         clientId={id}
         settings={{
           flatFederalRate: String(settings.flatFederalRate),
@@ -315,6 +294,7 @@ export default async function AssumptionsPage({ params }: PageProps) {
           saltCap,
         }}
       />
-    </div>
+      </div>
+    </ClientDataPageShell>
   );
 }

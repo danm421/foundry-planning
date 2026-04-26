@@ -3,16 +3,21 @@ import type { MonteCarloResult } from "@/engine/monteCarlo/run";
 import { runMonteCarlo } from "@/engine/monteCarlo/run";
 import { createReturnEngine } from "@/engine/monteCarlo/returns";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import type { ToggleState } from "@/engine/scenario/types";
 import { loadMonteCarloData } from "./load-monte-carlo-data";
 
 export const getMonteCarloResult = cache(
   async (
     clientId: string,
     firmId: string,
+    scenarioId: string | "base" = "base",
+    toggleState: ToggleState = {},
   ): Promise<MonteCarloResult | null> => {
     try {
       const [clientData, mcPayload] = await Promise.all([
-        loadEffectiveTree(clientId, firmId, "base", {}).then((r) => r.effectiveTree),
+        loadEffectiveTree(clientId, firmId, scenarioId, toggleState).then(
+          (r) => r.effectiveTree,
+        ),
         loadMonteCarloData(clientId, firmId),
       ]);
       const returnEngine = createReturnEngine({

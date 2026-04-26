@@ -4,13 +4,16 @@ import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { redirect } from "next/navigation";
 import ImportPageClient from "./import-client";
+import ClientDataPageShell from "@/components/client-data-page-shell";
 
 interface ImportPageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function ImportPage({ params }: ImportPageProps) {
+export default async function ImportPage({ params, searchParams }: ImportPageProps) {
   const { id } = await params;
+  const sp = await searchParams;
   const firmId = await getOrgId();
 
   const [client] = await db
@@ -47,11 +50,13 @@ export default async function ImportPage({ params }: ImportPageProps) {
   const currentYear = new Date().getFullYear();
 
   return (
-    <ImportPageClient
-      clientId={id}
-      existingAccountNames={existingAccounts.map((a) => a.name)}
-      defaultStartYear={settings?.planStartYear ?? currentYear}
-      defaultEndYear={settings?.planEndYear ?? currentYear + 30}
-    />
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <ImportPageClient
+        clientId={id}
+        existingAccountNames={existingAccounts.map((a) => a.name)}
+        defaultStartYear={settings?.planStartYear ?? currentYear}
+        defaultEndYear={settings?.planEndYear ?? currentYear + 30}
+      />
+    </ClientDataPageShell>
   );
 }

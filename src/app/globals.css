@@ -108,3 +108,15 @@ body {
     transform: none !important;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Scenario mode — amber-muted left border on editable inputs          */
+/* Applied via <ScenarioInputStyling> context when a non-base scenario */
+/* is active. Subtle visual cue that edits target a scenario overlay,  */
+/* not the base case.                                                  */
+/* ------------------------------------------------------------------ */
+
+.scenario-editable {
+  border-left-width: 2px;
+  border-left-color: #7a5b29;
+}

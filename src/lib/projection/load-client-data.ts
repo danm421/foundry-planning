@@ -506,6 +506,9 @@ export const loadClientData = cache(
       claimingAgeMonths: i.claimingAgeMonths ?? 0,
       claimingAgeMode: (i.claimingAgeMode as "years" | "fra" | "at_retirement" | null) ?? undefined,
       scheduleOverrides: incomeOverrideMap.get(i.id),
+      startYearRef: i.startYearRef ?? null,
+      endYearRef: i.endYearRef ?? null,
+      growthSource: i.growthSource ?? null,
     }));
 
     const mappedExpenses = expenseRows.map((e) => ({
@@ -521,6 +524,9 @@ export const loadClientData = cache(
       inflationStartYear: e.inflationStartYear ?? undefined,
       deductionType: e.deductionType ?? undefined,
       scheduleOverrides: expenseOverrideMap.get(e.id),
+      startYearRef: e.startYearRef ?? null,
+      endYearRef: e.endYearRef ?? null,
+      growthSource: e.growthSource ?? null,
     }));
 
     // Synthesize life-insurance premium expenses and merge with the mapped list.
@@ -581,6 +587,9 @@ export const loadClientData = cache(
       employerMatchAmount:
         s.employerMatchAmount != null ? parseFloat(s.employerMatchAmount) : undefined,
       scheduleOverrides: savingsOverrideMap.get(s.id),
+      startYearRef: s.startYearRef ?? null,
+      endYearRef: s.endYearRef ?? null,
+      growthSource: s.growthSource ?? null,
     }));
 
     const mappedWithdrawalStrategy = withdrawalRows.map((w) => ({
@@ -689,6 +698,8 @@ export const loadClientData = cache(
         endYear: t.endYear ?? undefined,
         growthRate: parseFloat(t.growthRate),
         schedules,
+        startYearRef: t.startYearRef ?? null,
+        endYearRef: t.endYearRef ?? null,
       };
     });
 

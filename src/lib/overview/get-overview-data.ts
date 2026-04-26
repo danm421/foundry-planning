@@ -11,6 +11,7 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
 import { buildTimeline } from "@/lib/timeline/build-timeline";
 import type { ProjectionYear } from "@/engine";
+import type { ToggleState } from "@/engine/scenario/types";
 
 const LIQUID_CATEGORY_EXCLUDE = new Set([
   "real_estate",
@@ -25,7 +26,12 @@ export type OverviewAlertInputs = {
   projectionError: string | null;
 };
 
-export async function getOverviewData(clientId: string, firmId: string) {
+export async function getOverviewData(
+  clientId: string,
+  firmId: string,
+  scenarioId: string | "base" = "base",
+  toggleState: ToggleState = {},
+) {
   const [client] = await db
     .select()
     .from(clients)
@@ -80,7 +86,12 @@ export async function getOverviewData(clientId: string, firmId: string) {
   let projectionError: string | null = null;
   let clientData;
   try {
-    ({ effectiveTree: clientData } = await loadEffectiveTree(clientId, firmId, "base", {}));
+    ({ effectiveTree: clientData } = await loadEffectiveTree(
+      clientId,
+      firmId,
+      scenarioId,
+      toggleState,
+    ));
     projection = runProjection(clientData);
   } catch (err) {
     if (err instanceof ClientNotFoundError) throw err;

@@ -4,11 +4,13 @@ import { getMonteCarloResult } from "@/lib/projection/get-monte-carlo-result";
 export async function MonteCarloKpiSlot({
   clientId,
   firmId,
+  scenarioId = "base",
 }: {
   clientId: string;
   firmId: string;
+  scenarioId?: string | "base";
 }) {
-  const result = await getMonteCarloResult(clientId, firmId);
+  const result = await getMonteCarloResult(clientId, firmId, scenarioId);
   return (
     <KpiCard
       href={`/clients/${clientId}/monte-carlo`}

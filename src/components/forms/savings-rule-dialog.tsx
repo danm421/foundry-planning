@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import GrowthSourceRadio from "./growth-source-radio";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import ScheduleTab from "@/components/schedule-tab";
@@ -112,6 +113,7 @@ export default function SavingsRuleDialog({
   const [error, setError] = useState<string | null>(null);
   const currentYear = new Date().getFullYear();
   const isEdit = Boolean(editing);
+  const writer = useScenarioWriter(clientId);
   const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
     editing?.growthSource === "inflation" ? "inflation" : "custom"
   );
@@ -214,24 +216,62 @@ export default function SavingsRuleDialog({
     };
 
     try {
-      const url = isEdit
-        ? `/api/clients/${clientId}/savings-rules/${editing!.id}`
-        : `/api/clients/${clientId}/savings-rules`;
-      const res = await fetch(url, {
-        method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      // Mint the new id up-front so we can pass it to the writer's `entity`
+      // payload (the unified route requires `entity.id`) and still use the
+      // same id when synthesizing the optimistic row in scenario mode.
+      const newRuleId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `tmp-${Date.now()}`;
+
+      const res = isEdit
+        ? await writer.submit(
+            {
+              op: "edit",
+              targetKind: "savings_rule",
+              targetId: editing!.id,
+              desiredFields: body,
+            },
+            {
+              url: `/api/clients/${clientId}/savings-rules/${editing!.id}`,
+              method: "PUT",
+              body,
+            },
+          )
+        : await writer.submit(
+            {
+              op: "add",
+              targetKind: "savings_rule",
+              entity: { id: newRuleId, ...body },
+            },
+            {
+              url: `/api/clients/${clientId}/savings-rules`,
+              method: "POST",
+              body,
+            },
+          );
 
       if (!res.ok) {
         const json = await res.json();
         throw new Error(json.error ?? "Failed to save savings rule");
       }
 
-      const saved = (await res.json()) as SavingsRuleRow;
+      // Base mode returns the saved row; scenario mode returns { ok, targetId }.
+      // For the optimistic onSaved callback, synthesize a SavingsRuleRow from
+      // the body when in scenario mode — router.refresh() (run by the writer)
+      // reloads canonical state shortly after.
+      const saved: SavingsRuleRow = writer.scenarioActive
+        ? ({
+            id: isEdit ? editing!.id : newRuleId,
+            ...body,
+            startYear: Number(body.startYear),
+            endYear: Number(body.endYear),
+          } as unknown as SavingsRuleRow)
+        : ((await res.json()) as SavingsRuleRow);
 
       // On create: if a schedule was staged, persist it now that we have the ID.
-      if (!isEdit && stagedSchedule.length > 0) {
+      // Schedule overrides are nested and not in v1 scenario scope — base mode only.
+      if (!isEdit && stagedSchedule.length > 0 && !writer.scenarioActive) {
         await fetch(`/api/clients/${clientId}/savings-rules/${saved.id}/schedule`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },

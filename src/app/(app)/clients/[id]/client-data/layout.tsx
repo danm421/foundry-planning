@@ -5,7 +5,10 @@ interface ClientDataLayoutProps {
   params: Promise<{ id: string }>;
 }
 
-export default async function ClientDataLayout({ children, params }: ClientDataLayoutProps) {
+export default async function ClientDataLayout({
+  children,
+  params,
+}: ClientDataLayoutProps) {
   const { id } = await params;
 
   return (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, FormEvent } from "react";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
@@ -49,6 +50,7 @@ export function AddDeductionForm({
   clientFirstName,
   spouseFirstName,
 }: AddDeductionFormProps) {
+  const writer = useScenarioWriter(clientId);
   const [type, setType] = useState<DeductionRow["type"]>(existing?.type ?? "charitable");
   const [name, setName] = useState(existing?.name ?? "");
   const [owner, setOwner] = useState<DeductionRow["owner"]>(existing?.owner ?? "joint");
@@ -80,16 +82,37 @@ export function AddDeductionForm({
         endYearRef,
       };
 
-      const url = existing
-        ? `/api/clients/${clientId}/deductions/${existing.id}`
-        : `/api/clients/${clientId}/deductions`;
-      const method = existing ? "PUT" : "POST";
+      const newDeductionId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `tmp-${Date.now()}`;
 
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const res = existing
+        ? await writer.submit(
+            {
+              op: "edit",
+              targetKind: "client_deduction",
+              targetId: existing.id,
+              desiredFields: body,
+            },
+            {
+              url: `/api/clients/${clientId}/deductions/${existing.id}`,
+              method: "PUT",
+              body,
+            },
+          )
+        : await writer.submit(
+            {
+              op: "add",
+              targetKind: "client_deduction",
+              entity: { id: newDeductionId, ...body },
+            },
+            {
+              url: `/api/clients/${clientId}/deductions`,
+              method: "POST",
+              body,
+            },
+          );
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

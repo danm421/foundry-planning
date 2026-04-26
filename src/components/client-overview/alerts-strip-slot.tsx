@@ -6,15 +6,17 @@ import type { OverviewAlertInputs } from "@/lib/overview/get-overview-data";
 export async function AlertsStripSlot({
   clientId,
   firmId,
+  scenarioId = "base",
   alertInputs,
   clientMeta,
 }: {
   clientId: string;
   firmId: string;
+  scenarioId?: string | "base";
   alertInputs: OverviewAlertInputs;
   clientMeta: { id: string; updatedAt: Date | string };
 }) {
-  const mc = await getMonteCarloResult(clientId, firmId);
+  const mc = await getMonteCarloResult(clientId, firmId, scenarioId);
 
   const alerts: Alert[] = computeAlerts(clientMeta, {
     monteCarloSuccess: mc?.successRate ?? null,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ReportHeader } from "./monte-carlo/report-header";
 import { KpiBand } from "./monte-carlo/kpi-band";
 import { FanChart } from "./monte-carlo/fan-chart";
@@ -23,6 +24,12 @@ import {
 
 interface Props {
   clientId: string;
+  /**
+   * Scenario id to load. Phase ε will thread this through the
+   * /api/clients/[id]/projection-data + /monte-carlo-data fetches; for now
+   * the prop is accepted but unused so the page handler can pass `?scenario=`.
+   */
+  scenarioId?: string | "base";
 }
 
 interface MonteCarloPayload {
@@ -36,6 +43,7 @@ interface MonteCarloPayload {
 
 
 export default function MonteCarloReport({ clientId }: Props) {
+  const searchParams = useSearchParams();
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const [mcPayload, setMcPayload] = useState<MonteCarloPayload | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -73,8 +81,12 @@ export default function MonteCarloReport({ clientId }: Props) {
     let cancelled = false;
     (async () => {
       try {
+        const scenarioParam = searchParams?.get("scenario");
+        const projUrl = scenarioParam
+          ? `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(scenarioParam)}`
+          : `/api/clients/${clientId}/projection-data`;
         const [projRes, mcRes] = await Promise.all([
-          fetch(`/api/clients/${clientId}/projection-data`),
+          fetch(projUrl),
           fetch(`/api/clients/${clientId}/monte-carlo-data`),
         ]);
         if (!projRes.ok) throw new Error(`projection-data: HTTP ${projRes.status}`);
@@ -91,7 +103,7 @@ export default function MonteCarloReport({ clientId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [clientId]);
+  }, [clientId, searchParams]);
 
   const handleRun = useCallback(async () => {
     if (!clientData || !mcPayload) return;

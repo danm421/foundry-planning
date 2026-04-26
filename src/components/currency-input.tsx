@@ -3,6 +3,7 @@
 import { forwardRef, useState, useEffect, useRef } from "react";
 import type { InputHTMLAttributes } from "react";
 import { inputClassName } from "./forms/input-styles";
+import { useScenarioInputClass } from "./scenario/scenario-input-styling";
 
 interface CurrencyInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "defaultValue" | "onChange"> {
@@ -48,6 +49,7 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
     const [internal, setInternal] = useState(initial);
     const raw = isControlled ? String(value ?? "") : internal;
     const displayInputRef = useRef<HTMLInputElement | null>(null);
+    const scenarioClass = useScenarioInputClass();
 
     // Sync internal when switching from uncontrolled defaultValue (e.g., editing prop change)
     useEffect(() => {
@@ -80,7 +82,7 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
           value={display}
           onChange={handleChange}
           placeholder={placeholder}
-          className={`${inputClassName} pl-7 ${className ?? ""}`}
+          className={`${inputClassName} pl-7 ${scenarioClass} ${className ?? ""}`}
         />
         {name && <input type="hidden" name={name} value={raw} />}
       </div>

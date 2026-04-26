@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { Entity } from "../family-view";
 import type { EntityFormCommonProps } from "./types";
 import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName } from "../forms/input-styles";
@@ -26,6 +27,7 @@ export default function BusinessForm({
   onClose,
   onSubmitStateChange,
 }: BusinessFormProps) {
+  const writer = useScenarioWriter(clientId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,19 +64,47 @@ export default function BusinessForm({
       exemptionConsumed: undefined,
     };
     try {
-      const url = isEdit
-        ? `/api/clients/${clientId}/entities/${editing!.id}`
-        : `/api/clients/${clientId}/entities`;
-      const res = await fetch(url, {
-        method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const newEntityId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `tmp-${Date.now()}`;
+
+      const res = isEdit
+        ? await writer.submit(
+            {
+              op: "edit",
+              targetKind: "entity",
+              targetId: editing!.id,
+              desiredFields: body,
+            },
+            {
+              url: `/api/clients/${clientId}/entities/${editing!.id}`,
+              method: "PUT",
+              body,
+            },
+          )
+        : await writer.submit(
+            {
+              op: "add",
+              targetKind: "entity",
+              entity: { id: newEntityId, ...body },
+            },
+            {
+              url: `/api/clients/${clientId}/entities`,
+              method: "POST",
+              body,
+            },
+          );
       if (!res.ok) {
         const json = await res.json();
         throw new Error(json.error ?? "Failed to save");
       }
-      const saved = (await res.json()) as Entity;
+      const saved: Entity = writer.scenarioActive
+        ? ({
+            id: isEdit ? editing!.id : newEntityId,
+            ...body,
+          } as unknown as Entity)
+        : ((await res.json()) as Entity);
       onSaved(saved, isEdit ? "edit" : "create");
       onClose();
     } catch (err) {

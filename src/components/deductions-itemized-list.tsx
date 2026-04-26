@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { AddDeductionForm } from "@/components/forms/add-deduction-form";
 import type { ClientMilestones } from "@/lib/milestones";
 
@@ -51,6 +52,7 @@ export function DeductionsItemizedList({
   spouseFirstName?: string;
 }) {
   const router = useRouter();
+  const writer = useScenarioWriter(clientId);
   const [editing, setEditing] = useState<ItemizedRow | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -66,7 +68,10 @@ export function DeductionsItemizedList({
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this deduction?")) return;
-    await fetch(`/api/clients/${clientId}/deductions/${id}`, { method: "DELETE" });
+    await writer.submit(
+      { op: "remove", targetKind: "client_deduction", targetId: id },
+      { url: `/api/clients/${clientId}/deductions/${id}`, method: "DELETE" },
+    );
     router.refresh();
     onChange?.();
   }

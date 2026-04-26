@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, FormEvent } from "react";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
@@ -79,6 +80,7 @@ export default function AddTransferForm({
   onClose,
   onSaved,
 }: AddTransferFormProps) {
+  const writer = useScenarioWriter(clientId);
   // Only allow liquid accounts in transfer dropdowns
   const liquidAccounts = accounts.filter(
     (a) => !["business", "real_estate"].includes(a.category),
@@ -177,19 +179,39 @@ export default function AddTransferForm({
             : [],
       };
 
-      const url = initialData
-        ? `/api/clients/${clientId}/transfers`
-        : `/api/clients/${clientId}/transfers`;
-      const method = initialData ? "PUT" : "POST";
-      const fetchBody = initialData
-        ? JSON.stringify({ transferId: initialData.id, ...body })
-        : JSON.stringify(body);
+      // Mint the new id up-front so we can pass it to the writer's `entity`
+      // payload (the unified route requires `entity.id`) in scenario mode.
+      const newTransferId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `tmp-${Date.now()}`;
 
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: fetchBody,
-      });
+      const res = initialData
+        ? await writer.submit(
+            {
+              op: "edit",
+              targetKind: "transfer",
+              targetId: initialData.id,
+              desiredFields: body,
+            },
+            {
+              url: `/api/clients/${clientId}/transfers`,
+              method: "PUT",
+              body: { transferId: initialData.id, ...body },
+            },
+          )
+        : await writer.submit(
+            {
+              op: "add",
+              targetKind: "transfer",
+              entity: { id: newTransferId, ...body },
+            },
+            {
+              url: `/api/clients/${clientId}/transfers`,
+              method: "POST",
+              body,
+            },
+          );
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

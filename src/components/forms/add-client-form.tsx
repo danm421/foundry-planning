@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName } from "./input-styles";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 
 export interface ClientFormInitial {
   id: string;
@@ -41,6 +42,13 @@ function toDateInput(v: string | null | undefined): string {
 
 export default function AddClientForm({ mode = "create", initial, onSuccess, onSubmitStateChange }: AddClientFormProps) {
   const router = useRouter();
+  // Edit-mode submits route through the unified writer so client-level field
+  // changes (retirement age, DOB, spouse info, etc.) record as scenario_change
+  // rows when `?scenario=<sid>` is active. In base mode the writer falls
+  // through to the legacy `PUT /api/clients/[id]` route. Create mode never
+  // goes through the writer — there's no client-id to attach a change to
+  // until the row exists.
+  const writer = useScenarioWriter(initial?.id ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSpouse, setShowSpouse] = useState(Boolean(initial?.spouseName || initial?.spouseDob));
@@ -98,20 +106,34 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onS
     }
 
     try {
-      const url = isEdit ? `/api/clients/${initial!.id}` : "/api/clients";
-      const method = isEdit ? "PUT" : "POST";
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const res = isEdit
+        ? await writer.submit(
+            {
+              op: "edit",
+              targetKind: "client",
+              targetId: initial!.id,
+              desiredFields: body,
+            },
+            {
+              url: `/api/clients/${initial!.id}`,
+              method: "PUT",
+              body,
+            },
+          )
+        : await fetch("/api/clients", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
 
       if (!res.ok) {
         const json = await res.json();
         throw new Error(json.error ?? "Failed to save client");
       }
 
-      router.refresh();
+      // The writer auto-refreshes on success in edit mode; create mode is a
+      // raw fetch and still needs the manual refresh.
+      if (!isEdit) router.refresh();
       onSuccess?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");

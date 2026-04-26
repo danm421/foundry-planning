@@ -5,6 +5,7 @@ import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import MilestoneYearPicker from "./milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultWithdrawalRefs, resolveMilestone } from "@/lib/milestones";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -83,6 +84,7 @@ function WithdrawalDialog({
   onSaved,
   onRequestDelete,
 }: DialogProps) {
+  const writer = useScenarioWriter(clientId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const currentYear = new Date().getFullYear();
@@ -127,18 +129,50 @@ function WithdrawalDialog({
       const url = isEdit
         ? `/api/clients/${clientId}/withdrawal-strategy/${editing!.id}`
         : `/api/clients/${clientId}/withdrawal-strategy`;
-      const res = await fetch(url, {
-        method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      // In scenario mode the writer's `add` returns `{ ok, targetId }` (not the
+      // full row), and `edit` returns `{ ok }`. We synthesize a local stub so the
+      // optimistic list mutation in `onSaved` lines up; `router.refresh()` (run
+      // by the writer on success) will re-fetch the canonical rows.
+      const newId = !isEdit
+        ? typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `tmp-${Date.now()}`
+        : editing!.id;
+      const res = await writer.submit(
+        isEdit
+          ? {
+              op: "edit",
+              targetKind: "withdrawal_strategy",
+              targetId: editing!.id,
+              desiredFields: body,
+            }
+          : {
+              op: "add",
+              targetKind: "withdrawal_strategy",
+              entity: { id: newId, ...body },
+            },
+        { url, method: isEdit ? "PUT" : "POST", body },
+      );
 
       if (!res.ok) {
         const json = await res.json();
         throw new Error(json.error ?? "Failed to save withdrawal entry");
       }
 
-      const saved = (await res.json()) as WithdrawalStrategy;
+      // Base mode returns the full row; scenario mode returns `{ ok, targetId? }`.
+      // Build a local stub for scenario mode so the dialog can close cleanly —
+      // router.refresh() (called by writer) will pull canonical state.
+      const saved: WithdrawalStrategy = writer.scenarioActive
+        ? {
+            id: isEdit ? editing!.id : newId,
+            accountId: body.accountId,
+            priorityOrder: body.priorityOrder,
+            startYear: Number(body.startYear),
+            endYear: Number(body.endYear),
+            startYearRef: body.startYearRef,
+            endYearRef: body.endYearRef,
+          }
+        : ((await res.json()) as WithdrawalStrategy);
       onSaved(saved, isEdit ? "edit" : "create");
       onOpenChange(false);
     } catch (err) {
@@ -303,6 +337,7 @@ export default function WithdrawalStrategySection({
   clientFirstName,
   spouseFirstName,
 }: WithdrawalStrategySectionProps) {
+  const writer = useScenarioWriter(clientId);
   const [list, setList] = useState<WithdrawalStrategy[]>(initialStrategies);
   const [editMode, setEditMode] = useState(false);
   const [dialog, setDialog] = useState<{ open: boolean; editing?: WithdrawalStrategy }>({
@@ -315,9 +350,13 @@ export default function WithdrawalStrategySection({
   const nextPriority = list.length > 0 ? Math.max(...list.map((w) => w.priorityOrder)) + 1 : 1;
 
   async function performDelete(strategyId: string): Promise<boolean> {
-    const res = await fetch(`/api/clients/${clientId}/withdrawal-strategy/${strategyId}`, {
-      method: "DELETE",
-    });
+    const res = await writer.submit(
+      { op: "remove", targetKind: "withdrawal_strategy", targetId: strategyId },
+      {
+        url: `/api/clients/${clientId}/withdrawal-strategy/${strategyId}`,
+        method: "DELETE",
+      },
+    );
     if (!res.ok && res.status !== 204) {
       const json = await res.json().catch(() => ({}));
       alert(json.error ?? "Failed to delete");

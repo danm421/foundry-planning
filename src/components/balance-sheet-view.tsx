@@ -2,6 +2,8 @@
 
 import { useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 import AddAccountDialog from "./add-account-dialog";
 import AddLiabilityDialog from "./add-liability-dialog";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
@@ -243,6 +245,8 @@ export default function BalanceSheetView({
   resolvedInflationRate,
 }: BalanceSheetViewProps) {
   const router = useRouter();
+  const writer = useScenarioWriter(clientId);
+  const withScenario = useScenarioPreservingHref();
 
   const [assetsEdit, setAssetsEdit] = useState(false);
   const [liabilitiesEdit, setLiabilitiesEdit] = useState(false);
@@ -302,7 +306,10 @@ export default function BalanceSheetView({
     .map((a) => ({ id: a.id, name: a.name }));
 
   async function performAccountDelete(id: string) {
-    const res = await fetch(`/api/clients/${clientId}/accounts/${id}`, { method: "DELETE" });
+    const res = await writer.submit(
+      { op: "remove", targetKind: "account", targetId: id },
+      { url: `/api/clients/${clientId}/accounts/${id}`, method: "DELETE" },
+    );
     if (!res.ok && res.status !== 204) {
       const json = await res.json().catch(() => ({}));
       alert(json.error ?? "Failed to delete account");
@@ -314,7 +321,10 @@ export default function BalanceSheetView({
   }
 
   async function performLiabilityDelete(id: string) {
-    const res = await fetch(`/api/clients/${clientId}/liabilities/${id}`, { method: "DELETE" });
+    const res = await writer.submit(
+      { op: "remove", targetKind: "liability", targetId: id },
+      { url: `/api/clients/${clientId}/liabilities/${id}`, method: "DELETE" },
+    );
     if (!res.ok && res.status !== 204) {
       const json = await res.json().catch(() => ({}));
       alert(json.error ?? "Failed to delete liability");
@@ -328,7 +338,7 @@ export default function BalanceSheetView({
   function handleAccountClick(a: AccountRow) {
     if (assetsEdit) return; // edit mode: user is toggling delete affordances, not opening details
     if (a.category === "life_insurance") {
-      router.push(`/clients/${clientId}/client-data/insurance?policy=${a.id}`);
+      router.push(withScenario(`/clients/${clientId}/client-data/insurance?policy=${a.id}`));
       return;
     }
     setEditingAccount(a);
@@ -503,7 +513,7 @@ export default function BalanceSheetView({
                   {businessEntityRows.map((e) => (
                     <a
                       key={e.id}
-                      href={`/clients/${clientId}/client-data/family`}
+                      href={withScenario(`/clients/${clientId}/client-data/family`)}
                       className="flex items-center justify-between px-4 py-2 hover:bg-gray-800/60"
                     >
                       <div>

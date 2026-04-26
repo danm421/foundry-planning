@@ -22,14 +22,19 @@ export const dynamic = "force-dynamic";
 
 export default async function ClientOverviewPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string; toggles?: string }>;
 }) {
   const firmId = await getOrgId();
   const { id } = await params;
+  const sp = await searchParams;
+  const scenarioId = sp.scenario ?? "base";
+  // toggleState wire-up via `?toggles=` lands in Phase ε — pass {} for now.
   if (!(await findClientInFirm(id, firmId))) notFound();
 
-  const d = await getOverviewData(id, firmId);
+  const d = await getOverviewData(id, firmId, scenarioId);
 
   const earliestRetirementYear = d.lifeEvents.length
     ? Math.min(...d.lifeEvents.map((e) => e.year))
@@ -45,7 +50,7 @@ export default async function ClientOverviewPage({
         liquidPortfolio={d.kpi.liquidPortfolio}
         mcSlot={
           <Suspense fallback={<MonteCarloKpiSkeleton clientId={id} />}>
-            <MonteCarloKpiSlot clientId={id} firmId={firmId} />
+            <MonteCarloKpiSlot clientId={id} firmId={firmId} scenarioId={scenarioId} />
           </Suspense>
         }
         yearsToRetirement={d.kpi.yearsToRetirement}
@@ -57,7 +62,7 @@ export default async function ClientOverviewPage({
           clientId={id}
           gaugeSlot={
             <Suspense fallback={<RunwayGaugeSkeleton />}>
-              <RunwayGaugeSlot clientId={id} firmId={firmId} />
+              <RunwayGaugeSlot clientId={id} firmId={firmId} scenarioId={scenarioId} />
             </Suspense>
           }
           netWorthSeries={d.runway.netWorthSeries}
@@ -78,6 +83,7 @@ export default async function ClientOverviewPage({
           <AlertsStripSlot
             clientId={id}
             firmId={firmId}
+            scenarioId={scenarioId}
             alertInputs={d.alertInputs}
             clientMeta={{ id: d.client.id, updatedAt: d.client.updatedAt }}
           />

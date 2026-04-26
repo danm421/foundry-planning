@@ -4,7 +4,6 @@ import {
   clients,
   familyMembers,
   entities,
-  accounts,
   externalBeneficiaries,
   beneficiaryDesignations,
   gifts,
@@ -21,14 +20,18 @@ import FamilyView, {
   Designation,
 } from "@/components/family-view";
 import OpenItemsPanel from "@/components/open-items/open-items-panel";
+import ClientDataPageShell from "@/components/client-data-page-shell";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function FamilyPage({ params }: PageProps) {
+export default async function FamilyPage({ params, searchParams }: PageProps) {
   const firmId = await getOrgId();
   const { id } = await params;
+  const sp = await searchParams;
 
   const [client] = await db
     .select()
@@ -37,7 +40,7 @@ export default async function FamilyPage({ params }: PageProps) {
 
   if (!client) notFound();
 
-  const [memberRows, entityRows, externalRows, accountRows, designationRows, giftRows] =
+  const [memberRows, entityRows, externalRows, designationRows, giftRows, { effectiveTree }] =
     await Promise.all([
       db
         .select()
@@ -50,7 +53,6 @@ export default async function FamilyPage({ params }: PageProps) {
         .from(externalBeneficiaries)
         .where(eq(externalBeneficiaries.clientId, id))
         .orderBy(asc(externalBeneficiaries.name)),
-      db.select().from(accounts).where(eq(accounts.clientId, id)).orderBy(asc(accounts.name)),
       db
         .select()
         .from(beneficiaryDesignations)
@@ -61,7 +63,11 @@ export default async function FamilyPage({ params }: PageProps) {
         .from(gifts)
         .where(eq(gifts.clientId, id))
         .orderBy(asc(gifts.year), asc(gifts.createdAt)),
+      loadEffectiveTree(id, firmId, sp.scenario ?? "base", {}),
     ]);
+
+  const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
+  const effectiveClient = effectiveTree.client;
 
   const members: FamilyMember[] = memberRows.map((m) => ({
     id: m.id,
@@ -134,21 +140,21 @@ export default async function FamilyPage({ params }: PageProps) {
   }));
 
   const primary: PrimaryInfo = {
-    firstName: client.firstName,
-    lastName: client.lastName,
-    dateOfBirth: client.dateOfBirth,
-    retirementAge: client.retirementAge,
-    lifeExpectancy: client.lifeExpectancy,
-    filingStatus: client.filingStatus,
-    spouseName: client.spouseName ?? null,
+    firstName: effectiveClient.firstName,
+    lastName: effectiveClient.lastName,
+    dateOfBirth: effectiveClient.dateOfBirth,
+    retirementAge: effectiveClient.retirementAge,
+    lifeExpectancy: effectiveClient.lifeExpectancy ?? client.lifeExpectancy,
+    filingStatus: effectiveClient.filingStatus,
+    spouseName: effectiveClient.spouseName ?? null,
     spouseLastName: client.spouseLastName ?? null,
-    spouseDob: client.spouseDob ?? null,
-    spouseRetirementAge: client.spouseRetirementAge ?? null,
-    spouseLifeExpectancy: client.spouseLifeExpectancy ?? null,
+    spouseDob: effectiveClient.spouseDob ?? null,
+    spouseRetirementAge: effectiveClient.spouseRetirementAge ?? null,
+    spouseLifeExpectancy: effectiveClient.spouseLifeExpectancy ?? null,
   };
 
   return (
-    <>
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
       <FamilyView
         clientId={id}
         primary={primary}
@@ -160,6 +166,6 @@ export default async function FamilyPage({ params }: PageProps) {
         initialGifts={giftsList}
       />
       <OpenItemsPanel clientId={id} firmId={firmId} />
-    </>
+    </ClientDataPageShell>
   );
 }

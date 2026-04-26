@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import { runProjection } from "@/engine";
@@ -181,6 +182,7 @@ export default function AddAssetTransactionForm({
   onClose,
   onSaved,
 }: AddAssetTransactionFormProps) {
+  const writer = useScenarioWriter(clientId);
   const isEdit = !!initialData;
   const currentYear = new Date().getFullYear();
 
@@ -410,15 +412,37 @@ export default function AddAssetTransactionForm({
     }
 
     try {
-      const url = `/api/clients/${clientId}/asset-transactions`;
-      const method = isEdit ? "PUT" : "POST";
-      const payload = isEdit ? { ...body, transactionId: initialData!.id } : body;
+      const newTransactionId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `tmp-${Date.now()}`;
 
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = isEdit
+        ? await writer.submit(
+            {
+              op: "edit",
+              targetKind: "asset_transaction",
+              targetId: initialData!.id,
+              desiredFields: body,
+            },
+            {
+              url: `/api/clients/${clientId}/asset-transactions`,
+              method: "PUT",
+              body: { ...body, transactionId: initialData!.id },
+            },
+          )
+        : await writer.submit(
+            {
+              op: "add",
+              targetKind: "asset_transaction",
+              entity: { id: newTransactionId, ...body },
+            },
+            {
+              url: `/api/clients/${clientId}/asset-transactions`,
+              method: "POST",
+              body,
+            },
+          );
 
       if (!res.ok) {
         const json = await res.json();

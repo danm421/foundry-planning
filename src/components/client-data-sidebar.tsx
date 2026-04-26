@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 
 interface ClientDataSidebarProps {
   clientId: string;
@@ -106,6 +107,7 @@ const TABS: SidebarTab[] = [
 
 export default function ClientDataSidebar({ clientId }: ClientDataSidebarProps) {
   const pathname = usePathname();
+  const withScenario = useScenarioPreservingHref();
 
   return (
     <nav className="flex flex-col gap-1">
@@ -115,7 +117,7 @@ export default function ClientDataSidebar({ clientId }: ClientDataSidebarProps) 
         return (
           <Link
             key={tab.href}
-            href={href}
+            href={withScenario(href)}
             className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               isActive
                 ? "bg-gray-800 text-gray-100"

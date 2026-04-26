@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import AddTransferForm from "./forms/add-transfer-form";
 import AddAssetTransactionForm from "./forms/add-asset-transaction-form";
 import { runProjection } from "@/engine";
@@ -526,6 +527,7 @@ export default function TechniquesView({
   spouseFirstName,
 }: TechniquesViewProps) {
   const router = useRouter();
+  const writer = useScenarioWriter(clientId);
 
   const [showAddTransfer, setShowAddTransfer] = useState(false);
   const [editingTransfer, setEditingTransfer] = useState<TransferRow | null>(null);
@@ -574,16 +576,25 @@ export default function TechniquesView({
   }, [projectionYears]);
 
   async function handleDeleteTransfer(transferId: string) {
-    await fetch(`/api/clients/${clientId}/transfers?transferId=${transferId}`, {
-      method: "DELETE",
-    });
+    await writer.submit(
+      { op: "remove", targetKind: "transfer", targetId: transferId },
+      {
+        url: `/api/clients/${clientId}/transfers?transferId=${transferId}`,
+        method: "DELETE",
+      },
+    );
+    // writer.submit calls router.refresh on res.ok; this is belt-and-suspenders
+    // for the case where the legacy route returns a non-ok status we ignore.
     router.refresh();
   }
 
   async function handleDeleteTransaction(transactionId: string) {
-    await fetch(
-      `/api/clients/${clientId}/asset-transactions?transactionId=${transactionId}`,
-      { method: "DELETE" },
+    await writer.submit(
+      { op: "remove", targetKind: "asset_transaction", targetId: transactionId },
+      {
+        url: `/api/clients/${clientId}/asset-transactions?transactionId=${transactionId}`,
+        method: "DELETE",
+      },
     );
     router.refresh();
   }

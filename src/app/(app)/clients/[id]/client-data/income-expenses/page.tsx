@@ -3,31 +3,36 @@ import { db } from "@/db";
 import {
   clients,
   scenarios,
-  accounts,
-  incomes,
-  expenses,
-  savingsRules,
-  planSettings,
-  entities,
   incomeScheduleOverrides,
   expenseScheduleOverrides,
   savingsScheduleOverrides,
   assetClasses,
   clientCmaOverrides,
+  planSettings,
+  entities,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import IncomeExpensesView from "@/components/income-expenses-view";
-import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
+import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
+import ClientDataPageShell from "@/components/client-data-page-shell";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
+import {
+  expenseEngineToView,
+  incomeEngineToView,
+  savingsRuleEngineToView,
+} from "@/lib/scenario/view-adapters";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function IncomeExpensesPage({ params }: PageProps) {
+export default async function IncomeExpensesPage({ params, searchParams }: PageProps) {
   const firmId = await getOrgId();
   const { id } = await params;
+  const sp = await searchParams;
 
   const [client] = await db
     .select()
@@ -36,6 +41,8 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
 
   if (!client) notFound();
 
+  const { effectiveTree } = await loadEffectiveTree(id, firmId, sp.scenario ?? "base", {});
+
   const [scenario] = await db
     .select()
     .from(scenarios)
@@ -43,26 +50,28 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
 
   if (!scenario) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-        No base case scenario found.
-      </div>
+      <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+          No base case scenario found.
+        </div>
+      </ClientDataPageShell>
     );
   }
 
-  const [incomeRows, expenseRows, savingsRuleRows, accountRows, planSettingsRows, entityRows] = await Promise.all([
-    db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
-    db.select().from(expenses).where(and(eq(expenses.clientId, id), eq(expenses.scenarioId, scenario.id))),
-    db.select().from(savingsRules).where(and(eq(savingsRules.clientId, id), eq(savingsRules.scenarioId, scenario.id))),
-    db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
-    db.select().from(planSettings).where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
-    db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
-  ]);
+  const incomes = effectiveTree.incomes.map(incomeEngineToView);
+  // Synthesized life-insurance premiums (source: "policy") are derived from
+  // life-insurance accounts at load time; they aren't real expense rows and
+  // shouldn't appear in the manual income-expenses editor.
+  const expenses = effectiveTree.expenses
+    .filter((e) => e.source !== "policy")
+    .map(expenseEngineToView);
+  const savingsRulesView = effectiveTree.savingsRules.map(savingsRuleEngineToView);
 
-  const incomeIds = incomeRows.map((i) => i.id);
-  const expenseIds = expenseRows.map((e) => e.id);
-  const savingsRuleIds = savingsRuleRows.map((s) => s.id);
+  const incomeIds = incomes.map((i) => i.id);
+  const expenseIds = expenses.map((e) => e.id);
+  const savingsRuleIds = savingsRulesView.map((s) => s.id);
 
-  const [incOverrides, expOverrides, savOverrides] = await Promise.all([
+  const [incOverrides, expOverrides, savOverrides, planSettingsRows, entityRows] = await Promise.all([
     incomeIds.length > 0
       ? db.select().from(incomeScheduleOverrides).where(inArray(incomeScheduleOverrides.incomeId, incomeIds))
       : Promise.resolve([]),
@@ -72,6 +81,8 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
     savingsRuleIds.length > 0
       ? db.select().from(savingsScheduleOverrides).where(inArray(savingsScheduleOverrides.savingsRuleId, savingsRuleIds))
       : Promise.resolve([]),
+    db.select().from(planSettings).where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
+    db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
   ]);
 
   const incomeScheduleMap: Record<string, { year: number; amount: number }[]> = {};
@@ -132,63 +143,23 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
   const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
   const milestones = buildClientMilestones(client, planStartYear, planEndYear);
 
-  // Resolution-on-read: re-resolve milestone refs and update stale years
-  for (const row of incomeRows) {
-    if (row.startYearRef) {
-      const resolved = resolveMilestone(row.startYearRef as YearRef, milestones);
-      if (resolved != null && resolved !== row.startYear) {
-        row.startYear = resolved;
-        db.update(incomes).set({ startYear: resolved }).where(eq(incomes.id, row.id));
-      }
-    }
-    if (row.endYearRef) {
-      const resolved = resolveMilestone(row.endYearRef as YearRef, milestones);
-      if (resolved != null && resolved !== row.endYear) {
-        row.endYear = resolved;
-        db.update(incomes).set({ endYear: resolved }).where(eq(incomes.id, row.id));
-      }
-    }
-  }
-  for (const row of expenseRows) {
-    if (row.startYearRef) {
-      const resolved = resolveMilestone(row.startYearRef as YearRef, milestones);
-      if (resolved != null && resolved !== row.startYear) {
-        row.startYear = resolved;
-        db.update(expenses).set({ startYear: resolved }).where(eq(expenses.id, row.id));
-      }
-    }
-    if (row.endYearRef) {
-      const resolved = resolveMilestone(row.endYearRef as YearRef, milestones);
-      if (resolved != null && resolved !== row.endYear) {
-        row.endYear = resolved;
-        db.update(expenses).set({ endYear: resolved }).where(eq(expenses.id, row.id));
-      }
-    }
-  }
-  for (const row of savingsRuleRows) {
-    if (row.startYearRef) {
-      const resolved = resolveMilestone(row.startYearRef as YearRef, milestones);
-      if (resolved != null && resolved !== row.startYear) {
-        row.startYear = resolved;
-        db.update(savingsRules).set({ startYear: resolved }).where(eq(savingsRules.id, row.id));
-      }
-    }
-    if (row.endYearRef) {
-      const resolved = resolveMilestone(row.endYearRef as YearRef, milestones);
-      if (resolved != null && resolved !== row.endYear) {
-        row.endYear = resolved;
-        db.update(savingsRules).set({ endYear: resolved }).where(eq(savingsRules.id, row.id));
-      }
-    }
-  }
+  const accountsForView = effectiveTree.accounts.map((a) => ({
+    id: a.id,
+    name: a.name,
+    category: a.category,
+    subType: a.subType,
+    isDefaultChecking: a.isDefaultChecking ?? null,
+    ownerEntityId: a.ownerEntityId ?? null,
+  }));
 
   return (
-    <IncomeExpensesView
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <IncomeExpensesView
       clientId={id}
-      initialIncomes={incomeRows}
-      initialExpenses={expenseRows}
-      initialSavingsRules={savingsRuleRows}
-      accounts={accountRows}
+      initialIncomes={incomes}
+      initialExpenses={expenses}
+      initialSavingsRules={savingsRulesView}
+      accounts={accountsForView}
       entities={entityRows.map((e) => ({ id: e.id, name: e.name }))}
       ownerNames={{
         clientName: `${client.firstName} ${client.lastName}`,
@@ -230,5 +201,6 @@ export default async function IncomeExpensesPage({ params }: PageProps) {
         planEndYear,
       } : undefined}
     />
+    </ClientDataPageShell>
   );
 }

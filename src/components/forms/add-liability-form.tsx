@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import MilestoneYearPicker from "../milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { resolveMilestone } from "@/lib/milestones";
@@ -72,6 +73,7 @@ export default function AddLiabilityForm({
   onSubmitStateChange,
 }: AddLiabilityFormProps) {
   const router = useRouter();
+  const writer = useScenarioWriter(clientId);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
     onSubmitStateChange?.({ canSubmit: !loading, loading });
@@ -230,15 +232,37 @@ export default function AddLiabilityForm({
     };
 
     try {
-      const url = isEdit
-        ? `/api/clients/${clientId}/liabilities/${initial!.id}`
-        : `/api/clients/${clientId}/liabilities`;
-      const method = isEdit ? "PUT" : "POST";
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const newLiabilityId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `tmp-${Date.now()}`;
+
+      const res = isEdit
+        ? await writer.submit(
+            {
+              op: "edit",
+              targetKind: "liability",
+              targetId: initial!.id,
+              desiredFields: body,
+            },
+            {
+              url: `/api/clients/${clientId}/liabilities/${initial!.id}`,
+              method: "PUT",
+              body,
+            },
+          )
+        : await writer.submit(
+            {
+              op: "add",
+              targetKind: "liability",
+              entity: { id: newLiabilityId, ...body },
+            },
+            {
+              url: `/api/clients/${clientId}/liabilities`,
+              method: "POST",
+              body,
+            },
+          );
 
       if (!res.ok) {
         const json = await res.json();

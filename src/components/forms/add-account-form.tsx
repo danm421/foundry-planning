@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { AssetMixTab, type AssetClassOption } from "./asset-mix-tab";
 import BeneficiariesTab from "./beneficiaries-tab";
 import { CurrencyInput } from "@/components/currency-input";
@@ -206,6 +207,7 @@ export default function AddAccountForm({
   const clientLabel = ownerNames?.clientName ?? "Client";
   const spouseLabel = ownerNames?.spouseName ?? null;
   const router = useRouter();
+  const writer = useScenarioWriter(clientId);
   const isEdit = mode === "edit" && !!initial;
 
   // Auto-focus + select-all the Name input on create so the advisor can start
@@ -476,17 +478,26 @@ export default function AddAccountForm({
 
     try {
       if (isEdit) {
-        const res = await fetch(`/api/clients/${clientId}/accounts/${initial!.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(accountBody),
-        });
+        const res = await writer.submit(
+          {
+            op: "edit",
+            targetKind: "account",
+            targetId: initial!.id,
+            desiredFields: accountBody,
+          },
+          {
+            url: `/api/clients/${clientId}/accounts/${initial!.id}`,
+            method: "PUT",
+            body: accountBody,
+          },
+        );
         if (!res.ok) {
           const json = await res.json();
           throw new Error(json.error ?? "Failed to update account");
         }
-        // Save asset mix allocations for existing account
-        if (showAssetMixTab && customAllocations.length > 0) {
+        // Save asset mix allocations for existing account. Allocations are a
+        // nested resource and not in v1 scenario scope — base mode only.
+        if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive) {
           await fetch(`/api/clients/${clientId}/accounts/${initial!.id}/allocations`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -494,19 +505,39 @@ export default function AddAccountForm({
           });
         }
       } else {
-        const res = await fetch(`/api/clients/${clientId}/accounts`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(accountBody),
-        });
+        // Mint the new id up-front so we can pass it to the writer's `entity`
+        // payload (the unified route requires `entity.id`) and still know what
+        // it is for the allocations follow-up in base mode.
+        const newAccountId =
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `tmp-${Date.now()}`;
+        const res = await writer.submit(
+          {
+            op: "add",
+            targetKind: "account",
+            entity: { id: newAccountId, ...accountBody },
+          },
+          {
+            url: `/api/clients/${clientId}/accounts`,
+            method: "POST",
+            body: accountBody,
+          },
+        );
         if (!res.ok) {
           const json = await res.json();
           throw new Error(json.error ?? "Failed to create account");
         }
-        const account = await res.json();
+        // Base-mode response is the saved row (includes the server-assigned id);
+        // scenario-mode response is `{ ok, targetId }`. Either way, the id we
+        // need next is `account.id`.
+        const account = writer.scenarioActive
+          ? { id: newAccountId }
+          : await res.json();
 
-        // Save asset mix allocations for new account
-        if (showAssetMixTab && customAllocations.length > 0) {
+        // Save asset mix allocations for new account. Allocations are nested
+        // and not in v1 scenario scope — base mode only.
+        if (showAssetMixTab && customAllocations.length > 0 && !writer.scenarioActive) {
           await fetch(`/api/clients/${clientId}/accounts/${account.id}/allocations`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -514,7 +545,9 @@ export default function AddAccountForm({
           });
         }
 
-        // Create savings rule if savings tab filled (create-only)
+        // Create savings rule if savings tab filled (create-only). Routes
+        // through the writer so a savings_rule add fires through the unified
+        // route in scenario mode (Task 14b).
         const savingsAmount = data.get("annualAmount") as string;
         const savingsPercent = data.get("annualPercent") as string;
         const hasAmount = contribMode === "amount" && savingsAmount && Number(savingsAmount) > 0;
@@ -553,11 +586,22 @@ export default function AddAccountForm({
               showEmployerMatch && matchMode === "flat" && matchAmount ? matchAmount : null,
           };
 
-          const savingsRes = await fetch(`/api/clients/${clientId}/savings-rules`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(savingsBody),
-          });
+          const newSavingsRuleId =
+            typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+              ? crypto.randomUUID()
+              : `tmp-${Date.now()}`;
+          const savingsRes = await writer.submit(
+            {
+              op: "add",
+              targetKind: "savings_rule",
+              entity: { id: newSavingsRuleId, ...savingsBody },
+            },
+            {
+              url: `/api/clients/${clientId}/savings-rules`,
+              method: "POST",
+              body: savingsBody,
+            },
+          );
           if (!savingsRes.ok) {
             console.error("Failed to create savings rule");
           }
@@ -1147,7 +1191,13 @@ export default function AddAccountForm({
             <button
               type="button"
               onClick={async () => {
-                const res = await fetch(`/api/clients/${clientId}/savings-rules/${deletingSr.id}`, { method: "DELETE" });
+                const res = await writer.submit(
+                  { op: "remove", targetKind: "savings_rule", targetId: deletingSr.id },
+                  {
+                    url: `/api/clients/${clientId}/savings-rules/${deletingSr.id}`,
+                    method: "DELETE",
+                  },
+                );
                 if (res.ok || res.status === 204) {
                   setAccountSavingsRules((prev) => prev.filter((r) => r.id !== deletingSr.id));
                 }

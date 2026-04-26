@@ -3,7 +3,6 @@ import { db } from "@/db";
 import {
   clients,
   scenarios,
-  accounts,
   familyMembers,
   entities,
   externalBeneficiaries,
@@ -17,14 +16,18 @@ import InsurancePanel, {
   type InsurancePanelEntity,
   type InsurancePanelExternal,
 } from "@/components/insurance-panel";
+import ClientDataPageShell from "@/components/client-data-page-shell";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function InsurancePage({ params }: PageProps) {
+export default async function InsurancePage({ params, searchParams }: PageProps) {
   const firmId = await getOrgId();
   const { id } = await params;
+  const sp = await searchParams;
 
   const [client] = await db
     .select()
@@ -39,18 +42,15 @@ export default async function InsurancePage({ params }: PageProps) {
 
   if (!scenario) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-        No base case scenario found.
-      </div>
+      <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+          No base case scenario found.
+        </div>
+      </ClientDataPageShell>
     );
   }
 
-  const [accountRows, familyRows, entityRows, externalRows] = await Promise.all([
-    db
-      .select()
-      .from(accounts)
-      .where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id)))
-      .orderBy(asc(accounts.name)),
+  const [familyRows, entityRows, externalRows, { effectiveTree }] = await Promise.all([
     db
       .select()
       .from(familyMembers)
@@ -66,8 +66,10 @@ export default async function InsurancePage({ params }: PageProps) {
       .from(externalBeneficiaries)
       .where(eq(externalBeneficiaries.clientId, id))
       .orderBy(asc(externalBeneficiaries.name)),
+    loadEffectiveTree(id, firmId, sp.scenario ?? "base", {}),
   ]);
 
+  const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
   const lifeAccountIds = accountRows
     .filter((a) => a.category === "life_insurance")
     .map((a) => a.id);
@@ -77,11 +79,11 @@ export default async function InsurancePage({ params }: PageProps) {
     id: a.id,
     name: a.name,
     category: a.category,
-    subType: a.subType ?? null,
+    subType: (a.subType ?? null) as InsurancePanelAccount["subType"],
     owner: a.owner,
     ownerEntityId: a.ownerEntityId ?? null,
     insuredPerson: a.insuredPerson ?? null,
-    value: a.value,
+    value: String(a.value),
   }));
   const fams: InsurancePanelFamilyMember[] = familyRows.map((f) => ({
     id: f.id,
@@ -104,15 +106,17 @@ export default async function InsurancePage({ params }: PageProps) {
   }));
 
   return (
-    <InsurancePanel
-      clientId={id}
-      clientFirstName={client.firstName}
-      spouseFirstName={client.spouseName ?? null}
-      accounts={accts}
-      policies={policies}
-      entities={ents}
-      familyMembers={fams}
-      externalBeneficiaries={exts}
-    />
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <InsurancePanel
+        clientId={id}
+        clientFirstName={client.firstName}
+        spouseFirstName={client.spouseName ?? null}
+        accounts={accts}
+        policies={policies}
+        entities={ents}
+        familyMembers={fams}
+        externalBeneficiaries={exts}
+      />
+    </ClientDataPageShell>
   );
 }

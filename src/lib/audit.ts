@@ -90,7 +90,29 @@ export type AuditAction =
   | "open_item.create"
   | "open_item.update"
   | "open_item.complete"
-  | "open_item.delete";
+  | "open_item.delete"
+  // Scenario builder (per-scenario diff overlay; the writer at
+  // src/lib/scenario/changes-writer.ts is the only sanctioned path for
+  // non-base-case mutations on overlayable tables).
+  | "scenario_change.upsert"
+  | "scenario_change.revert"
+  // Scenario lifecycle (CRUD on the scenarios row itself).
+  | "scenario.create"
+  | "scenario.rename"
+  | "scenario.duplicate"
+  | "scenario.delete"
+  // Toggle groups (per-scenario named buckets that gate scenario_changes).
+  | "toggle_group.create"
+  | "toggle_group.rename"
+  | "toggle_group.set_default"
+  | "toggle_group.set_required"
+  | "toggle_group.delete"
+  // Reassign a single scenario_change row into (or out of) a toggle group.
+  // Used by Plan 2 Task 20's retroactive-group action bar.
+  | "toggle_group.move_change"
+  // Scenario snapshots (frozen comparisons; survive scenario deletion).
+  | "snapshot.create"
+  | "snapshot.delete";
 
 type Args = {
   action: AuditAction;

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactElement } from "react";
+import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 
 const TABS = [
   { label: "Overview", href: "overview" },
@@ -22,6 +23,7 @@ interface ClientTabsProps {
 
 export default function ClientTabs({ clientId }: ClientTabsProps): ReactElement {
   const pathname = usePathname();
+  const withScenario = useScenarioPreservingHref();
 
   return (
     <nav
@@ -37,7 +39,7 @@ export default function ClientTabs({ clientId }: ClientTabsProps): ReactElement 
         return (
           <Link
             key={tab.href}
-            href={href}
+            href={withScenario(href)}
             role="tab"
             aria-selected={active || undefined}
             className={className}

@@ -372,6 +372,20 @@
       "when": 1777224750419,
       "tag": "0052_trust_dialog_phase_1",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1777143036084,
+      "tag": "0053_scenario_base_only_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1777400000000,
+      "tag": "0054_snapshot_user_id_text",
+      "breakpoints": true
     }
   ]
 }

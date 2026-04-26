@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { runProjection } from "@/engine/projection";
 import type { ProjectionYear } from "@/engine/types";
 import type { OwnerNames } from "@/lib/owner-labels";
@@ -33,6 +34,7 @@ export default function BalanceSheetReportView({
   ownerNames,
   entities,
 }: BalanceSheetReportViewProps) {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [apiData, setApiData] = useState<ProjectionApiResponse | null>(null);
@@ -47,7 +49,11 @@ export default function BalanceSheetReportView({
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`/api/clients/${clientId}/projection-data`);
+        const scenarioParam = searchParams?.get("scenario");
+        const url = scenarioParam
+          ? `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(scenarioParam)}`
+          : `/api/clients/${clientId}/projection-data`;
+        const res = await fetch(url);
         if (!res.ok) {
           const body = await res.json().catch(() => ({})) as { error?: string };
           throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -64,7 +70,7 @@ export default function BalanceSheetReportView({
       }
     }
     load();
-  }, [clientId]);
+  }, [clientId, searchParams]);
 
   const hasEntityAccounts = useMemo(() => {
     return apiData?.accounts?.some((a) => a.ownerEntityId != null) ?? false;

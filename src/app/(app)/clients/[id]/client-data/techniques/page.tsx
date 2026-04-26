@@ -3,25 +3,24 @@ import { db } from "@/db";
 import {
   clients,
   scenarios,
-  accounts,
-  transfers,
-  transferSchedules,
-  assetTransactions,
-  liabilities,
   planSettings,
 } from "@/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import TechniquesView from "@/components/techniques-view";
 import { buildClientMilestones } from "@/lib/milestones";
+import ClientDataPageShell from "@/components/client-data-page-shell";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function TechniquesPage({ params }: PageProps) {
+export default async function TechniquesPage({ params, searchParams }: PageProps) {
   const firmId = await getOrgId();
   const { id } = await params;
+  const sp = await searchParams;
 
   const [client] = await db
     .select()
@@ -37,56 +36,37 @@ export default async function TechniquesPage({ params }: PageProps) {
 
   if (!scenario) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-        No base case scenario found.
-      </div>
+      <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+          No base case scenario found.
+        </div>
+      </ClientDataPageShell>
     );
   }
 
-  const [accountRows, transferRows, scheduleRows, transactionRows, liabilityRows, planSettingsRows] =
-    await Promise.all([
-      db
-        .select()
-        .from(accounts)
-        .where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id)))
-        .orderBy(asc(accounts.name)),
-      db
-        .select()
-        .from(transfers)
-        .where(and(eq(transfers.clientId, id), eq(transfers.scenarioId, scenario.id)))
-        .orderBy(asc(transfers.name)),
-      db
-        .select()
-        .from(transferSchedules)
-        .orderBy(asc(transferSchedules.year)),
-      db
-        .select()
-        .from(assetTransactions)
-        .where(and(eq(assetTransactions.clientId, id), eq(assetTransactions.scenarioId, scenario.id)))
-        .orderBy(asc(assetTransactions.year)),
-      db
-        .select()
-        .from(liabilities)
-        .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id)))
-        .orderBy(asc(liabilities.name)),
-      db
-        .select()
-        .from(planSettings)
-        .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
-    ]);
+  const [planSettingsRows, { effectiveTree }] = await Promise.all([
+    db
+      .select()
+      .from(planSettings)
+      .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
+    loadEffectiveTree(id, firmId, sp.scenario ?? "base", {}),
+  ]);
+
+  const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
+  const transferRows = [...(effectiveTree.transfers ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+  const transactionRows = [...(effectiveTree.assetTransactions ?? [])].sort(
+    (a, b) => a.year - b.year,
+  );
+  const liabilityRows = [...effectiveTree.liabilities].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
 
   const settings = planSettingsRows[0];
   const planStartYear = settings?.planStartYear ?? new Date().getFullYear();
   const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
   const milestones = buildClientMilestones(client, planStartYear, planEndYear);
-
-  // Attach schedules to their parent transfers
-  const schedulesByTransfer = new Map<string, { id: string; year: number; amount: string }[]>();
-  for (const s of scheduleRows) {
-    const list = schedulesByTransfer.get(s.transferId) ?? [];
-    list.push({ id: s.id, year: s.year, amount: String(s.amount) });
-    schedulesByTransfer.set(s.transferId, list);
-  }
 
   const transferProps = transferRows.map((t) => ({
     id: t.id,
@@ -100,7 +80,11 @@ export default async function TechniquesPage({ params }: PageProps) {
     endYear: t.endYear ?? null,
     endYearRef: t.endYearRef ?? null,
     growthRate: String(t.growthRate),
-    schedules: schedulesByTransfer.get(t.id) ?? [],
+    schedules: t.schedules.map((s, idx) => ({
+      id: `${t.id}-${idx}`,
+      year: s.year,
+      amount: String(s.amount),
+    })),
   }));
 
   const transactionProps = transactionRows.map((tx) => ({
@@ -142,15 +126,17 @@ export default async function TechniquesPage({ params }: PageProps) {
   }));
 
   return (
-    <TechniquesView
-      clientId={id}
-      transfers={transferProps}
-      assetTransactions={transactionProps}
-      accounts={accountOptions}
-      liabilities={liabilityOptions}
-      milestones={milestones}
-      clientFirstName={client.firstName}
-      spouseFirstName={client.spouseName ?? undefined}
-    />
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <TechniquesView
+        clientId={id}
+        transfers={transferProps}
+        assetTransactions={transactionProps}
+        accounts={accountOptions}
+        liabilities={liabilityOptions}
+        milestones={milestones}
+        clientFirstName={client.firstName}
+        spouseFirstName={client.spouseName ?? undefined}
+      />
+    </ClientDataPageShell>
   );
 }

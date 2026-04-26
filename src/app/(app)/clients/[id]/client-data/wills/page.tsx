@@ -3,14 +3,12 @@ import { db } from "@/db";
 import {
   clients,
   scenarios,
-  accounts,
   familyMembers,
   externalBeneficiaries,
   entities,
   wills,
   willBequests,
   willBequestRecipients,
-  liabilities,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -26,14 +24,18 @@ import WillsPanel, {
   type WillsPanelAssetBequest,
   type WillsPanelLiabilityBequest,
 } from "@/components/wills-panel";
+import ClientDataPageShell from "@/components/client-data-page-shell";
+import { loadEffectiveTree } from "@/lib/scenario/loader";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ scenario?: string }>;
 }
 
-export default async function WillsPage({ params }: PageProps) {
+export default async function WillsPage({ params, searchParams }: PageProps) {
   const firmId = await getOrgId();
   const { id } = await params;
+  const sp = await searchParams;
 
   const [client] = await db
     .select()
@@ -48,20 +50,17 @@ export default async function WillsPage({ params }: PageProps) {
 
   if (!scenario) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
-        No base case scenario found.
-      </div>
+      <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+        <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+          No base case scenario found.
+        </div>
+      </ClientDataPageShell>
     );
   }
 
-  const [willRows, accountRows, familyRows, externalRows, entityRows, liabilityRows] =
+  const [willRows, familyRows, externalRows, entityRows, { effectiveTree }] =
     await Promise.all([
       db.select().from(wills).where(eq(wills.clientId, id)).orderBy(asc(wills.grantor)),
-      db
-        .select()
-        .from(accounts)
-        .where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id)))
-        .orderBy(asc(accounts.name)),
       db.select().from(familyMembers).where(eq(familyMembers.clientId, id)).orderBy(asc(familyMembers.firstName)),
       db
         .select()
@@ -69,12 +68,11 @@ export default async function WillsPage({ params }: PageProps) {
         .where(eq(externalBeneficiaries.clientId, id))
         .orderBy(asc(externalBeneficiaries.name)),
       db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
-      db
-        .select()
-        .from(liabilities)
-        .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id)))
-        .orderBy(asc(liabilities.name)),
+      loadEffectiveTree(id, firmId, sp.scenario ?? "base", {}),
     ]);
+
+  const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
+  const liabilityRows = [...effectiveTree.liabilities].sort((a, b) => a.name.localeCompare(b.name));
 
   const willIds = willRows.map((w) => w.id);
   const bequestRows = willIds.length
@@ -174,21 +172,23 @@ export default async function WillsPage({ params }: PageProps) {
   const liabs: WillsPanelLiability[] = liabilityRows.map((l) => ({
     id: l.id,
     name: l.name,
-    balance: parseFloat(l.balance),
+    balance: l.balance,
     linkedPropertyId: l.linkedPropertyId ?? null,
     ownerEntityId: l.ownerEntityId ?? null,
   }));
 
   return (
-    <WillsPanel
-      clientId={id}
-      primary={primary}
-      accounts={accts}
-      liabilities={liabs}
-      familyMembers={fams}
-      externalBeneficiaries={exts}
-      entities={ents}
-      initialWills={initialWills}
-    />
+    <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
+      <WillsPanel
+        clientId={id}
+        primary={primary}
+        accounts={accts}
+        liabilities={liabs}
+        familyMembers={fams}
+        externalBeneficiaries={exts}
+        entities={ents}
+        initialWills={initialWills}
+      />
+    </ClientDataPageShell>
   );
 }

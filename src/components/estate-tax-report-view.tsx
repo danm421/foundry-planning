@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { runProjection } from "@/engine/projection";
 import type { EstateTaxResult, HypotheticalEstateTaxOrdering, ProjectionYear } from "@/engine/types";
 
@@ -28,6 +29,7 @@ export default function EstateTaxReportView({
   isMarried,
   ownerNames,
 }: EstateTaxReportViewProps) {
+  const searchParams = useSearchParams();
   const [projectionYears, setProjectionYears] = useState<ProjectionYear[]>([]);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [ordering, setOrdering] = useState<Ordering>("primaryFirst");
@@ -38,7 +40,11 @@ export default function EstateTaxReportView({
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch(`/api/clients/${clientId}/projection-data`);
+        const scenarioParam = searchParams?.get("scenario");
+        const url = scenarioParam
+          ? `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(scenarioParam)}`
+          : `/api/clients/${clientId}/projection-data`;
+        const res = await fetch(url);
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as {
             error?: string;
@@ -63,7 +69,7 @@ export default function EstateTaxReportView({
     return () => {
       cancelled = true;
     };
-  }, [clientId]);
+  }, [clientId, searchParams]);
 
   const selectedProjectionYear = useMemo(() => {
     if (selectedYear == null) return null;

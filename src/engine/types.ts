@@ -375,6 +375,12 @@ export interface Income {
    *  income shows in totals. Applies typically to schedule C / K-1 SE
    *  streams on `business` type. Absent = treated as W-2-style for tax. */
   isSelfEmployment?: boolean;
+  // ── View-only metadata ─────────────────────────────────────────────
+  // Carried through from the DB row so page-level adapters can render
+  // milestone-relative editing UI. Engine math ignores these fields.
+  startYearRef?: string | null;
+  endYearRef?: string | null;
+  growthSource?: string | null;
 }
 
 export interface Expense {
@@ -400,6 +406,12 @@ export interface Expense {
    *  this synthetic expense. Used by downstream consumers (cash routing, UI
    *  disambiguation, payout transform) to link the expense to its policy. */
   sourcePolicyAccountId?: string;
+  // ── View-only metadata ─────────────────────────────────────────────
+  // Carried through from the DB row so page-level adapters can render
+  // milestone-relative editing UI. Engine math ignores these fields.
+  startYearRef?: string | null;
+  endYearRef?: string | null;
+  growthSource?: string | null;
 }
 
 export interface ExtraPayment {
@@ -460,6 +472,12 @@ export interface SavingsRule {
   employerMatchAmount?: number;
   /** Year-by-year amount overrides. When present, bypasses growth-rate calc. */
   scheduleOverrides?: Map<number, number>;
+  // ── View-only metadata ─────────────────────────────────────────────
+  // Carried through from the DB row so page-level adapters can render
+  // milestone-relative editing UI. Engine math ignores these fields.
+  startYearRef?: string | null;
+  endYearRef?: string | null;
+  growthSource?: string | null;
 }
 
 export interface WithdrawalPriority {
@@ -480,6 +498,9 @@ export interface Transfer {
   endYear?: number;
   growthRate: number;
   schedules: TransferSchedule[];
+  // View-only metadata. Engine math ignores these.
+  startYearRef?: string | null;
+  endYearRef?: string | null;
 }
 
 export interface TransferSchedule {

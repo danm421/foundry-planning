@@ -343,7 +343,10 @@ export const scenarioSnapshots = pgTable("scenario_snapshots", {
   rawChangesRight: jsonb("raw_changes_right").notNull(),
   rawToggleGroupsRight: jsonb("raw_toggle_groups_right").notNull(),
   frozenAt: timestamp("frozen_at").defaultNow().notNull(),
-  frozenByUserId: uuid("frozen_by_user_id").notNull(),
+  // Clerk userIds are strings like `user_2qXyZ...`, not uuids. Stored as text
+  // to mirror `audit_log.actor_id`. Originally declared `uuid` in 0050, fixed
+  // in 0053 before the table was first written to in production.
+  frozenByUserId: text("frozen_by_user_id").notNull(),
   sourceKind: scenarioSnapshotSourceKindEnum("source_kind").notNull().default("manual"),
 });
 

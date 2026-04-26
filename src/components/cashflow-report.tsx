@@ -321,7 +321,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`/api/clients/${clientId}/projection-data`);
+        const scenarioParam = searchParams?.get("scenario");
+        const url = scenarioParam
+          ? `/api/clients/${clientId}/projection-data?scenario=${encodeURIComponent(scenarioParam)}`
+          : `/api/clients/${clientId}/projection-data`;
+        const res = await fetch(url);
         if (!res.ok) {
           const body = await res.json().catch(() => ({})) as { error?: string };
           throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -346,7 +350,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       }
     }
     load();
-  }, [clientId]);
+  }, [clientId, searchParams]);
 
   // ── Drill-down navigation ─────────────────────────────────────────────────
 

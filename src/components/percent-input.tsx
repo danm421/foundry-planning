@@ -3,6 +3,7 @@
 import { forwardRef, useState, useEffect, useRef } from "react";
 import type { InputHTMLAttributes } from "react";
 import { inputClassName } from "./forms/input-styles";
+import { useScenarioInputClass } from "./scenario/scenario-input-styling";
 
 interface PercentInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "defaultValue" | "onChange"> {
@@ -39,6 +40,7 @@ export const PercentInput = forwardRef<HTMLInputElement, PercentInputProps>(
     const [internal, setInternal] = useState(initial);
     const raw = isControlled ? String(value ?? "") : internal;
     const displayInputRef = useRef<HTMLInputElement | null>(null);
+    const scenarioClass = useScenarioInputClass();
 
     useEffect(() => {
       if (!isControlled) setInternal(initial);
@@ -65,7 +67,7 @@ export const PercentInput = forwardRef<HTMLInputElement, PercentInputProps>(
           value={raw}
           onChange={handleChange}
           placeholder={placeholder}
-          className={`${inputClassName} pr-7 ${className ?? ""}`}
+          className={`${inputClassName} pr-7 ${scenarioClass} ${className ?? ""}`}
         />
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-ink-3">
           %

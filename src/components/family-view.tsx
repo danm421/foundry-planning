@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import ConfirmDeleteDialog from "./confirm-delete-dialog";
 import AddClientDialog from "./add-client-dialog";
 import EntityDialog from "./entity-dialog";
@@ -202,6 +203,7 @@ function FamilyMemberDialog({
   onSaved,
   onRequestDelete,
 }: FamilyMemberDialogProps) {
+  const writer = useScenarioWriter(clientId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isEdit = Boolean(editing);
@@ -221,19 +223,55 @@ function FamilyMemberDialog({
       notes: (data.get("notes") as string) || null,
     };
     try {
-      const url = isEdit
-        ? `/api/clients/${clientId}/family-members/${editing!.id}`
-        : `/api/clients/${clientId}/family-members`;
-      const res = await fetch(url, {
-        method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const newMemberId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `tmp-${Date.now()}`;
+
+      const res = isEdit
+        ? await writer.submit(
+            {
+              op: "edit",
+              targetKind: "family_member",
+              targetId: editing!.id,
+              desiredFields: body,
+            },
+            {
+              url: `/api/clients/${clientId}/family-members/${editing!.id}`,
+              method: "PUT",
+              body,
+            },
+          )
+        : await writer.submit(
+            {
+              op: "add",
+              targetKind: "family_member",
+              entity: { id: newMemberId, ...body },
+            },
+            {
+              url: `/api/clients/${clientId}/family-members`,
+              method: "POST",
+              body,
+            },
+          );
       if (!res.ok) {
         const json = await res.json();
         throw new Error(json.error ?? "Failed to save");
       }
-      const saved = (await res.json()) as FamilyMember;
+      // Base mode returns the saved row; scenario mode returns { ok, targetId }.
+      // For the optimistic onSaved callback, synthesize a FamilyMember in
+      // scenario mode — router.refresh() (run by the writer) reloads canonical
+      // state shortly after.
+      const saved: FamilyMember = writer.scenarioActive
+        ? ({
+            id: isEdit ? editing!.id : newMemberId,
+            firstName: body.firstName,
+            lastName: body.lastName || null,
+            relationship: body.relationship as FamilyMember["relationship"],
+            dateOfBirth: body.dateOfBirth,
+            notes: body.notes,
+          })
+        : ((await res.json()) as FamilyMember);
       onSaved(saved, isEdit ? "edit" : "create");
       onOpenChange(false);
     } catch (err) {
@@ -361,6 +399,7 @@ export default function FamilyView({
   initialDesignations,
   initialGifts,
 }: FamilyViewProps) {
+  const writer = useScenarioWriter(clientId);
   const [members, setMembers] = useState<FamilyMember[]>(initialMembers);
   const [entities, setEntities] = useState<Entity[]>(initialEntities);
   const [externals, setExternals] = useState<ExternalBeneficiary[]>(initialExternalBeneficiaries);
@@ -740,7 +779,13 @@ export default function FamilyView({
         onCancel={() => setDeletingMember(null)}
         onConfirm={async () => {
           if (!deletingMember) return;
-          const res = await fetch(`/api/clients/${clientId}/family-members/${deletingMember.id}`, { method: "DELETE" });
+          const res = await writer.submit(
+            { op: "remove", targetKind: "family_member", targetId: deletingMember.id },
+            {
+              url: `/api/clients/${clientId}/family-members/${deletingMember.id}`,
+              method: "DELETE",
+            },
+          );
           if (res.ok || res.status === 204) {
             setMembers((prev) => prev.filter((m) => m.id !== deletingMember.id));
             setMemberDialogOpen(false);
@@ -760,7 +805,13 @@ export default function FamilyView({
         onCancel={() => setDeletingEntity(null)}
         onConfirm={async () => {
           if (!deletingEntity) return;
-          const res = await fetch(`/api/clients/${clientId}/entities/${deletingEntity.id}`, { method: "DELETE" });
+          const res = await writer.submit(
+            { op: "remove", targetKind: "entity", targetId: deletingEntity.id },
+            {
+              url: `/api/clients/${clientId}/entities/${deletingEntity.id}`,
+              method: "DELETE",
+            },
+          );
           if (res.ok || res.status === 204) {
             setEntities((prev) => prev.filter((e) => e.id !== deletingEntity.id));
             setEntityDialogOpen(false);

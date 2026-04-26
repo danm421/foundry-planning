@@ -14,6 +14,7 @@ import { defaultIncomeRefs, defaultExpenseRefs, resolveMilestone } from "@/lib/m
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import type { ClientInfo as EngineClientInfo, PlanSettings, Income as EngineIncome } from "@/engine/types";
 import { SocialSecurityCard } from "./social-security-card";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -383,6 +384,7 @@ function IncomeDialog({
   schedule,
   resolvedInflationRate,
 }: IncomeDialogProps) {
+  const writer = useScenarioWriter(clientId);
   type TabId = "details" | "schedule";
   const [activeTab, setActiveTab] = useState<TabId>("details");
   const [hasSchedule, setHasSchedule] = useState((schedule ?? []).length > 0);
@@ -496,21 +498,47 @@ function IncomeDialog({
       const url = isEdit
         ? `/api/clients/${clientId}/incomes/${editing!.id}`
         : `/api/clients/${clientId}/incomes`;
-      const res = await fetch(url, {
-        method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      // For scenario-mode `add` we mint a uuid up-front so we can read it back
+      // without parsing the response (which is `{ ok, targetId }` from the
+      // unified writer route, not the full row).
+      const newId = !isEdit
+        ? typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `tmp-${Date.now()}`
+        : editing!.id;
+      const res = await writer.submit(
+        isEdit
+          ? {
+              op: "edit",
+              targetKind: "income",
+              targetId: editing!.id,
+              desiredFields: body,
+            }
+          : {
+              op: "add",
+              targetKind: "income",
+              entity: { id: newId, ...body },
+            },
+        { url, method: isEdit ? "PUT" : "POST", body },
+      );
 
       if (!res.ok) {
         const json = await res.json();
         throw new Error(json.error ?? "Failed to save income");
       }
 
-      const saved = (await res.json()) as Income;
+      // Base mode returns the saved row; scenario mode returns `{ ok, targetId }`.
+      // Synthesize a stub for the optimistic onSaved callback — router.refresh()
+      // (run by the writer) reloads canonical state.
+      const saved: Income = writer.scenarioActive
+        ? ({ id: newId, ...body } as unknown as Income)
+        : ((await res.json()) as Income);
 
       // On create: if a schedule was staged, persist it now that we have the ID.
-      if (!isEdit && stagedSchedule.length > 0) {
+      // Schedule overrides are out of v1 scenario scope, so we leave this as a
+      // raw fetch — only meaningful in base mode (in scenario mode `saved.id`
+      // points to the synthesized id, which has no base row to attach to).
+      if (!isEdit && stagedSchedule.length > 0 && !writer.scenarioActive) {
         await fetch(`/api/clients/${clientId}/incomes/${saved.id}/schedule`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -854,6 +882,7 @@ function ExpenseDialog({
   schedule,
   resolvedInflationRate,
 }: ExpenseDialogProps) {
+  const writer = useScenarioWriter(clientId);
   type ExpTabId = "details" | "schedule";
   const [activeTab, setActiveTab] = useState<ExpTabId>("details");
   const [hasSchedule, setHasSchedule] = useState((schedule ?? []).length > 0);
@@ -920,21 +949,39 @@ function ExpenseDialog({
       const url = isEdit
         ? `/api/clients/${clientId}/expenses/${editing!.id}`
         : `/api/clients/${clientId}/expenses`;
-      const res = await fetch(url, {
-        method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const newId = !isEdit
+        ? typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `tmp-${Date.now()}`
+        : editing!.id;
+      const res = await writer.submit(
+        isEdit
+          ? {
+              op: "edit",
+              targetKind: "expense",
+              targetId: editing!.id,
+              desiredFields: body,
+            }
+          : {
+              op: "add",
+              targetKind: "expense",
+              entity: { id: newId, ...body },
+            },
+        { url, method: isEdit ? "PUT" : "POST", body },
+      );
 
       if (!res.ok) {
         const json = await res.json();
         throw new Error(json.error ?? "Failed to save expense");
       }
 
-      const saved = (await res.json()) as Expense;
+      const saved: Expense = writer.scenarioActive
+        ? ({ id: newId, ...body } as unknown as Expense)
+        : ((await res.json()) as Expense);
 
-      // On create: if a schedule was staged, persist it now that we have the ID.
-      if (!isEdit && stagedSchedule.length > 0) {
+      // On create: persist the staged schedule. Schedule overrides are out of
+      // v1 scenario scope, so this only fires in base mode.
+      if (!isEdit && stagedSchedule.length > 0 && !writer.scenarioActive) {
         await fetch(`/api/clients/${clientId}/expenses/${saved.id}/schedule`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -1224,6 +1271,7 @@ export default function IncomeExpensesView({
   ssClientInfo,
   ssPlanSettings,
 }: IncomeExpensesViewProps) {
+  const writer = useScenarioWriter(clientId);
   const [incomeList, setIncomeList] = useState<Income[]>(initialIncomes);
   const [expenseList, setExpenseList] = useState<Expense[]>(initialExpenses);
   const [savingsRuleList, setSavingsRuleList] = useState<SavingsRule[]>(initialSavingsRules);
@@ -1279,8 +1327,17 @@ export default function IncomeExpensesView({
   const outOfEstateIncome = incomeList.filter((i) => i.ownerEntityId).reduce((s, i) => s + Number(i.annualAmount), 0);
   const outOfEstateExpense = expenseList.filter((e) => e.ownerEntityId).reduce((s, e) => s + Number(e.annualAmount), 0);
 
-  async function performDelete(url: string) {
-    const res = await fetch(url, { method: "DELETE" });
+  // Scenario-aware delete: routes through `useScenarioWriter` so a delete in
+  // scenario mode records a `remove` change instead of dropping the base row.
+  async function performScenarioDelete(
+    targetKind: "income" | "expense" | "savings_rule",
+    targetId: string,
+    url: string,
+  ) {
+    const res = await writer.submit(
+      { op: "remove", targetKind, targetId },
+      { url, method: "DELETE" },
+    );
     if (!res.ok && res.status !== 204) {
       const json = await res.json().catch(() => ({}));
       alert(json.error ?? "Failed to delete");
@@ -1540,7 +1597,11 @@ export default function IncomeExpensesView({
         onCancel={() => setDeletingIncome(null)}
         onConfirm={async () => {
           if (!deletingIncome) return;
-          const ok = await performDelete(`/api/clients/${clientId}/incomes/${deletingIncome.id}`);
+          const ok = await performScenarioDelete(
+            "income",
+            deletingIncome.id,
+            `/api/clients/${clientId}/incomes/${deletingIncome.id}`,
+          );
           if (ok) {
             setIncomeList((prev) => prev.filter((i) => i.id !== deletingIncome.id));
             setIncomeDialog({ open: false });
@@ -1556,7 +1617,11 @@ export default function IncomeExpensesView({
         onCancel={() => setDeletingExpense(null)}
         onConfirm={async () => {
           if (!deletingExpense) return;
-          const ok = await performDelete(`/api/clients/${clientId}/expenses/${deletingExpense.id}`);
+          const ok = await performScenarioDelete(
+            "expense",
+            deletingExpense.id,
+            `/api/clients/${clientId}/expenses/${deletingExpense.id}`,
+          );
           if (ok) {
             setExpenseList((prev) => prev.filter((e) => e.id !== deletingExpense.id));
             setExpenseDialog({ open: false });
@@ -1576,7 +1641,11 @@ export default function IncomeExpensesView({
         onCancel={() => setDeletingSavings(null)}
         onConfirm={async () => {
           if (!deletingSavings) return;
-          const ok = await performDelete(`/api/clients/${clientId}/savings-rules/${deletingSavings.id}`);
+          const ok = await performScenarioDelete(
+            "savings_rule",
+            deletingSavings.id,
+            `/api/clients/${clientId}/savings-rules/${deletingSavings.id}`,
+          );
           if (ok) {
             setSavingsRuleList((prev) => prev.filter((r) => r.id !== deletingSavings.id));
             setSavingsDialog({ open: false });

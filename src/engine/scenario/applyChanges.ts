@@ -38,7 +38,68 @@ export function resolveEffectiveToggleState(
  * Map from TargetKind to the ClientData property holding that entity's array.
  * Add new entries here whenever a new TargetKind is added.
  */
-const TARGET_KIND_TO_FIELD: Record<TargetKind, keyof ClientData | null> = {
+// Forms send decimal fields as strings (matching the base POST shape that
+// round-trips through Drizzle decimal columns and gets `parseFloat`'d in
+// `loadClientData`). Scenario `add`/`edit` payloads bypass that loader, so
+// applyChanges has to coerce or numeric-string values reach the engine and
+// poison every `+` reduction. Keep aligned with `loadClientData`.
+const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
+  account: [
+    "value",
+    "basis",
+    "growthRate",
+    "annualPropertyTax",
+    "propertyTaxGrowthRate",
+    "turnoverPct",
+    "overridePctOi",
+    "overridePctLtCg",
+    "overridePctQdiv",
+    "overridePctTaxExempt",
+  ],
+  income: ["annualAmount", "growthRate", "piaMonthly"],
+  expense: ["annualAmount", "growthRate"],
+  liability: ["balance", "interestRate", "monthlyPayment"],
+  savings_rule: [
+    "annualAmount",
+    "annualPercent",
+    "growthRate",
+    "employerMatchPct",
+    "employerMatchCap",
+    "employerMatchAmount",
+  ],
+  client_deduction: ["annualAmount", "growthRate"],
+};
+
+function toNumberIfNumericString(v: unknown): unknown {
+  if (typeof v !== "string" || v === "") return v;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : v;
+}
+
+function coerceEntityNumerics(
+  targetKind: TargetKind,
+  entity: Record<string, unknown>,
+): Record<string, unknown> {
+  const fields = NUMERIC_FIELDS_BY_KIND[targetKind];
+  if (!fields) return entity;
+  const out: Record<string, unknown> = { ...entity };
+  for (const f of fields) {
+    if (f in out) out[f] = toNumberIfNumericString(out[f]);
+  }
+  return out;
+}
+
+function coerceEditValue(
+  targetKind: TargetKind,
+  fieldName: string,
+  v: unknown,
+): unknown {
+  const fields = NUMERIC_FIELDS_BY_KIND[targetKind];
+  if (!fields || !fields.includes(fieldName)) return v;
+  return toNumberIfNumericString(v);
+}
+
+export const TARGET_KIND_TO_FIELD: Record<TargetKind, keyof ClientData | null> = {
   account: "accounts",
   income: "incomes",
   expense: "expenses",
@@ -138,7 +199,11 @@ function applyAdd(tree: ClientData, change: ScenarioChange): void {
     );
   }
   const arr = (tree[field] as unknown[]) ?? [];
-  (tree[field] as unknown) = [...arr, change.payload];
+  const entity = coerceEntityNumerics(
+    change.targetKind,
+    change.payload as Record<string, unknown>,
+  );
+  (tree[field] as unknown) = [...arr, entity];
 }
 
 function applyEdit(tree: ClientData, change: ScenarioChange): void {
@@ -174,7 +239,7 @@ function applyEdit(tree: ClientData, change: ScenarioChange): void {
 
   const target = { ...arr[idx] } as Record<string, unknown>;
   for (const [k, { to }] of Object.entries(diff)) {
-    target[k] = to;
+    target[k] = coerceEditValue(change.targetKind, k, to);
   }
   arr[idx] = target as { id: string };
 }

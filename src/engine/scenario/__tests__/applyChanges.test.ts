@@ -127,6 +127,41 @@ describe("applyScenarioChanges — add", () => {
     );
     expect(base.accounts).toEqual([]);
   });
+
+  it("coerces string numerics in account add payloads to numbers", () => {
+    // Forms send decimal fields as strings (matching the base POST body shape
+    // that round-trips through Drizzle decimal columns). The engine declares
+    // these fields as `number` and downstream reductions use `+`, so a leaked
+    // string concatenates the whole sum. applyAdd must coerce.
+    const base = minimalClientData();
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "add",
+      targetKind: "account",
+      targetId: "a-new",
+      payload: {
+        id: "a-new",
+        name: "Brokerage",
+        category: "taxable",
+        subType: "individual",
+        owner: "client",
+        value: "50000",
+        basis: "0",
+        growthRate: "0.05",
+        turnoverPct: "0",
+      } as unknown as Account,
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    const acct = result.effectiveTree.accounts[0];
+    expect(typeof acct.value).toBe("number");
+    expect(acct.value).toBe(50000);
+    expect(typeof acct.basis).toBe("number");
+    expect(typeof acct.growthRate).toBe("number");
+  });
 });
 
 describe("applyScenarioChanges — edit", () => {
@@ -188,6 +223,36 @@ describe("applyScenarioChanges — edit", () => {
     // double-apply on top of an already-added entity.
     expect(result.effectiveTree.accounts).toHaveLength(1);
     expect(result.effectiveTree.accounts[0].value).toBe(100000);
+  });
+
+  it("coerces string numerics in account edit `to` values to numbers", () => {
+    const base = minimalClientData();
+    base.accounts = [{
+      id: "a-base",
+      clientId: "c1",
+      scenarioId: "s-base",
+      name: "Brokerage",
+      category: "taxable",
+      subType: "individual",
+      owner: "client",
+      value: 250000,
+      basis: 0,
+    } as unknown as Account];
+
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "edit",
+      targetKind: "account",
+      targetId: "a-base",
+      payload: { value: { from: 250000, to: "350000" } },
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    expect(typeof result.effectiveTree.accounts[0].value).toBe("number");
+    expect(result.effectiveTree.accounts[0].value).toBe(350000);
   });
 
   it("applies edit to plan_settings (singleton)", () => {

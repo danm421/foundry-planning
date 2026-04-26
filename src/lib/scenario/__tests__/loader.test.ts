@@ -1,11 +1,12 @@
 // src/lib/scenario/__tests__/loader.test.ts
 import { describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
-import { loadEffectiveTree } from "../loader";
+import { loadEffectiveTree, loadEffectiveTreeForRef } from "../loader";
 import { loadClientData } from "@/lib/projection/load-client-data";
 import { db } from "@/db";
-import { scenarios, scenarioChanges } from "@/db/schema";
+import { scenarios, scenarioChanges, scenarioSnapshots } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+import type { ClientData } from "@/engine/types";
 
 const TEST_FIRM_ID = process.env.TEST_FIRM_ID;
 const TEST_CLIENT_ID = process.env.TEST_CLIENT_ID;
@@ -72,6 +73,123 @@ describe.skipIf(!TEST_FIRM_ID || !TEST_CLIENT_ID)(
         // Cleanup: ON DELETE CASCADE on scenario_changes.scenario_id cleans up the change row
         await db.delete(scenarios).where(eq(scenarios.id, scn.id));
       }
+    });
+  },
+);
+
+describe.skipIf(!TEST_FIRM_ID || !TEST_CLIENT_ID)(
+  "loadEffectiveTreeForRef",
+  () => {
+    /**
+     * Insert a minimal snapshot row with two distinct frozen trees so we can
+     * assert that `side: "left" | "right"` selects the right one.
+     */
+    async function seedSnapshot({
+      clientId,
+      leftTree,
+      rightTree,
+    }: {
+      clientId: string;
+      leftTree: unknown;
+      rightTree: unknown;
+    }): Promise<string> {
+      const [row] = await db
+        .insert(scenarioSnapshots)
+        .values({
+          clientId,
+          name: "loader-test-snap",
+          description: null,
+          leftScenarioId: null,
+          rightScenarioId: null,
+          effectiveTreeLeft: leftTree,
+          effectiveTreeRight: rightTree,
+          toggleState: {},
+          rawChangesRight: [],
+          rawToggleGroupsRight: [],
+          // frozen_by_user_id is uuid notNull — use a random uuid for test seeding
+          frozenByUserId: randomUUID(),
+          sourceKind: "manual",
+        })
+        .returning({ id: scenarioSnapshots.id });
+      return row.id;
+    }
+
+    it("scenario-ref delegates to loadEffectiveTree (base case)", async () => {
+      const [base] = await db
+        .select()
+        .from(scenarios)
+        .where(
+          and(eq(scenarios.clientId, TEST_CLIENT_ID!), eq(scenarios.isBaseCase, true)),
+        );
+
+      const [viaRef, viaDirect] = await Promise.all([
+        loadEffectiveTreeForRef(TEST_CLIENT_ID!, TEST_FIRM_ID!, {
+          kind: "scenario",
+          id: base.id,
+          toggleState: {},
+        }),
+        loadEffectiveTree(TEST_CLIENT_ID!, TEST_FIRM_ID!, base.id, {}),
+      ]);
+
+      expect(viaRef.effectiveTree).toEqual(viaDirect.effectiveTree);
+      expect(viaRef.warnings).toEqual(viaDirect.warnings);
+    });
+
+    it("snapshot-ref returns the frozen left tree verbatim", async () => {
+      const leftTree = { __marker: "left-tree" } as unknown as ClientData;
+      const rightTree = { __marker: "right-tree" } as unknown as ClientData;
+      const snapId = await seedSnapshot({
+        clientId: TEST_CLIENT_ID!,
+        leftTree,
+        rightTree,
+      });
+
+      try {
+        const result = await loadEffectiveTreeForRef(TEST_CLIENT_ID!, TEST_FIRM_ID!, {
+          kind: "snapshot",
+          id: snapId,
+          side: "left",
+        });
+        expect(result.effectiveTree).toEqual(leftTree);
+        expect(result.warnings).toEqual([]);
+      } finally {
+        await db.delete(scenarioSnapshots).where(eq(scenarioSnapshots.id, snapId));
+      }
+    });
+
+    it("snapshot-ref returns the frozen right tree verbatim", async () => {
+      const leftTree = { __marker: "left-tree" } as unknown as ClientData;
+      const rightTree = { __marker: "right-tree" } as unknown as ClientData;
+      const snapId = await seedSnapshot({
+        clientId: TEST_CLIENT_ID!,
+        leftTree,
+        rightTree,
+      });
+
+      try {
+        const result = await loadEffectiveTreeForRef(TEST_CLIENT_ID!, TEST_FIRM_ID!, {
+          kind: "snapshot",
+          id: snapId,
+          side: "right",
+        });
+        expect(result.effectiveTree).toEqual(rightTree);
+        expect(result.warnings).toEqual([]);
+      } finally {
+        await db.delete(scenarioSnapshots).where(eq(scenarioSnapshots.id, snapId));
+      }
+    });
+
+    it("snapshot-ref throws when the snapshot id is unknown / cross-firm", async () => {
+      // Random uuid that isn't in the table — covers both "not found" and the
+      // cross-firm case (a real id from another firm's client wouldn't satisfy
+      // the firmId join either).
+      await expect(
+        loadEffectiveTreeForRef(TEST_CLIENT_ID!, TEST_FIRM_ID!, {
+          kind: "snapshot",
+          id: randomUUID(),
+          side: "left",
+        }),
+      ).rejects.toThrow(/Snapshot .* not found/);
     });
   },
 );
