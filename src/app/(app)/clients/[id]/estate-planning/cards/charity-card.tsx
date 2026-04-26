@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { CharityCardData, BequestSummaryRow } from "../lib/derive-card-data";
+import { useDroppable } from "@dnd-kit/core";
+import type { CharityCardData } from "../lib/derive-card-data";
+import { useBequestEdit } from "../dnd-context-provider";
+import { BequestRow } from "./bequest-row";
 
 interface Props {
   data: CharityCardData;
@@ -11,9 +14,17 @@ interface Props {
 export function CharityCard({ data, defaultExpanded = false }: Props) {
   const [open, setOpen] = useState(defaultExpanded);
   const count = data.bequestsReceived.length;
+  const { isOver, setNodeRef } = useDroppable({
+    id: `charity:${data.externalBeneficiaryId}`,
+    data: { kind: "charity", externalBeneficiaryId: data.externalBeneficiaryId, name: data.name },
+  });
+  const { onEditBequest } = useBequestEdit();
 
   return (
-    <div className="border-b border-[var(--color-hair)] last:border-b-0">
+    <div
+      ref={setNodeRef}
+      className={`border-b border-[var(--color-hair)] last:border-b-0${isOver ? " ring-2 ring-[var(--color-accent)] bg-[var(--color-card-hover)]" : ""}`}
+    >
       <button
         type="button"
         aria-expanded={open}
@@ -36,7 +47,9 @@ export function CharityCard({ data, defaultExpanded = false }: Props) {
             </div>
           ) : (
             <ul className="flex flex-col">
-              {data.bequestsReceived.map((b) => <BequestRow key={b.bequestId} bequest={b} />)}
+              {data.bequestsReceived.map((b) => (
+                <BequestRow key={b.bequestId} bequest={b} onEdit={onEditBequest} />
+              ))}
             </ul>
           )}
         </div>
@@ -45,16 +58,3 @@ export function CharityCard({ data, defaultExpanded = false }: Props) {
   );
 }
 
-function BequestRow({ bequest }: { bequest: BequestSummaryRow }) {
-  return (
-    <li className="flex items-center gap-2 py-1.5 text-[12px]">
-      <span className="truncate text-[var(--color-ink-2)]">{bequest.assetName}</span>
-      {bequest.condition !== "always" && (
-        <span className="rounded-sm bg-[var(--color-card)] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--color-ink-3)]">
-          {bequest.condition}
-        </span>
-      )}
-      <span className="ml-auto tabular-nums text-[var(--color-ink)]">{bequest.percentage}%</span>
-    </li>
-  );
-}

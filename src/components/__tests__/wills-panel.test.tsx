@@ -93,25 +93,27 @@ describe("WillsPanel — add bequest modal", () => {
     const addButtons = screen.getAllByRole("button", { name: /Add bequest/i });
     fireEvent.click(addButtons[0]);
     expect(screen.getByText(/New bequest/i)).toBeDefined();
-    expect(screen.getByLabelText(/Name/i)).toBeDefined();
-    expect(screen.getByLabelText(/Asset/i)).toBeDefined();
-    expect(screen.getByLabelText(/Percentage/i)).toBeDefined();
-    expect(screen.getByLabelText(/Condition/i)).toBeDefined();
+    expect(screen.getByLabelText(/^Name$/i)).toBeDefined();
+    expect(screen.getByLabelText(/^Asset$/i)).toBeDefined();
+    expect(screen.getByLabelText(/^Percentage$/i)).toBeDefined();
+    expect(screen.getByLabelText(/^Condition$/i)).toBeDefined();
   });
 
-  it("enables Save when name is filled and default spouse recipient is at 100%", () => {
+  it("enables Save when name is filled, an account is picked, and default spouse recipient is at 100%", () => {
     render(<WillsPanel {...baseProps} initialWills={[]} />);
     fireEvent.click(screen.getAllByRole("button", { name: /Add bequest/i })[0]);
     const save = screen.getByRole("button", { name: /^Save$/i });
-    expect((save as HTMLButtonElement).disabled).toBe(true); // name empty
-    fireEvent.change(screen.getByLabelText(/Name/i), { target: { value: "Test" } });
-    expect((save as HTMLButtonElement).disabled).toBe(false); // name filled, spouse default at 100%
+    expect((save as HTMLButtonElement).disabled).toBe(true); // name empty + accountId null
+    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Test" } });
+    expect((save as HTMLButtonElement).disabled).toBe(true); // accountId still null (assetMode 'specific')
+    fireEvent.change(screen.getByLabelText(/^Asset$/i), { target: { value: u("a1") } });
+    expect((save as HTMLButtonElement).disabled).toBe(false); // name filled, account picked, spouse default at 100%
   });
 
   it("disables Save when recipient percentages drift from 100", () => {
     render(<WillsPanel {...baseProps} initialWills={[]} />);
     fireEvent.click(screen.getAllByRole("button", { name: /Add bequest/i })[0]);
-    fireEvent.change(screen.getByLabelText(/Name/i), { target: { value: "Test" } });
+    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: "Test" } });
     const pctInputs = screen.getAllByRole("spinbutton");
     // Recipient percentage input is the second spinbutton (first is bequest-percentage).
     fireEvent.change(pctInputs[1], { target: { value: "50" } });

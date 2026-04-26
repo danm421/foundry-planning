@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
 
 export type WillGrantor = "client" | "spouse";
 export type WillAssetMode = "specific" | "all_assets";
@@ -828,234 +829,39 @@ export default function WillsPanel(props: WillsPanelProps) {
       })}
 
       {/* Asset bequest modal */}
-      {assetModalOpen && (() => {
-        const recipientSum = assetDraft.recipients.reduce((s, x) => s + x.percentage, 0);
-        const recipientSumOk = Math.abs(recipientSum - 100) < 0.01;
-        return (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={editingIndex != null ? "Edit bequest" : "New bequest"}
-            onClick={() => {
+      {assetModalOpen && (
+        <BequestDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) {
               setAssetModalOpen(null);
               setEditingIndex(null);
-            }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg rounded-lg border border-gray-700 bg-gray-900 p-5"
-            >
-              <h3 className="mb-4 text-base font-semibold text-gray-100">
-                {editingIndex != null ? "Edit bequest" : "New bequest"}
-              </h3>
-
-              <label className="mb-3 block text-sm">
-                <span className="mb-1 block text-gray-300">Name</span>
-                <input
-                  type="text"
-                  value={assetDraft.name}
-                  onChange={(e) => setAssetDraft({ ...assetDraft, name: e.target.value })}
-                  className="w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-gray-100"
-                />
-              </label>
-
-              <label className="mb-3 block text-sm">
-                <span className="mb-1 block text-gray-300">Asset</span>
-                <select
-                  value={assetDraft.assetMode === "all_assets" ? "__residual__" : (assetDraft.accountId ?? "")}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === "__residual__") {
-                      setAssetDraft({ ...assetDraft, assetMode: "all_assets", accountId: null });
-                    } else {
-                      setAssetDraft({ ...assetDraft, assetMode: "specific", accountId: v });
-                    }
-                  }}
-                  className="w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-gray-100"
-                >
-                  <option value="__residual__">All other assets</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="mb-3 block text-sm">
-                <span className="mb-1 block text-gray-300">Percentage</span>
-                <input
-                  type="number"
-                  min={0.01}
-                  max={100}
-                  step={0.01}
-                  value={assetDraft.percentage}
-                  onChange={(e) => setAssetDraft({ ...assetDraft, percentage: parseFloat(e.target.value) || 0 })}
-                  className="w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-gray-100"
-                />
-              </label>
-
-              <label className="mb-3 block text-sm">
-                <span className="mb-1 block text-gray-300">Condition</span>
-                <select
-                  value={assetDraft.condition}
-                  onChange={(e) => setAssetDraft({ ...assetDraft, condition: e.target.value as WillCondition })}
-                  className="w-full rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-gray-100"
-                >
-                  <option value="always">Always</option>
-                  <option value="if_spouse_survives">If spouse survives</option>
-                  <option value="if_spouse_predeceased">If spouse predeceases</option>
-                </select>
-              </label>
-
-              <fieldset className="mb-4">
-                <legend className="mb-2 text-sm text-gray-300">Recipients</legend>
-                {assetDraft.recipients.map((r, i) => (
-                  <div key={i} className="mb-2 flex items-center gap-2">
-                    <select
-                      value={r.recipientKind}
-                      onChange={(e) => {
-                        const nextKind = e.target.value as WillRecipientKind;
-                        const next = [...assetDraft.recipients];
-                        next[i] = {
-                          ...r,
-                          recipientKind: nextKind,
-                          recipientId: nextKind === "spouse" ? null : (
-                            nextKind === "family_member" ? familyMembers[0]?.id ?? null :
-                            nextKind === "external_beneficiary" ? externalBeneficiaries[0]?.id ?? null :
-                            entities[0]?.id ?? null
-                          ),
-                        };
-                        setAssetDraft({ ...assetDraft, recipients: next });
-                      }}
-                      className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100"
-                    >
-                      <option value="spouse">Spouse</option>
-                      <option value="family_member">Family member</option>
-                      <option value="external_beneficiary">External beneficiary</option>
-                      <option value="entity">Entity / Trust</option>
-                    </select>
-                    {r.recipientKind !== "spouse" && (
-                      <select
-                        value={r.recipientId ?? ""}
-                        onChange={(e) => {
-                          const next = [...assetDraft.recipients];
-                          next[i] = { ...r, recipientId: e.target.value };
-                          setAssetDraft({ ...assetDraft, recipients: next });
-                        }}
-                        className="flex-1 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100"
-                      >
-                        {r.recipientKind === "family_member" &&
-                          familyMembers.map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {f.firstName} {f.lastName ?? ""}
-                            </option>
-                          ))}
-                        {r.recipientKind === "external_beneficiary" &&
-                          externalBeneficiaries.map((x) => (
-                            <option key={x.id} value={x.id}>{x.name}</option>
-                          ))}
-                        {r.recipientKind === "entity" &&
-                          entities.map((x) => (
-                            <option key={x.id} value={x.id}>{x.name}</option>
-                          ))}
-                      </select>
-                    )}
-                    <input
-                      type="number"
-                      min={0.01}
-                      max={100}
-                      step={0.01}
-                      value={r.percentage}
-                      onChange={(e) => {
-                        const next = [...assetDraft.recipients];
-                        next[i] = { ...r, percentage: parseFloat(e.target.value) || 0 };
-                        setAssetDraft({ ...assetDraft, recipients: next });
-                      }}
-                      className="w-20 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = assetDraft.recipients.filter((_, j) => j !== i);
-                        setAssetDraft({ ...assetDraft, recipients: next });
-                      }}
-                      className="rounded-md border border-gray-700 px-2 py-1 text-sm text-gray-300 hover:bg-gray-800"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const sortOrder = assetDraft.recipients.length;
-                    setAssetDraft({
-                      ...assetDraft,
-                      recipients: [
-                        ...assetDraft.recipients,
-                        {
-                          recipientKind: "family_member",
-                          recipientId: familyMembers[0]?.id ?? null,
-                          percentage: 0,
-                          sortOrder,
-                        },
-                      ],
-                    });
-                  }}
-                  className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-gray-100 hover:bg-gray-700"
-                >
-                  + Add recipient
-                </button>
-                <p className="mt-2 text-xs text-gray-300">
-                  Total:{" "}
-                  <span className={recipientSumOk ? "text-green-400" : "text-red-400"}>
-                    {recipientSum.toFixed(2)}%
-                  </span>
-                </p>
-              </fieldset>
-
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAssetModalOpen(null);
-                    setEditingIndex(null);
-                  }}
-                  className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={!assetDraft.name.trim() || !recipientSumOk || saving}
-                  onClick={async () => {
-                    if (!assetModalOpen) return;
-                    const g = assetModalOpen;
-                    const existing = wills.find((w) => w.grantor === g)?.bequests ?? [];
-                    let next: WillsPanelBequest[];
-                    const assetBequest: WillsPanelAssetBequest = { kind: "asset", ...assetDraft };
-                    if (editingIndex != null) {
-                      next = existing.map((b, i) =>
-                        i === editingIndex
-                          ? { ...assetBequest, sortOrder: i, id: b.id }
-                          : b,
-                      );
-                    } else {
-                      next = [...existing, { ...assetBequest, sortOrder: existing.length }];
-                    }
-                    await saveWill(g, next);
-                    setAssetModalOpen(null);
-                    setEditingIndex(null);
-                  }}
-                  className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+            }
+          }}
+          accounts={accounts}
+          familyMembers={familyMembers}
+          externalBeneficiaries={externalBeneficiaries}
+          entities={entities}
+          editing={editingIndex != null ? assetDraft : undefined}
+          saving={saving}
+          onSave={async (draft: BequestDraft) => {
+            if (!assetModalOpen) return;
+            const g = assetModalOpen;
+            const existing = wills.find((w) => w.grantor === g)?.bequests ?? [];
+            const assetBequest: WillsPanelAssetBequest = { kind: "asset", ...draft };
+            const next: WillsPanelBequest[] = editingIndex != null
+              ? existing.map((b, i) =>
+                  i === editingIndex
+                    ? { ...assetBequest, sortOrder: i, id: b.id }
+                    : b,
+                )
+              : [...existing, { ...assetBequest, sortOrder: existing.length }];
+            await saveWill(g, next);
+            setAssetModalOpen(null);
+            setEditingIndex(null);
+          }}
+        />
+      )}
 
       {/* Debt bequest modal */}
       {debtModalOpen && (

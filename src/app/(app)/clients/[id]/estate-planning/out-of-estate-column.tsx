@@ -8,12 +8,16 @@ import { TrustCard } from "./cards/trust-card";
 import { HeirCard } from "./cards/heir-card";
 import { CharityCard } from "./cards/charity-card";
 import EntityDialog from "@/components/entity-dialog";
+import FamilyMemberDialog from "@/components/family-member-dialog";
+import ExternalBeneficiaryDialog from "@/components/external-beneficiary-dialog";
 
 export function OutOfEstateColumn({ tree, asOfYear }: { tree: ClientData; asOfYear: number }) {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const clientId = params.id;
   const [trustDialogOpen, setTrustDialogOpen] = useState(false);
+  const [heirDialogOpen, setHeirDialogOpen] = useState(false);
+  const [charityDialogOpen, setCharityDialogOpen] = useState(false);
 
   const trusts = deriveTrustCardData(tree, asOfYear);
   const heirs = deriveHeirCardData(tree, asOfYear);
@@ -36,9 +40,7 @@ export function OutOfEstateColumn({ tree, asOfYear }: { tree: ClientData; asOfYe
         ) : (
           heirs.map((h) => <HeirCard key={h.familyMemberId} data={h} />)
         )}
-        {/* TODO(plan-2): "+ Add heir" affordance — FamilyMemberDialog is currently
-            a private function inside src/components/family-view.tsx; extract+export
-            before wiring here. See future-work/ui.md "estate-planning add-heir/charity affordances". */}
+        <AddRow label="+ Add heir" onClick={() => setHeirDialogOpen(true)} />
       </Section>
 
       <Section title="Charities" total={null}>
@@ -47,10 +49,7 @@ export function OutOfEstateColumn({ tree, asOfYear }: { tree: ClientData; asOfYe
         ) : (
           charities.map((c) => <CharityCard key={c.externalBeneficiaryId} data={c} />)
         )}
-        {/* TODO(plan-2): "+ Add charity" affordance — external beneficiaries are
-            currently added via an inline row form (ExternalBeneficiaryRowForm) inside
-            family-view.tsx, not via a standalone dialog. Either extract the row form
-            into a dialog or build a new minimal AddCharityDialog. See future-work/ui.md. */}
+        <AddRow label="+ Add charity" onClick={() => setCharityDialogOpen(true)} />
       </Section>
 
       <EntityDialog
@@ -76,6 +75,30 @@ export function OutOfEstateColumn({ tree, asOfYear }: { tree: ClientData; asOfYe
           router.refresh();
         }}
       />
+
+      {heirDialogOpen && (
+        <FamilyMemberDialog
+          clientId={clientId}
+          open={heirDialogOpen}
+          onOpenChange={setHeirDialogOpen}
+          onSaved={() => {
+            setHeirDialogOpen(false);
+            router.refresh();
+          }}
+        />
+      )}
+
+      {charityDialogOpen && (
+        <ExternalBeneficiaryDialog
+          clientId={clientId}
+          open={charityDialogOpen}
+          onOpenChange={setCharityDialogOpen}
+          onSaved={() => {
+            setCharityDialogOpen(false);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

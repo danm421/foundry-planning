@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useDroppable } from "@dnd-kit/core";
 import MoneyText from "@/components/money-text";
 import type { TrustCardData, AssetRow } from "../lib/derive-card-data";
 
@@ -19,9 +20,16 @@ const SUBTYPE_PILL_CLASS: Record<string, string> = {
 export function TrustCard({ data, defaultExpanded = false }: Props) {
   const [open, setOpen] = useState(defaultExpanded);
   const pill = SUBTYPE_PILL_CLASS[data.subType] ?? "bg-[var(--color-card-2)] text-[var(--color-ink-3)]";
+  const { isOver, setNodeRef } = useDroppable({
+    id: `trust:${data.entityId}`,
+    data: { kind: "trust", entityId: data.entityId, name: data.name },
+  });
 
   return (
-    <div className="border-b border-[var(--color-hair)] last:border-b-0">
+    <div
+      ref={setNodeRef}
+      className={`border-b border-[var(--color-hair)] last:border-b-0${isOver ? " ring-2 ring-[var(--color-accent)] bg-[var(--color-card-hover)]" : ""}`}
+    >
       <button
         type="button"
         aria-expanded={open}

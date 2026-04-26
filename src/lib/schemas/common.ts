@@ -19,6 +19,12 @@ import { NextResponse } from "next/server";
 // vocabulary — no objects or arrays.
 export const uuidLike = z.string().min(1).max(128);
 
+// Strict RFC-4122 UUID. Use for FK references that must be real UUIDs
+// (entity ids, family-member ids, etc.). uuidLike remains available for
+// contexts where tests pass short plain-string ids.
+export const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const uuidSchema = z.string().regex(uuidRegex, "Invalid UUID format");
+
 // Money and rates. Accept number or numeric string; reject NaN / Infinity.
 const finiteNumber = z
   .union([z.number(), z.string()])
