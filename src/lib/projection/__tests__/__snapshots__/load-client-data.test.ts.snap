@@ -98,6 +98,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "role": undefined,
     },
   ],
+  "giftEvents": [],
   "gifts": [],
   "incomes": [
     {

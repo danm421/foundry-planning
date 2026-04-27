@@ -1841,6 +1841,7 @@ describe("first-death asset transfer (spec 4b)", () => {
             recipients: [{ recipientKind: "spouse" as const, recipientId: null, percentage: 100, sortOrder: 0 }] },
         ]},
       ],
+      giftEvents: [],
     };
     return data;
   }
@@ -2296,6 +2297,7 @@ describe("fractional ownership: property tax + debt service pro-rate (Task 9)", 
       entities: [
         { id: "trust-1", name: "Trust", includeInPortfolio: false, isGrantor: false },
       ],
+      giftEvents: [],
     };
     const yrs = runProjection(data);
     // Household real-estate expenses include the synthetic property-tax line
@@ -2358,6 +2360,7 @@ describe("fractional ownership: property tax + debt service pro-rate (Task 9)", 
       entities: [
         { id: "trust-1", name: "Trust", includeInPortfolio: false, isGrantor: false },
       ],
+      giftEvents: [],
     };
     const yrs = runProjection(data);
     // Household liabilities expense should reflect 70% of the annual payment.
@@ -2448,6 +2451,7 @@ describe("fractional ownership: grantor pass-through pro-rate (Task 8)", () => {
           distributionMode: null,
         },
       ],
+      giftEvents: [],
     };
     const yrs = runProjection(data);
     // Household-like (FM 50% + grantor 30%) → 80% of $100k = $80k OI on the
@@ -2522,6 +2526,7 @@ describe("fractional ownership: RMD single-owner guard (Task 7)", () => {
       entities: [
         { id: "ngt", name: "NGT", includeInPortfolio: false, isGrantor: false },
       ],
+      giftEvents: [],
     };
     const yrs = runProjection(data);
     // The trust IRA's RMD landed in the trust checking, not household.
@@ -2607,6 +2612,7 @@ describe("fractional ownership: dividend / interest / cap-gains routing (Task 6)
           distributionMode: null,
         },
       ],
+      giftEvents: [],
     };
     const yrs = runProjection(data);
     // Household OI = $100k * 70% = $70k.
@@ -2673,6 +2679,7 @@ describe("fractional ownership: balance sheet pro-rate (Task 5)", () => {
       entities: [
         { id: "trust-1", includeInPortfolio: false, isGrantor: false },
       ],
+      giftEvents: [],
     };
     const yrs = runProjection(data);
     const t = yrs[0].portfolioAssets.taxable["acct-mixed"] ?? 0;

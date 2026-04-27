@@ -205,6 +205,7 @@ function emptyClientData(
     familyMembers,
     entities,
     taxYearRows: [taxYearRow],
+    giftEvents: [],
   };
 }
 

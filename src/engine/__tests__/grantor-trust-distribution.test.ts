@@ -125,6 +125,7 @@ function mkData(overrides: Partial<ClientData> & { entity?: Partial<EntitySummar
     planSettings,
     familyMembers: [spouseFm],
     entities: [entity],
+    giftEvents: [],
     ...rest,
   };
 }
@@ -248,6 +249,7 @@ describe("grantor trust distribution pass", () => {
         distributionMode: "fixed",
         distributionAmount: 50_000,
       }],
+      giftEvents: [],
     };
     const years = runProjection(data);
     const y0 = years[0];
@@ -394,6 +396,7 @@ describe("grantor-flip propagation through projection year loop", () => {
       familyMembers: [],
       entities: [idgtFlip],
       taxYearRows: [taxYearRow],
+      giftEvents: [],
     };
 
     const years = runProjection(data);
@@ -537,6 +540,7 @@ describe("asset-transaction sale routing for trust-owned accounts", () => {
       familyMembers: [],
       entities: [accumulatingSlat],
       taxYearRows: [taxYearRow],
+      giftEvents: [],
       assetTransactions: [
         {
           id: "sale-1",
@@ -590,6 +594,7 @@ describe("asset-transaction sale routing for trust-owned accounts", () => {
       familyMembers: [],
       entities: [],
       taxYearRows: [taxYearRow],
+      giftEvents: [],
       assetTransactions: [
         {
           id: "sale-2",

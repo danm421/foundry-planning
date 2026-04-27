@@ -216,6 +216,7 @@ describe("IDGT grantor flip", () => {
       familyMembers: [],
       entities: [idgt],
       taxYearRows: [taxYearRow],
+      giftEvents: [],
     };
 
     const years = runProjection(data);

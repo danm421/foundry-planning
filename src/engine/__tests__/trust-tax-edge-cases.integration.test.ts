@@ -198,6 +198,7 @@ describe("Trust tax — edge cases", () => {
       familyMembers: [spouseFm],
       entities: [trust],
       taxYearRows: [taxYearRow],
+      giftEvents: [],
     };
 
     const years = runProjection(data);
@@ -258,6 +259,7 @@ describe("Trust tax — edge cases", () => {
       familyMembers: [spouseFm],
       entities: [trust],
       taxYearRows: [taxYearRow],
+      giftEvents: [],
     };
 
     const years = runProjection(data);
@@ -334,6 +336,7 @@ describe("Trust tax — edge cases", () => {
       familyMembers: [],
       entities: [trust],
       taxYearRows: [taxYearRow],
+      giftEvents: [],
     };
 
     const years = runProjection(data);

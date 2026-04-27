@@ -394,6 +394,7 @@ async function loadClientData(clientId: string): Promise<ClientData> {
       mortgageRate: t.mortgageRate ? parseFloat(t.mortgageRate) : undefined,
       mortgageTermMonths: t.mortgageTermMonths ?? undefined,
     })) as any,
+    giftEvents: [],
   };
 
   return data;

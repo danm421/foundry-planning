@@ -18,6 +18,7 @@ import {
   extraPayments,
   familyMembers,
   gifts,
+  giftSeries,
   incomes,
   incomeScheduleOverrides,
   liabilities,
@@ -36,7 +37,8 @@ import {
   wills,
   withdrawalStrategies,
 } from "@/db/schema";
-import type { BeneficiaryRef, ClientData, Will, WillBequest } from "@/engine/types";
+import type { BeneficiaryRef, ClientData, GiftEvent, Will, WillBequest } from "@/engine/types";
+import { fanOutGiftSeries } from "@/engine/series-fanout";
 import type { AccountOwner } from "@/engine/ownership";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
@@ -105,6 +107,7 @@ export const loadClientData = cache(
       giftRows,
       familyMemberRows,
       externalBeneficiaryRows,
+      giftSeriesRows,
     ] = await Promise.all([
       db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
       db.select().from(incomes).where(and(eq(incomes.clientId, id), eq(incomes.scenarioId, scenario.id))),
@@ -128,6 +131,10 @@ export const loadClientData = cache(
         .orderBy(asc(gifts.year), asc(gifts.createdAt)),
       db.select().from(familyMembers).where(eq(familyMembers.clientId, id)).orderBy(asc(familyMembers.dateOfBirth)),
       db.select().from(externalBeneficiaries).where(eq(externalBeneficiaries.clientId, id)),
+      db
+        .select()
+        .from(giftSeries)
+        .where(and(eq(giftSeries.clientId, id), eq(giftSeries.scenarioId, scenario.id))),
     ]);
 
     // Load schedule overrides for all incomes, expenses, and savings rules
@@ -764,13 +771,74 @@ export const loadClientData = cache(
     const mappedGifts = giftRows.map((g) => ({
       id: g.id,
       year: g.year,
-      amount: parseFloat(g.amount),
+      amount: parseFloat(g.amount ?? "0"),
       grantor: g.grantor,
       recipientEntityId: g.recipientEntityId ?? undefined,
       recipientFamilyMemberId: g.recipientFamilyMemberId ?? undefined,
       recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? undefined,
       useCrummeyPowers: g.useCrummeyPowers,
     }));
+
+    // ── Build giftEvents (discriminated union) ───────────────────────────────
+    const cpi = resolvedInflationRate;
+
+    const cashFromGifts: GiftEvent[] = giftRows
+      .filter((g) => g.amount != null && g.accountId == null && g.liabilityId == null)
+      .map((g) => ({
+        kind: "cash" as const,
+        year: g.year,
+        amount: Number(g.amount),
+        grantor: g.grantor as "client" | "spouse",
+        recipientEntityId: g.recipientEntityId!,
+        useCrummeyPowers: g.useCrummeyPowers ?? false,
+      }));
+
+    const assetFromGifts: GiftEvent[] = giftRows
+      .filter((g) => g.accountId != null)
+      .map((g) => ({
+        kind: "asset" as const,
+        year: g.year,
+        accountId: g.accountId!,
+        percent: Number(g.percent),
+        grantor: g.grantor as "client" | "spouse",
+        recipientEntityId: g.recipientEntityId!,
+        amountOverride: g.amount != null ? Number(g.amount) : undefined,
+      }));
+
+    const liabilityFromGifts: GiftEvent[] = giftRows
+      .filter((g) => g.liabilityId != null)
+      .map((g) => ({
+        kind: "liability" as const,
+        year: g.year,
+        liabilityId: g.liabilityId!,
+        percent: Number(g.percent),
+        grantor: g.grantor as "client" | "spouse",
+        recipientEntityId: g.recipientEntityId!,
+        parentGiftId: g.parentGiftId!,
+      }));
+
+    const seriesEvents: GiftEvent[] = giftSeriesRows.flatMap((s) =>
+      fanOutGiftSeries(
+        {
+          id: s.id,
+          grantor: s.grantor as "client" | "spouse",
+          recipientEntityId: s.recipientEntityId,
+          startYear: s.startYear,
+          endYear: s.endYear,
+          annualAmount: Number(s.annualAmount),
+          inflationAdjust: s.inflationAdjust,
+          useCrummeyPowers: s.useCrummeyPowers,
+        },
+        { cpi },
+      ),
+    );
+
+    const giftEvents: GiftEvent[] = [
+      ...cashFromGifts,
+      ...assetFromGifts,
+      ...liabilityFromGifts,
+      ...seriesEvents,
+    ].sort((a, b) => a.year - b.year);
 
     const mappedFamilyMembers = familyMemberRows.map((f) => ({
       id: f.id,
@@ -811,6 +879,7 @@ export const loadClientData = cache(
       transfers: mappedTransfers,
       assetTransactions: mappedAssetTransactions,
       gifts: mappedGifts,
+      giftEvents,
       wills: engineWills,
       familyMembers: mappedFamilyMembers,
     };

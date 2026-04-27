@@ -91,6 +91,7 @@ function mkClientData(over: Partial<ClientData>): ClientData {
     savingsRules: [],
     withdrawalStrategy: [],
     planSettings: BASE_PLAN,
+    giftEvents: [],
     ...over,
   };
 }

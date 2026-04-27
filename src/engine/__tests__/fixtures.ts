@@ -224,6 +224,7 @@ export function buildClientData(overrides?: Partial<ClientData>): ClientData {
     withdrawalStrategy: sampleWithdrawalStrategy,
     planSettings: basePlanSettings,
     familyMembers: sampleFamilyMembers,
+    giftEvents: [],
     ...overrides,
   };
 }

@@ -77,6 +77,7 @@ const minimalClientData = (): ClientData => ({
   savingsRules: [],
   withdrawalStrategy: [],
   planSettings: {} as ClientData["planSettings"],
+  giftEvents: [],
 });
 
 describe("applyScenarioChanges — add", () => {

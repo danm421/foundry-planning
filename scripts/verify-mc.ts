@@ -185,6 +185,7 @@ const clientData: ClientData = {
     taxEngineMode: "flat",
   },
   entities: entityRows.map((e: any) => ({ id: e.id, includeInPortfolio: e.include_in_portfolio, isGrantor: e.is_grantor ?? false })),
+  giftEvents: [],
 };
 
 // ── Build account mixes ────────────────────────────────────────────────

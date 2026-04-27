@@ -199,6 +199,7 @@ describe("Trust-owned business sale", () => {
       entities: [slat],
       assetTransactions: [sale2030],
       taxYearRows: [taxYearRow],
+      giftEvents: [],
     };
 
     const years = runProjection(data);

@@ -518,6 +518,7 @@ describe("4d integration — final death estate tax", () => {
       planSettings,
       familyMembers: [kidA],
       wills,
+      giftEvents: [],
     };
 
     const years = runProjection(data);
@@ -1202,6 +1203,7 @@ describe("4e — liability bequests at final death", () => {
       planSettings,
       familyMembers: [tomJr],
       wills,
+      giftEvents: [],
     };
 
     const years = runProjection(data);

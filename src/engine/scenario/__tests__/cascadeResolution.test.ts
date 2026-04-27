@@ -13,6 +13,7 @@ const tree = (overrides: Partial<ClientData> = {}): ClientData => ({
   savingsRules: [],
   withdrawalStrategy: [],
   planSettings: {} as ClientData["planSettings"],
+  giftEvents: [],
   ...overrides,
 });
 
