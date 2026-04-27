@@ -1319,13 +1319,26 @@ export default function IncomeExpensesView({
   // Exclude SS rows from the visible income list (SS is shown in its own card)
   const nonSsIncomeList = incomeList.filter((i) => i.type !== "social_security");
 
-  // Totals (household only = exclude out-of-estate)
-  const householdIncome = incomeList.filter((i) => !i.ownerEntityId).reduce((s, i) => s + Number(i.annualAmount), 0);
-  const householdExpense = expenseList.filter((e) => !e.ownerEntityId).reduce((s, e) => s + Number(e.annualAmount), 0);
+  // Totals (household only = exclude out-of-estate). KPIs reflect what's
+  // active *this* calendar year — anything starting in the future or already
+  // ended is excluded so the headline totals don't overstate today's reality.
+  const kpiYear = new Date().getFullYear();
+  const isActiveThisYear = (row: { startYear: number; endYear: number }) =>
+    row.startYear <= kpiYear && row.endYear >= kpiYear;
+  const householdIncome = incomeList
+    .filter((i) => !i.ownerEntityId && isActiveThisYear(i))
+    .reduce((s, i) => s + Number(i.annualAmount), 0);
+  const householdExpense = expenseList
+    .filter((e) => !e.ownerEntityId && isActiveThisYear(e))
+    .reduce((s, e) => s + Number(e.annualAmount), 0);
   const netCashFlow = householdIncome - householdExpense;
 
-  const outOfEstateIncome = incomeList.filter((i) => i.ownerEntityId).reduce((s, i) => s + Number(i.annualAmount), 0);
-  const outOfEstateExpense = expenseList.filter((e) => e.ownerEntityId).reduce((s, e) => s + Number(e.annualAmount), 0);
+  const outOfEstateIncome = incomeList
+    .filter((i) => i.ownerEntityId && isActiveThisYear(i))
+    .reduce((s, i) => s + Number(i.annualAmount), 0);
+  const outOfEstateExpense = expenseList
+    .filter((e) => e.ownerEntityId && isActiveThisYear(e))
+    .reduce((s, e) => s + Number(e.annualAmount), 0);
 
   // Scenario-aware delete: routes through `useScenarioWriter` so a delete in
   // scenario mode records a `remove` change instead of dropping the base row.

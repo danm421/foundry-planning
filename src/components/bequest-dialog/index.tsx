@@ -130,7 +130,7 @@ export default function BequestDialog({
       }}
     >
       <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div className="col-span-2">
             <label className={fieldLabelClassName}>Asset</label>
             <select
@@ -154,7 +154,7 @@ export default function BequestDialog({
           </div>
 
           <div>
-            <label className={fieldLabelClassName}>Percentage of asset</label>
+            <label className={fieldLabelClassName}>Percentage</label>
             <input
               type="number"
               aria-label="Percentage"

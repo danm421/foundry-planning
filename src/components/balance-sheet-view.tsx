@@ -87,6 +87,15 @@ const CATEGORY_ORDER: AccountCategory[] = [
   "life_insurance",
 ];
 
+// Categories the Add Asset menu offers. Business entities and life-insurance
+// policies are created from their own sections (Entities / Insurance), not here.
+const ADDABLE_CATEGORIES: AccountCategory[] = [
+  "taxable",
+  "cash",
+  "retirement",
+  "real_estate",
+];
+
 const ENTITY_TYPE_LABELS: Record<string, string> = {
   trust: "Trust",
   llc: "LLC",
@@ -210,7 +219,7 @@ function AddAssetMenu({ onPick }: { onPick: (cat: AccountCategory) => void }) {
       </button>
       {open && (
         <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-md border border-gray-700 bg-gray-900 shadow-lg">
-          {CATEGORY_ORDER.map((cat) => (
+          {ADDABLE_CATEGORIES.map((cat) => (
             <button
               key={cat}
               onClick={() => {
