@@ -26,10 +26,19 @@ vi.mock("@/lib/audit/snapshots/liability", () => ({
 
 // db.select() is called twice: once for client check, once for the before-liability fetch.
 // db.update().set().where().returning() returns the updated row.
+// db.transaction() is called for the update + optional owners[] write.
 vi.mock("@/db", () => {
   let selectCallCount = 0;
   const beforeRow = { id: "lia_test", balance: "300000", name: "Mortgage", clientId: "cli_test" };
   const afterRow = { id: "lia_test", balance: "290000", name: "Mortgage", clientId: "cli_test" };
+
+  const update = vi.fn(() => ({
+    set: vi.fn(() => ({
+      where: vi.fn(() => ({
+        returning: vi.fn().mockResolvedValue([afterRow]),
+      })),
+    })),
+  }));
 
   const select = vi.fn(() => ({
     from: vi.fn(() => ({
@@ -45,16 +54,13 @@ vi.mock("@/db", () => {
     })),
   }));
 
-  const update = vi.fn(() => ({
-    set: vi.fn(() => ({
-      where: vi.fn(() => ({
-        returning: vi.fn().mockResolvedValue([afterRow]),
-      })),
-    })),
-  }));
+  // transaction() executes the callback with the same tx mock (update only; no owners[] in this test)
+  const transaction = vi.fn(async (fn: (tx: object) => Promise<void>) => {
+    await fn({ update, select, delete: vi.fn(() => ({ where: vi.fn() })), insert: vi.fn(() => ({ values: vi.fn() })) });
+  });
 
   return {
-    db: { select, update },
+    db: { select, update, transaction },
   };
 });
 

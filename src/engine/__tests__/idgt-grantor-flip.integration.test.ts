@@ -33,6 +33,7 @@ import type {
   ClientInfo,
 } from "../types";
 import type { TaxYearParameters } from "../../lib/tax/types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 
 // ── Shared minimal scaffolding ──────────────────────────────────────────────
 
@@ -69,11 +70,14 @@ const hhChecking: Account = {
   name: "Household Checking",
   category: "cash",
   subType: "checking",
-  owner: "joint",
   value: 100_000,
   basis: 100_000,
   growthRate: 0,
   rmdEnabled: false,
+  owners: [
+    { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+    { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+  ],
   isDefaultChecking: true,
 };
 
@@ -93,13 +97,15 @@ const idgtChecking: Account = {
   name: "IDGT Checking",
   category: "cash",
   subType: "checking",
-  owner: "joint",
   value: 50_000,
   basis: 50_000,
   growthRate: 0,
   rmdEnabled: false,
+  owners: [
+    { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+    { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+  ],
   isDefaultChecking: true,
-  ownerEntityId: "idgt-1",
 };
 
 const idgtBrokerage: Account = {
@@ -107,12 +113,11 @@ const idgtBrokerage: Account = {
   name: "IDGT Brokerage",
   category: "taxable",
   subType: "brokerage",
-  owner: "joint",
   value: 2_000_000,
   basis: 2_000_000,
   growthRate: 0.06,
   rmdEnabled: false,
-  ownerEntityId: "idgt-1",
+  owners: [{ kind: "entity", entityId: "idgt-1", percent: 1 }],
   realization: brokerageRealization,
 };
 

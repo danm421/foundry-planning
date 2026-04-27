@@ -18,6 +18,7 @@ function baseLiability(overrides: Partial<Liability> = {}): Liability {
     startMonth: 1,
     termMonths: 120,
     extraPayments: [],
+    owners: [],
     ...overrides,
   };
 }
@@ -170,7 +171,7 @@ describe("applyLiabilityBequests — entity recipient", () => {
     });
 
     expect(result.newLiabilityRows).toHaveLength(1);
-    expect(result.newLiabilityRows[0].ownerEntityId).toBe(entity.id);
+    expect(result.newLiabilityRows[0].owners).toEqual([{ kind: "entity", entityId: entity.id, percent: 1 }]);
     expect(result.newLiabilityRows[0].ownerFamilyMemberId).toBeUndefined();
     expect(result.bequestTransfers[0].recipientKind).toBe("entity");
   });
@@ -194,7 +195,7 @@ describe("applyLiabilityBequests — defensive skip cases", () => {
   });
 
   it("bequest target has ownerEntityId → warning, bequest skipped", () => {
-    const liab = baseLiability({ ownerEntityId: "ent-99" });
+    const liab = baseLiability({ owners: [{ kind: "entity", entityId: "e1", percent: 1 }] });
     const fam = baseFam();
     const will = baseWill([{
       id: "beq-1", name: "Trust debt", kind: "liability", assetMode: null, accountId: null,

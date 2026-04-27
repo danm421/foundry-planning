@@ -23,7 +23,6 @@ const row: typeof liabilities.$inferSelect = {
   termMonths: 360,
   termUnit: "annual",
   linkedPropertyId: null,
-  ownerEntityId: null,
   isInterestDeductible: true,
   createdAt: new Date(),
   updatedAt: new Date(),

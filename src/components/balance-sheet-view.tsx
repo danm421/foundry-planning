@@ -13,6 +13,7 @@ import { LiabilityFormInitial } from "./forms/add-liability-form";
 import { computeAmortizationSchedule, calcOriginalBalance } from "@/lib/loan-math";
 import { individualOwnerLabel, type OwnerNames } from "@/lib/owner-labels";
 import type { ClientMilestones } from "@/lib/milestones";
+import type { AccountOwner } from "@/engine/ownership";
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -35,6 +36,7 @@ export interface AccountRow {
   overridePctQdiv?: string | null;
   overridePctTaxExempt?: string | null;
   isDefaultChecking?: boolean;
+  owners?: AccountOwner[];
 }
 
 export interface LiabilityRow {
@@ -52,6 +54,7 @@ export interface LiabilityRow {
   linkedPropertyId?: string | null;
   ownerEntityId?: string | null;
   isInterestDeductible?: boolean;
+  owners?: AccountOwner[];
 }
 
 interface BalanceSheetViewProps {
@@ -59,6 +62,7 @@ interface BalanceSheetViewProps {
   accounts: AccountRow[];
   liabilities: LiabilityRow[];
   entities: EntityOption[];
+  familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
   ownerNames: OwnerNames;
@@ -153,6 +157,7 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     overridePctQdiv: a.overridePctQdiv ?? null,
     overridePctTaxExempt: a.overridePctTaxExempt ?? null,
     isDefaultChecking: a.isDefaultChecking ?? false,
+    owners: a.owners,
   };
 }
 
@@ -172,6 +177,7 @@ function liabilityToInitial(l: LiabilityRow): LiabilityFormInitial {
     linkedPropertyId: l.linkedPropertyId ?? null,
     ownerEntityId: l.ownerEntityId ?? null,
     isInterestDeductible: l.isInterestDeductible,
+    owners: l.owners,
   };
 }
 
@@ -244,6 +250,7 @@ export default function BalanceSheetView({
   accounts,
   liabilities,
   entities,
+  familyMembers,
   categoryDefaults,
   modelPortfolios,
   ownerNames,
@@ -435,6 +442,7 @@ export default function BalanceSheetView({
                 clientId={clientId}
                 realEstateAccounts={realEstateAccounts}
                 entities={entities}
+                familyMembers={familyMembers}
                 clientFirstName={ownerNames.clientName.split(" ")[0]}
                 spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
               />
@@ -547,6 +555,7 @@ export default function BalanceSheetView({
         category={addCategory ?? undefined}
         label={addCategory ? CATEGORY_LABELS[addCategory] : undefined}
         entities={entities}
+        familyMembers={familyMembers}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
         ownerNames={ownerNames}
@@ -566,6 +575,7 @@ export default function BalanceSheetView({
       <AddAccountDialog
         clientId={clientId}
         entities={entities}
+        familyMembers={familyMembers}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolios}
         ownerNames={ownerNames}
@@ -588,6 +598,7 @@ export default function BalanceSheetView({
         clientId={clientId}
         realEstateAccounts={realEstateAccounts}
         entities={entities}
+        familyMembers={familyMembers}
         clientFirstName={ownerNames.clientName.split(" ")[0]}
         spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
         open={!!editingLiability}

@@ -107,7 +107,6 @@ d("wills tenant isolation", () => {
         name: "Test Acct",
         category: "taxable",
         subType: "brokerage",
-        owner: "client",
       })
       .returning();
     return {

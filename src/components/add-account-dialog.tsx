@@ -18,6 +18,7 @@ interface AddAccountDialogProps {
   editing?: AccountFormInitial;
   onRequestDelete?: () => void;
   entities?: EntityOption[];
+  familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults?: CategoryDefaults;
   modelPortfolios?: ModelPortfolioOption[];
   ownerNames?: { clientName: string; spouseName: string | null };
@@ -48,6 +49,7 @@ export default function AddAccountDialog({
   editing,
   onRequestDelete,
   entities,
+  familyMembers,
   categoryDefaults,
   modelPortfolios,
   ownerNames,
@@ -117,6 +119,7 @@ export default function AddAccountDialog({
             mode={isEdit ? "edit" : "create"}
             initial={editing}
             entities={entities}
+            familyMembers={familyMembers}
             categoryDefaults={categoryDefaults}
             modelPortfolios={modelPortfolios}
             ownerNames={ownerNames}

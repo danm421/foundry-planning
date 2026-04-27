@@ -21,6 +21,27 @@ import type {
   LifeInsurancePolicy,
   Will,
 } from "../../types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../../ownership";
+
+/** Principal family members for the test household. */
+const PRINCIPAL_FMS: FamilyMember[] = [
+  {
+    id: LEGACY_FM_CLIENT,
+    role: "client",
+    relationship: "other",
+    firstName: "Client",
+    lastName: null,
+    dateOfBirth: "1965-01-01",
+  },
+  {
+    id: LEGACY_FM_SPOUSE,
+    role: "spouse",
+    relationship: "other",
+    firstName: "Spouse",
+    lastName: null,
+    dateOfBirth: "1967-01-01",
+  },
+];
 
 // ── Factories ──────────────────────────────────────────────────────────────
 
@@ -53,7 +74,7 @@ function mkInput(over: Partial<DeathEventInput> = {}): DeathEventInput {
     accounts,
     incomes: over.incomes ?? [],
     liabilities: over.liabilities ?? [],
-    familyMembers: over.familyMembers ?? [],
+    familyMembers: over.familyMembers ?? PRINCIPAL_FMS,
     externalBeneficiaries: over.externalBeneficiaries ?? [],
     entities: over.entities ?? [],
     planSettings: over.planSettings ?? BASE_PLAN_SETTINGS,
@@ -79,12 +100,12 @@ function mkPolicyAccount(
     name: `Life Policy ${id}`,
     category: "life_insurance",
     subType: "whole",
-    owner: "client",
     insuredPerson: "client",
     value: 50_000,   // cash value (pre-payout)
     basis: 0,
     growthRate: 0,
     rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     lifeInsurance: {
       faceValue: 1_000_000,
       costBasis: 0,
@@ -107,7 +128,6 @@ function mkPolicyAccount(
 /** Build a minimal cash/savings account. */
 function mkCashAccount(
   id: string,
-  owner: "client" | "spouse" | "joint",
   value: number,
 ): Account {
   return {
@@ -115,11 +135,11 @@ function mkCashAccount(
     name: `Cash ${id}`,
     category: "cash",
     subType: "savings",
-    owner,
     value,
     basis: value,
     growthRate: 0.02,
     rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   };
 }
 
@@ -155,6 +175,7 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
     const kid1: FamilyMember = {
       id: "kid-1",
       relationship: "child",
+      role: "child" as const,
       firstName: "Alice",
       lastName: null,
       dateOfBirth: null,
@@ -167,7 +188,6 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
       sortOrder: 0,
     };
     const policy = mkPolicyAccount("pol-1", {
-      owner: "client",
       insuredPerson: "client",
       beneficiaries: [beneRef],
     });
@@ -175,7 +195,7 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
     const input = mkInput({
       deceased: "client",
       accounts: [policy],
-      familyMembers: [kid1],
+      familyMembers: [...PRINCIPAL_FMS, kid1],
     });
 
     const result = applyFirstDeath(input);
@@ -198,7 +218,6 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
 
   it("person-owned self-insured policy with no beneficiaries falls through to will bequest", () => {
     const policy = mkPolicyAccount("pol-2", {
-      owner: "client",
       insuredPerson: "client",
       // no beneficiaries
     });
@@ -230,7 +249,6 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
 
   it("person-owned self-insured policy with no beneficiaries and no will falls through to default-transfer schedule", () => {
     const policy = mkPolicyAccount("pol-3", {
-      owner: "client",
       insuredPerson: "client",
       // no beneficiaries
     });
@@ -270,10 +288,11 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
       includeInPortfolio: false,
       isGrantor: false,
     };
+    // The ILIT owns the policy (entity-owned, not FM-owned). This excludes the
+    // face value from the grantor's gross estate under §2042.
     const policy = mkPolicyAccount("pol-4", {
-      owner: "client",
       insuredPerson: "client",
-      ownerEntityId: "ilit-1",
+      owners: [{ kind: "entity", entityId: "ilit-1", percent: 1 }],
     });
 
     const input = mkInput({
@@ -298,9 +317,7 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
       isGrantor: true,
     };
     const policy = mkPolicyAccount("pol-5", {
-      owner: "client",
       insuredPerson: "client",
-      ownerEntityId: "rev-1",
     });
 
     const input = mkInput({
@@ -329,7 +346,7 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
      *     in the gross estate of the deceased (spouse).
      */
     const policy = mkPolicyAccount("pol-6", {
-      owner: "client",        // client owns the policy
+      // client owns the policy
       insuredPerson: "spouse", // spouse is insured — payout triggers at spouse's death
       value: 50_000,
     });
@@ -364,8 +381,12 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
   });
 
   it("joint-insured policy does nothing at first death", () => {
+    // Policy is jointly owned by client and spouse (JTWROS-style).
     const policy = mkPolicyAccount("pol-7", {
-      owner: "joint",
+      owners: [
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+      ],
       insuredPerson: "joint",
       value: 50_000,
     });
@@ -409,15 +430,20 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
 
   it("joint-insured policy pays out at final death", () => {
     // Same joint policy — joint-insured fires at final_death eventKind.
-    // At final death the surviving spouse is now the deceased (second to die).
+    // At final death the spouse is the second to die. The policy was retitled
+    // to the spouse at first death (spouse is now the sole owner). When the
+    // spouse dies last, the payout triggers (joint insured + final_death) and
+    // the chain distributes the proceeds.
     const policy = mkPolicyAccount("pol-8", {
-      owner: "spouse",      // retitled to survivor after first death
+      // retitled to spouse at first-death; spouse is now sole owner
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
       insuredPerson: "joint",
       value: 50_000,
     });
     const kid1: FamilyMember = {
       id: "kid-1",
       relationship: "child",
+      role: "child" as const,
       firstName: "Alice",
       lastName: null,
       dateOfBirth: null,
@@ -428,7 +454,7 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
       deceased: "spouse",
       survivor: "client",   // irrelevant for final death but required by type
       accounts: [policy],
-      familyMembers: [kid1],
+      familyMembers: [...PRINCIPAL_FMS, kid1],
       will: null,
     });
 
@@ -470,7 +496,6 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
      * full tracking item.
      */
     const policy = mkPolicyAccount("pol-9", {
-      owner: "client",
       insuredPerson: "client",
       value: 50_000,
       policyOver: {
@@ -479,7 +504,7 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
         postPayoutGrowthRate: 0.05,
       },
     });
-    const spBroker = mkCashAccount("sp-broker", "spouse", 500_000);
+    const spBroker = { ...mkCashAccount("sp-broker", 500_000), owners: [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }] };
 
     const input = mkInput({
       deceased: "client",

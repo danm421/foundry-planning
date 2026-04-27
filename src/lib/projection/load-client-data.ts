@@ -4,6 +4,7 @@ import { db } from "@/db";
 import {
   accounts,
   accountAssetAllocations,
+  accountOwners,
   assetClasses,
   assetTransactions,
   beneficiaryDesignations,
@@ -20,6 +21,7 @@ import {
   incomes,
   incomeScheduleOverrides,
   liabilities,
+  liabilityOwners,
   modelPortfolioAllocations,
   modelPortfolios,
   planSettings,
@@ -35,6 +37,7 @@ import {
   withdrawalStrategies,
 } from "@/db/schema";
 import type { BeneficiaryRef, ClientData, Will, WillBequest } from "@/engine/types";
+import type { AccountOwner } from "@/engine/ownership";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
@@ -202,6 +205,39 @@ export const loadClientData = cache(
             accountRows.map((a) => a.id),
           ),
         );
+    }
+
+    // Load ownership junction rows for accounts and liabilities
+    const accountIds = accountRows.map((a) => a.id);
+    const liabilityIds = liabilityRows.map((l) => l.id);
+    const [accountOwnerRows, liabilityOwnerRows] = await Promise.all([
+      accountIds.length > 0
+        ? db.select().from(accountOwners).where(inArray(accountOwners.accountId, accountIds))
+        : Promise.resolve([]),
+      liabilityIds.length > 0
+        ? db.select().from(liabilityOwners).where(inArray(liabilityOwners.liabilityId, liabilityIds))
+        : Promise.resolve([]),
+    ]);
+
+    // Build owners lookup maps
+    const ownersByAccountId = new Map<string, AccountOwner[]>();
+    for (const r of accountOwnerRows) {
+      const owner: AccountOwner = r.familyMemberId
+        ? { kind: "family_member", familyMemberId: r.familyMemberId, percent: parseFloat(r.percent) }
+        : { kind: "entity", entityId: r.entityId!, percent: parseFloat(r.percent) };
+      const arr = ownersByAccountId.get(r.accountId) ?? [];
+      arr.push(owner);
+      ownersByAccountId.set(r.accountId, arr);
+    }
+
+    const ownersByLiabilityId = new Map<string, AccountOwner[]>();
+    for (const r of liabilityOwnerRows) {
+      const owner: AccountOwner = r.familyMemberId
+        ? { kind: "family_member", familyMemberId: r.familyMemberId, percent: parseFloat(r.percent) }
+        : { kind: "entity", entityId: r.entityId!, percent: parseFloat(r.percent) };
+      const arr = ownersByLiabilityId.get(r.liabilityId) ?? [];
+      arr.push(owner);
+      ownersByLiabilityId.set(r.liabilityId, arr);
     }
 
     // ── CMA resolution ─────────────────────────────────────────────────────────
@@ -469,13 +505,10 @@ export const loadClientData = cache(
         name: a.name,
         category: a.category,
         subType: a.subType,
-        owner: a.owner,
         value: parseFloat(a.value),
         basis: parseFloat(a.basis),
         growthRate,
         rmdEnabled: a.rmdEnabled,
-        ownerEntityId: a.ownerEntityId ?? undefined,
-        ownerFamilyMemberId: a.ownerFamilyMemberId ?? undefined,
         beneficiaries: accountBens.get(a.id) ?? undefined,
         isDefaultChecking: a.isDefaultChecking,
         realization,
@@ -483,6 +516,7 @@ export const loadClientData = cache(
         propertyTaxGrowthRate: parseFloat(a.propertyTaxGrowthRate),
         insuredPerson: a.insuredPerson ?? undefined,
         lifeInsurance: policiesByAccount[a.id],
+        owners: ownersByAccountId.get(a.id) ?? [],
       };
     });
 
@@ -558,7 +592,6 @@ export const loadClientData = cache(
       balanceAsOfMonth: l.balanceAsOfMonth ?? undefined,
       balanceAsOfYear: l.balanceAsOfYear ?? undefined,
       linkedPropertyId: l.linkedPropertyId ?? undefined,
-      ownerEntityId: l.ownerEntityId ?? undefined,
       isInterestDeductible: l.isInterestDeductible,
       extraPayments: extraPaymentRows
         .filter((ep) => ep.liabilityId === l.id)
@@ -569,6 +602,7 @@ export const loadClientData = cache(
           type: ep.type,
           amount: parseFloat(ep.amount),
         })),
+      owners: ownersByLiabilityId.get(l.id) ?? [],
     }));
 
     const mappedSavingsRules = savingsRuleRows.map((s) => ({
@@ -740,6 +774,7 @@ export const loadClientData = cache(
 
     const mappedFamilyMembers = familyMemberRows.map((f) => ({
       id: f.id,
+      role: f.role,
       relationship: f.relationship,
       firstName: f.firstName,
       lastName: f.lastName ?? null,

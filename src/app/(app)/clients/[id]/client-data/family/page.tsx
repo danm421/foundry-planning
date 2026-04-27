@@ -22,6 +22,7 @@ import FamilyView, {
 import OpenItemsPanel from "@/components/open-items/open-items-panel";
 import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -109,8 +110,41 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
     id: a.id,
     name: a.name,
     category: a.category,
-    ownerFamilyMemberId: a.ownerFamilyMemberId ?? null,
-    ownerEntityId: a.ownerEntityId ?? null,
+    ownerFamilyMemberId: controllingFamilyMember(a) ?? null,
+    ownerEntityId: controllingEntity(a) ?? null,
+  }));
+
+  // Full asset data for the trust Assets tab
+  const fullAccounts = (effectiveTree.accounts ?? []).map((a) => ({
+    id: a.id,
+    name: a.name,
+    value: a.value,
+    subType: a.subType,
+    isDefaultChecking: a.isDefaultChecking,
+    owners: a.owners,
+  }));
+  const fullLiabilities = (effectiveTree.liabilities ?? []).map((l) => ({
+    id: l.id,
+    name: l.name,
+    balance: l.balance,
+    owners: l.owners,
+  }));
+  const fullIncomes = (effectiveTree.incomes ?? []).map((i) => ({
+    id: i.id,
+    name: i.name,
+    annualAmount: i.annualAmount,
+    cashAccountId: i.cashAccountId,
+  }));
+  const fullExpenses = (effectiveTree.expenses ?? []).map((e) => ({
+    id: e.id,
+    name: e.name,
+    annualAmount: e.annualAmount,
+    cashAccountId: e.cashAccountId,
+  }));
+  const assetFamilyMembers = memberRows.map((m) => ({
+    id: m.id,
+    role: (m.role as "client" | "spouse" | "child" | "other"),
+    firstName: m.firstName,
   }));
 
   const designations: Designation[] = designationRows.map((d) => ({
@@ -164,6 +198,11 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
         initialAccounts={accts}
         initialDesignations={designations}
         initialGifts={giftsList}
+        initialFullAccounts={fullAccounts}
+        initialFullLiabilities={fullLiabilities}
+        initialFullIncomes={fullIncomes}
+        initialFullExpenses={fullExpenses}
+        initialAssetFamilyMembers={assetFamilyMembers}
       />
       <OpenItemsPanel clientId={id} firmId={firmId} />
     </ClientDataPageShell>

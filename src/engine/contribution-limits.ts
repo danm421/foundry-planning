@@ -1,4 +1,5 @@
-import type { Account, ClientInfo, SavingsRule } from "./types";
+import type { Account, ClientInfo, FamilyMember, SavingsRule } from "./types";
+import { controllingFamilyMember } from "./ownership";
 import type { TaxYearParameters } from "../lib/tax/types";
 
 /** 401(k) / 403(b) family of payroll-deduction retirement accounts. The IRS
@@ -84,6 +85,8 @@ export interface ApplyLimitsInput {
    *  Callers compute this via resolveContributionAmount so percent-mode is
    *  already resolved to a dollar figure. */
   resolvedByRuleId: Record<string, number>;
+  /** Household family members — used to derive per-person owner key from owners[]. */
+  familyMembers?: FamilyMember[];
 }
 
 export interface ApplyLimitsResult {
@@ -98,11 +101,25 @@ export interface ApplyLimitsResult {
  *  with `applyContributionLimit === false` bypass the cap entirely AND do
  *  not count against the group bucket. */
 export function applyContributionLimits(input: ApplyLimitsInput): ApplyLimitsResult {
-  const { year, rules, accounts, client, taxYearParams, resolvedByRuleId } = input;
+  const { year, rules, accounts, client, taxYearParams, resolvedByRuleId, familyMembers } = input;
 
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   const cappedByRuleId: Record<string, number> = { ...resolvedByRuleId };
   const adjustments: CapAdjustment[] = [];
+
+  // Derive FM ids for principal owner classification.
+  const clientFmId = (familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
+  const spouseFmId = (familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
+
+  /** Derive "client" | "spouse" | "joint" from owners[]. Falls back to "client"
+   *  for entity-owned or unclassifiable accounts (rare for retirement accounts). */
+  function ownerKeyFor(acct: Account): OwnerKey {
+    const cfm = controllingFamilyMember(acct);
+    if (cfm != null && cfm === spouseFmId) return "spouse";
+    if (cfm != null && cfm === clientFmId) return "client";
+    // Multiple FM owners or single FM owner that is neither principal: treat as joint.
+    return "joint";
+  }
 
   // Pre-compute age + limits per owner. "joint" falls back to the client's
   // age for cap purposes (joint retirement accounts are rare; document as a
@@ -142,7 +159,7 @@ export function applyContributionLimits(input: ApplyLimitsInput): ApplyLimitsRes
     if (group === "none") continue;
     const amount = resolvedByRuleId[rule.id] ?? 0;
     if (amount <= 0) continue;
-    const owner = acct.owner as OwnerKey;
+    const owner = ownerKeyFor(acct);
     const key = `${owner}:${group}`;
     const b = buckets.get(key) ?? { owner, group, ruleIds: [], total: 0 };
     b.ruleIds.push(rule.id);

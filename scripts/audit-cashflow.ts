@@ -311,9 +311,9 @@ async function loadClientData(clientId: string): Promise<ClientData> {
         realization = undefined;
       }
       return {
-        id: a.id, name: a.name, category: a.category, subType: a.subType, owner: a.owner,
+        id: a.id, name: a.name, category: a.category, subType: a.subType,
         value: parseFloat(a.value), basis: parseFloat(a.basis), growthRate,
-        rmdEnabled: a.rmdEnabled, ownerEntityId: a.ownerEntityId ?? undefined,
+        rmdEnabled: a.rmdEnabled,
         isDefaultChecking: a.isDefaultChecking, realization,
         annualPropertyTax: parseFloat(a.annualPropertyTax),
         propertyTaxGrowthRate: parseFloat(a.propertyTaxGrowthRate),
@@ -345,7 +345,7 @@ async function loadClientData(clientId: string): Promise<ClientData> {
       interestRate: parseFloat(l.interestRate), monthlyPayment: parseFloat(l.monthlyPayment),
       startYear: l.startYear, startMonth: l.startMonth, termMonths: l.termMonths,
       balanceAsOfMonth: l.balanceAsOfMonth ?? undefined, balanceAsOfYear: l.balanceAsOfYear ?? undefined,
-      linkedPropertyId: l.linkedPropertyId ?? undefined, ownerEntityId: l.ownerEntityId ?? undefined,
+      linkedPropertyId: l.linkedPropertyId ?? undefined,
       isInterestDeductible: l.isInterestDeductible,
       extraPayments: extraPaymentRows.filter((ep) => ep.liabilityId === l.id).map((ep) => ({ id: ep.id, liabilityId: ep.liabilityId, year: ep.year, type: ep.type, amount: parseFloat(ep.amount) })),
     })) as any,

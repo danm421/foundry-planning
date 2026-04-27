@@ -24,6 +24,7 @@ import type {
   LifeInsurancePolicy,
   PlanSettings,
 } from "../types";
+import { LEGACY_FM_CLIENT } from "../ownership";
 
 // ── Factories ──────────────────────────────────────────────────────────────
 
@@ -69,13 +70,13 @@ function mkPolicyAccount(
     name: `Policy ${id}`,
     category: "life_insurance",
     subType: policy.policyType,
-    owner: "client",
     insuredPerson: "client",
     value: 0,
     basis: 0,
     growthRate: 0,
     rmdEnabled: false,
     lifeInsurance: policy,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     ...acctOver,
   };
 }

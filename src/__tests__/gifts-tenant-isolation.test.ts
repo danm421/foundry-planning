@@ -131,7 +131,6 @@ d("gifts tenant isolation", () => {
         name: "Test Acct",
         category: "taxable",
         subType: "brokerage",
-        owner: "client",
       })
       .returning();
     const [irrevTrust] = await db

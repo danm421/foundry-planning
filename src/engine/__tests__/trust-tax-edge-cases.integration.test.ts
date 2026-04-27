@@ -34,6 +34,7 @@ import type {
   FamilyMember,
 } from "../types";
 import type { TaxYearParameters } from "../../lib/tax/types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 
 // ── Shared minimal scaffolding ──────────────────────────────────────────────
 
@@ -64,11 +65,14 @@ const hhChecking: Account = {
   name: "Household Checking",
   category: "cash",
   subType: "checking",
-  owner: "joint",
   value: 100_000,
   basis: 100_000,
   growthRate: 0,
   rmdEnabled: false,
+  owners: [
+    { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+    { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+  ],
   isDefaultChecking: true,
 };
 
@@ -77,6 +81,7 @@ const hhChecking: Account = {
 const spouseFm: FamilyMember = {
   id: "fm-spouse",
   relationship: "other",
+  role: "other",
   firstName: "Bob",
   lastName: "Test",
   dateOfBirth: "1975-06-01",
@@ -159,13 +164,15 @@ describe("Trust tax — edge cases", () => {
       name: "Trust Checking",
       category: "cash",
       subType: "checking",
-      owner: "joint",
       value: 100_000,
       basis: 100_000,
       growthRate: 0,
       rmdEnabled: false,
+      owners: [
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+      ],
       isDefaultChecking: true,
-      ownerEntityId: "t1",
     };
     const trust: EntitySummary = {
       id: "t1",
@@ -220,13 +227,12 @@ describe("Trust tax — edge cases", () => {
       name: "Trust Checking",
       category: "cash",
       subType: "checking",
-      owner: "joint",
       value: 50_000,
       basis: 50_000,
       growthRate: 0,
       rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "t1", percent: 1 }],
       isDefaultChecking: true,
-      ownerEntityId: "t1",
     };
     const trust: EntitySummary = {
       id: "t1",
@@ -279,25 +285,23 @@ describe("Trust tax — edge cases", () => {
       name: "Trust Checking",
       category: "cash",
       subType: "checking",
-      owner: "joint",
       value: 50_000,
       basis: 50_000,
       growthRate: 0,
       rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "t1", percent: 1 }],
       isDefaultChecking: true,
-      ownerEntityId: "t1",
     };
     const trustBrokerage: Account = {
       id: "t1-brokerage",
       name: "Trust Brokerage",
       category: "taxable",
       subType: "brokerage",
-      owner: "joint",
       value: 1_000_000,
       basis: 1_000_000,
       growthRate: 0.06,
       rmdEnabled: false,
-      ownerEntityId: "t1",
+      owners: [{ kind: "entity", entityId: "t1", percent: 1 }],
       realization: {
         pctOrdinaryIncome: 0.6,
         pctQualifiedDividends: 0.15,

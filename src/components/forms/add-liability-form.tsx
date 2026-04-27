@@ -10,6 +10,8 @@ import { calcPayment, calcTerm, calcRate } from "@/lib/loan-math";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
+import { OwnershipEditor } from "./ownership-editor";
+import type { AccountOwner } from "@/engine/ownership";
 
 const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -30,6 +32,7 @@ export interface LiabilityFormInitial {
   balanceAsOfYear?: number | null;
   linkedPropertyId?: string | null;
   ownerEntityId?: string | null;
+  owners?: AccountOwner[];
   startYearRef?: string | null;
   isInterestDeductible?: boolean;
 }
@@ -49,6 +52,7 @@ interface AddLiabilityFormProps {
   clientId: string;
   realEstateAccounts?: { id: string; name: string }[];
   entities?: { id: string; name: string }[];
+  familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
@@ -63,6 +67,7 @@ export default function AddLiabilityForm({
   clientId,
   realEstateAccounts,
   entities,
+  familyMembers = [],
   milestones,
   clientFirstName,
   spouseFirstName,
@@ -79,7 +84,13 @@ export default function AddLiabilityForm({
     onSubmitStateChange?.({ canSubmit: !loading, loading });
   }, [loading, onSubmitStateChange]);
   const [error, setError] = useState<string | null>(null);
-  const [ownerEntityId, setOwnerEntityId] = useState<string>(initial?.ownerEntityId ?? "");
+  const clientFm = familyMembers.find((fm) => fm.role === "client");
+  const defaultOwners: AccountOwner[] = clientFm
+    ? [{ kind: "family_member", familyMemberId: clientFm.id, percent: 1 }]
+    : [];
+  const [owners, setOwners] = useState<AccountOwner[]>(
+    initial?.owners && initial.owners.length > 0 ? initial.owners : defaultOwners,
+  );
   const [isInterestDeductible, setIsInterestDeductible] = useState(initial?.isInterestDeductible ?? false);
   const isEdit = mode === "edit" && !!initial;
 
@@ -226,7 +237,7 @@ export default function AddLiabilityForm({
       balanceAsOfMonth,
       balanceAsOfYear,
       linkedPropertyId: linkedPropertyId || null,
-      ownerEntityId: ownerEntityId || null,
+      owners,
       startYearRef,
       isInterestDeductible,
     };
@@ -490,28 +501,15 @@ export default function AddLiabilityForm({
         </div>
       )}
 
-      {/* Row 6: Owner entity (if applicable) */}
-      {entities && entities.length > 0 && (
-        <div>
-          <label className={fieldLabelClassName} htmlFor="ownerEntityId">
-            Owed by entity (out of estate)
-          </label>
-          <select
-            id="ownerEntityId"
-            value={ownerEntityId}
-            onChange={(e) => setOwnerEntityId(e.target.value)}
-            className={selectClassName}
-          >
-            <option value="">Household (client/spouse)</option>
-            {entities.map((ent) => (
-              <option key={ent.id} value={ent.id}>{ent.name}</option>
-            ))}
-          </select>
-          {ownerEntityId && (
-            <p className="mt-1 text-xs text-amber-400">Counted as out of estate.</p>
-          )}
-        </div>
-      )}
+      {/* Row 6: Ownership */}
+      <div>
+        <OwnershipEditor
+          familyMembers={familyMembers}
+          entities={(entities ?? []).map((e) => ({ id: e.id, name: e.name }))}
+          value={owners}
+          onChange={setOwners}
+        />
+      </div>
 
       {/* Row 7: Interest deductible checkbox */}
       <div>

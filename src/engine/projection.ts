@@ -56,6 +56,14 @@ import { applyTrustAnnualPass, type NonGrantorTrustInput } from "./trust-tax/ind
 import type { AccountYearRealization, AssetTransactionGain } from "./trust-tax/collect-trust-income";
 import type { TrustLiquidityPool, TrustIncomeBuckets, TrustWarning, DistributionPolicy } from "./trust-tax/types";
 import { computeDistribution } from "./trust-tax/compute-distribution";
+import {
+  normalizeOwners,
+  ownedByHousehold,
+  ownedByEntity,
+  isFullyEntityOwned,
+  controllingFamilyMember,
+  controllingEntity,
+} from "./ownership";
 
 // Map legacy income type to the new tax type categories.
 function legacyTaxType(
@@ -77,7 +85,7 @@ function legacyTaxType(
 // account, not a source. Real estate / business / life-insurance accounts are skipped
 // (they can't be liquidated cleanly).
 function defaultWithdrawalPriorityFor(acct: Account): number | null {
-  if (acct.ownerEntityId != null) return null;
+  if (controllingEntity(acct) != null) return null;
   if (acct.isDefaultChecking) return null;
   if (acct.category === "cash") return 1;
   if (acct.category === "taxable") return 2;
@@ -149,6 +157,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   const { client, planSettings } = data;
   const years: ProjectionYear[] = [];
 
+  // Normalize ownership: any account/liability whose `owners[]` is empty (legacy
+  // engine-test fixtures predating Phase 2 fractional ownership) gets a single
+  // 100% row derived from legacy fields (owner/ownerEntityId/ownerFamilyMemberId)
+  // that may still exist on test fixture objects (LegacyOwnedThing bridge in
+  // src/engine/ownership.ts). Production data from `loadClientData` already
+  // arrives with `owners[]` populated from the `account_owners` /
+  // `liability_owners` junction tables — for that path this is a no-op. After
+  // this step, every downstream ownership read can use `owners[]` exclusively
+  // (see src/engine/ownership.ts helpers).
+  data = {
+    ...data,
+    accounts: data.accounts.map(normalizeOwners),
+    liabilities: data.liabilities.map(normalizeOwners),
+  };
+
   const taxYearRows: TaxYearParameters[] = data.taxYearRows ?? [];
   if (planSettings.taxEngineMode === "bracket" && taxYearRows.length === 0) {
     console.warn(
@@ -196,15 +219,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // household cash flows through the household checking; entity cash through the
   // entity's own checking. When the household checking is absent we fall back to
   // the legacy surplus/deficit model (preserves tests + pre-migration data).
+  // Migration 0055's default-checking trigger guarantees `isDefaultChecking`
+  // accounts are either fully household-owned OR have exactly one entity
+  // owner (never mixed), so the find-and-assert below is safe.
   const defaultChecking = data.accounts.find(
-    (a) => a.isDefaultChecking && a.ownerEntityId == null
+    (a) => a.isDefaultChecking && !isFullyEntityOwned(a)
   );
   const hasChecking = defaultChecking != null;
   const entityCheckingByEntityId: Record<string, string> = {};
   for (const a of data.accounts) {
-    if (a.isDefaultChecking && a.ownerEntityId) {
-      entityCheckingByEntityId[a.ownerEntityId] = a.id;
-    }
+    if (!a.isDefaultChecking) continue;
+    if (!isFullyEntityOwned(a)) continue;
+    const entityOwner = a.owners.find((o) => o.kind === "entity") as
+      | { kind: "entity"; entityId: string; percent: number }
+      | undefined;
+    if (entityOwner) entityCheckingByEntityId[entityOwner.entityId] = a.id;
   }
 
   // Trust classification builders. Re-run each year against `currentEntities`
@@ -358,6 +387,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   const spouseBirthYear = client.spouseDob
     ? parseInt(client.spouseDob.slice(0, 4), 10)
     : undefined;
+
+  // Household principal FM ids — used to route account ownership checks that
+  // previously relied on acct.owner === "client" / "spouse".
+  const clientFmId = (data.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
+  const spouseFmId = (data.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
+
+  /** Returns true if `acct` is controlled 100% by the spouse FM. */
+  const isSpouseAccount = (acct: { owners: import("./ownership").AccountOwner[] }): boolean => {
+    if (!spouseFmId) return false;
+    return controllingFamilyMember(acct) === spouseFmId;
+  };
 
   const firstDeathYear = computeFirstDeathYear(
     client,
@@ -547,6 +587,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Inject synthetic property-tax expenses for real estate accounts. Built
     // after BoY sales/purchases so a sold property is excluded and a newly-
     // bought property contributes a full year of property tax.
+    // Property tax is split by ownership: the household share goes into the
+    // household synthetic expense (no ownerEntityId — routes to defaultChecking
+    // via resolveCashAccount and lands in the realEstate bucket); each entity
+    // owner's share emits its own synthetic expense tagged with that entity's
+    // id so it routes to the entity's checking via the existing entity-expense
+    // path. Synthetic ids stay deterministic for downstream consumers (PDF
+    // export, drill-down UI).
     const syntheticExpenses: typeof data.expenses = [];
     for (const acct of workingAccounts) {
       if (acct.category !== "real_estate") continue;
@@ -554,30 +601,61 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (propTax <= 0) continue;
       const elapsed = year - planSettings.planStartYear;
       const inflated = propTax * Math.pow(1 + (acct.propertyTaxGrowthRate ?? 0.03), Math.max(0, elapsed));
-      syntheticExpenses.push({
-        id: `synth-proptax-${acct.id}`,
-        type: "other",
-        name: `Property Tax – ${acct.name}`,
-        annualAmount: inflated,
-        startYear: planSettings.planStartYear,
-        endYear: planSettings.planEndYear,
-        growthRate: 0, // already inflated
-      });
+      const householdShare = ownedByHousehold(acct);
+      if (householdShare > 0) {
+        syntheticExpenses.push({
+          id: `synth-proptax-${acct.id}`,
+          type: "other",
+          name: `Property Tax – ${acct.name}`,
+          annualAmount: inflated * householdShare,
+          startYear: planSettings.planStartYear,
+          endYear: planSettings.planEndYear,
+          growthRate: 0, // already inflated
+        });
+      }
+      for (const owner of acct.owners) {
+        if (owner.kind !== "entity") continue;
+        if (owner.percent <= 0) continue;
+        syntheticExpenses.push({
+          id: `synth-proptax-${acct.id}-${owner.entityId}`,
+          type: "other",
+          name: `Property Tax – ${acct.name}`,
+          annualAmount: inflated * owner.percent,
+          startYear: planSettings.planStartYear,
+          endYear: planSettings.planEndYear,
+          growthRate: 0,
+          ownerEntityId: owner.entityId,
+        });
+      }
     }
     const allExpenses = [...data.expenses, ...syntheticExpenses];
 
     // 3. Liability payments — amortize all liabilities (so balances roll forward),
-    // capture the household total for reporting, and keep the per-liability map
-    // so entity liability payments can be routed to entity checking below. Runs
-    // after BoY sales/purchases so sold-asset mortgages are already removed and
-    // new mortgages from purchases are included for a full year of payments.
+    // and keep the per-liability map so entity liability payments can be routed
+    // to entity checking below. The internal filter is a no-op (the household
+    // total it computes is recomputed below from fractional shares so each
+    // liability contributes only its household-owned percentage). Runs after
+    // BoY sales/purchases so sold-asset mortgages are already removed and new
+    // mortgages from purchases are included for a full year of payments.
     const liabResult = computeLiabilities(
       currentLiabilities,
       year,
-      (liab) => liab.ownerEntityId == null,
+      () => false, // skip computeLiabilities's internal totalPayment — recomputed pro-rata below
       liabilitySchedules,
     );
     currentLiabilities = liabResult.updatedLiabilities;
+    // Household share of total liability service: each liability contributes
+    // ownedByHousehold(liab) × annualPayment. Entity portions route to entity
+    // checking via the per-liability cash routing block (creditCash) below.
+    {
+      let total = 0;
+      for (const liab of currentLiabilities) {
+        const payment = liabResult.byLiability[liab.id] ?? 0;
+        if (payment === 0) continue;
+        total += payment * ownedByHousehold(liab);
+      }
+      liabResult.totalPayment = total;
+    }
 
     // Life-insurance cash-value schedule override (free-form mode). The schedule
     // is authoritative for the year, replacing whatever growth model the account
@@ -687,32 +765,55 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // Retirement accounts defer all tax until withdrawal; cash accounts
         // are always 100% OI but that's baked into the realization model.
         if (acct.category === "taxable" || acct.category === "cash") {
-          if (acct.ownerEntityId == null || isGrantorEntity(acct.ownerEntityId)) {
-            // Household or grantor-trust income → standard household scalars
-            realizationOI += oi;
-            realizationQDiv += qdiv;
-            realizationSTCG += stcg;
-            if (oi > 0) realizationBySource[`${acct.id}:oi`] = { type: "ordinary_income", amount: oi };
-            if (qdiv > 0) realizationBySource[`${acct.id}:qdiv`] = { type: "dividends", amount: qdiv };
-            if (stcg > 0) realizationBySource[`${acct.id}:stcg`] = { type: "stcg", amount: stcg };
-            // Also track per-entity income for grantor-trust distribution (pct_income mode).
-            if (acct.ownerEntityId != null) {
-              const bucket = grantorTrustIncomeByEntity.get(acct.ownerEntityId);
-              if (bucket) {
-                bucket.ordinary += oi;
-                bucket.dividends += qdiv;
-                bucket.taxExempt += taxExempt;
-              }
+          // Pro-rate each realization stream by ownership share. Household and
+          // grantor-entity portions roll into household 1040 tax detail.
+          // Non-grantor entity portions land on per-account realization entries
+          // for the trust-tax pass to consume. Grantor-entity portions also
+          // populate grantorTrustIncomeByEntity for pct_income distribution.
+          const householdShare = ownedByHousehold(acct);
+          let grantorShare = 0;
+          for (const owner of acct.owners) {
+            if (owner.kind !== "entity") continue;
+            if (isGrantorEntity(owner.entityId)) grantorShare += owner.percent;
+          }
+          const householdLikeShare = householdShare + grantorShare;
+
+          if (householdLikeShare > 0) {
+            const oiHH = oi * householdLikeShare;
+            const qdivHH = qdiv * householdLikeShare;
+            const stcgHH = stcg * householdLikeShare;
+            realizationOI += oiHH;
+            realizationQDiv += qdivHH;
+            realizationSTCG += stcgHH;
+            if (oiHH > 0) realizationBySource[`${acct.id}:oi`] = { type: "ordinary_income", amount: oiHH };
+            if (qdivHH > 0) realizationBySource[`${acct.id}:qdiv`] = { type: "dividends", amount: qdivHH };
+            if (stcgHH > 0) realizationBySource[`${acct.id}:stcg`] = { type: "stcg", amount: stcgHH };
+          }
+
+          // Per grantor-entity owner: track its share for pct_income distribution.
+          for (const owner of acct.owners) {
+            if (owner.kind !== "entity") continue;
+            if (!isGrantorEntity(owner.entityId)) continue;
+            const bucket = grantorTrustIncomeByEntity.get(owner.entityId);
+            if (bucket) {
+              bucket.ordinary += oi * owner.percent;
+              bucket.dividends += qdiv * owner.percent;
+              bucket.taxExempt += taxExempt * owner.percent;
             }
-          } else {
-            // Non-grantor trust account → per-account realization entry for the trust-tax pass
+          }
+
+          // Per non-grantor-entity owner: emit a per-account realization entry
+          // scaled by the entity's share of this account.
+          for (const owner of acct.owners) {
+            if (owner.kind !== "entity") continue;
+            if (isGrantorEntity(owner.entityId)) continue;
             yearRealizations.push({
               accountId: acct.id,
-              ownerEntityId: acct.ownerEntityId,
-              ordinary: oi,
-              dividends: qdiv,
-              taxExempt,
-              capGains: stcg, // ambient — collect-trust-income ignores this field per convention
+              ownerEntityId: owner.entityId,
+              ordinary: oi * owner.percent,
+              dividends: qdiv * owner.percent,
+              taxExempt: taxExempt * owner.percent,
+              capGains: stcg * owner.percent, // ambient — collect-trust-income ignores this per convention
             });
           }
         }
@@ -763,6 +864,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accountLedgers,
         year,
         ownerAges: { client: ages.client, spouse: ages.spouse },
+        spouseFamilyMemberId: spouseFmId,
       });
     }
 
@@ -776,7 +878,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const acct of workingAccounts) {
       if (!acct.rmdEnabled) continue;
       let ownerBirthYear: number;
-      if (acct.owner === "spouse" && spouseBirthYear != null) {
+      if (isSpouseAccount(acct) && spouseBirthYear != null) {
         ownerBirthYear = spouseBirthYear;
       } else {
         ownerBirthYear = clientBirthYear;
@@ -803,21 +905,39 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         });
       }
 
+      // Retirement accounts are required to have a single owner (DB CHECK
+      // trigger in migration 0055). Route the RMD via that single owner —
+      // either the controlling family member (→ household) or the lone entity
+      // (→ entity checking, with grantor pass-through to household tax).
       const rmdLabel = `RMD from ${acct.name}`;
-      if (acct.ownerEntityId == null) {
+      const householdOwner = controllingFamilyMember(acct);
+      if (householdOwner != null) {
         householdRmdIncome += rmd;
         rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmd };
         creditCash(defaultChecking?.id, rmd, { category: "rmd", label: rmdLabel, sourceId: acct.id });
-      } else {
-        creditCash(entityCheckingByEntityId[acct.ownerEntityId], rmd, {
+      } else if (isFullyEntityOwned(acct)) {
+        const entityOwner = acct.owners.find((o) => o.kind === "entity") as
+          | { kind: "entity"; entityId: string; percent: number }
+          | undefined;
+        if (!entityOwner) {
+          throw new Error(
+            `RMD-enabled retirement account ${acct.id} (${acct.name}) is fully-entity-owned but has no entity owner row`,
+          );
+        }
+        creditCash(entityCheckingByEntityId[entityOwner.entityId], rmd, {
           category: "rmd",
           label: rmdLabel,
           sourceId: acct.id,
         });
-        if (isGrantorEntity(acct.ownerEntityId)) {
+        if (isGrantorEntity(entityOwner.entityId)) {
           grantorRmdTaxable += rmd;
           rmdBySource[`${acct.id}:rmd`] = { type: "ordinary_income", amount: rmd };
         }
+      } else {
+        throw new Error(
+          `RMD-enabled retirement account ${acct.id} (${acct.name}) must have a single owner ` +
+            `(controlling family member or fully entity-owned). Owners: ${JSON.stringify(acct.owners)}`,
+        );
       }
     }
 
@@ -908,17 +1028,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     //   (c) cash debits for tax + distributions → applied to accountBalances
     let trustPassResult: ReturnType<typeof applyTrustAnnualPass> | null = null;
     if (nonGrantorTrusts.length > 0) {
-      // Build AssetTransactionGain[] from sale breakdown, mapping accountId →
-      // ownerEntityId. Source from the invariant `accountById` (built from
-      // `data.accounts` outside the year loop) because the BoY sale step
-      // removes sold accounts from `workingAccounts` BEFORE this lookup runs
-      // — using `workingAccounts` here would silently miss every sold trust
-      // account and route the gain to household taxDetail.capitalGains.
+      // Build AssetTransactionGain[] from sale breakdown, pro-rating each gain
+      // by the sold account's ownership shares. Source ownership from the
+      // invariant `accountById` (built from `data.accounts` outside the year
+      // loop) because the BoY sale step removes sold accounts from
+      // `workingAccounts` BEFORE this lookup runs — `workingAccounts` would
+      // silently miss every sold trust account.
       const assetTransactionGains: AssetTransactionGain[] = [];
       for (const item of saleResult.breakdown) {
-        const ownerEntityId = accountById.get(item.accountId)?.ownerEntityId;
-        if (ownerEntityId != null && !isGrantorEntity(ownerEntityId)) {
-          assetTransactionGains.push({ ownerEntityId, gain: item.capitalGain });
+        const sold = accountById.get(item.accountId);
+        if (!sold) continue;
+        for (const owner of sold.owners) {
+          if (owner.kind !== "entity") continue;
+          if (isGrantorEntity(owner.entityId)) continue;
+          assetTransactionGains.push({
+            ownerEntityId: owner.entityId,
+            gain: item.capitalGain * owner.percent,
+          });
         }
       }
 
@@ -930,6 +1056,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
 
       // Build trustLiquidity from current accountBalances for each trust.
+      // Each non-checking account contributes only its trust-owned share —
+      // the rest belongs to the household / other entities and isn't tappable
+      // for this trust's distributions or tax bill.
       const trustLiquidity = new Map<string, TrustLiquidityPool>();
       for (const trust of nonGrantorTrusts) {
         const checkingId = entityCheckingByEntityId[trust.entityId];
@@ -938,11 +1067,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         let taxableBrokerage = 0;
         let retirementInRmdPhase = 0;
         for (const acct of workingAccounts) {
-          if (acct.ownerEntityId !== trust.entityId) continue;
+          const trustShare = ownedByEntity(acct, trust.entityId);
+          if (trustShare <= 0) continue;
           if (acct.id === checkingId) continue;
-          if (acct.category === "taxable") taxableBrokerage += accountBalances[acct.id] ?? 0;
+          const balance = accountBalances[acct.id] ?? 0;
+          if (acct.category === "taxable") taxableBrokerage += balance * trustShare;
           if (acct.category === "retirement" && acct.rmdEnabled) {
-            retirementInRmdPhase += accountBalances[acct.id] ?? 0;
+            retirementInRmdPhase += balance * trustShare;
           }
         }
         trustLiquidity.set(trust.entityId, { cash, taxableBrokerage, retirementInRmdPhase });
@@ -1012,15 +1143,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const grantorDistributionWarnings: TrustWarning[] = [];
     if (grantorTrusts.length > 0) {
       // Collect asset-transaction gains for grantor entities (needed for
-      // pct_income mode). Same caveat as the non-grantor lookup above:
+      // pct_income mode), pro-rated by each grantor entity's share of the
+      // sold account. Same caveat as the non-grantor lookup above:
       // `workingAccounts` no longer contains sold accounts at this point in
       // the year loop, so we resolve ownership against the invariant
       // `accountById` map.
       for (const item of saleResult.breakdown) {
-        const ownerEntityId = accountById.get(item.accountId)?.ownerEntityId;
-        if (ownerEntityId != null && isGrantorEntity(ownerEntityId)) {
-          const bucket = grantorTrustIncomeByEntity.get(ownerEntityId);
-          if (bucket) bucket.recognizedCapGains += item.capitalGain;
+        const sold = accountById.get(item.accountId);
+        if (!sold) continue;
+        for (const owner of sold.owners) {
+          if (owner.kind !== "entity") continue;
+          if (!isGrantorEntity(owner.entityId)) continue;
+          const bucket = grantorTrustIncomeByEntity.get(owner.entityId);
+          if (bucket) bucket.recognizedCapGains += item.capitalGain * owner.percent;
         }
       }
 
@@ -1029,15 +1164,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (!checkingId) continue; // no checking account — cannot distribute
 
         const cash = accountBalances[checkingId] ?? 0;
-        // Aggregate taxable brokerage for this grantor trust
+        // Aggregate taxable brokerage for this grantor trust — only the
+        // trust-owned share of each fractional-ownership account contributes
+        // to its tappable liquidity.
         let taxableBrokerage = 0;
         let retirementInRmdPhase = 0;
         for (const acct of workingAccounts) {
-          if (acct.ownerEntityId !== gt.entityId) continue;
+          const trustShare = ownedByEntity(acct, gt.entityId);
+          if (trustShare <= 0) continue;
           if (acct.id === checkingId) continue;
-          if (acct.category === "taxable") taxableBrokerage += accountBalances[acct.id] ?? 0;
+          const balance = accountBalances[acct.id] ?? 0;
+          if (acct.category === "taxable") taxableBrokerage += balance * trustShare;
           if (acct.category === "retirement" && acct.rmdEnabled) {
-            retirementInRmdPhase += accountBalances[acct.id] ?? 0;
+            retirementInRmdPhase += balance * trustShare;
           }
         }
         const liquid: TrustLiquidityPool = { cash, taxableBrokerage, retirementInRmdPhase };
@@ -1106,10 +1245,24 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const salaryByRuleId: Record<string, number> = {};
     for (const rule of data.savingsRules) {
       const acct = accountById.get(rule.accountId);
-      salaryByRuleId[rule.id] =
-        acct && (acct.owner === "client" || acct.owner === "spouse")
-          ? salaryByOwner[acct.owner]
-          : totalHouseholdSalary;
+      if (acct) {
+        const cfm = controllingFamilyMember(acct);
+        if (cfm === spouseFmId && spouseFmId != null) {
+          salaryByRuleId[rule.id] = salaryByOwner.spouse;
+        } else if (cfm === clientFmId && clientFmId != null) {
+          salaryByRuleId[rule.id] = salaryByOwner.client;
+        } else if (cfm == null && (clientFmId != null || spouseFmId != null)) {
+          // Joint (multiple FM owners) or entity-owned: no individual salary can ground
+          // an employer match. Return 0 so the match is suppressed. Only applies when
+          // we have proper FM resolution (clientFmId / spouseFmId set); legacy plans
+          // without FMs fall through to household total (backward-compatible).
+          salaryByRuleId[rule.id] = 0;
+        } else {
+          salaryByRuleId[rule.id] = totalHouseholdSalary;
+        }
+      } else {
+        salaryByRuleId[rule.id] = totalHouseholdSalary;
+      }
     }
 
     // Resolve each rule's pre-cap dollar contribution so we can apply IRS
@@ -1128,7 +1281,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const acct = accountById.get(rule.accountId);
         if (acct) {
           const ownerDob =
-            acct.owner === "spouse" ? client.spouseDob : client.dateOfBirth;
+            isSpouseAccount(acct) ? client.spouseDob : client.dateOfBirth;
           const age = resolveAgeInYear(ownerDob, year);
           resolvedByRuleId[rule.id] = computeMaxContribution(
             acct.subType ?? "",
@@ -1152,6 +1305,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           client,
           taxYearParams: resolved.params,
           resolvedByRuleId,
+          familyMembers: data.familyMembers ?? [],
         })
       : { cappedByRuleId: resolvedByRuleId, adjustments: [] };
     const cappedByRuleId = capResult.cappedByRuleId;
@@ -1176,7 +1330,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             id: a.id,
             subType: a.subType ?? "",
             category: a.category,
-            ownerEntityId: a.ownerEntityId,
+            ownerEntityId: controllingEntity(a) ?? undefined,
           })),
           isGrantorEntity,
           salaryByRuleId,
@@ -1206,7 +1360,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             startYear: l.startYear,
             endYear: l.startYear + Math.ceil(l.termMonths / 12) - 1,
           })),
-          liabResult.interestByLiability
+          // Only the household share of mortgage interest counts toward the
+          // household 1040 itemized deduction.
+          Object.fromEntries(
+            currentLiabilities.map((l) => [
+              l.id,
+              (liabResult.interestByLiability[l.id] ?? 0) * ownedByHousehold(l),
+            ])
+          )
         ),
         derivePropertyTaxFromAccounts(
           year,
@@ -1214,7 +1375,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             id: a.id,
             name: a.name,
             category: a.category,
-            annualPropertyTax: a.annualPropertyTax ?? 0,
+            // Only the household share of property tax counts toward SALT.
+            // Entity-owned shares are paid by the entity and don't show on
+            // the household 1040 deduction.
+            annualPropertyTax: (a.annualPropertyTax ?? 0) * ownedByHousehold(a),
             propertyTaxGrowthRate: a.propertyTaxGrowthRate ?? 0.03,
           })),
           planSettings.planStartYear
@@ -1282,7 +1446,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (!acct) continue;
         const subType = acct.subType ?? "";
         if (subType !== "traditional_ira" && subType !== "401k") continue;
-        if (acct.ownerEntityId != null && !isGrantorEntity(acct.ownerEntityId)) continue;
+        if (controllingEntity(acct) != null && !isGrantorEntity(controllingEntity(acct)!)) continue;
         aboveLineBySource[rule.id] = { label: acct.name, amount: rule.annualAmount };
       }
 
@@ -1447,15 +1611,29 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       });
     }
 
-    // 8. Liability payments settle against the owning party's cash account.
+    // 8. Liability payments settle against the owning party's cash account —
+    // pro-rated by ownership share. Household share leaves household checking;
+    // each entity owner's share leaves that entity's checking.
     for (const liab of data.liabilities) {
       const payment = liabResult.byLiability[liab.id] ?? 0;
       if (payment === 0) continue;
-      creditCash(resolveCashAccount(liab.ownerEntityId), -payment, {
-        category: "liability",
-        label: `Liability: ${liab.name}`,
-        sourceId: liab.id,
-      });
+      const householdShare = ownedByHousehold(liab);
+      if (householdShare > 0) {
+        creditCash(resolveCashAccount(undefined), -payment * householdShare, {
+          category: "liability",
+          label: `Liability: ${liab.name}`,
+          sourceId: liab.id,
+        });
+      }
+      for (const owner of liab.owners) {
+        if (owner.kind !== "entity") continue;
+        if (owner.percent <= 0) continue;
+        creditCash(resolveCashAccount(owner.entityId), -payment * owner.percent, {
+          category: "liability",
+          label: `Liability: ${liab.name}`,
+          sourceId: liab.id,
+        });
+      }
     }
 
     // 9. Taxes are paid from household checking.
@@ -1523,10 +1701,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const rule of data.savingsRules) {
       if (year < rule.startYear || year > rule.endYear) continue;
       const acct = data.accounts.find((a) => a.id === rule.accountId);
-      const ownerSalary =
-        acct && (acct.owner === "client" || acct.owner === "spouse")
-          ? salaryByOwner[acct.owner]
-          : 0;
+      const ownerSalary = acct ? (salaryByRuleId[rule.id] ?? 0) : 0;
       const match = computeEmployerMatch(rule, ownerSalary);
       if (match === 0) continue;
       accountBalances[rule.accountId] = (accountBalances[rule.accountId] ?? 0) + match;
@@ -1601,12 +1776,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // 12b. Build withdrawal source balances reflecting post-BoY-purchase state
     // so gap-fill doesn't pull from an account that was just drained to fund a
-    // purchase.
+    // purchase. Withdrawals are scoped to the household share of each account
+    // — entity-owned percentages stay with the entity and aren't tappable for
+    // household shortfalls.
     const householdWithdrawBalances: Record<string, number> = {};
     for (const acct of workingAccounts) {
-      if (acct.ownerEntityId != null) continue;
+      const householdShare = ownedByHousehold(acct);
+      if (householdShare <= 0) continue;
       if (acct.isDefaultChecking) continue;
-      householdWithdrawBalances[acct.id] = acct.id in accountBalances ? accountBalances[acct.id] : 0;
+      const balance = acct.id in accountBalances ? accountBalances[acct.id] : 0;
+      householdWithdrawBalances[acct.id] = balance * householdShare;
     }
 
     if (hasChecking) {
@@ -1722,15 +1901,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       life_insurance: "lifeInsurance",
     };
     for (const acct of workingAccounts) {
-      if (acct.ownerEntityId != null) {
-        const entity = entityMap[acct.ownerEntityId];
-        if (!entity?.includeInPortfolio) continue;
-      }
       const val = accountBalances[acct.id] ?? 0;
+      // Pro-rate value into the portfolio: household share rolls in directly,
+      // each entity owner's share rolls in only when its entity is flagged
+      // includeInPortfolio. Non-portfolio entity shares are excluded.
+      let inPortfolioFraction = ownedByHousehold(acct);
+      for (const owner of acct.owners) {
+        if (owner.kind !== "entity") continue;
+        const entity = entityMap[owner.entityId];
+        if (entity?.includeInPortfolio) inPortfolioFraction += owner.percent;
+      }
+      if (inPortfolioFraction <= 0) continue;
+      const inPortfolioVal = val * inPortfolioFraction;
       const key = categoryToKey[acct.category] ?? "taxable";
-      portfolioAssets[key][acct.id] = val;
+      portfolioAssets[key][acct.id] = inPortfolioVal;
       const totalKey = `${key}Total` as keyof typeof portfolioAssets;
-      (portfolioAssets[totalKey] as number) += val;
+      (portfolioAssets[totalKey] as number) += inPortfolioVal;
     }
     portfolioAssets.total =
       portfolioAssets.taxableTotal +
@@ -1808,24 +1994,34 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     Object.assign(income.bySource, techniqueIncomeBySource);
 
     const totalTaxes = taxes + withdrawalTax;
+    // Property tax only counts toward the household realEstate bucket for the
+    // household-share synthetic rows. Entity-owned shares are tagged with
+    // ownerEntityId and route to the entity's checking via resolveCashAccount.
+    const householdSyntheticExpenseTotal = syntheticExpenses
+      .filter((s) => s.ownerEntityId == null)
+      .reduce((sum, s) => sum + s.annualAmount, 0);
     const expenses = {
       living: expenseBreakdown.living,
       liabilities: liabResult.totalPayment,
       other: expenseBreakdown.other + techniqueExpenses,
       insurance: expenseBreakdown.insurance,
-      realEstate: syntheticExpenses.reduce((sum, s) => sum + s.annualAmount, 0),
+      realEstate: householdSyntheticExpenseTotal,
       taxes: totalTaxes,
       total:
         expenseBreakdown.living +
         expenseBreakdown.other +
         expenseBreakdown.insurance +
-        syntheticExpenses.reduce((sum, s) => sum + s.annualAmount, 0) +
+        householdSyntheticExpenseTotal +
         liabResult.totalPayment +
         totalTaxes +
         techniqueExpenses,
       bySource: {
         ...expenseBreakdown.bySource,
-        ...Object.fromEntries(syntheticExpenses.map((s) => [s.id, s.annualAmount])),
+        ...Object.fromEntries(
+          syntheticExpenses
+            .filter((s) => s.ownerEntityId == null)
+            .map((s) => [s.id, s.annualAmount])
+        ),
         ...techniqueExpenseBySource,
       },
       byLiability: liabResult.byLiability,
@@ -1955,14 +2151,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         dsueReceived: 0, // first decedent has no prior DSUE
       });
 
-      workingAccounts = deathResult.accounts;
+      // Death-event creates synthetic accounts/liabilities mid-projection with
+      // legacy ownership fields populated but `owners[]` empty. Normalize so
+      // subsequent year iterations read fractional ownership consistently.
+      workingAccounts = deathResult.accounts.map(normalizeOwners);
       // Reassign the mutable balance / basis maps in place so later years see the new state.
       for (const key of Object.keys(accountBalances)) delete (accountBalances as Record<string, number>)[key];
       Object.assign(accountBalances, deathResult.accountBalances);
       for (const key of Object.keys(basisMap)) delete (basisMap as Record<string, number>)[key];
       Object.assign(basisMap, deathResult.basisMap);
       currentIncomes = deathResult.incomes;
-      currentLiabilities = deathResult.liabilities;
+      currentLiabilities = deathResult.liabilities.map(normalizeOwners);
       // Adopt grantor-succession entity flips (e.g. IDGT post-grantor-death).
       // Trust-tax classification reads `currentEntities` at the top of each
       // subsequent year, so the next iteration picks up the flipped state.
@@ -2013,13 +2212,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         dsueReceived: stashedDSUE,
       });
 
-      workingAccounts = finalResult.accounts;
+      // Same normalization as first-death — keeps fractional reads consistent
+      // for the truncated final-year processing below.
+      workingAccounts = finalResult.accounts.map(normalizeOwners);
       for (const key of Object.keys(accountBalances)) delete (accountBalances as Record<string, number>)[key];
       Object.assign(accountBalances, finalResult.accountBalances);
       for (const key of Object.keys(basisMap)) delete (basisMap as Record<string, number>)[key];
       Object.assign(basisMap, finalResult.basisMap);
       currentIncomes = finalResult.incomes;
-      currentLiabilities = finalResult.liabilities;
+      currentLiabilities = finalResult.liabilities.map(normalizeOwners);
       // Adopt grantor-succession entity flips at final death. The loop breaks
       // immediately after, but keep the map in sync for any post-loop reads.
       currentEntities = finalResult.entities;

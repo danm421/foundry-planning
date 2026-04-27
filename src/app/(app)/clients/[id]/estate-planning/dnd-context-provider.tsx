@@ -27,6 +27,7 @@ import {
 } from "./drop-handlers";
 import type { WillBequestInput } from "@/lib/schemas/wills";
 import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
+import { controllingEntity } from "@/engine/ownership";
 
 /** Context that heir/charity cards use to open the edit dialog without prop-drilling. */
 interface BequestEditContextValue {
@@ -311,7 +312,7 @@ export function CanvasDndProvider({
         inverse = await applyAlreadyOwned({
           clientId,
           accountId: account.id,
-          previousOwnerEntityId: account.ownerEntityId ?? null,
+          previousOwnerEntityId: controllingEntity(account) ?? null,
           targetEntityId: trust.id,
         });
         label = `Moved ${account.name} into ${trust.name ?? "trust"}`;

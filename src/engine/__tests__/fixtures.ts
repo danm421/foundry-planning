@@ -5,10 +5,12 @@ import type {
   Income,
   Expense,
   Liability,
+  FamilyMember,
   SavingsRule,
   WithdrawalPriority,
   PlanSettings,
 } from "../types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 
 export const baseClient: ClientInfo = {
   firstName: "John",
@@ -36,57 +38,66 @@ export const sampleAccounts: Account[] = [
     name: "John 401(k)",
     category: "retirement",
     subType: "401k",
-    owner: "client",
     value: 500000,
     basis: 500000,
     growthRate: 0.07,
     rmdEnabled: true,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   },
   {
     id: "acct-roth",
     name: "Jane Roth IRA",
     category: "retirement",
     subType: "roth_ira",
-    owner: "spouse",
     value: 200000,
     basis: 150000,
     growthRate: 0.07,
     rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
   },
   {
     id: "acct-brokerage",
     name: "Joint Brokerage",
     category: "taxable",
     subType: "brokerage",
-    owner: "joint",
     value: 300000,
     basis: 200000,
     growthRate: 0.06,
     rmdEnabled: false,
+    owners: [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+    ],
   },
   {
     id: "acct-savings",
     name: "Emergency Fund",
     category: "cash",
     subType: "savings",
-    owner: "joint",
     value: 50000,
     basis: 50000,
     growthRate: 0.04,
     rmdEnabled: false,
+    owners: [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+    ],
   },
   {
     id: "acct-home",
     name: "Primary Home",
     category: "real_estate",
     subType: "primary_residence",
-    owner: "joint",
     value: 750000,
     basis: 500000,
     growthRate: 0.04,
     rmdEnabled: false,
     annualPropertyTax: 12000,
     propertyTaxGrowthRate: 0.03,
+    owners: [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+    ],
   },
 ];
 
@@ -157,6 +168,7 @@ export const sampleLiabilities: Liability[] = [
     termMonths: 240,
     isInterestDeductible: true,
     extraPayments: [],
+    owners: [],
   },
 ];
 
@@ -180,6 +192,27 @@ export const sampleWithdrawalStrategy: WithdrawalPriority[] = [
   { accountId: "acct-roth", priorityOrder: 4, startYear: 2026, endYear: 2055 },
 ];
 
+/** Principal FMs with LEGACY sentinel IDs — needed for owner-resolution in
+ *  employer-match, SS, and death-event tests that go through runProjection. */
+export const sampleFamilyMembers: FamilyMember[] = [
+  {
+    id: LEGACY_FM_CLIENT,
+    role: "client",
+    relationship: "other",
+    firstName: "John",
+    lastName: "Smith",
+    dateOfBirth: "1970-01-01",
+  },
+  {
+    id: LEGACY_FM_SPOUSE,
+    role: "spouse",
+    relationship: "other",
+    firstName: "Jane",
+    lastName: "Smith",
+    dateOfBirth: "1972-06-15",
+  },
+];
+
 export function buildClientData(overrides?: Partial<ClientData>): ClientData {
   return {
     client: baseClient,
@@ -190,6 +223,7 @@ export function buildClientData(overrides?: Partial<ClientData>): ClientData {
     savingsRules: sampleSavingsRules,
     withdrawalStrategy: sampleWithdrawalStrategy,
     planSettings: basePlanSettings,
+    familyMembers: sampleFamilyMembers,
     ...overrides,
   };
 }

@@ -127,7 +127,6 @@ d("beneficiaries tenant isolation", () => {
         name: "Test Acct",
         category: "taxable",
         subType: "brokerage",
-        owner: "client",
       })
       .returning();
     return { clientId: client.id, accountId: account.id, fmId: fm.id };

@@ -4,6 +4,7 @@ import { detectInsuranceEvents } from "../../detectors/insurance";
 import { runProjection } from "@/engine";
 import { buildClientData } from "@/engine/__tests__/fixtures";
 import type { LifeInsurancePolicy } from "@/engine/types";
+import { LEGACY_FM_CLIENT } from "../../../../engine/ownership";
 
 describe("detectInsuranceEvents", () => {
   it("returns empty array when no life-insurance accounts exist", () => {
@@ -23,11 +24,11 @@ describe("detectInsuranceEvents", () => {
         name: "Life policy",
         category: "life_insurance",
         subType: "whole_life",
-        owner: "client",
         value: 500_000,
         basis: 0,
         growthRate: 0,
         rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const projection = runProjection(data);
@@ -63,12 +64,12 @@ describe("detectInsuranceEvents", () => {
         name: "20-year term on client",
         category: "life_insurance",
         subType: "term",
-        owner: "client",
         insuredPerson: "client",
         value: 0,
         basis: 0,
         growthRate: 0,
         rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
         lifeInsurance: termPolicy,
       },
     ];

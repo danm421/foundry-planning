@@ -29,6 +29,7 @@ import type {
   PlanSettings,
 } from "../types";
 import type { TaxYearParameters } from "../../lib/tax/types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 
 // ── Shared minimal scaffolding (mirrors Task 14) ────────────────────────────
 
@@ -57,11 +58,14 @@ const hhChecking: Account = {
   name: "Household Checking",
   category: "cash",
   subType: "checking",
-  owner: "joint",
   value: 100_000,
   basis: 100_000,
   growthRate: 0,
   rmdEnabled: false,
+  owners: [
+    { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+    { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+  ],
   isDefaultChecking: true,
 };
 
@@ -70,13 +74,15 @@ const trustChecking: Account = {
   name: "SLAT Checking",
   category: "cash",
   subType: "checking",
-  owner: "joint",
   value: 50_000,
   basis: 50_000,
   growthRate: 0,
   rmdEnabled: false,
+  owners: [
+    { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+    { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+  ],
   isDefaultChecking: true,
-  ownerEntityId: "slat-3",
 };
 
 // Trust-owned business — held flat at $5M (growthRate 0) so the only gain
@@ -86,12 +92,11 @@ const trustBusiness: Account = {
   name: "SLAT Business",
   category: "business",
   subType: "private",
-  owner: "joint",
   value: 5_000_000,
   basis: 1_000_000,
   growthRate: 0,
   rmdEnabled: false,
-  ownerEntityId: "slat-3",
+  owners: [{ kind: "entity", entityId: "slat-3", percent: 1 }],
 };
 
 // Full-position sale of the business in 2030.

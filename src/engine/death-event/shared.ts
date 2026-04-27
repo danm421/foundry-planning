@@ -1,6 +1,8 @@
 import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, FamilyMember, Will, WillBequest, EntitySummary, Income, PlanSettings, Gift, BeneficiaryRef } from "../types";
 import { nextSyntheticId } from "../asset-transactions";
 import type { FilingStatus } from "../../lib/tax/types";
+import type { AccountOwner } from "../ownership";
+import { controllingEntity, isFullyEntityOwned, ownedByHousehold } from "../ownership";
 
 /** Compute the year of the first-death event. Returns null when there is no
  *  spouse, when no lifeExpectancy is set, or when the earliest death falls
@@ -89,9 +91,11 @@ export function identifyFinalDeceased(
 }
 
 export type OwnerMutation = {
-  owner?: "client" | "spouse";
-  ownerFamilyMemberId?: string;
-  ownerEntityId?: string;
+  /** Replacement ownership for the resulting account after a death-event split.
+   *  Exactly one entry (100 %) for a single-owner transfer; two entries (50/50
+   *  each) is not produced by any current death-event path (joint accounts are
+   *  retitled to the survivor 100 %). */
+  owners: AccountOwner[];
 };
 
 export type SplitShare = {
@@ -100,9 +104,7 @@ export type SplitShare = {
   /** When true, this share produces NO resulting account — the value leaves
    *  the household. Still emits a ledger entry. */
   removed?: boolean;
-  /** When !removed, the mutation to apply to the resulting account's owner
-   *  fields. Exactly one of owner / ownerFamilyMemberId / ownerEntityId
-   *  should be set. */
+  /** When !removed, the ownership to assign to the resulting account. */
   ownerMutation?: OwnerMutation;
   ledgerMeta: {
     via: DeathTransfer["via"];
@@ -216,21 +218,9 @@ export function splitAccount(
       };
     }
 
-    // Apply owner mutation. Explicit assigns overwrite existing values so the
-    // deceased's ownerFamilyMemberId/ownerEntityId never linger onto a spouse-
-    // owned account.
+    // Apply owner mutation: replace owners[] with the post-transfer ownership.
     if (share.ownerMutation) {
-      if (share.ownerMutation.owner !== undefined) {
-        newAccount.owner = share.ownerMutation.owner;
-        newAccount.ownerFamilyMemberId = undefined;
-        newAccount.ownerEntityId = undefined;
-      } else if (share.ownerMutation.ownerFamilyMemberId !== undefined) {
-        newAccount.ownerFamilyMemberId = share.ownerMutation.ownerFamilyMemberId;
-        newAccount.ownerEntityId = undefined;
-      } else if (share.ownerMutation.ownerEntityId !== undefined) {
-        newAccount.ownerEntityId = share.ownerMutation.ownerEntityId;
-        newAccount.ownerFamilyMemberId = undefined;
-      }
+      newAccount.owners = share.ownerMutation.owners;
     }
 
     resultingAccounts.push(newAccount);
@@ -291,14 +281,27 @@ export interface ExternalBeneficiarySummary {
   kind?: "charity" | "individual";
 }
 
+/** Returns true when the account is joint-household-owned (two FM owners each
+ *  at ≈ 50%). Entity-owned and single-owner household accounts return false. */
+function isJointHousehold(a: Account): boolean {
+  const fmRows = a.owners.filter((o) => o.kind === "family_member");
+  if (fmRows.length !== 2) return false;
+  if (a.owners.some((o) => o.kind === "entity")) return false;
+  const total = ownedByHousehold(a);
+  const EPSILON = 0.0001;
+  return Math.abs(total - 1) < EPSILON;
+}
+
 /** Step 1: Titling. Joint accounts pass 100% to the survivor via right-of-
- *  survivorship. Non-joint accounts pass through unchanged. */
+ *  survivorship. Non-joint accounts pass through unchanged.
+ *  @param survivorFmId  Family-member id of the surviving spouse. */
 export function applyTitling(
   source: Account,
-  survivor: "client" | "spouse",
+  _survivor: "client" | "spouse",
   linkedLiability: Liability | undefined,
+  survivorFmId: string,
 ): StepResult {
-  if (source.owner !== "joint") {
+  if (!isJointHousehold(source)) {
     return {
       consumed: false,
       resultingAccounts: [],
@@ -313,7 +316,9 @@ export function applyTitling(
     [
       {
         fraction: 1,
-        ownerMutation: { owner: survivor },
+        ownerMutation: {
+          owners: [{ kind: "family_member", familyMemberId: survivorFmId, percent: 1 }],
+        },
         ledgerMeta: {
           via: "titling",
           recipientKind: "spouse",
@@ -369,7 +374,7 @@ export function applyBeneficiaryDesignations(
     let removed = false;
 
     if (b.familyMemberId) {
-      ownerMutation = { ownerFamilyMemberId: b.familyMemberId };
+      ownerMutation = { owners: [{ kind: "family_member", familyMemberId: b.familyMemberId, percent: 1 }] };
       recipientKind = "family_member";
       recipientId = b.familyMemberId;
       const fam = famMap.get(b.familyMemberId);
@@ -451,7 +456,8 @@ export function firesAtDeath(b: WillBequest, deathOrder: 1 | 2): boolean {
 
 function resolveRecipientLabelAndMutation(
   r: WillBequest["recipients"][number],
-  survivor: "client" | "spouse" | null,
+  _survivor: "client" | "spouse" | null,
+  survivorFmId: string | null,
   familyMembers: FamilyMember[],
   externals: ExternalBeneficiarySummary[],
   entities: EntitySummary[],
@@ -464,7 +470,9 @@ function resolveRecipientLabelAndMutation(
 } {
   if (r.recipientKind === "spouse") {
     return {
-      ownerMutation: survivor ? { owner: survivor } : undefined,
+      ownerMutation: survivorFmId != null
+        ? { owners: [{ kind: "family_member", familyMemberId: survivorFmId, percent: 1 }] }
+        : undefined,
       removed: false,
       recipientKind: "spouse",
       recipientId: null,
@@ -474,7 +482,7 @@ function resolveRecipientLabelAndMutation(
   if (r.recipientKind === "family_member") {
     const fam = familyMembers.find((f) => f.id === r.recipientId);
     return {
-      ownerMutation: { ownerFamilyMemberId: r.recipientId! },
+      ownerMutation: { owners: [{ kind: "family_member", familyMemberId: r.recipientId!, percent: 1 }] },
       removed: false,
       recipientKind: "family_member",
       recipientId: r.recipientId,
@@ -486,7 +494,7 @@ function resolveRecipientLabelAndMutation(
   if (r.recipientKind === "entity") {
     const ent = entities.find((e) => e.id === r.recipientId);
     return {
-      ownerMutation: { ownerEntityId: r.recipientId! },
+      ownerMutation: { owners: [{ kind: "entity", entityId: r.recipientId!, percent: 1 }] },
       removed: false,
       recipientKind: "entity",
       recipientId: r.recipientId,
@@ -512,6 +520,7 @@ export function applyWillSpecificBequests(
   will: Will,
   deathOrder: 1 | 2,
   survivor: "client" | "spouse" | null,
+  survivorFmId: string | null,
   familyMembers: FamilyMember[],
   externals: ExternalBeneficiarySummary[],
   entities: EntitySummary[],
@@ -557,7 +566,7 @@ export function applyWillSpecificBequests(
     b.recipients.forEach((r) => {
       const rFrac = bFrac * (r.percentage / 100);
       const { ownerMutation, removed, recipientKind, recipientId, recipientLabel } =
-        resolveRecipientLabelAndMutation(r, survivor, familyMembers, externals, entities);
+        resolveRecipientLabelAndMutation(r, survivor, survivorFmId, familyMembers, externals, entities);
       shares.push({
         fraction: rFrac,
         removed: removed || undefined,
@@ -607,6 +616,7 @@ export function applyWillAllAssetsResidual(
   will: Will,
   deathOrder: 1 | 2,
   survivor: "client" | "spouse" | null,
+  survivorFmId: string | null,
   familyMembers: FamilyMember[],
   externals: ExternalBeneficiarySummary[],
   entities: EntitySummary[],
@@ -632,7 +642,7 @@ export function applyWillAllAssetsResidual(
     b.recipients.forEach((r) => {
       const rFrac = clauseFraction * (r.percentage / 100);
       const { ownerMutation, removed, recipientKind, recipientId, recipientLabel } =
-        resolveRecipientLabelAndMutation(r, survivor, familyMembers, externals, entities);
+        resolveRecipientLabelAndMutation(r, survivor, survivorFmId, familyMembers, externals, entities);
       shares.push({
         fraction: rFrac,
         removed: removed || undefined,
@@ -732,7 +742,7 @@ export function distributeUnlinkedLiabilities(
   deceased: "client" | "spouse",
 ): UnlinkedLiabilityDistributionResult {
   const unlinked = liabilities.filter(
-    (l) => l.linkedPropertyId == null && l.ownerEntityId == null,
+    (l) => l.linkedPropertyId == null && !isFullyEntityOwned(l),
   );
 
   if (unlinked.length === 0) {
@@ -814,8 +824,9 @@ export function distributeUnlinkedLiabilities(
           startMonth: liab.startMonth,
           termMonths: liab.termMonths,
           extraPayments: [],
-          ownerFamilyMemberId: rec.id,
+          ownerFamilyMemberId: rec.id,  // kept: signals "distributed-to-heir" semantics (not a legacy owner column)
           isInterestDeductible: liab.isInterestDeductible,
+          owners: [{ kind: "family_member", familyMemberId: rec.id, percent: 1 }],
         });
         resultingLiabilityId = newId;
       }
@@ -899,6 +910,7 @@ export function applyFallback(
   source: Account,
   undisposedFraction: number,
   survivor: "client" | "spouse" | null,
+  survivorFmId: string | null,
   familyMembers: FamilyMember[],
   linkedLiability: Liability | undefined,
 ): { step: StepResult; warnings: string[] } {
@@ -923,12 +935,12 @@ export function applyFallback(
     : undefined;
 
   // Tier 1
-  if (survivor) {
+  if (survivor && survivorFmId != null) {
     const split = splitAccount(
       scaledSource,
       [{
         fraction: 1,
-        ownerMutation: { owner: survivor },
+        ownerMutation: { owners: [{ kind: "family_member", familyMemberId: survivorFmId, percent: 1 }] },
         ledgerMeta: {
           via: "fallback_spouse",
           recipientKind: "spouse",
@@ -957,7 +969,7 @@ export function applyFallback(
     const perChild = 1 / children.length;
     const shares: SplitShare[] = children.map((c) => ({
       fraction: perChild,
-      ownerMutation: { ownerFamilyMemberId: c.id },
+      ownerMutation: { owners: [{ kind: "family_member", familyMemberId: c.id, percent: 1 }] },
       ledgerMeta: {
         via: "fallback_children" as const,
         recipientKind: "family_member" as const,
@@ -1029,7 +1041,7 @@ export interface RunPourOutResult {
  *  irrevocable at the grantor's death, the trust's accounts and unlinked
  *  debts pour out to its beneficiaries per their BeneficiaryRef percentages.
  *  Emits one ledger entry per (account, beneficiary) pair with via="trust_pour_out".
- *  Trust liabilities have their ownerEntityId stripped so downstream
+ *  Trust liabilities have their owners[] cleared so downstream
  *  distributeUnlinkedLiabilities can redistribute them with the rest.
  *
  *  Fallbacks:
@@ -1043,7 +1055,7 @@ export function runPourOut(input: RunPourOutInput): RunPourOutResult {
   let workingLiabs = [...input.liabilities];
 
   for (const q of input.queue) {
-    const trustAccounts = input.accounts.filter((a) => a.ownerEntityId === q.entityId);
+    const trustAccounts = input.accounts.filter((a) => controllingEntity(a) === q.entityId);
     const bens = q.trustBeneficiaries;
     const totalPct = bens.reduce((s, b) => s + b.percentage, 0);
 
@@ -1105,9 +1117,11 @@ export function runPourOut(input: RunPourOutInput): RunPourOutResult {
       }
     }
 
+    // Strip the entity ownership from trust liabilities so distributeUnlinkedLiabilities
+    // can redistribute them with the rest of the household unlinked debt.
     workingLiabs = workingLiabs.map((l) =>
-      l.ownerEntityId === q.entityId
-        ? { ...l, ownerEntityId: undefined }
+      controllingEntity(l) === q.entityId
+        ? { ...l, owners: [] }
         : l,
     );
   }

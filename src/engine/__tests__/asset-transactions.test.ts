@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { applyAssetSales, applyAssetPurchases, _resetSyntheticIdCounter } from "../asset-transactions";
 import type { Account, Liability, AssetTransaction, AccountLedger } from "../types";
+import { LEGACY_FM_CLIENT } from "../ownership";
 
 function makeLedger(value: number): AccountLedger {
   return {
@@ -20,11 +21,11 @@ const rentalProperty: Account = {
   name: "Rental Property",
   category: "real_estate",
   subType: "rental_property",
-  owner: "client",
   value: 500000,
   basis: 300000,
   growthRate: 0.03,
   rmdEnabled: false,
+  owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
 };
 
 const mortgage: Liability = {
@@ -39,6 +40,7 @@ const mortgage: Liability = {
   linkedPropertyId: "rental-1",
   isInterestDeductible: true,
   extraPayments: [],
+  owners: [],
 };
 
 const checkingAccount: Account = {
@@ -46,12 +48,12 @@ const checkingAccount: Account = {
   name: "Checking",
   category: "cash",
   subType: "checking",
-  owner: "client",
   value: 50000,
   basis: 50000,
   growthRate: 0,
   rmdEnabled: false,
   isDefaultChecking: true,
+  owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
 };
 
 const brokerageAccount: Account = {
@@ -59,11 +61,11 @@ const brokerageAccount: Account = {
   name: "Brokerage",
   category: "taxable",
   subType: "brokerage",
-  owner: "client",
   value: 200000,
   basis: 150000,
   growthRate: 0.07,
   rmdEnabled: false,
+  owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
 };
 
 beforeEach(() => {
@@ -172,11 +174,11 @@ describe("applyAssetSales — home-sale exclusion (§121)", () => {
     name: "Primary Residence",
     category: "real_estate",
     subType: "primary_residence",
-    owner: "client",
     value: 900000,
     basis: 300000,
     growthRate: 0.03,
     rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   };
 
   function runSale(

@@ -5,6 +5,7 @@ import AddTrustForm from "../forms/add-trust-form";
 import BusinessForm from "./business-form";
 import { getEntityKind, type EntityKind } from "./types";
 import type { Entity, FamilyMember, ExternalBeneficiary, Designation } from "../family-view";
+import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember } from "../forms/assets-tab";
 import DialogShell from "../dialog-shell";
 
 export interface EntityDialogProps {
@@ -24,6 +25,12 @@ export interface EntityDialogProps {
   otherEntities: { id: string; name: string }[];
   /** Pre-loaded designations for edit mode */
   initialDesignations?: Designation[];
+  /** Assets tab data — when absent the Assets tab degrades gracefully */
+  accounts?: AssetsTabAccount[];
+  liabilities?: AssetsTabLiability[];
+  incomes?: AssetsTabIncome[];
+  expenses?: AssetsTabExpense[];
+  assetFamilyMembers?: AssetsTabFamilyMember[];
 }
 
 export default function EntityDialog({
@@ -39,12 +46,17 @@ export default function EntityDialog({
   externals,
   otherEntities,
   initialDesignations,
+  accounts,
+  liabilities,
+  incomes,
+  expenses,
+  assetFamilyMembers,
 }: EntityDialogProps) {
   const [submitState, setSubmitState] = useState<{ canSubmit: boolean; loading: boolean }>({
     canSubmit: true,
     loading: false,
   });
-  const [trustTab, setTrustTab] = useState<"details" | "notes">("details");
+  const [trustTab, setTrustTab] = useState<"details" | "assets" | "notes">("details");
 
   if (!open) return null;
 
@@ -62,17 +74,21 @@ export default function EntityDialog({
       size="md"
       tabs={
         kind === "trust"
-          ? [{ id: "details", label: "Details" }, { id: "notes", label: "Notes" }]
+          ? [{ id: "details", label: "Details" }, { id: "assets", label: "Assets" }, { id: "notes", label: "Notes" }]
           : undefined
       }
       activeTab={kind === "trust" ? trustTab : undefined}
-      onTabChange={kind === "trust" ? (tab) => setTrustTab(tab as "details" | "notes") : undefined}
-      primaryAction={{
-        label: isEdit ? "Save Changes" : kind === "trust" ? "Add Trust" : "Add Business",
-        form: kind === "trust" ? "add-trust-form" : "entity-business-form",
-        disabled: !submitState.canSubmit,
-        loading: submitState.loading,
-      }}
+      onTabChange={kind === "trust" ? (tab) => setTrustTab(tab as "details" | "assets" | "notes") : undefined}
+      primaryAction={
+        kind === "trust" && trustTab === "assets"
+          ? undefined
+          : {
+              label: isEdit ? "Save Changes" : kind === "trust" ? "Add Trust" : "Add Business",
+              form: kind === "trust" ? "add-trust-form" : "entity-business-form",
+              disabled: !submitState.canSubmit,
+              loading: submitState.loading,
+            }
+      }
       destructiveAction={
         isEdit && onRequestDelete
           ? { label: "Delete", onClick: onRequestDelete }
@@ -89,6 +105,11 @@ export default function EntityDialog({
           entities={otherEntities}
           initialDesignations={initialDesignations}
           activeTab={trustTab}
+          accounts={accounts}
+          liabilities={liabilities}
+          incomes={incomes}
+          expenses={expenses}
+          assetFamilyMembers={assetFamilyMembers}
           onSaved={onSaved}
           onClose={() => onOpenChange(false)}
           onSubmitStateChange={setSubmitState}

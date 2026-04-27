@@ -6,19 +6,28 @@ import type {
   Account, AssetTransaction, FamilyMember, Will, PlanSettings,
   AccountLedger,
 } from "../types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 
 describe("step-up end-to-end: death + future sale → correct cap-gains", () => {
   const jointBrok: Account = {
     id: "joint-brok", name: "Joint Brokerage",
     category: "taxable", subType: "brokerage",
-    owner: "joint", value: 500_000, basis: 200_000,
+    value: 500_000, basis: 200_000,
     growthRate: 0.05, rmdEnabled: false,
+    owners: [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+    ],
   };
   const cashForProceeds: Account = {
     id: "cash", name: "Joint Checking",
     category: "cash", subType: "checking",
-    owner: "joint", value: 10_000, basis: 10_000,
+    value: 10_000, basis: 10_000,
     growthRate: 0, rmdEnabled: false,
+    owners: [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+    ],
   };
   const will: Will = {
     id: "w", grantor: "client",

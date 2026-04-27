@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import { buildClientData } from "./fixtures";
 import type { AssetTransaction, Account, Liability } from "../types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 
 /**
  * Repro for Finding #1: NaN propagates through cashflow after sell→buy→buy→sell
@@ -14,13 +15,16 @@ describe("NaN propagation — sell→buy→buy→sell with linked mortgage", () 
       name: "Original Home",
       category: "real_estate",
       subType: "primary_residence",
-      owner: "joint",
       value: 750_000,
       basis: 500_000,
       growthRate: 0.04,
       rmdEnabled: false,
       annualPropertyTax: 12_000,
       propertyTaxGrowthRate: 0.03,
+      owners: [
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+      ],
     };
     const homeMortgage: Liability = {
       id: "liab-home-orig",
@@ -34,6 +38,7 @@ describe("NaN propagation — sell→buy→buy→sell with linked mortgage", () 
       linkedPropertyId: "home-orig",
       isInterestDeductible: true,
       extraPayments: [],
+      owners: [],
     };
 
     const sellOrig: AssetTransaction = {
@@ -99,12 +104,15 @@ describe("NaN propagation — sell→buy→buy→sell with linked mortgage", () 
           name: "Checking",
           category: "cash",
           subType: "checking",
-          owner: "joint",
           value: 200_000,
           basis: 200_000,
           growthRate: 0.02,
           rmdEnabled: false,
           isDefaultChecking: true,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
         },
       ],
       liabilities: [homeMortgage],

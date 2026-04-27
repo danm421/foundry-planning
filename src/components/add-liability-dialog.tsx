@@ -12,6 +12,7 @@ interface AddLiabilityDialogProps {
   clientId: string;
   realEstateAccounts?: { id: string; name: string }[];
   entities?: { id: string; name: string }[];
+  familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
@@ -26,6 +27,7 @@ export default function AddLiabilityDialog({
   clientId,
   realEstateAccounts,
   entities,
+  familyMembers,
   milestones,
   clientFirstName,
   spouseFirstName,
@@ -102,6 +104,7 @@ export default function AddLiabilityDialog({
             clientId={clientId}
             realEstateAccounts={realEstateAccounts}
             entities={entities}
+            familyMembers={familyMembers}
             milestones={milestones}
             clientFirstName={clientFirstName}
             spouseFirstName={spouseFirstName}

@@ -5,6 +5,7 @@ import {
   externalBeneficiaries,
   entities,
   liabilities,
+  liabilityOwners,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import type { WillBequestInput } from "@/lib/schemas/wills";
@@ -105,10 +106,18 @@ export async function verifyCrossRefs(
         .select({
           id: liabilities.id,
           linkedPropertyId: liabilities.linkedPropertyId,
-          ownerEntityId: liabilities.ownerEntityId,
         })
         .from(liabilities)
         .where(and(eq(liabilities.clientId, clientId), inArray(liabilities.id, liabilityIds)));
+
+      // Check entity ownership via liability_owners junction.
+      const ownerRows = await db
+        .select({ liabilityId: liabilityOwners.liabilityId, entityId: liabilityOwners.entityId })
+        .from(liabilityOwners)
+        .where(inArray(liabilityOwners.liabilityId, liabilityIds));
+      const entityOwnedLiabIds = new Set(
+        ownerRows.filter((r) => r.entityId != null).map((r) => r.liabilityId)
+      );
 
       const byId = new Map(found.map((l) => [l.id, l]));
 
@@ -120,7 +129,7 @@ export async function verifyCrossRefs(
         if (liab.linkedPropertyId != null) {
           return { code: "liability_linked_not_bequestable", detail: liab.id };
         }
-        if (liab.ownerEntityId != null) {
+        if (entityOwnedLiabIds.has(liab.id)) {
           return { code: "liability_entity_owned_not_bequestable", detail: liab.id };
         }
       }

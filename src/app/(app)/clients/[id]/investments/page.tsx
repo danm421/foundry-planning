@@ -5,13 +5,14 @@ import {
   scenarios,
   planSettings,
   accounts as accountsTable,
+  accountOwners,
   accountAssetAllocations,
   assetClasses as assetClassesTable,
   modelPortfolios,
   modelPortfolioAllocations,
   reportComments,
 } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import {
   resolveAccountAllocation,
@@ -71,6 +72,19 @@ export default async function InvestmentsPage({ params }: PageProps) {
 
   const existingCommentBody = commentRows[0]?.body ?? "";
 
+  // Build entity ownership map from junction table (replaces dropped ownerEntityId column).
+  const accountEntityOwner = new Map<string, string>();
+  if (acctRows.length > 0) {
+    const acctIds = acctRows.map((a) => a.id);
+    const ownerRows = await db
+      .select({ accountId: accountOwners.accountId, entityId: accountOwners.entityId })
+      .from(accountOwners)
+      .where(inArray(accountOwners.accountId, acctIds));
+    for (const row of ownerRows) {
+      if (row.entityId != null) accountEntityOwner.set(row.accountId, row.entityId);
+    }
+  }
+
   // Index asset allocations by account id (filter to this client's accounts).
   const accountIds = new Set(acctRows.map((a) => a.id));
   const accountMixByAccountId: Record<string, AssetClassWeight[]> = {};
@@ -107,7 +121,7 @@ export default async function InvestmentsPage({ params }: PageProps) {
     growthSource: a.growthSource,
     modelPortfolioId: a.modelPortfolioId ?? null,
     value: Number(a.value),
-    ownerEntityId: a.ownerEntityId ?? null,
+    ownerEntityId: accountEntityOwner.get(a.id) ?? null,
   }));
 
   const assetClassLites: AssetClassLite[] = classRows.map((c) => ({

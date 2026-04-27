@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, accounts, familyMembers } from "@/db/schema";
+import { clients, accounts, familyMembers, accountOwners } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import {
@@ -9,6 +9,12 @@ import {
 } from "@/lib/db-scoping";
 import { recordUpdate, recordDelete } from "@/lib/audit";
 import { toAccountSnapshot, ACCOUNT_FIELD_LABELS } from "@/lib/audit/snapshots/account";
+import {
+  type ValidatedOwner,
+  validateOwnersShape,
+  validateOwnersTenant,
+  validateAccountOwnershipRules,
+} from "@/lib/ownership";
 
 export const dynamic = "force-dynamic";
 
@@ -66,16 +72,65 @@ export async function PUT(
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
     }
 
-    const [updated] = await db
-      .update(accounts)
-      .set({
-        ...safeUpdate,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)))
-      .returning();
+    // ── owners[] validation (PUT) ──────────────────────────────────────────
+    let validatedOwners: ValidatedOwner[] | undefined;
 
-    if (!updated) {
+    if (Array.isArray(body.owners)) {
+      const shapeResult = validateOwnersShape(body.owners);
+      if ("error" in shapeResult) {
+        return NextResponse.json({ error: shapeResult.error }, { status: 400 });
+      }
+
+      // Resolve subType: use incoming value if provided, else existing row's value
+      const resolvedSubType =
+        "subType" in safeUpdate ? (safeUpdate as { subType?: string }).subType : before.subType;
+
+      const rulesError = validateAccountOwnershipRules(
+        shapeResult.owners,
+        resolvedSubType,
+        before.isDefaultChecking,
+      );
+      if (rulesError) {
+        return NextResponse.json({ error: rulesError.error }, { status: 400 });
+      }
+      const tenantError = await validateOwnersTenant(shapeResult.owners, id);
+      if (tenantError) {
+        return NextResponse.json({ error: tenantError.error }, { status: 400 });
+      }
+      validatedOwners = shapeResult.owners;
+    }
+    // ── end owners[] validation ────────────────────────────────────────────
+
+    // Strip owners from the account update payload — owners live in account_owners, not accounts
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { owners: _stripOwners, ...accountUpdate } = safeUpdate as Record<string, unknown>;
+
+    let updated: typeof accounts.$inferSelect;
+    await db.transaction(async (tx) => {
+      const [result] = await tx
+        .update(accounts)
+        .set({
+          ...accountUpdate,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)))
+        .returning();
+      updated = result;
+
+      if (validatedOwners) {
+        await tx.delete(accountOwners).where(eq(accountOwners.accountId, accountId));
+        for (const o of validatedOwners) {
+          await tx.insert(accountOwners).values({
+            accountId,
+            familyMemberId: o.kind === "family_member" ? o.familyMemberId : null,
+            entityId: o.kind === "entity" ? o.entityId : null,
+            percent: o.percent.toString(),
+          });
+        }
+      }
+    });
+
+    if (!updated!) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
     }
 
@@ -86,11 +141,11 @@ export async function PUT(
       clientId: id,
       firmId,
       before: await toAccountSnapshot(before),
-      after: await toAccountSnapshot(updated),
+      after: await toAccountSnapshot(updated!),
       fieldLabels: ACCOUNT_FIELD_LABELS,
     });
 
-    return NextResponse.json(updated);
+    return NextResponse.json(updated!);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -152,18 +207,23 @@ export async function PATCH(
         );
       }
 
-      const [account] = await db
-        .select({ ownerEntityId: accounts.ownerEntityId })
+      const [accountCheck] = await db
+        .select({ id: accounts.id })
         .from(accounts)
         .where(and(eq(accounts.id, accountId), eq(accounts.clientId, id)));
-      if (!account) {
+      if (!accountCheck) {
         return NextResponse.json({ error: "Account not found" }, { status: 404 });
       }
-      if (account.ownerEntityId) {
+      const entityOwnerRows = await db
+        .select({ entityId: accountOwners.entityId })
+        .from(accountOwners)
+        .where(eq(accountOwners.accountId, accountId));
+      const hasEntityOwner = entityOwnerRows.some((r) => r.entityId != null);
+      if (hasEntityOwner) {
         return NextResponse.json(
           {
             error:
-              "Cannot set ownerFamilyMemberId while the account has an entity owner. Clear ownerEntityId first.",
+              "Cannot set ownerFamilyMemberId while the account has an entity owner. Clear entity ownership first.",
           },
           { status: 400 },
         );

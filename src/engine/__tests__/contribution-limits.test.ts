@@ -7,6 +7,7 @@ import {
 } from "../contribution-limits";
 import type { Account, ClientInfo, SavingsRule } from "../types";
 import type { TaxYearParameters } from "../../lib/tax/types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -66,17 +67,21 @@ const clientInfoAge62: ClientInfo = {
   dateOfBirth: "1963-01-01", // age 62 (inside 60-63 super catch-up band)
 };
 
-function acct(id: string, subType: string, owner: "client" | "spouse" | "joint" = "client"): Account {
+function acct(id: string, subType: string, ownerKind: "client" | "spouse" | "joint" = "client"): Account {
+  const owners = ownerKind === "joint"
+    ? [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+       { kind: "family_member" as const, familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 }]
+    : [{ kind: "family_member" as const, familyMemberId: ownerKind === "client" ? LEGACY_FM_CLIENT : LEGACY_FM_SPOUSE, percent: 1 }];
   return {
     id,
     name: id,
     category: "retirement",
     subType,
-    owner,
     value: 0,
     basis: 0,
     growthRate: 0,
     rmdEnabled: false,
+    owners,
   };
 }
 
@@ -261,6 +266,10 @@ describe("applyContributionLimits", () => {
     const accounts = [acct("a1", "401k", "client"), acct("a2", "401k", "spouse")];
     const rules = [rule("r1", "a1"), rule("r2", "a2")];
     const client = { ...clientInfoAge40, spouseDob: "1985-01-01" };
+    const familyMembers = [
+      { id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other" as const, firstName: "Client", lastName: null, dateOfBirth: "1985-01-01" },
+      { id: LEGACY_FM_SPOUSE, role: "spouse" as const, relationship: "other" as const, firstName: "Spouse", lastName: null, dateOfBirth: "1985-01-01" },
+    ];
     const { cappedByRuleId } = applyContributionLimits({
       year: 2025,
       rules,
@@ -268,6 +277,7 @@ describe("applyContributionLimits", () => {
       client,
       taxYearParams: PARAMS_2025,
       resolvedByRuleId: { r1: 30_000, r2: 10_000 },
+      familyMembers,
     });
     // Client bucket: 30k → capped 23_500. Spouse bucket: 10k → under cap.
     expect(cappedByRuleId.r1).toBe(23_500);
@@ -313,11 +323,11 @@ describe("applyContributionLimits", () => {
       name: "Brokerage",
       category: "taxable",
       subType: "brokerage",
-      owner: "client",
       value: 0,
       basis: 0,
       growthRate: 0,
       rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const rules = [rule("r1", "brk")];
     const { cappedByRuleId, adjustments } = applyContributionLimits({

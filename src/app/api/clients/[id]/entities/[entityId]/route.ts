@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, entities, accounts } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
-import { getOrgId, requireOrgId } from "@/lib/db-helpers";
+import { clients, entities, accounts, accountOwners } from "@/db/schema";
+import { eq, and, inArray } from "drizzle-orm";
+import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { entityCreateSchema, entityUpdateSchema } from "@/lib/schemas/entities";
 import type { TrustSubType } from "@/lib/entities/trust";
@@ -207,17 +207,26 @@ export async function DELETE(
     // Delete the entity's default checking accounts explicitly. The accounts.owner_entity_id
     // FK is ON DELETE SET NULL, so other entity-owned accounts simply become household-
     // owned once the entity is gone — but a default checking whose owner_entity_id goes
+    // Delete the entity's default checking account (if any). Previously keyed by
+    // ownerEntityId; now find via account_owners junction table.
     // null would collide with the household's own default checking on the per-scenario
     // unique index.
-    await db
-      .delete(accounts)
-      .where(
-        and(
-          eq(accounts.clientId, id),
-          eq(accounts.ownerEntityId, entityId),
-          eq(accounts.isDefaultChecking, true)
-        )
-      );
+    const entityDefaultCheckingOwnerRows = await db
+      .select({ accountId: accountOwners.accountId })
+      .from(accountOwners)
+      .where(eq(accountOwners.entityId, entityId));
+    const entityAccountIds = entityDefaultCheckingOwnerRows.map((r) => r.accountId);
+    if (entityAccountIds.length > 0) {
+      await db
+        .delete(accounts)
+        .where(
+          and(
+            eq(accounts.clientId, id),
+            inArray(accounts.id, entityAccountIds),
+            eq(accounts.isDefaultChecking, true)
+          )
+        );
+    }
 
     await db
       .delete(entities)

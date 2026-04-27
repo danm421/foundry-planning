@@ -30,6 +30,12 @@ import ContributionCapCheckbox, {
   supportsContributionCap,
 } from "./contribution-cap-checkbox";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
+import { OwnershipEditor } from "./ownership-editor";
+import type { AccountOwner } from "@/engine/ownership";
+import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
+
+const isRetirementSubType = (st: string) =>
+  (RETIREMENT_SUBTYPES as readonly string[]).includes(st);
 
 type AccountCategory = "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
 
@@ -45,6 +51,7 @@ export interface AccountFormInitial {
   growthRate: string | null;
   rmdEnabled?: boolean | null;
   ownerEntityId?: string | null;
+  owners?: AccountOwner[];
   annualPropertyTax?: string;
   propertyTaxGrowthRate?: string;
   growthSource?: string;
@@ -89,6 +96,7 @@ interface AddAccountFormProps {
   mode?: "create" | "edit";
   initial?: AccountFormInitial;
   entities?: EntityOption[];
+  familyMembers?: { id: string; role: "client" | "spouse" | "child" | "other"; firstName: string }[];
   categoryDefaults?: CategoryDefaults;
   /** Real names used in the owner dropdown. Falls back to "Client"/"Spouse" if absent. */
   ownerNames?: { clientName: string; spouseName: string | null };
@@ -188,6 +196,7 @@ export default function AddAccountForm({
   mode = "create",
   initial,
   entities,
+  familyMembers = [],
   categoryDefaults,
   ownerNames,
   modelPortfolios,
@@ -204,8 +213,6 @@ export default function AddAccountForm({
   onSuccess,
   onSubmitStateChange,
 }: AddAccountFormProps) {
-  const clientLabel = ownerNames?.clientName ?? "Client";
-  const spouseLabel = ownerNames?.spouseName ?? null;
   const router = useRouter();
   const writer = useScenarioWriter(clientId);
   const isEdit = mode === "edit" && !!initial;
@@ -297,12 +304,14 @@ export default function AddAccountForm({
     initial?.propertyTaxGrowthRate != null ? (Number(initial.propertyTaxGrowthRate) * 100).toString() : "3"
   );
 
-  // Owner selection: either an "individual" owner (client/spouse/joint) or an entity id.
-  type OwnerChoice = { kind: "individual"; value: string } | { kind: "entity"; value: string };
-  const initialOwnerChoice: OwnerChoice = initial?.ownerEntityId
-    ? { kind: "entity", value: initial.ownerEntityId }
-    : { kind: "individual", value: initial?.owner ?? "client" };
-  const [ownerChoice, setOwnerChoice] = useState<OwnerChoice>(initialOwnerChoice);
+  // Owner selection: AccountOwner[] driven by OwnershipEditor.
+  const clientFm = familyMembers.find((fm) => fm.role === "client");
+  const defaultOwners: AccountOwner[] = clientFm
+    ? [{ kind: "family_member", familyMemberId: clientFm.id, percent: 1 }]
+    : [];
+  const [owners, setOwners] = useState<AccountOwner[]>(
+    initial?.owners && initial.owners.length > 0 ? initial.owners : defaultOwners,
+  );
 
   // Growth source: "default" (category default), "model_portfolio", or "custom"
   const isInvestable = ["taxable", "cash", "retirement"].includes(category);
@@ -443,9 +452,6 @@ export default function AddAccountForm({
     const form = e.currentTarget;
     const data = new FormData(form);
 
-    const individualOwner = ownerChoice.kind === "individual" ? ownerChoice.value : "client";
-    const ownerEntityId = ownerChoice.kind === "entity" ? ownerChoice.value : null;
-
     const growthRate = growthSource === "custom"
       ? String(Number(data.get("growthRate")) / 100)
       : isInvestable ? null : String(Number(data.get("growthRate")) / 100);
@@ -459,12 +465,11 @@ export default function AddAccountForm({
       name: data.get("name") as string,
       category: data.get("category") as string,
       subType: data.get("subType") as string,
-      owner: individualOwner,
+      owners,
       value: data.get("value") as string,
       basis: data.get("basis") as string,
       growthRate,
       rmdEnabled,
-      ownerEntityId,
       growthSource: isInvestable ? growthSource : "custom",
       modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
       turnoverPct: toPctOrNull("turnoverPct") ?? "0",
@@ -771,36 +776,14 @@ export default function AddAccountForm({
               </select>
             </div>
 
-            <div>
-              <label className={fieldLabelClassName} htmlFor="owner">
-                Owner
-              </label>
-              <select
-                id="owner"
-                value={ownerChoice.kind === "individual" ? `ind:${ownerChoice.value}` : `ent:${ownerChoice.value}`}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v.startsWith("ind:")) setOwnerChoice({ kind: "individual", value: v.slice(4) });
-                  else if (v.startsWith("ent:")) setOwnerChoice({ kind: "entity", value: v.slice(4) });
-                }}
-                className={selectClassName}
-              >
-                <option value="ind:client">{clientLabel}</option>
-                <option value="ind:spouse" disabled={!spouseLabel}>
-                  {spouseLabel ?? "Spouse (none on file)"}
-                </option>
-                <option value="ind:joint">Joint</option>
-                {entities && entities.length > 0 && (
-                  <optgroup label="Entities (out of estate)">
-                    {entities.map((ent) => (
-                      <option key={ent.id} value={`ent:${ent.id}`}>{ent.name}</option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-              {ownerChoice.kind === "entity" && (
-                <p className="mt-1 text-xs text-amber-400">Counted as out of estate.</p>
-              )}
+            <div className="col-span-2">
+              <OwnershipEditor
+                familyMembers={familyMembers}
+                entities={(entities ?? []).map((e) => ({ id: e.id, name: e.name }))}
+                value={owners}
+                onChange={setOwners}
+                retirementMode={isRetirementSubType(subType)}
+              />
             </div>
 
             {isInvestable ? (

@@ -1,18 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { drainLiquidAssets } from "../creditor-payoff";
 import type { Account } from "../../types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../../ownership";
 
-function acct(id: string, category: Account["category"], value: number, owner: Account["owner"] = "client"): Account {
+function acct(id: string, category: Account["category"], value: number, ownerKind: "client" | "spouse" = "client"): Account {
   return {
     id,
     name: `Account ${id}`,
     category,
     subType: "generic",
-    owner,
     value,
     basis: value,
     growthRate: 0,
     rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: ownerKind === "client" ? LEGACY_FM_CLIENT : LEGACY_FM_SPOUSE, percent: 1 }],
   };
 }
 
@@ -105,7 +106,7 @@ describe("drainLiquidAssets", () => {
       amountNeeded: 5_000,
       accounts,
       accountBalances: { c1: 10_000, c2: 10_000 },
-      eligibilityFilter: (a) => a.owner === "client",
+      eligibilityFilter: (a) => a.owners.some(o => o.kind === "family_member" && o.familyMemberId === LEGACY_FM_CLIENT),
     });
     expect(r.debits).toEqual([{ accountId: "c1", amount: 5_000 }]);
   });

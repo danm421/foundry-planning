@@ -58,7 +58,7 @@ async function main() {
   for (const row of existing) {
     const a = row.accounts;
     const policyType = mapSubTypeToPolicyType(a.subType);
-    const insured = a.owner === "joint" ? "joint" : a.owner; // client | spouse | joint
+    const insured = "client"; // owner column dropped in migration 0060; default to client for historical backfill
 
     await db.transaction(async (tx) => {
       await tx

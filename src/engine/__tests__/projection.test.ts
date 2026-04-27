@@ -3,6 +3,7 @@ import { runProjection } from "../projection";
 import { buildClientData, basePlanSettings, baseClient, sampleExpenses, sampleAccounts } from "./fixtures";
 import type { TaxYearParameters } from "../../lib/tax/types";
 import type { ClientData, ClientInfo, Account, PlanSettings } from "../types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 
 describe("runProjection", () => {
   it("returns one ProjectionYear per year in the plan range", () => {
@@ -69,10 +70,15 @@ describe("runProjection", () => {
   it("employer match is zero when the savings account is joint-owned", () => {
     // A joint-owned retirement account has no individual salary to base the match on,
     // so the match should be 0 rather than falling back to household salary.
+    // Cap planEndYear before RMD age (75) — joint-owned retirement accounts
+    // violate the migration 0055 single-owner CHECK and the engine RMD guard
+    // throws, but they're still a valid input for the pre-RMD employer-match
+    // test we're asserting against.
     const data = buildClientData({
       accounts: sampleAccounts.map((a) =>
-        a.id === "acct-401k" ? { ...a, owner: "joint" as const } : a
+        a.id === "acct-401k" ? { ...a, owners: [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 }, { kind: "family_member" as const, familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 }] } : a
       ),
+      planSettings: { ...basePlanSettings, planEndYear: 2040 },
     });
     const result = runProjection(data);
     const ledger = result[0].accountLedgers["acct-401k"];
@@ -135,11 +141,11 @@ describe("runProjection", () => {
           name: "Traditional IRA",
           category: "retirement",
           subType: "traditional_ira",
-          owner: "client",
           value: 1000000,
           basis: 1000000,
           growthRate: 0.07,
           rmdEnabled: true,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
         },
       ],
       incomes: [],
@@ -172,11 +178,11 @@ describe("runProjection", () => {
           name: "Roth IRA",
           category: "retirement",
           subType: "roth_ira",
-          owner: "client",
           value: 1000000,
           basis: 500000,
           growthRate: 0.07,
           rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
         },
       ],
       incomes: [],
@@ -202,11 +208,11 @@ describe("runProjection", () => {
           name: "401k RMD Test",
           category: "retirement",
           subType: "401k",
-          owner: "client",
           value: 500000,
           basis: 500000,
           growthRate: 0.0, // No growth to simplify
           rmdEnabled: true,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
         },
       ],
       incomes: [],
@@ -233,11 +239,11 @@ describe("runProjection", () => {
           name: "Brokerage",
           category: "taxable",
           subType: "brokerage",
-          owner: "client",
           value: 100000,
           basis: 80000,
           growthRate: 0.10,
           rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
           realization: {
             pctOrdinaryIncome: 0.10,
             pctLtCapitalGains: 0.70,
@@ -251,11 +257,11 @@ describe("runProjection", () => {
           name: "Checking",
           category: "cash",
           subType: "checking",
-          owner: "client",
           value: 50000,
           basis: 50000,
           growthRate: 0.02,
           rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
           isDefaultChecking: true,
         },
       ],
@@ -293,11 +299,14 @@ describe("runProjection", () => {
           name: "Primary Home",
           category: "real_estate",
           subType: "primary_residence",
-          owner: "joint",
           value: 500000,
           basis: 400000,
           growthRate: 0.04,
           rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
         },
       ],
       incomes: [],
@@ -320,11 +329,11 @@ describe("runProjection", () => {
           name: "Brokerage",
           category: "taxable",
           subType: "brokerage",
-          owner: "client",
           value: 100000,
           basis: 80000,
           growthRate: 0.10,
           rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
           realization: {
             pctOrdinaryIncome: 0.10,
             pctLtCapitalGains: 0.70,
@@ -338,11 +347,11 @@ describe("runProjection", () => {
           name: "Checking",
           category: "cash",
           subType: "checking",
-          owner: "client",
           value: 50000,
           basis: 50000,
           growthRate: 0.02,
           rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
           isDefaultChecking: true,
         },
       ],
@@ -558,6 +567,7 @@ describe("projection — bracket/flat tax routing", () => {
       startYear: 2026,
       endYear: 2055,
       growthRate: 0,
+      owner: "client",
       deductionType: "charitable" as const,
     };
     const fixture = buildClientData({
@@ -725,11 +735,14 @@ describe("techniques integration", () => {
           name: "Household Cash",
           category: "cash",
           subType: "checking",
-          owner: "joint",
           value: 50_000,
           basis: 50_000,
           growthRate: 0,
           rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
           isDefaultChecking: true,
         },
         {
@@ -737,11 +750,14 @@ describe("techniques integration", () => {
           name: "Old Home",
           category: "real_estate",
           subType: "primary_residence",
-          owner: "joint",
           value: 500_000,
           basis: 400_000,
           growthRate: 0,
           rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
         },
       ],
       incomes: [],
@@ -851,11 +867,14 @@ describe("techniques integration", () => {
           name: "Household Cash",
           category: "cash",
           subType: "checking",
-          owner: "joint",
           value: 600_000,
           basis: 600_000,
           growthRate: 0,
           rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
           isDefaultChecking: true,
         },
         {
@@ -863,11 +882,14 @@ describe("techniques integration", () => {
           name: "Old Home",
           category: "real_estate",
           subType: "primary_residence",
-          owner: "joint",
           value: 200_000,
           basis: 200_000,
           growthRate: 0,
           rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
         },
       ],
       incomes: [],
@@ -946,11 +968,14 @@ describe("techniques integration", () => {
           name: "Household Cash",
           category: "cash",
           subType: "checking",
-          owner: "joint",
           value: 0,
           basis: 0,
           growthRate: 0,
           rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
           isDefaultChecking: true,
         },
         {
@@ -958,11 +983,14 @@ describe("techniques integration", () => {
           name: "Brokerage",
           category: "taxable",
           subType: "brokerage",
-          owner: "joint",
           value: 500000,
           basis: 500000,
           growthRate: 0,
           rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
         },
       ],
       incomes: [],
@@ -1009,8 +1037,11 @@ describe("techniques integration", () => {
           name: "Household Cash",
           category: "cash",
           subType: "checking",
-          owner: "joint",
           value: 0, basis: 0, growthRate: 0, rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
           isDefaultChecking: true,
         },
         {
@@ -1018,8 +1049,11 @@ describe("techniques integration", () => {
           name: "Brokerage",
           category: "taxable",
           subType: "brokerage",
-          owner: "joint",
           value: 100000, basis: 100000, growthRate: 0.10, rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
         },
       ],
       incomes: [], expenses: [], liabilities: [], savingsRules: [],
@@ -1052,8 +1086,11 @@ describe("techniques integration", () => {
           name: "Household Cash",
           category: "cash",
           subType: "checking",
-          owner: "joint",
           value: 100000, basis: 100000, growthRate: 0, rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
           isDefaultChecking: true,
         },
       ],
@@ -1089,8 +1126,11 @@ describe("techniques integration", () => {
           name: "Household Cash",
           category: "cash",
           subType: "checking",
-          owner: "joint",
           value: 200000, basis: 200000, growthRate: 0, rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
           isDefaultChecking: true,
         },
       ],
@@ -1099,7 +1139,8 @@ describe("techniques integration", () => {
           id: "salary", type: "salary", name: "Salary",
           annualAmount: 500000,
           startYear: 2026, endYear: 2030,
-          growthRate: 0, owner: "client",
+          growthRate: 0,
+          owner: "client",
         },
       ],
       expenses: [], liabilities: [], savingsRules: [],
@@ -1148,11 +1189,11 @@ describe("runProjection — liability amortization alignment", () => {
       name: "House",
       category: "real_estate" as const,
       subType: "primary_residence",
-      owner: "client" as const,
       value: 600000,
       basis: 400000,
       growthRate: 0,
       rmdEnabled: false,
+      owners: [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const mortgage = {
       id: "liab-retro",
@@ -1168,6 +1209,7 @@ describe("runProjection — liability amortization alignment", () => {
       linkedPropertyId: "acct-house",
       isInterestDeductible: true,
       extraPayments: [],
+      owners: [],
     };
 
     const data = buildClientData({
@@ -1223,22 +1265,22 @@ describe("runProjection — liability amortization alignment", () => {
       name: "House",
       category: "real_estate" as const,
       subType: "primary_residence",
-      owner: "client" as const,
       value: 600000,
       basis: 400000,
       growthRate: 0,
       rmdEnabled: false,
+      owners: [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const checking = {
       id: "acct-checking",
       name: "Checking",
       category: "cash" as const,
       subType: "checking",
-      owner: "client" as const,
       value: 10000,
       basis: 10000,
       growthRate: 0,
       rmdEnabled: false,
+      owners: [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       isDefaultChecking: true,
     };
     const mortgage = {
@@ -1255,6 +1297,7 @@ describe("runProjection — liability amortization alignment", () => {
       linkedPropertyId: "acct-house",
       isInterestDeductible: true,
       extraPayments: [],
+      owners: [],
     };
 
     const data = buildClientData({
@@ -1763,11 +1806,15 @@ describe("first-death asset transfer (spec 4b)", () => {
       spouseLifeExpectancy: 90, // dies 2062
     };
     const accounts: Account[] = [
-      { id: "joint-brok", name: "Joint Brokerage", category: "taxable", subType: "brokerage", owner: "joint", value: 400000, basis: 300000, growthRate: 0.06, rmdEnabled: false },
-      { id: "john-ira", name: "John IRA", category: "retirement", subType: "traditional_ira", owner: "client", value: 500000, basis: 0, growthRate: 0.07, rmdEnabled: true,
-        beneficiaries: [{ id: "b-1", tier: "primary", percentage: 100, familyMemberId: "child-a", sortOrder: 0 }] },
-      { id: "john-cash", name: "John Savings", category: "cash", subType: "savings", owner: "client", value: 80000, basis: 80000, growthRate: 0.04, rmdEnabled: false, isDefaultChecking: true },
-      { id: "jane-roth", name: "Jane Roth", category: "retirement", subType: "roth_ira", owner: "spouse", value: 200000, basis: 100000, growthRate: 0.07, rmdEnabled: false },
+      { id: "joint-brok", name: "Joint Brokerage", category: "taxable", subType: "brokerage", value: 400000, basis: 300000, growthRate: 0.06, rmdEnabled: false,
+        owners: [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 }, { kind: "family_member" as const, familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 }] },
+      { id: "john-ira", name: "John IRA", category: "retirement", subType: "traditional_ira", value: 500000, basis: 0, growthRate: 0.07, rmdEnabled: true,
+        beneficiaries: [{ id: "b-1", tier: "primary", percentage: 100, familyMemberId: "child-a", sortOrder: 0 }],
+        owners: [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_CLIENT, percent: 1 }] },
+      { id: "john-cash", name: "John Savings", category: "cash", subType: "savings", value: 80000, basis: 80000, growthRate: 0.04, rmdEnabled: false, isDefaultChecking: true,
+        owners: [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_CLIENT, percent: 1 }] },
+      { id: "jane-roth", name: "Jane Roth", category: "retirement", subType: "roth_ira", value: 200000, basis: 100000, growthRate: 0.07, rmdEnabled: false,
+        owners: [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }] },
     ];
     const planSettings: PlanSettings = {
       ...basePlanSettings,
@@ -1784,7 +1831,9 @@ describe("first-death asset transfer (spec 4b)", () => {
       withdrawalStrategy: [],
       planSettings,
       familyMembers: [
-        { id: "child-a", relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" },
+        { id: LEGACY_FM_CLIENT, relationship: "other" as const, role: "client" as const, firstName: "John", lastName: "Smith", dateOfBirth: "1970-01-01" },
+        { id: LEGACY_FM_SPOUSE, relationship: "other" as const, role: "spouse" as const, firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-01-01" },
+        { id: "child-a", relationship: "child" as const, role: "child" as const, firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" },
       ],
       wills: [
         { id: "w-john", grantor: "client", bequests: [
@@ -1852,10 +1901,20 @@ describe("first-death asset transfer (spec 4b)", () => {
   });
 
   it("existing projection tests without wills continue to pass (regression)", () => {
-    // Smoke: a trivial ClientData with no wills / familyMembers should still run
-    // without touching accounts.
+    // Smoke: a ClientData with no wills (but principals still in familyMembers)
+    // should still run — the deceased's accounts hit fallback tier and warnings
+    // are emitted. That's acceptable behavior.
     const data: ClientData = buildEstateScenario();
-    const noWills: ClientData = { ...data, wills: [], familyMembers: [] };
+    // Keep principal FMs so the death event can identify deceased-owned accounts;
+    // drop wills and non-principal children for the minimal regression fixture.
+    const noWills: ClientData = {
+      ...data,
+      wills: [],
+      familyMembers: [
+        { id: LEGACY_FM_CLIENT, relationship: "other" as const, role: "client" as const, firstName: "John", lastName: "Smith", dateOfBirth: "1970-01-01" },
+        { id: LEGACY_FM_SPOUSE, relationship: "other" as const, role: "spouse" as const, firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-01-01" },
+      ],
+    };
     // With no will, the deceased's owned accounts hit fallback → survivor (still works)
     // and warnings are emitted. That's acceptable behavior.
     const years = runProjection(noWills);
@@ -1890,10 +1949,13 @@ describe("runProjection — final-death event (spec 4c)", () => {
       planSettings,
       accounts: [{
         id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
-        owner: "client", value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+        value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       }],
       familyMembers: [
-        { id: "c1", relationship: "child", firstName: "Child", lastName: null, dateOfBirth: null },
+        { id: LEGACY_FM_CLIENT, relationship: "other" as const, role: "client" as const, firstName: "Tom", lastName: "Test", dateOfBirth: "1970-01-01" },
+        { id: LEGACY_FM_SPOUSE, relationship: "other" as const, role: "spouse" as const, firstName: "Spouse", lastName: "Test", dateOfBirth: "1972-01-01" },
+        { id: "c1", relationship: "child", role: "child" as const, firstName: "Child", lastName: null, dateOfBirth: null },
       ],
     });
 
@@ -1909,10 +1971,13 @@ describe("runProjection — final-death event (spec 4c)", () => {
       planSettings,
       accounts: [{
         id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
-        owner: "client", value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+        value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       }],
       familyMembers: [
-        { id: "c1", relationship: "child", firstName: "Child", lastName: null, dateOfBirth: null },
+        { id: LEGACY_FM_CLIENT, relationship: "other" as const, role: "client" as const, firstName: "Tom", lastName: "Test", dateOfBirth: "1970-01-01" },
+        { id: LEGACY_FM_SPOUSE, relationship: "other" as const, role: "spouse" as const, firstName: "Spouse", lastName: "Test", dateOfBirth: "1972-01-01" },
+        { id: "c1", relationship: "child", role: "child" as const, firstName: "Child", lastName: null, dateOfBirth: null },
       ],
     });
 
@@ -1933,13 +1998,17 @@ describe("runProjection — final-death event (spec 4c)", () => {
       client, planSettings,
       accounts: [{
         id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
-        owner: "client", value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+        value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       }, {
         id: "a2", name: "Spouse IRA", category: "retirement", subType: "trad_ira",
-        owner: "spouse", value: 200_000, basis: 200_000, growthRate: 0.05, rmdEnabled: true,
+        value: 200_000, basis: 200_000, growthRate: 0.05, rmdEnabled: true,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
       }],
       familyMembers: [
-        { id: "c1", relationship: "child", firstName: "Child", lastName: null, dateOfBirth: null },
+        { id: LEGACY_FM_CLIENT, relationship: "other" as const, role: "client" as const, firstName: "Tom", lastName: "Test", dateOfBirth: "1970-01-01" },
+        { id: LEGACY_FM_SPOUSE, relationship: "other" as const, role: "spouse" as const, firstName: "Spouse", lastName: "Test", dateOfBirth: "1972-01-01" },
+        { id: "c1", relationship: "child", role: "child" as const, firstName: "Child", lastName: null, dateOfBirth: null },
       ],
     });
 
@@ -1964,10 +2033,12 @@ describe("runProjection — final-death event (spec 4c)", () => {
       client, planSettings,
       accounts: [{
         id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
-        owner: "client", value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+        value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       }],
       familyMembers: [
-        { id: "c1", relationship: "child", firstName: "Child", lastName: null, dateOfBirth: null },
+        { id: LEGACY_FM_CLIENT, relationship: "other" as const, role: "client" as const, firstName: "Solo", lastName: "Test", dateOfBirth: "1970-01-01" },
+        { id: "c1", relationship: "child", role: "child" as const, firstName: "Child", lastName: null, dateOfBirth: null },
       ],
     });
 
@@ -2002,8 +2073,9 @@ describe("runProjection — final-death event (spec 4c)", () => {
       accounts: [{
         id: "a1", name: "Primary Home", category: "real_estate",
         subType: "primary_residence",
-        owner: "client", value: 500_000, basis: 300_000,
+        value: 500_000, basis: 300_000,
         growthRate: 0.03, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       }],
       liabilities: [{
         // Non-amortizing unlinked debt: zero payment + long term so the
@@ -2014,10 +2086,13 @@ describe("runProjection — final-death event (spec 4c)", () => {
         id: "cc1", name: "Credit Card", balance: 20_000,
         interestRate: 0, monthlyPayment: 0,
         startYear: 2025, startMonth: 1, termMonths: 600, extraPayments: [],
+        owners: [],
       }],
       familyMembers: [
-        { id: "c1", relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
-        { id: "c2", relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
+        { id: LEGACY_FM_CLIENT, relationship: "other" as const, role: "client" as const, firstName: "Tom", lastName: "Test", dateOfBirth: "1970-01-01" },
+        { id: LEGACY_FM_SPOUSE, relationship: "other" as const, role: "spouse" as const, firstName: "Spouse", lastName: "Test", dateOfBirth: "1972-01-01" },
+        { id: "c1", relationship: "child", role: "child" as const, firstName: "A", lastName: null, dateOfBirth: null },
+        { id: "c2", relationship: "child", role: "child" as const, firstName: "B", lastName: null, dateOfBirth: null },
       ],
     });
 
@@ -2062,10 +2137,11 @@ describe("4d-2: hypotheticalEstateTax", () => {
       planSettings,
       accounts: [{
         id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
-        owner: "client", value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+        value: 500_000, basis: 300_000, growthRate: 0.05, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       }],
       familyMembers: [
-        { id: "c1", relationship: "child", firstName: "Child", lastName: null, dateOfBirth: null },
+        { id: "c1", relationship: "child", role: "child" as const, firstName: "Child", lastName: null, dateOfBirth: null },
       ],
     });
   };
@@ -2085,7 +2161,7 @@ describe("4d-2: hypotheticalEstateTax", () => {
       client: soloClient,
       // Drop spouse-owned accounts/incomes so single-filer is internally
       // consistent (no "spouse" owners floating around).
-      accounts: sampleAccounts.filter((a) => a.owner !== "spouse"),
+      accounts: sampleAccounts.filter((a) => !a.owners.some(o => o.kind === "family_member" && o.familyMemberId === "__legacy_fm_spouse")),
       incomes: [
         {
           id: "inc-salary-solo",
@@ -2157,5 +2233,451 @@ describe("4d-2: hypotheticalEstateTax", () => {
     expect(midYear.hypotheticalEstateTax.primaryFirst.firstDeath.grossEstate).toBeGreaterThanOrEqual(
       firstYear.hypotheticalEstateTax.primaryFirst.firstDeath.grossEstate,
     );
+  });
+});
+
+// ─── Fractional ownership (Phase 2 — Tasks 5–9) ────────────────────────────────
+
+describe("fractional ownership: property tax + debt service pro-rate (Task 9)", () => {
+  it("property tax on a 60% household / 40% entity real-estate account: only 60% hits household expenses", () => {
+    // Account: real estate, $12k annual property tax. 60% household / 40% entity.
+    // Today: full $12k → household. Fractional: $7,200 to household.
+    const data: ClientData = {
+      client: {
+        firstName: "Test",
+        lastName: "User",
+        dateOfBirth: "1980-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        filingStatus: "single",
+      },
+      accounts: [
+        {
+          id: "acct-checking-hh",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 100_000,
+          basis: 100_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+        {
+          id: "acct-home",
+          name: "Mixed-ownership Home",
+          category: "real_estate",
+          subType: "primary_residence",
+          value: 1_000_000,
+          basis: 800_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          annualPropertyTax: 12_000,
+          propertyTaxGrowthRate: 0,
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.6 },
+            { kind: "entity", entityId: "trust-1", percent: 0.4 },
+          ],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0,
+        planStartYear: 2026,
+        planEndYear: 2026,
+      },
+      entities: [
+        { id: "trust-1", name: "Trust", includeInPortfolio: false, isGrantor: false },
+      ],
+    };
+    const yrs = runProjection(data);
+    // Household real-estate expenses include the synthetic property-tax line
+    // pro-rated by household share (60% of $12k = $7,200).
+    expect(yrs[0].expenses.realEstate).toBeCloseTo(7_200, 0);
+  });
+
+  it("debt service on a 70% household / 30% entity liability: only 70% hits household liability expenses", () => {
+    const data: ClientData = {
+      client: {
+        firstName: "Test",
+        lastName: "User",
+        dateOfBirth: "1980-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        filingStatus: "single",
+      },
+      accounts: [
+        {
+          id: "acct-checking-hh",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 100_000,
+          basis: 100_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [
+        {
+          id: "liab-mixed",
+          name: "Mixed-ownership Mortgage",
+          balance: 300_000,
+          interestRate: 0.05,
+          monthlyPayment: 2_000, // ~24k/yr
+          startYear: 2026,
+          startMonth: 1,
+          termMonths: 240,
+          extraPayments: [],
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.7 },
+            { kind: "entity", entityId: "trust-1", percent: 0.3 },
+          ],
+        },
+      ],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0,
+        planStartYear: 2026,
+        planEndYear: 2026,
+      },
+      entities: [
+        { id: "trust-1", name: "Trust", includeInPortfolio: false, isGrantor: false },
+      ],
+    };
+    const yrs = runProjection(data);
+    // Household liabilities expense should reflect 70% of the annual payment.
+    const fullPayment = yrs[0].expenses.byLiability["liab-mixed"];
+    expect(fullPayment).toBeGreaterThan(0);
+    expect(yrs[0].expenses.liabilities).toBeCloseTo(fullPayment * 0.7, 0);
+  });
+});
+
+describe("fractional ownership: grantor pass-through pro-rate (Task 8)", () => {
+  it("50% household + 30% grantor-trust + 20% non-grantor-trust → 80% to household 1040 OI", () => {
+    // 50% client + 30% IDGT (grantor) + 20% NGT (non-grantor) of a $1M taxable
+    // 100% OI account growing 10% = $100k OI. Grantor + household = 80% → $80k
+    // to household. NGT's $20k goes to the trust-tax pass.
+    const data: ClientData = {
+      client: {
+        firstName: "Test",
+        lastName: "User",
+        dateOfBirth: "1980-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        filingStatus: "single",
+      },
+      accounts: [
+        {
+          id: "acct-checking-hh",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 100_000,
+          basis: 100_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+        {
+          id: "acct-mixed",
+          name: "Mixed-grantor brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: 1_000_000,
+          basis: 1_000_000,
+          growthRate: 0.10,
+          rmdEnabled: false,
+          realization: {
+            pctOrdinaryIncome: 1.0,
+            pctLtCapitalGains: 0,
+            pctQualifiedDividends: 0,
+            pctTaxExempt: 0,
+            turnoverPct: 0,
+          },
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
+            { kind: "entity", entityId: "idgt", percent: 0.3 },
+            { kind: "entity", entityId: "ngt", percent: 0.2 },
+          ],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0,
+        planStartYear: 2026,
+        planEndYear: 2026,
+      },
+      entities: [
+        {
+          id: "idgt",
+          name: "IDGT",
+          includeInPortfolio: false,
+          isGrantor: true,
+          isIrrevocable: true,
+          entityType: "trust",
+        },
+        {
+          id: "ngt",
+          name: "NGT",
+          includeInPortfolio: false,
+          isGrantor: false,
+          isIrrevocable: true,
+          entityType: "trust",
+          distributionMode: null,
+        },
+      ],
+    };
+    const yrs = runProjection(data);
+    // Household-like (FM 50% + grantor 30%) → 80% of $100k = $80k OI on the
+    // household 1040 detail. NGT's 20% does NOT flow to household.
+    expect(yrs[0].taxDetail?.ordinaryIncome).toBeCloseTo(80_000, 0);
+  });
+});
+
+describe("fractional ownership: RMD single-owner guard (Task 7)", () => {
+  it("RMD on a fully-entity-owned IRA routes to the entity checking and throws if mixed", () => {
+    // 100% trust-owned IRA → routes to trust checking. Grantor → household tax.
+    const data: ClientData = {
+      client: {
+        firstName: "Test",
+        lastName: "User",
+        dateOfBirth: "1950-01-01", // age 76 in 2026 → RMD eligible
+        retirementAge: 65,
+        planEndAge: 90,
+        filingStatus: "single",
+      },
+      accounts: [
+        {
+          id: "acct-checking-hh",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 100_000,
+          basis: 100_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 1 },
+          ],
+        },
+        {
+          id: "acct-checking-trust",
+          name: "Trust Checking",
+          category: "cash",
+          subType: "checking",
+          value: 0,
+          basis: 0,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "entity", entityId: "ngt", percent: 1 }],
+        },
+        {
+          id: "acct-ira",
+          name: "Trust IRA",
+          category: "retirement",
+          subType: "traditional_ira",
+          value: 1_000_000,
+          basis: 1_000_000,
+          growthRate: 0,
+          rmdEnabled: true,
+          owners: [{ kind: "entity", entityId: "ngt", percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0,
+        planStartYear: 2026,
+        planEndYear: 2026,
+      },
+      entities: [
+        { id: "ngt", name: "NGT", includeInPortfolio: false, isGrantor: false },
+      ],
+    };
+    const yrs = runProjection(data);
+    // The trust IRA's RMD landed in the trust checking, not household.
+    const trustChecking = yrs[0].accountLedgers["acct-checking-trust"];
+    const rmdEntries = trustChecking.entries.filter((e) => e.category === "rmd");
+    expect(rmdEntries.length).toBeGreaterThan(0);
+    expect(rmdEntries[0].amount).toBeGreaterThan(0);
+  });
+});
+
+describe("fractional ownership: dividend / interest / cap-gains routing (Task 6)", () => {
+  it("70/30 household/non-grantor-trust taxable account: only 70% of OI/QDiv flow to household tax", () => {
+    // Account grows $100k, all OI per realization model.
+    // Old behavior (legacy ownerEntityId = undefined): 100% household → $100k OI.
+    // Fractional behavior: 70% household (= $70k household OI), 30% to trust pass.
+    const data: ClientData = {
+      client: {
+        firstName: "Test",
+        lastName: "User",
+        dateOfBirth: "1980-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        filingStatus: "single",
+      },
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 100_000,
+          basis: 100_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 1 },
+          ],
+        },
+        {
+          id: "acct-mixed-tax",
+          name: "Mixed-ownership Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: 1_000_000,
+          basis: 1_000_000,
+          growthRate: 0.10,
+          rmdEnabled: false,
+          realization: {
+            pctOrdinaryIncome: 1.0,
+            pctLtCapitalGains: 0,
+            pctQualifiedDividends: 0,
+            pctTaxExempt: 0,
+            turnoverPct: 0,
+          },
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.7 },
+            { kind: "entity", entityId: "ngt", percent: 0.3 },
+          ],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0,
+        planStartYear: 2026,
+        planEndYear: 2026,
+      },
+      entities: [
+        // Non-grantor irrevocable trust — its 30% share of the OI must NOT flow into household tax detail.
+        {
+          id: "ngt",
+          name: "NGT",
+          includeInPortfolio: false,
+          isGrantor: false,
+          isIrrevocable: true,
+          entityType: "trust",
+          distributionMode: null,
+        },
+      ],
+    };
+    const yrs = runProjection(data);
+    // Household OI = $100k * 70% = $70k.
+    expect(yrs[0].taxDetail?.ordinaryIncome).toBeCloseTo(70_000, 0);
+  });
+});
+
+describe("fractional ownership: balance sheet pro-rate (Task 5)", () => {
+  it("portfolio rolls in only the household share of a 60/40 (FM/entity-non-portfolio) account", () => {
+    // Account: 60% household, 40% entity (entity NOT in portfolio).
+    // Today's behavior would be: legacy ownerEntityId=null → full $1M into portfolio.
+    // Fractional behavior: only $600k household share is in portfolio.
+    const data: ClientData = {
+      client: {
+        firstName: "Test",
+        lastName: "User",
+        dateOfBirth: "1980-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        filingStatus: "single",
+      },
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 100_000,
+          basis: 100_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 1 },
+          ],
+        },
+        {
+          id: "acct-mixed",
+          name: "Mixed-ownership Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: 1_000_000,
+          basis: 800_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.6 },
+            { kind: "entity", entityId: "trust-1", percent: 0.4 },
+          ],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0,
+        planStartYear: 2026,
+        planEndYear: 2026,
+      },
+      entities: [
+        { id: "trust-1", includeInPortfolio: false, isGrantor: false },
+      ],
+    };
+    const yrs = runProjection(data);
+    const t = yrs[0].portfolioAssets.taxable["acct-mixed"] ?? 0;
+    expect(t).toBeCloseTo(600_000, 0);
+    // Household checking is 100% household → unchanged.
+    expect(yrs[0].portfolioAssets.cash["acct-checking"]).toBeCloseTo(100_000, 0);
   });
 });

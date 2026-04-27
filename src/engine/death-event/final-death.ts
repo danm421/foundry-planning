@@ -14,6 +14,7 @@ import {
   type DeathEventInput,
   type DeathEventResult,
 } from "./shared";
+import { controllingEntity, isFullyEntityOwned, ownedByHousehold, controllingFamilyMember } from "../ownership";
 import {
   buildEstateTaxResult,
   computeDeductions,
@@ -48,14 +49,17 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     familyMembers, externalBeneficiaries, entities,
   } = input;
 
+  // Resolve household principal FM ids for ownership comparisons.
+  const deceasedFmId = familyMembers.find((fm) => fm.role === deceased)?.id ?? null;
+
   // Defensive: no joint accounts can exist at 4c. Entity/family-member-owned
-  // accounts are exempt — the `owner` enum is ignored when those IDs are set
-  // (see accounts schema: ownerEntityId > ownerFamilyMemberId > owner), and
-  // they're skipped by the chain below for the same reason.
+  // (ownerFamilyMemberId heir-distribution) accounts are exempt.
   for (const a of accounts) {
-    if (a.owner === "joint" && !a.ownerEntityId && !a.ownerFamilyMemberId) {
+    const cfm = controllingFamilyMember(a);
+    const isJoint = ownedByHousehold(a) > 0.0001 && cfm == null && !isFullyEntityOwned(a);
+    if (isJoint) {
       throw new Error(
-        `applyFinalDeath invariant: account ${a.id} still has owner='joint' at final death (should have been retitled at 4b)`,
+        `applyFinalDeath invariant: account ${a.id} still has joint ownership at final death (should have been retitled at 4b)`,
       );
     }
   }
@@ -70,8 +74,11 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
   const deceasedWill: Will | null = will && will.grantor === deceased ? will : null;
 
   for (const acct of accounts) {
-    const touchedByDeceased = acct.owner === deceased;
-    if (!touchedByDeceased || acct.ownerEntityId || acct.ownerFamilyMemberId) {
+    const cfm = controllingFamilyMember(acct);
+    const touchedByDeceased = cfm === deceasedFmId && deceasedFmId != null;
+    // isHeirOwned: sole FM owner is not a household principal (already distributed to an heir FM)
+    const isHeirOwned = cfm != null && cfm !== deceasedFmId;
+    if (!touchedByDeceased || isFullyEntityOwned(acct) || isHeirOwned) {
       nextAccounts.push(acct);
       continue;
     }
@@ -116,7 +123,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     // Step 3a: Specific bequests (deathOrder=2)
     if (undisposed > 1e-9 && deceasedWill) {
       const step3a = applyWillSpecificBequests(
-        effectiveAcct, undisposed, deceasedWill, 2, null,
+        effectiveAcct, undisposed, deceasedWill, 2, null, null,
         familyMembers, externalBeneficiaries, entities, linkedLiability,
       );
       if (step3a.fractionClaimed > 0) {
@@ -132,7 +139,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     // Step 3b: all_assets residual (deathOrder=2)
     if (undisposed > 1e-9 && deceasedWill) {
       const step3b = applyWillAllAssetsResidual(
-        effectiveAcct, undisposed, anySpecificClauseTouched, deceasedWill, 2, null,
+        effectiveAcct, undisposed, anySpecificClauseTouched, deceasedWill, 2, null, null,
         familyMembers, externalBeneficiaries, entities, linkedLiability,
       );
       if (step3b.fractionClaimed > 0) {
@@ -146,7 +153,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     // Step 4: Fallback with survivor=null — tier 1 skipped; tiers 2/3 live.
     if (undisposed > 1e-9) {
       const step4 = applyFallback(
-        effectiveAcct, undisposed, null, familyMembers, linkedLiability,
+        effectiveAcct, undisposed, null, null, familyMembers, linkedLiability,
       );
       stepAccts.push(...step4.step.resultingAccounts);
       stepLiabs.push(...step4.step.resultingLiabilities);
@@ -198,6 +205,10 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
 export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   const warnings: string[] = [];
 
+  // Resolve household principal FM ids for ownership comparisons in drains.
+  const deceasedFmId =
+    input.familyMembers.find((fm) => fm.role === input.deceased)?.id ?? null;
+
   // Phase 0 — life-insurance pre-chain transform. Triggering policies have
   // their cash value swapped for faceValue and are reclassified as cash, so
   // the chain routes them via per-account beneficiaries / will / fallback
@@ -239,6 +250,8 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     accountBalances: prepared.accountBalances,
     liabilities: prepared.liabilities,
     entities: prepared.entities,
+    deceasedFmId,
+    survivorFmId: null, // no survivor at final death
   });
 
   // Working state for the drain passes.
@@ -268,12 +281,14 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   // Phase 4 — creditor-payoff drain. Pay off unlinked household debt from
   // the deceased's liquid accounts (proportional inside each category, fixed
   // category order cash → taxable → life_insurance → retirement).
+  // Exclude liabilities already transferred to a specific owner (heir FM or
+  // entity) via a will-liability bequest — those are no longer unlinked debt.
   const unlinkedDebt = workingLiabs
     .filter(
       (l) =>
         l.linkedPropertyId == null &&
-        l.ownerEntityId == null &&
-        l.ownerFamilyMemberId == null,
+        !l.ownerFamilyMemberId &&
+        controllingEntity(l) == null,
     )
     .reduce((sum, l) => sum + l.balance, 0);
 
@@ -282,15 +297,18 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     accounts: prepared.accounts,
     accountBalances,
     eligibilityFilter: (a) => {
-      if (a.ownerFamilyMemberId) return false;
-      if (a.ownerEntityId) {
-        const ent = input.entities.find((e) => e.id === a.ownerEntityId);
+      // Exclude accounts already distributed to a non-principal heir FM
+      const cfmA = controllingFamilyMember(a);
+      if (cfmA != null && cfmA !== deceasedFmId) return false;
+      const entityId = controllingEntity(a);
+      if (entityId != null) {
+        const ent = input.entities.find((e) => e.id === entityId);
         if (!ent) return false;
         if (ent.isIrrevocable) return false;
         if (ent.grantor !== input.deceased) return false;
         return true;
       }
-      return a.owner === input.deceased;
+      return controllingFamilyMember(a) === deceasedFmId && deceasedFmId != null;
     },
   });
 
@@ -305,7 +323,9 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   if (unlinkedDebt > 0) {
     const ratio = creditorDrain.drainedTotal / unlinkedDebt;
     workingLiabs = workingLiabs.map((l) => {
-      if (l.linkedPropertyId || l.ownerEntityId || l.ownerFamilyMemberId) return l;
+      // Skip linked-property debt, heir-distributed liabilities, and entity-owned
+      // (will-bequest-transferred) liabilities — these are not in the drain pool.
+      if (l.linkedPropertyId || l.ownerFamilyMemberId || controllingEntity(l) != null) return l;
       return { ...l, balance: l.balance * (1 - ratio) };
     });
   }
@@ -357,15 +377,18 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     accounts: prepared.accounts,
     accountBalances,
     eligibilityFilter: (a) => {
-      if (a.ownerFamilyMemberId) return false;
-      if (a.ownerEntityId) {
-        const ent = input.entities.find((e) => e.id === a.ownerEntityId);
+      // Exclude accounts already distributed to a non-principal heir FM
+      const cfmA = controllingFamilyMember(a);
+      if (cfmA != null && cfmA !== deceasedFmId) return false;
+      const entityId = controllingEntity(a);
+      if (entityId != null) {
+        const ent = input.entities.find((e) => e.id === entityId);
         if (!ent) return false;
         if (ent.isIrrevocable) return false;
         if (ent.grantor !== input.deceased) return false;
         return true;
       }
-      return a.owner === input.deceased;
+      return controllingFamilyMember(a) === deceasedFmId && deceasedFmId != null;
     },
   });
 
@@ -527,13 +550,13 @@ function assertFinalDeathInvariants(
       throw new Error(`[4e] bequest sum ${total} exceeds pre-bequest balance ${original.balance} for ${liabId}`);
     }
   }
-  // New liability rows from bequests: exactly one ownership kind set
+  // New liability rows from bequests: exactly one ownership kind set (FM or entity, not both or neither)
   for (const row of workingLiabs) {
     if (!row.id.startsWith("death-liab-bequest")) continue;
     const fam = row.ownerFamilyMemberId != null;
-    const ent = row.ownerEntityId != null;
+    const ent = controllingEntity(row) != null;
     if (fam === ent) {
-      throw new Error(`[4e] bequest-derived liability ${row.id} must have exactly one of ownerFamilyMemberId / ownerEntityId set`);
+      throw new Error(`[4e] bequest-derived liability ${row.id} must have exactly one ownership kind (family_member or entity)`);
     }
   }
 }

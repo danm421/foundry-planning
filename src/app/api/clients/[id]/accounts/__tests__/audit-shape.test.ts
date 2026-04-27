@@ -28,7 +28,8 @@ vi.mock("@/lib/audit/snapshots/account", () => ({
   ACCOUNT_FIELD_LABELS: {},
 }));
 
-// Mock db: select returns client then scenario; insert -> values -> returning resolves to one row.
+// Mock db: select returns client then scenario then empty family members;
+// insert -> values -> returning resolves to one row; transaction executes the callback.
 vi.mock("@/db", () => {
   let selectCallCount = 0;
   const select = vi.fn(() => ({
@@ -39,27 +40,35 @@ vi.mock("@/db", () => {
           // First select: client lookup in getBaseCaseScenarioId
           return [{ id: "cli_test", firmId: "firm_test" }];
         }
-        // Second select: scenario lookup in getBaseCaseScenarioId
-        return [{ id: "scn_test", clientId: "cli_test", isBaseCase: true }];
+        if (selectCallCount === 2) {
+          // Second select: scenario lookup in getBaseCaseScenarioId
+          return [{ id: "scn_test", clientId: "cli_test", isBaseCase: true }];
+        }
+        // Third select: synthesizeLegacyOwners family member lookup — return empty so
+        // no owner rows are synthesized (legacy path with no family members seeded).
+        return [];
       }),
     })),
   }));
-  const insert = vi.fn(() => ({
-    values: vi.fn(() => ({
-      returning: vi.fn().mockResolvedValue([
-        {
-          id: "acc_test",
-          name: "Joint Brokerage",
-          value: "50000",
-          basis: "30000",
-          owner: "joint",
-          category: "taxable",
-        },
-      ]),
-    })),
-  }));
+  const insertReturning = vi.fn().mockResolvedValue([
+    {
+      id: "acc_test",
+      name: "Joint Brokerage",
+      value: "50000",
+      basis: "30000",
+      owner: "joint",
+      category: "taxable",
+    },
+  ]);
+  const insertValues = vi.fn(() => ({ returning: insertReturning }));
+  const insert = vi.fn(() => ({ values: insertValues }));
+  // transaction: execute the callback with a tx that has insert/delete stubs
+  const transaction = vi.fn(async (cb: (tx: unknown) => Promise<void>) => {
+    const tx = { insert, delete: vi.fn(() => ({ where: vi.fn() })) };
+    await cb(tx);
+  });
   return {
-    db: { select, insert },
+    db: { select, insert, transaction },
   };
 });
 

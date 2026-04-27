@@ -6,6 +6,7 @@ import {
   accounts,
   liabilities,
   entities,
+  familyMembers,
   planSettings,
   modelPortfolios,
   modelPortfolioAllocations,
@@ -19,6 +20,7 @@ import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -56,6 +58,7 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
     accountMetaRows,
     liabilityMetaRows,
     entityRows,
+    familyMemberRows,
     settingsRows,
     portfolioRows,
     allocationRows,
@@ -83,6 +86,11 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
       .from(liabilities)
       .where(and(eq(liabilities.clientId, id), eq(liabilities.scenarioId, scenario.id))),
     db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
+    db
+      .select({ id: familyMembers.id, role: familyMembers.role, firstName: familyMembers.firstName })
+      .from(familyMembers)
+      .where(eq(familyMembers.clientId, id))
+      .orderBy(asc(familyMembers.role), asc(familyMembers.firstName)),
     db
       .select()
       .from(planSettings)
@@ -152,6 +160,16 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
   const planEndYear = settings?.planEndYear ?? new Date().getFullYear() + 30;
   const milestones = buildClientMilestones(client, planStartYear, planEndYear);
 
+  // Derive owner key for UI display from owners[].
+  const _clientFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
+  const _spouseFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
+  function _ownerKeyOf(acct: (typeof effectiveTree.accounts)[number]): string {
+    const cfm = controllingFamilyMember(acct);
+    if (cfm === _spouseFmId && _spouseFmId != null) return "spouse";
+    if (cfm === _clientFmId && _clientFmId != null) return "client";
+    return "joint";
+  }
+
   const accountProps: AccountRow[] = effectiveTree.accounts.map((a) => {
     const meta = accountMetaById.get(a.id);
     return {
@@ -159,12 +177,12 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
       name: a.name,
       category: a.category as AccountRow["category"],
       subType: a.subType,
-      owner: a.owner,
+      owner: _ownerKeyOf(a),
       value: String(a.value),
       basis: String(a.basis),
       growthRate: a.growthRate == null ? null : String(a.growthRate),
       rmdEnabled: a.rmdEnabled ?? null,
-      ownerEntityId: a.ownerEntityId ?? null,
+      ownerEntityId: controllingEntity(a) ?? null,
       growthSource: meta?.growthSource ?? "default",
       modelPortfolioId: meta?.modelPortfolioId ?? null,
       turnoverPct: meta?.turnoverPct == null ? null : String(meta.turnoverPct),
@@ -174,6 +192,7 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
       overridePctTaxExempt:
         meta?.overridePctTaxExempt == null ? null : String(meta.overridePctTaxExempt),
       isDefaultChecking: a.isDefaultChecking ?? false,
+      owners: a.owners,
     };
   });
 
@@ -192,8 +211,9 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
       balanceAsOfMonth: l.balanceAsOfMonth ?? null,
       balanceAsOfYear: l.balanceAsOfYear ?? null,
       linkedPropertyId: l.linkedPropertyId ?? null,
-      ownerEntityId: l.ownerEntityId ?? null,
+      ownerEntityId: controllingEntity(l) ?? null,
       isInterestDeductible: l.isInterestDeductible ?? false,
+      owners: l.owners,
     };
   });
 
@@ -249,6 +269,7 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
         accounts={accountProps}
         liabilities={liabilityProps}
         entities={entityOptions}
+        familyMembers={familyMemberRows}
         categoryDefaults={categoryDefaults}
         modelPortfolios={modelPortfolioOptions}
         ownerNames={{

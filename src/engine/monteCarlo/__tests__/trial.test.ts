@@ -3,6 +3,7 @@ import { runTrial, liquidPortfolioTotal } from "../trial";
 import { createReturnEngine } from "../returns";
 import { buildClientData } from "../../__tests__/fixtures";
 import type { ClientData } from "../../types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../../ownership";
 
 // Minimal 3-index engine used by all trial tests; correlation matrix is
 // identity so each asset class draws independently.
@@ -91,11 +92,14 @@ describe("runTrial — success/failure classification (PDF p.11)", () => {
           name: "Household Checking",
           category: "cash" as const,
           subType: "checking",
-          owner: "joint" as const,
           value: 0,
           basis: 0,
           growthRate: 0,
           rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+            { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+          ],
           isDefaultChecking: true,
           annualPropertyTax: 0,
           propertyTaxGrowthRate: 0,

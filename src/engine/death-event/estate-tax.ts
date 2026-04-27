@@ -4,6 +4,7 @@ import type {
 } from "../types";
 import { applyUnifiedRateSchedule } from "@/lib/tax/estate";
 import type { ExternalBeneficiarySummary } from "./shared";
+import { controllingEntity, ownedByHousehold, controllingFamilyMember } from "../ownership";
 
 // ── Form 706 federal tax formula ────────────────────────────────────────────
 
@@ -45,6 +46,10 @@ export function computeGrossEstate(input: {
   accountBalances: Record<string, number>;
   liabilities: Liability[];
   entities: EntitySummary[];
+  /** FM id of the deceased principal. */
+  deceasedFmId: string | null;
+  /** FM id of the surviving principal. */
+  survivorFmId: string | null;
 }): GrossEstateOutput {
   const lines: GrossEstateLine[] = [];
   const entityById = new Map(input.entities.map((e) => [e.id, e]));
@@ -55,9 +60,12 @@ export function computeGrossEstate(input: {
     if (fmv <= 0) continue;
 
     let pct = 0;
+    let inEntity = false;
 
-    if (a.ownerEntityId) {
-      const ent = entityById.get(a.ownerEntityId);
+    const solEntityId = controllingEntity(a);
+    if (solEntityId != null) {
+      inEntity = true;
+      const ent = entityById.get(solEntityId);
       if (!ent) continue;
       if (ent.isIrrevocable) {
         continue; // ILIT / IDGT excluded
@@ -67,20 +75,30 @@ export function computeGrossEstate(input: {
       } else {
         continue;
       }
-    } else if (a.ownerFamilyMemberId) {
-      continue; // already inherited
-    } else if (a.owner === input.deceased) {
-      pct = 1;
-    } else if (a.owner === "joint") {
-      pct = input.deathOrder === 1 ? 0.5 : 1;
     } else {
-      continue; // spouse-owned, etc.
+      // Household / family-member owned
+      const cfm = controllingFamilyMember(a);
+      if (cfm != null) {
+        // Single FM owner
+        if (cfm === input.deceasedFmId) {
+          pct = 1;
+        } else if (cfm === input.survivorFmId) {
+          continue; // survivor-owned
+        } else {
+          continue; // already inherited by a child/heir FM
+        }
+      } else {
+        // Joint (multiple FM owners) — treat as 50% at first death, 100% at final
+        const hh = ownedByHousehold(a);
+        if (hh < 0.0001) continue; // entity-dominated, skip
+        pct = input.deathOrder === 1 ? 0.5 : 1;
+      }
     }
 
     if (pct <= 0) continue;
     const amount = fmv * pct;
     lines.push({
-      label: formatLabel(a.name, pct, !!a.ownerEntityId),
+      label: formatLabel(a.name, pct, inEntity),
       accountId: a.id,
       liabilityId: null,
       percentage: pct,
@@ -92,12 +110,16 @@ export function computeGrossEstate(input: {
   const accountById = new Map(input.accounts.map((a) => [a.id, a]));
   for (const l of input.liabilities) {
     if (l.balance <= 0) continue;
+    // Skip liabilities already distributed to a non-household heir (ownerFamilyMemberId semantics kept)
     if (l.ownerFamilyMemberId) continue;
 
     let pct = 0;
+    let inEntity = false;
 
-    if (l.ownerEntityId) {
-      const ent = entityById.get(l.ownerEntityId);
+    const solEntityId = controllingEntity(l);
+    if (solEntityId != null) {
+      inEntity = true;
+      const ent = entityById.get(solEntityId);
       if (!ent) continue;
       if (ent.isIrrevocable) continue;
       if (ent.grantor === input.deceased) pct = 1;
@@ -105,9 +127,13 @@ export function computeGrossEstate(input: {
     } else if (l.linkedPropertyId) {
       const linked = accountById.get(l.linkedPropertyId);
       if (!linked) continue;
-      if (linked.owner === input.deceased) pct = 1;
-      else if (linked.owner === "joint") pct = input.deathOrder === 1 ? 0.5 : 1;
-      else continue; // linked to survivor
+      const cfm = controllingFamilyMember(linked);
+      if (cfm === input.deceasedFmId) pct = 1;
+      else if (cfm === input.survivorFmId) continue; // linked to survivor
+      else {
+        // Joint linked property: split by death order
+        pct = input.deathOrder === 1 ? 0.5 : 1;
+      }
     } else {
       // Unlinked household debt: 50/50 at first death; 100% at final death.
       pct = input.deathOrder === 1 ? 0.5 : 1;
@@ -115,7 +141,7 @@ export function computeGrossEstate(input: {
 
     if (pct <= 0) continue;
     lines.push({
-      label: formatLabel(l.name, pct, !!l.ownerEntityId),
+      label: formatLabel(l.name, pct, inEntity),
       accountId: null,
       liabilityId: l.id,
       percentage: pct,

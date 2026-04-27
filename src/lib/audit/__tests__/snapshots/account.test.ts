@@ -17,15 +17,12 @@ const baseRow: typeof accounts.$inferSelect = {
   name: "Joint Brokerage",
   category: "taxable",
   subType: "other",
-  owner: "joint",
   insuredPerson: null,
   value: "50000.00",
   basis: "30000.00",
   growthRate: "0.05",
   rmdEnabled: false,
   isDefaultChecking: false,
-  ownerEntityId: null,
-  ownerFamilyMemberId: null,
   growthSource: "default",
   modelPortfolioId: null,
   turnoverPct: "0",
@@ -56,14 +53,11 @@ describe("toAccountSnapshot", () => {
       name: "Joint Brokerage",
       category: "taxable",
       subType: "other",
-      owner: "joint",
       value: 50000,
       basis: 30000,
       growthRate: 0.05,
       rmdEnabled: false,
       isDefaultChecking: false,
-      ownerEntity: null,
-      ownerFamilyMember: null,
       growthSource: "default",
       modelPortfolio: null,
       turnoverPct: 0,
@@ -74,23 +68,25 @@ describe("toAccountSnapshot", () => {
     expect(snap).not.toHaveProperty("id");
     expect(snap).not.toHaveProperty("createdAt");
     expect(snap).not.toHaveProperty("ownerEntityId");
+    expect(snap).not.toHaveProperty("ownerEntity");
+    expect(snap).not.toHaveProperty("ownerFamilyMember");
   });
 
-  it("hydrates ownerEntityId to a reference value", async () => {
+  it("hydrates modelPortfolioId to a reference value", async () => {
     vi.mocked(db.select).mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([
-          { id: "ent1", name: "Family Trust" },
+          { id: "mp1", name: "Balanced Growth" },
         ]),
       }),
     } as never);
 
-    const snap = await toAccountSnapshot({ ...baseRow, ownerEntityId: "ent1" });
+    const snap = await toAccountSnapshot({ ...baseRow, modelPortfolioId: "mp1" });
 
-    expect(snap.ownerEntity).toEqual({ id: "ent1", display: "Family Trust" });
+    expect(snap.modelPortfolio).toEqual({ id: "mp1", display: "Balanced Growth" });
   });
 
-  it("falls back to id-only display when reference cannot be resolved", async () => {
+  it("falls back to deleted display when model portfolio cannot be resolved", async () => {
     vi.mocked(db.select).mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
@@ -99,11 +95,11 @@ describe("toAccountSnapshot", () => {
 
     const snap = await toAccountSnapshot({
       ...baseRow,
-      ownerEntityId: "ent_missing",
+      modelPortfolioId: "mp_missing",
     });
 
-    expect(snap.ownerEntity).toEqual({
-      id: "ent_missing",
+    expect(snap.modelPortfolio).toEqual({
+      id: "mp_missing",
       display: "(deleted)",
     });
   });

@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, liabilities } from "@/db/schema";
+import { clients, liabilities, liabilityOwners } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordUpdate, recordDelete } from "@/lib/audit";
 import { toLiabilitySnapshot, LIABILITY_FIELD_LABELS } from "@/lib/audit/snapshots/liability";
+import {
+  type ValidatedOwner,
+  validateOwnersShape,
+  validateOwnersTenant,
+} from "@/lib/ownership";
 
 export const dynamic = "force-dynamic";
 
@@ -49,16 +54,52 @@ export async function PUT(
       return NextResponse.json({ error: "Liability not found" }, { status: 404 });
     }
 
-    const [updated] = await db
-      .update(liabilities)
-      .set({
-        ...safeUpdate,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)))
-      .returning();
+    // ── owners[] validation (PUT) ──────────────────────────────────────────
+    let validatedOwners: ValidatedOwner[] | undefined;
 
-    if (!updated) {
+    if (Array.isArray(body.owners)) {
+      const shapeResult = validateOwnersShape(body.owners);
+      if ("error" in shapeResult) {
+        return NextResponse.json({ error: shapeResult.error }, { status: 400 });
+      }
+      const tenantError = await validateOwnersTenant(shapeResult.owners, id);
+      if (tenantError) {
+        return NextResponse.json({ error: tenantError.error }, { status: 400 });
+      }
+      validatedOwners = shapeResult.owners;
+    }
+    // ── end owners[] validation ────────────────────────────────────────────
+
+    // Strip owners from the update payload — owners live in liability_owners, not liabilities
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { owners: _stripOwners, ...liabilityUpdate } = safeUpdate as Record<string, unknown>;
+
+    let updated: typeof liabilities.$inferSelect;
+    await db.transaction(async (tx) => {
+      const [result] = await tx
+        .update(liabilities)
+        .set({
+          ...liabilityUpdate,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(liabilities.id, liabilityId), eq(liabilities.clientId, id)))
+        .returning();
+      updated = result;
+
+      if (validatedOwners) {
+        await tx.delete(liabilityOwners).where(eq(liabilityOwners.liabilityId, liabilityId));
+        for (const o of validatedOwners) {
+          await tx.insert(liabilityOwners).values({
+            liabilityId,
+            familyMemberId: o.kind === "family_member" ? o.familyMemberId : null,
+            entityId: o.kind === "entity" ? o.entityId : null,
+            percent: o.percent.toString(),
+          });
+        }
+      }
+    });
+
+    if (!updated!) {
       return NextResponse.json({ error: "Liability not found" }, { status: 404 });
     }
 
@@ -69,11 +110,11 @@ export async function PUT(
       clientId: id,
       firmId,
       before: await toLiabilitySnapshot(before),
-      after: await toLiabilitySnapshot(updated),
+      after: await toLiabilitySnapshot(updated!),
       fieldLabels: LIABILITY_FIELD_LABELS,
     });
 
-    return NextResponse.json(updated);
+    return NextResponse.json(updated!);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

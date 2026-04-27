@@ -14,6 +14,7 @@ import {
   type DeathEventInput,
   type DeathEventResult,
 } from "./shared";
+import { controllingEntity, isFullyEntityOwned, isFullyHouseholdOwned, ownedByHousehold, controllingFamilyMember } from "../ownership";
 import {
   buildEstateTaxResult,
   computeDeductions,
@@ -47,6 +48,10 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     familyMembers, externalBeneficiaries, entities,
   } = input;
 
+  // Resolve household principal FM ids for ownership comparisons.
+  const deceasedFmId = familyMembers.find((fm) => fm.role === deceased)?.id ?? null;
+  const survivorFmId = familyMembers.find((fm) => fm.role === survivor)?.id ?? null;
+
   const nextAccounts: Account[] = [];
   const nextLiabilities: Liability[] = [...liabilities];
   const nextAccountBalances: Record<string, number> = { ...accountBalances };
@@ -59,9 +64,15 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
 
   for (const acct of accounts) {
     // Accounts not touched by the deceased pass through unchanged.
-    const touchedByDeceased =
-      acct.owner === deceased || acct.owner === "joint";
-    if (!touchedByDeceased || acct.ownerEntityId || acct.ownerFamilyMemberId) {
+    // Entity-owned accounts and accounts already distributed to a non-principal
+    // FM (ownerFamilyMemberId semantics) are also skipped.
+    const cfm = controllingFamilyMember(acct);
+    const isDeceasedOwned = cfm === deceasedFmId && deceasedFmId != null;
+    const isJoint = ownedByHousehold(acct) > 0.0001 && cfm == null && !isFullyEntityOwned(acct);
+    const touchedByDeceased = isDeceasedOwned || isJoint;
+    // isHeirOwned: sole FM owner is not a household principal (already distributed to heir)
+    const isHeirOwned = cfm != null && cfm !== deceasedFmId && cfm !== survivorFmId;
+    if (!touchedByDeceased || isFullyEntityOwned(acct) || isHeirOwned) {
       nextAccounts.push(acct);
       continue;
     }
@@ -86,19 +97,19 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     }
     const steppedBasis = computeSteppedUpBasis(
       acct.category, balance, originalBasis,
-      { isJointAtFirstDeath: acct.owner === "joint" },
+      { isJointAtFirstDeath: isJoint },
     );
     const effectiveAcct: Account = { ...acct, value: balance, basis: steppedBasis };
 
     // Track remaining undisposed fraction for this account.
-    let undisposed = acct.owner === "joint" ? 1 : 1; // either way, the account goes through steps
+    let undisposed = 1; // always 100% of the deceased's share goes through the chain
     let anySpecificClauseTouched = false;
     const stepAccts: Account[] = [];
     const stepLiabs: Liability[] = [];
     const stepLedger: Array<Omit<DeathTransfer, "year" | "deceased" | "deathOrder">> = [];
 
     // Step 1: Titling
-    const step1 = applyTitling(effectiveAcct, survivor, linkedLiability);
+    const step1 = applyTitling(effectiveAcct, survivor, linkedLiability, survivorFmId ?? "");
     if (step1.consumed) {
       stepAccts.push(...step1.resultingAccounts);
       stepLiabs.push(...step1.resultingLiabilities);
@@ -123,7 +134,7 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     // Step 3a: Specific bequests
     if (undisposed > 1e-9 && deceasedWill) {
       const step3a = applyWillSpecificBequests(
-        effectiveAcct, undisposed, deceasedWill, 1, survivor,
+        effectiveAcct, undisposed, deceasedWill, 1, survivor, survivorFmId,
         familyMembers, externalBeneficiaries, entities, linkedLiability,
       );
       if (step3a.fractionClaimed > 0) {
@@ -139,7 +150,7 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     // Step 3b: all_assets residual (only if no specific clause touched this account)
     if (undisposed > 1e-9 && deceasedWill) {
       const step3b = applyWillAllAssetsResidual(
-        effectiveAcct, undisposed, anySpecificClauseTouched, deceasedWill, 1, survivor,
+        effectiveAcct, undisposed, anySpecificClauseTouched, deceasedWill, 1, survivor, survivorFmId,
         familyMembers, externalBeneficiaries, entities, linkedLiability,
       );
       if (step3b.fractionClaimed > 0) {
@@ -153,7 +164,7 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     // Step 4: Fallback
     if (undisposed > 1e-9) {
       const step4 = applyFallback(
-        effectiveAcct, undisposed, survivor, familyMembers, linkedLiability,
+        effectiveAcct, undisposed, survivor, survivorFmId, familyMembers, linkedLiability,
       );
       stepAccts.push(...step4.step.resultingAccounts);
       stepLiabs.push(...step4.step.resultingLiabilities);
@@ -209,6 +220,13 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
  *    · final EstateTaxResult with drain debits populated (Phase 11)
  *  No creditor-payoff at first death. */
 export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
+  // Resolve household principal FM ids — needed in the orchestrator for
+  // computeGrossEstate and the estate-tax drain eligibility filter.
+  const deceasedFmId =
+    input.familyMembers.find((fm) => fm.role === input.deceased)?.id ?? null;
+  const survivorFmId =
+    input.familyMembers.find((fm) => fm.role === (input.survivor ?? ""))?.id ?? null;
+
   // Phase 0 — life-insurance pre-chain transform. Triggering policies have
   // their cash value swapped for faceValue and are reclassified as cash, so
   // the chain routes them via per-account beneficiaries / will / fallback
@@ -254,6 +272,8 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     accountBalances: prepared.accountBalances,
     liabilities: prepared.liabilities,
     entities: prepared.entities,
+    deceasedFmId,
+    survivorFmId,
   });
 
   // Phase 4 — deductions (marital + charitable + admin).
@@ -309,15 +329,18 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     accountBalances,
     eligibilityFilter: (a) => {
       if (maritalAccountIds.has(a.id)) return false;
-      if (a.ownerFamilyMemberId) return false;
-      if (a.ownerEntityId) {
-        const ent = input.entities.find((e) => e.id === a.ownerEntityId);
+      // Exclude accounts distributed to a non-principal heir FM
+      const cfmA = controllingFamilyMember(a);
+      if (cfmA != null && cfmA !== deceasedFmId && cfmA !== survivorFmId) return false;
+      const entityId = controllingEntity(a);
+      if (entityId != null) {
+        const ent = input.entities.find((e) => e.id === entityId);
         if (!ent) return false;
         if (ent.isIrrevocable) return false;
         if (ent.grantor !== input.deceased) return false;
         return true;
       }
-      return a.owner === input.deceased;
+      return controllingFamilyMember(a) === deceasedFmId && deceasedFmId != null;
     },
   });
 
@@ -413,6 +436,7 @@ function assertPrecedenceChainInvariants(
   chain: { transfers: DeathTransfer[]; accounts: Account[]; incomes: Income[] },
   input: DeathEventInput,
 ): void {
+  const deceasedFmId = input.familyMembers.find((fm) => fm.role === input.deceased)?.id ?? null;
   // 1. Sum of ledger amounts grouped by source = each source's pre-death value
   //    (skip liability-only transfers which have null sourceAccountId)
   const bySource = new Map<string, number>();
@@ -429,12 +453,12 @@ function assertPrecedenceChainInvariants(
       );
     }
   }
-  // 2. No deceased-owner orphan accounts (no entity/family-member tag, owner = deceased)
+  // 2. No deceased-owner orphan accounts (sole FM owner = deceased, not entity-owned)
   for (const a of chain.accounts) {
     if (
-      a.owner === input.deceased &&
-      !a.ownerEntityId &&
-      !a.ownerFamilyMemberId
+      !isFullyEntityOwned(a) &&
+      deceasedFmId != null &&
+      controllingFamilyMember(a) === deceasedFmId
     ) {
       throw new Error(
         `applyFirstDeath invariant: account ${a.id} still has deceased as sole owner`,

@@ -13,6 +13,7 @@ import type { AccountFormInitial } from "./forms/add-account-form";
 import type { EntityKind } from "./entity-dialog/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import { type TrustSubType } from "@/lib/entities/trust";
+import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember } from "./forms/assets-tab";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -120,6 +121,12 @@ interface FamilyViewProps {
   initialAccounts: AccountLite[];
   initialDesignations: Designation[];
   initialGifts: Gift[];
+  /** Optional: full asset data for the trust Assets tab */
+  initialFullAccounts?: AssetsTabAccount[];
+  initialFullLiabilities?: AssetsTabLiability[];
+  initialFullIncomes?: AssetsTabIncome[];
+  initialFullExpenses?: AssetsTabExpense[];
+  initialAssetFamilyMembers?: AssetsTabFamilyMember[];
 }
 
 const RELATIONSHIP_LABELS: Record<Relationship, string> = {
@@ -196,6 +203,11 @@ export default function FamilyView({
   initialAccounts,
   initialDesignations,
   initialGifts,
+  initialFullAccounts,
+  initialFullLiabilities,
+  initialFullIncomes,
+  initialFullExpenses,
+  initialAssetFamilyMembers,
 }: FamilyViewProps) {
   const writer = useScenarioWriter(clientId);
   const [members, setMembers] = useState<FamilyMember[]>(initialMembers);
@@ -543,6 +555,11 @@ export default function FamilyView({
             .filter((e) => e.id !== editingEntity?.id)
             .map((e) => ({ id: e.id, name: e.name }))}
           initialDesignations={designations}
+          accounts={initialFullAccounts}
+          liabilities={initialFullLiabilities}
+          incomes={initialFullIncomes}
+          expenses={initialFullExpenses}
+          assetFamilyMembers={initialAssetFamilyMembers}
           onSaved={(e, mode) => {
             if (mode === "create") setEntities((prev) => [...prev, e]);
             else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));
@@ -567,6 +584,7 @@ export default function FamilyView({
           editing={accountDialogEditing}
           initialTab={accountDialogInitialTab}
           lockTab={accountDialogLockTab}
+          familyMembers={[]}
         />
       )}
 

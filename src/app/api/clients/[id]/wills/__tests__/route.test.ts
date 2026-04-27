@@ -17,7 +17,11 @@ type DbState = {
     id: string;
     clientId: string;
     linkedPropertyId: string | null;
-    ownerEntityId: string | null;
+  }>;
+  liabilityOwners: Array<{
+    liabilityId: string;
+    entityId: string | null;
+    familyMemberId: string | null;
   }>;
   willBequests: Array<{
     id: string;
@@ -49,7 +53,7 @@ const FIRM_B_ID = "10000000-0000-0000-0000-000000000012";
 const ACCT_A_ID = "10000000-0000-0000-0000-000000000021";
 const ACCT_B_ID = "10000000-0000-0000-0000-000000000022";
 const FM_A_ID = "10000000-0000-0000-0000-000000000031";
-const FM_B_ID = "10000000-0000-0000-0000-000000000032";
+// FM_B_ID not currently used in test assertions but kept as a reference constant.
 const WILL_EXISTING_ID = "10000000-0000-0000-0000-000000000041";
 
 const dbState: DbState = {
@@ -66,6 +70,7 @@ const dbState: DbState = {
   // passes when FM_A_ID is in the request.
   familyMembers: [{ id: FM_A_ID, clientId: CLIENT_A_ID }],
   liabilities: [],
+  liabilityOwners: [],
   willBequests: [],
   willBequestRecipients: [],
 };
@@ -75,6 +80,7 @@ function resetState(overrides: Partial<DbState> = {}) {
   dbState.willBequests = overrides.willBequests ?? [];
   dbState.willBequestRecipients = overrides.willBequestRecipients ?? [];
   dbState.liabilities = overrides.liabilities ?? [];
+  dbState.liabilityOwners = overrides.liabilityOwners ?? [];
 }
 
 vi.mock("@/db", async () => {
@@ -96,6 +102,8 @@ vi.mock("@/db", async () => {
       return dbState.familyMembers;
     if (t === schema.liabilities || getTableNameSafe(t) === "liabilities")
       return dbState.liabilities;
+    if (t === schema.liabilityOwners || getTableNameSafe(t) === "liability_owners")
+      return dbState.liabilityOwners;
     if (t === schema.willBequests || getTableNameSafe(t) === "will_bequests")
       return dbState.willBequests;
     if (t === schema.willBequestRecipients || getTableNameSafe(t) === "will_bequest_recipients")
@@ -182,11 +190,11 @@ vi.mock("@/db", async () => {
       },
     }),
 
-    delete: (_t: unknown) => ({
+    delete: () => ({
       where: () => Promise.resolve(),
     }),
 
-    update: (_t: unknown) => ({
+    update: () => ({
       set: () => ({
         where: () => Promise.resolve(),
       }),
@@ -255,14 +263,14 @@ vi.mock("@/db", async () => {
             return { returning: () => Promise.resolve([{ id: "r_new" }]) };
           },
         }),
-        delete: (_t: unknown) => ({
+        delete: () => ({
           where: () => {
             // Clear willBequests (full-replace pattern in PATCH)
             dbState.willBequests = [];
             return Promise.resolve();
           },
         }),
-        update: (_t: unknown) => ({
+        update: () => ({
           set: () => ({
             where: () => Promise.resolve(),
           }),
@@ -329,19 +337,22 @@ const LIAB_UNLINKED = {
   id: "20000000-0000-0000-0000-000000000001",
   clientId: CLIENT_A_ID,
   linkedPropertyId: null,
-  ownerEntityId: null,
 };
 const LIAB_LINKED = {
   id: "20000000-0000-0000-0000-000000000002",
   clientId: CLIENT_A_ID,
   linkedPropertyId: "20000000-0000-0000-0000-000000000099",
-  ownerEntityId: null,
 };
 const LIAB_ENTITY_OWNED = {
   id: "20000000-0000-0000-0000-000000000003",
   clientId: CLIENT_A_ID,
   linkedPropertyId: null,
-  ownerEntityId: "20000000-0000-0000-0000-000000000098",
+};
+// Corresponding liability_owners row that makes LIAB_ENTITY_OWNED entity-owned.
+const LIAB_ENTITY_OWNED_OWNER = {
+  liabilityId: "20000000-0000-0000-0000-000000000003",
+  entityId: "20000000-0000-0000-0000-000000000098",
+  familyMemberId: null,
 };
 
 function makeLiabilityBequest(overrides: {
@@ -427,7 +438,7 @@ describe("POST /api/clients/[id]/wills — liability bequest validation", () => 
   });
 
   it("rejects a liability bequest when liability has ownerEntityId set", async () => {
-    resetState({ liabilities: [LIAB_ENTITY_OWNED] });
+    resetState({ liabilities: [LIAB_ENTITY_OWNED], liabilityOwners: [LIAB_ENTITY_OWNED_OWNER] });
     _liabilityWhereId = LIAB_ENTITY_OWNED.id;
 
     const { POST } = await import("../route");

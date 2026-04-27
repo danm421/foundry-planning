@@ -19,7 +19,8 @@ export interface InsurancePanelAccount {
   name: string;
   category: AccountRow["category"];
   subType: AccountRow["subType"] | null;
-  owner: AccountRow["owner"];
+  /** Display owner label derived from owners[]. */
+  owner: "client" | "spouse" | "joint";
   ownerEntityId: string | null;
   insuredPerson: AccountRow["insuredPerson"];
   value: string; // decimal-as-string from DB

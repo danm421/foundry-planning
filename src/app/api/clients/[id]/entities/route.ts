@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, entities, scenarios, accounts } from "@/db/schema";
+import { clients, entities, scenarios, accounts, accountOwners } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
-import { getOrgId, requireOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { entityCreateSchema } from "@/lib/schemas/entities";
 import type { TrustSubType } from "@/lib/entities/trust";
@@ -108,22 +108,34 @@ export async function POST(
       .where(eq(scenarios.clientId, id));
 
     if (scenarioRows.length > 0) {
-      await db.insert(accounts).values(
+      // Insert one entity-checking account per scenario, then wire ownership via
+      // the account_owners junction table (no legacy owner/ownerEntityId columns).
+      const insertedAccounts = await db.insert(accounts).values(
         scenarioRows.map((s) => ({
           clientId: id,
           scenarioId: s.id,
           name: `${entity.name} — Cash`,
           category: "cash" as const,
           subType: "checking" as const,
-          owner: "joint" as const,
           value: "0",
           basis: "0",
           growthRate: null,
           rmdEnabled: false,
           isDefaultChecking: true,
-          ownerEntityId: entity.id,
         }))
-      );
+      ).returning({ id: accounts.id });
+
+      // Create accountOwners rows linking each new account to this entity.
+      if (insertedAccounts.length > 0) {
+        await db.insert(accountOwners).values(
+          insertedAccounts.map((a) => ({
+            accountId: a.id,
+            entityId: entity.id,
+            familyMemberId: null,
+            percent: "1.0000",
+          }))
+        );
+      }
     }
 
     await recordAudit({

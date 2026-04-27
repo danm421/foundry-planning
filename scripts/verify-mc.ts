@@ -124,6 +124,7 @@ const accounts: Account[] = accountRows.map((a: any) => {
     basis: parseFloat(a.basis),
     growthRate,
     rmdEnabled: a.rmd_enabled,
+    owners: [],
     isDefaultChecking: a.is_default_checking,
     ownerEntityId: a.owner_entity_id ?? undefined,
     annualPropertyTax: parseFloat(a.annual_property_tax ?? "0"),
@@ -164,6 +165,7 @@ const clientData: ClientData = {
     id: l.id, name: l.name, balance: parseFloat(l.balance), interestRate: parseFloat(l.interest_rate),
     monthlyPayment: parseFloat(l.monthly_payment), startYear: l.start_year, startMonth: l.start_month ?? 1,
     termMonths: l.term_months, extraPayments: [],
+    owners: [],
   })),
   savingsRules: savingsRows.map((s: any) => ({
     id: s.id, accountId: s.account_id, annualAmount: parseFloat(s.annual_amount),

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { prepareLifeInsurancePayouts } from "../life-insurance-payout";
 import type { Account, LifeInsurancePolicy } from "../../types";
+import { LEGACY_FM_CLIENT } from "../../ownership";
 
 const mkPolicy = (over: Partial<LifeInsurancePolicy> = {}): LifeInsurancePolicy => ({
   faceValue: 1_000_000,
@@ -23,11 +24,11 @@ const mkAccount = (over: Partial<Account> = {}): Account => ({
   name: "Whole life policy",
   category: "life_insurance",
   subType: "whole_life",
-  owner: "client",
   value: 50_000,
   basis: 0,
   growthRate: 0.04,
   rmdEnabled: false,
+  owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   insuredPerson: "client",
   lifeInsurance: mkPolicy(),
   ...over,
@@ -90,10 +91,9 @@ describe("prepareLifeInsurancePayouts", () => {
     expect(final.accounts[0].category).toBe("cash");
   });
 
-  it("preserves owner, ownerEntityId, and beneficiaries on the transformed account", () => {
+  it("preserves entity ownership and beneficiaries on the transformed account", () => {
     const acct = mkAccount({
-      owner: "client",
-      ownerEntityId: "ilit-1",
+      owners: [{ kind: "entity", entityId: "ilit-1", percent: 1 }],
       beneficiaries: [
         { id: "ref-1", tier: "primary", percentage: 100, familyMemberId: "kid-1", sortOrder: 0 },
       ],
@@ -108,8 +108,7 @@ describe("prepareLifeInsurancePayouts", () => {
           isIrrevocable: true, grantor: "client" },
       ],
     });
-    expect(result.accounts[0].owner).toBe("client");
-    expect(result.accounts[0].ownerEntityId).toBe("ilit-1");
+    expect(result.accounts[0].owners).toEqual([{ kind: "entity", entityId: "ilit-1", percent: 1 }]);
     expect(result.accounts[0].beneficiaries).toHaveLength(1);
     expect(result.accountBalances["pol-1"]).toBe(1_000_000);
     expect(result.basisMap["pol-1"]).toBe(1_000_000);
@@ -121,8 +120,9 @@ describe("prepareLifeInsurancePayouts", () => {
     });
     const spouseBrokerage: Account = {
       id: "spouse-brokerage", name: "Spouse brokerage", category: "taxable",
-      subType: "brokerage", owner: "spouse", value: 500_000, basis: 400_000,
+      subType: "brokerage", value: 500_000, basis: 400_000,
       growthRate: 0.06, rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "ilit-1", percent: 1 }],
     };
     const result = prepareLifeInsurancePayouts({
       year: 2040, deceased: "client", eventKind: "first_death",
@@ -203,7 +203,8 @@ describe("prepareLifeInsurancePayouts", () => {
     const pol = mkAccount({ insuredPerson: "client" });
     const cash: Account = {
       id: "cash-1", name: "Checking", category: "cash", subType: "checking",
-      owner: "client", value: 20_000, basis: 20_000, growthRate: 0.005, rmdEnabled: false,
+      value: 20_000, basis: 20_000, growthRate: 0.005, rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const result = prepareLifeInsurancePayouts({
       year: 2040, deceased: "client", eventKind: "first_death",

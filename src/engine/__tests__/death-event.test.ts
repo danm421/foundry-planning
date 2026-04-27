@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { computeFirstDeathYear, computeFinalDeathYear, identifyDeceased, identifyFinalDeceased, firesAtDeath, distributeUnlinkedLiabilities } from "../death-event";
 import type { ClientInfo, WillBequest } from "../types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, controllingFamilyMember, controllingEntity } from "../ownership";
 
 describe("computeFirstDeathYear", () => {
   const baseClient: ClientInfo = {
@@ -201,21 +202,24 @@ describe("splitAccount", () => {
     name: "Joint Brokerage",
     category: "taxable",
     subType: "brokerage",
-    owner: "joint",
     value: 300000,
     basis: 200000,
     growthRate: 0.06,
     rmdEnabled: false,
+    owners: [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+    ],
   };
 
   it("returns a single in-place mutation when one share takes 100%", () => {
     const result = splitAccount(brokerage, [
-      { fraction: 1.0, ownerMutation: { owner: "spouse" }, ledgerMeta: { recipientKind: "spouse", recipientId: null, recipientLabel: "Spouse", via: "titling" } },
+      { fraction: 1.0, ownerMutation: { owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }] }, ledgerMeta: { recipientKind: "spouse", recipientId: null, recipientLabel: "Spouse", via: "titling" } },
     ], undefined);
 
     expect(result.resultingAccounts).toHaveLength(1);
     expect(result.resultingAccounts[0].id).toBe("acct-brokerage"); // no rename
-    expect(result.resultingAccounts[0].owner).toBe("spouse");
+    expect(controllingFamilyMember(result.resultingAccounts[0])).toBe(LEGACY_FM_SPOUSE);
     expect(result.resultingAccounts[0].value).toBe(300000);
     expect(result.resultingAccounts[0].basis).toBe(200000);
     expect(result.resultingLiabilities).toHaveLength(0);
@@ -231,8 +235,8 @@ describe("splitAccount", () => {
 
   it("splits 50/50 across two recipients with proportional balance + basis", () => {
     const result = splitAccount(brokerage, [
-      { fraction: 0.5, ownerMutation: { ownerFamilyMemberId: "child-a" }, ledgerMeta: { recipientKind: "family_member", recipientId: "child-a", recipientLabel: "Child A", via: "will" } },
-      { fraction: 0.5, ownerMutation: { ownerFamilyMemberId: "child-b" }, ledgerMeta: { recipientKind: "family_member", recipientId: "child-b", recipientLabel: "Child B", via: "will" } },
+      { fraction: 0.5, ownerMutation: { owners: [{ kind: "family_member", familyMemberId: "child-a", percent: 1 }] }, ledgerMeta: { recipientKind: "family_member", recipientId: "child-a", recipientLabel: "Child A", via: "will" } },
+      { fraction: 0.5, ownerMutation: { owners: [{ kind: "family_member", familyMemberId: "child-b", percent: 1 }] }, ledgerMeta: { recipientKind: "family_member", recipientId: "child-b", recipientLabel: "Child B", via: "will" } },
     ], undefined);
 
     expect(result.resultingAccounts).toHaveLength(2);
@@ -241,7 +245,7 @@ describe("splitAccount", () => {
     expect(result.resultingAccounts[0].name).toBe("Joint Brokerage — to Child A");
     expect(result.resultingAccounts[0].value).toBe(150000);
     expect(result.resultingAccounts[0].basis).toBe(100000);
-    expect(result.resultingAccounts[0].ownerFamilyMemberId).toBe("child-a");
+    expect(controllingFamilyMember(result.resultingAccounts[0])).toBe("child-a");
     expect(result.resultingAccounts[1].name).toBe("Joint Brokerage — to Child B");
     expect(result.resultingAccounts[1].value).toBe(150000);
     expect(result.ledgerEntries).toHaveLength(2);
@@ -271,11 +275,12 @@ describe("splitAccount", () => {
       termMonths: 360,
       linkedPropertyId: "acct-home",
       extraPayments: [],
+      owners: [],
     };
 
     const result = splitAccount(home, [
-      { fraction: 0.6, ownerMutation: { owner: "spouse" }, ledgerMeta: { recipientKind: "spouse", recipientId: null, recipientLabel: "Spouse", via: "will" } },
-      { fraction: 0.4, ownerMutation: { ownerFamilyMemberId: "child-a" }, ledgerMeta: { recipientKind: "family_member", recipientId: "child-a", recipientLabel: "Child A", via: "will" } },
+      { fraction: 0.6, ownerMutation: { owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }] }, ledgerMeta: { recipientKind: "spouse", recipientId: null, recipientLabel: "Spouse", via: "will" } },
+      { fraction: 0.4, ownerMutation: { owners: [{ kind: "family_member", familyMemberId: "child-a", percent: 1 }] }, ledgerMeta: { recipientKind: "family_member", recipientId: "child-a", recipientLabel: "Child A", via: "will" } },
     ], mortgage);
 
     expect(result.resultingLiabilities).toHaveLength(2);
@@ -288,7 +293,7 @@ describe("splitAccount", () => {
 
   it("removes a linked liability when the account is removed (debts follow assets)", () => {
     const home: Account = { ...brokerage, id: "acct-home", name: "Primary Home" };
-    const mortgage: Liability = { id: "liab-m", name: "Mortgage", balance: 100000, interestRate: 0.05, monthlyPayment: 600, startYear: 2020, startMonth: 1, termMonths: 360, linkedPropertyId: "acct-home", extraPayments: [] };
+    const mortgage: Liability = { id: "liab-m", name: "Mortgage", balance: 100000, interestRate: 0.05, monthlyPayment: 600, startYear: 2020, startMonth: 1, termMonths: 360, linkedPropertyId: "acct-home", extraPayments: [], owners: [] };
     const result = splitAccount(home, [
       { fraction: 1.0, removed: true, ledgerMeta: { recipientKind: "external_beneficiary", recipientId: "charity-1", recipientLabel: "Charity", via: "will" } },
     ], mortgage);
@@ -298,7 +303,7 @@ describe("splitAccount", () => {
   it("throws when any share has fraction <= 0 (enforces JSDoc contract)", () => {
     expect(() =>
       splitAccount(brokerage, [
-        { fraction: 1.0, ownerMutation: { owner: "spouse" }, ledgerMeta: { via: "titling", recipientKind: "spouse", recipientId: null, recipientLabel: "Spouse" } },
+        { fraction: 1.0, ownerMutation: { owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }] }, ledgerMeta: { via: "titling", recipientKind: "spouse", recipientId: null, recipientLabel: "Spouse" } },
         { fraction: 0, removed: true, ledgerMeta: { via: "will", recipientKind: "external_beneficiary", recipientId: null, recipientLabel: "X" } },
       ], undefined),
     ).toThrow(/share fraction must be > 0/);
@@ -313,19 +318,27 @@ describe("applyTitling (Step 1)", () => {
     name: "Joint Brokerage",
     category: "taxable",
     subType: "brokerage",
-    owner: "joint",
     value: 400000,
     basis: 250000,
     growthRate: 0.06,
     rmdEnabled: false,
+    owners: [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+    ],
   };
 
-  const soloClient: Account = { ...joint, id: "acct-solo", name: "Client Solo", owner: "client" };
+  const soloClient: Account = {
+    ...joint,
+    id: "acct-solo",
+    name: "Client Solo",
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+  };
 
   it("flips joint → survivor, emits single titling ledger entry", () => {
-    const result = applyTitling(joint, "spouse", undefined);
+    const result = applyTitling(joint, "spouse", undefined, LEGACY_FM_SPOUSE);
     expect(result.consumed).toBe(true);
-    expect(result.resultingAccounts[0].owner).toBe("spouse");
+    expect(controllingFamilyMember(result.resultingAccounts[0])).toBe(LEGACY_FM_SPOUSE);
     expect(result.resultingAccounts[0].id).toBe("acct-joint"); // in-place
     expect(result.ledgerEntries[0]).toMatchObject({
       via: "titling",
@@ -335,7 +348,7 @@ describe("applyTitling (Step 1)", () => {
   });
 
   it("no-op for non-joint accounts", () => {
-    const result = applyTitling(soloClient, "spouse", undefined);
+    const result = applyTitling(soloClient, "spouse", undefined, LEGACY_FM_SPOUSE);
     expect(result.consumed).toBe(false);
     expect(result.resultingAccounts).toHaveLength(0);
     expect(result.ledgerEntries).toHaveLength(0);
@@ -353,11 +366,11 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
     name: "John Traditional IRA",
     category: "retirement",
     subType: "traditional_ira",
-    owner: "client",
     value: 500000,
     basis: 0,
     growthRate: 0.07,
     rmdEnabled: true,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   };
 
   it("routes 100% to primaries when they sum to 100", () => {
@@ -373,8 +386,8 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
       iraWithBens,
       /* undisposedFraction */ 1,
       /* familyMembers */ [
-        { id: "child-a", relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" },
-        { id: "child-b", relationship: "child", firstName: "Bob", lastName: "Smith", dateOfBirth: "2002-01-01" },
+        { id: "child-a", role: "child" as const, relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" },
+        { id: "child-b", role: "child" as const, relationship: "child", firstName: "Bob", lastName: "Smith", dateOfBirth: "2002-01-01" },
       ],
       /* externals */ [],
       undefined,
@@ -402,7 +415,7 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
 
     const result = applyBeneficiaryDesignations(
       iraWithBens, 1,
-      [{ id: "child-a", relationship: "child", firstName: "Alice", lastName: null, dateOfBirth: null }],
+      [{ id: "child-a", role: "child" as const, relationship: "child", firstName: "Alice", lastName: null, dateOfBirth: null }],
       [], undefined,
     );
 
@@ -430,8 +443,8 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
     const result = applyBeneficiaryDesignations(
       iraBothTiers, 1,
       [
-        { id: "child-a", relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
-        { id: "child-b", relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
+        { id: "child-a", role: "child" as const, relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+        { id: "child-b", role: "child" as const, relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
       ],
       [], undefined,
     );
@@ -445,12 +458,13 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
   const brokerage: Account = {
     id: "acct-brok", name: "Taxable Brokerage",
     category: "taxable", subType: "brokerage",
-    owner: "client", value: 200000, basis: 150000,
+    value: 200000, basis: 150000,
     growthRate: 0.06, rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   };
   const fams: FamilyMember[] = [
-    { id: "child-a", relationship: "child", firstName: "Alice", lastName: "S", dateOfBirth: null },
-    { id: "child-b", relationship: "child", firstName: "Bob", lastName: "S", dateOfBirth: null },
+    { id: "child-a", role: "child" as const, relationship: "child", firstName: "Alice", lastName: "S", dateOfBirth: null },
+    { id: "child-b", role: "child" as const, relationship: "child", firstName: "Bob", lastName: "S", dateOfBirth: null },
   ];
 
   it("routes a 100% specific bequest to one family-member recipient", () => {
@@ -469,7 +483,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
       }],
     };
 
-    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", fams, [], [], undefined);
+    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
     expect(result.fractionClaimed).toBeCloseTo(1, 9);
     expect(result.consumed).toBe(true);
     expect(result.ledgerEntries[0]).toMatchObject({
@@ -491,7 +505,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
       }],
     };
 
-    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", fams, [], [], undefined);
+    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
     expect(result.ledgerEntries).toHaveLength(2);
     expect(result.ledgerEntries[0].amount).toBe(100000);
     expect(result.ledgerEntries[1].amount).toBe(100000);
@@ -509,7 +523,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
         ],
       }],
     };
-    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", fams, [], [], undefined);
+    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
     expect(result.fractionClaimed).toBeCloseTo(0.4, 9);
     expect(result.consumed).toBe(false);
   });
@@ -526,7 +540,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
         ],
       }],
     };
-    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", fams, [], [], undefined);
+    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
     expect(result.fractionClaimed).toBe(0);
   });
 
@@ -548,7 +562,7 @@ describe("applyWillSpecificBequests (Step 3a)", () => {
         },
       ],
     };
-    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", fams, [], [], undefined);
+    const result = applyWillSpecificBequests(brokerage, 1, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
     // Pro-rate down: each bequest effectively claims 60/120 of the undisposed remainder.
     expect(result.fractionClaimed).toBeCloseTo(1, 9);
     expect(result.warnings).toContain("over_allocation_in_will:acct-brok");
@@ -559,12 +573,13 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
   const cash: Account = {
     id: "acct-cash", name: "Savings",
     category: "cash", subType: "savings",
-    owner: "client", value: 50000, basis: 50000,
+    value: 50000, basis: 50000,
     growthRate: 0.04, rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   };
 
   const fams: FamilyMember[] = [
-    { id: "child-a", relationship: "child", firstName: "Alice", lastName: null, dateOfBirth: null },
+    { id: "child-a", role: "child" as const, relationship: "child", firstName: "Alice", lastName: null, dateOfBirth: null },
   ];
 
   it("sweeps residual when no specific clause touched this account", () => {
@@ -582,7 +597,7 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
       cash,
       /* undisposedFraction */ 1,
       /* accountTouchedBySpecific */ false,
-      will, 1, "spouse", fams, [], [], undefined,
+      will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined,
     );
     expect(result.consumed).toBe(true);
     expect(result.fractionClaimed).toBe(1);
@@ -603,7 +618,7 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
     };
     const result = applyWillAllAssetsResidual(
       cash, 0.6, /* accountTouchedBySpecific */ true,
-      will, 1, "spouse", fams, [], [], undefined,
+      will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined,
     );
     expect(result.consumed).toBe(false);
     expect(result.fractionClaimed).toBe(0);
@@ -611,7 +626,7 @@ describe("applyWillAllAssetsResidual (Step 3b)", () => {
 
   it("no-op when the will has no all_assets clause", () => {
     const will: Will = { id: "will-1", grantor: "client", bequests: [] };
-    const result = applyWillAllAssetsResidual(cash, 1, false, will, 1, "spouse", fams, [], [], undefined);
+    const result = applyWillAllAssetsResidual(cash, 1, false, will, 1, "spouse", LEGACY_FM_SPOUSE, fams, [], [], undefined);
     expect(result.consumed).toBe(false);
     expect(result.fractionClaimed).toBe(0);
   });
@@ -623,12 +638,13 @@ describe("applyFallback (Step 4)", () => {
   const source: Account = {
     id: "acct-x", name: "Leftover",
     category: "taxable", subType: "brokerage",
-    owner: "client", value: 100000, basis: 80000,
+    value: 100000, basis: 80000,
     growthRate: 0.05, rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   };
 
   it("tier 1: survivor exists → residual to spouse, with warning", () => {
-    const result = applyFallback(source, 1, "spouse", [], undefined);
+    const result = applyFallback(source, 1, "spouse", LEGACY_FM_SPOUSE, [], undefined);
     expect(result.step.ledgerEntries[0]).toMatchObject({
       via: "fallback_spouse", recipientKind: "spouse", amount: 100000,
     });
@@ -637,17 +653,17 @@ describe("applyFallback (Step 4)", () => {
 
   it("tier 2: no survivor → even split among living children", () => {
     const kids: FamilyMember[] = [
-      { id: "c1", relationship: "child", firstName: "Alice", lastName: null, dateOfBirth: null },
-      { id: "c2", relationship: "child", firstName: "Bob", lastName: null, dateOfBirth: null },
+      { id: "c1", role: "child" as const, relationship: "child", firstName: "Alice", lastName: null, dateOfBirth: null },
+      { id: "c2", role: "child" as const, relationship: "child", firstName: "Bob", lastName: null, dateOfBirth: null },
     ];
-    const result = applyFallback(source, 1, null, kids, undefined);
+    const result = applyFallback(source, 1, null, null, kids, undefined);
     expect(result.step.ledgerEntries).toHaveLength(2);
     expect(result.step.ledgerEntries[0].amount).toBe(50000);
     expect(result.step.ledgerEntries[0].via).toBe("fallback_children");
   });
 
   it("tier 3: no survivor, no children → Other Heirs sink", () => {
-    const result = applyFallback(source, 1, null, [], undefined);
+    const result = applyFallback(source, 1, null, null, [], undefined);
     expect(result.step.ledgerEntries).toHaveLength(1);
     expect(result.step.ledgerEntries[0]).toMatchObject({
       via: "fallback_other_heirs",
@@ -660,7 +676,7 @@ describe("applyFallback (Step 4)", () => {
   });
 
   it("no-op when undisposedFraction is ~0", () => {
-    const result = applyFallback(source, 1e-12, "spouse", [], undefined);
+    const result = applyFallback(source, 1e-12, "spouse", LEGACY_FM_SPOUSE, [], undefined);
     expect(result.step.ledgerEntries).toHaveLength(0);
     expect(result.warnings).toHaveLength(0);
   });
@@ -734,25 +750,31 @@ describe("applyFirstDeath orchestrator", () => {
       id: "joint-brok",
       name: "Joint Brokerage",
       category: "taxable", subType: "brokerage",
-      owner: "joint", value: 400000, basis: 250000,
+      value: 400000, basis: 250000,
       growthRate: 0.06, rmdEnabled: false,
+      owners: [
+        { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
+        { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 },
+      ],
     },
     {
       id: "client-ira",
       name: "John IRA",
       category: "retirement", subType: "traditional_ira",
-      owner: "client", value: 600000, basis: 0,
+      value: 600000, basis: 0,
       growthRate: 0.07, rmdEnabled: true,
       beneficiaries: [
         { id: "b-1", tier: "primary", percentage: 100, familyMemberId: "child-a", sortOrder: 0 },
       ],
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
     },
     {
       id: "client-cash",
       name: "John Savings",
       category: "cash", subType: "savings",
-      owner: "client", value: 100000, basis: 100000,
+      value: 100000, basis: 100000,
       growthRate: 0.04, rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
     },
   ];
 
@@ -761,7 +783,9 @@ describe("applyFirstDeath orchestrator", () => {
   ];
 
   const fams: FamilyMember[] = [
-    { id: "child-a", relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" },
+    { id: "fm-client", role: "client" as const, relationship: "other", firstName: "John", lastName: "Smith", dateOfBirth: "1970-01-01" },
+    { id: "fm-spouse", role: "spouse" as const, relationship: "other", firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-06-15" },
+    { id: "child-a", role: "child" as const, relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" },
   ];
 
   const will: Will = {
@@ -805,14 +829,14 @@ describe("applyFirstDeath orchestrator", () => {
     const result = applyFirstDeath(input);
     // Joint → spouse via titling (in-place; id preserved)
     const titledJoint = result.accounts.find((a) => a.id === "joint-brok")!;
-    expect(titledJoint.owner).toBe("spouse");
+    expect(controllingFamilyMember(titledJoint)).toBe("fm-spouse");
     // IRA → child-a via bene designation (100% claimed, in-place mutation)
     const titledIra = result.accounts.find((a) => a.id === "client-ira")!;
-    expect(titledIra.ownerFamilyMemberId).toBe("child-a");
+    expect(controllingFamilyMember(titledIra)).toBe("child-a");
     expect(titledIra.beneficiaries).toBeUndefined();
     // Cash → spouse via all_assets residual (in-place, 100%)
     const titledCash = result.accounts.find((a) => a.id === "client-cash")!;
-    expect(titledCash.owner).toBe("spouse");
+    expect(controllingFamilyMember(titledCash)).toBe("fm-spouse");
     // Ledger: 3 entries (titling, bene-designation, will)
     expect(result.transfers).toHaveLength(3);
     expect(result.transfers.map((t) => t.via).sort()).toEqual([
@@ -925,8 +949,12 @@ describe("applyFirstDeath orchestrator", () => {
     const joint_re: Account = {
       id: "joint-home", name: "Home",
       category: "real_estate", subType: "primary_residence",
-      owner: "joint", value: 800_000, basis: 300_000,
+      value: 800_000, basis: 300_000,
       growthRate: 0.04, rmdEnabled: false,
+      owners: [
+        { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
+        { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 },
+      ],
     };
     const homeInput: DeathEventInput = {
       ...input,
@@ -943,8 +971,9 @@ describe("applyFirstDeath orchestrator", () => {
     const brok: Account = {
       id: "client-brok", name: "John Brokerage",
       category: "taxable", subType: "brokerage",
-      owner: "client", value: 500_000, basis: 200_000,
+      value: 500_000, basis: 200_000,
       growthRate: 0.06, rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
     };
     const willToChild: Will = {
       id: "w", grantor: "client",
@@ -966,7 +995,7 @@ describe("applyFirstDeath orchestrator", () => {
     const result = applyFirstDeath(bequestInput);
     // The resulting account may have a synthetic id (non in-place split) or keep "client-brok" (in-place).
     // Either way, exactly one account should exist with the stepped-up basis = FMV = 500k.
-    const heirAccounts = result.accounts.filter((a) => a.ownerFamilyMemberId === "child-a");
+    const heirAccounts = result.accounts.filter((a) => controllingFamilyMember(a) === "child-a");
     expect(heirAccounts).toHaveLength(1);
     expect(result.basisMap[heirAccounts[0].id]).toBeCloseTo(500_000, 2);
   });
@@ -984,13 +1013,15 @@ describe("applyFirstDeath orchestrator", () => {
     const trustBrok: Account = {
       id: "rev-brok", name: "Revocable Trust Brokerage",
       category: "taxable", subType: "brokerage",
-      owner: "client", value: 1_000_000, basis: 400_000,
-      ownerEntityId: "rev-trust-1",
+      value: 1_000_000, basis: 400_000,
       growthRate: 0.06, rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "rev-trust-1", percent: 1 }],
     };
     const fams2: FamilyMember[] = [
-      { id: "child-a", relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" },
-      { id: "child-b", relationship: "child", firstName: "Bob",   lastName: "Smith", dateOfBirth: "2002-01-01" },
+      { id: "fm-client", role: "client" as const, relationship: "other", firstName: "John", lastName: "Smith", dateOfBirth: "1970-01-01" },
+      { id: "fm-spouse", role: "spouse" as const, relationship: "other", firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-06-15" },
+      { id: "child-a", role: "child" as const, relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" },
+      { id: "child-b", role: "child" as const, relationship: "child", firstName: "Bob",   lastName: "Smith", dateOfBirth: "2002-01-01" },
     ];
     const trustInput: DeathEventInput = {
       ...input,
@@ -1022,9 +1053,9 @@ describe("applyFirstDeath orchestrator", () => {
     const trustIra: Account = {
       id: "rev-ira", name: "Trust-Owned IRA",
       category: "retirement", subType: "traditional_ira",
-      owner: "client", value: 500_000, basis: 50_000,
-      ownerEntityId: "rev-trust-2",
+      value: 500_000, basis: 50_000,
       growthRate: 0.07, rmdEnabled: true,
+      owners: [{ kind: "entity", entityId: "rev-trust-2", percent: 1 }],
     };
     const trustInput: DeathEventInput = {
       ...input,
@@ -1052,9 +1083,9 @@ describe("applyFirstDeath orchestrator", () => {
     const trustBrok: Account = {
       id: "ilit-brok", name: "ILIT Brokerage",
       category: "taxable", subType: "brokerage",
-      owner: "client", value: 2_000_000, basis: 500_000,
-      ownerEntityId: "ilit-1",
+      value: 2_000_000, basis: 500_000,
       growthRate: 0.06, rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "ilit-1", percent: 1 }],
     };
     const trustInput: DeathEventInput = {
       ...input,
@@ -1139,6 +1170,7 @@ describe("distributeUnlinkedLiabilities", () => {
     interestRate: 0.15, monthlyPayment: 500,
     startYear: 2025, startMonth: 1, termMonths: 24,
     extraPayments: [],
+    owners: [],
     ...overrides,
   });
 
@@ -1151,7 +1183,7 @@ describe("distributeUnlinkedLiabilities", () => {
   });
 
   it("skips entity-owned liabilities (4d territory)", () => {
-    const liabilities = [mkLiability({ ownerEntityId: "ent-1" })];
+    const liabilities = [mkLiability({ owners: [{ kind: "entity", entityId: "ent-1", percent: 1 }] })];
     const transfers = [mkTransfer({ kind: "family_member", id: "fm-1", label: "Sarah" }, 50_000)];
     const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
     expect(result.liabilityTransfers).toEqual([]);
@@ -1274,7 +1306,7 @@ describe("distributeUnlinkedLiabilities — negative-share filter (4e)", () => {
     const residualUnlinkedDebt: Liability = {
       id: "liab-residual", name: "Student loan",
       balance: 20_000, interestRate: 0.05, monthlyPayment: 200,
-      startYear: 2020, startMonth: 1, termMonths: 120, extraPayments: [],
+      startYear: 2020, startMonth: 1, termMonths: 120, extraPayments: [], owners: [],
     };
 
     const result = distributeUnlinkedLiabilities(
@@ -1302,8 +1334,9 @@ describe("distributeUnlinkedLiabilities — negative-share filter (4e)", () => {
 describe("applyFinalDeath orchestrator", () => {
   const mkAccount = (over: Partial<Account> = {}): Account => ({
     id: "a1", name: "Brokerage", category: "taxable", subType: "brokerage",
-    owner: "client", value: 100_000, basis: 60_000,
+    value: 100_000, basis: 60_000,
     growthRate: 0.05, rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     ...over,
   });
 
@@ -1316,20 +1349,28 @@ describe("applyFinalDeath orchestrator", () => {
       if (accountBalances[a.id] == null) accountBalances[a.id] = a.value;
       if (basisMap[a.id] == null) basisMap[a.id] = a.basis;
     }
+    // Always include the deceased principal FM so deceasedFmId resolves to LEGACY_FM_CLIENT.
+    const callerFms = over.familyMembers ?? [];
+    const deceasedPrincipalFm: FamilyMember = {
+      id: LEGACY_FM_CLIENT, role: "client", relationship: "other",
+      firstName: "Client", lastName: "Test", dateOfBirth: "1970-01-01",
+    };
+    const principalFms = callerFms.some((f) => f.id === LEGACY_FM_CLIENT) ? [] : [deceasedPrincipalFm];
+    const { familyMembers: _fm, ...rest } = over;
     return {
       year: 2050,
       deceased: "client",
       survivor: "spouse",  // note: 4c's applyFinalDeath treats this field loosely; orchestrator internally passes null to fallback
-      will: over.will ?? null,
+      will: null,
       accounts,
       accountBalances,
       basisMap,
-      incomes: over.incomes ?? [],
-      liabilities: over.liabilities ?? [],
-      familyMembers: over.familyMembers ?? [],
-      externalBeneficiaries: over.externalBeneficiaries ?? [],
-      entities: over.entities ?? [],
-      planSettings: over.planSettings ?? {
+      incomes: [],
+      liabilities: [],
+      familyMembers: [...principalFms, ...callerFms],
+      externalBeneficiaries: [],
+      entities: [],
+      planSettings: {
         flatFederalRate: 0,
         flatStateRate: 0,
         inflationRate: 0.025,
@@ -1338,25 +1379,25 @@ describe("applyFinalDeath orchestrator", () => {
         estateAdminExpenses: 0,
         flatStateEstateRate: 0,
       },
-      gifts: over.gifts ?? [],
-      annualExclusionsByYear: over.annualExclusionsByYear ?? {},
-      dsueReceived: over.dsueReceived ?? 0,
-      ...over,
+      gifts: [],
+      annualExclusionsByYear: {},
+      dsueReceived: 0,
+      ...rest,
     };
   };
 
   it("distributes an unwilled account to living children when no will exists (fallback tier 2)", () => {
     const children: FamilyMember[] = [
-      { id: "c1", relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
-      { id: "c2", relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
+      { id: "c1", role: "child" as const, relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+      { id: "c2", role: "child" as const, relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
     ];
     const input = mkInput({ familyMembers: children });
     const result = applyFinalDeath(input);
 
-    // 2 accounts (one per child), each $50k, both with ownerFamilyMemberId
+    // 2 accounts (one per child), each $50k, both owned by child FM
     expect(result.accounts).toHaveLength(2);
-    expect(result.accounts[0].ownerFamilyMemberId).toBe("c1");
-    expect(result.accounts[1].ownerFamilyMemberId).toBe("c2");
+    expect(controllingFamilyMember(result.accounts[0])).toBe("c1");
+    expect(controllingFamilyMember(result.accounts[1])).toBe("c2");
     expect(result.accounts[0].value).toBeCloseTo(50_000, 2);
     expect(result.accounts[1].value).toBeCloseTo(50_000, 2);
 
@@ -1380,7 +1421,7 @@ describe("applyFinalDeath orchestrator", () => {
 
   it("executes an always-condition will at 4c with deathOrder=2", () => {
     const children: FamilyMember[] = [
-      { id: "c1", relationship: "child", firstName: "Child", lastName: null, dateOfBirth: null },
+      { id: "c1", role: "child" as const, relationship: "child", firstName: "Child", lastName: null, dateOfBirth: null },
     ];
     const will: Will = {
       id: "w1", grantor: "client", bequests: [
@@ -1396,7 +1437,7 @@ describe("applyFinalDeath orchestrator", () => {
     const result = applyFinalDeath(input);
 
     expect(result.accounts).toHaveLength(1);
-    expect(result.accounts[0].ownerFamilyMemberId).toBe("c1");
+    expect(controllingFamilyMember(result.accounts[0])).toBe("c1");
     const willEntry = result.transfers.find((t) => t.via === "will");
     expect(willEntry).toBeDefined();
     expect(willEntry!.deathOrder).toBe(2);
@@ -1404,7 +1445,7 @@ describe("applyFinalDeath orchestrator", () => {
 
   it("skips if_spouse_survives clauses and fires if_spouse_predeceased clauses at 4c", () => {
     const children: FamilyMember[] = [
-      { id: "c1", relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+      { id: "c1", role: "child" as const, relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
     ];
     const will: Will = {
       id: "w1", grantor: "client", bequests: [
@@ -1440,7 +1481,7 @@ describe("applyFinalDeath orchestrator", () => {
     // retirement, so a real_estate-only estate has no eligible accounts.
     // The full $10k falls through to the residual distribution helper.
     const children: FamilyMember[] = [
-      { id: "c1", relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+      { id: "c1", role: "child" as const, relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
     ];
     const home = mkAccount({
       id: "home", name: "Primary Home",
@@ -1451,7 +1492,7 @@ describe("applyFinalDeath orchestrator", () => {
       {
         id: "cc1", name: "Credit Card", balance: 10_000,
         interestRate: 0.18, monthlyPayment: 500,
-        startYear: 2025, startMonth: 1, termMonths: 24, extraPayments: [],
+        startYear: 2025, startMonth: 1, termMonths: 24, extraPayments: [], owners: [],
       },
     ];
     const input = mkInput({ accounts: [home], familyMembers: children, liabilities });
@@ -1493,8 +1534,8 @@ describe("applyFinalDeath orchestrator", () => {
 
   it("passes entity-owned accounts through untouched", () => {
     const accounts = [
-      mkAccount({ id: "a1", owner: "client", ownerEntityId: "e1", value: 500_000, basis: 200_000 }),
-      mkAccount({ id: "a2", owner: "client", value: 100_000, basis: 60_000 }),
+      mkAccount({ id: "a1", owners: [{ kind: "entity", entityId: "e1", percent: 1 }], value: 500_000, basis: 200_000 }),
+      mkAccount({ id: "a2", value: 100_000, basis: 60_000 }),
     ];
     const entities: EntitySummary[] = [
       { id: "e1", includeInPortfolio: true, isGrantor: true },
@@ -1504,7 +1545,7 @@ describe("applyFinalDeath orchestrator", () => {
 
     expect(result.accounts.find((a) => a.id === "a1")).toBeDefined();
     const a1 = result.accounts.find((a) => a.id === "a1")!;
-    expect(a1.ownerEntityId).toBe("e1");
+    expect(controllingEntity(a1)).toBe("e1");
   });
 
   // Removed: "throws when a will clause routes 'spouse' as recipient at 4c".
@@ -1514,10 +1555,15 @@ describe("applyFinalDeath orchestrator", () => {
   // guard comes back, it belongs at the will-validation layer (API
   // schema / form validation), not inside the 4c orchestrator.
 
-  it("throws when any account remains with owner='joint' post-event (defensive)", () => {
+  it("throws when any account remains with joint household ownership post-event (defensive)", () => {
     // This is impossible in production because 4b retitles joint accounts,
     // but the orchestrator should reject the data defensively.
-    const accounts = [mkAccount({ owner: "joint" })];
+    const accounts = [mkAccount({
+      owners: [
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+      ],
+    })];
     const input = mkInput({ accounts });
     expect(() => applyFinalDeath(input)).toThrow(/joint/i);
   });
@@ -1526,11 +1572,12 @@ describe("applyFinalDeath orchestrator", () => {
     const brok: Account = {
       id: "surv-brok", name: "Survivor Brokerage",
       category: "taxable", subType: "brokerage",
-      owner: "client", value: 800_000, basis: 300_000,
+      value: 800_000, basis: 300_000,
       growthRate: 0.06, rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const alice: FamilyMember = {
-      id: "child-a", relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01",
+      id: "child-a", role: "child" as const, relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01",
     };
     const will: Will = {
       id: "w2", grantor: "client",
@@ -1548,7 +1595,7 @@ describe("applyFinalDeath orchestrator", () => {
       will,
     });
     const result = applyFinalDeath(input);
-    const heirAccounts = result.accounts.filter((a) => a.ownerFamilyMemberId === "child-a");
+    const heirAccounts = result.accounts.filter((a) => controllingFamilyMember(a) === "child-a");
     expect(heirAccounts).toHaveLength(1);
     // Full step-up: basis = FMV = 800k
     expect(result.basisMap[heirAccounts[0].id]).toBeCloseTo(800_000, 2);
@@ -1558,21 +1605,22 @@ describe("applyFinalDeath orchestrator", () => {
     const ira: Account = {
       id: "surv-ira", name: "Survivor IRA",
       category: "retirement", subType: "traditional_ira",
-      owner: "client", value: 500_000, basis: 0,
+      value: 500_000, basis: 0,
       growthRate: 0.07, rmdEnabled: true,
       beneficiaries: [
         { id: "b-1", tier: "primary", percentage: 100, familyMemberId: "child-a", sortOrder: 0 },
       ],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const alice: FamilyMember = {
-      id: "child-a", relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01",
+      id: "child-a", role: "child" as const, relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01",
     };
     const input = mkInput({
       accounts: [ira],
       familyMembers: [alice],
     });
     const result = applyFinalDeath(input);
-    const heirAccounts = result.accounts.filter((a) => a.ownerFamilyMemberId === "child-a");
+    const heirAccounts = result.accounts.filter((a) => controllingFamilyMember(a) === "child-a");
     expect(heirAccounts).toHaveLength(1);
     // No step-up for IRD: basis stays at 0
     expect(result.basisMap[heirAccounts[0].id]).toBeCloseTo(0, 2);
@@ -1582,21 +1630,22 @@ describe("applyFinalDeath orchestrator", () => {
     const roth: Account = {
       id: "surv-roth", name: "Survivor Roth",
       category: "retirement", subType: "roth_ira",
-      owner: "client", value: 400_000, basis: 150_000,
+      value: 400_000, basis: 150_000,
       growthRate: 0.07, rmdEnabled: false,
       beneficiaries: [
         { id: "b-1", tier: "primary", percentage: 100, familyMemberId: "child-a", sortOrder: 0 },
       ],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     const alice: FamilyMember = {
-      id: "child-a", relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01",
+      id: "child-a", role: "child" as const, relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01",
     };
     const input = mkInput({
       accounts: [roth],
       familyMembers: [alice],
     });
     const result = applyFinalDeath(input);
-    const heirAccounts = result.accounts.filter((a) => a.ownerFamilyMemberId === "child-a");
+    const heirAccounts = result.accounts.filter((a) => controllingFamilyMember(a) === "child-a");
     expect(heirAccounts).toHaveLength(1);
     // Category gate blocks step-up regardless of Roth vs traditional:
     expect(result.basisMap[heirAccounts[0].id]).toBeCloseTo(150_000, 2);

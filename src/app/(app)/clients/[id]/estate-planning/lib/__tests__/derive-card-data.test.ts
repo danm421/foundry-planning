@@ -6,7 +6,19 @@ import {
   deriveCharityCardData,
   taxTreatmentTag,
 } from "../derive-card-data";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, FamilyMember } from "@/engine/types";
+
+const CLIENT_FM_ID = "fm-client-test";
+const SPOUSE_FM_ID = "fm-spouse-test";
+
+const clientFm: FamilyMember = {
+  id: CLIENT_FM_ID, role: "client", relationship: "child",
+  firstName: "Tom", lastName: "Smith", dateOfBirth: "1968-03-12",
+};
+const spouseFm: FamilyMember = {
+  id: SPOUSE_FM_ID, role: "spouse", relationship: "child",
+  firstName: "Linda", lastName: "Smith", dateOfBirth: "1970-05-20",
+};
 
 const baseClient = (overrides: Partial<ClientData["client"]> = {}): ClientData["client"] =>
   ({
@@ -23,7 +35,7 @@ const baseTree = (overrides: Partial<ClientData> = {}): ClientData =>
   ({
     accounts: [],
     entities: [],
-    familyMembers: [],
+    familyMembers: [clientFm, spouseFm],
     externalBeneficiaries: [],
     wills: [],
     incomes: [],
@@ -37,6 +49,49 @@ const baseTree = (overrides: Partial<ClientData> = {}): ClientData =>
     client: baseClient(),
     ...overrides,
   } as ClientData);
+
+/** Build a minimal Account owned solely by the client FM. */
+function clientAcct(id: string, name: string, category: ClientData["accounts"][0]["category"], value: number, extra: object = {}): ClientData["accounts"][0] {
+  return {
+    id, name, category, subType: "generic",
+    value, basis: value, growthRate: 0, rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 }],
+    ...extra,
+  } as ClientData["accounts"][0];
+}
+
+/** Build a minimal Account owned solely by the spouse FM. */
+function spouseAcct(id: string, name: string, category: ClientData["accounts"][0]["category"], value: number, extra: object = {}): ClientData["accounts"][0] {
+  return {
+    id, name, category, subType: "generic",
+    value, basis: value, growthRate: 0, rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: SPOUSE_FM_ID, percent: 1 }],
+    ...extra,
+  } as ClientData["accounts"][0];
+}
+
+/** Build a minimal jointly-owned Account. */
+function jointAcct(id: string, name: string, category: ClientData["accounts"][0]["category"], value: number, extra: object = {}): ClientData["accounts"][0] {
+  return {
+    id, name, category, subType: "generic",
+    value, basis: value, growthRate: 0, rmdEnabled: false,
+    owners: [
+      { kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 0.5 },
+      { kind: "family_member", familyMemberId: SPOUSE_FM_ID, percent: 0.5 },
+    ],
+    ...extra,
+  } as ClientData["accounts"][0];
+}
+
+/** Build an entity-owned Account. */
+function entityAcct(id: string, name: string, category: ClientData["accounts"][0]["category"], value: number, entityId: string, extra: object = {}): ClientData["accounts"][0] {
+  return {
+    id, name, category, subType: "generic",
+    value, basis: value, growthRate: 0, rmdEnabled: false,
+    owners: [{ kind: "entity", entityId, percent: 1 }],
+    ...extra,
+  } as ClientData["accounts"][0];
+}
 
 describe("taxTreatmentTag", () => {
   it("maps traditional retirement → DEF", () => {
@@ -64,10 +119,11 @@ describe("deriveClientCardData", () => {
   it("emits a single client card when no spouse is set, and groups outright vs joint accounts", () => {
     const tree = baseTree({
       client: baseClient({ firstName: "Tom", lastName: "Smith" }),
+      familyMembers: [clientFm], // no spouse FM
       accounts: [
-        { id: "a1", name: "401k", category: "retirement", value: 500_000, owner: "client" },
-        { id: "a2", name: "Joint Brokerage", category: "taxable", value: 1_000_000, owner: "joint" },
-      ] as ClientData["accounts"],
+        clientAcct("a1", "401k", "retirement", 500_000),
+        jointAcct("a2", "Joint Brokerage", "taxable", 1_000_000),
+      ],
     });
 
     const cards = deriveClientCardData(tree, 2026);
@@ -91,9 +147,10 @@ describe("deriveClientCardData", () => {
         spouseName: "Linda Smith",
         spouseDob: "1970-05-20",
       }),
+      familyMembers: [clientFm, spouseFm],
       accounts: [
-        { id: "a1", name: "Linda Roth IRA", category: "retirement", value: 200_000, owner: "spouse" },
-      ] as ClientData["accounts"],
+        spouseAcct("a1", "Linda Roth IRA", "retirement", 200_000),
+      ],
     });
     const cards = deriveClientCardData(tree, 2026);
     expect(cards).toHaveLength(2);
@@ -115,15 +172,8 @@ describe("deriveClientCardData", () => {
   it("tags a Roth IRA on the client card as FREE (not DEF)", () => {
     const tree = baseTree({
       accounts: [
-        {
-          id: "a1",
-          name: "Tom Roth IRA",
-          category: "retirement",
-          subType: "roth_ira",
-          value: 100_000,
-          owner: "client",
-        },
-      ] as ClientData["accounts"],
+        clientAcct("a1", "Tom Roth IRA", "retirement", 100_000, { subType: "roth_ira" }),
+      ],
     });
     const cards = deriveClientCardData(tree, 2026);
     expect(cards).toHaveLength(1);
@@ -150,8 +200,8 @@ describe("deriveTrustCardData", () => {
         },
       ] as unknown as ClientData["entities"],
       accounts: [
-        { id: "a3", name: "SLAT Brokerage", category: "taxable", value: 2_400_000, owner: "client", ownerEntityId: "e1" },
-      ] as ClientData["accounts"],
+        entityAcct("a3", "SLAT Brokerage", "taxable", 2_400_000, "e1"),
+      ],
       planSettings: { taxInflationRate: 0.03 } as ClientData["planSettings"],
     });
     const cards = deriveTrustCardData(tree, 2026);
@@ -175,13 +225,15 @@ describe("deriveTrustCardData", () => {
 
 describe("deriveHeirCardData", () => {
   it("returns one row per (bequest × matching family-member recipient), carrying recipient percentage", () => {
+    const childFm: FamilyMember = {
+      id: "fm1", relationship: "child", role: "child",
+      firstName: "Tom Jr", lastName: "S", dateOfBirth: "1995-01-01",
+    };
     const tree = baseTree({
-      familyMembers: [
-        { id: "fm1", relationship: "child", firstName: "Tom Jr", lastName: "S", dateOfBirth: "1995-01-01" },
-      ] as ClientData["familyMembers"],
+      familyMembers: [clientFm, spouseFm, childFm],
       accounts: [
-        { id: "a1", name: "401k", category: "retirement", value: 500_000, owner: "client" },
-      ] as ClientData["accounts"],
+        clientAcct("a1", "401k", "retirement", 500_000),
+      ],
       wills: [
         {
           id: "w1",
@@ -223,8 +275,8 @@ describe("deriveCharityCardData", () => {
     const tree = baseTree({
       externalBeneficiaries: [{ id: "ex1", name: "Stanford University", kind: "charity" }],
       accounts: [
-        { id: "a1", name: "DAF", category: "taxable", value: 1_000_000, owner: "client" },
-      ] as ClientData["accounts"],
+        clientAcct("a1", "DAF", "taxable", 1_000_000),
+      ],
       wills: [
         {
           id: "w1",

@@ -18,6 +18,7 @@ import InsurancePanel, {
 } from "@/components/insurance-panel";
 import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -75,13 +76,22 @@ export default async function InsurancePage({ params, searchParams }: PageProps)
     .map((a) => a.id);
   const policies = await loadPoliciesByAccountIds(lifeAccountIds);
 
+  const _clientFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
+  const _spouseFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
+  function _ownerLabel(a: (typeof accountRows)[number]): "client" | "spouse" | "joint" {
+    const cfm = controllingFamilyMember(a);
+    if (cfm === _spouseFmId && _spouseFmId != null) return "spouse";
+    if (cfm === _clientFmId && _clientFmId != null) return "client";
+    return "joint";
+  }
+
   const accts: InsurancePanelAccount[] = accountRows.map((a) => ({
     id: a.id,
     name: a.name,
     category: a.category,
     subType: (a.subType ?? null) as InsurancePanelAccount["subType"],
-    owner: a.owner,
-    ownerEntityId: a.ownerEntityId ?? null,
+    owner: _ownerLabel(a),
+    ownerEntityId: controllingEntity(a) ?? null,
     insuredPerson: a.insuredPerson ?? null,
     value: String(a.value),
   }));

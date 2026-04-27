@@ -2,6 +2,7 @@ import type { TaxResult, TaxYearParameters } from "../lib/tax/types";
 import type { ClientDeductionRow } from "../lib/tax/derive-deductions";
 import type { TrustSubType } from "@/lib/entities/trust";
 import type { TrustTaxBreakdown, TrustWarning } from "./trust-tax/types";
+import type { AccountOwner } from "./ownership";
 
 // ── Input Types ──────────────────────────────────────────────────────────────
 
@@ -191,6 +192,10 @@ export interface HypotheticalEstateTax {
 
 export interface FamilyMember {
   id: string;
+  /** Household role: "client" / "spouse" are the household principals; "child" / "other"
+   *  are dependants. The engine uses this to resolve ownership when translating
+   *  "client"-owned and "spouse"-owned accounts to `owners[]` rows. */
+  role: "client" | "spouse" | "child" | "other";
   relationship: "child" | "grandchild" | "parent" | "sibling" | "other";
   firstName: string;
   lastName: string | null;
@@ -313,13 +318,10 @@ export interface Account {
   name: string;
   category: "taxable" | "cash" | "retirement" | "real_estate" | "business" | "life_insurance";
   subType: string;
-  owner: "client" | "spouse" | "joint";
   value: number;
   basis: number;
   growthRate: number;
   rmdEnabled: boolean;
-  ownerEntityId?: string;
-  ownerFamilyMemberId?: string;
   beneficiaries?: BeneficiaryRef[];
   isDefaultChecking?: boolean;
   annualPropertyTax?: number;
@@ -334,6 +336,7 @@ export interface Account {
     pctTaxExempt: number;
     turnoverPct: number;
   };
+  owners: AccountOwner[];
 }
 
 export interface Income {
@@ -434,13 +437,13 @@ export interface Liability {
   balanceAsOfMonth?: number;
   balanceAsOfYear?: number;
   linkedPropertyId?: string;
-  ownerEntityId?: string;
   /** Set by the final-death event (4c) when an unlinked household liability
    *  is distributed proportionally to a family-member heir. Null / absent
    *  for household-originated liabilities. */
   ownerFamilyMemberId?: string;
   isInterestDeductible?: boolean;
   extraPayments: ExtraPayment[];
+  owners: AccountOwner[];
 }
 
 export interface SavingsRule {

@@ -14,6 +14,7 @@ import type {
   Will,
   WillBequest,
 } from "../types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, controllingEntity } from "../ownership";
 
 /**
  * Integration tests for the 4d estate-tax pipeline.
@@ -27,6 +28,16 @@ import type {
  */
 
 // ── Scaffolding ─────────────────────────────────────────────────────────────
+
+/** Default principal family members with LEGACY sentinel IDs. */
+const defaultClientFm: FamilyMember = {
+  id: LEGACY_FM_CLIENT, role: "client", relationship: "other",
+  firstName: "Client", lastName: "Test", dateOfBirth: "1970-01-01",
+};
+const defaultSpouseFm: FamilyMember = {
+  id: LEGACY_FM_SPOUSE, role: "spouse", relationship: "other",
+  firstName: "Spouse", lastName: "Test", dateOfBirth: "1972-01-01",
+};
 
 const basePlanSettings: PlanSettings = {
   flatFederalRate: 0,
@@ -50,24 +61,32 @@ function mkFirstDeathInput(over: Partial<DeathEventInput> = {}): DeathEventInput
     if (accountBalances[a.id] == null) accountBalances[a.id] = a.value;
     if (basisMap[a.id] == null) basisMap[a.id] = a.basis;
   }
+  // Always include principal FMs so deceasedFmId / survivorFmId resolve correctly.
+  // Merge caller-supplied FMs (e.g. children) without duplicating the principals.
+  const callerFms = over.familyMembers ?? [];
+  const principalFms = [defaultClientFm, defaultSpouseFm].filter(
+    (p) => !callerFms.some((f) => f.id === p.id),
+  );
+  const familyMembers = [...principalFms, ...callerFms];
+  const { familyMembers: _fm, ...rest } = over;
   return {
     year: 2045,
     deceased: "client",
     survivor: "spouse",
-    will: over.will ?? null,
+    will: null,
     accounts,
     accountBalances,
     basisMap,
-    incomes: over.incomes ?? [],
-    liabilities: over.liabilities ?? [],
-    familyMembers: over.familyMembers ?? [],
-    externalBeneficiaries: over.externalBeneficiaries ?? [],
-    entities: over.entities ?? [],
-    planSettings: over.planSettings ?? basePlanSettings,
-    gifts: over.gifts ?? [],
-    annualExclusionsByYear: over.annualExclusionsByYear ?? {},
-    dsueReceived: over.dsueReceived ?? 0,
-    ...over,
+    incomes: [],
+    liabilities: [],
+    familyMembers,
+    externalBeneficiaries: [],
+    entities: [],
+    planSettings: basePlanSettings,
+    gifts: [],
+    annualExclusionsByYear: {},
+    dsueReceived: 0,
+    ...rest,
   };
 }
 
@@ -79,35 +98,42 @@ function mkFinalDeathInput(over: Partial<DeathEventInput> = {}): DeathEventInput
     if (accountBalances[a.id] == null) accountBalances[a.id] = a.value;
     if (basisMap[a.id] == null) basisMap[a.id] = a.basis;
   }
+  // Always include the deceased's FM so deceasedFmId resolves correctly.
+  const callerFms = over.familyMembers ?? [];
+  const principalFms = [defaultClientFm].filter(
+    (p) => !callerFms.some((f) => f.id === p.id),
+  );
+  const familyMembers = [...principalFms, ...callerFms];
+  const { familyMembers: _fm, ...rest } = over;
   return {
     year: 2052,
     deceased: "client",
     // survivor is unused by applyFinalDeath internals; pass the deceased as a
     // placeholder to keep the shared type happy.
     survivor: "client",
-    will: over.will ?? null,
+    will: null,
     accounts,
     accountBalances,
     basisMap,
-    incomes: over.incomes ?? [],
-    liabilities: over.liabilities ?? [],
-    familyMembers: over.familyMembers ?? [],
-    externalBeneficiaries: over.externalBeneficiaries ?? [],
-    entities: over.entities ?? [],
-    planSettings: over.planSettings ?? basePlanSettings,
-    gifts: over.gifts ?? [],
-    annualExclusionsByYear: over.annualExclusionsByYear ?? {},
-    dsueReceived: over.dsueReceived ?? 0,
-    ...over,
+    incomes: [],
+    liabilities: [],
+    familyMembers,
+    externalBeneficiaries: [],
+    entities: [],
+    planSettings: basePlanSettings,
+    gifts: [],
+    annualExclusionsByYear: {},
+    dsueReceived: 0,
+    ...rest,
   };
 }
 
 const kidA: FamilyMember = {
-  id: "kid-a", relationship: "child", firstName: "Alice", lastName: "Test",
+  id: "kid-a", relationship: "child", role: "child", firstName: "Alice", lastName: "Test",
   dateOfBirth: "2000-01-01",
 };
 const kidB: FamilyMember = {
-  id: "kid-b", relationship: "child", firstName: "Bob", lastName: "Test",
+  id: "kid-b", relationship: "child", role: "child", firstName: "Bob", lastName: "Test",
   dateOfBirth: "2002-01-01",
 };
 
@@ -121,14 +147,19 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "brokerage", name: "Joint Brokerage",
         category: "taxable", subType: "brokerage",
-        owner: "joint", value: 2_000_000, basis: 1_500_000,
+        value: 2_000_000, basis: 1_500_000,
         growthRate: 0.06, rmdEnabled: false,
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+          { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+        ],
       },
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 500_000, basis: 500_000,
+        value: 500_000, basis: 500_000,
         growthRate: 0.02, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const will: Will = {
@@ -172,8 +203,9 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "brokerage", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
-        owner: "client", value: 1_000_000, basis: 600_000,
+        value: 1_000_000, basis: 600_000,
         growthRate: 0.05, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const will: Will = {
@@ -215,14 +247,16 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "brokerage", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
-        owner: "client", value: 5_000_000, basis: 3_000_000,
+        value: 5_000_000, basis: 3_000_000,
         growthRate: 0.05, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 2_000_000, basis: 2_000_000,
+        value: 2_000_000, basis: 2_000_000,
         growthRate: 0.02, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const will: Will = {
@@ -279,9 +313,10 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "trust-acct", name: "Trust Brokerage",
         category: "taxable", subType: "brokerage",
-        owner: "client", value: 1_000_000, basis: 700_000,
+        value: 1_000_000, basis: 700_000,
         growthRate: 0.05, rmdEnabled: false,
-        ownerEntityId: "trust-1",
+        // Entity-owned by the revocable trust (entity ownership is the canonical model)
+        owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }],
       },
     ];
     const input = mkFirstDeathInput({
@@ -325,15 +360,18 @@ describe("4d integration — first death estate tax", () => {
       {
         id: "ilit-policy", name: "ILIT Life Policy",
         category: "life_insurance", subType: "term",
-        owner: "client", value: 3_000_000, basis: 0,
+        value: 3_000_000, basis: 0,
         growthRate: 0, rmdEnabled: false,
-        ownerEntityId: "ilit-1",
+        // Owned by the ILIT entity — irrevocable trust excludes from gross estate
+        owners: [{ kind: "entity", entityId: "ilit-1", percent: 1 }],
       },
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 200_000, basis: 200_000,
+        value: 200_000, basis: 200_000,
         growthRate: 0.02, rmdEnabled: false,
+        // Client-owned cash (in gross estate; marital deduction covers it)
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const will: Will = {
@@ -374,14 +412,16 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "brokerage", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
-        owner: "client", value: 30_000_000, basis: 15_000_000,
+        value: 30_000_000, basis: 15_000_000,
         growthRate: 0.05, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 10_000_000, basis: 10_000_000,
+        value: 10_000_000, basis: 10_000_000,
         growthRate: 0.02, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const input = mkFinalDeathInput({
@@ -432,14 +472,16 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "client-brok", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
-        owner: "client", value: 1_000_000, basis: 700_000,
+        value: 1_000_000, basis: 700_000,
         growthRate: 0, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 200_000, basis: 200_000,
+        value: 200_000, basis: 200_000,
         growthRate: 0, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const wills: Will[] = [
@@ -511,14 +553,16 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 500_000, basis: 500_000,
+        value: 500_000, basis: 500_000,
         growthRate: 0.02, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const liabilities: Liability[] = [{
       id: "cc", name: "Credit Card", balance: 10_000,
       interestRate: 0.18, monthlyPayment: 500,
       startYear: 2025, startMonth: 1, termMonths: 24, extraPayments: [],
+      owners: [],
     }];
     const input = mkFinalDeathInput({
       accounts, liabilities,
@@ -549,14 +593,16 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "home", name: "Primary Home",
         category: "real_estate", subType: "primary_residence",
-        owner: "client", value: 500_000, basis: 400_000,
+        value: 500_000, basis: 400_000,
         growthRate: 0.03, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const liabilities: Liability[] = [{
       id: "cc", name: "Credit Card", balance: 20_000,
       interestRate: 0.18, monthlyPayment: 800,
       startYear: 2025, startMonth: 1, termMonths: 36, extraPayments: [],
+      owners: [],
     }];
     const input = mkFinalDeathInput({
       accounts, liabilities,
@@ -586,14 +632,16 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "home", name: "Primary Home",
         category: "real_estate", subType: "primary_residence",
-        owner: "client", value: 40_000_000, basis: 10_000_000,
+        value: 40_000_000, basis: 10_000_000,
         growthRate: 0.03, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 10_000, basis: 10_000,
+        value: 10_000, basis: 10_000,
         growthRate: 0.01, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const input = mkFinalDeathInput({
@@ -626,15 +674,16 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "trust-acct", name: "Trust Brokerage",
         category: "taxable", subType: "brokerage",
-        owner: "client", value: 1_000_000, basis: 700_000,
+        value: 1_000_000, basis: 700_000,
         growthRate: 0.05, rmdEnabled: false,
-        ownerEntityId: "trust-1",
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
       {
         id: "personal-cash", name: "Personal Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 100_000, basis: 100_000,
+        value: 100_000, basis: 100_000,
         growthRate: 0.02, rmdEnabled: false,
+        owners: [{ kind: "entity", entityId: "trust-1", percent: 1 }],
       },
     ];
     const input = mkFinalDeathInput({
@@ -673,15 +722,20 @@ describe("4d integration — final death estate tax", () => {
       {
         id: "joint-in-trust", name: "Joint Trust Brokerage",
         category: "taxable", subType: "brokerage",
-        owner: "joint", value: 500_000, basis: 400_000,
+        value: 500_000, basis: 400_000,
         growthRate: 0.05, rmdEnabled: false,
-        ownerEntityId: "irrev-trust",
+        // Entity-owned — verifies that entity-owned accounts pass through 4c
+        // without tripping the "still joint" invariant. The old system allowed
+        // owner="joint" + ownerEntityId which entity precedence resolved; now
+        // canonical entity ownership is the only model.
+        owners: [{ kind: "entity", entityId: "irrev-trust", percent: 1 }],
       },
       {
         id: "personal-cash", name: "Personal Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 100_000, basis: 100_000,
+        value: 100_000, basis: 100_000,
         growthRate: 0.02, rmdEnabled: false,
+        owners: [{ kind: "entity", entityId: "irrev-trust", percent: 1 }],
       },
     ];
     const input = mkFinalDeathInput({
@@ -693,8 +747,8 @@ describe("4d integration — final death estate tax", () => {
     expect(() => applyFinalDeath(input)).not.toThrow();
     const result = applyFinalDeath(input);
     const passthrough = result.accounts.find((a) => a.id === "joint-in-trust");
-    expect(passthrough?.owner).toBe("joint");
-    expect(passthrough?.ownerEntityId).toBe("irrev-trust");
+    expect(passthrough).toBeDefined();
+    expect(controllingEntity(passthrough!)).toBe("irrev-trust");
   });
 });
 
@@ -706,8 +760,9 @@ describe("4d integration — state estate tax", () => {
       {
         id: "brokerage", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
-        owner: "client", value: 5_000_000, basis: 3_000_000,
+        value: 5_000_000, basis: 3_000_000,
         growthRate: 0.05, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const input = mkFinalDeathInput({
@@ -728,8 +783,9 @@ describe("4d integration — state estate tax", () => {
       {
         id: "brokerage", name: "Client Brokerage",
         category: "taxable", subType: "brokerage",
-        owner: "client", value: 2_000_000, basis: 1_500_000,
+        value: 2_000_000, basis: 1_500_000,
         growthRate: 0, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const input = mkFinalDeathInput({
@@ -752,7 +808,7 @@ describe("4d integration — state estate tax", () => {
 
 /** Shared liability bequest fixture helpers. */
 const tomJr: FamilyMember = {
-  id: "tom-jr", relationship: "child", firstName: "Tom", lastName: "Jr.",
+  id: "tom-jr", relationship: "child", role: "child", firstName: "Tom", lastName: "Jr.",
   dateOfBirth: "2000-01-01",
 };
 
@@ -761,6 +817,7 @@ function mkVisaLiability(overrides: Partial<Liability> = {}): Liability {
     id: "visa", name: "Visa", balance: 15_000,
     interestRate: 0.18, monthlyPayment: 300,
     startYear: 2025, startMonth: 1, termMonths: 120, extraPayments: [],
+    owners: [],
     ...overrides,
   };
 }
@@ -785,8 +842,9 @@ describe("4e — liability bequests at final death", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 200_000, basis: 200_000,
+        value: 200_000, basis: 200_000,
         growthRate: 0.02, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const liabilities = [mkVisaLiability()];
@@ -840,8 +898,9 @@ describe("4e — liability bequests at final death", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 100_000, basis: 100_000,
+        value: 100_000, basis: 100_000,
         growthRate: 0.02, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const liabilities = [mkVisaLiability()];
@@ -889,14 +948,16 @@ describe("4e — liability bequests at final death", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 1_000, basis: 1_000,
+        value: 1_000, basis: 1_000,
         growthRate: 0.02, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
       {
         id: "client-home", name: "Primary Home",
         category: "real_estate", subType: "primary_residence",
-        owner: "client", value: 200_000, basis: 150_000,
+        value: 200_000, basis: 150_000,
         growthRate: 0.03, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const liabilities = [mkVisaLiability()];
@@ -956,8 +1017,9 @@ describe("4e — liability bequests at final death", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 100_000, basis: 100_000,
+        value: 100_000, basis: 100_000,
         growthRate: 0.02, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const liabilities = [mkVisaLiability()];
@@ -987,8 +1049,8 @@ describe("4e — liability bequests at final death", () => {
     expect(bequestTransfers[0].recipientKind).toBe("entity");
     expect(bequestTransfers[0].recipientId).toBe(irrevocableTrust.id);
 
-    // Post-death liabilities: a new row with ownerEntityId set.
-    const entityRow = result.liabilities.find((l) => l.ownerEntityId === irrevocableTrust.id);
+    // Post-death liabilities: a new row with entity ownership set.
+    const entityRow = result.liabilities.find((l) => controllingEntity(l) === irrevocableTrust.id);
     expect(entityRow).toBeDefined();
     expect(entityRow!.balance).toBeCloseTo(15_000, 0);
     expect(entityRow!.ownerFamilyMemberId).toBeUndefined();
@@ -1005,14 +1067,15 @@ describe("4e — liability bequests at final death", () => {
       id: "entity-debt", name: "Entity Loan", balance: 10_000,
       interestRate: 0.05, monthlyPayment: 200,
       startYear: 2020, startMonth: 1, termMonths: 60, extraPayments: [],
-      ownerEntityId: irrevTrust.id,
+      owners: [{ kind: "entity", entityId: irrevTrust.id, percent: 1 }],
     };
     const accounts: Account[] = [
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 50_000, basis: 50_000,
+        value: 50_000, basis: 50_000,
         growthRate: 0.02, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
     ];
     const will: Will = {
@@ -1053,7 +1116,7 @@ describe("4e — liability bequests at final death", () => {
     // Entity-owned liability survives in the post-event list unchanged.
     const stillOwned = result.liabilities.find((l) => l.id === entityOwnedLiab.id);
     expect(stillOwned).toBeDefined();
-    expect(stillOwned!.ownerEntityId).toBe(irrevTrust.id);
+    expect(controllingEntity(stillOwned!)).toBe(irrevTrust.id);
   });
 
   // ── Scenario F: first-death bequest ignored ────────────────────────────────
@@ -1085,14 +1148,16 @@ describe("4e — liability bequests at final death", () => {
       {
         id: "client-cash", name: "Client Cash",
         category: "cash", subType: "savings",
-        owner: "client", value: 100_000, basis: 100_000,
+        value: 100_000, basis: 100_000,
         growthRate: 0, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       },
       {
         id: "spouse-cash", name: "Spouse Cash",
         category: "cash", subType: "savings",
-        owner: "spouse", value: 50_000, basis: 50_000,
+        value: 50_000, basis: 50_000,
         growthRate: 0, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
       },
     ];
     const wills: Will[] = [

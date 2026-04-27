@@ -14,6 +14,7 @@ import {
   varchar,
   jsonb,
   index,
+  check,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import type { BracketTier } from "@/lib/tax/types";
@@ -145,6 +146,15 @@ export const householdRoleEnum = pgEnum("household_role", [
   "client",
   "spouse",
 ]);
+
+export const familyMemberRoleEnum = pgEnum("family_member_role", [
+  "client",
+  "spouse",
+  "child",
+  "other",
+]);
+
+export const ownerKindEnum = pgEnum("owner_kind", ["family_member", "entity"]);
 
 export const trustEndsEnum = pgEnum("trust_ends", [
   "client_death",
@@ -467,6 +477,7 @@ export const familyMembers = pgTable("family_members", {
   firstName: text("first_name").notNull(),
   lastName: text("last_name"),
   relationship: familyRelationshipEnum("relationship").notNull().default("child"),
+  role: familyMemberRoleEnum("role").notNull().default("other"),
   dateOfBirth: date("date_of_birth"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -673,7 +684,6 @@ export const accounts = pgTable("accounts", {
   name: text("name").notNull(),
   category: accountCategoryEnum("category").notNull(),
   subType: accountSubTypeEnum("sub_type").notNull().default("other"),
-  owner: ownerEnum("owner").notNull().default("client"),
   insuredPerson: insuredPersonEnum("insured_person"),
   value: decimal("value", { precision: 15, scale: 2 }).notNull().default("0"),
   basis: decimal("basis", { precision: 15, scale: 2 }).notNull().default("0"),
@@ -684,17 +694,6 @@ export const accounts = pgTable("accounts", {
   // paid into this account and expenses, taxes, and savings are drawn from it; when it
   // goes negative the engine pulls from the withdrawal strategy to top it up.
   isDefaultChecking: boolean("is_default_checking").notNull().default(false),
-  // When set, the account is considered owned by a non-individual entity (trust, LLC, etc.)
-  // and is treated as "out of estate" relative to client/spouse/joint ownership.
-  ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
-    onDelete: "set null",
-  }),
-  // Owner override for individual family members (e.g., UTMA / custodial).
-  // Resolver precedence: ownerEntityId > ownerFamilyMemberId > owner enum.
-  ownerFamilyMemberId: uuid("owner_family_member_id").references(
-    () => familyMembers.id,
-    { onDelete: "set null" },
-  ),
   growthSource: growthSourceEnum("growth_source").notNull().default("default"),
   modelPortfolioId: uuid("model_portfolio_id").references(() => modelPortfolios.id, {
     onDelete: "set null",
@@ -710,6 +709,34 @@ export const accounts = pgTable("accounts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const accountOwners = pgTable(
+  "account_owners",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    familyMemberId: uuid("family_member_id").references(() => familyMembers.id, {
+      onDelete: "cascade",
+    }),
+    entityId: uuid("entity_id").references(() => entities.id, {
+      onDelete: "cascade",
+    }),
+    percent: decimal("percent", { precision: 6, scale: 4 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    exactlyOneOwner: check(
+      "account_owners_one_owner",
+      sql`(${t.familyMemberId} IS NOT NULL)::int + (${t.entityId} IS NOT NULL)::int = 1`,
+    ),
+    uniqOwner: unique("account_owners_uniq")
+      .on(t.accountId, t.familyMemberId, t.entityId)
+      .nullsNotDistinct(),
+  }),
+);
 
 export const lifeInsurancePolicies = pgTable("life_insurance_policies", {
   accountId: uuid("account_id")
@@ -869,13 +896,38 @@ export const liabilities = pgTable("liabilities", {
   linkedPropertyId: uuid("linked_property_id").references(() => accounts.id, {
     onDelete: "set null",
   }),
-  ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
-    onDelete: "set null",
-  }),
   isInterestDeductible: boolean("is_interest_deductible").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const liabilityOwners = pgTable(
+  "liability_owners",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    liabilityId: uuid("liability_id")
+      .notNull()
+      .references(() => liabilities.id, { onDelete: "cascade" }),
+    familyMemberId: uuid("family_member_id").references(() => familyMembers.id, {
+      onDelete: "cascade",
+    }),
+    entityId: uuid("entity_id").references(() => entities.id, {
+      onDelete: "cascade",
+    }),
+    percent: decimal("percent", { precision: 6, scale: 4 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    exactlyOneOwner: check(
+      "liability_owners_one_owner",
+      sql`(${t.familyMemberId} IS NOT NULL)::int + (${t.entityId} IS NOT NULL)::int = 1`,
+    ),
+    uniqOwner: unique("liability_owners_uniq")
+      .on(t.liabilityId, t.familyMemberId, t.entityId)
+      .nullsNotDistinct(),
+  }),
+);
 
 export const extraPayments = pgTable("extra_payments", {
   id: uuid("id").defaultRandom().primaryKey(),

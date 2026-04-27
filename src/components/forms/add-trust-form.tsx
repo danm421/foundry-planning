@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
 import type { Designation, Entity, ExternalBeneficiary, FamilyMember } from "../family-view";
 import BeneficiaryRowList, { type BeneficiaryRow } from "./beneficiary-row-list";
@@ -8,6 +9,9 @@ import TrustEndsSelect, { type TrustEnds } from "./trust-ends-select";
 import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
 import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName } from "./input-styles";
+import AssetsTab, { type AssetsTabAccount, type AssetsTabLiability, type AssetsTabIncome, type AssetsTabExpense, type AssetsTabFamilyMember } from "./assets-tab";
+import { applyAssetTabOp } from "./asset-tab-ops";
+import type { AssetTabOp } from "./asset-tab-ops";
 
 interface AddTrustFormProps {
   clientId: string;
@@ -17,7 +21,13 @@ interface AddTrustFormProps {
   externals: ExternalBeneficiary[];
   entities: { id: string; name: string }[];  // for remainder picker
   initialDesignations?: Designation[];        // pre-loaded for edit mode
-  activeTab: "details" | "notes";
+  activeTab: "details" | "assets" | "notes";
+  /** Assets tab data — when absent the tab degrades gracefully */
+  accounts?: AssetsTabAccount[];
+  liabilities?: AssetsTabLiability[];
+  incomes?: AssetsTabIncome[];
+  expenses?: AssetsTabExpense[];
+  assetFamilyMembers?: AssetsTabFamilyMember[];
   onSaved: (entity: Entity, mode: "create" | "edit") => void;
   onClose: () => void;
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
@@ -38,11 +48,13 @@ const TRUST_TYPE_LABELS: Record<TrustSubType, string> = {
 
 export default function AddTrustForm({
   clientId, editing, household, members, externals, entities,
-  initialDesignations, activeTab, onSaved, onClose, onSubmitStateChange,
+  initialDesignations, activeTab, accounts, liabilities, incomes, expenses,
+  assetFamilyMembers, onSaved, onClose, onSubmitStateChange,
 }: AddTrustFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => onSubmitStateChange?.({ canSubmit: !loading, loading }), [loading, onSubmitStateChange]);
+  const scenarioWriter = useScenarioWriter(clientId);
 
   // Form state — create-mode defaults follow the most-common shape:
   //   * irrevocable trust (revocable trusts are typically already wired to the
@@ -88,6 +100,68 @@ export default function AddTrustForm({
 
   const isIrrevocable = trustSubType !== "" && deriveIsIrrevocable(trustSubType);
   const showDistributionAndIncome = isIrrevocable;
+
+  // ── Asset tab op handler ───────────────────────────────────────────────────
+  const handleAssetTabOp = useCallback(async (op: AssetTabOp) => {
+    if (!editing) return; // no trust id in create mode — shouldn't be reachable
+    const trustId = editing.id;
+    const ctx = {
+      trustId,
+      familyMembers: (assetFamilyMembers ?? []).map((m) => ({ id: m.id, role: m.role })),
+    };
+
+    const assetType = op.assetType;
+    const assetId = op.assetId;
+
+    // Find the current owners for this asset
+    const currentItem =
+      assetType === "account"
+        ? (accounts ?? []).find((a) => a.id === assetId)
+        : (liabilities ?? []).find((l) => l.id === assetId);
+
+    if (!currentItem && op.type !== "add") return;
+    const currentOwners = currentItem?.owners ?? [];
+
+    // I5: wrap applyAssetTabOp — it can throw on invariant violations
+    let newOwners: import("@/engine/ownership").AccountOwner[];
+    try {
+      newOwners = applyAssetTabOp(currentOwners, op, ctx);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Cannot apply this change");
+      return;
+    }
+
+    const url =
+      assetType === "account"
+        ? `/api/clients/${clientId}/accounts/${assetId}`
+        : `/api/clients/${clientId}/liabilities/${assetId}`;
+
+    // I2: route through scenario writer so scenario-mode edits go to the
+    // unified changes route instead of mutating base-plan data directly.
+    try {
+      const res = await scenarioWriter.submit(
+        {
+          op: "edit",
+          targetKind: assetType,
+          targetId: assetId,
+          desiredFields: { owners: newOwners },
+        },
+        {
+          url,
+          method: "PUT",
+          body: { owners: newOwners },
+        },
+      );
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(json.error ?? "Failed to update asset ownership");
+        return;
+      }
+      // useScenarioWriter calls router.refresh() on success — no need to repeat here.
+    } catch {
+      setError("Failed to update asset ownership");
+    }
+  }, [editing, accounts, liabilities, assetFamilyMembers, clientId, scenarioWriter]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -313,6 +387,25 @@ export default function AddTrustForm({
             </span>
           </label>
         </div>
+      </div>
+
+      <div className={activeTab !== "assets" ? "hidden" : ""}>
+        {editing && accounts !== undefined ? (
+          <AssetsTab
+            trustId={editing.id}
+            accounts={accounts ?? []}
+            liabilities={liabilities ?? []}
+            incomes={incomes ?? []}
+            expenses={expenses ?? []}
+            familyMembers={assetFamilyMembers ?? []}
+            entities={entities}
+            onChange={handleAssetTabOp}
+          />
+        ) : (
+          <p className="text-[13px] text-ink-3 text-center py-6">
+            Asset management is available when editing an existing trust from the Estate Planning page.
+          </p>
+        )}
       </div>
 
       <div className={activeTab !== "notes" ? "hidden" : ""}>

@@ -19,6 +19,7 @@ import { resolveInflationRate } from "@/lib/inflation";
 import { amortizeLiability } from "@/engine/liabilities";
 import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -88,6 +89,16 @@ export default async function AssumptionsPage({ params, searchParams }: PageProp
   const savingsRows = effectiveTree.savingsRules;
   const expenseRows = effectiveTree.expenses;
   const liabilityRows = effectiveTree.liabilities;
+
+  // Derive per-account owner key ("client" | "spouse" | "joint") for UI display.
+  const _clientFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
+  const _spouseFmId = (effectiveTree.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
+  function _ownerKeyOf(acct: (typeof accountRows)[number]): "client" | "spouse" | "joint" {
+    const cfm = controllingFamilyMember(acct);
+    if (cfm === _spouseFmId && _spouseFmId != null) return "spouse";
+    if (cfm === _clientFmId && _clientFmId != null) return "client";
+    return "joint";
+  }
 
   const settings = settingsRows[0];
   if (!settings) {
@@ -177,7 +188,7 @@ export default async function AssumptionsPage({ params, searchParams }: PageProp
         accountName: acct.name,
         subType: acct.subType ?? "",
         annualAmount: r.annualAmount,
-        owner: acct.owner,
+        owner: _ownerKeyOf(acct),
         startYear: r.startYear,
         endYear: r.endYear,
       };
@@ -278,7 +289,7 @@ export default async function AssumptionsPage({ params, searchParams }: PageProp
           category: a.category,
           subType: a.subType,
           isDefaultChecking: a.isDefaultChecking,
-          ownerEntityId: a.ownerEntityId,
+          ownerEntityId: controllingEntity(a) ?? null,
         }))}
         withdrawalStrategies={withdrawalRows}
         milestones={milestones}

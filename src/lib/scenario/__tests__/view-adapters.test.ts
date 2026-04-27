@@ -19,6 +19,7 @@ import type {
   SavingsRule as EngineSavingsRule,
   EntitySummary,
 } from "@/engine/types";
+import { LEGACY_FM_CLIENT } from "../../../engine/ownership";
 
 describe("view-adapters", () => {
   describe("incomeEngineToView", () => {
@@ -128,11 +129,11 @@ describe("view-adapters", () => {
         name: "Brokerage",
         category: "taxable",
         subType: "individual",
-        owner: "client",
         value: 500_000,
         basis: 250_000,
         growthRate: 0.07,
         rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
         isDefaultChecking: false,
       };
       const view = accountEngineToView(account);
@@ -156,6 +157,7 @@ describe("view-adapters", () => {
         startMonth: 6,
         termMonths: 360,
         extraPayments: [],
+        owners: [],
       };
       const view = liabilityEngineToView(liability);
       expect(view.balance).toBe("250000");

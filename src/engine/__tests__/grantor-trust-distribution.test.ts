@@ -17,6 +17,7 @@ import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
 import type { ClientData, EntitySummary, Account, PlanSettings, FamilyMember, ClientInfo } from "../types";
 import type { TaxYearParameters } from "../../lib/tax/types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../ownership";
 
 // ── Minimal fixtures ─────────────────────────────────────────────────────────
 
@@ -46,27 +47,29 @@ const hhChecking: Account = {
   name: "Household Checking",
   category: "cash",
   subType: "checking",
-  owner: "joint",
   value: 100_000,
   basis: 100_000,
   growthRate: 0,
   rmdEnabled: false,
+  owners: [
+    { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+    { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+  ],
   isDefaultChecking: true,
 };
 
-// Trust checking — where trust cash lives
+// Trust checking — where trust cash lives (entity-owned by the IDGT)
 const trustChecking: Account = {
   id: "trust-checking",
   name: "IDGT Checking",
   category: "cash",
   subType: "checking",
-  owner: "joint",
   value: 50_000,
   basis: 50_000,
   growthRate: 0,
   rmdEnabled: false,
+  owners: [{ kind: "entity", entityId: "idgt", percent: 1 }],
   isDefaultChecking: true,
-  ownerEntityId: "idgt",
 };
 
 // Trust brokerage — taxable, for pct_liquid mode
@@ -75,12 +78,11 @@ const trustBrokerage: Account = {
   name: "IDGT Brokerage",
   category: "taxable",
   subType: "brokerage",
-  owner: "joint",
   value: 200_000,
   basis: 100_000,
   growthRate: 0.06,
   rmdEnabled: false,
-  ownerEntityId: "idgt",
+  owners: [{ kind: "entity", entityId: "idgt", percent: 1 }],
 };
 
 // Spouse-as-beneficiary family member (used as the income beneficiary of the SLAT/IDGT).
@@ -88,6 +90,7 @@ const trustBrokerage: Account = {
 const spouseFm: FamilyMember = {
   id: "fm-spouse",
   relationship: "other",
+  role: "other",
   firstName: "Bob",
   lastName: "Test",
   dateOfBirth: "1975-06-01",
@@ -349,9 +352,9 @@ describe("grantor-flip propagation through projection year loop", () => {
       id: "idgt-brok",
       name: "IDGT Brokerage",
       category: "taxable", subType: "brokerage",
-      owner: "joint", value: 2_000_000, basis: 2_000_000,
+      value: 2_000_000, basis: 2_000_000,
       growthRate: 0.06, rmdEnabled: false,
-      ownerEntityId: "idgt-grantor-flip",
+      owners: [{ kind: "entity", entityId: "idgt-grantor-flip", percent: 1 }],
       realization: {
         pctOrdinaryIncome: 0.6, pctQualifiedDividends: 0.15,
         pctLtCapitalGains: 0.25, pctTaxExempt: 0, turnoverPct: 0,
@@ -361,10 +364,10 @@ describe("grantor-flip propagation through projection year loop", () => {
       id: "idgt-flip-checking",
       name: "IDGT Checking",
       category: "cash", subType: "checking",
-      owner: "joint", value: 50_000, basis: 50_000,
+      value: 50_000, basis: 50_000,
       growthRate: 0, rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "idgt-grantor-flip", percent: 1 }],
       isDefaultChecking: true,
-      ownerEntityId: "idgt-grantor-flip",
     };
     const idgtFlip: EntitySummary = {
       id: "idgt-grantor-flip",
@@ -500,12 +503,11 @@ describe("asset-transaction sale routing for trust-owned accounts", () => {
     name: "SLAT-owned business",
     category: "business",
     subType: "operating_business",
-    owner: "joint",
     value: 5_000_000,
     basis: 1_000_000,
     growthRate: 0,
     rmdEnabled: false,
-    ownerEntityId: "slat-3",
+    owners: [{ kind: "entity", entityId: "slat-3", percent: 1 }],
   };
 
   // Trust checking — required so trust tax has somewhere to be debited from.
@@ -514,13 +516,12 @@ describe("asset-transaction sale routing for trust-owned accounts", () => {
     name: "SLAT Checking",
     category: "cash",
     subType: "checking",
-    owner: "joint",
     value: 200_000,
     basis: 200_000,
     growthRate: 0,
     rmdEnabled: false,
+    owners: [{ kind: "entity", entityId: "slat-3", percent: 1 }],
     isDefaultChecking: true,
-    ownerEntityId: "slat-3",
   };
 
   it("100% sale of trust-owned business: gain recognized at trust, NOT on household 1040", () => {
@@ -575,7 +576,7 @@ describe("asset-transaction sale routing for trust-owned accounts", () => {
     const householdBusiness: Account = {
       ...trustBusiness,
       id: "sale-hh-business",
-      ownerEntityId: undefined,
+      owners: [],
     };
     const data: ClientData = {
       client,

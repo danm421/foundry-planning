@@ -18,6 +18,7 @@ import { buildClientMilestones } from "@/lib/milestones";
 import { resolveInflationRate } from "@/lib/inflation";
 import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { controllingEntity } from "@/engine/ownership";
 import {
   expenseEngineToView,
   incomeEngineToView,
@@ -149,7 +150,7 @@ export default async function IncomeExpensesPage({ params, searchParams }: PageP
     category: a.category,
     subType: a.subType,
     isDefaultChecking: a.isDefaultChecking ?? null,
-    ownerEntityId: a.ownerEntityId ?? null,
+    ownerEntityId: controllingEntity(a) ?? null,
   }));
 
   return (

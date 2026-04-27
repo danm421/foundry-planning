@@ -26,6 +26,7 @@ import WillsPanel, {
 } from "@/components/wills-panel";
 import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { controllingEntity } from "@/engine/ownership";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -174,7 +175,7 @@ export default async function WillsPage({ params, searchParams }: PageProps) {
     name: l.name,
     balance: l.balance,
     linkedPropertyId: l.linkedPropertyId ?? null,
-    ownerEntityId: l.ownerEntityId ?? null,
+    ownerEntityId: controllingEntity(l) ?? null,
   }));
 
   return (

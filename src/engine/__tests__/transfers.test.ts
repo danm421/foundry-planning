@@ -11,22 +11,22 @@ function makeLedger(value: number): AccountLedger {
 
 const iraAccount: Account = {
   id: "ira-1", name: "Traditional IRA", category: "retirement", subType: "traditional_ira",
-  owner: "client", value: 500000, basis: 0, growthRate: 0.07, rmdEnabled: true,
+  value: 500000, basis: 0, growthRate: 0.07, rmdEnabled: true, owners: [],
 };
 
 const rothAccount: Account = {
   id: "roth-1", name: "Roth IRA", category: "retirement", subType: "roth_ira",
-  owner: "client", value: 100000, basis: 60000, growthRate: 0.07, rmdEnabled: false,
+  value: 100000, basis: 60000, growthRate: 0.07, rmdEnabled: false, owners: [],
 };
 
 const checkingAccount: Account = {
   id: "checking-1", name: "Checking", category: "cash", subType: "checking",
-  owner: "client", value: 50000, basis: 50000, growthRate: 0, rmdEnabled: false, isDefaultChecking: true,
+  value: 50000, basis: 50000, growthRate: 0, rmdEnabled: false, isDefaultChecking: true, owners: [],
 };
 
 const brokerageAccount: Account = {
   id: "brokerage-1", name: "Brokerage", category: "taxable", subType: "brokerage",
-  owner: "client", value: 200000, basis: 100000, growthRate: 0.07, rmdEnabled: false,
+  value: 200000, basis: 100000, growthRate: 0.07, rmdEnabled: false, owners: [],
 };
 
 describe("applyTransfers", () => {

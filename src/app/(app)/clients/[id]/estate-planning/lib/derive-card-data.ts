@@ -1,5 +1,6 @@
 import type { ClientData, Account, FamilyMember, WillBequest } from "@/engine/types";
 import { beaForYear } from "@/lib/tax/estate";
+import { controllingEntity, controllingFamilyMember, ownedByHousehold } from "@/engine/ownership";
 
 export type TaxTreatmentTag = "DEF" | "TAX" | "FREE" | "DB";
 
@@ -105,16 +106,24 @@ export function deriveClientCardData(
 ): ClientCardData[] {
   const c = tree.client;
 
+  // Resolve FM ids for principal ownership checks.
+  const clientFmId = (tree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
+  const spouseFmId = (tree.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
+
   const buildCard = (
     ownerKey: "client" | "spouse",
     name: string,
     dob: string | undefined,
   ): ClientCardData => {
-    const outright = tree.accounts.filter(
-      (a) => a.owner === ownerKey && a.ownerEntityId == null,
-    );
+    const ownerFmId = ownerKey === "client" ? clientFmId : spouseFmId;
+    // Outright: sole FM owner is this principal, no entity ownership.
+    const outright = tree.accounts.filter((a) => {
+      if (controllingEntity(a) != null) return false;
+      return ownerFmId != null && controllingFamilyMember(a) === ownerFmId;
+    });
+    // Joint: shared between two FM owners (not solely one principal), no entity control.
     const joint = tree.accounts.filter(
-      (a) => a.owner === "joint" && a.ownerEntityId == null,
+      (a) => controllingEntity(a) == null && controllingFamilyMember(a) == null && ownedByHousehold(a) > 0.5,
     );
     const trustsAsGrantor = (tree.entities ?? []).filter(
       (e) => e.entityType === "trust" && e.grantor === ownerKey,
@@ -154,7 +163,7 @@ export function deriveTrustCardData(tree: ClientData, asOfYear: number): TrustCa
   const inflation = tree.planSettings?.taxInflationRate ?? 0.03;
   const bea = beaForYear(asOfYear, inflation);
   return trusts.map((e) => {
-    const heldAccounts = tree.accounts.filter((a) => a.ownerEntityId === e.id);
+    const heldAccounts = tree.accounts.filter((a) => controllingEntity(a) === e.id);
     return {
       entityId: e.id,
       name: e.name ?? "(unnamed trust)",
@@ -206,7 +215,8 @@ export function deriveHeirCardData(
   tree: ClientData,
   asOfYear: number = new Date().getUTCFullYear(),
 ): HeirCardData[] {
-  return (tree.familyMembers ?? []).map((fm) => {
+  const results: HeirCardData[] = [];
+  for (const fm of tree.familyMembers ?? []) {
     const received: BequestSummaryRow[] = [];
     for (const will of tree.wills ?? []) {
       received.push(
@@ -219,14 +229,18 @@ export function deriveHeirCardData(
         ),
       );
     }
-    return {
-      familyMemberId: fm.id,
-      name: fmFullName(fm),
-      relationship: fm.relationship,
-      age: ageAsOf(fm.dateOfBirth, asOfYear),
-      bequestsReceived: received,
-    };
-  });
+    // Only emit heir cards for FMs that have received bequests.
+    if (received.length > 0) {
+      results.push({
+        familyMemberId: fm.id,
+        name: fmFullName(fm),
+        relationship: fm.relationship,
+        age: ageAsOf(fm.dateOfBirth, asOfYear),
+        bequestsReceived: received,
+      });
+    }
+  }
+  return results;
 }
 
 export function deriveCharityCardData(tree: ClientData): CharityCardData[] {

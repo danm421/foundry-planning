@@ -10,22 +10,53 @@ import type {
   PlanSettings,
   Will,
 } from "../../types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../../ownership";
+
+const principalFamilyMembers: FamilyMember[] = [
+  {
+    id: LEGACY_FM_CLIENT,
+    role: "client",
+    relationship: "other",
+    firstName: "Client",
+    lastName: null,
+    dateOfBirth: "1965-01-01",
+  },
+  {
+    id: LEGACY_FM_SPOUSE,
+    role: "spouse",
+    relationship: "other",
+    firstName: "Spouse",
+    lastName: null,
+    dateOfBirth: "1967-01-01",
+  },
+];
 
 function makeAccount(
   id: string,
   owner: "client" | "spouse" | "joint",
   value: number,
 ): Account {
+  let owners: Account["owners"];
+  if (owner === "client") {
+    owners = [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }];
+  } else if (owner === "spouse") {
+    owners = [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }];
+  } else {
+    owners = [
+      { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+      { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+    ];
+  }
   return {
     id,
     name: id,
-    accountType: "investment_taxable",
-    taxTreatment: "taxable",
-    owner,
-    beginningValue: value,
-    expectedReturn: 0,
-    contributions: [],
-    distributions: [],
+    category: "taxable",
+    subType: "brokerage",
+    value,
+    basis: value,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners,
   } as unknown as Account;
 }
 
@@ -64,7 +95,7 @@ describe("computeHypotheticalEstateTax", () => {
       basisMap,
       incomes: [] as Income[],
       liabilities: [] as Liability[],
-      familyMembers: [] as FamilyMember[],
+      familyMembers: principalFamilyMembers,
       externalBeneficiaries: [],
       entities: [] as EntitySummary[],
       wills: [] as Will[],
@@ -120,7 +151,7 @@ describe("computeHypotheticalEstateTax", () => {
       basisMap,
       incomes: [] as Income[],
       liabilities: [] as Liability[],
-      familyMembers: [] as FamilyMember[],
+      familyMembers: principalFamilyMembers,
       externalBeneficiaries: [],
       entities: [] as EntitySummary[],
       wills: [] as Will[],
@@ -155,7 +186,7 @@ describe("computeHypotheticalEstateTax", () => {
       basisMap,
       incomes: [] as Income[],
       liabilities: [] as Liability[],
-      familyMembers: [] as FamilyMember[],
+      familyMembers: principalFamilyMembers,
       externalBeneficiaries: [],
       entities: [] as EntitySummary[],
       wills: [] as Will[],

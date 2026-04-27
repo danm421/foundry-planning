@@ -70,6 +70,45 @@ export function OutOfEstateColumn({ tree, asOfYear }: { tree: ClientData; asOfYe
           notes: null,
         }))}
         otherEntities={(tree.entities ?? []).filter((e) => e.name != null).map((e) => ({ id: e.id, name: e.name! }))}
+        accounts={(tree.accounts ?? []).map((a) => ({
+          id: a.id,
+          name: a.name,
+          value: a.value,
+          subType: a.subType,
+          isDefaultChecking: a.isDefaultChecking,
+          owners: a.owners,
+        }))}
+        liabilities={(tree.liabilities ?? []).map((l) => ({
+          id: l.id,
+          name: l.name,
+          balance: l.balance,
+          owners: l.owners,
+        }))}
+        incomes={(tree.incomes ?? []).map((i) => ({
+          id: i.id,
+          name: i.name,
+          annualAmount: i.annualAmount,
+          cashAccountId: i.cashAccountId,
+        }))}
+        expenses={(tree.expenses ?? []).map((e) => ({
+          id: e.id,
+          name: e.name,
+          annualAmount: e.annualAmount,
+          cashAccountId: e.cashAccountId,
+        }))}
+        assetFamilyMembers={(tree.familyMembers ?? []).map((m) => ({
+          id: m.id,
+          // Engine FamilyMember uses `relationship` not `role`; map child→child, other→other.
+          // NOTE (C3): This mapping never produces role:"client"|"spouse" because engine
+          // FamilyMember rows do not include client/spouse (those live on tree.client).
+          // The Assets tab is only reachable when `editing` is set, which cannot happen
+          // from this create-only dialog — the Assets tab body is gated on
+          // `editing && accounts !== undefined` in add-trust-form.tsx. If this dialog
+          // is ever extended to support editing, thread DB-backed family_members rows
+          // (with the `role` column) like family-view.tsx does, instead of this mapping.
+          role: (m.relationship === "child" ? "child" : "other") as "client" | "spouse" | "child" | "other",
+          firstName: m.firstName,
+        }))}
         onSaved={() => {
           setTrustDialogOpen(false);
           router.refresh();

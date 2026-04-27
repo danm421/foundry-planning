@@ -4,6 +4,8 @@ import {
   clients,
   scenarios,
   accounts,
+  accountOwners,
+  familyMembers,
   lifeInsurancePolicies,
   lifeInsuranceCashValueSchedule,
 } from "@/db/schema";
@@ -124,6 +126,14 @@ export async function POST(
     }
     const input = parsed.data;
 
+    // Look up FM ids so we can synthesize account_owners rows.
+    const fmRows = await db
+      .select({ id: familyMembers.id, role: familyMembers.role })
+      .from(familyMembers)
+      .where(eq(familyMembers.clientId, id));
+    const clientFmId = fmRows.find((f) => f.role === "client")?.id ?? null;
+    const spouseFmId = fmRows.find((f) => f.role === "spouse")?.id ?? null;
+
     const policyAccountId = await db.transaction(async (tx) => {
       const [acct] = await tx
         .insert(accounts)
@@ -133,8 +143,6 @@ export async function POST(
           name: input.name,
           category: "life_insurance",
           subType: mapPolicyTypeToSubType(input.policyType),
-          owner: input.owner,
-          ownerEntityId: input.ownerEntityId ?? null,
           insuredPerson: input.insuredPerson,
           value: String(input.cashValue),
           // `accounts.basis` is unused for life-insurance — the policy's
@@ -142,6 +150,44 @@ export async function POST(
           basis: "0",
         })
         .returning({ id: accounts.id, name: accounts.name });
+
+      // Synthesize account_owners from legacy owner/ownerEntityId fields.
+      if (input.ownerEntityId) {
+        await tx.insert(accountOwners).values({
+          accountId: acct.id,
+          entityId: input.ownerEntityId,
+          familyMemberId: null,
+          percent: "1.0000",
+        });
+      } else if (input.owner === "client" && clientFmId) {
+        await tx.insert(accountOwners).values({
+          accountId: acct.id,
+          familyMemberId: clientFmId,
+          entityId: null,
+          percent: "1.0000",
+        });
+      } else if (input.owner === "spouse" && spouseFmId) {
+        await tx.insert(accountOwners).values({
+          accountId: acct.id,
+          familyMemberId: spouseFmId,
+          entityId: null,
+          percent: "1.0000",
+        });
+      } else if (input.owner === "joint") {
+        // Joint: both client and spouse own 50%.
+        if (clientFmId) await tx.insert(accountOwners).values({
+          accountId: acct.id,
+          familyMemberId: clientFmId,
+          entityId: null,
+          percent: "0.5000",
+        });
+        if (spouseFmId) await tx.insert(accountOwners).values({
+          accountId: acct.id,
+          familyMemberId: spouseFmId,
+          entityId: null,
+          percent: "0.5000",
+        });
+      }
 
       await tx.insert(lifeInsurancePolicies).values({
         accountId: acct.id,

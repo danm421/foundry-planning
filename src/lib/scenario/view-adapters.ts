@@ -26,6 +26,7 @@ import type {
   SavingsRule as EngineSavingsRule,
   EntitySummary,
 } from "@/engine/types";
+import { controllingEntity } from "@/engine/ownership";
 
 // ── Income ────────────────────────────────────────────────────────────────────
 
@@ -168,7 +169,6 @@ export interface AccountViewEngineFields {
   name: string;
   category: EngineAccount["category"];
   subType: string;
-  owner: EngineAccount["owner"];
   value: string;
   basis: string;
   growthRate: string | null;
@@ -183,12 +183,11 @@ export function accountEngineToView(account: EngineAccount): AccountViewEngineFi
     name: account.name,
     category: account.category,
     subType: account.subType,
-    owner: account.owner,
     value: String(account.value),
     basis: String(account.basis),
     growthRate: account.growthRate != null ? String(account.growthRate) : null,
     rmdEnabled: account.rmdEnabled ?? null,
-    ownerEntityId: account.ownerEntityId ?? null,
+    ownerEntityId: controllingEntity(account) ?? null,
     isDefaultChecking: account.isDefaultChecking ?? false,
   };
 }
@@ -228,7 +227,7 @@ export function liabilityEngineToView(liability: EngineLiability): LiabilityView
     balanceAsOfMonth: liability.balanceAsOfMonth ?? null,
     balanceAsOfYear: liability.balanceAsOfYear ?? null,
     linkedPropertyId: liability.linkedPropertyId ?? null,
-    ownerEntityId: liability.ownerEntityId ?? null,
+    ownerEntityId: controllingEntity(liability) ?? null,
     isInterestDeductible: liability.isInterestDeductible ?? false,
   };
 }

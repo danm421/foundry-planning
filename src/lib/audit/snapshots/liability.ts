@@ -1,6 +1,6 @@
 // src/lib/audit/snapshots/liability.ts
 import { db } from "@/db";
-import { accounts, entities, liabilities } from "@/db/schema";
+import { accounts, liabilities } from "@/db/schema";
 import { inArray } from "drizzle-orm";
 import type { EntitySnapshot, FieldLabels, ReferenceValue } from "../types";
 
@@ -17,7 +17,6 @@ export const LIABILITY_FIELD_LABELS: FieldLabels = {
   termMonths: { label: "Term (months)", format: "text" },
   termUnit: { label: "Term unit", format: "text" },
   linkedProperty: { label: "Linked property", format: "reference" },
-  ownerEntity: { label: "Owner entity", format: "reference" },
   isInterestDeductible: { label: "Interest deductible", format: "text" },
 };
 
@@ -26,32 +25,18 @@ type LiabilityRow = typeof liabilities.$inferSelect;
 export async function toLiabilitySnapshot(
   row: LiabilityRow,
 ): Promise<EntitySnapshot> {
-  const [linkedProperty, ownerEntity] = await Promise.all([
-    row.linkedPropertyId
-      ? db
-          .select({ id: accounts.id, name: accounts.name })
-          .from(accounts)
-          .where(inArray(accounts.id, [row.linkedPropertyId]))
-          .then(
-            (rs): ReferenceValue => ({
-              id: row.linkedPropertyId!,
-              display: rs[0]?.name ?? "(deleted)",
-            }),
-          )
-      : null,
-    row.ownerEntityId
-      ? db
-          .select({ id: entities.id, name: entities.name })
-          .from(entities)
-          .where(inArray(entities.id, [row.ownerEntityId]))
-          .then(
-            (rs): ReferenceValue => ({
-              id: row.ownerEntityId!,
-              display: rs[0]?.name ?? "(deleted)",
-            }),
-          )
-      : null,
-  ]);
+  const linkedProperty: ReferenceValue | null = row.linkedPropertyId
+    ? await db
+        .select({ id: accounts.id, name: accounts.name })
+        .from(accounts)
+        .where(inArray(accounts.id, [row.linkedPropertyId]))
+        .then(
+          (rs): ReferenceValue => ({
+            id: row.linkedPropertyId!,
+            display: rs[0]?.name ?? "(deleted)",
+          }),
+        )
+    : null;
 
   return {
     name: row.name,
@@ -66,7 +51,6 @@ export async function toLiabilitySnapshot(
     termMonths: row.termMonths,
     termUnit: row.termUnit,
     linkedProperty,
-    ownerEntity,
     isInterestDeductible: row.isInterestDeductible,
   };
 }

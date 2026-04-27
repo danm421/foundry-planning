@@ -7,6 +7,7 @@ import type {
   EntitySummary,
   DeathTransfer,
 } from "../types";
+import { controllingEntity } from "../ownership";
 
 export interface LiabilityBequestResult {
   updatedLiabilities: Liability[];
@@ -49,7 +50,7 @@ export function applyLiabilityBequests(input: LiabilityBequestsInput): Liability
       continue;
     }
 
-    if (liab.linkedPropertyId != null || liab.ownerEntityId != null) {
+    if (liab.linkedPropertyId != null || controllingEntity(liab) != null) {
       warnings.push(`liability_bequest_ineligible:${liab.id}`);
       continue;
     }
@@ -84,8 +85,11 @@ export function applyLiabilityBequests(input: LiabilityBequestsInput): Liability
           startMonth: liab.startMonth,
           termMonths: liab.termMonths,
           extraPayments: [],
-          ownerFamilyMemberId: recipient.recipientId ?? undefined,
+          ownerFamilyMemberId: recipient.recipientId ?? undefined,  // kept: signals "distributed-to-heir"
           isInterestDeductible: liab.isInterestDeductible,
+          owners: recipient.recipientId != null
+            ? [{ kind: "family_member", familyMemberId: recipient.recipientId, percent: 1 }]
+            : [],
         });
         resultingLiabilityId = newId;
       } else if (recipient.recipientKind === "entity") {
@@ -102,8 +106,10 @@ export function applyLiabilityBequests(input: LiabilityBequestsInput): Liability
           startMonth: liab.startMonth,
           termMonths: liab.termMonths,
           extraPayments: [],
-          ownerEntityId: recipient.recipientId ?? undefined,
           isInterestDeductible: liab.isInterestDeductible,
+          owners: recipient.recipientId != null
+            ? [{ kind: "entity", entityId: recipient.recipientId, percent: 1 }]
+            : [],
         });
         resultingLiabilityId = newId;
       } else {

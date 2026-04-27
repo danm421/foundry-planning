@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, scenarios, liabilities } from "@/db/schema";
+import { clients, scenarios, liabilities, liabilityOwners } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { assertAccountsInClient, assertEntitiesInClient } from "@/lib/db-scoping";
 import { recordCreate } from "@/lib/audit";
 import { toLiabilitySnapshot } from "@/lib/audit/snapshots/liability";
+import {
+  type ValidatedOwner,
+  validateOwnersShape,
+  validateOwnersTenant,
+  synthesizeLegacyLiabilityOwners,
+} from "@/lib/ownership";
 
 export const dynamic = "force-dynamic";
 
@@ -100,38 +106,75 @@ export async function POST(
       return NextResponse.json({ error: acctCheck.reason }, { status: 400 });
     }
 
-    const [liability] = await db
-      .insert(liabilities)
-      .values({
-        clientId: id,
-        scenarioId,
-        name,
-        balance: balance ?? "0",
-        interestRate: interestRate ?? "0",
-        monthlyPayment: monthlyPayment ?? "0",
-        startYear: Number(startYear),
-        startMonth: startMonth != null ? Number(startMonth) : 1,
-        termMonths: Number(termMonths),
-        termUnit: termUnit ?? "annual",
-        balanceAsOfMonth: balanceAsOfMonth != null ? Number(balanceAsOfMonth) : null,
-        balanceAsOfYear: balanceAsOfYear != null ? Number(balanceAsOfYear) : null,
-        linkedPropertyId: linkedPropertyId ?? null,
-        ownerEntityId: ownerEntityId ?? null,
-        startYearRef,
-        isInterestDeductible: body.isInterestDeductible ?? false,
-      })
-      .returning();
+    // ── owners[] validation ────────────────────────────────────────────────
+    let resolvedOwners: ValidatedOwner[] | undefined;
+
+    if ("owners" in body && body.owners !== undefined) {
+      // New owners[] path
+      const shapeResult = validateOwnersShape(body.owners);
+      if ("error" in shapeResult) {
+        return NextResponse.json({ error: shapeResult.error }, { status: 400 });
+      }
+      const tenantError = await validateOwnersTenant(shapeResult.owners, id);
+      if (tenantError) {
+        return NextResponse.json({ error: tenantError.error }, { status: 400 });
+      }
+      resolvedOwners = shapeResult.owners;
+    } else {
+      // Legacy path: synthesize from ownerEntityId or client family member
+      const synthesized = await synthesizeLegacyLiabilityOwners(id, ownerEntityId);
+      if (synthesized.length > 0) {
+        resolvedOwners = synthesized;
+      }
+    }
+    // ── end owners[] validation ────────────────────────────────────────────
+
+    let liability: typeof liabilities.$inferSelect;
+    await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(liabilities)
+        .values({
+          clientId: id,
+          scenarioId,
+          name,
+          balance: balance ?? "0",
+          interestRate: interestRate ?? "0",
+          monthlyPayment: monthlyPayment ?? "0",
+          startYear: Number(startYear),
+          startMonth: startMonth != null ? Number(startMonth) : 1,
+          termMonths: Number(termMonths),
+          termUnit: termUnit ?? "annual",
+          balanceAsOfMonth: balanceAsOfMonth != null ? Number(balanceAsOfMonth) : null,
+          balanceAsOfYear: balanceAsOfYear != null ? Number(balanceAsOfYear) : null,
+          linkedPropertyId: linkedPropertyId ?? null,
+          startYearRef,
+          isInterestDeductible: body.isInterestDeductible ?? false,
+        })
+        .returning();
+      liability = inserted;
+
+      if (resolvedOwners && resolvedOwners.length > 0) {
+        for (const o of resolvedOwners) {
+          await tx.insert(liabilityOwners).values({
+            liabilityId: liability.id,
+            familyMemberId: o.kind === "family_member" ? o.familyMemberId : null,
+            entityId: o.kind === "entity" ? o.entityId : null,
+            percent: o.percent.toString(),
+          });
+        }
+      }
+    });
 
     await recordCreate({
       action: "liability.create",
       resourceType: "liability",
-      resourceId: liability.id,
+      resourceId: liability!.id,
       clientId: id,
       firmId,
-      snapshot: await toLiabilitySnapshot(liability),
+      snapshot: await toLiabilitySnapshot(liability!),
     });
 
-    return NextResponse.json(liability, { status: 201 });
+    return NextResponse.json(liability!, { status: 201 });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

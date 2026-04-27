@@ -7,6 +7,7 @@ import {
 import type {
   Account, Liability, DeathTransfer, EntitySummary, PlanSettings,
 } from "../../types";
+import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../../ownership";
 
 describe("computeFederalEstateTax", () => {
   it("reproduces the Form 706 screenshot walkthrough (zero tax, simplified DSUE)", () => {
@@ -70,6 +71,7 @@ function liab(id: string, balance: number, extras: Partial<Liability> = {}): Lia
     startMonth: 1,
     termMonths: 0,
     extraPayments: [],
+    owners: [],
     ...extras,
   };
 }
@@ -80,11 +82,11 @@ function acct(id: string, value: number, extras: Partial<Account> = {}): Account
     name: `Account ${id}`,
     category: "cash",
     subType: "generic",
-    owner: "client",
     value,
     basis: value,
     growthRate: 0,
     rmdEnabled: false,
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     ...extras,
   };
 }
@@ -94,10 +96,12 @@ describe("computeGrossEstate", () => {
     const r = computeGrossEstate({
       deceased: "client",
       deathOrder: 1,
-      accounts: [acct("a1", 100_000, { owner: "client" })],
+      accounts: [acct("a1", 100_000)],
       accountBalances: { a1: 100_000 },
       liabilities: [],
       entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
     });
     expect(r.total).toBeCloseTo(100_000, 2);
     expect(r.lines).toHaveLength(1);
@@ -109,10 +113,17 @@ describe("computeGrossEstate", () => {
     const r = computeGrossEstate({
       deceased: "client",
       deathOrder: 1,
-      accounts: [acct("j1", 200_000, { owner: "joint" })],
+      accounts: [acct("j1", 200_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+          { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+        ],
+      })],
       accountBalances: { j1: 200_000 },
       liabilities: [],
       entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
     });
     expect(r.total).toBeCloseTo(100_000, 2);
     expect(r.lines[0].percentage).toBe(0.5);
@@ -123,10 +134,14 @@ describe("computeGrossEstate", () => {
     const r = computeGrossEstate({
       deceased: "client",
       deathOrder: 1,
-      accounts: [acct("s1", 100_000, { owner: "spouse" })],
+      accounts: [acct("s1", 100_000, {
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
+      })],
       accountBalances: { s1: 100_000 },
       liabilities: [],
       entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
     });
     expect(r.total).toBe(0);
     expect(r.lines).toEqual([]);
@@ -143,10 +158,14 @@ describe("computeGrossEstate", () => {
     const r = computeGrossEstate({
       deceased: "client",
       deathOrder: 1,
-      accounts: [acct("ilit-a1", 500_000, { ownerEntityId: "ilit", owner: "client" })],
+      accounts: [acct("ilit-a1", 500_000, {
+        owners: [{ kind: "entity", entityId: "ilit", percent: 1 }],
+      })],
       accountBalances: { "ilit-a1": 500_000 },
       liabilities: [],
       entities: [entity],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
     });
     expect(r.total).toBe(0);
   });
@@ -162,10 +181,14 @@ describe("computeGrossEstate", () => {
     const r = computeGrossEstate({
       deceased: "client",
       deathOrder: 1,
-      accounts: [acct("rev-a1", 300_000, { ownerEntityId: "rev", owner: "client" })],
+      accounts: [acct("rev-a1", 300_000, {
+        owners: [{ kind: "entity", entityId: "rev", percent: 1 }],
+      })],
       accountBalances: { "rev-a1": 300_000 },
       liabilities: [],
       entities: [entity],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
     });
     expect(r.total).toBeCloseTo(300_000, 2);
   });
@@ -178,6 +201,8 @@ describe("computeGrossEstate", () => {
       accountBalances: { a1: 100_000 },
       liabilities: [liab("d1", 20_000)],
       entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
     });
     expect(r.total).toBeCloseTo(100_000 - 10_000, 2);
     const debtLine = r.lines.find((l) => l.liabilityId === "d1");
@@ -192,6 +217,8 @@ describe("computeGrossEstate", () => {
       accountBalances: { a1: 100_000 },
       liabilities: [liab("d1", 20_000)],
       entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: null,
     });
     expect(r.total).toBeCloseTo(100_000 - 20_000, 2);
   });

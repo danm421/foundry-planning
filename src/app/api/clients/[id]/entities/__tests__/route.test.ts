@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { clients, entities, familyMembers, scenarios, accounts } from "@/db/schema";
-import { eq, and, isNotNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", () => ({
   auth: vi.fn(async () => ({ userId: "user_test_entities", orgId: "firm_test_entities" })),
@@ -54,18 +54,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // Delete entity-owned default-checking accounts first. The FK is ON DELETE SET NULL,
-  // so deleting entities without this step would null out owner_entity_id, colliding with
-  // the household's own default-checking row on the per-scenario unique index.
+  // Entity-owned accounts' ownership is tracked via account_owners junction table.
+  // Deleting accounts cascades to account_owners; the trigger skips validation when
+  // the parent account row is already gone (cascade-delete path).
   await db
     .delete(accounts)
-    .where(
-      and(
-        eq(accounts.clientId, clientId),
-        eq(accounts.isDefaultChecking, true),
-        isNotNull(accounts.ownerEntityId),
-      )
-    );
+    .where(eq(accounts.clientId, clientId));
   await db.delete(entities).where(eq(entities.clientId, clientId));
   await db.delete(scenarios).where(eq(scenarios.clientId, clientId));
   await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));

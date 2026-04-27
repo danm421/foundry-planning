@@ -1,5 +1,6 @@
 import type { Account, Transfer, AccountLedger } from "./types";
 import { classifyTransferTax } from "./tax-classification";
+import { controllingFamilyMember } from "./ownership";
 
 // ============================================================================
 // Public Types
@@ -13,6 +14,9 @@ export interface TransfersInput {
   accountLedgers: Record<string, AccountLedger>;
   year: number;
   ownerAges: { client: number; spouse?: number };
+  /** FM id of the spouse principal, used to resolve the correct owner age for
+   *  early-withdrawal penalty calculations on spouse-owned accounts. */
+  spouseFamilyMemberId?: string | null;
 }
 
 export interface TransfersResult {
@@ -39,7 +43,7 @@ export interface TransfersResult {
  * Transfers occur after annual growth has been applied but before RMDs.
  */
 export function applyTransfers(input: TransfersInput): TransfersResult {
-  const { transfers, accounts, accountBalances, basisMap, accountLedgers, year, ownerAges } = input;
+  const { transfers, accounts, accountBalances, basisMap, accountLedgers, year, ownerAges, spouseFamilyMemberId } = input;
 
   const result: TransfersResult = {
     taxableOrdinaryIncome: 0,
@@ -70,7 +74,9 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
     const actualAmount = Math.min(amount, sourceBalance);
 
     // Determine owner age for penalty calculation
-    const ownerAge = _resolveOwnerAge(sourceAccount.owner, ownerAges);
+    const isSpouseOwned = spouseFamilyMemberId != null &&
+      controllingFamilyMember(sourceAccount) === spouseFamilyMemberId;
+    const ownerAge = _resolveOwnerAge(isSpouseOwned ? "spouse" : "client", ownerAges);
 
     // Classify tax treatment
     const taxResult = classifyTransferTax({

@@ -1,5 +1,6 @@
 import type { Account, AccountLedger, AssetTransaction, Liability } from "./types";
 import type { FilingStatus } from "../lib/tax/types";
+import { LEGACY_FM_CLIENT } from "./ownership";
 
 /** IRC §121 home-sale exclusion caps by filing status.
  *  Married filing jointly gets $500k; all other statuses (single, head of
@@ -301,12 +302,15 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
       name: purchase.assetName ?? purchase.name,
       category: purchase.assetCategory ?? "taxable",
       subType: purchase.assetSubType ?? "other",
-      owner: "client",
       value: purchasePrice,
       basis: assetBasis,
       growthRate: purchase.growthRate ?? 0,
       rmdEnabled: false,
       realization: purchase.realization,
+      // Technique-created assets default to household-owned (single client).
+      // Mirrors the legacy `owner: "client"` semantics so portfolio rollups,
+      // withdrawal sourcing, etc. treat the new asset as household property.
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
     };
     newAccounts.push(newAccount);
 
@@ -349,6 +353,9 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
         linkedPropertyId: newAccountId,
         isInterestDeductible: true,
         extraPayments: [],
+        // Technique-created mortgages default to household debt (single client),
+        // mirroring migration 0055's "non-entity liabilities → client 100%" rule.
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
       };
       newLiabilities.push(newLiability);
       syntheticLiabilityId = newLiabilityId;

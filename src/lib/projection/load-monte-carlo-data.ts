@@ -5,6 +5,7 @@ import {
   clients,
   scenarios,
   accounts,
+  accountOwners,
   planSettings,
   entities,
   modelPortfolioAllocations,
@@ -55,6 +56,7 @@ export const loadMonteCarloData = cache(
       accountAllocationRows,
       portfolioAllocationRows,
       correlationRows,
+      accountOwnerRows,
     ] = await Promise.all([
       db.select().from(accounts).where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
       db.select().from(planSettings).where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))).limit(1),
@@ -67,6 +69,7 @@ export const loadMonteCarloData = cache(
         .from(assetClassCorrelations)
         .innerJoin(assetClasses, eq(assetClassCorrelations.assetClassIdA, assetClasses.id))
         .where(eq(assetClasses.firmId, firmId)),
+      db.select().from(accountOwners),
     ]);
     const settings = settingsRow[0];
     if (!settings) throw new ProjectionInputError(`Client ${clientId} has no plan settings`);
@@ -92,8 +95,15 @@ export const loadMonteCarloData = cache(
     // Entity filter for "in estate" — matches projection engine's portfolio-asset rule.
     const entityInPortfolio = new Map<string, boolean>();
     for (const e of entityRows) entityInPortfolio.set(e.id, e.includeInPortfolio);
-    const accountInEstate = (a: typeof accountRows[number]): boolean =>
-      a.ownerEntityId == null || entityInPortfolio.get(a.ownerEntityId) === true;
+    // Build per-account entity ownership from the junction table.
+    const accountEntityOwner = new Map<string, string | null>();
+    for (const row of accountOwnerRows) {
+      if (row.entityId != null) accountEntityOwner.set(row.accountId, row.entityId);
+    }
+    const accountInEstate = (a: typeof accountRows[number]): boolean => {
+      const entityId = accountEntityOwner.get(a.id) ?? null;
+      return entityId == null || entityInPortfolio.get(entityId) === true;
+    };
 
     // Per-category default growth source + model portfolio from plan_settings.
     // Only the three investable categories have category-level defaults.

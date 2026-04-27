@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { accounts, clients } from "@/db/schema";
+import { accounts, accountOwners, clients, familyMembers } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordCreate, recordDelete } from "@/lib/audit";
@@ -33,12 +33,35 @@ export async function POST(
     if (!target) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
     }
-    if (target.owner !== "joint") {
+
+    // Determine joint ownership via account_owners junction table.
+    const ownerRows = await db
+      .select({ familyMemberId: accountOwners.familyMemberId, entityId: accountOwners.entityId })
+      .from(accountOwners)
+      .where(eq(accountOwners.accountId, accountId));
+    const fmOwnerRows = ownerRows.filter((r) => r.familyMemberId != null);
+    const isJoint = fmOwnerRows.length >= 2;
+    if (!isJoint) {
       return NextResponse.json(
-        { error: "Only joint accounts can be split" },
+        { error: "Only joint (household) accounts can be split" },
         { status: 400 },
       );
     }
+
+    // Look up household principal FM ids (client and spouse).
+    const fmRows = await db
+      .select({ id: familyMembers.id, role: familyMembers.role })
+      .from(familyMembers)
+      .where(and(eq(familyMembers.clientId, id)));
+    const clientFmId = fmRows.find((f) => f.role === "client")?.id ?? null;
+    const spouseFmId = fmRows.find((f) => f.role === "spouse")?.id ?? null;
+    if (!clientFmId || !spouseFmId) {
+      return NextResponse.json(
+        { error: "Client and spouse family members must both exist to split a joint account" },
+        { status: 400 },
+      );
+    }
+
     if (target.isDefaultChecking) {
       return NextResponse.json(
         { error: "The default household cash account cannot be split" },
@@ -79,7 +102,6 @@ export async function POST(
         .insert(accounts)
         .values({
           ...targetRest,
-          owner: "client",
           value: clientValueRounded.toFixed(2),
           basis: clientBasisRounded.toFixed(2),
           name: `${target.name} (${client.firstName ?? "Client"} share)`,
@@ -90,12 +112,29 @@ export async function POST(
         .insert(accounts)
         .values({
           ...targetRest,
-          owner: "spouse",
           value: spouseValueRounded.toFixed(2),
           basis: spouseBasisRounded.toFixed(2),
           name: `${target.name} (Spouse share)`,
         })
         .returning();
+
+      // Insert account_owners rows for each split account.
+      if (clientAcct) {
+        await tx.insert(accountOwners).values({
+          accountId: clientAcct.id,
+          familyMemberId: clientFmId,
+          entityId: null,
+          percent: "1.0000",
+        });
+      }
+      if (spouseAcct) {
+        await tx.insert(accountOwners).values({
+          accountId: spouseAcct.id,
+          familyMemberId: spouseFmId,
+          entityId: null,
+          percent: "1.0000",
+        });
+      }
 
       // NOTE: deleting the original account cascades to beneficiary_designations,
       // account_asset_allocations, and transfers (per schema FK ON DELETE CASCADE).
@@ -116,14 +155,12 @@ export async function POST(
       toAccountSnapshot({
         ...target,
         id: result.clientAccountId,
-        owner: "client",
         value: clientValueRounded.toFixed(2),
         basis: clientBasisRounded.toFixed(2),
       }),
       toAccountSnapshot({
         ...target,
         id: result.spouseAccountId,
-        owner: "spouse",
         value: spouseValueRounded.toFixed(2),
         basis: spouseBasisRounded.toFixed(2),
       }),

@@ -130,13 +130,14 @@ export async function POST(request: NextRequest) {
     // Insert default household cash account. Household income lands here and expenses
     // are drawn from it; the projection engine pulls from the withdrawal strategy when
     // this balance would go negative.
+    // Insert default household cash account. No account_owners rows are created here;
+    // joint FM ownership is inferred when family members are added via the family page.
     await db.insert(accounts).values({
       clientId: client.id,
       scenarioId: scenario.id,
       name: "Household Cash",
       category: "cash",
       subType: "checking",
-      owner: "joint",
       value: "0",
       basis: "0",
       // null -> inherit the cash category default from plan_settings

@@ -1,4 +1,5 @@
 import type { Account, Expense } from "@/engine/types";
+import { controllingEntity } from "@/engine/ownership";
 
 export interface SynthesizePremiumsInput {
   /** The projection's first year — premiums that were issued in the past
@@ -90,7 +91,7 @@ export function synthesizePremiumExpenses(
       startYear,
       endYear,
       growthRate: 0,
-      ownerEntityId: acct.ownerEntityId ?? undefined,
+      ownerEntityId: controllingEntity(acct) ?? undefined,
       source: "policy",
       sourcePolicyAccountId: acct.id,
     });

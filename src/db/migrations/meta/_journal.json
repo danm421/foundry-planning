@@ -386,6 +386,20 @@
       "when": 1777400000000,
       "tag": "0054_snapshot_user_id_text",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1777300442482,
+      "tag": "0055_fractional_ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1777311442001,
+      "tag": "0056_drop_legacy_owners",
+      "breakpoints": true
     }
   ]
 }
