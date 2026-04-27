@@ -272,7 +272,7 @@ export function liabilityOwnersForYear(
 
     if (e.percent > householdShare + 1e-9) {
       throw new Error(
-        `liabilityOwnersForYear: would overdraw household share on liability ${liability.id} at year ${e.year}`,
+        `liabilityOwnersForYear: would overdraw household share on liability ${liability.id} at year ${e.year} (requested ${e.percent}, available ${householdShare})`,
       );
     }
 
@@ -294,7 +294,7 @@ export function liabilityOwnersForYear(
   const total = owners.reduce((s, o) => s + o.percent, 0);
   if (Math.abs(total - 1) > 1e-6) {
     throw new Error(
-      `liabilityOwnersForYear: composed sum=${total} for liability ${liability.id} at year ${year}`,
+      `liabilityOwnersForYear: composed owners for liability ${liability.id} at year ${year} sum to ${total}, expected 1`,
     );
   }
   return owners;

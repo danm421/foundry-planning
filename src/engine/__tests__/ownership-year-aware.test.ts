@@ -159,4 +159,31 @@ describe("liabilityOwnersForYear", () => {
     expect(post.find((o) => o.kind === "entity")?.percent).toBeCloseTo(0.5);
     expect(post.find((o) => o.kind === "family_member")?.percent).toBeCloseTo(0.5);
   });
+
+  it("throws on a second transfer once the household has been fully drained", () => {
+    const l = liab([{ kind: "family_member", id: "fm-client", percent: 1 }]);
+    const events: GiftEvent[] = [
+      {
+        kind: "liability",
+        year: 2030,
+        liabilityId: "L1",
+        percent: 1,
+        grantor: "client",
+        recipientEntityId: "trust-1",
+        parentGiftId: "gift-asset-1",
+      },
+      {
+        kind: "liability",
+        year: 2032,
+        liabilityId: "L1",
+        percent: 0.0001,
+        grantor: "client",
+        recipientEntityId: "trust-2",
+        parentGiftId: "gift-asset-2",
+      },
+    ];
+    expect(() => liabilityOwnersForYear(l, events, 2032, PROJ_START)).toThrow(
+      /no household share remaining/i,
+    );
+  });
 });
