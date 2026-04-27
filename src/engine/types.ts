@@ -202,6 +202,36 @@ export interface FamilyMember {
   dateOfBirth: string | null;
 }
 
+export type GiftEvent =
+  | {
+      kind: "cash";
+      year: number;
+      amount: number;
+      grantor: "client" | "spouse";
+      recipientEntityId: string;
+      sourceAccountId?: string;
+      useCrummeyPowers: boolean;
+      seriesId?: string; // present on fanned-out series occurrences
+    }
+  | {
+      kind: "asset";
+      year: number;
+      accountId: string;
+      percent: number; // 0.0001..1
+      grantor: "client" | "spouse";
+      recipientEntityId: string;
+      amountOverride?: number; // if advisor provided a manual amount
+    }
+  | {
+      kind: "liability";
+      year: number;
+      liabilityId: string;
+      percent: number;
+      grantor: "client" | "spouse";
+      recipientEntityId: string;
+      parentGiftId: string;
+    };
+
 export interface ClientData {
   client: ClientInfo;
   accounts: Account[];
@@ -222,6 +252,9 @@ export interface ClientData {
   assetTransactions?: AssetTransaction[];
   /** Gifts made by the client or spouse. */
   gifts?: Gift[];
+  /** Structured gift events (cash / asset / liability) fanned out from DB rows + gift_series.
+   *  Populated by the T5 loader. Engine gift-tax module consumes these. */
+  giftEvents: GiftEvent[];
   /** Wills per grantor — spec 4a data-only. Engine consumption arrives in spec 4b. */
   wills?: Will[];
   /** Family members (children, grandchildren, parents, siblings). Consumed by the
