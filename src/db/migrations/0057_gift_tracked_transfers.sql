@@ -1,3 +1,5 @@
+BEGIN;
+
 CREATE TABLE "gift_series" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"client_id" uuid NOT NULL,
@@ -60,3 +62,5 @@ BEGIN
     RAISE EXCEPTION 'Migration 0057: % existing gift rows fail the new gifts_event_kind CHECK', bad_count;
   END IF;
 END $$;
+
+COMMIT;
