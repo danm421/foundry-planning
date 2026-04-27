@@ -58,9 +58,7 @@ import type { TrustLiquidityPool, TrustIncomeBuckets, TrustWarning, Distribution
 import { computeDistribution } from "./trust-tax/compute-distribution";
 import {
   normalizeOwners,
-  ownedByHousehold,
   ownedByHouseholdAtYear,
-  ownedByEntity,
   ownedByEntityAtYear,
   ownersForYear,
   liabilityOwnedByHouseholdAtYear,
@@ -1175,7 +1173,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       for (const item of saleResult.breakdown) {
         const sold = accountById.get(item.accountId);
         if (!sold) continue;
-        for (const owner of sold.owners) {
+        const grantorSaleYearOwners = ownersForYear(
+          sold,
+          data.giftEvents,
+          year,
+          planSettings.planStartYear,
+        );
+        for (const owner of grantorSaleYearOwners) {
           if (owner.kind !== "entity") continue;
           if (!isGrantorEntity(owner.entityId)) continue;
           const bucket = grantorTrustIncomeByEntity.get(owner.entityId);
