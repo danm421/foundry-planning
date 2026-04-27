@@ -2688,3 +2688,86 @@ describe("fractional ownership: balance sheet pro-rate (Task 5)", () => {
     expect(yrs[0].portfolioAssets.cash["acct-checking"]).toBeCloseTo(100_000, 0);
   });
 });
+
+describe("fractional ownership: balance sheet year-aware pro-rate (Task 7 — Phase 3)", () => {
+  it("Phase 3: 50% asset transfer at year 2030 splits household portfolio starting in 2030", () => {
+    // Account starts 100% household-owned. A gift event in 2030 transfers 50%
+    // to trust-1. Before 2030 the full account value lands in household portfolio;
+    // from 2030 onward only 50% does.
+    const data: ClientData = {
+      client: {
+        firstName: "Test",
+        lastName: "User",
+        dateOfBirth: "1980-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        filingStatus: "single",
+      },
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 50_000,
+          basis: 50_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+        {
+          id: "a1",
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: 1_000_000,
+          basis: 1_000_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0,
+        planStartYear: 2026,
+        planEndYear: 2032,
+      },
+      entities: [
+        { id: "trust-1", name: "Test Trust", includeInPortfolio: false, isGrantor: true },
+      ],
+      giftEvents: [
+        {
+          kind: "asset",
+          year: 2030,
+          accountId: "a1",
+          percent: 0.5,
+          grantor: "client",
+          recipientEntityId: "trust-1",
+        },
+      ],
+    };
+
+    const yrs = runProjection(data);
+
+    // 2029 (index 3): gift hasn't fired yet — household holds 100% of a1.
+    const yr2029 = yrs.find((y) => y.year === 2029)!;
+    expect(yr2029.portfolioAssets.taxable["a1"]).toBeCloseTo(1_000_000, 0);
+
+    // 2030 (index 4): gift fires — household holds 50%, trust holds 50%.
+    // Only the household 50% appears in portfolioAssets (trust is not includeInPortfolio).
+    const yr2030 = yrs.find((y) => y.year === 2030)!;
+    expect(yr2030.portfolioAssets.taxable["a1"]).toBeCloseTo(500_000, 0);
+
+    // 2031+: still 50%.
+    const yr2031 = yrs.find((y) => y.year === 2031)!;
+    expect(yr2031.portfolioAssets.taxable["a1"]).toBeCloseTo(500_000, 0);
+  });
+});

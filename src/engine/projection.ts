@@ -59,6 +59,7 @@ import { computeDistribution } from "./trust-tax/compute-distribution";
 import {
   normalizeOwners,
   ownedByHousehold,
+  ownedByHouseholdAtYear,
   ownedByEntity,
   isFullyEntityOwned,
   controllingFamilyMember,
@@ -1905,7 +1906,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Pro-rate value into the portfolio: household share rolls in directly,
       // each entity owner's share rolls in only when its entity is flagged
       // includeInPortfolio. Non-portfolio entity shares are excluded.
-      let inPortfolioFraction = ownedByHousehold(acct);
+      // T7: use year-aware helper so gift events that transfer ownership to an
+      // entity are reflected in the correct year's balance-sheet snapshot.
+      let inPortfolioFraction = ownedByHouseholdAtYear(acct, data.giftEvents, year, planSettings.planStartYear);
       for (const owner of acct.owners) {
         if (owner.kind !== "entity") continue;
         const entity = entityMap[owner.entityId];
