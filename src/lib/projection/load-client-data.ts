@@ -768,16 +768,24 @@ export const loadClientData = cache(
       mortgageTermMonths: t.mortgageTermMonths ?? undefined,
     }));
 
-    const mappedGifts = giftRows.map((g) => ({
-      id: g.id,
-      year: g.year,
-      amount: parseFloat(g.amount ?? "0"),
-      grantor: g.grantor,
-      recipientEntityId: g.recipientEntityId ?? undefined,
-      recipientFamilyMemberId: g.recipientFamilyMemberId ?? undefined,
-      recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? undefined,
-      useCrummeyPowers: g.useCrummeyPowers,
-    }));
+    // Legacy `gifts: Gift[]` array consumed by computeAdjustedTaxableGifts.
+    // Restricted to cash-only rows (amount NOT NULL, no asset/liability link)
+    // — asset/liability gifts flow through `giftEvents` instead and are
+    // valued at projection time via T11's `accountValueAtYear × percent`.
+    // Without this filter, asset rows would reach the estate-tax calc as $0
+    // and silently drop from lifetime exemption consumption.
+    const mappedGifts = giftRows
+      .filter((g) => g.amount != null && g.accountId == null && g.liabilityId == null)
+      .map((g) => ({
+        id: g.id,
+        year: g.year,
+        amount: parseFloat(g.amount!),
+        grantor: g.grantor,
+        recipientEntityId: g.recipientEntityId ?? undefined,
+        recipientFamilyMemberId: g.recipientFamilyMemberId ?? undefined,
+        recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? undefined,
+        useCrummeyPowers: g.useCrummeyPowers,
+      }));
 
     // ── Build giftEvents (discriminated union) ───────────────────────────────
     const cpi = resolvedInflationRate;
