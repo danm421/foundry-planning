@@ -1766,6 +1766,35 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // 10b. Cash gifts — one-time gifts and fanned-out series occurrences that fire
+    // this year.  Debit the source account (household default checking, or the
+    // advisor-specified override) and credit the recipient trust's default checking.
+    // Inserted after savings/employer-match so the household shortfall (if any) is
+    // visible to the withdrawal gap-fill in step 12.
+    for (const gift of data.giftEvents) {
+      if (gift.kind !== "cash" || gift.year !== year) continue;
+      // Resolve source: use the advisor-specified account if set; fall back to
+      // household default checking.  If neither resolves, skip (no crash).
+      const sourceId = gift.sourceAccountId ?? defaultChecking?.id;
+      if (!sourceId) continue;
+
+      // Resolve recipient: trust's default checking.  If the trust has no
+      // default-checking account configured, log a soft skip — don't crash.
+      const recipientId = entityCheckingByEntityId[gift.recipientEntityId];
+      if (!recipientId) continue;
+
+      creditCash(sourceId, -gift.amount, {
+        category: "gift",
+        label: `Cash gift to ${currentEntities.find((e) => e.id === gift.recipientEntityId)?.name ?? gift.recipientEntityId}`,
+        sourceId: gift.recipientEntityId,
+      });
+      creditCash(recipientId, gift.amount, {
+        category: "gift",
+        label: `Cash gift received`,
+        sourceId: gift.recipientEntityId,
+      });
+    }
+
     // Snapshot the checking balance *before* this year's inflows/outflows are applied
     // so we can attribute any drawdown of prior-year cash surplus as a "withdrawal
     // from cash" in the withdrawals drill-down.

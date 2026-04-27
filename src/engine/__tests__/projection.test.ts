@@ -3230,3 +3230,195 @@ describe("year-aware grantor pass-through, property tax, debt service (Task 9 �
     expect(liabEntries[0].amount).toBeLessThan(0); // debit
   });
 });
+
+describe("cash gift cashflow routing (Task 10 — Phase 3)", () => {
+  // Shared minimal client fixture.
+  const cashGiftClient = {
+    firstName: "Test",
+    lastName: "User",
+    dateOfBirth: "1980-01-01",
+    retirementAge: 65,
+    planEndAge: 90,
+    filingStatus: "single" as const,
+  };
+
+  const cashGiftPlanSettings = {
+    flatFederalRate: 0,
+    flatStateRate: 0,
+    inflationRate: 0,
+    planStartYear: 2026,
+    planEndYear: 2032,
+  };
+
+  it("T10: one-time cash gift debits household checking and credits trust checking at gift year", () => {
+    // Household checking starts at $100k. Trust checking starts at $0.
+    // A $19k cash gift fires in 2028. No growth on either account.
+    // Expected: household checking ends 2028 ≈ $100k − $19k = $81k.
+    //           trust checking ends 2028 ≈ $19k.
+    const data: ClientData = {
+      client: cashGiftClient,
+      accounts: [
+        {
+          id: "acct-hh-checking",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 100_000,
+          basis: 100_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+        {
+          id: "acct-trust-checking",
+          name: "Trust Checking",
+          category: "cash",
+          subType: "checking",
+          value: 0,
+          basis: 0,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "entity", entityId: "trust-cash-1", percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: cashGiftPlanSettings,
+      entities: [
+        {
+          id: "trust-cash-1",
+          name: "SLAT",
+          includeInPortfolio: false,
+          isGrantor: true,
+          isIrrevocable: true,
+          entityType: "trust",
+          distributionMode: null,
+        },
+      ],
+      giftEvents: [
+        {
+          kind: "cash",
+          year: 2028,
+          amount: 19_000,
+          grantor: "client",
+          recipientEntityId: "trust-cash-1",
+          useCrummeyPowers: false,
+        },
+      ],
+    };
+
+    const yrs = runProjection(data);
+
+    // 2027 (pre-gift): household checking is still ~$100k; trust checking is $0.
+    const yr2027 = yrs.find((y) => y.year === 2027)!;
+    expect(yr2027.accountLedgers["acct-hh-checking"].endingValue).toBeCloseTo(100_000, 0);
+    expect(yr2027.accountLedgers["acct-trust-checking"].endingValue).toBeCloseTo(0, 0);
+
+    // 2028 (gift year): household drops by $19k; trust gains $19k.
+    const yr2028 = yrs.find((y) => y.year === 2028)!;
+    expect(yr2028.accountLedgers["acct-hh-checking"].endingValue).toBeCloseTo(81_000, 0);
+    expect(yr2028.accountLedgers["acct-trust-checking"].endingValue).toBeCloseTo(19_000, 0);
+
+    // Ledger entries: household has a gift debit; trust has a gift credit.
+    const hhGiftEntries = yr2028.accountLedgers["acct-hh-checking"].entries.filter(
+      (e) => e.category === "gift"
+    );
+    const trustGiftEntries = yr2028.accountLedgers["acct-trust-checking"].entries.filter(
+      (e) => e.category === "gift"
+    );
+    expect(hhGiftEntries.length).toBeGreaterThan(0);
+    expect(hhGiftEntries[0].amount).toBeLessThan(0); // debit
+    expect(trustGiftEntries.length).toBeGreaterThan(0);
+    expect(trustGiftEntries[0].amount).toBeGreaterThan(0); // credit
+  });
+
+  it("T10: fanned-out series (5 years) produces correct outflow each year", () => {
+    // 5 pre-fanned cash events at years 2026..2030, each $19k (no inflation, flat rate=0).
+    // Household checking starts at $500k, trust checking at $0. Zero growth.
+    // Each year's gift should debit household by $19k and credit trust by $19k.
+    const data: ClientData = {
+      client: cashGiftClient,
+      accounts: [
+        {
+          id: "acct-hh-series",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 500_000,
+          basis: 500_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+        {
+          id: "acct-trust-series",
+          name: "Trust Checking",
+          category: "cash",
+          subType: "checking",
+          value: 0,
+          basis: 0,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "entity", entityId: "trust-series-1", percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: cashGiftPlanSettings,
+      entities: [
+        {
+          id: "trust-series-1",
+          name: "Series SLAT",
+          includeInPortfolio: false,
+          isGrantor: true,
+          isIrrevocable: true,
+          entityType: "trust",
+          distributionMode: null,
+        },
+      ],
+      // Pre-fanned: one cash event per year (simulates T6 fan-out).
+      giftEvents: [2026, 2027, 2028, 2029, 2030].map((yr, i) => ({
+        kind: "cash" as const,
+        year: yr,
+        amount: 19_000 * Math.pow(1.03, i),
+        grantor: "client" as const,
+        recipientEntityId: "trust-series-1",
+        useCrummeyPowers: false,
+        seriesId: "series-abc",
+      })),
+    };
+
+    const yrs = runProjection(data);
+
+    // Year 2026: first occurrence, $19k.
+    const yr2026 = yrs.find((y) => y.year === 2026)!;
+    const hhLedger2026 = yr2026.accountLedgers["acct-hh-series"];
+    expect(hhLedger2026.endingValue).toBeCloseTo(500_000 - 19_000, 0);
+    expect(yr2026.accountLedgers["acct-trust-series"].endingValue).toBeCloseTo(19_000, 0);
+
+    // Year 2030: fifth occurrence, $19k * 1.03^4 ≈ $21,405.
+    const yr2030 = yrs.find((y) => y.year === 2030)!;
+    const expectedAmt2030 = 19_000 * Math.pow(1.03, 4);
+    const hhLedger2030 = yr2030.accountLedgers["acct-hh-series"];
+    const hhGift2030 = hhLedger2030.entries.filter((e) => e.category === "gift");
+    expect(hhGift2030.length).toBeGreaterThan(0);
+    expect(Math.abs(hhGift2030[0].amount)).toBeCloseTo(expectedAmt2030, 0);
+
+    // Year 2031: no gift — trust checking doesn't gain another $19k.
+    const yr2031 = yrs.find((y) => y.year === 2031)!;
+    const trustGift2031 = yr2031.accountLedgers["acct-trust-series"].entries.filter(
+      (e) => e.category === "gift"
+    );
+    expect(trustGift2031.length).toBe(0);
+  });
+});

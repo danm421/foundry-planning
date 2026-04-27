@@ -768,7 +768,8 @@ export interface AccountLedgerEntry {
     | "savings_contribution"
     | "employer_match"
     | "withdrawal"
-    | "withdrawal_tax";
+    | "withdrawal_tax"
+    | "gift";
   label: string;
   amount: number;
   sourceId?: string;
