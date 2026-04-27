@@ -2968,3 +2968,265 @@ describe("year-aware dividend/interest/cap-gain routing (Task 8 — Phase 3)", (
     expect(yr2031.taxDetail?.capitalGains).toBeCloseTo(250_000, -3);
   });
 });
+
+describe("year-aware grantor pass-through, property tax, debt service (Task 9 — Phase 3)", () => {
+  it("Phase 3: grantor-trust pass-through respects per-year ownership", () => {
+    // Two accounts start 100% household-owned:
+    //   1. Taxable brokerage — 10% qualified-dividend yield (for dividend routing test)
+    //   2. Real estate — $12k/yr property tax with no growth (for property-tax routing test)
+    // At 2030, 50% of each is gifted to a GRANTOR trust (IDGT-style).
+    //
+    // Dividend assertion (T8-confirmed, verified correct in T9):
+    //   Pre-2030: household receives 100% of dividends.
+    //   Post-2030: household still receives ~100% because grantor pass-through routes
+    //   the trust's 50% share back to grantor (household) via householdLikeShare.
+    //
+    // Property tax assertion (T9 — key correctness change):
+    //   Pre-2030: household pays $12k (100% of property tax).
+    //   Post-2030: household pays only $6k (50%); trust's $6k routes to entity synthetic row.
+    //   This FAILS before T9 because line 606 uses static ownedByHousehold(acct) = 1.0
+    //   even after the gift, causing household to always pay the full amount.
+    const data: ClientData = {
+      client: {
+        firstName: "Test",
+        lastName: "User",
+        dateOfBirth: "1980-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        filingStatus: "single",
+      },
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 200_000,
+          basis: 200_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+        {
+          id: "acct-brok",
+          name: "Taxable Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: 1_000_000,
+          basis: 1_000_000,
+          growthRate: 0.10,
+          rmdEnabled: false,
+          realization: {
+            pctOrdinaryIncome: 0,
+            pctLtCapitalGains: 0,
+            pctQualifiedDividends: 1.0,
+            pctTaxExempt: 0,
+            turnoverPct: 0,
+          },
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+        {
+          id: "acct-re",
+          name: "Investment Property",
+          category: "real_estate",
+          subType: "real_estate",
+          value: 500_000,
+          basis: 500_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          annualPropertyTax: 12_000,
+          propertyTaxGrowthRate: 0, // no inflation — keeps math simple
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0,
+        planStartYear: 2026,
+        planEndYear: 2032,
+      },
+      entities: [
+        {
+          id: "idgt-1",
+          name: "IDGT",
+          includeInPortfolio: false,
+          isGrantor: true,
+          isIrrevocable: true,
+          entityType: "trust",
+        },
+      ],
+      giftEvents: [
+        {
+          kind: "asset",
+          year: 2030,
+          accountId: "acct-brok",
+          percent: 0.5,
+          grantor: "client",
+          recipientEntityId: "idgt-1",
+        },
+        {
+          kind: "asset",
+          year: 2030,
+          accountId: "acct-re",
+          percent: 0.5,
+          grantor: "client",
+          recipientEntityId: "idgt-1",
+        },
+      ],
+    };
+
+    const yrs = runProjection(data);
+
+    const yr2029 = yrs.find((y) => y.year === 2029)!;
+    const yr2030 = yrs.find((y) => y.year === 2030)!;
+
+    // ── Dividend routing: grantor pass-through keeps household at ~100% ───────
+    // Both pre- and post-gift, household taxDetail.dividends should be near 100k
+    // (10% of $1M). The grantor trust's 50% routes back to household via
+    // householdLikeShare, so the ratio should be near 1.0 (not ~0.5).
+    const div2029 = yr2029.taxDetail?.dividends ?? 0;
+    const div2030 = yr2030.taxDetail?.dividends ?? 0;
+    expect(div2029).toBeGreaterThan(80_000);
+    expect(div2030).toBeGreaterThan(80_000);
+    const divRatio = div2030 / div2029;
+    expect(divRatio).toBeGreaterThan(0.8); // would be ~0.55 for a non-grantor trust
+    expect(divRatio).toBeLessThan(1.3);
+
+    // ── Property tax routing: post-gift only 50% in household realEstate ──────
+    // Pre-gift year: full $12k routes to household realEstate expenses.
+    expect(yr2029.expenses.realEstate).toBeCloseTo(12_000, -2);
+    // Post-gift year: only 50% ($6k) routes to household (T9 swap of line 606).
+    expect(yr2030.expenses.realEstate).toBeCloseTo(6_000, -2);
+  });
+
+  it("Phase 3: 100% liability transfer at 2030 flips debt service", () => {
+    // Account + liability both start 100% household-owned.
+    // At 2030, both are gifted 100% to a non-grantor trust.
+    // Pre-2030: household expenses.liabilities > 0, trust pays nothing.
+    // Post-2030: household expenses.liabilities = 0, trust's checking is debited.
+    const data: ClientData = {
+      client: {
+        firstName: "Test",
+        lastName: "User",
+        dateOfBirth: "1980-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        filingStatus: "single",
+      },
+      accounts: [
+        {
+          id: "acct-checking-hh",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 500_000,
+          basis: 500_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+        {
+          id: "acct-checking-trust",
+          name: "Trust Checking",
+          category: "cash",
+          subType: "checking",
+          value: 500_000,
+          basis: 500_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "entity", entityId: "ngt-1", percent: 1 }],
+        },
+        {
+          id: "acct-re",
+          name: "Investment Property",
+          category: "real_estate",
+          subType: "real_estate",
+          value: 1_000_000,
+          basis: 1_000_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [
+        {
+          id: "liab-mortgage",
+          name: "Property Mortgage",
+          balance: 500_000,
+          interestRate: 0.05,
+          monthlyPayment: 2_685, // ~$32k/yr
+          startYear: 2026,
+          startMonth: 1,
+          termMonths: 360,
+          extraPayments: [],
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0,
+        planStartYear: 2026,
+        planEndYear: 2032,
+      },
+      entities: [
+        {
+          id: "ngt-1",
+          name: "NGT",
+          includeInPortfolio: false,
+          isGrantor: false,
+          isIrrevocable: true,
+          entityType: "trust",
+          distributionMode: null,
+        },
+      ],
+      giftEvents: [
+        {
+          kind: "asset",
+          year: 2030,
+          accountId: "acct-re",
+          percent: 1.0,
+          grantor: "client",
+          recipientEntityId: "ngt-1",
+        },
+        {
+          kind: "liability",
+          year: 2030,
+          liabilityId: "liab-mortgage",
+          percent: 1.0,
+          grantor: "client",
+          recipientEntityId: "ngt-1",
+          parentGiftId: "acct-re-gift",
+        },
+      ],
+    };
+
+    const yrs = runProjection(data);
+
+    // Pre-transfer: household pays full debt service.
+    const yr2029 = yrs.find((y) => y.year === 2029)!;
+    expect(yr2029.expenses.liabilities).toBeGreaterThan(0);
+
+    // Post-transfer: household pays nothing; trust checking is debited.
+    const yr2031 = yrs.find((y) => y.year === 2031)!;
+    expect(yr2031.expenses.liabilities).toBeCloseTo(0, 0);
+    // Trust checking should have a liability debit entry.
+    const trustLedger = yr2031.accountLedgers["acct-checking-trust"];
+    const liabEntries = trustLedger?.entries.filter((e) => e.category === "liability") ?? [];
+    expect(liabEntries.length).toBeGreaterThan(0);
+    expect(liabEntries[0].amount).toBeLessThan(0); // debit
+  });
+});

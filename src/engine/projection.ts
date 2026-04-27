@@ -61,7 +61,10 @@ import {
   ownedByHousehold,
   ownedByHouseholdAtYear,
   ownedByEntity,
+  ownedByEntityAtYear,
   ownersForYear,
+  liabilityOwnedByHouseholdAtYear,
+  liabilityOwnersForYear,
   isFullyEntityOwned,
   controllingFamilyMember,
   controllingEntity,
@@ -603,7 +606,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (propTax <= 0) continue;
       const elapsed = year - planSettings.planStartYear;
       const inflated = propTax * Math.pow(1 + (acct.propertyTaxGrowthRate ?? 0.03), Math.max(0, elapsed));
-      const householdShare = ownedByHousehold(acct);
+      // T9: use year-aware helpers so gift events that transferred real-estate
+      // ownership to an entity are reflected in the correct year's property-tax
+      // routing (household vs entity synthetic expense rows).
+      const propTaxYearOwners = ownersForYear(acct, data.giftEvents, year, planSettings.planStartYear);
+      const householdShare = propTaxYearOwners
+        .filter((o) => o.kind === "family_member")
+        .reduce((s, o) => s + o.percent, 0);
       if (householdShare > 0) {
         syntheticExpenses.push({
           id: `synth-proptax-${acct.id}`,
@@ -615,7 +624,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           growthRate: 0, // already inflated
         });
       }
-      for (const owner of acct.owners) {
+      for (const owner of propTaxYearOwners) {
         if (owner.kind !== "entity") continue;
         if (owner.percent <= 0) continue;
         syntheticExpenses.push({
@@ -647,14 +656,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     );
     currentLiabilities = liabResult.updatedLiabilities;
     // Household share of total liability service: each liability contributes
-    // ownedByHousehold(liab) × annualPayment. Entity portions route to entity
-    // checking via the per-liability cash routing block (creditCash) below.
+    // liabilityOwnedByHouseholdAtYear(liab) × annualPayment. Entity portions
+    // route to entity checking via the per-liability cash routing block below.
+    // T9: use year-aware helper so gift events that transferred liability
+    // ownership to an entity are reflected in the correct year's debt-service total.
     {
       let total = 0;
       for (const liab of currentLiabilities) {
         const payment = liabResult.byLiability[liab.id] ?? 0;
         if (payment === 0) continue;
-        total += payment * ownedByHousehold(liab);
+        total += payment * liabilityOwnedByHouseholdAtYear(liab, data.giftEvents, year, planSettings.planStartYear);
       }
       liabResult.totalPayment = total;
     }
@@ -1069,6 +1080,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Each non-checking account contributes only its trust-owned share —
       // the rest belongs to the household / other entities and isn't tappable
       // for this trust's distributions or tax bill.
+      // T9: use year-aware ownedByEntityAtYear so gift events that transferred
+      // account ownership to a non-grantor trust are reflected in the trust's
+      // tappable liquidity starting the year the gift fires.
       const trustLiquidity = new Map<string, TrustLiquidityPool>();
       for (const trust of nonGrantorTrusts) {
         const checkingId = entityCheckingByEntityId[trust.entityId];
@@ -1077,7 +1091,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         let taxableBrokerage = 0;
         let retirementInRmdPhase = 0;
         for (const acct of workingAccounts) {
-          const trustShare = ownedByEntity(acct, trust.entityId);
+          const trustShare = ownedByEntityAtYear(acct, data.giftEvents, trust.entityId, year, planSettings.planStartYear);
           if (trustShare <= 0) continue;
           if (acct.id === checkingId) continue;
           const balance = accountBalances[acct.id] ?? 0;
@@ -1177,10 +1191,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // Aggregate taxable brokerage for this grantor trust — only the
         // trust-owned share of each fractional-ownership account contributes
         // to its tappable liquidity.
+        // T9: use year-aware ownedByEntityAtYear so gift events that transferred
+        // account ownership into the grantor trust are reflected in its tappable
+        // liquidity starting the year the gift fires.
         let taxableBrokerage = 0;
         let retirementInRmdPhase = 0;
         for (const acct of workingAccounts) {
-          const trustShare = ownedByEntity(acct, gt.entityId);
+          const trustShare = ownedByEntityAtYear(acct, data.giftEvents, gt.entityId, year, planSettings.planStartYear);
           if (trustShare <= 0) continue;
           if (acct.id === checkingId) continue;
           const balance = accountBalances[acct.id] ?? 0;
@@ -1372,10 +1389,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           })),
           // Only the household share of mortgage interest counts toward the
           // household 1040 itemized deduction.
+          // T9: year-aware helper so gift events that transferred liability
+          // ownership to an entity reduce the household mortgage-interest deduction
+          // starting the year the gift fires.
           Object.fromEntries(
             currentLiabilities.map((l) => [
               l.id,
-              (liabResult.interestByLiability[l.id] ?? 0) * ownedByHousehold(l),
+              (liabResult.interestByLiability[l.id] ?? 0) * liabilityOwnedByHouseholdAtYear(l, data.giftEvents, year, planSettings.planStartYear),
             ])
           )
         ),
@@ -1388,7 +1408,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             // Only the household share of property tax counts toward SALT.
             // Entity-owned shares are paid by the entity and don't show on
             // the household 1040 deduction.
-            annualPropertyTax: (a.annualPropertyTax ?? 0) * ownedByHousehold(a),
+            // T9: year-aware helper so gift events that transferred real-estate
+            // ownership to an entity reduce the household SALT deduction.
+            annualPropertyTax: (a.annualPropertyTax ?? 0) * ownedByHouseholdAtYear(a, data.giftEvents, year, planSettings.planStartYear),
             propertyTaxGrowthRate: a.propertyTaxGrowthRate ?? 0.03,
           })),
           planSettings.planStartYear
@@ -1624,10 +1646,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // 8. Liability payments settle against the owning party's cash account —
     // pro-rated by ownership share. Household share leaves household checking;
     // each entity owner's share leaves that entity's checking.
+    // T9: use year-aware liabilityOwnersForYear so gift events that transferred
+    // liability ownership to an entity route debt service to the entity's checking
+    // starting the year the gift fires.
     for (const liab of data.liabilities) {
       const payment = liabResult.byLiability[liab.id] ?? 0;
       if (payment === 0) continue;
-      const householdShare = ownedByHousehold(liab);
+      const liabYearOwners = liabilityOwnersForYear(liab, data.giftEvents, year, planSettings.planStartYear);
+      const householdShare = liabYearOwners
+        .filter((o) => o.kind === "family_member")
+        .reduce((s, o) => s + o.percent, 0);
       if (householdShare > 0) {
         creditCash(resolveCashAccount(undefined), -payment * householdShare, {
           category: "liability",
@@ -1635,7 +1663,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           sourceId: liab.id,
         });
       }
-      for (const owner of liab.owners) {
+      for (const owner of liabYearOwners) {
         if (owner.kind !== "entity") continue;
         if (owner.percent <= 0) continue;
         creditCash(resolveCashAccount(owner.entityId), -payment * owner.percent, {
@@ -1789,9 +1817,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // purchase. Withdrawals are scoped to the household share of each account
     // — entity-owned percentages stay with the entity and aren't tappable for
     // household shortfalls.
+    // T9: use year-aware helper so gift events that transferred account ownership
+    // to an entity reduce the household's tappable withdrawal balance starting
+    // the year the gift fires.
     const householdWithdrawBalances: Record<string, number> = {};
     for (const acct of workingAccounts) {
-      const householdShare = ownedByHousehold(acct);
+      const householdShare = ownedByHouseholdAtYear(acct, data.giftEvents, year, planSettings.planStartYear);
       if (householdShare <= 0) continue;
       if (acct.isDefaultChecking) continue;
       const balance = acct.id in accountBalances ? accountBalances[acct.id] : 0;
@@ -1917,8 +1948,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // includeInPortfolio. Non-portfolio entity shares are excluded.
       // T7: use year-aware helper so gift events that transfer ownership to an
       // entity are reflected in the correct year's balance-sheet snapshot.
-      let inPortfolioFraction = ownedByHouseholdAtYear(acct, data.giftEvents, year, planSettings.planStartYear);
-      for (const owner of acct.owners) {
+      // T9: also use year-aware owners for the entity-side loop so includeInPortfolio
+      // entities that receive ownership via a gift are counted starting the gift year.
+      const portfolioYearOwners = ownersForYear(acct, data.giftEvents, year, planSettings.planStartYear);
+      let inPortfolioFraction = portfolioYearOwners
+        .filter((o) => o.kind === "family_member")
+        .reduce((s, o) => s + o.percent, 0);
+      for (const owner of portfolioYearOwners) {
         if (owner.kind !== "entity") continue;
         const entity = entityMap[owner.entityId];
         if (entity?.includeInPortfolio) inPortfolioFraction += owner.percent;
