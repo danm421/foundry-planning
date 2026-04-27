@@ -3,8 +3,10 @@ import {
   ownersForYear,
   ownedByEntityAtYear,
   ownedByHouseholdAtYear,
+  liabilityOwnersForYear,
   type AccountWithOwners,
 } from "@/engine/ownership";
+import type { LiabilityWithOwners } from "@/engine/ownership";
 import type { GiftEvent } from "@/engine/types";
 
 const PROJ_START = 2026;
@@ -105,5 +107,56 @@ describe("ownedByEntityAtYear / ownedByHouseholdAtYear", () => {
   it("returns 0.5 / 0.5 post-transfer", () => {
     expect(ownedByEntityAtYear(a, events, "trust-1", 2031, PROJ_START)).toBeCloseTo(0.5);
     expect(ownedByHouseholdAtYear(a, events, 2031, PROJ_START)).toBeCloseTo(0.5);
+  });
+});
+
+function liab(owners: { kind: "family_member" | "entity"; id: string; percent: number }[]): LiabilityWithOwners {
+  return {
+    id: "L1",
+    owners: owners.map((o) =>
+      o.kind === "family_member"
+        ? { kind: "family_member", familyMemberId: o.id, percent: o.percent }
+        : { kind: "entity", entityId: o.id, percent: o.percent },
+    ),
+  } as LiabilityWithOwners;
+}
+
+describe("liabilityOwnersForYear", () => {
+  it("applies a future-dated 100% liability transfer at gift year", () => {
+    const l = liab([{ kind: "family_member", id: "fm-client", percent: 1 }]);
+    const events: GiftEvent[] = [
+      {
+        kind: "liability",
+        year: 2030,
+        liabilityId: "L1",
+        percent: 1,
+        grantor: "client",
+        recipientEntityId: "trust-1",
+        parentGiftId: "gift-asset-1",
+      },
+    ];
+    expect(liabilityOwnersForYear(l, events, 2029, PROJ_START)).toEqual(l.owners);
+    const post = liabilityOwnersForYear(l, events, 2030, PROJ_START);
+    expect(post).toHaveLength(1);
+    expect(post[0].kind).toBe("entity");
+    expect(post[0].percent).toBeCloseTo(1);
+  });
+
+  it("supports partial liability transfer", () => {
+    const l = liab([{ kind: "family_member", id: "fm-client", percent: 1 }]);
+    const events: GiftEvent[] = [
+      {
+        kind: "liability",
+        year: 2030,
+        liabilityId: "L1",
+        percent: 0.5,
+        grantor: "client",
+        recipientEntityId: "trust-1",
+        parentGiftId: "gift-asset-1",
+      },
+    ];
+    const post = liabilityOwnersForYear(l, events, 2030, PROJ_START);
+    expect(post.find((o) => o.kind === "entity")?.percent).toBeCloseTo(0.5);
+    expect(post.find((o) => o.kind === "family_member")?.percent).toBeCloseTo(0.5);
   });
 });

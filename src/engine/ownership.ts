@@ -234,3 +234,91 @@ export function ownedByFamilyMemberAtYear(
     .filter((o) => o.kind === "family_member" && o.familyMemberId === familyMemberId)
     .reduce((s, o) => s + o.percent, 0);
 }
+
+export type LiabilityOwner = AccountOwner; // structurally identical
+export type LiabilityWithOwners = { id: string; owners: LiabilityOwner[] };
+
+export function liabilityOwnersForYear(
+  liability: LiabilityWithOwners,
+  giftEvents: GiftEvent[],
+  year: number,
+  projectionStartYear: number,
+): LiabilityOwner[] {
+  let owners: LiabilityOwner[] = liability.owners.map((o) => ({ ...o }));
+
+  const events = giftEvents
+    .filter(
+      (e) =>
+        e.kind === "liability" &&
+        e.liabilityId === liability.id &&
+        e.year >= projectionStartYear &&
+        e.year <= year,
+    )
+    .sort((a, b) => a.year - b.year) as Array<Extract<GiftEvent, { kind: "liability" }>>;
+
+  for (const e of events) {
+    const householdShare = owners
+      .filter((o) => o.kind === "family_member")
+      .reduce((s, o) => s + o.percent, 0);
+
+    // Guard against divide-by-zero when household has been fully drained.
+    // Without this, a small e.percent (or 0) slips past the overdraw check
+    // below and produces NaN downstream.
+    if (householdShare <= 1e-9) {
+      throw new Error(
+        `liabilityOwnersForYear: no household share remaining on liability ${liability.id} at year ${e.year} (requested ${e.percent})`,
+      );
+    }
+
+    if (e.percent > householdShare + 1e-9) {
+      throw new Error(
+        `liabilityOwnersForYear: would overdraw household share on liability ${liability.id} at year ${e.year}`,
+      );
+    }
+
+    const factor = (householdShare - e.percent) / householdShare;
+    owners = owners.map((o) =>
+      o.kind === "family_member" ? { ...o, percent: o.percent * factor } : o,
+    );
+    owners = owners.filter((o) => o.kind !== "family_member" || o.percent > 1e-9);
+    const existing = owners.findIndex(
+      (o) => o.kind === "entity" && o.entityId === e.recipientEntityId,
+    );
+    if (existing >= 0) {
+      owners[existing] = { ...owners[existing], percent: owners[existing].percent + e.percent };
+    } else {
+      owners.push({ kind: "entity", entityId: e.recipientEntityId, percent: e.percent });
+    }
+  }
+
+  const total = owners.reduce((s, o) => s + o.percent, 0);
+  if (Math.abs(total - 1) > 1e-6) {
+    throw new Error(
+      `liabilityOwnersForYear: composed sum=${total} for liability ${liability.id} at year ${year}`,
+    );
+  }
+  return owners;
+}
+
+export function liabilityOwnedByEntityAtYear(
+  liability: LiabilityWithOwners,
+  events: GiftEvent[],
+  entityId: string,
+  year: number,
+  projectionStartYear: number,
+): number {
+  return liabilityOwnersForYear(liability, events, year, projectionStartYear)
+    .filter((o) => o.kind === "entity" && o.entityId === entityId)
+    .reduce((s, o) => s + o.percent, 0);
+}
+
+export function liabilityOwnedByHouseholdAtYear(
+  liability: LiabilityWithOwners,
+  events: GiftEvent[],
+  year: number,
+  projectionStartYear: number,
+): number {
+  return liabilityOwnersForYear(liability, events, year, projectionStartYear)
+    .filter((o) => o.kind === "family_member")
+    .reduce((s, o) => s + o.percent, 0);
+}
