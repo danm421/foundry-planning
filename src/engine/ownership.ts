@@ -151,6 +151,15 @@ export function ownersForYear(
       .filter((o) => o.kind === "family_member")
       .reduce((s, o) => s + o.percent, 0);
 
+    // Guard against divide-by-zero when household has been fully drained.
+    // Without this, a small e.percent (or 0) slips past the overdraw check
+    // below and produces NaN downstream.
+    if (householdShare <= 1e-9) {
+      throw new Error(
+        `ownersForYear: no household share remaining on account ${account.id} at year ${e.year} (requested ${e.percent})`,
+      );
+    }
+
     if (e.percent > householdShare + 1e-9) {
       throw new Error(
         `ownersForYear: gift event would overdraw household share on account ${account.id} at year ${e.year} (requested ${e.percent}, available ${householdShare})`,

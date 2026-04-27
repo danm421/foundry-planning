@@ -71,6 +71,15 @@ describe("ownersForYear", () => {
     expect(() => ownersForYear(a, events, 2030, PROJ_START)).toThrow(/overdraw|exceed/i);
   });
 
+  it("throws on a second transfer once the household has been fully drained", () => {
+    const a = acct([{ kind: "family_member", id: "fm-client", percent: 1 }]);
+    const events: GiftEvent[] = [
+      { kind: "asset", year: 2030, accountId: "a1", percent: 1, grantor: "client", recipientEntityId: "trust-1" },
+      { kind: "asset", year: 2032, accountId: "a1", percent: 0.0001, grantor: "client", recipientEntityId: "trust-2" },
+    ];
+    expect(() => ownersForYear(a, events, 2032, PROJ_START)).toThrow(/no household share remaining/i);
+  });
+
   it("validates sum-to-1 invariant after composition", () => {
     const a = acct([{ kind: "family_member", id: "fm-client", percent: 0.5 }, { kind: "family_member", id: "fm-spouse", percent: 0.5 }]);
     const events: GiftEvent[] = [
