@@ -1,6 +1,15 @@
+import type { GiftEvent } from "./types";
+
 export type AccountOwner =
   | { kind: "family_member"; familyMemberId: string; percent: number }
   | { kind: "entity"; entityId: string; percent: number };
+
+/** Minimal account shape used by the year-aware ownership helpers. Structurally
+ *  satisfied by the full `Account` type from engine/types. */
+export interface AccountWithOwners {
+  id: string;
+  owners: AccountOwner[];
+}
 
 export interface OwnedThing {
   owners: AccountOwner[];
@@ -111,4 +120,108 @@ export function controllingEntity(a: OwnedThing): string | null {
   if (Math.abs(entityRows[0].percent - 1) > EPSILON) return null;
   if (a.owners.some((o) => o.kind === "family_member")) return null;
   return (entityRows[0] as { entityId: string }).entityId;
+}
+
+/**
+ * Compose static account_owners + asset-transfer gift events into the ownership
+ * snapshot at a given projection year. Events with year < projectionStartYear are
+ * historical and assumed to be already reflected in the static owners.
+ */
+export function ownersForYear(
+  account: AccountWithOwners,
+  giftEvents: GiftEvent[],
+  year: number,
+  projectionStartYear: number,
+): AccountOwner[] {
+  // Start from a deep clone of static owners so we don't mutate input.
+  let owners: AccountOwner[] = account.owners.map((o) => ({ ...o }));
+
+  const events = giftEvents
+    .filter(
+      (e) =>
+        e.kind === "asset" &&
+        e.accountId === account.id &&
+        e.year >= projectionStartYear &&
+        e.year <= year,
+    )
+    .sort((a, b) => a.year - b.year) as Array<Extract<GiftEvent, { kind: "asset" }>>;
+
+  for (const e of events) {
+    const householdShare = owners
+      .filter((o) => o.kind === "family_member")
+      .reduce((s, o) => s + o.percent, 0);
+
+    if (e.percent > householdShare + 1e-9) {
+      throw new Error(
+        `ownersForYear: gift event would overdraw household share on account ${account.id} at year ${e.year} (requested ${e.percent}, available ${householdShare})`,
+      );
+    }
+
+    // Shrink each household row proportionally to free e.percent.
+    const factor = (householdShare - e.percent) / householdShare;
+    owners = owners.map((o) =>
+      o.kind === "family_member" ? { ...o, percent: o.percent * factor } : o,
+    );
+
+    // Drop any household rows that rounded to ~0.
+    owners = owners.filter((o) => o.kind !== "family_member" || o.percent > 1e-9);
+
+    // Add or merge the recipient entity row.
+    const existing = owners.findIndex(
+      (o) => o.kind === "entity" && o.entityId === e.recipientEntityId,
+    );
+    if (existing >= 0) {
+      owners[existing] = { ...owners[existing], percent: owners[existing].percent + e.percent };
+    } else {
+      owners.push({ kind: "entity", entityId: e.recipientEntityId, percent: e.percent });
+    }
+  }
+
+  // Validate sum-to-1 within tolerance.
+  const total = owners.reduce((s, o) => s + o.percent, 0);
+  if (Math.abs(total - 1) > 1e-6) {
+    throw new Error(
+      `ownersForYear: composed owners for account ${account.id} at year ${year} sum to ${total}, expected 1`,
+    );
+  }
+
+  return owners;
+}
+
+export function ownedByEntityAtYear(
+  account: AccountWithOwners,
+  events: GiftEvent[],
+  entityId: string,
+  year: number,
+  projectionStartYear: number,
+): number {
+  const owners = ownersForYear(account, events, year, projectionStartYear);
+  return owners
+    .filter((o) => o.kind === "entity" && o.entityId === entityId)
+    .reduce((s, o) => s + o.percent, 0);
+}
+
+export function ownedByHouseholdAtYear(
+  account: AccountWithOwners,
+  events: GiftEvent[],
+  year: number,
+  projectionStartYear: number,
+): number {
+  const owners = ownersForYear(account, events, year, projectionStartYear);
+  return owners
+    .filter((o) => o.kind === "family_member")
+    .reduce((s, o) => s + o.percent, 0);
+}
+
+export function ownedByFamilyMemberAtYear(
+  account: AccountWithOwners,
+  events: GiftEvent[],
+  familyMemberId: string,
+  year: number,
+  projectionStartYear: number,
+): number {
+  const owners = ownersForYear(account, events, year, projectionStartYear);
+  return owners
+    .filter((o) => o.kind === "family_member" && o.familyMemberId === familyMemberId)
+    .reduce((s, o) => s + o.percent, 0);
 }
