@@ -217,6 +217,8 @@ export function deriveHeirCardData(
 ): HeirCardData[] {
   const results: HeirCardData[] = [];
   for (const fm of tree.familyMembers ?? []) {
+    // Skip household principals — they're rendered as the Client card, not as heirs.
+    if (fm.role === "client" || fm.role === "spouse") continue;
     const received: BequestSummaryRow[] = [];
     for (const will of tree.wills ?? []) {
       received.push(
@@ -229,16 +231,13 @@ export function deriveHeirCardData(
         ),
       );
     }
-    // Only emit heir cards for FMs that have received bequests.
-    if (received.length > 0) {
-      results.push({
-        familyMemberId: fm.id,
-        name: fmFullName(fm),
-        relationship: fm.relationship,
-        age: ageAsOf(fm.dateOfBirth, asOfYear),
-        bequestsReceived: received,
-      });
-    }
+    results.push({
+      familyMemberId: fm.id,
+      name: fmFullName(fm),
+      relationship: fm.relationship,
+      age: ageAsOf(fm.dateOfBirth, asOfYear),
+      bequestsReceived: received,
+    });
   }
   return results;
 }

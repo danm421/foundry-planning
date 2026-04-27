@@ -8,7 +8,7 @@ import {
   beneficiaryDesignations,
   gifts,
 } from "@/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, notInArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import FamilyView, {
   FamilyMember,
@@ -46,7 +46,12 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
       db
         .select()
         .from(familyMembers)
-        .where(eq(familyMembers.clientId, id))
+        .where(
+          and(
+            eq(familyMembers.clientId, id),
+            notInArray(familyMembers.role, ["client", "spouse"]),
+          ),
+        )
         .orderBy(asc(familyMembers.relationship), asc(familyMembers.firstName)),
       db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
       db

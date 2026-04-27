@@ -61,10 +61,12 @@ export function OutOfEstateColumn({ tree, asOfYear }: { tree: ClientData; asOfYe
           client: { firstName: tree.client.firstName },
           spouse: tree.client.spouseName ? { firstName: tree.client.spouseName } : null,
         }}
-        members={(tree.familyMembers ?? []).map((m) => ({
-          ...m,
-          notes: null,
-        }))}
+        members={(tree.familyMembers ?? [])
+          .filter((m) => m.role !== "client" && m.role !== "spouse")
+          .map((m) => ({
+            ...m,
+            notes: null,
+          }))}
         externals={(tree.externalBeneficiaries ?? []).map((e) => ({
           ...e,
           notes: null,
