@@ -2771,3 +2771,200 @@ describe("fractional ownership: balance sheet year-aware pro-rate (Task 7 — Ph
     expect(yr2031.portfolioAssets.taxable["a1"]).toBeCloseTo(500_000, 0);
   });
 });
+
+describe("year-aware dividend/interest/cap-gain routing (Task 8 — Phase 3)", () => {
+  it("Phase 3: dividend split flips at the gift year", () => {
+    // Account starts 100% household-owned with a 10% qualified-dividend yield.
+    // At 2030, 50% is gifted to a non-grantor trust.
+    // Pre-2030: household receives 100% of dividends (taxDetail.dividends = full).
+    // From 2030 onward: household receives only 50% (trust takes the rest via yearRealizations).
+    const data: ClientData = {
+      client: {
+        firstName: "Test",
+        lastName: "User",
+        dateOfBirth: "1980-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        filingStatus: "single",
+      },
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 50_000,
+          basis: 50_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+        {
+          id: "acct-div",
+          name: "Dividend Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: 1_000_000,
+          basis: 1_000_000,
+          growthRate: 0.10,
+          rmdEnabled: false,
+          realization: {
+            pctOrdinaryIncome: 0,
+            pctLtCapitalGains: 0,
+            pctQualifiedDividends: 1.0,
+            pctTaxExempt: 0,
+            turnoverPct: 0,
+          },
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0,
+        planStartYear: 2026,
+        planEndYear: 2032,
+      },
+      entities: [
+        {
+          id: "ngt-div",
+          name: "Dividend Trust",
+          includeInPortfolio: false,
+          isGrantor: false,
+          isIrrevocable: true,
+          entityType: "trust",
+          distributionMode: null,
+        },
+      ],
+      giftEvents: [
+        {
+          kind: "asset",
+          year: 2030,
+          accountId: "acct-div",
+          percent: 0.5,
+          grantor: "client",
+          recipientEntityId: "ngt-div",
+        },
+      ],
+    };
+
+    const yrs = runProjection(data);
+
+    // 2029: gift hasn't fired — household gets 100% of dividends = $100k (10% of $1M).
+    const yr2029 = yrs.find((y) => y.year === 2029)!;
+    // taxDetail.dividends should be close to 100k (growth compounds, so approximately)
+    expect(yr2029.taxDetail?.dividends).toBeGreaterThan(90_000);
+
+    // 2030: gift fires — household gets only 50% of dividends.
+    const yr2030 = yrs.find((y) => y.year === 2030)!;
+    // The 2030 household dividend should be roughly half the 2029 value.
+    // With 10% annual growth the balance is 10% larger in 2030, so
+    // the expected ratio is 0.5 × 1.1 = 0.55 (not 0.5). The key
+    // assertion is that it's near 0.55, not 1.1 (which would mean
+    // the engine is still routing 100% to household in 2030).
+    const div2030 = yr2030.taxDetail?.dividends ?? 0;
+    const div2029 = yr2029.taxDetail?.dividends ?? 1;
+    const ratio = div2030 / div2029;
+    expect(ratio).toBeGreaterThan(0.45);
+    expect(ratio).toBeLessThan(0.65); // would be ~1.1 if ownership not split
+  });
+
+  it("Phase 3: cap-gain at sale uses ownership at the sale year", () => {
+    // Account: $1M value, $500k basis → $500k cap-gain at sale.
+    // Gift 50% to non-grantor trust at 2030, then sell at 2031.
+    // With year-aware routing: household's taxDetail.capitalGains = $250k,
+    // trust's cap-gain ($250k) is subtracted from household taxDetail via trust pass.
+    // Without year-aware routing: all $500k lands in household taxDetail (bug).
+    const data: ClientData = {
+      client: {
+        firstName: "Test",
+        lastName: "User",
+        dateOfBirth: "1980-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        filingStatus: "single",
+      },
+      accounts: [
+        {
+          id: "acct-checking",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 50_000,
+          basis: 50_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+        {
+          id: "acct-re",
+          name: "Investment Property",
+          category: "real_estate",
+          subType: "real_estate",
+          value: 1_000_000,
+          basis: 500_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      assetTransactions: [
+        {
+          id: "tx-sell",
+          name: "Sell Investment Property",
+          type: "sell",
+          year: 2031,
+          accountId: "acct-re",
+          proceedsAccountId: "acct-checking",
+        },
+      ],
+      planSettings: {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0,
+        planStartYear: 2026,
+        planEndYear: 2032,
+      },
+      entities: [
+        {
+          id: "ngt-re",
+          name: "Real Estate Trust",
+          includeInPortfolio: false,
+          isGrantor: false,
+          isIrrevocable: true,
+          entityType: "trust",
+          distributionMode: null,
+        },
+      ],
+      giftEvents: [
+        {
+          kind: "asset",
+          year: 2030,
+          accountId: "acct-re",
+          percent: 0.5,
+          grantor: "client",
+          recipientEntityId: "ngt-re",
+        },
+      ],
+    };
+
+    const yrs = runProjection(data);
+
+    // At sale year 2031, total cap-gain = $500k. Ownership at 2031 = 50/50.
+    // Household should see only $250k in taxDetail.capitalGains (trust's $250k is removed).
+    const yr2031 = yrs.find((y) => y.year === 2031)!;
+    expect(yr2031.taxDetail?.capitalGains).toBeCloseTo(250_000, -3);
+  });
+});

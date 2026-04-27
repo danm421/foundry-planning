@@ -61,6 +61,7 @@ import {
   ownedByHousehold,
   ownedByHouseholdAtYear,
   ownedByEntity,
+  ownersForYear,
   isFullyEntityOwned,
   controllingFamilyMember,
   controllingEntity,
@@ -766,14 +767,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // Retirement accounts defer all tax until withdrawal; cash accounts
         // are always 100% OI but that's baked into the realization model.
         if (acct.category === "taxable" || acct.category === "cash") {
-          // Pro-rate each realization stream by ownership share. Household and
-          // grantor-entity portions roll into household 1040 tax detail.
-          // Non-grantor entity portions land on per-account realization entries
-          // for the trust-tax pass to consume. Grantor-entity portions also
+          // Pro-rate each realization stream by ownership share. Use year-aware
+          // owners so gift events that transfer ownership to a trust are reflected
+          // in the correct year's dividend/interest/STCG routing (T8 — Phase 3).
+          // Household and grantor-entity portions roll into household 1040 tax
+          // detail. Non-grantor entity portions land on per-account realization
+          // entries for the trust-tax pass to consume. Grantor-entity portions also
           // populate grantorTrustIncomeByEntity for pct_income distribution.
-          const householdShare = ownedByHousehold(acct);
+          const yearOwners = ownersForYear(acct, data.giftEvents, year, planSettings.planStartYear);
+          const householdShare = yearOwners
+            .filter((o) => o.kind === "family_member")
+            .reduce((s, o) => s + o.percent, 0);
           let grantorShare = 0;
-          for (const owner of acct.owners) {
+          for (const owner of yearOwners) {
             if (owner.kind !== "entity") continue;
             if (isGrantorEntity(owner.entityId)) grantorShare += owner.percent;
           }
@@ -792,7 +798,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           }
 
           // Per grantor-entity owner: track its share for pct_income distribution.
-          for (const owner of acct.owners) {
+          for (const owner of yearOwners) {
             if (owner.kind !== "entity") continue;
             if (!isGrantorEntity(owner.entityId)) continue;
             const bucket = grantorTrustIncomeByEntity.get(owner.entityId);
@@ -805,7 +811,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
           // Per non-grantor-entity owner: emit a per-account realization entry
           // scaled by the entity's share of this account.
-          for (const owner of acct.owners) {
+          for (const owner of yearOwners) {
             if (owner.kind !== "entity") continue;
             if (isGrantorEntity(owner.entityId)) continue;
             yearRealizations.push({
@@ -1030,16 +1036,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let trustPassResult: ReturnType<typeof applyTrustAnnualPass> | null = null;
     if (nonGrantorTrusts.length > 0) {
       // Build AssetTransactionGain[] from sale breakdown, pro-rating each gain
-      // by the sold account's ownership shares. Source ownership from the
+      // by the sold account's ownership at the sale year. Source from the
       // invariant `accountById` (built from `data.accounts` outside the year
       // loop) because the BoY sale step removes sold accounts from
       // `workingAccounts` BEFORE this lookup runs — `workingAccounts` would
       // silently miss every sold trust account.
+      // T8: use ownersForYear so gift events that transferred ownership before
+      // the sale year are reflected in the cap-gain split (Phase 3).
       const assetTransactionGains: AssetTransactionGain[] = [];
       for (const item of saleResult.breakdown) {
         const sold = accountById.get(item.accountId);
         if (!sold) continue;
-        for (const owner of sold.owners) {
+        const saleYearOwners = ownersForYear(sold, data.giftEvents, year, planSettings.planStartYear);
+        for (const owner of saleYearOwners) {
           if (owner.kind !== "entity") continue;
           if (isGrantorEntity(owner.entityId)) continue;
           assetTransactionGains.push({
