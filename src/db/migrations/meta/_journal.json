@@ -400,6 +400,13 @@
       "when": 1777311442001,
       "tag": "0056_drop_legacy_owners",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1777329365196,
+      "tag": "0057_gift_tracked_transfers",
+      "breakpoints": true
     }
   ]
 }

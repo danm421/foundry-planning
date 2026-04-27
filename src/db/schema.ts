@@ -15,6 +15,7 @@ import {
   jsonb,
   index,
   check,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import type { BracketTier } from "@/lib/tax/types";
@@ -554,7 +555,8 @@ export const gifts = pgTable(
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),
     year: integer("year").notNull(),
-    amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+    yearRef: yearRefEnum("year_ref"),
+    amount: decimal("amount", { precision: 15, scale: 2 }),
     grantor: ownerEnum("grantor").notNull(),
     recipientEntityId: uuid("recipient_entity_id").references(() => entities.id, {
       onDelete: "cascade",
@@ -566,6 +568,14 @@ export const gifts = pgTable(
     recipientExternalBeneficiaryId: uuid(
       "recipient_external_beneficiary_id",
     ).references(() => externalBeneficiaries.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    liabilityId: uuid("liability_id").references(() => liabilities.id, {
+      onDelete: "set null",
+    }),
+    percent: decimal("percent", { precision: 6, scale: 4 }),
+    parentGiftId: uuid("parent_gift_id"),
     useCrummeyPowers: boolean("use_crummey_powers").notNull().default(false),
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -574,6 +584,24 @@ export const gifts = pgTable(
   (t) => [
     index("gifts_client_year_idx").on(t.clientId, t.year),
     index("gifts_client_grantor_year_idx").on(t.clientId, t.grantor, t.year),
+    index("gifts_recipient_year_idx").on(t.recipientEntityId, t.year),
+    index("gifts_account_year_idx").on(t.accountId, t.year),
+    index("gifts_liability_year_idx").on(t.liabilityId, t.year),
+    foreignKey({
+      columns: [t.parentGiftId],
+      foreignColumns: [t.id],
+      name: "gifts_parent_gift_id_fk",
+    }).onDelete("cascade"),
+    check(
+      "gifts_event_kind",
+      sql`(
+        (${t.amount} IS NOT NULL AND ${t.accountId} IS NULL AND ${t.liabilityId} IS NULL AND ${t.percent} IS NULL)
+        OR
+        ((${t.accountId} IS NOT NULL OR ${t.liabilityId} IS NOT NULL)
+         AND ${t.percent} IS NOT NULL
+         AND NOT (${t.accountId} IS NOT NULL AND ${t.liabilityId} IS NOT NULL))
+      )`,
+    ),
   ],
 );
 
@@ -1109,6 +1137,49 @@ export const giftsRelations = relations(gifts, ({ one }) => ({
   recipientExternalBeneficiary: one(externalBeneficiaries, {
     fields: [gifts.recipientExternalBeneficiaryId],
     references: [externalBeneficiaries.id],
+  }),
+}));
+
+// ── Gift Series ───────────────────────────────────────────────────────────────
+
+export const giftSeries = pgTable(
+  "gift_series",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    scenarioId: uuid("scenario_id")
+      .notNull()
+      .references(() => scenarios.id, { onDelete: "cascade" }),
+    grantor: ownerEnum("grantor").notNull(),
+    recipientEntityId: uuid("recipient_entity_id")
+      .notNull()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    startYear: integer("start_year").notNull(),
+    startYearRef: yearRefEnum("start_year_ref"),
+    endYear: integer("end_year").notNull(),
+    endYearRef: yearRefEnum("end_year_ref"),
+    annualAmount: decimal("annual_amount", { precision: 15, scale: 2 }).notNull(),
+    inflationAdjust: boolean("inflation_adjust").notNull().default(false),
+    useCrummeyPowers: boolean("use_crummey_powers").notNull().default(false),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("gift_series_recipient_idx").on(t.recipientEntityId),
+    index("gift_series_client_idx").on(t.clientId),
+    check("gift_series_year_order", sql`${t.endYear} >= ${t.startYear}`),
+  ],
+);
+
+export const giftSeriesRelations = relations(giftSeries, ({ one }) => ({
+  client: one(clients, { fields: [giftSeries.clientId], references: [clients.id] }),
+  scenario: one(scenarios, { fields: [giftSeries.scenarioId], references: [scenarios.id] }),
+  recipientEntity: one(entities, {
+    fields: [giftSeries.recipientEntityId],
+    references: [entities.id],
   }),
 }));
 
