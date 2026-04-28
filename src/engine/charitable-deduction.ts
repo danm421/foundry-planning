@@ -66,15 +66,60 @@ const CARRYFORWARD_MAX_YEARS = 5;
 export function computeCharitableDeductionForYear(
   input: ComputeCharitableDeductionInput,
 ): ComputeCharitableDeductionResult {
-  // Implementation lands in Tasks 7-9 (TDD). Placeholder for now.
-  return {
-    deductionThisYear: 0,
-    carryforwardOut: input.carryforwardIn,
-    byBucket: {
-      cashPublic: 0,
-      cashPrivate: 0,
-      appreciatedPublic: 0,
-      appreciatedPrivate: 0,
-    },
+  const { giftsThisYear, agi, carryforwardIn, currentYear, willItemize } = input;
+
+  const byBucket: Record<CharityBucket, number> = {
+    cashPublic: 0,
+    cashPrivate: 0,
+    appreciatedPublic: 0,
+    appreciatedPrivate: 0,
   };
+
+  const giftsByBucket: Record<CharityBucket, number> = {
+    cashPublic: 0,
+    cashPrivate: 0,
+    appreciatedPublic: 0,
+    appreciatedPrivate: 0,
+  };
+  for (const g of giftsThisYear) {
+    giftsByBucket[g.bucket] += g.amount;
+  }
+
+  const carryforwardOut: CharityCarryforward = {
+    cashPublic: [...carryforwardIn.cashPublic],
+    cashPrivate: [...carryforwardIn.cashPrivate],
+    appreciatedPublic: [...carryforwardIn.appreciatedPublic],
+    appreciatedPrivate: [...carryforwardIn.appreciatedPrivate],
+  };
+
+  let deductionThisYear = 0;
+
+  for (const bucket of BUCKET_ORDER) {
+    const limit = AGI_LIMITS[bucket] * agi;
+    const giftThisYear = giftsByBucket[bucket];
+
+    const deductFromGift = Math.min(giftThisYear, limit);
+    byBucket[bucket] += deductFromGift;
+    deductionThisYear += deductFromGift;
+    const overflow = giftThisYear - deductFromGift;
+
+    if (overflow > 0) {
+      carryforwardOut[bucket].push({ amount: overflow, originYear: currentYear });
+    }
+  }
+
+  if (!willItemize) {
+    return {
+      deductionThisYear: 0,
+      carryforwardOut,
+      byBucket: {
+        cashPublic: 0,
+        cashPrivate: 0,
+        appreciatedPublic: 0,
+        appreciatedPrivate: 0,
+      },
+    };
+  }
+
+  return { deductionThisYear, carryforwardOut, byBucket };
 }
