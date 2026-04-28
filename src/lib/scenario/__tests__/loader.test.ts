@@ -4,8 +4,8 @@ import { randomUUID } from "node:crypto";
 import { loadEffectiveTree, loadEffectiveTreeForRef } from "../loader";
 import { loadClientData } from "@/lib/projection/load-client-data";
 import { db } from "@/db";
-import { scenarios, scenarioChanges, scenarioSnapshots } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { scenarios, scenarioChanges, scenarioSnapshots, externalBeneficiaries } from "@/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import type { ClientData } from "@/engine/types";
 
 const TEST_FIRM_ID = process.env.TEST_FIRM_ID;
@@ -190,6 +190,60 @@ describe.skipIf(!TEST_FIRM_ID || !TEST_CLIENT_ID)(
           side: "left",
         }),
       ).rejects.toThrow(/Snapshot .* not found/);
+    });
+  },
+);
+
+describe.skipIf(!TEST_FIRM_ID || !TEST_CLIENT_ID)(
+  "loadEffectiveTree — external_beneficiaries threaded through",
+  () => {
+    it("loads external_beneficiaries onto the effective tree", async () => {
+      // Seed two rows: one charity (public), one individual
+      const [charity, individual] = await db
+        .insert(externalBeneficiaries)
+        .values([
+          {
+            clientId: TEST_CLIENT_ID!,
+            name: "Stanford University",
+            kind: "charity" as const,
+            charityType: "public" as const,
+          },
+          {
+            clientId: TEST_CLIENT_ID!,
+            name: "Jane Doe",
+            kind: "individual" as const,
+            charityType: "public" as const, // charityType is notNull; default for individuals
+          },
+        ])
+        .returning();
+
+      try {
+        const { effectiveTree } = await loadEffectiveTree(
+          TEST_CLIENT_ID!,
+          TEST_FIRM_ID!,
+          "base",
+          {},
+        );
+
+        const extBens = effectiveTree.externalBeneficiaries ?? [];
+        const charityRow = extBens.find((e) => e.id === charity.id);
+        const individualRow = extBens.find((e) => e.id === individual.id);
+
+        expect(charityRow).toBeDefined();
+        expect(charityRow!.name).toBe("Stanford University");
+        expect(charityRow!.kind).toBe("charity");
+        expect(charityRow!.charityType).toBe("public");
+
+        expect(individualRow).toBeDefined();
+        expect(individualRow!.name).toBe("Jane Doe");
+        expect(individualRow!.kind).toBe("individual");
+      } finally {
+        await db
+          .delete(externalBeneficiaries)
+          .where(
+            inArray(externalBeneficiaries.id, [charity.id, individual.id]),
+          );
+      }
     });
   },
 );
