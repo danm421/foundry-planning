@@ -131,6 +131,8 @@ export const externalBeneficiaryKindEnum = pgEnum("external_beneficiary_kind", [
   "individual",
 ]);
 
+export const charityTypeEnum = pgEnum("charity_type", ["public", "private"]);
+
 export const beneficiaryTierEnum = pgEnum("beneficiary_tier", [
   "primary",
   "contingent",
@@ -492,6 +494,7 @@ export const externalBeneficiaries = pgTable("external_beneficiaries", {
     .references(() => clients.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   kind: externalBeneficiaryKindEnum("kind").notNull().default("charity"),
+  charityType: charityTypeEnum("charity_type").notNull().default("public"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

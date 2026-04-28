@@ -407,6 +407,13 @@
       "when": 1777329365196,
       "tag": "0057_gift_tracked_transfers",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1777385852917,
+      "tag": "0058_charitable_deduction_and_recipient_check",
+      "breakpoints": true
     }
   ]
 }
