@@ -57,5 +57,5 @@ export function DeathSpine({ data }: { data: SpineData }) {
 }
 
 function Chevron() {
-  return <div className="text-ink-3 text-center my-1">▼</div>;
+  return <div aria-hidden="true" className="text-ink-3 text-center my-1">▼</div>;
 }

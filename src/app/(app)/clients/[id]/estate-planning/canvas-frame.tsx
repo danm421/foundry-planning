@@ -24,7 +24,7 @@ export function CanvasFrame({
         <div className="border-r border-[var(--color-hair)]">
           <InEstateColumn tree={tree} asOfYear={currentYear} />
         </div>
-        <div className="min-h-[480px] p-4">
+        <div className="min-h-[480px]">
           <DeathSpine data={spineData} />
         </div>
         <div className="border-l border-[var(--color-hair)]">
