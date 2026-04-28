@@ -2825,6 +2825,50 @@
           "method": "btree",
           "with": {}
         },
+        "gifts_recipient_family_member_year_idx": {
+          "name": "gifts_recipient_family_member_year_idx",
+          "columns": [
+            {
+              "expression": "recipient_family_member_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "year",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"gifts\".\"recipient_family_member_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "gifts_recipient_external_beneficiary_year_idx": {
+          "name": "gifts_recipient_external_beneficiary_year_idx",
+          "columns": [
+            {
+              "expression": "recipient_external_beneficiary_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "year",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"gifts\".\"recipient_external_beneficiary_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "gifts_account_year_idx": {
           "name": "gifts_account_year_idx",
           "columns": [
