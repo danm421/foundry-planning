@@ -131,6 +131,8 @@ export const externalBeneficiaryKindEnum = pgEnum("external_beneficiary_kind", [
   "individual",
 ]);
 
+export const charityTypeEnum = pgEnum("charity_type", ["public", "private"]);
+
 export const beneficiaryTierEnum = pgEnum("beneficiary_tier", [
   "primary",
   "contingent",
@@ -492,6 +494,7 @@ export const externalBeneficiaries = pgTable("external_beneficiaries", {
     .references(() => clients.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   kind: externalBeneficiaryKindEnum("kind").notNull().default("charity"),
+  charityType: charityTypeEnum("charity_type").notNull().default("public"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -585,6 +588,12 @@ export const gifts = pgTable(
     index("gifts_client_year_idx").on(t.clientId, t.year),
     index("gifts_client_grantor_year_idx").on(t.clientId, t.grantor, t.year),
     index("gifts_recipient_year_idx").on(t.recipientEntityId, t.year),
+    index("gifts_recipient_family_member_year_idx")
+      .on(t.recipientFamilyMemberId, t.year)
+      .where(sql`${t.recipientFamilyMemberId} IS NOT NULL`),
+    index("gifts_recipient_external_beneficiary_year_idx")
+      .on(t.recipientExternalBeneficiaryId, t.year)
+      .where(sql`${t.recipientExternalBeneficiaryId} IS NOT NULL`),
     index("gifts_account_year_idx").on(t.accountId, t.year),
     index("gifts_liability_year_idx").on(t.liabilityId, t.year),
     foreignKey({

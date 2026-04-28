@@ -273,7 +273,7 @@ describe("deriveHeirCardData", () => {
 describe("deriveCharityCardData", () => {
   it("returns one card per external beneficiary with received bequests", () => {
     const tree = baseTree({
-      externalBeneficiaries: [{ id: "ex1", name: "Stanford University", kind: "charity" }],
+      externalBeneficiaries: [{ id: "ex1", name: "Stanford University", kind: "charity", charityType: "public" as const }],
       accounts: [
         clientAcct("a1", "DAF", "taxable", 1_000_000),
       ],

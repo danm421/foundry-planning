@@ -263,7 +263,7 @@ export interface ClientData {
   familyMembers?: FamilyMember[];
   /** External beneficiaries (charities and non-family individuals) configured on the
    *  client. The death-event module uses these for recipient resolution. */
-  externalBeneficiaries?: Array<{ id: string; name: string; kind: "charity" | "individual" }>;
+  externalBeneficiaries?: Array<{ id: string; name: string; kind: "charity" | "individual"; charityType: "public" | "private" }>;
 }
 
 // Minimal entity view used by the engine to decide cash-flow treatment of entity-owned
@@ -732,6 +732,8 @@ export interface ProjectionYear {
   estimatedBeneficiaryTax?: number;
   /** Non-fatal warnings emitted by the trust annual pass. */
   trustWarnings?: TrustWarning[];
+  /** IRC §170(b) charitable-deduction carryforward state at end of this year. */
+  charityCarryforward?: CharityCarryforward;
 }
 
 export interface AccountLedger {
@@ -794,5 +796,33 @@ export interface DeductionBreakdown {
     standardDeduction: number;
     taxDeductions: number;
     bySource: Record<string, { label: string; amount: number }>;
+  };
+}
+
+/**
+ * 5-year FIFO carryforward of unused charitable deductions, partitioned by AGI bucket.
+ */
+export interface CharityCarryforward {
+  /** Cash gifts to public charities — 60% AGI limit. */
+  cashPublic: CarryforwardEntry[];
+  /** Cash gifts to private foundations — 30% AGI limit. */
+  cashPrivate: CarryforwardEntry[];
+  /** Appreciated-property gifts to public charities — 30% AGI limit. */
+  appreciatedPublic: CarryforwardEntry[];
+  /** Appreciated-property gifts to private foundations — 20% AGI limit. */
+  appreciatedPrivate: CarryforwardEntry[];
+}
+
+export interface CarryforwardEntry {
+  amount: number;
+  originYear: number;
+}
+
+export function emptyCharityCarryforward(): CharityCarryforward {
+  return {
+    cashPublic: [],
+    cashPrivate: [],
+    appreciatedPublic: [],
+    appreciatedPrivate: [],
   };
 }

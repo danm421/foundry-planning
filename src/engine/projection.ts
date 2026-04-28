@@ -67,6 +67,14 @@ import {
   controllingFamilyMember,
   controllingEntity,
 } from "./ownership";
+import {
+  computeCharitableDeductionForYear,
+  type CharityBucket,
+} from "./charitable-deduction";
+import {
+  emptyCharityCarryforward,
+  type CharityCarryforward,
+} from "./types";
 
 // Map legacy income type to the new tax type categories.
 function legacyTaxType(
@@ -435,6 +443,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   let currentIncomes: Income[] = [...data.incomes];
 
   const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? []);
+  let charityCarryforward: CharityCarryforward = emptyCharityCarryforward();
 
   for (
     let year = planSettings.planStartYear;
@@ -1546,6 +1555,62 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Deductible-half-of-SE-tax is an above-the-line adjustment per §164(f).
     const aboveLineWithSeca = aboveLineDeductions + secaResult.deductibleHalf;
 
+    // Plan 3a — charitable-deduction pass on gift events targeting external beneficiaries
+    // (kind='charity'). Decay + FIFO consumption + AGI-limit per IRC §170(b).
+    const charityGiftsThisYear: { amount: number; bucket: CharityBucket }[] = [];
+    for (const g of data.gifts ?? []) {
+      if (g.year !== year) continue;
+      if (!g.recipientExternalBeneficiaryId) continue;
+      const beneficiary = (data.externalBeneficiaries ?? []).find(
+        (eb) => eb.id === g.recipientExternalBeneficiaryId,
+      );
+      if (!beneficiary || beneficiary.kind !== "charity") continue;
+      // v1 simplification: gift events carry no asset-class metadata yet, so all are treated as "cash".
+      // Plan 3b's drop popup will populate this when wired.
+      const isPrivate = beneficiary.charityType === "private";
+      charityGiftsThisYear.push({
+        amount: g.amount,
+        bucket: isPrivate ? "cashPrivate" : "cashPublic",
+      });
+    }
+
+    // Approximate AGI as taxable income minus above-line adjustments. Close enough for §170(b) bucket math
+    // (the exact AGI is computed inside calculateTaxYearBracket; this approximation lives upstream of that).
+    const charityAgi = Math.max(0, taxableIncome - aboveLineWithSeca);
+    const willItemize = useBracket
+      ? itemizedDeductions > (resolved?.params.stdDeduction[filingStatus] ?? 0)
+      : false;
+
+    const charityResult = computeCharitableDeductionForYear({
+      giftsThisYear: charityGiftsThisYear,
+      agi: charityAgi,
+      carryforwardIn: charityCarryforward,
+      currentYear: year,
+      willItemize,
+    });
+
+    // Carryforward state advances year-to-year regardless of itemize/standard outcome.
+    charityCarryforward = charityResult.carryforwardOut;
+
+    // Add the charitable deduction (already gated by willItemize inside the module) to the itemized total.
+    itemizedDeductions += charityResult.deductionThisYear;
+
+    // Patch the drill-down breakdown so the UI reflects gift-event charitable deductions
+    // alongside expense-tagged ones. Tax math already handled above via itemizedDeductions.
+    if (deductionBreakdownResult && charityResult.deductionThisYear > 0) {
+      const newCharitable = deductionBreakdownResult.belowLine.charitable + charityResult.deductionThisYear;
+      const newItemizedTotal = deductionBreakdownResult.belowLine.itemizedTotal + charityResult.deductionThisYear;
+      deductionBreakdownResult = {
+        ...deductionBreakdownResult,
+        belowLine: {
+          ...deductionBreakdownResult.belowLine,
+          charitable: newCharitable,
+          itemizedTotal: newItemizedTotal,
+          taxDeductions: Math.max(newItemizedTotal, deductionBreakdownResult.belowLine.standardDeduction),
+        },
+      };
+    }
+
     // Split realization OI out of the generic ordinaryIncome bucket so NIIT
     // (IRC §1411) can see investment interest while still excluding RMDs,
     // IRA distributions, and SE earnings which ride in ordinaryIncome.
@@ -2159,6 +2224,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       ...(income.socialSecurityDetail ? { socialSecurityDetail: income.socialSecurityDetail } : {}),
       taxDetail,
       taxResult,
+      charityCarryforward,
       deductionBreakdown: deductionBreakdownResult,
       withdrawals,
       expenses,

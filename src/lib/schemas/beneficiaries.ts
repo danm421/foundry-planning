@@ -8,9 +8,12 @@ const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 
 export const externalBeneficiaryKindSchema = z.enum(["charity", "individual"]);
 
+export const externalBeneficiaryCharityTypeSchema = z.enum(["public", "private"]);
+
 export const externalBeneficiaryCreateSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   kind: externalBeneficiaryKindSchema.optional().default("charity"),
+  charityType: externalBeneficiaryCharityTypeSchema.optional().default("public"),
   notes: z.string().trim().nullish(),
 });
 
