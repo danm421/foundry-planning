@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
+import { runProjectionWithEvents } from "@/engine";
 import { CanvasFrame } from "./canvas-frame";
 import { CanvasDndProvider } from "./dnd-context-provider";
 
@@ -23,6 +24,8 @@ export default async function EstatePlanningPage({ params }: PageProps) {
     throw e;
   }
 
+  const withResult = runProjectionWithEvents(tree);
+
   const clientFirstName = tree.client.firstName;
   // spouseName from ClientInfo is the full spouse name; use it as the display name
   const spouseFirstName = tree.client.spouseName ?? null;
@@ -34,7 +37,7 @@ export default async function EstatePlanningPage({ params }: PageProps) {
       spouseFirstName={spouseFirstName}
       tree={tree}
     >
-      <CanvasFrame tree={tree} />
+      <CanvasFrame tree={tree} withResult={withResult} />
     </CanvasDndProvider>
   );
 }

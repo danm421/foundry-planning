@@ -1,9 +1,19 @@
 import type { ClientData } from "@/engine/types";
+import type { ProjectionResult } from "@/engine";
 import { InEstateColumn } from "./in-estate-column";
 import { OutOfEstateColumn } from "./out-of-estate-column";
+import { DeathSpine } from "./spine/death-spine";
+import { deriveSpineData } from "./spine/lib/derive-spine-data";
 
-export function CanvasFrame({ tree }: { tree: ClientData }) {
+export function CanvasFrame({
+  tree,
+  withResult,
+}: {
+  tree: ClientData;
+  withResult: ProjectionResult;
+}) {
   const currentYear = new Date().getUTCFullYear();
+  const spineData = deriveSpineData({ tree, withResult });
   return (
     <div className="mx-auto max-w-[1440px] px-6 py-8">
       <header className="mb-6">
@@ -14,8 +24,8 @@ export function CanvasFrame({ tree }: { tree: ClientData }) {
         <div className="border-r border-[var(--color-hair)]">
           <InEstateColumn tree={tree} asOfYear={currentYear} />
         </div>
-        <div className="min-h-[480px] flex items-center justify-center text-[var(--color-ink-3)]">
-          <span className="text-sm">Death-sequence spine — coming in Plan 3</span>
+        <div className="min-h-[480px] p-4">
+          <DeathSpine data={spineData} />
         </div>
         <div className="border-l border-[var(--color-hair)]">
           <OutOfEstateColumn tree={tree} asOfYear={currentYear} />
