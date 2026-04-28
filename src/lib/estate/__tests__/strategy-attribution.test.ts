@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { rankTrustsByContribution, computeTrustCardData } from "../strategy-attribution";
+import {
+  rankTrustsByContribution,
+  computeTrustCardData,
+  computeProcrastinationCardData,
+  synthesizeDelayedTopGift,
+} from "../strategy-attribution";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 
 const ILIT_ID = "trust-ilit";
@@ -100,5 +105,38 @@ describe("computeTrustCardData", () => {
     expect(card.tagLine).toContain("$2.4M GIFT IN 2026");
     expect(card.primaryAmount).toBe(9_870_000);
     expect(card.narrative).toMatch(/Compounded/);
+  });
+});
+
+describe("synthesizeDelayedTopGift", () => {
+  it("moves the top trust-targeted gift forward by N years", () => {
+    const { tree } = fixture();
+    const delayed = synthesizeDelayedTopGift(tree, 10);
+    const movedGift = (delayed.gifts ?? []).find((g) => g.id === "g1");
+    expect(movedGift?.year).toBe(2036);
+  });
+
+  it("returns the original tree when no trust-targeted gifts exist", () => {
+    const tree = { entities: [], gifts: [], accounts: [] } as unknown as ClientData;
+    const result = synthesizeDelayedTopGift(tree, 10);
+    expect(result).toEqual(tree);
+  });
+});
+
+describe("computeProcrastinationCardData", () => {
+  it("returns negative delta for delayed gift", () => {
+    const { tree, withResult } = fixture();
+    const delayedResult = [
+      { year: 2054, accountLedgers: { "slat-broker": { endingValue: 4_450_000 } } },
+    ] as unknown as ProjectionYear[];
+    const card = computeProcrastinationCardData({
+      tree,
+      withResult,
+      delayedResult,
+      delayYears: 10,
+      finalDeathYear: 2054,
+    });
+    expect(card.primaryAmount).toBeLessThan(0);
+    expect(card.narrative).toMatch(/cost of procrastination/i);
   });
 });

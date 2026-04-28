@@ -186,3 +186,84 @@ function formatM(amount: number): string {
   const fixed = Math.abs(m) >= 10 ? m.toFixed(0) : m.toFixed(2);
   return parseFloat(fixed).toString() + "M";
 }
+
+export interface ProcrastinationCard {
+  primaryAmount: number;
+  tagLine: string;
+  narrative: string;
+}
+
+export interface ComputeProcrastinationArgs {
+  tree: ClientData;
+  withResult: ProjectionYear[];
+  /** Pre-computed projection on the delayed-top-gift synthesized variant. */
+  delayedResult: ProjectionYear[];
+  delayYears: number;
+  finalDeathYear: number;
+}
+
+export function computeProcrastinationCardData(
+  args: ComputeProcrastinationArgs,
+): ProcrastinationCard {
+  const { tree, withResult, delayedResult, delayYears } = args;
+  const ranked = rankTrustsByContribution(tree, withResult);
+  const top = ranked.find((r) => r.cardKind === "gifting");
+  if (!top) {
+    return {
+      primaryAmount: 0,
+      tagLine: `IF YOU WAIT ${delayYears} YEARS`,
+      narrative: "No active gifting trusts to compare against.",
+    };
+  }
+
+  const currentVal = compoundedTrustValueAtFinalYear(
+    top.trustId,
+    tree,
+    withResult,
+  );
+  const delayedVal = compoundedTrustValueAtFinalYear(
+    top.trustId,
+    tree,
+    delayedResult,
+  );
+  const delta = delayedVal - currentVal;
+
+  const giftEvent = (tree.gifts ?? []).find(
+    (g) => g.recipientEntityId === top.trustId,
+  );
+  const giftYear = giftEvent?.year ?? withResult[0]?.year ?? 2026;
+  const giftAmount = giftEvent ? Number(giftEvent.amount) : top.primaryAmount;
+
+  return {
+    primaryAmount: delta,
+    tagLine: `IF YOU WAIT ${delayYears} YEARS`,
+    narrative: `Same $${formatM(giftAmount)} gifted in ${giftYear + delayYears} compounds for ${delayYears} fewer years. Cost of procrastination.`,
+  };
+}
+
+export function synthesizeDelayedTopGift(
+  tree: ClientData,
+  delayYears: number,
+): ClientData {
+  const irrevocableTrustIds = new Set(
+    (tree.entities ?? [])
+      .filter((e) => e.entityType === "trust" && e.isIrrevocable === true)
+      .map((e) => e.id),
+  );
+
+  const trustGifts = (tree.gifts ?? []).filter(
+    (g) => g.recipientEntityId && irrevocableTrustIds.has(g.recipientEntityId),
+  );
+  if (trustGifts.length === 0) return tree;
+
+  const topGift = [...trustGifts].sort(
+    (a, b) => Number(b.amount) - Number(a.amount),
+  )[0];
+
+  return {
+    ...tree,
+    gifts: (tree.gifts ?? []).map((g) =>
+      g.id === topGift.id ? { ...g, year: g.year + delayYears } : g,
+    ),
+  };
+}
