@@ -30,6 +30,9 @@ export function rankTrustsByContribution(
       hasLifeInsurancePolicy(tree, entity.id);
 
     if (isIlit) {
+      // ILIT classification is exclusive: non-insurance accounts owned by an ILIT
+      // (e.g. cash to cover premium shortfalls) are intentionally excluded from
+      // primaryAmount. The card is meant to surface the death benefit headline.
       const faceValue = totalIlitFaceValue(tree, entity.id);
       ranked.push({
         trustId: entity.id,
@@ -49,7 +52,10 @@ export function rankTrustsByContribution(
         trustId: entity.id,
         trustName: entity.name ?? "Trust",
         trustSubType: entity.trustSubType,
-        primaryAmount: compoundedValue || giftAmount,
+        // Floor: if the projection produced $0 (e.g. trust fully distributed by final
+        // year, or no ledger entry), fall back to total gifts contributed. We never
+        // want $0 on a strategy card if the trust was actually funded.
+        primaryAmount: compoundedValue > 0 ? compoundedValue : giftAmount,
         cardKind: "gifting",
       });
     }
