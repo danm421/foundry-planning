@@ -3,6 +3,7 @@ import { db } from "@/db";
 import {
   clients,
   gifts,
+  liabilities,
   entities,
   familyMembers,
   externalBeneficiaries,
@@ -140,20 +141,58 @@ export async function POST(
       }
     }
 
-    const [row] = await db
-      .insert(gifts)
-      .values({
-        clientId: id,
-        year: data.year,
-        amount: String(data.amount),
-        grantor: data.grantor,
-        recipientEntityId: data.recipientEntityId ?? null,
-        recipientFamilyMemberId: data.recipientFamilyMemberId ?? null,
-        recipientExternalBeneficiaryId: data.recipientExternalBeneficiaryId ?? null,
-        useCrummeyPowers: data.useCrummeyPowers ?? false,
-        notes: data.notes ?? null,
-      })
-      .returning();
+    const row = await db.transaction(async (tx) => {
+      const [parent] = await tx
+        .insert(gifts)
+        .values({
+          clientId: id,
+          year: data.year,
+          yearRef: data.yearRef ?? null,
+          // amount is only valid for cash gifts; null for asset/liability transfers
+          amount: data.accountId == null && data.liabilityId == null
+            ? (data.amount != null ? String(data.amount) : null)
+            : null,
+          grantor: data.grantor,
+          recipientEntityId: data.recipientEntityId ?? null,
+          recipientFamilyMemberId: data.recipientFamilyMemberId ?? null,
+          recipientExternalBeneficiaryId: data.recipientExternalBeneficiaryId ?? null,
+          accountId: data.accountId ?? null,
+          liabilityId: data.liabilityId ?? null,
+          percent: data.percent != null ? String(data.percent) : null,
+          parentGiftId: null,
+          useCrummeyPowers: data.useCrummeyPowers ?? false,
+          notes: data.notes ?? null,
+        })
+        .returning();
+
+      // If this is an asset transfer (accountId set, no explicit liabilityId),
+      // check for a linked liability and auto-create a bundled child gift row.
+      if (data.accountId != null && data.liabilityId == null) {
+        const linked = await tx.query.liabilities.findFirst({
+          where: eq(liabilities.linkedPropertyId, data.accountId),
+        });
+        if (linked) {
+          await tx.insert(gifts).values({
+            clientId: id,
+            year: data.year,
+            yearRef: data.yearRef ?? null,
+            amount: null,
+            grantor: data.grantor,
+            recipientEntityId: data.recipientEntityId ?? null,
+            recipientFamilyMemberId: null,
+            recipientExternalBeneficiaryId: null,
+            accountId: null,
+            liabilityId: linked.id,
+            percent: data.percent != null ? String(data.percent) : null,
+            parentGiftId: parent.id,
+            useCrummeyPowers: false,
+            notes: `Auto-bundled with asset transfer of account ${data.accountId}`,
+          });
+        }
+      }
+
+      return parent;
+    });
     return NextResponse.json(row, { status: 201 });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
