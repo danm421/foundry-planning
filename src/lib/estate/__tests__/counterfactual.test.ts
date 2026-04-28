@@ -48,7 +48,7 @@ function fixture(): ClientData {
     familyMembers: [
       { id: FM_CLIENT, firstName: "Client", lastName: "Test", relationship: "other", role: "client", dateOfBirth: "1970-01-01" } satisfies FamilyMember,
       { id: FM_SPOUSE, firstName: "Spouse", lastName: "Test", relationship: "other", role: "spouse", dateOfBirth: "1972-01-01" } satisfies FamilyMember,
-      { id: FM_CHILD, firstName: "Child", lastName: "Test", relationship: "child", role: "dependent", dateOfBirth: "2005-01-01" } satisfies FamilyMember,
+      { id: FM_CHILD, firstName: "Child", lastName: "Test", relationship: "child", role: "child", dateOfBirth: "2005-01-01" } satisfies FamilyMember,
     ],
     gifts: [
       { id: "g1", year: 2026, amount: 100_000, grantor: "client", recipientEntityId: TRUST_SLAT, useCrummeyPowers: true } satisfies Gift,
