@@ -6,7 +6,7 @@ import type { ProjectionResult } from "@/engine/projection";
 import { ChipBar } from "./chip-bar";
 import { AssumptionsModal } from "./assumptions-modal";
 import { YearScrubber } from "./year-scrubber";
-// import { ComparisonGrid } from "./comparison-grid";    // Phase 6 — Task 26
+import { ComparisonGrid } from "./comparison-grid";
 // import { TrajectoryChart } from "./trajectory-chart";  // Phase 7 — Task 28
 // import { StrategyCards } from "./strategy-cards";      // Phase 8 — Task 29
 
@@ -46,9 +46,9 @@ export function ProjectionPanel({
   const [scrubberYear, setScrubberYear] = useState<number>(finalDeathYear);
   const [assumptionsOpen, setAssumptionsOpen] = useState(false);
 
-  // Phase 6-8 will read these — referenced here so the props stay live
+  // Phase 7-8 will read this — referenced here so the prop stays live
   // and TypeScript flags any later breaking change to ProjectionResult.
-  void withoutResult;
+  // (withoutResult is now consumed by ComparisonGrid below.)
   void procrastinatedResult;
 
   return (
@@ -65,8 +65,12 @@ export function ProjectionPanel({
         value={scrubberYear}
         onChange={setScrubberYear}
       />
-      {/* Phase 6 — Task 26 */}
-      {/* <ComparisonGrid tree={tree} withResult={withResult} withoutResult={withoutResult} scrubberYear={scrubberYear} /> */}
+      <ComparisonGrid
+        tree={tree}
+        withResult={withResult}
+        withoutResult={withoutResult}
+        scrubberYear={scrubberYear}
+      />
       {/* Phase 7 — Task 28 */}
       {/* <TrajectoryChart withResult={withResult} withoutResult={withoutResult} firstDeathYear={firstDeathYear} secondDeathYear={secondDeathYear} scrubberYear={scrubberYear} /> */}
       {/* Phase 8 — Task 29 */}
