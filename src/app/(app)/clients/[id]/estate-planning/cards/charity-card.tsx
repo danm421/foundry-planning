@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
+import MoneyText from "@/components/money-text";
 import type { CharityCardData } from "../lib/derive-card-data";
 import { useBequestEdit } from "../dnd-context-provider";
 import { BequestRow } from "./bequest-row";
@@ -41,20 +42,37 @@ export function CharityCard({ data, defaultExpanded = false }: Props) {
 
       {open && (
         <div className="bg-[var(--color-card-2)] px-5 py-3">
-          {count === 0 ? (
-            <div className="rounded-md border border-dashed border-[var(--color-hair-2)] px-3 py-3 text-center text-xs text-[var(--color-ink-3)]">
-              Drop assets to bequeath
-            </div>
+          {data.bequestsReceived.length === 0 && data.lifetimeGifts.length === 0 ? (
+            <p className="text-xs text-[var(--color-ink-3)]">No bequests or lifetime gifts yet.</p>
           ) : (
-            <ul className="flex flex-col">
-              {data.bequestsReceived.map((b) => (
-                <BequestRow key={b.bequestId} bequest={b} onEdit={onEditBequest} />
-              ))}
-            </ul>
+            <>
+              {data.bequestsReceived.length > 0 && (
+                <ul className="flex flex-col">
+                  {data.bequestsReceived.map((b) => (
+                    <BequestRow key={b.bequestId} bequest={b} onEdit={onEditBequest} subLine="Bequest" />
+                  ))}
+                </ul>
+              )}
+              {data.lifetimeGifts.length > 0 && (
+                <ul className={`flex flex-col${data.bequestsReceived.length > 0 ? " mt-2 pt-2 border-t border-[var(--color-hair)]" : ""}`}>
+                  {data.lifetimeGifts.map((g, i) => (
+                    <li
+                      key={`${g.year}-${i}`}
+                      className="flex items-center justify-between gap-2 py-1.5 text-[12px]"
+                    >
+                      <span className="truncate text-[var(--color-ink-2)]">
+                        {g.sourceLabel} <span className="text-[var(--color-ink-3)]">({g.assetClass})</span>
+                      </span>
+                      <span className="shrink-0 text-xs text-[var(--color-ink-3)]">{g.year}</span>
+                      <MoneyText value={g.amount} className="shrink-0 tabular-nums text-[var(--color-ink)]" />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </div>
       )}
     </div>
   );
 }
-
