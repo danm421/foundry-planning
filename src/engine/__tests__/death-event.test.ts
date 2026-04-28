@@ -662,6 +662,30 @@ describe("applyFallback (Step 4)", () => {
     expect(result.step.ledgerEntries[0].via).toBe("fallback_children");
   });
 
+  it("tier 2: excludes family members whose role is 'client' or 'spouse' even when relationship === 'child'", () => {
+    // Guards against a real data-quality issue: dev DB had FamilyMember rows for
+    // the household principals (role=client, role=spouse) carrying a stale
+    // relationship: "child" value, which caused the fallback to sweep the
+    // grantors themselves into the heirs distribution. Filter must be by both
+    // relationship AND role.
+    const fms: FamilyMember[] = [
+      { id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "child", firstName: "Cooper", lastName: "Sample", dateOfBirth: null },
+      { id: LEGACY_FM_SPOUSE, role: "spouse" as const, relationship: "child", firstName: "Susan", lastName: "Sample", dateOfBirth: null },
+      { id: "fm-real-child-1", role: "child" as const, relationship: "child", firstName: "Child", lastName: "Sample", dateOfBirth: null },
+      { id: "fm-real-child-2", role: "other" as const, relationship: "child", firstName: "Second Child", lastName: "Sample", dateOfBirth: null },
+    ];
+    const result = applyFallback(source, 1, null, null, fms, undefined);
+    expect(result.step.ledgerEntries).toHaveLength(2);
+    expect(result.step.ledgerEntries.every((e) => e.via === "fallback_children")).toBe(true);
+    const recipientIds = result.step.ledgerEntries.map((e) => e.recipientId);
+    expect(recipientIds).toContain("fm-real-child-1");
+    expect(recipientIds).toContain("fm-real-child-2");
+    expect(recipientIds).not.toContain(LEGACY_FM_CLIENT);
+    expect(recipientIds).not.toContain(LEGACY_FM_SPOUSE);
+    // Each real child receives 50%, not 25%, after exclusion
+    expect(result.step.ledgerEntries[0].amount).toBe(50000);
+  });
+
   it("tier 3: no survivor, no children → Other Heirs sink", () => {
     const result = applyFallback(source, 1, null, null, [], undefined);
     expect(result.step.ledgerEntries).toHaveLength(1);

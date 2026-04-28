@@ -250,6 +250,29 @@ describe("deriveSpineData", () => {
     expect(typeof data.totals.toHeirs).toBe("number");
   });
 
+  it("two-grantor: pair.netWorth reflects plan-start-year balances, not first-death-year balances", () => {
+    // Bug fix: pair.client.netWorth and pair.spouse.netWorth render under a
+    // "TODAY ${planStartYear}" timeline tick, but were being computed from the
+    // first-death-year grossEstate (~2048 in this fixture). With 5%+ growth
+    // rates compounded over ~22 years, the first-death values are several
+    // multiples of the year-zero values.
+    const tree = twoGrantorFixture();
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({ tree, withResult });
+    if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
+
+    const pairTotal = data.pair.client.netWorth + data.pair.spouse.netWorth;
+    const yearZeroPortfolio = withResult.years[0].portfolioAssets.total;
+    const firstDeathGross = withResult.firstDeathEvent?.grossEstate ?? 0;
+
+    // Pair total should be on the order of year-zero portfolio (give or take
+    // liabilities and gross-vs-net treatment), NOT the at-first-death snapshot.
+    expect(pairTotal).toBeLessThan(yearZeroPortfolio * 1.5);
+    expect(pairTotal).toBeGreaterThan(yearZeroPortfolio * 0.3);
+    // And materially smaller than the deceased's at-first-death grossEstate.
+    expect(pairTotal).toBeLessThan(firstDeathGross * 0.5);
+  });
+
   it("returns 'single-grantor' when only one grantor is in the plan (no spouse)", () => {
     const tree = singleGrantorFixture();
     const withResult = runProjectionWithEvents(tree);

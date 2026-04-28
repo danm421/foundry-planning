@@ -112,6 +112,13 @@ function buildBeneficiaryCards(
       t.recipientKind !== "system_default"
     )
       continue;
+    // Defensive: skip family_members whose role is "client"/"spouse" — they're
+    // grantors, not heirs. The engine's applyFallback excludes these by role,
+    // but other engine paths could still emit a self-transfer with stale data.
+    if (t.recipientKind === "family_member" && t.recipientId) {
+      const fm = famById.get(t.recipientId);
+      if (fm && (fm.role === "client" || fm.role === "spouse")) continue;
+    }
 
     const key: Key = `${t.recipientKind}|${t.recipientId ?? ""}`;
     const existing = grouped.get(key);
@@ -154,50 +161,44 @@ function buildBeneficiaryCards(
 }
 
 /**
- * Compute the survivor's gross estate at the first-death year.
- * The engine doesn't compute this directly (the deceased's gross estate is on
- * EstateTaxResult.grossEstate). We call computeGrossEstate() directly, using
- * ending balances from the year BEFORE the death year.
+ * Compute one principal's gross estate as if they died at `year`, reading
+ * end-of-year balances from the projection's accountLedgers. Used to compute
+ * "today" net-worth values for the PairRow under the TODAY tick (year =
+ * planStartYear), and previously also used for the survivor's at-first-death
+ * snapshot.
  *
- * If we can't find the necessary balances, we fall back to 0 and log a note
- * in the returned object so callers can tell.
+ * Returns 0 when the year row isn't found in the projection.
  */
-function computeSurvivorGrossEstateAtFirstDeath(
+function computeGrossEstateAtYear(
   tree: ClientData,
   withResult: ProjectionResult,
-  survivor: "client" | "spouse",
-  firstDeathYear: number,
+  principal: "client" | "spouse",
+  year: number,
 ): number {
-  // Find the survivor's FM id
-  const survivorFm = (tree.familyMembers ?? []).find((fm) => fm.role === survivor);
-  const survivorFmId = survivorFm?.id ?? null;
+  const principalFm = (tree.familyMembers ?? []).find((fm) => fm.role === principal);
+  const principalFmId = principalFm?.id ?? null;
+  const otherRole = principal === "client" ? "spouse" : "client";
+  const otherFm = (tree.familyMembers ?? []).find((fm) => fm.role === otherRole);
+  const otherFmId = otherFm?.id ?? null;
 
-  const deceased = survivor === "client" ? "spouse" : "client";
-  const deceasedFm = (tree.familyMembers ?? []).find((fm) => fm.role === deceased);
-  const deceasedFmId = deceasedFm?.id ?? null;
+  const yearRow = withResult.years.find((y) => y.year === year);
+  if (!yearRow) return 0;
 
-  // Use ending balances from the year prior to first death (beginning-of-death-year state)
-  const priorYearIdx = withResult.years.findIndex((y) => y.year === firstDeathYear - 1);
-  if (priorYearIdx < 0) return 0;
-
-  const priorYear = withResult.years[priorYearIdx];
-  // Build accountBalances from the prior year's accountLedgers (endingValue)
   const accountBalances: Record<string, number> = {};
-  for (const [id, ledger] of Object.entries(priorYear.accountLedgers)) {
+  for (const [id, ledger] of Object.entries(yearRow.accountLedgers)) {
     accountBalances[id] = ledger.endingValue;
   }
 
   const result = computeGrossEstate({
-    deceased: survivor, // We're computing the "deceased" (the survivor in first-death terms)
-    deathOrder: 1,       // Treat as first death for pct purposes
+    deceased: principal,
+    deathOrder: 1,
     accounts: tree.accounts,
     accountBalances,
     liabilities: tree.liabilities,
     entities: tree.entities ?? [],
-    deceasedFmId: survivorFmId,
-    survivorFmId: deceasedFmId,
+    deceasedFmId: principalFmId,
+    survivorFmId: otherFmId,
   });
-
   return result.total;
 }
 
@@ -252,22 +253,11 @@ export function deriveSpineData(args: {
     const firstEvent = withResult.firstDeathEvent;
     const secondEvent = withResult.secondDeathEvent;
 
-    // Net worth at first-death year: deceased's is grossEstate from the event;
-    // survivor's is computed via computeGrossEstate with prior-year balances.
-    const deceasedGrossEstate = firstEvent?.grossEstate ?? 0;
-    const survivorGrossEstate = firstEvent
-      ? computeSurvivorGrossEstateAtFirstDeath(
-          tree,
-          withResult,
-          firstDeceasedRole === "client" ? "spouse" : "client",
-          firstDeathYear,
-        )
-      : 0;
-
-    const clientNetWorth =
-      firstDeceasedRole === "client" ? deceasedGrossEstate : survivorGrossEstate;
-    const spouseNetWorth =
-      firstDeceasedRole === "spouse" ? deceasedGrossEstate : survivorGrossEstate;
+    // Net worth at TODAY (planStartYear) — both principals' gross estates as of
+    // the plan's first projection year. The PairRow renders under a "TODAY ${year}"
+    // tick, so the values must reflect today, not the future at-first-death snapshot.
+    const clientNetWorth = computeGrossEstateAtYear(tree, withResult, "client", planStartYear);
+    const spouseNetWorth = computeGrossEstateAtYear(tree, withResult, "spouse", planStartYear);
 
     // Combined value: survivor holds everything at the year immediately after first death
     // (post-marital-deduction). Use portfolioAssets.total from that year row.

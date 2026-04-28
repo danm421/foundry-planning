@@ -973,7 +973,11 @@ export function applyFallback(
 
   // Tier 2 — living children. "Living" = no dateOfDeath field today; assume
   // all listed children are living. (See future-work fallback_children_recipient_deceased.)
-  const children = familyMembers.filter((f) => f.relationship === "child");
+  // Exclude household principals (role=client/spouse) — they're grantors, not heirs,
+  // even if their FamilyMember row carries a stale relationship: "child" value.
+  const children = familyMembers.filter(
+    (f) => f.relationship === "child" && f.role !== "client" && f.role !== "spouse",
+  );
   if (children.length > 0) {
     const perChild = 1 / children.length;
     const shares: SplitShare[] = children.map((c) => ({
