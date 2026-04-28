@@ -217,7 +217,6 @@ d("POST /api/clients/[id]/gifts", () => {
         name: "Rental Property",
         category: "real_estate" as const,
         subType: "rental_property",
-        owner: "client",
         value: "500000",
         basis: "200000",
       })
@@ -289,7 +288,6 @@ d("POST /api/clients/[id]/gifts", () => {
         name: "Brokerage Account",
         category: "taxable" as const,
         subType: "brokerage",
-        owner: "client",
         value: "100000",
         basis: "80000",
       })

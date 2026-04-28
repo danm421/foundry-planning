@@ -166,17 +166,25 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
     sortOrder: d.sortOrder,
   }));
 
-  const giftsList = giftRows.map((g) => ({
-    id: g.id,
-    year: g.year,
-    amount: parseFloat(g.amount),
-    grantor: g.grantor,
-    recipientEntityId: g.recipientEntityId ?? null,
-    recipientFamilyMemberId: g.recipientFamilyMemberId ?? null,
-    recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? null,
-    useCrummeyPowers: g.useCrummeyPowers,
-    notes: g.notes ?? null,
-  }));
+  // FamilyView's gift list shows cash gifts only — asset/liability transfers
+  // (post-migration-0057, these have null amount) are surfaced in the trust
+  // dialog Transfers tab instead.
+  // FamilyView's gift list shows cash gifts only — asset/liability transfers
+  // (post-migration-0057, these have null amount) are surfaced in the trust
+  // dialog Transfers tab instead.
+  const giftsList = giftRows
+    .filter((g) => g.amount != null)
+    .map((g) => ({
+      id: g.id,
+      year: g.year,
+      amount: parseFloat(g.amount as string),
+      grantor: g.grantor,
+      recipientEntityId: g.recipientEntityId ?? null,
+      recipientFamilyMemberId: g.recipientFamilyMemberId ?? null,
+      recipientExternalBeneficiaryId: g.recipientExternalBeneficiaryId ?? null,
+      useCrummeyPowers: g.useCrummeyPowers,
+      notes: g.notes ?? null,
+    }));
 
   const primary: PrimaryInfo = {
     firstName: effectiveClient.firstName,

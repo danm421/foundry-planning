@@ -1,15 +1,9 @@
 import { z } from "zod";
 import { uuidSchema } from "./common";
+import { YEAR_REFS } from "@/lib/milestones";
 
 const yearRefSchema = z
-  .enum([
-    "client_retire",
-    "spouse_retire",
-    "client_death",
-    "spouse_death",
-    "survivorship",
-    "today",
-  ])
+  .enum(YEAR_REFS)
   .nullable()
   .optional();
 
