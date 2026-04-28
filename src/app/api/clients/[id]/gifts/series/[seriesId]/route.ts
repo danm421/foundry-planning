@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, giftSeries } from "@/db/schema";
+import { clients, entities, giftSeries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
+import { parseBody } from "@/lib/schemas/common";
 import { giftSeriesUpdateSchema } from "@/lib/schemas/gift-series";
 
 export const dynamic = "force-dynamic";
@@ -27,14 +28,8 @@ export async function PATCH(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    const body = await request.json();
-    const parsed = giftSeriesUpdateSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid body", issues: parsed.error.issues },
-        { status: 400 },
-      );
-    }
+    const parsed = await parseBody(giftSeriesUpdateSchema, request);
+    if (!parsed.ok) return parsed.response;
     const d = parsed.data;
 
     // If endYear/startYear are both provided, validate ordering
@@ -43,6 +38,28 @@ export async function PATCH(
         { error: "endYear must be ≥ startYear" },
         { status: 400 },
       );
+    }
+
+    // Re-validate recipient trust on PATCH: prevents cross-client tampering
+    // (re-targeting a series at another client's trust) and re-targeting a
+    // series at a revocable trust mid-stream. Mirrors POST validation.
+    if (d.recipientEntityId !== undefined) {
+      const [trust] = await db
+        .select()
+        .from(entities)
+        .where(and(eq(entities.id, d.recipientEntityId), eq(entities.clientId, id)));
+      if (!trust) {
+        return NextResponse.json(
+          { error: "Recipient entity not found for this client" },
+          { status: 400 },
+        );
+      }
+      if (trust.entityType !== "trust" || !trust.isIrrevocable) {
+        return NextResponse.json(
+          { error: "Recurring gifts target irrevocable trusts only" },
+          { status: 400 },
+        );
+      }
     }
 
     const [updated] = await db

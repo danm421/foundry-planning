@@ -473,5 +473,17 @@ d("gift_series CRUD", () => {
       { params: Promise.resolve({ id: clientB.id, seriesId }) },
     );
     expect(patchRes.status).toBe(404);
+
+    // Verify clientA's row was NOT mutated. Without this read-back, the test
+    // would still pass if verifyClient(clientB) failed for the wrong reason
+    // (e.g. clientB became unreachable) while the WHERE-clientId guard was
+    // dropped — pin the actual safety property.
+    const { giftSeries } = schema;
+    const [original] = await db
+      .select()
+      .from(giftSeries)
+      .where(drizzleOrm.eq(giftSeries.id, seriesId));
+    expect(original?.annualAmount).toBe("18000.00");
+    expect(original?.clientId).toBe(clientA);
   });
 });

@@ -19,12 +19,20 @@ async function getBaseCaseScenarioId(
 
   if (!client) return null;
 
-  const [scenario] = await db
+  // LIMIT 2 to surface the "multiple base scenarios" data-integrity bug loudly
+  // rather than silently picking an arbitrary one.
+  const baseScenarios = await db
     .select()
     .from(scenarios)
-    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
+    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)))
+    .limit(2);
 
-  return scenario?.id ?? null;
+  if (baseScenarios.length > 1) {
+    throw new Error(
+      `Multiple base scenarios for client ${clientId}: invariant violated`,
+    );
+  }
+  return baseScenarios[0]?.id ?? null;
 }
 
 // GET /api/clients/[id]/gifts/series — list gift_series rows for base-case scenario
