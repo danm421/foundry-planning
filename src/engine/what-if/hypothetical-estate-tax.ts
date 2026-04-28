@@ -5,6 +5,7 @@ import type {
   EstateTaxResult,
   FamilyMember,
   Gift,
+  GiftEvent,
   HypotheticalEstateTax,
   HypotheticalEstateTaxOrdering,
   Income,
@@ -36,6 +37,9 @@ export interface HypotheticalEstateTaxInput {
   planSettings: PlanSettings;
   gifts: Gift[];
   annualExclusionsByYear: Record<number, number>;
+  /** Phase 3 gift events (asset + liability transfers) for lifetime exemption consumption.
+   *  Optional; defaults to [] when absent. */
+  giftEvents?: GiftEvent[];
 }
 
 function sumTotals(results: EstateTaxResult[]) {
@@ -76,6 +80,7 @@ function runOrdering(
     entities: structuredClone(input.entities),
     planSettings: input.planSettings,
     gifts: input.gifts,
+    giftEvents: input.giftEvents ?? [],
     annualExclusionsByYear: input.annualExclusionsByYear,
     dsueReceived: 0,
   });
@@ -109,6 +114,7 @@ function runOrdering(
     entities: firstResult.entities,
     planSettings: input.planSettings,
     gifts: input.gifts,
+    giftEvents: input.giftEvents ?? [],
     annualExclusionsByYear: input.annualExclusionsByYear,
     dsueReceived: firstResult.dsueGenerated,
   });

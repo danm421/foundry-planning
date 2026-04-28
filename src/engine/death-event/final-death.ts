@@ -342,11 +342,17 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     estateAdminExpenses: input.planSettings.estateAdminExpenses ?? 0,
   };
 
+  // accountValueAtYear: at final death, accountBalances holds the death-year snapshot.
+  const finalDeathBalances = accountBalances;
+  const accountValueAtYear = (accountId: string, _year: number) =>
+    finalDeathBalances[accountId] ?? 0;
   const adjustedGifts = computeAdjustedTaxableGifts(
     input.deceased,
     input.gifts,
     input.entities,
     input.annualExclusionsByYear,
+    accountValueAtYear,
+    input.giftEvents ?? [],
   );
   const taxInflation =
     input.planSettings.taxInflationRate ?? input.planSettings.inflationRate ?? 0;

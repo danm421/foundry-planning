@@ -2139,6 +2139,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       wills: data.wills ?? [],
       planSettings,
       gifts: data.gifts ?? [],
+      giftEvents: data.giftEvents,
       annualExclusionsByYear,
     });
 
@@ -2228,6 +2229,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         entities: currentEntities,
         planSettings,
         gifts: data.gifts ?? [],
+        giftEvents: data.giftEvents,
         annualExclusionsByYear,
         dsueReceived: 0, // first decedent has no prior DSUE
       });
@@ -2289,6 +2291,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         entities: currentEntities,
         planSettings,
         gifts: data.gifts ?? [],
+        giftEvents: data.giftEvents,
         annualExclusionsByYear,
         dsueReceived: stashedDSUE,
       });

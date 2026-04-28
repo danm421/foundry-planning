@@ -1,4 +1,4 @@
-import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, FamilyMember, Will, WillBequest, EntitySummary, Income, PlanSettings, Gift, BeneficiaryRef } from "../types";
+import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, FamilyMember, Will, WillBequest, EntitySummary, Income, PlanSettings, Gift, GiftEvent, BeneficiaryRef } from "../types";
 import { nextSyntheticId } from "../asset-transactions";
 import type { FilingStatus } from "../../lib/tax/types";
 import type { AccountOwner } from "../ownership";
@@ -878,6 +878,11 @@ export interface DeathEventInput {
   planSettings: PlanSettings;
   gifts: Gift[];
   annualExclusionsByYear: Record<number, number>;
+  /** Phase 3 gift events (asset + liability transfers). Used by
+   *  computeAdjustedTaxableGifts to include asset-transfer values in lifetime
+   *  exemption consumption. Optional for backwards compat with test fixtures
+   *  that don't set it; defaults to [] in the consumer. */
+  giftEvents?: GiftEvent[];
   /** Stashed DSUE from a prior first-death event. 0 at first death;
    *  survivor's DSUE balance at final death. */
   dsueReceived: number;

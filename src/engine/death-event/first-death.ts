@@ -287,11 +287,19 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   // Phase 5 — tax computation. Preview first so we know the drain amount,
   // then rebuild after drains with the debits populated. buildEstateTaxResult
   // is pure, so calling it twice is safe.
+  //
+  // accountValueAtYear: returns the year-N balance for a given account.
+  // At first-death the balances in accountBalances are the death-year snapshot.
+  const deathYearBalances = chainResult.accountBalances;
+  const accountValueAtYear = (accountId: string, _year: number) =>
+    deathYearBalances[accountId] ?? 0;
   const adjustedGifts = computeAdjustedTaxableGifts(
     input.deceased,
     input.gifts,
     input.entities,
     input.annualExclusionsByYear,
+    accountValueAtYear,
+    input.giftEvents ?? [],
   );
   const taxInflation =
     input.planSettings.taxInflationRate ?? input.planSettings.inflationRate ?? 0;
