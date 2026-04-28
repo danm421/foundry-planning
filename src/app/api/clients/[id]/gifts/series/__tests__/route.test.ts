@@ -1,246 +1,477 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+/**
+ * Integration tests for:
+ *   GET  /api/clients/[id]/gifts/series
+ *   POST /api/clients/[id]/gifts/series
+ *   PATCH  /api/clients/[id]/gifts/series/[seriesId]
+ *   DELETE /api/clients/[id]/gifts/series/[seriesId]
+ *
+ * Exercises the real DB via Drizzle.  Requires DATABASE_URL — suite is skipped
+ * in CI if unavailable.
+ *
+ * Covers:
+ *   1. POST creates a single gift_series row with all new fields.
+ *   2. GET returns persisted series rows.
+ *   3. PATCH /[seriesId] updates a row.
+ *   4. DELETE /[seriesId] removes a row.
+ *   5. POST rejects endYear < startYear with 400.
+ *   6. POST rejects revocable trust as recipient with 400.
+ *   7. PATCH on a series owned by a different client returns 404.
+ */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 
-// ---------------------------------------------------------------------------
-// Hoisted mocks — must be at top level before any vi.mock() calls
-// ---------------------------------------------------------------------------
-const mockInsert = vi.hoisted(() => vi.fn());
-const mockTransaction = vi.hoisted(() => vi.fn());
-const mockSelect = vi.hoisted(() => vi.fn());
-
-// Shared state for controlling DB responses per test
-const dbState = vi.hoisted(() => ({
-  client: null as object | null,
-  trust: null as object | null,
-  planSettings: null as object | null,
-  // capturedInsertRows: the array of row objects passed to the single bulk insert call
-  capturedInsertRows: [] as Array<{
-    clientId: string;
-    year: number;
-    amount: string;
-    grantor: string;
-    recipientEntityId: string;
-  }>,
-}));
-
-vi.mock("@clerk/nextjs/server", () => ({
-  auth: vi.fn().mockResolvedValue({ userId: "user_test", orgId: "firm_a" }),
-}));
-
-vi.mock("@/lib/db-helpers", () => ({
-  requireOrgId: vi.fn().mockResolvedValue("firm_a"),
-}));
-
-vi.mock("@/db", () => {
-  let selectCallIndex = 0;
-
-  mockSelect.mockImplementation(() => ({
-    from: vi.fn(() => ({
-      where: vi.fn(() => {
-        const n = selectCallIndex++;
-        if (n === 0) {
-          return Promise.resolve(dbState.client ? [dbState.client] : []);
-        }
-        if (n === 1) {
-          return Promise.resolve(dbState.trust ? [dbState.trust] : []);
-        }
-        // n === 2: planSettings
-        return Promise.resolve(dbState.planSettings ? [dbState.planSettings] : []);
-      }),
-    })),
-  }));
-
-  mockInsert.mockImplementation(() => ({
-    values: vi.fn((rows: Array<{ clientId: string; year: number; amount: string; grantor: string; recipientEntityId: string }>) => {
-      dbState.capturedInsertRows = rows;
-      return {
-        returning: vi.fn(() => {
-          return Promise.resolve(rows.map((_, i) => ({ id: `gift_${i}` })));
-        }),
-      };
-    }),
-  }));
-
-  mockTransaction.mockImplementation(
-    async (fn: (tx: { insert: typeof mockInsert }) => Promise<unknown>) => {
-      return fn({ insert: mockInsert });
-    },
-  );
-
-  return {
-    db: {
-      select: mockSelect,
-      transaction: mockTransaction,
-    },
-  };
-});
-
-import { requireOrgId } from "@/lib/db-helpers";
-import { POST } from "../route";
-
-function buildReq(body: object): Request {
-  return new Request("http://localhost/", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+// Load .env.local before anything that reads DATABASE_URL at module-init time.
+try {
+  const envPath = resolve(process.cwd(), ".env.local");
+  const raw = readFileSync(envPath, "utf8");
+  for (const line of raw.split("\n")) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
+    if (!m) continue;
+    const [, k, vRaw] = m;
+    if (process.env[k]) continue;
+    let v = vRaw.trim();
+    if (
+      (v.startsWith('"') && v.endsWith('"')) ||
+      (v.startsWith("'") && v.endsWith("'"))
+    ) {
+      v = v.slice(1, -1);
+    }
+    process.env[k] = v;
+  }
+} catch {
+  // .env.local not present — the skipIf below handles this.
 }
 
-const TRUST_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
-const CLIENT_ID = "b2c3d4e5-f6a7-8901-bcde-f12345678901";
+const HAS_DB = !!process.env.DATABASE_URL;
+const d = HAS_DB ? describe : describe.skip;
 
-beforeEach(() => {
-  vi.mocked(requireOrgId).mockResolvedValue("firm_a");
-  mockInsert.mockClear();
-  mockSelect.mockClear();
-  mockTransaction.mockClear();
-  dbState.capturedInsertRows = [];
+vi.mock("@/lib/db-helpers", () => ({
+  getOrgId: vi.fn(),
+  requireOrgId: vi.fn(),
+}));
 
-  // Reset the select call index by re-setting the implementation each test
-  let selectCallIndex = 0;
-  mockSelect.mockImplementation(() => ({
-    from: vi.fn(() => ({
-      where: vi.fn(() => {
-        const n = selectCallIndex++;
-        if (n === 0) {
-          return Promise.resolve(dbState.client ? [dbState.client] : []);
-        }
-        if (n === 1) {
-          return Promise.resolve(dbState.trust ? [dbState.trust] : []);
-        }
-        // n === 2: planSettings
-        return Promise.resolve(dbState.planSettings ? [dbState.planSettings] : []);
-      }),
-    })),
-  }));
+vi.mock("@/lib/audit", () => ({
+  recordCreate: vi.fn().mockResolvedValue(undefined),
+  recordUpdate: vi.fn().mockResolvedValue(undefined),
+  recordDelete: vi.fn().mockResolvedValue(undefined),
+}));
 
-  mockInsert.mockImplementation(() => ({
-    values: vi.fn((rows: Array<{ clientId: string; year: number; amount: string; grantor: string; recipientEntityId: string }>) => {
-      dbState.capturedInsertRows = rows;
-      return {
-        returning: vi.fn(() => {
-          return Promise.resolve(rows.map((_, i) => ({ id: `gift_${i}` })));
-        }),
-      };
-    }),
-  }));
+const TEST_FIRM = "firm_gift_series_route_test";
 
-  mockTransaction.mockImplementation(
-    async (fn: (tx: { insert: typeof mockInsert }) => Promise<unknown>) => {
-      return fn({ insert: mockInsert });
-    },
-  );
+d("gift_series CRUD", () => {
+  let dbMod: typeof import("@/db");
+  let schema: typeof import("@/db/schema");
+  let helpers: typeof import("@/lib/db-helpers");
+  let drizzleOrm: typeof import("drizzle-orm");
+  let GET: (typeof import("../route"))["GET"];
+  let POST: (typeof import("../route"))["POST"];
+  let PATCH: (typeof import("../[seriesId]/route"))["PATCH"];
+  let DELETE: (typeof import("../[seriesId]/route"))["DELETE"];
 
-  // Default: valid client + irrevocable trust + planSettings
-  dbState.client = { id: CLIENT_ID, firmId: "firm_a" };
-  dbState.trust = { id: TRUST_ID, clientId: CLIENT_ID, entityType: "trust", isIrrevocable: true };
-  dbState.planSettings = { clientId: CLIENT_ID, inflationRate: "0.03" };
-});
-
-describe("POST /api/clients/[id]/gifts/series", () => {
-  it("materializes (endYear - startYear + 1) rows with a flat amount when inflationAdjust=false", async () => {
-    const req = buildReq({
-      grantor: "client",
-      recipientEntityId: TRUST_ID,
-      startYear: 2026,
-      endYear: 2030,
-      annualAmount: 18000,
-      inflationAdjust: false,
-    });
-    const res = await POST(req as never, {
-      params: Promise.resolve({ id: CLIENT_ID }),
-    });
-
-    expect(res.status).toBe(201);
-    const body = await res.json() as { giftIds: string[] };
-    expect(body.giftIds).toHaveLength(5);
-
-    // mockInsert called exactly once with all 5 rows (bulk insert)
-    expect(mockInsert).toHaveBeenCalledTimes(1);
-
-    // Verify each year's amount is flat $18000.00
-    const rows = dbState.capturedInsertRows;
-    expect(rows).toHaveLength(5);
-    for (let i = 0; i < 5; i++) {
-      expect(rows[i]!.year).toBe(2026 + i);
-      expect(rows[i]!.amount).toBe("18000.00");
-    }
+  beforeAll(async () => {
+    dbMod = await import("@/db");
+    schema = await import("@/db/schema");
+    helpers = await import("@/lib/db-helpers");
+    drizzleOrm = await import("drizzle-orm");
+    ({ GET, POST } = await import("../route"));
+    ({ PATCH, DELETE } = await import("../[seriesId]/route"));
   });
 
-  it("inflation-adjusts amounts when inflationAdjust=true", async () => {
-    dbState.planSettings = { clientId: CLIENT_ID, inflationRate: "0.03" };
+  // ── helpers ────────────────────────────────────────────────────────────────
 
-    const req = buildReq({
-      grantor: "client",
-      recipientEntityId: TRUST_ID,
-      startYear: 2026,
-      endYear: 2030,
-      annualAmount: 18000,
-      inflationAdjust: true,
+  async function cleanup() {
+    const { db } = dbMod;
+    const { clients, scenarios, familyMembers, entities } = schema;
+
+    const testClients = await db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+    const ids = testClients.map((c) => c.id);
+    if (ids.length === 0) return;
+
+    // Delete gift_series before scenarios (explicit, consistent with pattern)
+    await db
+      .delete(schema.giftSeries)
+      .where(drizzleOrm.inArray(schema.giftSeries.clientId, ids));
+    await db
+      .delete(entities)
+      .where(drizzleOrm.inArray(entities.clientId, ids));
+    await db
+      .delete(scenarios)
+      .where(drizzleOrm.inArray(scenarios.clientId, ids));
+    await db
+      .delete(familyMembers)
+      .where(drizzleOrm.inArray(familyMembers.clientId, ids));
+    await db.delete(clients).where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+  }
+
+  /**
+   * Seeds a minimal client + base-case scenario + irrevocable trust entity.
+   * Returns clientId, scenarioId, entityId, and a revocableEntityId.
+   */
+  async function setupClient() {
+    const { db } = dbMod;
+    const { clients, scenarios, familyMembers, entities } = schema;
+
+    const [client] = await db
+      .insert(clients)
+      .values({
+        firmId: TEST_FIRM,
+        advisorId: "advisor_series_test",
+        firstName: "Series",
+        lastName: "Test",
+        dateOfBirth: "1970-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        lifeExpectancy: 90,
+        filingStatus: "single",
+      })
+      .returning();
+
+    const [scenario] = await db
+      .insert(scenarios)
+      .values({ clientId: client.id, name: "base", isBaseCase: true })
+      .returning();
+
+    const [fm] = await db
+      .insert(familyMembers)
+      .values({
+        clientId: client.id,
+        firstName: "Series",
+        lastName: "Test",
+        role: "client" as const,
+      })
+      .returning();
+
+    const [irrevocableTrust] = await db
+      .insert(entities)
+      .values({
+        clientId: client.id,
+        name: "ILIT",
+        entityType: "trust" as const,
+        isIrrevocable: true,
+      })
+      .returning();
+
+    const [revocableTrust] = await db
+      .insert(entities)
+      .values({
+        clientId: client.id,
+        name: "Revocable Living Trust",
+        entityType: "trust" as const,
+        isIrrevocable: false,
+      })
+      .returning();
+
+    return {
+      clientId: client.id,
+      scenarioId: scenario.id,
+      familyMemberId: fm.id,
+      entityId: irrevocableTrust.id,
+      revocableEntityId: revocableTrust.id,
+    };
+  }
+
+  function makeGetReq(clientId: string): Request {
+    return new Request(`http://localhost/api/clients/${clientId}/gifts/series`, {
+      method: "GET",
     });
-    const res = await POST(req as never, {
-      params: Promise.resolve({ id: CLIENT_ID }),
+  }
+
+  function makePostReq(clientId: string, body: object): Request {
+    return new Request(`http://localhost/api/clients/${clientId}/gifts/series`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
     });
+  }
 
-    expect(res.status).toBe(201);
-    const body = await res.json() as { giftIds: string[] };
-    expect(body.giftIds).toHaveLength(5);
+  function makePatchReq(
+    clientId: string,
+    seriesId: string,
+    body: object,
+  ): Request {
+    return new Request(
+      `http://localhost/api/clients/${clientId}/gifts/series/${seriesId}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+  }
 
-    // mockInsert called exactly once with all 5 rows (bulk insert)
-    expect(mockInsert).toHaveBeenCalledTimes(1);
+  function makeDeleteReq(clientId: string, seriesId: string): Request {
+    return new Request(
+      `http://localhost/api/clients/${clientId}/gifts/series/${seriesId}`,
+      { method: "DELETE" },
+    );
+  }
 
-    // Expected amounts with 3% inflation compounded
-    const expectedAmounts = [
-      (18000 * Math.pow(1.03, 0)).toFixed(2), // "18000.00"
-      (18000 * Math.pow(1.03, 1)).toFixed(2), // "18540.00"
-      (18000 * Math.pow(1.03, 2)).toFixed(2), // "19096.20"
-      (18000 * Math.pow(1.03, 3)).toFixed(2), // "19669.09"
-      (18000 * Math.pow(1.03, 4)).toFixed(2), // "20259.16"
-    ];
+  // ── setup / teardown ───────────────────────────────────────────────────────
 
-    const rows = dbState.capturedInsertRows;
-    expect(rows).toHaveLength(5);
-    for (let i = 0; i < 5; i++) {
-      expect(rows[i]!.year).toBe(2026 + i);
-      expect(rows[i]!.amount).toBe(expectedAmounts[i]);
-    }
+  beforeEach(async () => {
+    await cleanup();
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(TEST_FIRM);
+    vi.mocked(helpers.getOrgId).mockResolvedValue(TEST_FIRM);
   });
 
-  it("rejects endYear < startYear with 400", async () => {
-    const req = buildReq({
-      grantor: "client",
-      recipientEntityId: TRUST_ID,
-      startYear: 2030,
-      endYear: 2026,
-      annualAmount: 18000,
-      inflationAdjust: false,
-    });
-    const res = await POST(req as never, {
-      params: Promise.resolve({ id: CLIENT_ID }),
-    });
+  // ── tests ──────────────────────────────────────────────────────────────────
+
+  it("1. POST creates a gift_series row with all new fields", async () => {
+    const { clientId, entityId, scenarioId } = await setupClient();
+    const { db } = dbMod;
+    const { giftSeries } = schema;
+
+    const res = await POST(
+      makePostReq(clientId, {
+        grantor: "client",
+        recipientEntityId: entityId,
+        startYear: 2026,
+        endYear: 2042,
+        annualAmount: 19000,
+        inflationAdjust: true,
+        useCrummeyPowers: true,
+        notes: "ILIT premium",
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.id).toBeTruthy();
+
+    const [row] = await db
+      .select()
+      .from(giftSeries)
+      .where(drizzleOrm.eq(giftSeries.id, body.id));
+
+    expect(row).toBeDefined();
+    expect(row.clientId).toBe(clientId);
+    expect(row.scenarioId).toBe(scenarioId);
+    expect(row.grantor).toBe("client");
+    expect(row.startYear).toBe(2026);
+    expect(row.endYear).toBe(2042);
+    expect(parseFloat(row.annualAmount)).toBeCloseTo(19000, 2);
+    expect(row.inflationAdjust).toBe(true);
+    expect(row.useCrummeyPowers).toBe(true);
+    expect(row.notes).toBe("ILIT premium");
+  });
+
+  it("2. GET returns persisted series rows", async () => {
+    const { clientId, entityId } = await setupClient();
+
+    // POST two rows
+    const res1 = await POST(
+      makePostReq(clientId, {
+        grantor: "client",
+        recipientEntityId: entityId,
+        startYear: 2026,
+        endYear: 2030,
+        annualAmount: 18000,
+        inflationAdjust: false,
+        useCrummeyPowers: false,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res1.status).toBe(201);
+
+    const res2 = await POST(
+      makePostReq(clientId, {
+        grantor: "spouse",
+        recipientEntityId: entityId,
+        startYear: 2027,
+        endYear: 2035,
+        annualAmount: 9000,
+        inflationAdjust: true,
+        useCrummeyPowers: true,
+        notes: "Split-gift",
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res2.status).toBe(201);
+
+    const getRes = await GET(
+      makeGetReq(clientId) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+
+    expect(getRes.status).toBe(200);
+    const rows = await getRes.json();
+    expect(Array.isArray(rows)).toBe(true);
+    expect(rows).toHaveLength(2);
+
+    const sorted = [...rows].sort(
+      (a: { startYear: number }, b: { startYear: number }) => a.startYear - b.startYear,
+    );
+    expect(sorted[0].grantor).toBe("client");
+    expect(sorted[0].startYear).toBe(2026);
+    expect(sorted[1].grantor).toBe("spouse");
+    expect(sorted[1].notes).toBe("Split-gift");
+  });
+
+  it("3. PATCH /[seriesId] updates a row", async () => {
+    const { clientId, entityId } = await setupClient();
+    const { db } = dbMod;
+    const { giftSeries } = schema;
+
+    const postRes = await POST(
+      makePostReq(clientId, {
+        grantor: "client",
+        recipientEntityId: entityId,
+        startYear: 2026,
+        endYear: 2035,
+        annualAmount: 18000,
+        inflationAdjust: false,
+        useCrummeyPowers: false,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(postRes.status).toBe(201);
+    const { id: seriesId } = await postRes.json();
+
+    const patchRes = await PATCH(
+      makePatchReq(clientId, seriesId, { annualAmount: 25000 }) as never,
+      { params: Promise.resolve({ id: clientId, seriesId }) },
+    );
+    expect(patchRes.status).toBe(200);
+    const updated = await patchRes.json();
+    expect(parseFloat(updated.annualAmount)).toBeCloseTo(25000, 2);
+
+    // Confirm in DB
+    const [row] = await db
+      .select()
+      .from(giftSeries)
+      .where(drizzleOrm.eq(giftSeries.id, seriesId));
+    expect(parseFloat(row.annualAmount)).toBeCloseTo(25000, 2);
+  });
+
+  it("4. DELETE /[seriesId] removes a row", async () => {
+    const { clientId, entityId } = await setupClient();
+    const { db } = dbMod;
+    const { giftSeries } = schema;
+
+    const postRes = await POST(
+      makePostReq(clientId, {
+        grantor: "client",
+        recipientEntityId: entityId,
+        startYear: 2026,
+        endYear: 2030,
+        annualAmount: 18000,
+        inflationAdjust: false,
+        useCrummeyPowers: false,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(postRes.status).toBe(201);
+    const { id: seriesId } = await postRes.json();
+
+    const deleteRes = await DELETE(
+      makeDeleteReq(clientId, seriesId) as never,
+      { params: Promise.resolve({ id: clientId, seriesId }) },
+    );
+    expect(deleteRes.status).toBe(200);
+    const body = await deleteRes.json();
+    expect(body.ok).toBe(true);
+
+    // Row must be gone
+    const rows = await db
+      .select()
+      .from(giftSeries)
+      .where(drizzleOrm.eq(giftSeries.id, seriesId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("5. POST rejects endYear < startYear with 400", async () => {
+    const { clientId, entityId } = await setupClient();
+
+    const res = await POST(
+      makePostReq(clientId, {
+        grantor: "client",
+        recipientEntityId: entityId,
+        startYear: 2030,
+        endYear: 2026,
+        annualAmount: 18000,
+        inflationAdjust: false,
+        useCrummeyPowers: false,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
 
     expect(res.status).toBe(400);
-    const body = await res.json() as { error: string };
+    const body = await res.json();
     expect(body.error).toBe("Validation failed");
   });
 
-  it("returns 400 for non-irrevocable trust recipientEntityId", async () => {
-    // Trust exists but is revocable
-    dbState.trust = { id: TRUST_ID, clientId: CLIENT_ID, entityType: "trust", isIrrevocable: false };
+  it("6. POST rejects revocable trust as recipient with 400", async () => {
+    const { clientId, revocableEntityId } = await setupClient();
 
-    const req = buildReq({
-      grantor: "client",
-      recipientEntityId: TRUST_ID,
-      startYear: 2026,
-      endYear: 2030,
-      annualAmount: 18000,
-      inflationAdjust: false,
-    });
-    const res = await POST(req as never, {
-      params: Promise.resolve({ id: CLIENT_ID }),
-    });
+    const res = await POST(
+      makePostReq(clientId, {
+        grantor: "client",
+        recipientEntityId: revocableEntityId,
+        startYear: 2026,
+        endYear: 2030,
+        annualAmount: 18000,
+        inflationAdjust: false,
+        useCrummeyPowers: false,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
 
     expect(res.status).toBe(400);
-    const body = await res.json() as { error: string };
+    const body = await res.json();
     expect(body.error).toBe("Recurring gifts target irrevocable trusts only");
+  });
+
+  it("7. PATCH on a series owned by a different client returns 404", async () => {
+    // Set up two separate clients
+    const { clientId: clientA, entityId: entityA } = await setupClient();
+
+    // Create a second client under the same firm
+    const { db } = dbMod;
+    const { clients, scenarios } = schema;
+    const [clientB] = await db
+      .insert(clients)
+      .values({
+        firmId: TEST_FIRM,
+        advisorId: "advisor_series_test",
+        firstName: "Other",
+        lastName: "Client",
+        dateOfBirth: "1975-06-15",
+        retirementAge: 65,
+        planEndAge: 90,
+        lifeExpectancy: 90,
+        filingStatus: "single",
+      })
+      .returning();
+    await db
+      .insert(scenarios)
+      .values({ clientId: clientB.id, name: "base", isBaseCase: true });
+
+    // POST a series under clientA
+    const postRes = await POST(
+      makePostReq(clientA, {
+        grantor: "client",
+        recipientEntityId: entityA,
+        startYear: 2026,
+        endYear: 2030,
+        annualAmount: 18000,
+        inflationAdjust: false,
+        useCrummeyPowers: false,
+      }) as never,
+      { params: Promise.resolve({ id: clientA }) },
+    );
+    expect(postRes.status).toBe(201);
+    const { id: seriesId } = await postRes.json();
+
+    // Attempt to PATCH using clientB's id — should 404 (series doesn't belong to B)
+    const patchRes = await PATCH(
+      makePatchReq(clientB.id, seriesId, { annualAmount: 99999 }) as never,
+      { params: Promise.resolve({ id: clientB.id, seriesId }) },
+    );
+    expect(patchRes.status).toBe(404);
   });
 });

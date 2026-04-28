@@ -31,3 +31,19 @@ export const giftSeriesSchema = z
   });
 
 export type GiftSeriesInput = z.infer<typeof giftSeriesSchema>;
+
+// Partial schema for PATCH — no cross-field refinement so .partial() works.
+export const giftSeriesUpdateSchema = z.object({
+  grantor: z.enum(["client", "spouse"]).optional(),
+  recipientEntityId: uuidSchema.optional(),
+  startYear: year.optional(),
+  startYearRef: yearRefSchema.optional(),
+  endYear: year.optional(),
+  endYearRef: yearRefSchema.optional(),
+  annualAmount: z.number().gt(0).optional(),
+  inflationAdjust: z.boolean().optional(),
+  useCrummeyPowers: z.boolean().optional(),
+  notes: z.string().trim().nullish(),
+});
+
+export type GiftSeriesUpdate = z.infer<typeof giftSeriesUpdateSchema>;

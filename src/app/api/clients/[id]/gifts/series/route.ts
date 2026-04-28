@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, entities, gifts, planSettings } from "@/db/schema";
+import { clients, scenarios, entities, giftSeries } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { parseBody } from "@/lib/schemas/common";
@@ -8,6 +8,55 @@ import { giftSeriesSchema } from "@/lib/schemas/gift-series";
 
 export const dynamic = "force-dynamic";
 
+async function getBaseCaseScenarioId(
+  clientId: string,
+  firmId: string,
+): Promise<string | null> {
+  const [client] = await db
+    .select()
+    .from(clients)
+    .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)));
+
+  if (!client) return null;
+
+  const [scenario] = await db
+    .select()
+    .from(scenarios)
+    .where(and(eq(scenarios.clientId, clientId), eq(scenarios.isBaseCase, true)));
+
+  return scenario?.id ?? null;
+}
+
+// GET /api/clients/[id]/gifts/series — list gift_series rows for base-case scenario
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const firmId = await requireOrgId();
+    const { id } = await params;
+
+    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    if (!scenarioId) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+
+    const rows = await db
+      .select()
+      .from(giftSeries)
+      .where(and(eq(giftSeries.clientId, id), eq(giftSeries.scenarioId, scenarioId)));
+
+    return NextResponse.json(rows);
+  } catch (err) {
+    if (err instanceof Error && err.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    console.error("GET /api/clients/[id]/gifts/series error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+// POST /api/clients/[id]/gifts/series — create a gift_series row (base-case scenario)
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -16,22 +65,25 @@ export async function POST(
     const firmId = await requireOrgId();
     const { id } = await params;
 
-    const [client] = await db
-      .select()
-      .from(clients)
-      .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
-    if (!client) return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    const scenarioId = await getBaseCaseScenarioId(id, firmId);
+    if (!scenarioId) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
 
     const parsed = await parseBody(giftSeriesSchema, request);
     if (!parsed.ok) return parsed.response;
     const data = parsed.data;
 
+    // Validate the recipient entity belongs to this client and is an irrevocable trust
     const [trust] = await db
       .select()
       .from(entities)
       .where(and(eq(entities.id, data.recipientEntityId), eq(entities.clientId, id)));
     if (!trust) {
-      return NextResponse.json({ error: "Recipient entity not found for this client" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Recipient entity not found for this client" },
+        { status: 400 },
+      );
     }
     if (trust.entityType !== "trust" || !trust.isIrrevocable) {
       return NextResponse.json(
@@ -40,35 +92,27 @@ export async function POST(
       );
     }
 
-    let inflationRate = 0;
-    if (data.inflationAdjust) {
-      const [settings] = await db
-        .select()
-        .from(planSettings)
-        .where(eq(planSettings.clientId, id));
-      inflationRate = settings ? parseFloat(settings.inflationRate) : 0;
-    }
+    const [row] = await db
+      .insert(giftSeries)
+      .values({
+        clientId: id,
+        scenarioId,
+        grantor: data.grantor,
+        recipientEntityId: data.recipientEntityId,
+        startYear: data.startYear,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        startYearRef: (data.startYearRef ?? null) as any,
+        endYear: data.endYear,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        endYearRef: (data.endYearRef ?? null) as any,
+        annualAmount: data.annualAmount.toString(),
+        inflationAdjust: data.inflationAdjust ?? false,
+        useCrummeyPowers: data.useCrummeyPowers ?? false,
+        notes: data.notes ?? null,
+      })
+      .returning();
 
-    const giftIds = await db.transaction(async (tx) => {
-      const rows = [];
-      for (let y = data.startYear; y <= data.endYear; y++) {
-        const i = y - data.startYear;
-        const amt = data.inflationAdjust
-          ? data.annualAmount * Math.pow(1 + inflationRate, i)
-          : data.annualAmount;
-        rows.push({
-          clientId: id,
-          year: y,
-          amount: amt.toFixed(2),
-          grantor: data.grantor,
-          recipientEntityId: data.recipientEntityId,
-        });
-      }
-      const inserted = await tx.insert(gifts).values(rows).returning({ id: gifts.id });
-      return inserted.map((r) => r.id);
-    });
-
-    return NextResponse.json({ giftIds }, { status: 201 });
+    return NextResponse.json({ id: row.id }, { status: 201 });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
