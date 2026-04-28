@@ -263,7 +263,7 @@ export interface ClientData {
   familyMembers?: FamilyMember[];
   /** External beneficiaries (charities and non-family individuals) configured on the
    *  client. The death-event module uses these for recipient resolution. */
-  externalBeneficiaries?: Array<{ id: string; name: string; kind: "charity" | "individual" }>;
+  externalBeneficiaries?: Array<{ id: string; name: string; kind: "charity" | "individual"; charityType: "public" | "private" }>;
 }
 
 // Minimal entity view used by the engine to decide cash-flow treatment of entity-owned

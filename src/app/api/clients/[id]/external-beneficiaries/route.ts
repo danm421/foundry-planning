@@ -64,6 +64,7 @@ export async function POST(
         clientId: id,
         name: parsed.data.name,
         kind: parsed.data.kind,
+        charityType: parsed.data.charityType ?? "public",
         notes: parsed.data.notes ?? null,
       })
       .returning();

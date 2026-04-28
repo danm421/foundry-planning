@@ -353,6 +353,7 @@ export const externalBeneficiaryRow = {
   clientId: FIXTURE_CLIENT_ID,
   name: "Community Foundation",
   kind: "charity" as const,
+  charityType: "public" as const,
   notes: null,
   createdAt: NOW,
   updatedAt: NOW,

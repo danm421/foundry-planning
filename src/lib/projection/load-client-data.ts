@@ -722,6 +722,7 @@ export const loadClientData = cache(
       id: r.id,
       name: r.name,
       kind: r.kind,
+      charityType: r.charityType,
     }));
 
     const mappedTransfers = transferRows.map((t) => {

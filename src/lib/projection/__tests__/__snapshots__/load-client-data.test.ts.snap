@@ -83,6 +83,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
   ],
   "externalBeneficiaries": [
     {
+      "charityType": "public",
       "id": "00000000-0000-0000-0000-000000000110",
       "kind": "charity",
       "name": "Community Foundation",
