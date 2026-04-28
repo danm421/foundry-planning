@@ -37,6 +37,11 @@ function sumWhere(
   return total;
 }
 
+// Note on orphan-entity references: both helpers return `false` when an
+// owner.entityId doesn't resolve in tree.entities, so an orphan slice is
+// dropped from BOTH totals. The invariant `in + out === total` then breaks.
+// Production data is FK-validated so this shouldn't trip; if loaders ever
+// produce orphans, fix at the loader rather than papering over here.
 export function computeInEstateAtYear(args: ComputeAtYearArgs): number {
   return sumWhere(args, (owner) => {
     if (owner.kind === "family_member") return true;

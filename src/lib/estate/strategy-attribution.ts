@@ -241,7 +241,7 @@ export function computeProcrastinationCardData(
   const giftEvent = (tree.gifts ?? []).find(
     (g) => g.recipientEntityId === top.trustId,
   );
-  const giftYear = giftEvent?.year ?? withResult[0]?.year ?? 2026;
+  const giftYear = giftEvent?.year ?? withResult[0]?.year ?? args.finalDeathYear;
   const giftAmount = giftEvent
     ? Number(giftEvent.amount)
     : totalGiftsToEntity(tree, top.trustId);
