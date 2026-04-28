@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { clients, entities, familyMembers, scenarios, accounts } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", () => ({
   auth: vi.fn(async () => ({ userId: "user_test_entities", orgId: "firm_test_entities" })),
@@ -54,16 +54,25 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // Entity-owned accounts' ownership is tracked via account_owners junction table.
-  // Deleting accounts cascades to account_owners; the trigger skips validation when
-  // the parent account row is already gone (cascade-delete path).
-  await db
-    .delete(accounts)
-    .where(eq(accounts.clientId, clientId));
-  await db.delete(entities).where(eq(entities.clientId, clientId));
-  await db.delete(scenarios).where(eq(scenarios.clientId, clientId));
-  await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
-  await db.delete(clients).where(eq(clients.id, clientId));
+  // Entity-owned accounts have account_owners rows summing to 100%. Deleting an
+  // account cascades to account_owners, which trips the deferred sum-check
+  // trigger (it raises when SUM goes NULL). Disable the user triggers around
+  // the cleanup transaction. Mirrors the pattern in gifts/__tests__/route.test.ts
+  // and accounts/__tests__/owners.test.ts.
+  await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_sum_check`);
+  await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_retirement_check`);
+  await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_default_checking_check`);
+  try {
+    await db.delete(accounts).where(eq(accounts.clientId, clientId));
+    await db.delete(entities).where(eq(entities.clientId, clientId));
+    await db.delete(scenarios).where(eq(scenarios.clientId, clientId));
+    await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
+    await db.delete(clients).where(eq(clients.id, clientId));
+  } finally {
+    await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_sum_check`);
+    await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_retirement_check`);
+    await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_default_checking_check`);
+  }
 });
 
 // Import route handlers AFTER mock + fixture setup
