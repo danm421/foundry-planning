@@ -1,4 +1,5 @@
-export { runProjection } from "./projection";
+export { runProjection, runProjectionWithEvents } from "./projection";
+export type { ProjectionResult, ProjectionOptions } from "./projection";
 export { calculateTaxes } from "./tax";
 export { computeIncome } from "./income";
 export { computeExpenses } from "./expenses";
