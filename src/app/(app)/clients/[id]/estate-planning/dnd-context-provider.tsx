@@ -15,14 +15,10 @@ import { useRouter } from "next/navigation";
 import type { ClientData, Will } from "@/engine/types";
 import { useToast } from "@/components/toast";
 import { TrustDropChooser, type TrustDropOption } from "./popovers/trust-drop-chooser";
-import { YearPickerPopover } from "./popovers/year-picker-popover";
-import { AllocateConfirm } from "./popovers/allocate-confirm";
-import { RecurringSeriesPopover } from "./popovers/recurring-series-popover";
 import {
   applyAlreadyOwned,
   applyGiftThisYear,
   applyBequestAtDeath,
-  applyRecurringGiftSeries,
   type Inverse,
 } from "./drop-handlers";
 import type { WillBequestInput } from "@/lib/schemas/wills";
@@ -40,26 +36,6 @@ const BequestEditContext = createContext<BequestEditContextValue>({
 
 export function useBequestEdit() {
   return useContext(BequestEditContext);
-}
-
-/** Context that client-card joint rows use to open the allocate-confirm popover. */
-interface AllocateRequestValue {
-  accountId: string;
-  assetName: string;
-  totalValue: number;
-  anchor: { clientX: number; clientY: number };
-}
-
-interface AllocateRequestContextValue {
-  onAllocateRequest: (req: AllocateRequestValue) => void;
-}
-
-const AllocateRequestContext = createContext<AllocateRequestContextValue>({
-  onAllocateRequest: () => undefined,
-});
-
-export function useAllocateRequest() {
-  return useContext(AllocateRequestContext);
 }
 
 export interface DragPayload {
@@ -151,10 +127,7 @@ export function CanvasDndProvider({
 }: ProviderProps) {
   const [active, setActive] = useState<DragPayload | null>(null);
   const [pending, setPending] = useState<PendingDrop | null>(null);
-  const [yearPickerFor, setYearPickerFor] = useState<PendingDrop | null>(null);
-  const [pendingRecurring, setPendingRecurring] = useState<(PendingDrop & { trustName: string }) | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
-  const [pendingAllocate, setPendingAllocate] = useState<AllocateRequestValue | null>(null);
 
   const router = useRouter();
   const { showToast } = useToast();
@@ -325,16 +298,6 @@ export function CanvasDndProvider({
           recipientEntityId: trust.id,
         });
         label = `Gifted ${account.name} → ${trust.name ?? "trust"}`;
-      } else if (option === "gift_future_year") {
-        // Hand off to year-picker; dispatch resumes in onYearConfirm — spread carries overData
-        setYearPickerFor({ ...pending });
-        setPending(null);
-        return;
-      } else if (option === "recurring_gift") {
-        // Hand off to recurring-series popover — spread carries overData
-        setPendingRecurring({ ...pending, trustName: trust.name ?? "Trust" });
-        setPending(null);
-        return;
       } else if (option === "bequest_client" || option === "bequest_spouse") {
         const grantor = option === "bequest_client" ? "client" : "spouse";
         const rawWill = (tree.wills ?? []).find((w) => w.grantor === grantor) ?? null;
@@ -357,7 +320,8 @@ export function CanvasDndProvider({
         const grantorName = grantor === "client" ? clientFirstName : (spouseFirstName ?? "spouse");
         label = `Bequest added: ${account.name} → ${trust.name ?? "trust"} at ${grantorName}'s death`;
       } else {
-        // sale_to_trust is disabled
+        // gift_future_year, recurring_gift, sale_to_trust: no-op until Phase 3
+        // replaces the chooser with the unified DropPopup.
         setPending(null);
         return;
       }
@@ -370,81 +334,6 @@ export function CanvasDndProvider({
         durationMs: 5000,
       });
       setPending(null);
-    }
-  }
-
-  async function onYearConfirm(year: number) {
-    if (!yearPickerFor) return;
-    const { payload, overId, overData } = yearPickerFor;
-    const targetId = overData?.entityId ?? overId.split(":", 2)[1];
-    if (!targetId) {
-      setYearPickerFor(null);
-      return;
-    }
-    const trust = (tree.entities ?? []).find((e) => e.id === targetId);
-    const account = tree.accounts.find((a) => a.id === payload.assetId);
-    if (!trust || !account) {
-      setYearPickerFor(null);
-      return;
-    }
-
-    try {
-      const inverse = await applyGiftThisYear({
-        clientId,
-        currentYear: year,
-        amount: account.value,
-        grantor: payload.ownerKey,
-        recipientEntityId: trust.id,
-      });
-      setYearPickerFor(null);
-      toastWithUndo(`Gifted ${account.name} → ${trust.name ?? "trust"} in ${year}`, inverse);
-    } catch (e) {
-      showToast({
-        message: e instanceof Error ? e.message : "Failed",
-        durationMs: 5000,
-      });
-      setYearPickerFor(null);
-    }
-  }
-
-  async function onRecurringSeriesConfirm(input: {
-    startYear: number;
-    endYear: number;
-    annualAmount: number;
-    inflationAdjust: boolean;
-  }) {
-    if (!pendingRecurring) return;
-    const { payload, overId, overData, trustName } = pendingRecurring;
-    const targetId = overData?.entityId ?? overId.split(":", 2)[1];
-    if (!targetId) {
-      setPendingRecurring(null);
-      return;
-    }
-    const account = tree.accounts.find((a) => a.id === payload.assetId);
-    if (!account) {
-      setPendingRecurring(null);
-      return;
-    }
-
-    try {
-      const inverse = await applyRecurringGiftSeries({
-        clientId,
-        grantor: payload.ownerKey,
-        recipientEntityId: targetId,
-        startYear: input.startYear,
-        endYear: input.endYear,
-        annualAmount: input.annualAmount,
-        inflationAdjust: input.inflationAdjust,
-      });
-      const count = input.endYear - input.startYear + 1;
-      setPendingRecurring(null);
-      toastWithUndo(`Recurring gift series: ${count} rows from ${input.startYear} to ${input.endYear} → ${trustName}`, inverse);
-    } catch (e) {
-      showToast({
-        message: e instanceof Error ? e.message : "Failed to create recurring gift series",
-        durationMs: 5000,
-      });
-      setPendingRecurring(null);
     }
   }
 
@@ -495,53 +384,12 @@ export function CanvasDndProvider({
     showToast({ message: "Bequest updated", durationMs: 4000 });
   }
 
-  async function handleAllocateConfirm(clientShare: number) {
-    if (!pendingAllocate) return;
-    const { accountId, assetName } = pendingAllocate;
-    try {
-      const res = await fetch(`/api/clients/${clientId}/accounts/${accountId}/split`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientShare }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        showToast({
-          message: (j as { error?: string }).error ?? `HTTP ${res.status}`,
-          durationMs: 5000,
-        });
-        setPendingAllocate(null);
-        return;
-      }
-      setPendingAllocate(null);
-      router.refresh();
-      // Append asset name so consecutive splits are distinguishable in the toast stack.
-      showToast({
-        message: `Joint asset split — manual rejoin required. (${assetName})`,
-        durationMs: 8000,
-      });
-    } catch (e) {
-      showToast({
-        message: e instanceof Error ? e.message : "Failed to split account",
-        durationMs: 5000,
-      });
-      setPendingAllocate(null);
-    }
-  }
-
   // Determine the trust for the chooser — prefer structured overData, fall back to string-split
   const pendingTrust = pending
     ? (tree.entities ?? []).find((e) => e.id === (pending.overData?.entityId ?? pending.overId.split(":")[1]))
     : null;
 
-  const currentYear = new Date().getUTCFullYear();
-
   return (
-    <AllocateRequestContext.Provider
-      value={{
-        onAllocateRequest: (req) => setPendingAllocate(req),
-      }}
-    >
     <BequestEditContext.Provider value={{ onEditBequest: handleEditBequest }}>
       <DndContext
         sensors={sensors}
@@ -573,29 +421,6 @@ export function CanvasDndProvider({
           />
         )}
 
-        {yearPickerFor && (
-          <YearPickerPopover
-            anchor={yearPickerFor.anchor}
-            minYear={currentYear}
-            maxYear={currentYear + 30}
-            defaultYear={currentYear + 1}
-            onConfirm={onYearConfirm}
-            onCancel={() => setYearPickerFor(null)}
-          />
-        )}
-
-        {pendingRecurring && (
-          <RecurringSeriesPopover
-            anchor={pendingRecurring.anchor}
-            assetName={pendingRecurring.payload.assetName}
-            trustName={pendingRecurring.trustName}
-            defaultStartYear={currentYear}
-            defaultEndYear={currentYear + 9}
-            onConfirm={onRecurringSeriesConfirm}
-            onCancel={() => setPendingRecurring(null)}
-          />
-        )}
-
         {editing && (
           <BequestDialog
             open
@@ -624,19 +449,7 @@ export function CanvasDndProvider({
             onSave={handleEditSave}
           />
         )}
-        {pendingAllocate && (
-          <AllocateConfirm
-            anchor={pendingAllocate.anchor}
-            assetName={pendingAllocate.assetName}
-            totalValue={pendingAllocate.totalValue}
-            clientLabel={clientFirstName}
-            spouseLabel={spouseFirstName ?? "Spouse"}
-            onConfirm={handleAllocateConfirm}
-            onCancel={() => setPendingAllocate(null)}
-          />
-        )}
       </DndContext>
     </BequestEditContext.Provider>
-    </AllocateRequestContext.Provider>
   );
 }

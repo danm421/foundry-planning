@@ -16,11 +16,6 @@ vi.mock("@dnd-kit/core", () => ({
   }),
 }));
 
-// ClientCard calls useAllocateRequest from the DnD provider context.
-vi.mock("../../dnd-context-provider", () => ({
-  useAllocateRequest: () => ({ onAllocateRequest: () => undefined }),
-}));
-
 const data: ClientCardData = {
   ownerKey: "client",
   familyMemberId: "fm-tom",
