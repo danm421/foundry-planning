@@ -5,6 +5,13 @@
  *   3. Dropping all bequests targeting trusts (filtering nested recipients)
  *
  * Gifts to people and gifts to charities are preserved — those happen in any plan.
+ *
+ * Post-condition: a trust whose `grantor` field does not resolve to a `FamilyMember` (e.g. a
+ * third-party-grantor trust) has its ownership slice dropped silently, so the resulting
+ * `account.owners` and `liability.owners` percents may sum to less than 1.0. This is acceptable
+ * for the current Plan 3a counterfactual use because no third-party-grantor trusts appear in the
+ * Cooper-Sample test scenario; downstream consumers that need complete percent normalization should
+ * re-normalize explicitly (deferred decision).
  */
 
 import type { AccountOwner } from "@/engine/ownership";
@@ -84,6 +91,7 @@ export function synthesizeNoPlanClientData(tree: ClientData): ClientData {
             percent: owner.percent,
           });
         }
+        // Trust without a grantor (third-party-grantor) — drop the slice silently.
       } else {
         newOwners.push(owner);
       }

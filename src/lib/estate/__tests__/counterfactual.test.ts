@@ -84,4 +84,19 @@ describe("synthesizeNoPlanClientData", () => {
     const giftIds = (result.gifts ?? []).map((g) => g.id);
     expect(giftIds).toContain("g3");
   });
+
+  it("reassigns trust slice to spouse FM when entity.grantor is 'spouse'", () => {
+    const tree = fixture();
+    tree.entities![0].grantor = "spouse";
+    const result = synthesizeNoPlanClientData(tree);
+    // acc-1 had 0.6 FM_CLIENT + 0.4 SLAT; SLAT now reassigns to FM_SPOUSE.
+    // Expect two owner rows after collapseOwners (different FMs don't merge).
+    expect(result.accounts[0].owners).toEqual(
+      expect.arrayContaining([
+        { kind: "family_member", familyMemberId: FM_CLIENT, percent: 0.6 },
+        { kind: "family_member", familyMemberId: FM_SPOUSE, percent: 0.4 },
+      ]),
+    );
+    expect(result.accounts[0].owners.length).toBe(2);
+  });
 });
