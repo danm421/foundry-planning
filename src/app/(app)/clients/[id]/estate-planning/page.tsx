@@ -2,6 +2,11 @@ import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjectionWithEvents } from "@/engine";
+import { synthesizeNoPlanClientData } from "@/lib/estate/counterfactual";
+import {
+  rankTrustsByContribution,
+  synthesizeDelayedTopGift,
+} from "@/lib/estate/strategy-attribution";
 import { CanvasFrame } from "./canvas-frame";
 import { CanvasDndProvider } from "./dnd-context-provider";
 
@@ -24,7 +29,23 @@ export default async function EstatePlanningPage({ params }: PageProps) {
     throw e;
   }
 
-  const withResult = runProjectionWithEvents(tree);
+  // Three parallel projections. Engine is sync; Promise.all preserves the
+  // plan's concurrent-friendly shape for any future async migration.
+  const [withResult, withoutResult] = await Promise.all([
+    Promise.resolve(runProjectionWithEvents(tree)),
+    Promise.resolve(runProjectionWithEvents(synthesizeNoPlanClientData(tree))),
+  ]);
+
+  const ranked = rankTrustsByContribution(tree, withResult.years);
+  const procrastinatedResult =
+    ranked.length >= 1
+      ? runProjectionWithEvents(synthesizeDelayedTopGift(tree, 10))
+      : null;
+
+  // withoutResult + procrastinatedResult will be threaded into <ProjectionPanel />
+  // in Task 24; computing them here surfaces any compute errors at page render.
+  void withoutResult;
+  void procrastinatedResult;
 
   const clientFirstName = tree.client.firstName;
   // spouseName from ClientInfo is the full spouse name; use it as the display name
