@@ -90,10 +90,26 @@ export const giftCreateSchema = z.object(baseFields).superRefine((d, ctx) => {
   }
 });
 
+// Identity fields set at creation time. Re-parenting or swapping the underlying
+// account/liability would break the bundling contract (parent + child rows
+// pointing at related FK targets), so the update schema refuses these.
+const IMMUTABLE_AFTER_CREATE = [
+  "parentGiftId",
+  "accountId",
+  "liabilityId",
+] as const;
+
 export const giftUpdateSchema = z
   .object(
     Object.fromEntries(
-      Object.entries(baseFields).map(([k, v]) => [k, (v as z.ZodTypeAny).optional()]),
+      Object.entries(baseFields)
+        .filter(
+          ([k]) =>
+            !(
+              IMMUTABLE_AFTER_CREATE as readonly string[]
+            ).includes(k),
+        )
+        .map(([k, v]) => [k, (v as z.ZodTypeAny).optional()]),
     ) as Record<string, z.ZodTypeAny>,
   )
   .superRefine((d, ctx) => {
@@ -101,8 +117,6 @@ export const giftUpdateSchema = z
       recipientEntityId?: string | null;
       recipientFamilyMemberId?: string | null;
       recipientExternalBeneficiaryId?: string | null;
-      accountId?: string | null;
-      liabilityId?: string | null;
       amount?: number | null;
       percent?: number | null;
     };
@@ -116,14 +130,6 @@ export const giftUpdateSchema = z
         code: z.ZodIssueCode.custom,
         message:
           "When updating recipient fields, exactly one of the three must be non-null.",
-      });
-    }
-
-    // Enforce accountId XOR liabilityId if both are explicitly being set
-    if (patch.accountId != null && patch.liabilityId != null) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Gift cannot reference both accountId and liabilityId.",
       });
     }
   });
