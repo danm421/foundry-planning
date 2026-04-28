@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import MoneyText from "@/components/money-text";
-import type { TrustCardData, AssetRow } from "../lib/derive-card-data";
+import type { TrustCardData } from "../lib/derive-card-data";
+import type { RenderRow } from "../lib/render-rows";
 
 interface Props {
   data: TrustCardData;
   defaultExpanded?: boolean;
+  onRemoveSlice?: (args: { accountId: string; trustEntityId: string }) => void;
 }
 
 const SUBTYPE_PILL_CLASS: Record<string, string> = {
@@ -17,7 +19,7 @@ const SUBTYPE_PILL_CLASS: Record<string, string> = {
   irrev: "bg-[var(--color-cat-life)]/15 text-[var(--color-cat-life)]",
 };
 
-export function TrustCard({ data, defaultExpanded = false }: Props) {
+export function TrustCard({ data, defaultExpanded = false, onRemoveSlice }: Props) {
   const [open, setOpen] = useState(defaultExpanded);
   const pill = SUBTYPE_PILL_CLASS[data.subType] ?? "bg-[var(--color-card-2)] text-[var(--color-ink-3)]";
   const { isOver, setNodeRef } = useDroppable({
@@ -51,8 +53,8 @@ export function TrustCard({ data, defaultExpanded = false }: Props) {
           </span>
         </div>
         <div className="ml-auto flex flex-col items-end">
-          <MoneyText value={data.totalValue} className="text-[15px] font-semibold tabular-nums" />
-          <span className="text-[10.5px] text-[var(--color-ink-3)]">{data.heldAssets.length} asset{data.heldAssets.length === 1 ? "" : "s"}</span>
+          <MoneyText value={data.total} className="text-[15px] font-semibold tabular-nums" />
+          <span className="text-[10.5px] text-[var(--color-ink-3)]">{data.rows.length} asset{data.rows.length === 1 ? "" : "s"}</span>
         </div>
         <span aria-hidden className={`ml-2 transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
       </button>
@@ -66,9 +68,16 @@ export function TrustCard({ data, defaultExpanded = false }: Props) {
             </div>
           </dl>
           <ul className="flex flex-col">
-            {data.heldAssets.map((a) => <HeldAssetRow key={a.id} asset={a} />)}
+            {data.rows.map((row) => (
+              <HeldAssetRow
+                key={row.accountId}
+                row={row}
+                trustEntityId={data.entityId}
+                onRemoveSlice={onRemoveSlice}
+              />
+            ))}
           </ul>
-          {data.heldAssets.length === 0 && (
+          {data.rows.length === 0 && (
             <div className="rounded-md border border-dashed border-[var(--color-hair-2)] px-3 py-3 text-center text-xs text-[var(--color-ink-3)]">
               Drop assets from a client to fund
             </div>
@@ -89,17 +98,38 @@ export function TrustCard({ data, defaultExpanded = false }: Props) {
   );
 }
 
-function HeldAssetRow({ asset }: { asset: AssetRow }) {
+function HeldAssetRow({
+  row,
+  trustEntityId,
+  onRemoveSlice,
+}: {
+  row: RenderRow;
+  trustEntityId: string;
+  onRemoveSlice?: (args: { accountId: string; trustEntityId: string }) => void;
+}) {
   return (
     <li className="flex items-center gap-2 py-1.5 text-[12px]">
       <span className="h-1.5 w-1.5 shrink-0 bg-[var(--color-cat-portfolio)]" aria-hidden />
-      <span className="truncate text-[var(--color-ink-2)]">{asset.name}</span>
-      {asset.tag && (
+      <span className="truncate text-[var(--color-ink-2)]">{row.accountName}</span>
+      {row.taxTag && (
         <span className="rounded-sm bg-[var(--color-card)] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-[var(--color-ink-3)]">
-          {asset.tag}
+          {row.taxTag}
         </span>
       )}
-      <MoneyText value={asset.value} className="ml-auto tabular-nums text-[var(--color-ink)]" />
+      <MoneyText value={row.sliceValue} className="ml-auto tabular-nums text-[var(--color-ink)]" />
+      {onRemoveSlice && (
+        <button
+          type="button"
+          aria-label="Remove slice"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemoveSlice({ accountId: row.accountId, trustEntityId });
+          }}
+          className="ml-1 rounded p-0.5 text-[var(--color-ink-3)] hover:bg-[var(--color-card-hover)] hover:text-[var(--color-warn)]"
+        >
+          ×
+        </button>
+      )}
     </li>
   );
 }
