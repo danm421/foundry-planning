@@ -61,15 +61,19 @@ describe("TransferAssetForm", () => {
     const props = {
       ...defaultProps(),
       accounts: [
-        makeAccount({ id: "acc-ira", name: "Traditional IRA", subType: "ira_traditional" }),
+        makeAccount({ id: "acc-ira", name: "Traditional IRA", subType: "traditional_ira" }),
+        makeAccount({ id: "acc-roth", name: "Roth IRA", subType: "roth_ira" }),
         makeAccount({ id: "acc-401k", name: "401k Plan", subType: "401k" }),
+        makeAccount({ id: "acc-roth401k", name: "Roth 401k", subType: "roth_401k" }),
         makeAccount({ id: "acc-taxable", name: "Brokerage", subType: "taxable" }),
       ],
     };
     render(<TransferAssetForm {...props} />);
     // Retirement subtypes should not appear as options
     expect(screen.queryByRole("option", { name: /Traditional IRA/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Roth IRA/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /401k Plan/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Roth 401k/i })).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: /Brokerage/i })).toBeInTheDocument();
   });
 
@@ -99,6 +103,22 @@ describe("TransferAssetForm", () => {
     render(<TransferAssetForm {...props} />);
     expect(screen.queryByRole("option", { name: /Operating Checking/i })).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: /Brokerage/i })).toBeInTheDocument();
+  });
+
+  it("shows empty-state message when no eligible accounts remain", () => {
+    const props = {
+      ...defaultProps(),
+      accounts: [
+        makeAccount({ id: "acc-ira", name: "Traditional IRA", subType: "traditional_ira" }),
+        makeAccount({ id: "acc-checking", name: "Checking", isDefaultChecking: true }),
+        makeAccount({ id: "acc-full", name: "Full Trust", trustPercent: 1.0 }),
+        makeAccount({ id: "acc-other", name: "LLC", ownedByOtherEntity: true }),
+      ],
+    };
+    render(<TransferAssetForm {...props} />);
+    expect(screen.getByText(/No eligible assets to transfer/i)).toBeInTheDocument();
+    // The asset select itself should not be present; the MilestoneYearPicker still renders its own select
+    expect(screen.queryByRole("combobox", { name: /asset/i })).not.toBeInTheDocument();
   });
 
   it("filters out accounts pinned to other entities", () => {
@@ -169,42 +189,13 @@ describe("TransferAssetForm", () => {
     expect(screen.getByDisplayValue("100")).toBeInTheDocument();
   });
 
-  it("submits with override amount when provided", async () => {
-    const mockFetch = vi.spyOn(global, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({}),
-      text: async () => "",
-    } as Response);
-
-    const onSaved = vi.fn();
-    const onClose = vi.fn();
-    const props = {
-      ...defaultProps([{ id: "acc-submit", name: "Brokerage" }]),
-      onSaved,
-      onClose,
-    };
-    render(<TransferAssetForm {...props} />);
-
-    // Fill in override amount — find the currency input ($ prefix in the DOM)
+  it("override amount field is disabled (reserved for future valuation-discount support)", () => {
+    // The override field is intentionally disabled — the API forces amount=null for asset
+    // transfers regardless of what the UI sends. Once the route honors overrideAmount,
+    // re-enable the input and update this test.
+    render(<TransferAssetForm {...defaultProps([{ id: "acc-submit", name: "Brokerage" }])} />);
     const amountInput = screen.getByPlaceholderText(/e\.g\. 80,000/i);
-    fireEvent.change(amountInput, { target: { value: "75000" } });
-
-    fireEvent.click(screen.getByRole("button", { name: /^Save$/i }));
-
-    await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledOnce();
-    });
-
-    const [url, options] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(`/api/clients/${CLIENT_ID}/gifts`);
-    const body = JSON.parse(options.body as string);
-    expect(body.recipientEntityId).toBe(TRUST_ID);
-    expect(body.accountId).toBe("acc-submit");
-    expect(body.percent).toBeCloseTo(0.5); // default 50%
-    expect(body.amount).toBeDefined();
-
-    expect(onSaved).toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalled();
+    expect(amountInput).toBeDisabled();
   });
 
   it("submits without amount when no override and year >= projectionStartYear", async () => {

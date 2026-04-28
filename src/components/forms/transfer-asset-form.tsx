@@ -5,6 +5,7 @@ import MilestoneYearPicker from "@/components/milestone-year-picker";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import type { ClientMilestones, YearRef } from "@/lib/milestones";
+import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 import {
   inputClassName,
   selectClassName,
@@ -39,6 +40,11 @@ interface Props {
   trustGrantor: "client" | "spouse";
   accounts: AccountOption[];
   milestones?: ClientMilestones;
+  /**
+   * Kept for API compatibility with callers — no longer used internally now that
+   * the past-dated amount auto-fill branch has been removed (the route forces
+   * amount=null for asset transfers regardless).
+   */
   projectionStartYear: number;
   /** Current calendar year — passed as a prop so tests can control it. */
   currentYear: number;
@@ -62,14 +68,7 @@ interface GiftPostBody {
 // Constants
 // ---------------------------------------------------------------------------
 
-const RETIREMENT_SUBTYPES = new Set([
-  "ira_traditional",
-  "ira_roth",
-  "401k",
-  "403b",
-  "sep_ira",
-  "simple_ira",
-]);
+const RETIREMENT_SUBTYPES_SET = new Set<string>(RETIREMENT_SUBTYPES);
 
 // ---------------------------------------------------------------------------
 // Component
@@ -81,6 +80,7 @@ export default function TransferAssetForm({
   trustGrantor,
   accounts,
   milestones,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   projectionStartYear,
   currentYear,
   onClose,
@@ -90,7 +90,7 @@ export default function TransferAssetForm({
     () =>
       accounts.filter(
         (a) =>
-          !RETIREMENT_SUBTYPES.has(a.subType) &&
+          !RETIREMENT_SUBTYPES_SET.has(a.subType) &&
           !a.isDefaultChecking &&
           a.trustPercent < 1 &&
           !a.ownedByOtherEntity,
@@ -138,11 +138,11 @@ export default function TransferAssetForm({
         notes: notes || null,
       };
 
+      // NOTE: The API route forces amount=null for asset transfers (accountId set).
+      // overrideAmount is reserved for future valuation-discount support (FLP, minority interest)
+      // and currently has no effect. Tracked in future-work/ui.md (2026-04-28).
       if (overrideAmount) {
         body.amount = Number(overrideAmount);
-      } else if (year < projectionStartYear) {
-        // Past-dated transfer: amount required; pre-fill from estimate.
-        body.amount = estimatedValue;
       }
 
       const res = await fetch(`/api/clients/${clientId}/gifts`, {
@@ -150,7 +150,10 @@ export default function TransferAssetForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error((j as { error?: string }).error ?? `HTTP ${res.status}`);
+      }
       onSaved();
       onClose();
     } catch (err: unknown) {
@@ -162,7 +165,8 @@ export default function TransferAssetForm({
   }
 
   function balanceRemaining() {
-    // simple version — sets percent to 100% (transfers entire remaining household stake to trust)
+    // Simple version: claim 100% (transfers entire remaining household stake to trust).
+    // Multi-owner remainder distribution is future work.
     setPercent("100");
   }
 
@@ -173,30 +177,46 @@ export default function TransferAssetForm({
     clientEnd: currentYear + 50,
   };
 
+  const percentNum = Number(percent);
+  const percentValid = Number.isFinite(percentNum) && percentNum > 0 && percentNum <= 100;
+
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4">
+    <form id="transfer-asset-form" onSubmit={submit} className="flex flex-col gap-4">
       {/* Asset selector */}
       <div>
-        <label htmlFor="transfer-account" className={fieldLabelClassName}>
-          Asset
-        </label>
-        <select
-          id="transfer-account"
-          value={accountId}
-          onChange={(e) => setAccountId(e.target.value)}
-          className={selectClassName}
-        >
-          {eligibleAccounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name} — {a.ownerSummary} — ${a.value.toLocaleString()}
-            </option>
-          ))}
-        </select>
+        {eligibleAccounts.length === 0 ? (
+          <div className="text-xs text-gray-400 italic">
+            No eligible assets to transfer. (Excludes retirement, default-checking,
+            100%-trust-owned, and other-entity-pinned accounts.)
+          </div>
+        ) : (
+          <>
+            <label htmlFor="transfer-account" className={fieldLabelClassName}>
+              Asset
+            </label>
+            <select
+              id="transfer-account"
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
+              className={selectClassName}
+            >
+              {eligibleAccounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} — {a.ownerSummary} — ${a.value.toLocaleString()}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
 
       {/* Linked liability warning */}
       {account?.linkedLiability && (
-        <div className="rounded border border-amber-700/50 bg-amber-900/20 px-3 py-2 text-xs text-amber-300">
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded border border-amber-700/50 bg-amber-900/20 px-3 py-2 text-xs text-amber-300"
+        >
           Linked liability detected:{" "}
           <strong>{account.linkedLiability.name}</strong> ($
           {account.linkedLiability.balance.toLocaleString()}) — will
@@ -241,8 +261,8 @@ export default function TransferAssetForm({
 
       {/* Grantor radio */}
       <div>
-        <span className={fieldLabelClassName}>Grantor</span>
-        <div className="mt-1 flex gap-4 text-sm text-ink">
+        <span id="grantor-label" className={fieldLabelClassName}>Grantor</span>
+        <div role="radiogroup" aria-labelledby="grantor-label" className="mt-1 flex gap-4 text-sm text-ink">
           <label className="flex items-center gap-1.5">
             <input
               type="radio"
@@ -282,9 +302,11 @@ export default function TransferAssetForm({
           value={overrideAmount}
           onChange={setOverrideAmount}
           placeholder="e.g. 80,000"
+          disabled
+          title="Reserved for future valuation-discount support — currently has no effect on asset transfers."
         />
         <p className="mt-1 text-[10px] text-ink-4">
-          Use only when applying valuation discounts (FLP, minority interest)
+          Reserved for future valuation-discount support — currently has no effect on asset transfers.
         </p>
       </div>
 
@@ -318,7 +340,7 @@ export default function TransferAssetForm({
         </button>
         <button
           type="submit"
-          disabled={saving || !account}
+          disabled={saving || !account || !percentValid}
           className="rounded-[var(--radius-sm)] bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save"}
