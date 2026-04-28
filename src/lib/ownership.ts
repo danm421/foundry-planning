@@ -234,9 +234,26 @@ export async function synthesizeLegacyLiabilityOwners(
 // ── Past-dated transfer dual-write ────────────────────────────────────────────
 
 /**
+ * Tagged error for caller-visible validation failures during a past-dated
+ * transfer (drained household, overdraw). Routes catch this and return 400
+ * with `err.message`, distinguishing validation failure from a 500 crash.
+ */
+export class OwnershipTransferError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OwnershipTransferError";
+  }
+}
+
+/**
  * Returns the projection start year for the given scenario by reading
  * plan_settings.plan_start_year inside the supplied transaction.
- * Returns null if no plan_settings row exists (dual-write is skipped in that case).
+ *
+ * Returns null when no plan_settings row exists. In production, plan_settings
+ * is seeded at client creation (`POST /api/clients`) so this null path should
+ * be unreachable. We log a warning when it fires so any silent skip in
+ * durable junction-table writes is at least observable in runtime logs. See
+ * future-work/client-data.md for the proposed flip-to-throw audit.
  */
 export async function getProjectionStartYearForScenario(
   tx: Tx,
@@ -246,7 +263,13 @@ export async function getProjectionStartYearForScenario(
     .select({ planStartYear: planSettings.planStartYear })
     .from(planSettings)
     .where(eq(planSettings.scenarioId, scenarioId));
-  return row?.planStartYear ?? null;
+  if (!row) {
+    console.warn(
+      `getProjectionStartYearForScenario: no plan_settings row for scenario ${scenarioId} — past-dated dual-write skipped`,
+    );
+    return null;
+  }
+  return row.planStartYear;
 }
 
 /**
@@ -287,23 +310,29 @@ async function _applyToAccount(
   percent: number,
   recipientEntityId: string,
 ): Promise<void> {
+  // .for("update") locks all matching account_owners rows for the duration of
+  // the transaction so concurrent past-dated POSTs against the same account
+  // serialize at the read step. Without this, two requests can each compute a
+  // scaling factor against the same starting state, then the second's DELETE
+  // wipes the first's writes — silent data loss with sum-1.0 invariant intact.
   const owners = await tx
     .select()
     .from(accountOwners)
-    .where(eq(accountOwners.accountId, accountId));
+    .where(eq(accountOwners.accountId, accountId))
+    .for("update");
 
   const householdShare = owners
     .filter((o) => o.familyMemberId != null)
     .reduce((s, o) => s + Number(o.percent), 0);
 
   if (householdShare <= 1e-9) {
-    throw new Error(
-      `applyOwnershipTransfer(account ${accountId}): no household share remaining (available ${householdShare})`,
+    throw new OwnershipTransferError(
+      `Cannot transfer ownership: household has no remaining share on this account`,
     );
   }
   if (percent > householdShare + 1e-9) {
-    throw new Error(
-      `applyOwnershipTransfer(account ${accountId}): transfer ${percent} exceeds household share ${householdShare}`,
+    throw new OwnershipTransferError(
+      `Cannot transfer ${(percent * 100).toFixed(2)}% — household only has ${(householdShare * 100).toFixed(2)}% available on this account`,
     );
   }
 
@@ -353,23 +382,25 @@ async function _applyToLiability(
   percent: number,
   recipientEntityId: string,
 ): Promise<void> {
+  // See _applyToAccount for the rationale on .for("update") row-level locking.
   const owners = await tx
     .select()
     .from(liabilityOwners)
-    .where(eq(liabilityOwners.liabilityId, liabilityId));
+    .where(eq(liabilityOwners.liabilityId, liabilityId))
+    .for("update");
 
   const householdShare = owners
     .filter((o) => o.familyMemberId != null)
     .reduce((s, o) => s + Number(o.percent), 0);
 
   if (householdShare <= 1e-9) {
-    throw new Error(
-      `applyOwnershipTransfer(liability ${liabilityId}): no household share remaining (available ${householdShare})`,
+    throw new OwnershipTransferError(
+      `Cannot transfer ownership: household has no remaining share on this liability`,
     );
   }
   if (percent > householdShare + 1e-9) {
-    throw new Error(
-      `applyOwnershipTransfer(liability ${liabilityId}): transfer ${percent} exceeds household share ${householdShare}`,
+    throw new OwnershipTransferError(
+      `Cannot transfer ${(percent * 100).toFixed(2)}% — household only has ${(householdShare * 100).toFixed(2)}% available on this liability`,
     );
   }
 

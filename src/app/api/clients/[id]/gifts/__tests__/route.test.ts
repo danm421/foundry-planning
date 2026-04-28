@@ -1108,7 +1108,7 @@ d("POST /api/clients/[id]/gifts — T16 past-dated dual-write", () => {
     expect(Number(liabSpouse!.percent)).toBeCloseTo(0.2, 4);
   });
 
-  it("10. Drained-household guard — returns 500 when household owns 0%", async () => {
+  it("10. Drained-household guard — returns 400 with descriptive message when household owns 0%", async () => {
     const { clientId, scenarioId, clientFmId, entityId } = await setupClientWithPlanSettings(2026);
     const account = await setupAccountWithOwner(clientId, scenarioId, clientFmId);
 
@@ -1125,7 +1125,8 @@ d("POST /api/clients/[id]/gifts — T16 past-dated dual-write", () => {
     );
     expect(res1.status).toBe(201);
 
-    // Now try to transfer another 50% — household is drained
+    // Now try to transfer another 50% — household is drained.
+    // Tagged OwnershipTransferError → caller gets 400, not 500.
     const res2 = await POST(
       makePostReq(clientId, {
         year: 2024,
@@ -1136,8 +1137,9 @@ d("POST /api/clients/[id]/gifts — T16 past-dated dual-write", () => {
       }) as never,
       { params: Promise.resolve({ id: clientId }) },
     );
-    // Drained household throws inside the transaction → 500
-    expect(res2.status).toBe(500);
+    expect(res2.status).toBe(400);
+    const body = (await res2.json()) as { error: string };
+    expect(body.error).toMatch(/household.*remaining share/i);
   });
 
   it("11. Mid-stream household scaling — proportional preservation (client 60%, spouse 40%, transfer 50%)", async () => {

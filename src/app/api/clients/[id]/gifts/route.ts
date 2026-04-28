@@ -15,6 +15,7 @@ import { giftCreateSchema } from "@/lib/schemas/gifts";
 import {
   applyOwnershipTransfer,
   getProjectionStartYearForScenario,
+  OwnershipTransferError,
 } from "@/lib/ownership";
 
 export const dynamic = "force-dynamic";
@@ -271,6 +272,9 @@ export async function POST(
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (err instanceof OwnershipTransferError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
     console.error("POST /api/clients/[id]/gifts error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
