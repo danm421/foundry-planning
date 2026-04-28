@@ -77,16 +77,21 @@ describe("computeInEstateAtYear", () => {
     expect(result).toBe(2_900_000);
   });
 
-  it("excludes irrevocable trust slices", () => {
+  it("excludes irrevocable trust slices when the slice is large", () => {
     const { tree, giftEvents, balances } = fixture();
+    // Replace acc-1 with all-irrevocable ownership.
+    tree.accounts[0].owners = [
+      { kind: "entity", entityId: TRUST_IRREVOC, percent: 1 },
+    ];
     const result = computeInEstateAtYear({
       tree,
       giftEvents,
       year: 2026,
-      projectionStartYear: 2026,
       accountBalances: balances,
+      projectionStartYear: 2026,
     });
-    expect(result).toBe(2_900_000);
+    // acc-1 fully irrevocable → 0; acc-2 fully revocable → $2M
+    expect(result).toBe(2_000_000);
   });
 });
 

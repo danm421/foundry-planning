@@ -8,6 +8,7 @@
  */
 
 import { ownersForYear } from "@/engine/ownership";
+import type { AccountOwner } from "@/engine/ownership";
 import type { ClientData, GiftEvent } from "@/engine/types";
 
 export interface ComputeAtYearArgs {
@@ -18,13 +19,9 @@ export interface ComputeAtYearArgs {
   accountBalances: Map<string, number>;
 }
 
-type OwnerSlice =
-  | { kind: "family_member"; familyMemberId: string; percent: number }
-  | { kind: "entity"; entityId: string; percent: number };
-
 function sumWhere(
   args: ComputeAtYearArgs,
-  ownerInScope: (owner: OwnerSlice) => boolean,
+  ownerInScope: (owner: AccountOwner) => boolean,
 ): number {
   const { tree, giftEvents, year, projectionStartYear, accountBalances } = args;
   let total = 0;
@@ -32,7 +29,7 @@ function sumWhere(
     const owners = ownersForYear(account, giftEvents, year, projectionStartYear);
     const value = accountBalances.get(account.id) ?? account.value;
     for (const owner of owners) {
-      if (ownerInScope(owner as OwnerSlice)) {
+      if (ownerInScope(owner)) {
         total += value * owner.percent;
       }
     }
