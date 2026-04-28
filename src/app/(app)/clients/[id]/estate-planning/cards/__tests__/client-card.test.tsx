@@ -29,6 +29,8 @@ const data: ClientCardData = {
       taxTag: "TAX",
       ownerPercent: 0.6,
       sliceValue: 1_200_000,
+      linkedLiabilityBalance: 0,
+      netSliceValue: 1_200_000,
       hasMultipleOwners: true,
       coOwners: [{ label: "Linda", percent: 0.3 }, { label: "SLAT", percent: 0.1 }],
     },
@@ -39,10 +41,14 @@ const data: ClientCardData = {
       taxTag: "DEF",
       ownerPercent: 1,
       sliceValue: 500_000,
+      linkedLiabilityBalance: 0,
+      netSliceValue: 500_000,
       hasMultipleOwners: false,
       coOwners: [],
     },
   ],
+  unlinkedLiabilities: [],
+  hasDebt: false,
   total: 1_700_000,
 };
 
@@ -89,5 +95,65 @@ describe("ClientCard", () => {
     render(<ClientCard data={data} defaultExpanded />);
     expect(screen.getByText("TAX")).toBeInTheDocument();
     expect(screen.getByText("DEF")).toBeInTheDocument();
+  });
+
+  // ── debt-aware rendering ───────────────────────────────────────────────────
+
+  it("shows a DEBT pill on rows with linked debt; tooltip shows the debt amount", () => {
+    const debtData: ClientCardData = {
+      ...data,
+      hasDebt: true,
+      rows: [
+        {
+          accountId: "home",
+          accountName: "Home",
+          category: "real_estate",
+          taxTag: null,
+          ownerPercent: 1,
+          sliceValue: 1_000_000,
+          linkedLiabilityBalance: 600_000,
+          netSliceValue: 400_000,
+          hasMultipleOwners: false,
+          coOwners: [],
+        },
+      ],
+      total: 400_000,
+    };
+    render(<ClientCard data={debtData} defaultExpanded />);
+    const debtPill = screen.getByText("DEBT");
+    expect(debtPill).toBeInTheDocument();
+    expect(debtPill.getAttribute("title")).toMatch(/600,000|−\$600/);
+  });
+
+  it("renders a Liabilities subsection when unlinked liabilities exist", () => {
+    const debtData: ClientCardData = {
+      ...data,
+      hasDebt: true,
+      unlinkedLiabilities: [
+        { liabilityId: "cc", liabilityName: "Credit Card", ownerPercent: 1, sliceValue: 20_000 },
+        { liabilityId: "loan", liabilityName: "Personal Loan", ownerPercent: 1, sliceValue: 15_000 },
+      ],
+      total: 1_665_000,
+    };
+    render(<ClientCard data={debtData} defaultExpanded />);
+    expect(screen.getByText("Liabilities")).toBeInTheDocument();
+    expect(screen.getByText("Credit Card")).toBeInTheDocument();
+    expect(screen.getByText("Personal Loan")).toBeInTheDocument();
+  });
+
+  it("does not render the Liabilities subsection when there are no unlinked debts", () => {
+    render(<ClientCard data={data} defaultExpanded />);
+    expect(screen.queryByText("Liabilities")).not.toBeInTheDocument();
+  });
+
+  it("shows the 'net of debt' headline indicator when hasDebt is true", () => {
+    const debtData: ClientCardData = { ...data, hasDebt: true };
+    render(<ClientCard data={debtData} />);
+    expect(screen.getByLabelText("Net of debt")).toBeInTheDocument();
+  });
+
+  it("hides the 'net of debt' headline indicator when hasDebt is false", () => {
+    render(<ClientCard data={data} />);
+    expect(screen.queryByLabelText("Net of debt")).not.toBeInTheDocument();
   });
 });

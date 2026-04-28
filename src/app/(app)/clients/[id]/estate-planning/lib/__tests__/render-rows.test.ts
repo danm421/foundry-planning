@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rowsForFamilyMember, rowsForEntity } from "../render-rows";
+import { rowsForFamilyMember, rowsForEntity, unlinkedLiabilitiesForFamilyMember } from "../render-rows";
 import type { ClientData } from "@/engine/types";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -222,5 +222,148 @@ describe("render-rows", () => {
     const rows = rowsForFamilyMember(sortTree, "fm-tom");
     expect(rows[0].accountName).toBe("Large");
     expect(rows[1].accountName).toBe("Small");
+  });
+
+  // ── linked-liability handling ──────────────────────────────────────────────
+
+  it("linked liability: subtracts owner's debt slice from sliceValue → netSliceValue", () => {
+    const homeTree = baseTree({
+      accounts: [
+        mkAcct("home", "Home", "real_estate" as ClientData["accounts"][0]["category"], 1_000_000, [
+          { kind: "family_member", familyMemberId: "fm-tom", percent: 1 },
+        ]),
+      ],
+      liabilities: [
+        {
+          id: "mtg",
+          name: "Mortgage",
+          balance: 600_000,
+          interestRate: 0.05,
+          monthlyPayment: 3000,
+          startYear: 2020,
+          startMonth: 1,
+          termMonths: 360,
+          linkedPropertyId: "home",
+          extraPayments: [],
+          owners: [{ kind: "family_member", familyMemberId: "fm-tom", percent: 1 }],
+        },
+      ],
+    });
+    const rows = rowsForFamilyMember(homeTree, "fm-tom");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].sliceValue).toBe(1_000_000);
+    expect(rows[0].linkedLiabilityBalance).toBe(600_000);
+    expect(rows[0].netSliceValue).toBe(400_000);
+  });
+
+  it("linked liability: multi-owner liability is sliced by owner.percent", () => {
+    // Joint home, joint mortgage — each spouse sees 50% of debt.
+    const jointHomeTree = baseTree({
+      accounts: [
+        mkAcct("home", "Home", "real_estate" as ClientData["accounts"][0]["category"], 1_000_000, [
+          { kind: "family_member", familyMemberId: "fm-tom", percent: 0.5 },
+          { kind: "family_member", familyMemberId: "fm-linda", percent: 0.5 },
+        ]),
+      ],
+      liabilities: [
+        {
+          id: "mtg",
+          name: "Mortgage",
+          balance: 400_000,
+          interestRate: 0.05,
+          monthlyPayment: 2000,
+          startYear: 2020,
+          startMonth: 1,
+          termMonths: 360,
+          linkedPropertyId: "home",
+          extraPayments: [],
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-tom", percent: 0.5 },
+            { kind: "family_member", familyMemberId: "fm-linda", percent: 0.5 },
+          ],
+        },
+      ],
+    });
+    const tomRows = rowsForFamilyMember(jointHomeTree, "fm-tom");
+    expect(tomRows[0].sliceValue).toBe(500_000);          // 1M × 0.5
+    expect(tomRows[0].linkedLiabilityBalance).toBe(200_000); // 400K × 0.5
+    expect(tomRows[0].netSliceValue).toBe(300_000);
+
+    const lindaRows = rowsForFamilyMember(jointHomeTree, "fm-linda");
+    expect(lindaRows[0].linkedLiabilityBalance).toBe(200_000);
+    expect(lindaRows[0].netSliceValue).toBe(300_000);
+  });
+
+  it("linked liability: zero linkedLiabilityBalance when none attached → netSliceValue equals sliceValue", () => {
+    const rows = rowsForFamilyMember(tree, "fm-tom");
+    expect(rows.every((r) => r.linkedLiabilityBalance === 0)).toBe(true);
+    expect(rows.every((r) => r.netSliceValue === r.sliceValue)).toBe(true);
+  });
+
+  // ── unlinked-liability enumeration ─────────────────────────────────────────
+
+  it("unlinkedLiabilitiesForFamilyMember: returns liabilities with no linkedPropertyId, sliced by owner.percent", () => {
+    const ccTree = baseTree({
+      liabilities: [
+        // unlinked, joint
+        {
+          id: "cc",
+          name: "Credit Card",
+          balance: 20_000,
+          interestRate: 0.18,
+          monthlyPayment: 500,
+          startYear: 2024,
+          startMonth: 1,
+          termMonths: 60,
+          extraPayments: [],
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-tom", percent: 0.5 },
+            { kind: "family_member", familyMemberId: "fm-linda", percent: 0.5 },
+          ],
+        },
+        // unlinked, solo Tom
+        {
+          id: "loan",
+          name: "Personal Loan",
+          balance: 30_000,
+          interestRate: 0.07,
+          monthlyPayment: 600,
+          startYear: 2025,
+          startMonth: 1,
+          termMonths: 60,
+          extraPayments: [],
+          owners: [{ kind: "family_member", familyMemberId: "fm-tom", percent: 1 }],
+        },
+        // linked — should NOT appear
+        {
+          id: "mtg",
+          name: "Mortgage",
+          balance: 500_000,
+          interestRate: 0.05,
+          monthlyPayment: 2500,
+          startYear: 2020,
+          startMonth: 1,
+          termMonths: 360,
+          linkedPropertyId: "some-home",
+          extraPayments: [],
+          owners: [{ kind: "family_member", familyMemberId: "fm-tom", percent: 1 }],
+        },
+      ],
+    });
+    const tomDebt = unlinkedLiabilitiesForFamilyMember(ccTree, "fm-tom");
+    expect(tomDebt).toHaveLength(2);
+    // Sorted descending by sliceValue
+    expect(tomDebt[0]).toMatchObject({ liabilityId: "loan", sliceValue: 30_000, ownerPercent: 1 });
+    expect(tomDebt[1]).toMatchObject({ liabilityId: "cc", sliceValue: 10_000, ownerPercent: 0.5 });
+    // Mortgage excluded
+    expect(tomDebt.find((d) => d.liabilityId === "mtg")).toBeUndefined();
+
+    const lindaDebt = unlinkedLiabilitiesForFamilyMember(ccTree, "fm-linda");
+    expect(lindaDebt).toHaveLength(1);
+    expect(lindaDebt[0]).toMatchObject({ liabilityId: "cc", sliceValue: 10_000 });
+  });
+
+  it("unlinkedLiabilitiesForFamilyMember: empty when no liabilities", () => {
+    expect(unlinkedLiabilitiesForFamilyMember(tree, "fm-tom")).toEqual([]);
   });
 });

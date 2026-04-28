@@ -4,8 +4,33 @@ import { useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import MoneyText from "@/components/money-text";
 import type { ClientCardData } from "../lib/derive-card-data";
-import type { RenderRow } from "../lib/render-rows";
+import type { RenderRow, UnlinkedLiabilityRow } from "../lib/render-rows";
 import type { DragPayload } from "../dnd-context-provider";
+
+function formatMoney(n: number): string {
+  return `$${Math.round(n).toLocaleString()}`;
+}
+
+/** Subtle 12px chevron-down — telegraphs "this number is net of debt". */
+function NetOfDebtIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="ml-1 inline-block text-[var(--color-ink-3)]"
+      role="img"
+      aria-label="Net of debt"
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
 
 interface Props {
   data: ClientCardData;
@@ -34,8 +59,9 @@ export function ClientCard({ data, defaultExpanded = false }: Props) {
           <span className="text-[14px] font-semibold leading-tight text-[var(--color-ink)]">{data.name}</span>
           <span className="text-xs text-[var(--color-ink-3)]">{data.ageDescriptor}</span>
         </div>
-        <div className="ml-auto flex flex-col items-end">
+        <div className="ml-auto flex items-center">
           <MoneyText value={data.total} className="text-[15px] font-semibold tabular-nums" />
+          {data.hasDebt && <NetOfDebtIcon />}
         </div>
         <span aria-hidden className={`ml-2 transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
       </button>
@@ -57,6 +83,18 @@ export function ClientCard({ data, defaultExpanded = false }: Props) {
                 />
               ))}
             </ul>
+          )}
+          {data.unlinkedLiabilities.length > 0 && (
+            <div className="mt-3 border-t border-[var(--color-hair-2)] pt-3">
+              <div className="mb-1.5 text-[10px] uppercase tracking-wider text-[var(--color-ink-3)]">
+                Liabilities
+              </div>
+              <ul className="flex flex-col">
+                {data.unlinkedLiabilities.map((liab) => (
+                  <UnlinkedDebtRow key={liab.liabilityId} liab={liab} />
+                ))}
+              </ul>
+            </div>
           )}
           <div className="mt-3 flex justify-between text-xs text-[var(--color-ink-3)]">
             <span>{data.rows.length} asset{data.rows.length === 1 ? "" : "s"}</span>
@@ -112,6 +150,14 @@ function DraggableRow({
               {row.taxTag}
             </span>
           )}
+          {row.linkedLiabilityBalance > 0 && (
+            <span
+              className="rounded-sm bg-[var(--color-card)] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-[var(--color-ink-3)]"
+              title={`Linked debt: −${formatMoney(row.linkedLiabilityBalance)}`}
+            >
+              DEBT
+            </span>
+          )}
         </div>
         {row.hasMultipleOwners && row.coOwners.length > 0 && (
           <div data-sub-line className="text-[10px] text-[var(--color-ink-3)] mt-0.5">
@@ -119,7 +165,21 @@ function DraggableRow({
           </div>
         )}
       </div>
-      <MoneyText value={row.sliceValue} className="ml-auto tabular-nums text-[var(--color-ink)]" />
+      <MoneyText value={row.netSliceValue} className="ml-auto tabular-nums text-[var(--color-ink)]" />
+    </li>
+  );
+}
+
+function UnlinkedDebtRow({ liab }: { liab: UnlinkedLiabilityRow }) {
+  return (
+    <li className="flex items-center gap-2 py-1.5 text-[12px]">
+      <span className="h-1.5 w-1.5 shrink-0 bg-[var(--color-ink-3)]" aria-hidden />
+      <div className="flex-1 min-w-0">
+        <span className="truncate text-[var(--color-ink-2)]">{liab.liabilityName}</span>
+      </div>
+      <span className="ml-auto tabular-nums text-[var(--color-ink-3)]">
+        −{formatMoney(liab.sliceValue)}
+      </span>
     </li>
   );
 }

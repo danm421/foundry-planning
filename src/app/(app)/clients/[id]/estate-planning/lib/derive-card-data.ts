@@ -1,6 +1,12 @@
 import type { ClientData, FamilyMember, Account, WillBequest, Gift } from "@/engine/types";
 import { beaForYear } from "@/lib/tax/estate";
-import { rowsForFamilyMember, rowsForEntity, type RenderRow } from "./render-rows";
+import {
+  rowsForFamilyMember,
+  rowsForEntity,
+  unlinkedLiabilitiesForFamilyMember,
+  type RenderRow,
+  type UnlinkedLiabilityRow,
+} from "./render-rows";
 
 export type { TaxTreatmentTag } from "./render-rows";
 export { taxTreatmentTag } from "./render-rows";
@@ -11,6 +17,10 @@ export interface ClientCardData {
   name: string;
   ageDescriptor: string;
   rows: RenderRow[];
+  unlinkedLiabilities: UnlinkedLiabilityRow[];
+  /** True when any row has linked debt OR any unlinked liability exists. Drives the "net of debt" headline icon. */
+  hasDebt: boolean;
+  /** Net worth = Σ row.netSliceValue (assets − linked debt) − Σ unlinkedLiabilities.sliceValue. */
   total: number;
 }
 
@@ -98,7 +108,12 @@ export function deriveClientCardData(
     fmId: string,
   ): ClientCardData => {
     const rows = rowsForFamilyMember(tree, fmId);
-    const total = rows.reduce((a, r) => a + r.sliceValue, 0);
+    const unlinkedLiabilities = unlinkedLiabilitiesForFamilyMember(tree, fmId);
+    const assetsNet = rows.reduce((a, r) => a + r.netSliceValue, 0);
+    const debtUnlinked = unlinkedLiabilities.reduce((a, l) => a + l.sliceValue, 0);
+    const total = assetsNet - debtUnlinked;
+    const hasDebt =
+      rows.some((r) => r.linkedLiabilityBalance > 0) || unlinkedLiabilities.length > 0;
     const trustsAsGrantor = (tree.entities ?? []).filter(
       (e) => e.entityType === "trust" && e.grantor === ownerKey,
     );
@@ -116,6 +131,8 @@ export function deriveClientCardData(
       name,
       ageDescriptor: parts.join(" · "),
       rows,
+      unlinkedLiabilities,
+      hasDebt,
       total,
     };
   };

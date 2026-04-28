@@ -41,6 +41,8 @@ const ownershipOnly: HeirCardData = {
       taxTag: "TAX",
       ownerPercent: 1,
       sliceValue: 50_000,
+      linkedLiabilityBalance: 0,
+      netSliceValue: 50_000,
       hasMultipleOwners: false,
       coOwners: [],
     },

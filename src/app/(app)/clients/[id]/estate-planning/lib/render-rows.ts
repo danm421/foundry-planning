@@ -26,9 +26,21 @@ export interface RenderRow {
   category: string;
   taxTag: TaxTreatmentTag | null;
   ownerPercent: number;        // this owner's slice fraction
-  sliceValue: number;           // account.value * ownerPercent
+  sliceValue: number;           // account.value * ownerPercent (gross)
+  /** This owner's slice of any liability whose linkedPropertyId === account.id. 0 if none. */
+  linkedLiabilityBalance: number;
+  /** sliceValue − linkedLiabilityBalance — the value displayed on the IN ESTATE card. */
+  netSliceValue: number;
   hasMultipleOwners: boolean;
   coOwners: { label: string; percent: number }[]; // empty when sole owner
+}
+
+export interface UnlinkedLiabilityRow {
+  liabilityId: string;
+  liabilityName: string;
+  ownerPercent: number;
+  /** balance × owner.percent — expressed as a positive number; the UI prefixes with "−". */
+  sliceValue: number;
 }
 
 export function rowsForFamilyMember(tree: ClientData, familyMemberId: string): RenderRow[] {
@@ -64,16 +76,51 @@ function buildRow(
     .filter((o) => o !== owner)
     .map((o) => ({ label: ownerLabel(tree, o), percent: o.percent }));
 
+  const sliceValue = account.value * owner.percent;
+  const linkedLiabilityBalance = (tree.liabilities ?? [])
+    .filter((l) => l.linkedPropertyId === account.id)
+    .reduce((acc, l) => {
+      const lOwner = (l.owners ?? []).find((o) =>
+        ownerKind === "family_member"
+          ? o.kind === "family_member" && o.familyMemberId === ownerId
+          : o.kind === "entity" && o.entityId === ownerId,
+      );
+      return acc + (lOwner ? l.balance * lOwner.percent : 0);
+    }, 0);
+
   return {
     accountId: account.id,
     accountName: account.name,
     category: account.category,
     taxTag: taxTreatmentTag({ category: account.category, subType: account.subType }),
     ownerPercent: owner.percent,
-    sliceValue: account.value * owner.percent,
+    sliceValue,
+    linkedLiabilityBalance,
+    netSliceValue: sliceValue - linkedLiabilityBalance,
     hasMultipleOwners: coOwners.length > 0,
     coOwners,
   };
+}
+
+export function unlinkedLiabilitiesForFamilyMember(
+  tree: ClientData,
+  familyMemberId: string,
+): UnlinkedLiabilityRow[] {
+  return (tree.liabilities ?? [])
+    .filter((l) => !l.linkedPropertyId)
+    .flatMap((l) => {
+      const owner = (l.owners ?? []).find(
+        (o) => o.kind === "family_member" && o.familyMemberId === familyMemberId,
+      );
+      if (!owner) return [];
+      return [{
+        liabilityId: l.id,
+        liabilityName: l.name,
+        ownerPercent: owner.percent,
+        sliceValue: l.balance * owner.percent,
+      }];
+    })
+    .sort((a, b) => b.sliceValue - a.sliceValue);
 }
 
 function ownerLabel(

@@ -192,6 +192,59 @@ describe("deriveClientCardData", () => {
     // total = 1_000_000 (solo 100%) + 1_200_000 (joint 60% of 2_000_000)
     expect(tom.total).toBe(2_200_000);
   });
+
+  it("total reflects net worth: assets minus linked liability slices minus unlinked debt", () => {
+    const tree = baseTree({
+      accounts: [
+        clientAcct("home", "Home", "real_estate" as ClientData["accounts"][0]["category"], 1_000_000),
+      ],
+      liabilities: [
+        // linked mortgage
+        {
+          id: "mtg",
+          name: "Mortgage",
+          balance: 600_000,
+          interestRate: 0.05,
+          monthlyPayment: 3000,
+          startYear: 2020,
+          startMonth: 1,
+          termMonths: 360,
+          linkedPropertyId: "home",
+          extraPayments: [],
+          owners: [{ kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 }],
+        },
+        // unlinked credit card
+        {
+          id: "cc",
+          name: "Credit Card",
+          balance: 20_000,
+          interestRate: 0.18,
+          monthlyPayment: 500,
+          startYear: 2024,
+          startMonth: 1,
+          termMonths: 60,
+          extraPayments: [],
+          owners: [{ kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 }],
+        },
+      ],
+    });
+    const cards = deriveClientCardData(tree, 2026);
+    const tom = cards[0];
+    // 1M home − 600K mortgage = 400K net asset; − 20K cc unlinked = 380K
+    expect(tom.total).toBe(380_000);
+    expect(tom.hasDebt).toBe(true);
+    expect(tom.unlinkedLiabilities).toHaveLength(1);
+    expect(tom.unlinkedLiabilities[0]).toMatchObject({ liabilityId: "cc", sliceValue: 20_000 });
+  });
+
+  it("hasDebt is false and unlinkedLiabilities is empty when no debt", () => {
+    const tree = baseTree({
+      accounts: [clientAcct("a1", "401k", "retirement", 500_000)],
+    });
+    const tom = deriveClientCardData(tree, 2026)[0];
+    expect(tom.hasDebt).toBe(false);
+    expect(tom.unlinkedLiabilities).toEqual([]);
+  });
 });
 
 describe("deriveTrustCardData", () => {

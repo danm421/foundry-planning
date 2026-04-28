@@ -28,6 +28,8 @@ const data: TrustCardData = {
       taxTag: "TAX",
       ownerPercent: 1,
       sliceValue: 2_400_000,
+      linkedLiabilityBalance: 0,
+      netSliceValue: 2_400_000,
       hasMultipleOwners: false,
       coOwners: [],
     },
