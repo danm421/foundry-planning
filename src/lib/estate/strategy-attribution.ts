@@ -8,6 +8,9 @@
 
 import type { ClientData, ProjectionYear } from "@/engine/types";
 
+/** Fallback annual growth rate when an account has no explicit growthRate. */
+const DEFAULT_TRUST_GROWTH_RATE = 0.06;
+
 export interface RankedTrust {
   trustId: string;
   trustName: string;
@@ -143,7 +146,8 @@ export function computeTrustCardData(args: ComputeTrustCardArgs): TrustCard {
   );
   const giftAmount = giftEvent ? Number(giftEvent.amount) : 0;
   const giftYear = giftEvent?.year ?? withResult[0]?.year ?? finalDeathYear;
-  const years = finalDeathYear - giftYear;
+  const yearsRaw = finalDeathYear - giftYear;
+  const years = Math.max(1, yearsRaw);
   const growthRate = inferGrowthRateFromTrust(tree, ranked.trustId);
 
   const subTypeLabel = (ranked.trustSubType ?? "TRUST").toUpperCase();
@@ -165,16 +169,20 @@ function inferGrowthRateFromTrust(tree: ClientData, entityId: string): number {
     if (!slice) continue;
     const sliceValue = a.value * slice.percent;
     if (!topAccount || sliceValue > topAccount.value) {
-      topAccount = { value: sliceValue, growthRate: a.growthRate ?? 0.06 };
+      topAccount = { value: sliceValue, growthRate: a.growthRate ?? DEFAULT_TRUST_GROWTH_RATE };
     }
   }
-  return topAccount?.growthRate ?? 0.06;
+  return topAccount?.growthRate ?? DEFAULT_TRUST_GROWTH_RATE;
 }
 
 function formatM(amount: number): string {
-  // Drop trailing zeros: 2,400,000 → "2.4M", 5,000,000 → "5M", 9,870,000 → "9.87M",
-  // 12,000,000 → "12M". Cap at 2 fractional digits.
+  // Sub-$1M: render as K (thousands). $1M+: render as M with up to 2 decimals
+  // (no decimal at $10M+). Trailing zeros are dropped (2.40 → 2.4, 5.00 → 5).
+  const abs = Math.abs(amount);
+  if (abs < 1_000_000) {
+    return Math.round(amount / 1_000) + "K";
+  }
   const m = amount / 1_000_000;
-  const fixed = m >= 10 ? m.toFixed(0) : m.toFixed(2);
+  const fixed = Math.abs(m) >= 10 ? m.toFixed(0) : m.toFixed(2);
   return parseFloat(fixed).toString() + "M";
 }
