@@ -11,6 +11,7 @@ import {
   computeProcrastinationCardData,
   synthesizeDelayedTopGift,
 } from "../strategy-attribution";
+import { computeFinalDeathYear } from "@/engine/death-event/shared";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 
 const FM_CLIENT = "fm-client";
@@ -198,6 +199,12 @@ describe("Plan 3a integration — Cooper-Sample scenario", () => {
 
   it("strategy-attribution returns ILIT + SLAT cards + procrastination delta", () => {
     const tree = cooperSampleScenario();
+    const finalDeathYear =
+      computeFinalDeathYear(
+        tree.client,
+        tree.planSettings.planStartYear,
+        tree.planSettings.planEndYear,
+      ) ?? 2058;
     const withResult = runProjection(tree);
     const delayedResult = runProjection(synthesizeDelayedTopGift(tree, 10));
 
@@ -212,7 +219,7 @@ describe("Plan 3a integration — Cooper-Sample scenario", () => {
         ranked: r,
         tree,
         withResult,
-        finalDeathYear: 2058,
+        finalDeathYear,
       }),
     );
     expect(trustCards.length).toBe(2);
@@ -223,7 +230,7 @@ describe("Plan 3a integration — Cooper-Sample scenario", () => {
       withResult,
       delayedResult,
       delayYears: 10,
-      finalDeathYear: 2058,
+      finalDeathYear,
     });
     // synthesizeDelayedTopGift shifts gift.year in the `gifts` metadata array
     // (gift-tax BEA tracking) but does NOT change account initial balances or
