@@ -42,6 +42,7 @@ export async function PATCH(
     const patch = parsed.data as {
       year?: number;
       amount?: number;
+      percent?: number | null;
       grantor?: "client" | "spouse" | "joint";
       recipientEntityId?: string | null;
       recipientFamilyMemberId?: string | null;
@@ -118,30 +119,51 @@ export async function PATCH(
       }
     }
 
-    const [row] = await db
-      .update(gifts)
-      .set({
-        ...(patch.year !== undefined && { year: patch.year }),
-        ...(patch.amount !== undefined && { amount: String(patch.amount) }),
-        ...(patch.grantor !== undefined && { grantor: patch.grantor }),
-        ...(patch.recipientEntityId !== undefined && {
-          recipientEntityId: patch.recipientEntityId ?? null,
-        }),
-        ...(patch.recipientFamilyMemberId !== undefined && {
-          recipientFamilyMemberId: patch.recipientFamilyMemberId ?? null,
-        }),
-        ...(patch.recipientExternalBeneficiaryId !== undefined && {
-          recipientExternalBeneficiaryId:
-            patch.recipientExternalBeneficiaryId ?? null,
-        }),
-        ...(patch.useCrummeyPowers !== undefined && {
-          useCrummeyPowers: patch.useCrummeyPowers,
-        }),
-        ...(patch.notes !== undefined && { notes: patch.notes ?? null }),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(gifts.id, giftId), eq(gifts.clientId, id)))
-      .returning();
+    const row = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(gifts)
+        .set({
+          ...(patch.year !== undefined && { year: patch.year }),
+          ...(patch.amount !== undefined && { amount: String(patch.amount) }),
+          ...(patch.percent !== undefined && {
+            percent: patch.percent != null ? String(patch.percent) : null,
+          }),
+          ...(patch.grantor !== undefined && { grantor: patch.grantor }),
+          ...(patch.recipientEntityId !== undefined && {
+            recipientEntityId: patch.recipientEntityId ?? null,
+          }),
+          ...(patch.recipientFamilyMemberId !== undefined && {
+            recipientFamilyMemberId: patch.recipientFamilyMemberId ?? null,
+          }),
+          ...(patch.recipientExternalBeneficiaryId !== undefined && {
+            recipientExternalBeneficiaryId:
+              patch.recipientExternalBeneficiaryId ?? null,
+          }),
+          ...(patch.useCrummeyPowers !== undefined && {
+            useCrummeyPowers: patch.useCrummeyPowers,
+          }),
+          ...(patch.notes !== undefined && { notes: patch.notes ?? null }),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(gifts.id, giftId), eq(gifts.clientId, id)))
+        .returning();
+
+      if (!updated) return undefined;
+
+      // If percent was updated and this is a parent gift (no parentGiftId),
+      // propagate the new percent to all bundled child gifts.
+      if (patch.percent !== undefined && updated.parentGiftId === null) {
+        await tx
+          .update(gifts)
+          .set({
+            percent: patch.percent != null ? String(patch.percent) : null,
+            updatedAt: new Date(),
+          })
+          .where(eq(gifts.parentGiftId, giftId));
+      }
+
+      return updated;
+    });
 
     if (!row) {
       return NextResponse.json({ error: "Gift not found" }, { status: 404 });

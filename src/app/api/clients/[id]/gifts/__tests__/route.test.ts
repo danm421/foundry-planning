@@ -1,12 +1,22 @@
 /**
- * Integration tests for POST /api/clients/[id]/gifts.
+ * Integration tests for POST /api/clients/[id]/gifts,
+ * PATCH /api/clients/[id]/gifts/[giftId], and
+ * DELETE /api/clients/[id]/gifts/[giftId].
  * Exercises real DB via Drizzle. Requires DATABASE_URL — suite is skipped
  * in CI if unavailable.
  *
  * Covers:
+ *  POST
  *  1. Cash gift creation — amount set, accountId/liabilityId null.
  *  2. Asset transfer with linked liability — parent gift + auto-bundled child gift.
  *  3. Asset transfer without linked liability — no child gift row created.
+ *
+ *  PATCH
+ *  4. Updating percent on a parent gift propagates to bundled child gift.
+ *  5. Updating percent on a child gift (parentGiftId IS NOT NULL) does NOT propagate.
+ *
+ *  DELETE
+ *  6. Deleting a parent gift cascades to child gifts (ON DELETE CASCADE).
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -300,5 +310,450 @@ d("POST /api/clients/[id]/gifts", () => {
       .where(drizzleOrm.eq(gifts.parentGiftId, parentRow.id));
 
     expect(children).toHaveLength(0);
+  });
+});
+
+d("PATCH /api/clients/[id]/gifts/[giftId]", () => {
+  let dbMod: typeof import("@/db");
+  let schema: typeof import("@/db/schema");
+  let helpers: typeof import("@/lib/db-helpers");
+  let drizzleOrm: typeof import("drizzle-orm");
+  let POST: (typeof import("../route"))["POST"];
+  let PATCH: (typeof import("../[giftId]/route"))["PATCH"];
+
+  beforeAll(async () => {
+    dbMod = await import("@/db");
+    schema = await import("@/db/schema");
+    helpers = await import("@/lib/db-helpers");
+    drizzleOrm = await import("drizzle-orm");
+    ({ POST } = await import("../route"));
+    ({ PATCH } = await import("../[giftId]/route"));
+  });
+
+  async function cleanup() {
+    const { db } = dbMod;
+    const { clients, scenarios, familyMembers, entities } = schema;
+
+    const testClients = await db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+    const ids = testClients.map((c) => c.id);
+    if (ids.length === 0) return;
+
+    await db.delete(schema.gifts).where(drizzleOrm.inArray(schema.gifts.clientId, ids));
+    await db.delete(entities).where(drizzleOrm.inArray(entities.clientId, ids));
+    await db.delete(scenarios).where(drizzleOrm.inArray(scenarios.clientId, ids));
+    await db.delete(familyMembers).where(drizzleOrm.inArray(familyMembers.clientId, ids));
+    await db.delete(clients).where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+  }
+
+  async function setupClient() {
+    const { db } = dbMod;
+    const { clients, scenarios, familyMembers, entities } = schema;
+
+    const [client] = await db
+      .insert(clients)
+      .values({
+        firmId: TEST_FIRM,
+        advisorId: "advisor_gifts_test",
+        firstName: "Gift",
+        lastName: "Test",
+        dateOfBirth: "1970-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        lifeExpectancy: 90,
+        filingStatus: "single",
+      })
+      .returning();
+
+    const [scenario] = await db
+      .insert(scenarios)
+      .values({ clientId: client.id, name: "base", isBaseCase: true })
+      .returning();
+
+    const [fm] = await db
+      .insert(familyMembers)
+      .values({
+        clientId: client.id,
+        firstName: "Gift",
+        lastName: "Test",
+        role: "client" as const,
+      })
+      .returning();
+
+    const [entity] = await db
+      .insert(entities)
+      .values({
+        clientId: client.id,
+        name: "Test Trust",
+        entityType: "trust" as const,
+        isIrrevocable: true,
+      })
+      .returning();
+
+    return {
+      clientId: client.id,
+      scenarioId: scenario.id,
+      familyMemberId: fm.id,
+      entityId: entity.id,
+    };
+  }
+
+  function makePostReq(clientId: string, body: object): Request {
+    return new Request(`http://localhost/api/clients/${clientId}/gifts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  function makePatchReq(clientId: string, giftId: string, body: object): Request {
+    return new Request(
+      `http://localhost/api/clients/${clientId}/gifts/${giftId}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
+  beforeEach(async () => {
+    await cleanup();
+    vi.mocked(helpers.getOrgId).mockResolvedValue(TEST_FIRM);
+  });
+
+  it("4. PATCH percent on parent propagates to bundled child gift", async () => {
+    const { clientId, scenarioId, entityId } = await setupClient();
+    const { db } = dbMod;
+    const { accounts, liabilities, gifts } = schema;
+
+    // Seed real-estate account + linked liability
+    const [account] = await db
+      .insert(accounts)
+      .values({
+        clientId,
+        scenarioId,
+        name: "Rental Property",
+        category: "real_estate" as const,
+        subType: "rental_property",
+        value: "500000",
+        basis: "200000",
+      })
+      .returning();
+
+    const [liability] = await db
+      .insert(liabilities)
+      .values({
+        clientId,
+        scenarioId,
+        name: "Rental Mortgage",
+        balance: "250000",
+        interestRate: "0.065",
+        monthlyPayment: "1500",
+        startYear: 2020,
+        termMonths: 360,
+        linkedPropertyId: account.id,
+      })
+      .returning();
+
+    // POST to create parent + child gift (percent=0.5)
+    const postRes = await POST(
+      makePostReq(clientId, {
+        year: 2026,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 0.5,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(postRes.status).toBe(201);
+    const parentRow = await postRes.json();
+    expect(parentRow.parentGiftId).toBeNull();
+
+    // Confirm child exists with percent 0.5
+    const childrenBefore = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.parentGiftId, parentRow.id));
+    expect(childrenBefore).toHaveLength(1);
+    expect(childrenBefore[0].liabilityId).toBe(liability.id);
+    expect(parseFloat(childrenBefore[0].percent!)).toBeCloseTo(0.5, 4);
+
+    // PATCH parent percent to 0.75
+    const patchRes = await PATCH(
+      makePatchReq(clientId, parentRow.id, { percent: 0.75 }) as never,
+      { params: Promise.resolve({ id: clientId, giftId: parentRow.id }) },
+    );
+    expect(patchRes.status).toBe(200);
+    const patchedParent = await patchRes.json();
+    expect(parseFloat(patchedParent.percent)).toBeCloseTo(0.75, 4);
+
+    // Child percent must also be 0.75
+    const childrenAfter = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.parentGiftId, parentRow.id));
+    expect(childrenAfter).toHaveLength(1);
+    expect(parseFloat(childrenAfter[0].percent!)).toBeCloseTo(0.75, 4);
+  });
+
+  it("5. PATCH percent on child gift (parentGiftId set) does NOT propagate further", async () => {
+    const { clientId, scenarioId, entityId } = await setupClient();
+    const { db } = dbMod;
+    const { accounts, liabilities, gifts } = schema;
+
+    // Seed account + linked liability
+    const [account] = await db
+      .insert(accounts)
+      .values({
+        clientId,
+        scenarioId,
+        name: "Rental Property 2",
+        category: "real_estate" as const,
+        subType: "rental_property",
+        value: "400000",
+        basis: "150000",
+      })
+      .returning();
+
+    await db
+      .insert(liabilities)
+      .values({
+        clientId,
+        scenarioId,
+        name: "Rental Mortgage 2",
+        balance: "200000",
+        interestRate: "0.06",
+        monthlyPayment: "1200",
+        startYear: 2021,
+        termMonths: 360,
+        linkedPropertyId: account.id,
+      })
+      .returning();
+
+    // Create parent + child via POST
+    const postRes = await POST(
+      makePostReq(clientId, {
+        year: 2026,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 0.6,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(postRes.status).toBe(201);
+    const parentRow = await postRes.json();
+
+    const [child] = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.parentGiftId, parentRow.id));
+
+    // PATCH the child directly — percent changes only on child, parent unchanged
+    const patchRes = await PATCH(
+      makePatchReq(clientId, child.id, { percent: 0.9 }) as never,
+      { params: Promise.resolve({ id: clientId, giftId: child.id }) },
+    );
+    expect(patchRes.status).toBe(200);
+    const patchedChild = await patchRes.json();
+    expect(parseFloat(patchedChild.percent)).toBeCloseTo(0.9, 4);
+
+    // Parent percent must be unchanged at 0.6
+    const [parentAfter] = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.id, parentRow.id));
+    expect(parseFloat(parentAfter.percent!)).toBeCloseTo(0.6, 4);
+  });
+});
+
+d("DELETE /api/clients/[id]/gifts/[giftId]", () => {
+  let dbMod: typeof import("@/db");
+  let schema: typeof import("@/db/schema");
+  let helpers: typeof import("@/lib/db-helpers");
+  let drizzleOrm: typeof import("drizzle-orm");
+  let POST: (typeof import("../route"))["POST"];
+  let DELETE: (typeof import("../[giftId]/route"))["DELETE"];
+
+  beforeAll(async () => {
+    dbMod = await import("@/db");
+    schema = await import("@/db/schema");
+    helpers = await import("@/lib/db-helpers");
+    drizzleOrm = await import("drizzle-orm");
+    ({ POST } = await import("../route"));
+    ({ DELETE } = await import("../[giftId]/route"));
+  });
+
+  async function cleanup() {
+    const { db } = dbMod;
+    const { clients, scenarios, familyMembers, entities } = schema;
+
+    const testClients = await db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+    const ids = testClients.map((c) => c.id);
+    if (ids.length === 0) return;
+
+    await db.delete(schema.gifts).where(drizzleOrm.inArray(schema.gifts.clientId, ids));
+    await db.delete(entities).where(drizzleOrm.inArray(entities.clientId, ids));
+    await db.delete(scenarios).where(drizzleOrm.inArray(scenarios.clientId, ids));
+    await db.delete(familyMembers).where(drizzleOrm.inArray(familyMembers.clientId, ids));
+    await db.delete(clients).where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+  }
+
+  async function setupClient() {
+    const { db } = dbMod;
+    const { clients, scenarios, familyMembers, entities } = schema;
+
+    const [client] = await db
+      .insert(clients)
+      .values({
+        firmId: TEST_FIRM,
+        advisorId: "advisor_gifts_test",
+        firstName: "Gift",
+        lastName: "Test",
+        dateOfBirth: "1970-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        lifeExpectancy: 90,
+        filingStatus: "single",
+      })
+      .returning();
+
+    const [scenario] = await db
+      .insert(scenarios)
+      .values({ clientId: client.id, name: "base", isBaseCase: true })
+      .returning();
+
+    const [fm] = await db
+      .insert(familyMembers)
+      .values({
+        clientId: client.id,
+        firstName: "Gift",
+        lastName: "Test",
+        role: "client" as const,
+      })
+      .returning();
+
+    const [entity] = await db
+      .insert(entities)
+      .values({
+        clientId: client.id,
+        name: "Test Trust",
+        entityType: "trust" as const,
+        isIrrevocable: true,
+      })
+      .returning();
+
+    return {
+      clientId: client.id,
+      scenarioId: scenario.id,
+      familyMemberId: fm.id,
+      entityId: entity.id,
+    };
+  }
+
+  function makePostReq(clientId: string, body: object): Request {
+    return new Request(`http://localhost/api/clients/${clientId}/gifts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  function makeDeleteReq(clientId: string, giftId: string): Request {
+    return new Request(
+      `http://localhost/api/clients/${clientId}/gifts/${giftId}`,
+      { method: "DELETE" },
+    );
+  }
+
+  beforeEach(async () => {
+    await cleanup();
+    vi.mocked(helpers.getOrgId).mockResolvedValue(TEST_FIRM);
+  });
+
+  it("6. DELETE parent gift cascades — child gift is removed", async () => {
+    const { clientId, scenarioId, entityId } = await setupClient();
+    const { db } = dbMod;
+    const { accounts, liabilities, gifts } = schema;
+
+    // Seed account + linked liability
+    const [account] = await db
+      .insert(accounts)
+      .values({
+        clientId,
+        scenarioId,
+        name: "Rental Property",
+        category: "real_estate" as const,
+        subType: "rental_property",
+        value: "600000",
+        basis: "300000",
+      })
+      .returning();
+
+    await db
+      .insert(liabilities)
+      .values({
+        clientId,
+        scenarioId,
+        name: "Rental Mortgage",
+        balance: "300000",
+        interestRate: "0.07",
+        monthlyPayment: "2000",
+        startYear: 2019,
+        termMonths: 360,
+        linkedPropertyId: account.id,
+      })
+      .returning();
+
+    // Create parent + child via POST
+    const postRes = await POST(
+      makePostReq(clientId, {
+        year: 2026,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 0.5,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(postRes.status).toBe(201);
+    const parentRow = await postRes.json();
+
+    // Confirm child exists
+    const childrenBefore = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.parentGiftId, parentRow.id));
+    expect(childrenBefore).toHaveLength(1);
+
+    // DELETE the parent
+    const deleteRes = await DELETE(
+      makeDeleteReq(clientId, parentRow.id) as never,
+      { params: Promise.resolve({ id: clientId, giftId: parentRow.id }) },
+    );
+    expect(deleteRes.status).toBe(200);
+    const deleteBody = await deleteRes.json();
+    expect(deleteBody.ok).toBe(true);
+
+    // Child must have cascaded away
+    const childrenAfter = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.parentGiftId, parentRow.id));
+    expect(childrenAfter).toHaveLength(0);
+
+    // Parent row must also be gone
+    const parentAfter = await db
+      .select()
+      .from(gifts)
+      .where(drizzleOrm.eq(gifts.id, parentRow.id));
+    expect(parentAfter).toHaveLength(0);
   });
 });
