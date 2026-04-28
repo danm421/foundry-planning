@@ -1,7 +1,24 @@
 import type { ClientData } from "@/engine/types";
-import { taxTreatmentTag, type TaxTreatmentTag } from "./derive-card-data";
 
-export type { TaxTreatmentTag };
+export type TaxTreatmentTag = "DEF" | "TAX" | "FREE" | "DB";
+
+export function taxTreatmentTag(account: {
+  category: string;
+  subType?: string;
+}): TaxTreatmentTag | null {
+  const { category, subType } = account;
+  switch (category) {
+    case "retirement":
+      return subType === "roth_ira" || subType === "roth_401k" ? "FREE" : "DEF";
+    case "taxable":
+    case "cash":
+      return "TAX";
+    case "life_insurance":
+      return "DB";
+    default:
+      return null;
+  }
+}
 
 export interface RenderRow {
   accountId: string;
