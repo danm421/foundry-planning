@@ -40,6 +40,12 @@
   --color-cat-insurance: #f472b6;
   --color-cat-transactions: #22d3ee;
 
+  /* Estate spine palette — death-sequence canvas */
+  --color-spouse: #3E5568;
+  --color-tax: #6B3D2E;
+  --color-inherit: #355267;
+  --color-heirs: #5D6A45;
+
   /* Allocation palette (semantic aliases for D — overview refit) */
   --color-alloc-equities: var(--color-cat-income);
   --color-alloc-fi: var(--color-cat-portfolio);

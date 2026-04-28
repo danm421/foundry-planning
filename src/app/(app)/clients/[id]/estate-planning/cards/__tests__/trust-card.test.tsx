@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import { TrustCard } from "../trust-card";
 import type { TrustCardData } from "../../lib/derive-card-data";
+
+vi.mock("@dnd-kit/core", () => ({
+  useDroppable: () => ({
+    isOver: false,
+    setNodeRef: () => undefined,
+  }),
+}));
 
 const data: TrustCardData = {
   entityId: "e1",
@@ -12,10 +20,19 @@ const data: TrustCardData = {
   isIrrevocable: true,
   grantorRole: "client",
   trusteeName: "Sarah Smith",
-  heldAssets: [
-    { id: "a3", name: "SLAT Brokerage", category: "taxable", tag: "TAX", value: 2_400_000 },
+  rows: [
+    {
+      accountId: "a3",
+      accountName: "SLAT Brokerage",
+      category: "taxable",
+      taxTag: "TAX",
+      ownerPercent: 1,
+      sliceValue: 2_400_000,
+      hasMultipleOwners: false,
+      coOwners: [],
+    },
   ],
-  totalValue: 2_400_000,
+  total: 2_400_000,
   exemptionConsumed: 2_400_000,
   exemptionAvailable: 15_000_000,
 };
@@ -41,5 +58,21 @@ describe("TrustCard", () => {
     expect(screen.queryByText("SLAT Brokerage")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Tom's SLAT/i }));
     expect(screen.getByText("SLAT Brokerage")).toBeInTheDocument();
+  });
+
+  it("does not render a remove button when onRemoveSlice is not provided", () => {
+    render(<TrustCard data={data} defaultExpanded />);
+    expect(screen.queryByRole("button", { name: /remove slice/i })).not.toBeInTheDocument();
+  });
+
+  it("renders a remove button on each row that calls onRemoveSlice", async () => {
+    const onRemoveSlice = vi.fn();
+    render(<TrustCard data={data} defaultExpanded onRemoveSlice={onRemoveSlice} />);
+    const removeBtn = screen.getAllByRole("button", { name: /remove slice/i })[0];
+    await userEvent.click(removeBtn);
+    expect(onRemoveSlice).toHaveBeenCalledWith({
+      accountId: data.rows[0].accountId,
+      trustEntityId: data.entityId,
+    });
   });
 });

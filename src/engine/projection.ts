@@ -10,6 +10,7 @@ import type {
   PlanSettings,
   DeductionBreakdown,
   Income,
+  EstateTaxResult,
 } from "./types";
 import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
@@ -2403,4 +2404,40 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   }
 
   return years;
+}
+
+// ── Wrapper: projection result with named death-event refs ───────────────────
+
+/**
+ * The result of a projection run, with optional named references to the
+ * first- and second-death event years pulled out for convenient downstream
+ * access (e.g. estate report sections).
+ *
+ * Both event refs are `undefined` when no death falls inside the plan window.
+ * `years` is always the full projection array regardless.
+ */
+export interface ProjectionResult {
+  years: ProjectionYear[];
+  firstDeathEvent?: EstateTaxResult;
+  secondDeathEvent?: EstateTaxResult;
+}
+
+/**
+ * Thin wrapper around `runProjection` that also extracts the first- and
+ * second-death `EstateTaxResult` objects into named top-level fields.
+ *
+ * Zero breaking changes — existing callers of `runProjection` are unaffected.
+ */
+export function runProjectionWithEvents(
+  data: ClientData,
+  options?: ProjectionOptions,
+): ProjectionResult {
+  const years = runProjection(data, options);
+  const firstIdx = years.findIndex((y) => y.estateTax?.deathOrder === 1);
+  const secondIdx = years.findIndex((y) => y.estateTax?.deathOrder === 2);
+  return {
+    years,
+    firstDeathEvent: firstIdx >= 0 ? years[firstIdx].estateTax! : undefined,
+    secondDeathEvent: secondIdx >= 0 ? years[secondIdx].estateTax! : undefined,
+  };
 }

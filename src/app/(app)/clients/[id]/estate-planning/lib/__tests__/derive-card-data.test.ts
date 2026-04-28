@@ -70,14 +70,14 @@ function spouseAcct(id: string, name: string, category: ClientData["accounts"][0
   } as ClientData["accounts"][0];
 }
 
-/** Build a minimal jointly-owned Account. */
-function jointAcct(id: string, name: string, category: ClientData["accounts"][0]["category"], value: number, extra: object = {}): ClientData["accounts"][0] {
+/** Build a fractional account owned 60% client, 40% spouse. */
+function fractionalAcct(id: string, name: string, category: ClientData["accounts"][0]["category"], value: number, extra: object = {}): ClientData["accounts"][0] {
   return {
     id, name, category, subType: "generic",
     value, basis: value, growthRate: 0, rmdEnabled: false,
     owners: [
-      { kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 0.5 },
-      { kind: "family_member", familyMemberId: SPOUSE_FM_ID, percent: 0.5 },
+      { kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 0.6 },
+      { kind: "family_member", familyMemberId: SPOUSE_FM_ID, percent: 0.4 },
     ],
     ...extra,
   } as ClientData["accounts"][0];
@@ -116,13 +116,12 @@ describe("taxTreatmentTag", () => {
 });
 
 describe("deriveClientCardData", () => {
-  it("emits a single client card when no spouse is set, and groups outright vs joint accounts", () => {
+  it("emits a single client card with rows for client's accounts", () => {
     const tree = baseTree({
       client: baseClient({ firstName: "Tom", lastName: "Smith" }),
       familyMembers: [clientFm], // no spouse FM
       accounts: [
         clientAcct("a1", "401k", "retirement", 500_000),
-        jointAcct("a2", "Joint Brokerage", "taxable", 1_000_000),
       ],
     });
 
@@ -131,12 +130,10 @@ describe("deriveClientCardData", () => {
     const tom = cards[0];
     expect(tom.ownerKey).toBe("client");
     expect(tom.name).toBe("Tom Smith");
-    expect(tom.outrightAssets).toHaveLength(1);
-    expect(tom.outrightAssets[0].name).toBe("401k");
-    expect(tom.outrightAssets[0].tag).toBe("DEF");
-    expect(tom.jointAssets).toHaveLength(1);
-    expect(tom.outrightTotal).toBe(500_000);
-    expect(tom.jointHalfTotal).toBe(500_000);
+    expect(tom.rows).toHaveLength(1);
+    expect(tom.rows[0].accountName).toBe("401k");
+    expect(tom.rows[0].taxTag).toBe("DEF");
+    expect(tom.total).toBe(500_000);
   });
 
   it("emits both client and spouse cards when spouseName is set", () => {
@@ -158,8 +155,8 @@ describe("deriveClientCardData", () => {
     expect(cards[0].name).toBe("Tom Smith");
     expect(cards[1].ownerKey).toBe("spouse");
     expect(cards[1].name).toBe("Linda Smith");
-    expect(cards[1].outrightAssets).toHaveLength(1);
-    expect(cards[1].outrightTotal).toBe(200_000);
+    expect(cards[1].rows).toHaveLength(1);
+    expect(cards[1].total).toBe(200_000);
   });
 
   it("excludes a grantor whose lifeExpectancy has elapsed (modeled-deceased view)", () => {
@@ -177,13 +174,28 @@ describe("deriveClientCardData", () => {
     });
     const cards = deriveClientCardData(tree, 2026);
     expect(cards).toHaveLength(1);
-    expect(cards[0].outrightAssets).toHaveLength(1);
-    expect(cards[0].outrightAssets[0].tag).toBe("FREE");
+    expect(cards[0].rows).toHaveLength(1);
+    expect(cards[0].rows[0].taxTag).toBe("FREE");
+  });
+
+  it("ClientCardData rows include both solo and fractional accounts", () => {
+    const tree = baseTree({
+      accounts: [
+        clientAcct("a1", "Solo", "retirement", 1_000_000),
+        fractionalAcct("a2", "Joint", "taxable", 2_000_000),
+      ],
+    });
+    const cards = deriveClientCardData(tree, 2026);
+    const tom = cards.find((c) => c.ownerKey === "client")!;
+    expect(tom.rows.map((r) => r.accountName)).toContain("Solo");
+    expect(tom.rows.map((r) => r.accountName)).toContain("Joint");
+    // total = 1_000_000 (solo 100%) + 1_200_000 (joint 60% of 2_000_000)
+    expect(tom.total).toBe(2_200_000);
   });
 });
 
 describe("deriveTrustCardData", () => {
-  it("returns one card per trust entity, with held assets and exemption usage", () => {
+  it("returns one card per trust entity, with rows and exemption usage", () => {
     const tree = baseTree({
       entities: [
         {
@@ -208,7 +220,8 @@ describe("deriveTrustCardData", () => {
     expect(cards).toHaveLength(1);
     expect(cards[0].name).toBe("Tom's SLAT");
     expect(cards[0].subType).toBe("slat");
-    expect(cards[0].heldAssets).toHaveLength(1);
+    expect(cards[0].rows).toHaveLength(1);
+    expect(cards[0].total).toBe(2_400_000);
     expect(cards[0].exemptionConsumed).toBe(2_400_000);
     expect(cards[0].exemptionAvailable).toBeGreaterThan(13_000_000);
   });
@@ -268,6 +281,43 @@ describe("deriveHeirCardData", () => {
     expect(cards[0].bequestsReceived[0].willGrantor).toBe("client");
     expect(cards[0].bequestsReceived[0].condition).toBe("always");
   });
+
+  it("HeirCardData ownershipRows populated when heir directly owns an account", () => {
+    const childFm: FamilyMember = {
+      id: "fm-heir-1", relationship: "child", role: "child",
+      firstName: "Jane", lastName: "Smith", dateOfBirth: "1998-06-15",
+    };
+    const tree = baseTree({
+      familyMembers: [clientFm, spouseFm, childFm],
+      accounts: [
+        {
+          id: "a-heir", name: "UTMA for Jane", category: "taxable", subType: "generic",
+          value: 50_000, basis: 50_000, growthRate: 0, rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: "fm-heir-1", percent: 1 }],
+        } as ClientData["accounts"][0],
+      ],
+    });
+    const cards = deriveHeirCardData(tree, 2026);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].ownershipRows).toHaveLength(1);
+    expect(cards[0].ownershipRows[0].accountName).toBe("UTMA for Jane");
+    expect(cards[0].ownershipRows[0].sliceValue).toBe(50_000);
+  });
+
+  it("HeirCardData empty arrays when heir has neither bequests nor ownership", () => {
+    const childFm: FamilyMember = {
+      id: "fm-heir-2", relationship: "child", role: "child",
+      firstName: "Bob", lastName: "Smith", dateOfBirth: "2000-01-01",
+    };
+    const tree = baseTree({
+      familyMembers: [clientFm, spouseFm, childFm],
+      accounts: [],
+    });
+    const cards = deriveHeirCardData(tree, 2026);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].bequestsReceived).toHaveLength(0);
+    expect(cards[0].ownershipRows).toHaveLength(0);
+  });
 });
 
 describe("deriveCharityCardData", () => {
@@ -305,5 +355,38 @@ describe("deriveCharityCardData", () => {
     expect(cards[0].name).toBe("Stanford University");
     expect(cards[0].bequestsReceived).toHaveLength(1);
     expect(cards[0].bequestsReceived[0].percentage).toBe(100);
+  });
+
+  it("CharityCardData lifetimeGifts lists cash gifts in year order", () => {
+    const tree = baseTree({
+      externalBeneficiaries: [{ id: "ex1", name: "Red Cross", kind: "charity", charityType: "public" as const }],
+      gifts: [
+        {
+          id: "g1", year: 2025, amount: 10_000, grantor: "client",
+          recipientExternalBeneficiaryId: "ex1", useCrummeyPowers: false,
+        },
+        {
+          id: "g2", year: 2023, amount: 5_000, grantor: "client",
+          recipientExternalBeneficiaryId: "ex1", useCrummeyPowers: false,
+        },
+        // gift to a different charity — should not appear
+        {
+          id: "g3", year: 2024, amount: 2_000, grantor: "client",
+          recipientExternalBeneficiaryId: "ex-other", useCrummeyPowers: false,
+        },
+      ] as ClientData["gifts"],
+    });
+    const cards = deriveCharityCardData(tree);
+    expect(cards).toHaveLength(1);
+    const card = cards[0];
+    expect(card.lifetimeGifts).toHaveLength(2);
+    // sorted by year ascending
+    expect(card.lifetimeGifts[0].year).toBe(2023);
+    expect(card.lifetimeGifts[0].amount).toBe(5_000);
+    expect(card.lifetimeGifts[1].year).toBe(2025);
+    expect(card.lifetimeGifts[1].amount).toBe(10_000);
+    // Gift type has no accountId field — all gifts default to cash
+    expect(card.lifetimeGifts[0].assetClass).toBe("cash");
+    expect(card.lifetimeGifts[0].sourceLabel).toBe("Cash gift");
   });
 });

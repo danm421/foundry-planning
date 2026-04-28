@@ -4,7 +4,7 @@ import { ClientCard } from "./cards/client-card";
 
 export function InEstateColumn({ tree, asOfYear }: { tree: ClientData; asOfYear: number }) {
   const cards = deriveClientCardData(tree, asOfYear);
-  const total = cards.reduce((s, c) => s + c.outrightTotal + c.jointHalfTotal, 0);
+  const total = cards.reduce((s, c) => s + c.total, 0);
   return (
     <div>
       <header className="flex items-baseline justify-between border-b border-[var(--color-hair)] px-5 py-3">

@@ -1,43 +1,17 @@
-import type { ClientData, Account, FamilyMember, WillBequest } from "@/engine/types";
+import type { ClientData, FamilyMember, Account, WillBequest, Gift } from "@/engine/types";
 import { beaForYear } from "@/lib/tax/estate";
-import { controllingEntity, controllingFamilyMember, ownedByHousehold } from "@/engine/ownership";
+import { rowsForFamilyMember, rowsForEntity, type RenderRow } from "./render-rows";
 
-export type TaxTreatmentTag = "DEF" | "TAX" | "FREE" | "DB";
-
-export function taxTreatmentTag(account: {
-  category: string;
-  subType?: string;
-}): TaxTreatmentTag | null {
-  const { category, subType } = account;
-  switch (category) {
-    case "retirement":
-      return subType === "roth_ira" || subType === "roth_401k" ? "FREE" : "DEF";
-    case "taxable":
-    case "cash":
-      return "TAX";
-    case "life_insurance":
-      return "DB";
-    default:
-      return null;
-  }
-}
-
-export interface AssetRow {
-  id: string;
-  name: string;
-  category: string;
-  tag: TaxTreatmentTag | null;
-  value: number;
-}
+export type { TaxTreatmentTag } from "./render-rows";
+export { taxTreatmentTag } from "./render-rows";
 
 export interface ClientCardData {
   ownerKey: "client" | "spouse";
+  familyMemberId: string;
   name: string;
   ageDescriptor: string;
-  outrightAssets: AssetRow[];
-  jointAssets: AssetRow[];
-  outrightTotal: number;
-  jointHalfTotal: number;
+  rows: RenderRow[];
+  total: number;
 }
 
 export interface TrustCardData {
@@ -47,8 +21,8 @@ export interface TrustCardData {
   isIrrevocable: boolean;
   grantorRole: "client" | "spouse" | undefined;
   trusteeName: string | null;
-  heldAssets: AssetRow[];
-  totalValue: number;
+  rows: RenderRow[];
+  total: number;
   exemptionConsumed: number;
   exemptionAvailable: number;
 }
@@ -68,12 +42,19 @@ export interface HeirCardData {
   relationship: string;
   age: number | null;
   bequestsReceived: BequestSummaryRow[];
+  ownershipRows: RenderRow[];
 }
 
 export interface CharityCardData {
   externalBeneficiaryId: string;
   name: string;
   bequestsReceived: BequestSummaryRow[];
+  lifetimeGifts: {
+    year: number;
+    amount: number;
+    assetClass: "cash" | "appreciated";
+    sourceLabel: string;
+  }[];
 }
 
 const fmFullName = (fm: FamilyMember) => `${fm.firstName} ${fm.lastName ?? ""}`.trim();
@@ -92,13 +73,14 @@ const isAliveAtYear = (
   return new Date(dob).getUTCFullYear() + lifeExpectancy >= year;
 };
 
-const accountToRow = (a: Account): AssetRow => ({
-  id: a.id,
-  name: a.name,
-  category: a.category,
-  tag: taxTreatmentTag({ category: a.category, subType: a.subType }),
-  value: a.value,
-});
+// Gift type does not carry an accountId — all charity gifts are cash gifts.
+function deriveAssetClass(_tree: ClientData, _gift: Gift): "cash" | "appreciated" {
+  return "cash";
+}
+
+function deriveSourceLabel(_tree: ClientData, _gift: Gift): string {
+  return "Cash gift";
+}
 
 export function deriveClientCardData(
   tree: ClientData,
@@ -106,25 +88,17 @@ export function deriveClientCardData(
 ): ClientCardData[] {
   const c = tree.client;
 
-  // Resolve FM ids for principal ownership checks.
-  const clientFmId = (tree.familyMembers ?? []).find((fm) => fm.role === "client")?.id ?? null;
-  const spouseFmId = (tree.familyMembers ?? []).find((fm) => fm.role === "spouse")?.id ?? null;
+  const clientFm = (tree.familyMembers ?? []).find((fm) => fm.role === "client");
+  const spouseFm = (tree.familyMembers ?? []).find((fm) => fm.role === "spouse");
 
   const buildCard = (
     ownerKey: "client" | "spouse",
     name: string,
     dob: string | undefined,
+    fmId: string,
   ): ClientCardData => {
-    const ownerFmId = ownerKey === "client" ? clientFmId : spouseFmId;
-    // Outright: sole FM owner is this principal, no entity ownership.
-    const outright = tree.accounts.filter((a) => {
-      if (controllingEntity(a) != null) return false;
-      return ownerFmId != null && controllingFamilyMember(a) === ownerFmId;
-    });
-    // Joint: shared between two FM owners (not solely one principal), no entity control.
-    const joint = tree.accounts.filter(
-      (a) => controllingEntity(a) == null && controllingFamilyMember(a) == null && ownedByHousehold(a) > 0.5,
-    );
+    const rows = rowsForFamilyMember(tree, fmId);
+    const total = rows.reduce((a, r) => a + r.sliceValue, 0);
     const trustsAsGrantor = (tree.entities ?? []).filter(
       (e) => e.entityType === "trust" && e.grantor === ownerKey,
     );
@@ -136,24 +110,22 @@ export function deriveClientCardData(
         `Grantor of ${trustsAsGrantor.length} trust${trustsAsGrantor.length === 1 ? "" : "s"}`,
       );
     }
-    const ageDescriptor = parts.join(" · ");
     return {
       ownerKey,
+      familyMemberId: fmId,
       name,
-      ageDescriptor,
-      outrightAssets: outright.map(accountToRow),
-      jointAssets: joint.map(accountToRow),
-      outrightTotal: outright.reduce((s, a) => s + a.value, 0),
-      jointHalfTotal: joint.reduce((s, a) => s + a.value, 0) / 2,
+      ageDescriptor: parts.join(" · "),
+      rows,
+      total,
     };
   };
 
   const cards: ClientCardData[] = [];
-  if (isAliveAtYear(c.dateOfBirth, c.lifeExpectancy, asOfYear)) {
-    cards.push(buildCard("client", `${c.firstName} ${c.lastName}`.trim(), c.dateOfBirth));
+  if (clientFm && isAliveAtYear(c.dateOfBirth, c.lifeExpectancy, asOfYear)) {
+    cards.push(buildCard("client", `${c.firstName} ${c.lastName}`.trim(), c.dateOfBirth, clientFm.id));
   }
-  if (c.spouseName && isAliveAtYear(c.spouseDob, c.spouseLifeExpectancy ?? undefined, asOfYear)) {
-    cards.push(buildCard("spouse", c.spouseName, c.spouseDob));
+  if (c.spouseName && spouseFm && isAliveAtYear(c.spouseDob, c.spouseLifeExpectancy ?? undefined, asOfYear)) {
+    cards.push(buildCard("spouse", c.spouseName, c.spouseDob, spouseFm.id));
   }
   return cards;
 }
@@ -163,7 +135,8 @@ export function deriveTrustCardData(tree: ClientData, asOfYear: number): TrustCa
   const inflation = tree.planSettings?.taxInflationRate ?? 0.03;
   const bea = beaForYear(asOfYear, inflation);
   return trusts.map((e) => {
-    const heldAccounts = tree.accounts.filter((a) => controllingEntity(a) === e.id);
+    const rows = rowsForEntity(tree, e.id);
+    const total = rows.reduce((a, r) => a + r.sliceValue, 0);
     return {
       entityId: e.id,
       name: e.name ?? "(unnamed trust)",
@@ -171,8 +144,8 @@ export function deriveTrustCardData(tree: ClientData, asOfYear: number): TrustCa
       isIrrevocable: !!e.isIrrevocable,
       grantorRole: e.grantor,
       trusteeName: e.trustee ?? null,
-      heldAssets: heldAccounts.map(accountToRow),
-      totalValue: heldAccounts.reduce((s, a) => s + a.value, 0),
+      rows,
+      total,
       exemptionConsumed: e.exemptionConsumed ?? 0,
       exemptionAvailable: bea,
     };
@@ -211,13 +184,28 @@ const matchingRecipientRows = (
   return rows;
 };
 
+export function collectBequestsForRecipient(
+  tree: ClientData,
+  matcher: (
+    kind: "family_member" | "external_beneficiary" | "entity" | "spouse",
+    id: string | null,
+  ) => boolean,
+): BequestSummaryRow[] {
+  const received: BequestSummaryRow[] = [];
+  for (const will of tree.wills ?? []) {
+    received.push(
+      ...matchingRecipientRows(will.bequests, will.id, will.grantor, matcher, tree.accounts),
+    );
+  }
+  return received;
+}
+
 export function deriveHeirCardData(
   tree: ClientData,
   asOfYear: number = new Date().getUTCFullYear(),
 ): HeirCardData[] {
   const results: HeirCardData[] = [];
   for (const fm of tree.familyMembers ?? []) {
-    // Skip household principals — they're rendered as the Client card, not as heirs.
     if (fm.role === "client" || fm.role === "spouse") continue;
     const received: BequestSummaryRow[] = [];
     for (const will of tree.wills ?? []) {
@@ -237,6 +225,7 @@ export function deriveHeirCardData(
       relationship: fm.relationship,
       age: ageAsOf(fm.dateOfBirth, asOfYear),
       bequestsReceived: received,
+      ownershipRows: rowsForFamilyMember(tree, fm.id),
     });
   }
   return results;
@@ -256,6 +245,20 @@ export function deriveCharityCardData(tree: ClientData): CharityCardData[] {
         ),
       );
     }
-    return { externalBeneficiaryId: eb.id, name: eb.name, bequestsReceived: received };
+    const lifetimeGifts = (tree.gifts ?? [])
+      .filter((g) => g.recipientExternalBeneficiaryId === eb.id)
+      .map((g) => ({
+        year: g.year,
+        amount: g.amount ?? 0,
+        assetClass: deriveAssetClass(tree, g),
+        sourceLabel: deriveSourceLabel(tree, g),
+      }))
+      .sort((a, b) => a.year - b.year);
+    return {
+      externalBeneficiaryId: eb.id,
+      name: eb.name,
+      bequestsReceived: received,
+      lifetimeGifts,
+    };
   });
 }

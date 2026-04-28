@@ -14,20 +14,17 @@ import { useState, createContext, useContext, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { ClientData, Will } from "@/engine/types";
 import { useToast } from "@/components/toast";
-import { TrustDropChooser, type TrustDropOption } from "./popovers/trust-drop-chooser";
-import { YearPickerPopover } from "./popovers/year-picker-popover";
-import { AllocateConfirm } from "./popovers/allocate-confirm";
-import { RecurringSeriesPopover } from "./popovers/recurring-series-popover";
+import { DropPopup, type DropAction, type DropPopupProps } from "./drop/drop-popup";
 import {
-  applyAlreadyOwned,
-  applyGiftThisYear,
-  applyBequestAtDeath,
-  applyRecurringGiftSeries,
-  type Inverse,
-} from "./drop-handlers";
+  saveGiftOneTime,
+  saveGiftRecurring,
+  saveBequest,
+  saveRetitle,
+  type AccountOwner as SaveAccountOwner,
+} from "./drop/lib/save-handlers";
+import { sliceToAsset } from "./drop/lib/slice-percent-conversion";
 import type { WillBequestInput } from "@/lib/schemas/wills";
 import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
-import { controllingEntity } from "@/engine/ownership";
 
 /** Context that heir/charity cards use to open the edit dialog without prop-drilling. */
 interface BequestEditContextValue {
@@ -40,26 +37,6 @@ const BequestEditContext = createContext<BequestEditContextValue>({
 
 export function useBequestEdit() {
   return useContext(BequestEditContext);
-}
-
-/** Context that client-card joint rows use to open the allocate-confirm popover. */
-interface AllocateRequestValue {
-  accountId: string;
-  assetName: string;
-  totalValue: number;
-  anchor: { clientX: number; clientY: number };
-}
-
-interface AllocateRequestContextValue {
-  onAllocateRequest: (req: AllocateRequestValue) => void;
-}
-
-const AllocateRequestContext = createContext<AllocateRequestContextValue>({
-  onAllocateRequest: () => undefined,
-});
-
-export function useAllocateRequest() {
-  return useContext(AllocateRequestContext);
 }
 
 export interface DragPayload {
@@ -96,11 +73,14 @@ interface DropEvent {
   clientY: number;
 }
 
-interface PendingDrop {
-  payload: DragPayload;
-  overId: string;
-  overData: OverData | null;
+interface DropPopupState {
   anchor: { clientX: number; clientY: number };
+  source: DropPopupProps["source"];
+  target: DropPopupProps["target"];
+  /** Carried separately (not part of DropPopupProps) so dispatchSave has the full
+   *  drag context — payload.ownerKey routes the grantor for gift APIs, and the
+   *  account is the live source-of-truth for `currentOwners` on retitle. */
+  payload: DragPayload;
 }
 
 interface ProviderProps {
@@ -136,6 +116,20 @@ function willToExistingWill(will: Will): {
   };
 }
 
+/** Build the `existingWills` map saveBequest expects, keyed by grantor. Mirrors
+ *  `willToExistingWill` but produces the partial-record shape so saveBequest
+ *  flips POST→PATCH for grantors that already have a will. */
+function pickExistingWills(
+  wills: Will[],
+): Partial<Record<"client" | "spouse", { id: string; bequests: WillBequestInput[] }>> {
+  const out: Partial<Record<"client" | "spouse", { id: string; bequests: WillBequestInput[] }>> = {};
+  for (const w of wills) {
+    const stripped = willToExistingWill(w);
+    out[w.grantor] = { id: stripped.id, bequests: stripped.bequests };
+  }
+  return out;
+}
+
 interface EditingState {
   willId: string;
   bequestId: string;
@@ -150,36 +144,11 @@ export function CanvasDndProvider({
   tree,
 }: ProviderProps) {
   const [active, setActive] = useState<DragPayload | null>(null);
-  const [pending, setPending] = useState<PendingDrop | null>(null);
-  const [yearPickerFor, setYearPickerFor] = useState<PendingDrop | null>(null);
-  const [pendingRecurring, setPendingRecurring] = useState<(PendingDrop & { trustName: string }) | null>(null);
+  const [dropPopupState, setDropPopupState] = useState<DropPopupState | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
-  const [pendingAllocate, setPendingAllocate] = useState<AllocateRequestValue | null>(null);
 
   const router = useRouter();
   const { showToast } = useToast();
-
-  function toastWithUndo(message: string, inverse: Inverse) {
-    router.refresh();
-    showToast({
-      message,
-      undo: {
-        label: "Undo",
-        onClick: async () => {
-          try {
-            await inverse();
-            router.refresh();
-          } catch (err) {
-            showToast({
-              message: err instanceof Error ? `Undo failed: ${err.message}` : "Undo failed",
-              durationMs: 5000,
-            });
-          }
-        },
-      },
-      durationMs: 8000,
-    });
-  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -205,246 +174,172 @@ export function CanvasDndProvider({
     handleDrop(dropEvent);
   }
 
-  async function handleDrop(e: DropEvent) {
+  function handleDrop(e: DropEvent) {
     const targetKind = e.overData?.kind ?? e.overId.split(":")[0];
-    if (targetKind === "trust") {
-      // Show the chooser popover for trust drops
-      setPending({
-        payload: e.payload,
-        overId: e.overId,
-        overData: e.overData,
-        anchor: { clientX: e.clientX, clientY: e.clientY },
-      });
-      return;
-    }
 
-    if (targetKind === "heir") {
+    // ── Resolve source (account + dragged owner's slice) ────────────────────
+    const account = tree.accounts.find((a) => a.id === e.payload.assetId);
+    if (!account) return;
+
+    const ownerFm = (tree.familyMembers ?? []).find((fm) => fm.role === e.payload.ownerKey);
+    if (!ownerFm) return;
+
+    const ownerSlicePct =
+      account.owners.find(
+        (o) => o.kind === "family_member" && o.familyMemberId === ownerFm.id,
+      )?.percent ?? 0;
+    if (ownerSlicePct <= 0) return;
+
+    const source: DropPopupProps["source"] = {
+      accountId: account.id,
+      accountName: account.name,
+      accountCategory: account.category,
+      isCash: account.category === "cash",
+      ownerKind: "family_member",
+      ownerId: ownerFm.id,
+      ownerLabel: ownerFm.firstName,
+      ownerSlicePct,
+      ownerSliceValueToday: e.payload.assetValue,
+    };
+
+    // ── Resolve target ──────────────────────────────────────────────────────
+    let target: DropPopupProps["target"] | null = null;
+    if (targetKind === "trust") {
+      const entityId = e.overData?.entityId ?? e.overId.split(":", 2)[1];
+      const entity = (tree.entities ?? []).find((x) => x.id === entityId);
+      if (!entity) return;
+      target = {
+        kind: "entity",
+        id: entity.id,
+        label: entity.name ?? "Trust",
+        isCharity: false,
+      };
+    } else if (targetKind === "heir") {
       const familyMemberId = e.overData?.familyMemberId ?? e.overId.split(":", 2)[1];
       const fm = (tree.familyMembers ?? []).find((m) => m.id === familyMemberId);
-      const account = tree.accounts.find((a) => a.id === e.payload.assetId);
-      if (!fm || !account) return;
-      const grantor = e.payload.ownerKey;
-      const rawWill = (tree.wills ?? []).find((w) => w.grantor === grantor) ?? null;
-      const existingWill = rawWill ? willToExistingWill(rawWill) : null;
-      try {
-        const inverse = await applyBequestAtDeath({
-          clientId,
-          grantor,
-          existingWill,
-          bequest: {
-            name: account.name,
-            assetMode: "specific",
-            accountId: account.id,
-            percentage: 100,
-            condition: "always",
-            recipients: [
-              { recipientKind: "family_member", recipientId: fm.id, percentage: 100, sortOrder: 0 },
-            ],
-          },
-        });
-        const heirName = fm.lastName ? `${fm.firstName} ${fm.lastName}` : fm.firstName;
-        const grantorName = grantor === "client" ? clientFirstName : (spouseFirstName ?? "spouse");
-        toastWithUndo(`Bequest added: ${account.name} → ${heirName} at ${grantorName}'s death`, inverse);
-      } catch (err) {
-        showToast({
-          message: err instanceof Error ? err.message : "Failed",
-          durationMs: 5000,
-        });
-      }
-      return;
-    }
-
-    if (targetKind === "charity") {
+      if (!fm) return;
+      const label = fm.lastName ? `${fm.firstName} ${fm.lastName}` : fm.firstName;
+      target = { kind: "family_member", id: fm.id, label, isCharity: false };
+    } else if (targetKind === "charity") {
       const charityId = e.overData?.externalBeneficiaryId ?? e.overId.split(":", 2)[1];
       const charity = (tree.externalBeneficiaries ?? []).find((x) => x.id === charityId);
-      const account = tree.accounts.find((a) => a.id === e.payload.assetId);
-      if (!charity || !account) return;
-      const grantor = e.payload.ownerKey;
-      const rawWill = (tree.wills ?? []).find((w) => w.grantor === grantor) ?? null;
-      const existingWill = rawWill ? willToExistingWill(rawWill) : null;
-      try {
-        const inverse = await applyBequestAtDeath({
-          clientId,
-          grantor,
-          existingWill,
-          bequest: {
-            name: account.name,
-            assetMode: "specific",
-            accountId: account.id,
-            percentage: 100,
-            condition: "always",
-            recipients: [
-              { recipientKind: "external_beneficiary", recipientId: charity.id, percentage: 100, sortOrder: 0 },
-            ],
-          },
-        });
-        const grantorName = grantor === "client" ? clientFirstName : (spouseFirstName ?? "spouse");
-        toastWithUndo(`Bequest added: ${account.name} → ${charity.name} at ${grantorName}'s death`, inverse);
-      } catch (err) {
-        showToast({
-          message: err instanceof Error ? err.message : "Failed",
-          durationMs: 5000,
-        });
-      }
-      return;
+      if (!charity) return;
+      target = {
+        kind: "external_beneficiary",
+        id: charity.id,
+        label: charity.name,
+        isCharity: charity.kind === "charity",
+      };
     }
+
+    if (!target) return;
+
+    setDropPopupState({
+      anchor: { clientX: e.clientX, clientY: e.clientY },
+      source,
+      target,
+      payload: e.payload,
+    });
   }
 
-  async function dispatch(option: TrustDropOption) {
-    if (!pending) return;
-    const targetId = pending.overData?.entityId ?? pending.overId.split(":", 2)[1];
-    if (!targetId) {
-      setPending(null);
-      return;
-    }
-    const trust = (tree.entities ?? []).find((e) => e.id === targetId);
-    const account = tree.accounts.find((a) => a.id === pending.payload.assetId);
-    if (!trust || !account) {
-      setPending(null);
-      return;
-    }
-
-    try {
-      let inverse: Inverse;
-      let label: string;
-
-      if (option === "already_owned") {
-        inverse = await applyAlreadyOwned({
-          clientId,
-          accountId: account.id,
-          previousOwnerEntityId: controllingEntity(account) ?? null,
-          targetEntityId: trust.id,
-        });
-        label = `Moved ${account.name} into ${trust.name ?? "trust"}`;
-      } else if (option === "gift_this_year") {
-        inverse = await applyGiftThisYear({
-          clientId,
-          currentYear: new Date().getUTCFullYear(),
-          amount: account.value,
-          grantor: pending.payload.ownerKey,
-          recipientEntityId: trust.id,
-        });
-        label = `Gifted ${account.name} → ${trust.name ?? "trust"}`;
-      } else if (option === "gift_future_year") {
-        // Hand off to year-picker; dispatch resumes in onYearConfirm — spread carries overData
-        setYearPickerFor({ ...pending });
-        setPending(null);
-        return;
-      } else if (option === "recurring_gift") {
-        // Hand off to recurring-series popover — spread carries overData
-        setPendingRecurring({ ...pending, trustName: trust.name ?? "Trust" });
-        setPending(null);
-        return;
-      } else if (option === "bequest_client" || option === "bequest_spouse") {
-        const grantor = option === "bequest_client" ? "client" : "spouse";
-        const rawWill = (tree.wills ?? []).find((w) => w.grantor === grantor) ?? null;
-        const existingWill = rawWill ? willToExistingWill(rawWill) : null;
-        inverse = await applyBequestAtDeath({
-          clientId,
-          grantor,
-          existingWill,
-          bequest: {
-            name: account.name,
-            assetMode: "specific",
-            accountId: account.id,
-            percentage: 100,
-            condition: "always",
-            recipients: [
-              { recipientKind: "entity", recipientId: trust.id, percentage: 100, sortOrder: 0 },
-            ],
-          },
-        });
-        const grantorName = grantor === "client" ? clientFirstName : (spouseFirstName ?? "spouse");
-        label = `Bequest added: ${account.name} → ${trust.name ?? "trust"} at ${grantorName}'s death`;
-      } else {
-        // sale_to_trust is disabled
-        setPending(null);
-        return;
-      }
-
-      setPending(null);
-      toastWithUndo(label, inverse);
-    } catch (e) {
-      showToast({
-        message: e instanceof Error ? e.message : "Failed",
-        durationMs: 5000,
-      });
-      setPending(null);
-    }
-  }
-
-  async function onYearConfirm(year: number) {
-    if (!yearPickerFor) return;
-    const { payload, overId, overData } = yearPickerFor;
-    const targetId = overData?.entityId ?? overId.split(":", 2)[1];
-    if (!targetId) {
-      setYearPickerFor(null);
-      return;
-    }
-    const trust = (tree.entities ?? []).find((e) => e.id === targetId);
-    const account = tree.accounts.find((a) => a.id === payload.assetId);
-    if (!trust || !account) {
-      setYearPickerFor(null);
-      return;
-    }
-
-    try {
-      const inverse = await applyGiftThisYear({
-        clientId,
-        currentYear: year,
-        amount: account.value,
-        grantor: payload.ownerKey,
-        recipientEntityId: trust.id,
-      });
-      setYearPickerFor(null);
-      toastWithUndo(`Gifted ${account.name} → ${trust.name ?? "trust"} in ${year}`, inverse);
-    } catch (e) {
-      showToast({
-        message: e instanceof Error ? e.message : "Failed",
-        durationMs: 5000,
-      });
-      setYearPickerFor(null);
-    }
-  }
-
-  async function onRecurringSeriesConfirm(input: {
-    startYear: number;
-    endYear: number;
-    annualAmount: number;
-    inflationAdjust: boolean;
-  }) {
-    if (!pendingRecurring) return;
-    const { payload, overId, overData, trustName } = pendingRecurring;
-    const targetId = overData?.entityId ?? overId.split(":", 2)[1];
-    if (!targetId) {
-      setPendingRecurring(null);
-      return;
-    }
-    const account = tree.accounts.find((a) => a.id === payload.assetId);
+  async function dispatchSave(action: DropAction) {
+    if (!dropPopupState) return;
+    const { source, target, payload } = dropPopupState;
+    const account = tree.accounts.find((a) => a.id === source.accountId);
     if (!account) {
-      setPendingRecurring(null);
+      setDropPopupState(null);
       return;
     }
 
     try {
-      const inverse = await applyRecurringGiftSeries({
-        clientId,
-        grantor: payload.ownerKey,
-        recipientEntityId: targetId,
-        startYear: input.startYear,
-        endYear: input.endYear,
-        annualAmount: input.annualAmount,
-        inflationAdjust: input.inflationAdjust,
-      });
-      const count = input.endYear - input.startYear + 1;
-      setPendingRecurring(null);
-      toastWithUndo(`Recurring gift series: ${count} rows from ${input.startYear} to ${input.endYear} → ${trustName}`, inverse);
-    } catch (e) {
+      switch (action.kind) {
+        case "gift-one-time": {
+          const assetPct = sliceToAsset(action.sliceFraction, source.ownerSlicePct);
+          await saveGiftOneTime({
+            clientId,
+            year: action.year,
+            grantor: payload.ownerKey,
+            sourceAccountId: source.isCash ? undefined : source.accountId,
+            recipient: { kind: target.kind, id: target.id },
+            amountKind: source.isCash ? "dollar" : "percent",
+            percent: source.isCash ? undefined : assetPct,
+            amount: source.isCash ? action.overrideAmount : undefined,
+            useCrummeyPowers: action.useCrummey,
+            notes: action.notes,
+          });
+          break;
+        }
+        case "gift-recurring": {
+          // Recurring gifts are entity-only (sub-form gates this; saveGiftRecurring
+          // belt-and-suspenders throws on non-entity recipients).
+          await saveGiftRecurring({
+            clientId,
+            grantor: payload.ownerKey,
+            recipient: { kind: target.kind, id: target.id },
+            startYear: action.startYear,
+            endYear: action.endYear,
+            annualAmount: action.annualAmount,
+            inflationAdjust: action.inflationAdjust,
+            useCrummeyPowers: action.useCrummey,
+          });
+          break;
+        }
+        case "bequest": {
+          const assetPct = sliceToAsset(action.sliceFraction, source.ownerSlicePct);
+          // Recipient kind narrows the discriminant; bequest recipients accept
+          // entity / family_member / external_beneficiary (no `spouse` literal here).
+          if (
+            target.kind !== "entity" &&
+            target.kind !== "family_member" &&
+            target.kind !== "external_beneficiary"
+          ) {
+            throw new Error(`Unsupported bequest recipient kind: ${target.kind}`);
+          }
+          await saveBequest({
+            clientId,
+            grantorMode: action.grantorMode,
+            accountId: source.accountId,
+            percentage: assetPct * 100, // saveBequest expects 0–100; sliceToAsset returns 0–1
+            condition: action.condition,
+            recipient: { kind: target.kind, id: target.id },
+            existingWills: pickExistingWills(tree.wills ?? []),
+          });
+          break;
+        }
+        case "retitle": {
+          // The popup hides Retitle for charity targets, but defend anyway.
+          if (target.kind === "external_beneficiary") {
+            throw new Error("Cannot retitle to a charity");
+          }
+          const currentOwners: SaveAccountOwner[] = account.owners.map((o) =>
+            o.kind === "family_member"
+              ? { kind: "family_member", familyMemberId: o.familyMemberId, percent: o.percent }
+              : { kind: "entity", entityId: o.entityId, percent: o.percent },
+          );
+          await saveRetitle({
+            clientId,
+            accountId: source.accountId,
+            currentOwners,
+            moveFrom: { kind: "family_member", id: source.ownerId },
+            moveTo: { kind: target.kind, id: target.id },
+            slicePct: action.sliceFraction,
+          });
+          break;
+        }
+      }
+
+      setDropPopupState(null);
+      router.refresh();
       showToast({
-        message: e instanceof Error ? e.message : "Failed to create recurring gift series",
+        message: buildToastMessage(action, source, target),
         durationMs: 5000,
       });
-      setPendingRecurring(null);
+    } catch (e) {
+      showToast({
+        message: e instanceof Error ? e.message : "Save failed",
+        durationMs: 5000,
+      });
+      setDropPopupState(null);
     }
   }
 
@@ -495,53 +390,23 @@ export function CanvasDndProvider({
     showToast({ message: "Bequest updated", durationMs: 4000 });
   }
 
-  async function handleAllocateConfirm(clientShare: number) {
-    if (!pendingAllocate) return;
-    const { accountId, assetName } = pendingAllocate;
-    try {
-      const res = await fetch(`/api/clients/${clientId}/accounts/${accountId}/split`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientShare }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        showToast({
-          message: (j as { error?: string }).error ?? `HTTP ${res.status}`,
-          durationMs: 5000,
-        });
-        setPendingAllocate(null);
-        return;
-      }
-      setPendingAllocate(null);
-      router.refresh();
-      // Append asset name so consecutive splits are distinguishable in the toast stack.
-      showToast({
-        message: `Joint asset split — manual rejoin required. (${assetName})`,
-        durationMs: 8000,
-      });
-    } catch (e) {
-      showToast({
-        message: e instanceof Error ? e.message : "Failed to split account",
-        durationMs: 5000,
-      });
-      setPendingAllocate(null);
-    }
-  }
-
-  // Determine the trust for the chooser — prefer structured overData, fall back to string-split
-  const pendingTrust = pending
-    ? (tree.entities ?? []).find((e) => e.id === (pending.overData?.entityId ?? pending.overId.split(":")[1]))
+  // Pull a per-account growth rate for the live $-preview in the gift sub-form.
+  // Each account carries its own `growthRate`; fall back to PlanSettings.inflationRate
+  // when the account has no growth rate of its own (e.g. cash accounts), or 0.06 as
+  // a final placeholder. Not load-bearing — the preview is informational only.
+  // TODO(future-work/ui): if/when we expose per-asset-class assumed growth in
+  // PlanSettings, wire that here for parity with the projection engine.
+  const sourceAccount = dropPopupState
+    ? tree.accounts.find((a) => a.id === dropPopupState.source.accountId)
     : null;
+  const growthRateForPreview =
+    sourceAccount?.growthRate ?? tree.planSettings?.inflationRate ?? 0.06;
 
-  const currentYear = new Date().getUTCFullYear();
+  const yearMin = new Date().getUTCFullYear();
+  const yearMax = yearMin + 50;
+  const spouseAvailable = (tree.familyMembers ?? []).some((fm) => fm.role === "spouse");
 
   return (
-    <AllocateRequestContext.Provider
-      value={{
-        onAllocateRequest: (req) => setPendingAllocate(req),
-      }}
-    >
     <BequestEditContext.Provider value={{ onEditBequest: handleEditBequest }}>
       <DndContext
         sensors={sensors}
@@ -561,38 +426,17 @@ export function CanvasDndProvider({
           ) : null}
         </DragOverlay>
 
-        {pending && pendingTrust && (
-          <TrustDropChooser
-            anchor={pending.anchor}
-            assetName={pending.payload.assetName}
-            trustName={pendingTrust.name ?? "Trust"}
-            clientFirstName={clientFirstName}
-            spouseFirstName={spouseFirstName}
-            onSelect={dispatch}
-            onCancel={() => setPending(null)}
-          />
-        )}
-
-        {yearPickerFor && (
-          <YearPickerPopover
-            anchor={yearPickerFor.anchor}
-            minYear={currentYear}
-            maxYear={currentYear + 30}
-            defaultYear={currentYear + 1}
-            onConfirm={onYearConfirm}
-            onCancel={() => setYearPickerFor(null)}
-          />
-        )}
-
-        {pendingRecurring && (
-          <RecurringSeriesPopover
-            anchor={pendingRecurring.anchor}
-            assetName={pendingRecurring.payload.assetName}
-            trustName={pendingRecurring.trustName}
-            defaultStartYear={currentYear}
-            defaultEndYear={currentYear + 9}
-            onConfirm={onRecurringSeriesConfirm}
-            onCancel={() => setPendingRecurring(null)}
+        {dropPopupState && (
+          <DropPopup
+            anchor={dropPopupState.anchor}
+            source={dropPopupState.source}
+            target={dropPopupState.target}
+            growthRateForPreview={growthRateForPreview}
+            yearMin={yearMin}
+            yearMax={yearMax}
+            spouseAvailable={spouseAvailable}
+            onSave={dispatchSave}
+            onCancel={() => setDropPopupState(null)}
           />
         )}
 
@@ -624,19 +468,38 @@ export function CanvasDndProvider({
             onSave={handleEditSave}
           />
         )}
-        {pendingAllocate && (
-          <AllocateConfirm
-            anchor={pendingAllocate.anchor}
-            assetName={pendingAllocate.assetName}
-            totalValue={pendingAllocate.totalValue}
-            clientLabel={clientFirstName}
-            spouseLabel={spouseFirstName ?? "Spouse"}
-            onConfirm={handleAllocateConfirm}
-            onCancel={() => setPendingAllocate(null)}
-          />
-        )}
       </DndContext>
     </BequestEditContext.Provider>
-    </AllocateRequestContext.Provider>
   );
+}
+
+function buildToastMessage(
+  action: DropAction,
+  source: DropPopupProps["source"],
+  target: DropPopupProps["target"],
+): string {
+  const ownerName = source.ownerLabel;
+  const assetName = source.accountName;
+  const targetName = target.label;
+  switch (action.kind) {
+    case "gift-one-time": {
+      if (source.isCash && action.overrideAmount !== undefined) {
+        return `Gifted $${action.overrideAmount.toLocaleString("en-US", {
+          maximumFractionDigits: 0,
+        })} from ${ownerName}'s ${assetName} to ${targetName} in ${action.year}`;
+      }
+      const slicePct = Math.round(action.sliceFraction * 100);
+      return `Gifted ${slicePct}% of ${ownerName}'s ${assetName} to ${targetName} in ${action.year}`;
+    }
+    case "gift-recurring":
+      return `Recurring gift of $${action.annualAmount.toLocaleString("en-US", {
+        maximumFractionDigits: 0,
+      })}/yr → ${targetName} (${action.startYear}–${action.endYear})`;
+    case "bequest":
+      return `Bequest added: ${assetName} → ${targetName}`;
+    case "retitle": {
+      const slicePct = Math.round(action.sliceFraction * 100);
+      return `Retitled ${slicePct}% of ${ownerName}'s ${assetName} to ${targetName}`;
+    }
+  }
 }
