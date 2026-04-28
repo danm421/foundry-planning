@@ -25,7 +25,7 @@ export function OutOfEstateColumn({ tree, asOfYear }: { tree: ClientData; asOfYe
 
   return (
     <div>
-      <Section title="Trusts" total={trusts.reduce((s, t) => s + t.totalValue, 0)}>
+      <Section title="Trusts" total={trusts.reduce((s, t) => s + t.total, 0)}>
         {trusts.length === 0 ? (
           <Empty label="No trusts yet" />
         ) : (
