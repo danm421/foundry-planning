@@ -9,9 +9,10 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 // ProjectionYear[] fixture.
 vi.mock("@/engine/projection", () => ({
   runProjection: vi.fn(),
+  runProjectionWithEvents: vi.fn(),
 }));
 
-import { runProjection } from "@/engine/projection";
+import { runProjection, runProjectionWithEvents } from "@/engine/projection";
 import EstateTaxReportView from "@/components/estate-tax-report-view";
 import type {
   EstateTaxResult,
@@ -144,11 +145,27 @@ function makeProjectionYear(hypothetical: HypotheticalEstateTax): ProjectionYear
 // ── Test setup ─────────────────────────────────────────────────────────────
 
 const OWNERS = { clientName: "Tom", spouseName: "Linda" };
+const DOBS = { clientDob: "1960-01-01", spouseDob: "1962-01-01" };
+const SINGLE_DOBS = { clientDob: "1960-01-01", spouseDob: null };
+const RETIREMENT_YEAR = 2027;
+
+/** Wraps a mocked runProjection return into the runProjectionWithEvents shape. */
+function setProjectionFixture(years: ProjectionYear[]) {
+  vi.mocked(runProjection).mockReturnValue(years);
+  const firstIdx = years.findIndex((y) => y.estateTax?.deathOrder === 1);
+  const secondIdx = years.findIndex((y) => y.estateTax?.deathOrder === 2);
+  vi.mocked(runProjectionWithEvents).mockReturnValue({
+    years,
+    firstDeathEvent: firstIdx >= 0 ? years[firstIdx].estateTax : undefined,
+    secondDeathEvent: secondIdx >= 0 ? years[secondIdx].estateTax : undefined,
+  });
+}
 
 beforeEach(() => {
   vi.mocked(runProjection).mockReset();
-  // Mock fetch to return any JSON — content is irrelevant since runProjection
-  // is mocked to return fixtures regardless.
+  vi.mocked(runProjectionWithEvents).mockReset();
+  // Mock fetch to return any JSON — content is irrelevant since the engine is
+  // mocked to return fixtures regardless.
   global.fetch = vi.fn(async () => ({
     ok: true,
     status: 200,
@@ -162,13 +179,15 @@ describe("EstateTaxReportView", () => {
       primary: { first: {}, final: {} },
       spouse: { first: {}, final: {} },
     });
-    vi.mocked(runProjection).mockReturnValue([makeProjectionYear(hypo)]);
+    setProjectionFixture([makeProjectionYear(hypo)]);
 
     render(
       <EstateTaxReportView
         clientId="client-1"
         isMarried={true}
         ownerNames={OWNERS}
+        ownerDobs={DOBS}
+        retirementYear={RETIREMENT_YEAR}
       />,
     );
 
@@ -199,13 +218,15 @@ describe("EstateTaxReportView", () => {
       },
       spouse: { first: {}, final: {} },
     });
-    vi.mocked(runProjection).mockReturnValue([makeProjectionYear(hypo)]);
+    setProjectionFixture([makeProjectionYear(hypo)]);
 
     render(
       <EstateTaxReportView
         clientId="client-1"
         isMarried={true}
         ownerNames={OWNERS}
+        ownerDobs={DOBS}
+        retirementYear={RETIREMENT_YEAR}
       />,
     );
 
@@ -225,13 +246,15 @@ describe("EstateTaxReportView", () => {
       primaryFirst: makeOrdering("client", { year: 2050 }, null),
       // No spouseFirst, no finalDeath.
     };
-    vi.mocked(runProjection).mockReturnValue([makeProjectionYear(hypo)]);
+    setProjectionFixture([makeProjectionYear(hypo)]);
 
     render(
       <EstateTaxReportView
         clientId="client-1"
         isMarried={false}
         ownerNames={{ clientName: "Tom", spouseName: null }}
+        ownerDobs={SINGLE_DOBS}
+        retirementYear={RETIREMENT_YEAR}
       />,
     );
 
@@ -265,7 +288,7 @@ describe("EstateTaxReportView", () => {
       },
       spouse: { first: {}, final: {} },
     });
-    vi.mocked(runProjection).mockReturnValue([
+    setProjectionFixture([
       makeProjectionYear(hypo2040),
       makeProjectionYear(hypo2050),
     ]);
@@ -275,6 +298,8 @@ describe("EstateTaxReportView", () => {
         clientId="client-1"
         isMarried={true}
         ownerNames={OWNERS}
+        ownerDobs={DOBS}
+        retirementYear={RETIREMENT_YEAR}
       />,
     );
 
@@ -311,13 +336,15 @@ describe("EstateTaxReportView", () => {
         { federal: 456_000, state: 0, admin: 0, total: 456_000 },
       ),
     };
-    vi.mocked(runProjection).mockReturnValue([makeProjectionYear(hypo)]);
+    setProjectionFixture([makeProjectionYear(hypo)]);
 
     render(
       <EstateTaxReportView
         clientId="client-1"
         isMarried={true}
         ownerNames={OWNERS}
+        ownerDobs={DOBS}
+        retirementYear={RETIREMENT_YEAR}
       />,
     );
 

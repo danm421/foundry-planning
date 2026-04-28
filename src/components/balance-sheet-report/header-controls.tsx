@@ -1,11 +1,15 @@
 "use client";
 
+import { AsOfDropdown, type AsOfValue } from "../report-controls/as-of-dropdown";
+import type { OwnerDobs } from "../report-controls/age-helpers";
 import type { OwnershipView } from "./ownership-filter";
 
 export type AsOfSelection = "today" | number;
 
 interface HeaderControlsProps {
   years: number[];
+  todayYear: number;
+  ownerDobs: OwnerDobs;
   selectedAsOf: AsOfSelection;
   onAsOfChange: (value: AsOfSelection) => void;
   view: OwnershipView;
@@ -28,6 +32,8 @@ const VIEW_LABELS: Record<OwnershipView, string> = {
 
 export default function HeaderControls({
   years,
+  todayYear,
+  ownerDobs,
   selectedAsOf,
   onAsOfChange,
   view,
@@ -41,27 +47,24 @@ export default function HeaderControls({
     ? ["consolidated", "client", "spouse", "joint", "entities"]
     : ["consolidated", "client", "spouse", "joint"];
 
-  const asOfValue = selectedAsOf === "today" ? "today" : String(selectedAsOf);
+  const handleAsOfChange = (value: AsOfValue) => {
+    if (value === "split") return; // not surfaced on balance sheet
+    onAsOfChange(value);
+  };
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h1 className="text-2xl font-bold tracking-tight text-gray-100">Balance Sheet</h1>
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-sm text-gray-300">
-          AS OF
-          <select
-            value={asOfValue}
-            onChange={(e) => {
-              const v = e.target.value;
-              onAsOfChange(v === "today" ? "today" : Number(v));
-            }}
-            className="rounded border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
-          >
-            <option value="today">Today</option>
-            {years.map((y) => (
-              <option key={y} value={y}>End of {y}</option>
-            ))}
-          </select>
+          As of
+          <AsOfDropdown
+            years={years}
+            todayYear={todayYear}
+            selected={selectedAsOf}
+            onChange={handleAsOfChange}
+            dobs={ownerDobs}
+          />
         </label>
 
         {showViewSelector && (

@@ -54,6 +54,23 @@ export default async function EstateTaxReportPage({
     spouseName: client.spouseName ?? null,
   };
 
+  const ownerDobs = {
+    clientDob: client.dateOfBirth,
+    spouseDob: client.spouseDob ?? null,
+  };
+
+  const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+  const clientRetirementYear = clientBirthYear + client.retirementAge;
+  const spouseRetirementYear =
+    client.spouseDob && client.spouseRetirementAge != null
+      ? parseInt(client.spouseDob.slice(0, 4), 10) + client.spouseRetirementAge
+      : null;
+  // "Retirement (Clients)" milestone = the year both have retired (later of the two).
+  const retirementYear =
+    spouseRetirementYear != null
+      ? Math.max(clientRetirementYear, spouseRetirementYear)
+      : clientRetirementYear;
+
   const { left, right } = parseCompareSearchParams(sp);
   const isRightSnapshot = right.kind === "snapshot";
 
@@ -132,6 +149,8 @@ export default async function EstateTaxReportPage({
           clientId={id}
           isMarried={isMarried}
           ownerNames={ownerNames}
+          ownerDobs={ownerDobs}
+          retirementYear={retirementYear}
         />
       </div>
       <ComparePanel

@@ -2,8 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { runProjection } from "@/engine/projection";
-import type { EstateTaxResult, HypotheticalEstateTaxOrdering, ProjectionYear } from "@/engine/types";
+import { runProjectionWithEvents, type ProjectionResult } from "@/engine/projection";
+import type {
+  EstateTaxResult,
+  HypotheticalEstateTaxOrdering,
+} from "@/engine/types";
+import { AsOfDropdown, type AsOfValue } from "./report-controls/as-of-dropdown";
+import { TimePeriodButtons } from "./report-controls/time-period-buttons";
+import type { OwnerDobs } from "./report-controls/age-helpers";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -20,6 +26,8 @@ interface EstateTaxReportViewProps {
   clientId: string;
   isMarried: boolean;
   ownerNames: { clientName: string; spouseName: string | null };
+  ownerDobs: OwnerDobs;
+  retirementYear: number;
 }
 
 type Ordering = "primaryFirst" | "spouseFirst";
@@ -28,10 +36,12 @@ export default function EstateTaxReportView({
   clientId,
   isMarried,
   ownerNames,
+  ownerDobs,
+  retirementYear,
 }: EstateTaxReportViewProps) {
   const searchParams = useSearchParams();
-  const [projectionYears, setProjectionYears] = useState<ProjectionYear[]>([]);
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [projection, setProjection] = useState<ProjectionResult | null>(null);
+  const [selectedAsOf, setSelectedAsOf] = useState<AsOfValue>("today");
   const [ordering, setOrdering] = useState<Ordering>("primaryFirst");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -52,10 +62,9 @@ export default function EstateTaxReportView({
           throw new Error(body.error ?? `HTTP ${res.status}`);
         }
         const data = await res.json();
-        const projection = runProjection(data);
+        const result = runProjectionWithEvents(data);
         if (cancelled) return;
-        setProjectionYears(projection);
-        if (projection.length > 0) setSelectedYear(projection[0].year);
+        setProjection(result);
       } catch (e) {
         if (cancelled) return;
         setLoadError(
@@ -71,10 +80,29 @@ export default function EstateTaxReportView({
     };
   }, [clientId, searchParams]);
 
+  const projectionYears = useMemo(() => projection?.years ?? [], [projection]);
+  const todayYear = projectionYears[0]?.year;
+  const firstDeathYear = projection?.firstDeathEvent?.year;
+  const secondDeathYear = projection?.secondDeathEvent?.year;
+  const lastDeathYear = secondDeathYear ?? firstDeathYear;
+
+  /**
+   * Resolve which year the dropdown/buttons want to inspect for hypothetical mode.
+   * "today"  → first projection year.
+   * "split"  → not a single year; handled separately below.
+   * number   → that year.
+   */
+  const resolvedYear: number | null =
+    selectedAsOf === "today"
+      ? (todayYear ?? null)
+      : selectedAsOf === "split"
+        ? null
+        : selectedAsOf;
+
   const selectedProjectionYear = useMemo(() => {
-    if (selectedYear == null) return null;
-    return projectionYears.find((y) => y.year === selectedYear) ?? null;
-  }, [projectionYears, selectedYear]);
+    if (resolvedYear == null) return null;
+    return projectionYears.find((y) => y.year === resolvedYear) ?? null;
+  }, [projectionYears, resolvedYear]);
 
   const hypothetical = selectedProjectionYear?.hypotheticalEstateTax ?? null;
 
@@ -90,7 +118,7 @@ export default function EstateTaxReportView({
     return <div className="text-gray-300">Loading projection…</div>;
   }
 
-  if (projectionYears.length === 0 || !hypothetical || selectedYear == null) {
+  if (projectionYears.length === 0 || todayYear == null) {
     return (
       <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
         No projection data available. Ensure plan settings and base case scenario are configured.
@@ -98,91 +126,170 @@ export default function EstateTaxReportView({
     );
   }
 
-  const activeOrdering =
-    ordering === "spouseFirst" && hypothetical.spouseFirst
-      ? hypothetical.spouseFirst
-      : hypothetical.primaryFirst;
+  // Split death: render decedents at their actual projected death years.
+  const isSplit = selectedAsOf === "split";
+  const splitFirst = isSplit ? projection?.firstDeathEvent ?? null : null;
+  const splitSecond = isSplit ? projection?.secondDeathEvent ?? null : null;
 
+  if (!isSplit && !hypothetical) {
+    return (
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+        No estate tax snapshot available for {resolvedYear}.
+      </div>
+    );
+  }
+
+  const milestones = [
+    { year: retirementYear, label: "Retirement" },
+    ...(firstDeathYear != null ? [{ year: firstDeathYear, label: "First Death" }] : []),
+    ...(secondDeathYear != null ? [{ year: secondDeathYear, label: "Last Death" }] : []),
+  ];
+
+  const dropdownYears = projectionYears.map((y) => y.year);
+
+  // ── Active orderings ──
+  const activeOrdering =
+    !isSplit && hypothetical
+      ? ordering === "spouseFirst" && hypothetical.spouseFirst
+        ? hypothetical.spouseFirst
+        : hypothetical.primaryFirst
+      : null;
+
+  const firstDecedent = isSplit
+    ? splitFirst?.deceased ?? null
+    : activeOrdering?.firstDecedent ?? null;
   const firstDecedentName =
-    activeOrdering.firstDecedent === "client"
+    firstDecedent === "client"
       ? ownerNames.clientName
-      : ownerNames.spouseName ?? "Spouse";
+      : firstDecedent === "spouse"
+        ? ownerNames.spouseName ?? "Spouse"
+        : null;
   const survivorName =
-    activeOrdering.firstDecedent === "client"
+    firstDecedent === "client"
       ? ownerNames.spouseName ?? "Spouse"
-      : ownerNames.clientName;
+      : firstDecedent === "spouse"
+        ? ownerNames.clientName
+        : null;
+
+  // ── Header text ──
+  const headerNote = (() => {
+    if (isSplit) {
+      const parts: string[] = [];
+      if (splitFirst) parts.push(`${ownerForName(splitFirst, ownerNames)} dies in ${splitFirst.year}`);
+      if (splitSecond) parts.push(`${ownerForName(splitSecond, ownerNames)} dies in ${splitSecond.year}`);
+      return `Each decedent valued at their projected death year. ${parts.join(" · ")}.`;
+    }
+    if (isMarried) return `Assumes both clients die in ${resolvedYear}. Hypothetical only.`;
+    return `Assumes ${firstDecedentName} dies in ${resolvedYear}. Hypothetical only.`;
+  })();
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <TimePeriodButtons
+          selected={selectedAsOf}
+          onChange={setSelectedAsOf}
+          todayYear={todayYear}
+          retirementYear={retirementYear}
+          firstDeathYear={firstDeathYear}
+          lastDeathYear={lastDeathYear}
+          showSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
+        />
         <div className="flex items-center gap-3">
-          <label className="text-xs uppercase tracking-wide text-gray-300">
+          <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-300">
             As of
+            <AsOfDropdown
+              years={dropdownYears}
+              todayYear={todayYear}
+              selected={selectedAsOf}
+              onChange={setSelectedAsOf}
+              dobs={ownerDobs}
+              milestones={milestones}
+              allowSplit={isMarried && firstDeathYear != null && secondDeathYear != null}
+              yearPrefix="Both die in"
+            />
           </label>
-          <select
-            className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-sm text-gray-100"
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-          >
-            {projectionYears.map((y) => (
-              <option key={y.year} value={y.year}>
-                {y.year}
-              </option>
-            ))}
-          </select>
+          {isMarried && !isSplit && (
+            <div className="inline-flex rounded border border-gray-700 bg-gray-900 p-0.5 text-sm">
+              <button
+                type="button"
+                className={
+                  ordering === "primaryFirst"
+                    ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
+                    : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
+                }
+                onClick={() => setOrdering("primaryFirst")}
+              >
+                {ownerNames.clientName} dies first
+              </button>
+              <button
+                type="button"
+                className={
+                  ordering === "spouseFirst"
+                    ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
+                    : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
+                }
+                onClick={() => setOrdering("spouseFirst")}
+              >
+                {ownerNames.spouseName ?? "Spouse"} dies first
+              </button>
+            </div>
+          )}
         </div>
-        {isMarried && (
-          <div className="inline-flex rounded border border-gray-700 bg-gray-900 p-0.5 text-sm">
-            <button
-              type="button"
-              className={
-                ordering === "primaryFirst"
-                  ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                  : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
-              }
-              onClick={() => setOrdering("primaryFirst")}
-            >
-              {ownerNames.clientName} dies first
-            </button>
-            <button
-              type="button"
-              className={
-                ordering === "spouseFirst"
-                  ? "rounded bg-gray-700 px-3 py-1 text-gray-100"
-                  : "rounded px-3 py-1 text-gray-300 hover:text-gray-200"
-              }
-              onClick={() => setOrdering("spouseFirst")}
-            >
-              {ownerNames.spouseName ?? "Spouse"} dies first
-            </button>
-          </div>
-        )}
       </div>
 
-      <p className="text-xs text-gray-400">
-        {isMarried
-          ? `Assumes both clients die in ${selectedYear}. Hypothetical only.`
-          : `Assumes ${firstDecedentName} dies in ${selectedYear}. Hypothetical only.`}
-      </p>
+      <p className="text-xs text-gray-400">{headerNote}</p>
 
-      <DecedentBreakdown
-        heading={`${firstDecedentName} — ${isMarried ? "First to die" : `Hypothetical death in ${selectedYear}`}`}
-        tax={activeOrdering.firstDeath}
-        showDsueGenerated={isMarried}
-      />
-      {isMarried && activeOrdering.finalDeath && (
-        <DecedentBreakdown
-          heading={`${survivorName} — Second to die`}
-          tax={activeOrdering.finalDeath}
-          showDsueGenerated={false}
-        />
-      )}
-
-      {isMarried && activeOrdering.finalDeath && (
-        <GrandTotals ordering={activeOrdering} />
+      {isSplit ? (
+        <>
+          {splitFirst && (
+            <DecedentBreakdown
+              heading={`${ownerForName(splitFirst, ownerNames)} — First to die · ${splitFirst.year}`}
+              tax={splitFirst}
+              showDsueGenerated={isMarried}
+            />
+          )}
+          {splitSecond && (
+            <DecedentBreakdown
+              heading={`${ownerForName(splitSecond, ownerNames)} — Second to die · ${splitSecond.year}`}
+              tax={splitSecond}
+              showDsueGenerated={false}
+            />
+          )}
+          {splitFirst && splitSecond && (
+            <SplitTotals first={splitFirst} second={splitSecond} />
+          )}
+        </>
+      ) : (
+        activeOrdering && (
+          <>
+            <DecedentBreakdown
+              heading={`${firstDecedentName} — ${isMarried ? "First to die" : `Hypothetical death in ${resolvedYear}`}`}
+              tax={activeOrdering.firstDeath}
+              showDsueGenerated={isMarried}
+            />
+            {isMarried && activeOrdering.finalDeath && survivorName && (
+              <DecedentBreakdown
+                heading={`${survivorName} — Second to die`}
+                tax={activeOrdering.finalDeath}
+                showDsueGenerated={false}
+              />
+            )}
+            {isMarried && activeOrdering.finalDeath && (
+              <GrandTotals ordering={activeOrdering} />
+            )}
+          </>
+        )
       )}
     </div>
   );
+}
+
+function ownerForName(
+  result: EstateTaxResult,
+  names: { clientName: string; spouseName: string | null },
+): string {
+  return result.deceased === "client" ? names.clientName : names.spouseName ?? "Spouse";
 }
 
 function Row({
@@ -318,6 +425,29 @@ function GrandTotals({ ordering }: { ordering: HypotheticalEstateTaxOrdering }) 
         <div className="mt-2 flex items-center justify-between border-t border-gray-600 pt-2 text-base font-semibold text-gray-100">
           <span>Grand total taxes & expenses</span>
           <span className="font-mono tabular-nums">{fmt.format(ordering.totals.total)}</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SplitTotals({ first, second }: { first: EstateTaxResult; second: EstateTaxResult }) {
+  const federal = first.federalEstateTax + second.federalEstateTax;
+  const state = first.stateEstateTax + second.stateEstateTax;
+  const admin = first.estateAdminExpenses + second.estateAdminExpenses;
+  const total = first.totalTaxesAndExpenses + second.totalTaxesAndExpenses;
+  return (
+    <section className="rounded border border-gray-600 bg-gray-800 p-5">
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-300">
+        Grand totals — Split death
+      </h2>
+      <div className="mt-3 space-y-1">
+        <Row label="Total federal estate tax" amount={federal} />
+        <Row label="Total state estate tax" amount={state} />
+        <Row label="Total admin expenses" amount={admin} />
+        <div className="mt-2 flex items-center justify-between border-t border-gray-600 pt-2 text-base font-semibold text-gray-100">
+          <span>Grand total taxes &amp; expenses</span>
+          <span className="font-mono tabular-nums">{fmt.format(total)}</span>
         </div>
       </div>
     </section>

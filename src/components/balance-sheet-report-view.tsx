@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { runProjection } from "@/engine/projection";
 import type { ProjectionYear } from "@/engine/types";
 import type { OwnerNames } from "@/lib/owner-labels";
+import type { OwnerDobs } from "./report-controls/age-helpers";
 import HeaderControls from "./balance-sheet-report/header-controls";
 import AssetsPanel from "./balance-sheet-report/assets-panel";
 import LiabilitiesPanel from "./balance-sheet-report/liabilities-panel";
@@ -19,6 +20,7 @@ interface BalanceSheetReportViewProps {
   clientId: string;
   isMarried: boolean;
   ownerNames: OwnerNames;
+  ownerDobs: OwnerDobs;
   entities: EntityInfo[];
 }
 
@@ -32,6 +34,7 @@ export default function BalanceSheetReportView({
   clientId,
   isMarried,
   ownerNames,
+  ownerDobs,
   entities,
 }: BalanceSheetReportViewProps) {
   const searchParams = useSearchParams();
@@ -152,6 +155,8 @@ export default function BalanceSheetReportView({
     <div className="flex flex-col gap-6">
       <HeaderControls
         years={projectionYears.map((y) => y.year)}
+        todayYear={projectionYears[0].year}
+        ownerDobs={ownerDobs}
         selectedAsOf={selectedAsOf}
         onAsOfChange={setSelectedAsOf}
         view={view}

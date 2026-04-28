@@ -105,6 +105,11 @@ export default async function BalanceSheetReportPage({
     spouseName: client.spouseName ?? null,
   };
 
+  const ownerDobs = {
+    clientDob: client.dateOfBirth,
+    spouseDob: client.spouseDob ?? null,
+  };
+
   const entityInfos = entityRows.map((e) => ({
     id: e.id,
     name: e.name,
@@ -141,6 +146,7 @@ export default async function BalanceSheetReportPage({
           clientId={id}
           isMarried={isMarried}
           ownerNames={ownerNames}
+          ownerDobs={ownerDobs}
           entities={entityInfos}
         />
       </div>
