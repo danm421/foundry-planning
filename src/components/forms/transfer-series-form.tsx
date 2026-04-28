@@ -74,6 +74,7 @@ export default function TransferSeriesForm({
   // Validation
   const amountNum = Number(annualAmount);
   const amountValid = Number.isFinite(amountNum) && amountNum > 0;
+  // Form-level guard is source of truth — MilestoneYearPicker keeps its own internal year state and may lag a re-render after startYear changes.
   const endYearValid = endYear >= startYear;
 
   async function submit(e: React.FormEvent) {
@@ -82,7 +83,11 @@ export default function TransferSeriesForm({
     setSaving(true);
     setError(null);
     try {
-      // sourceAccountId is UI-only — not included in POST body
+      // Build source account note for context (sourceAccountId is UI-only, not in POST body)
+      const sourceAccount = accounts.find((a) => a.id === sourceAccountId);
+      const sourceNote = sourceAccount ? `Source: ${sourceAccount.name}` : null;
+      const composed = [notes.trim() || null, sourceNote].filter(Boolean).join(" | ") || null;
+
       const body = {
         grantor,
         recipientEntityId: trustId,
@@ -93,7 +98,8 @@ export default function TransferSeriesForm({
         annualAmount: Number(annualAmount),
         inflationAdjust,
         useCrummeyPowers,
-        notes: notes || null,
+        notes: composed,
+        // NO accountId, liabilityId, percent, sourceAccountId
       };
 
       const res = await fetch(`/api/clients/${clientId}/gifts/series`, {
@@ -164,7 +170,6 @@ export default function TransferSeriesForm({
         <div
           role="status"
           aria-live="polite"
-          aria-label="End year must be ≥ start year"
           className="text-xs text-red-400"
         >
           End year must be ≥ start year.

@@ -74,8 +74,8 @@ describe("TransferSeriesForm", () => {
 
     // The inline validation message should appear
     expect(
-      screen.getByRole("status", { name: /end year/i })
-    ).toBeInTheDocument();
+      screen.getByRole("status")
+    ).toHaveTextContent(/end year must be/i);
 
     // Save button should be disabled
     const saveButton = screen.getByRole("button", { name: /^Save$/i });
@@ -86,7 +86,7 @@ describe("TransferSeriesForm", () => {
 
     // Validation message should disappear
     expect(
-      screen.queryByRole("status", { name: /end year/i })
+      screen.queryByRole("status")
     ).not.toBeInTheDocument();
 
     // startYearInput is still in the DOM
@@ -181,5 +181,8 @@ describe("TransferSeriesForm", () => {
 
     // sourceAccountId must NOT be present in the POST body
     expect(body).not.toHaveProperty("sourceAccountId");
+    expect(body).not.toHaveProperty("accountId");
+    expect(body).not.toHaveProperty("liabilityId");
+    expect(body).not.toHaveProperty("percent");
   });
 });
