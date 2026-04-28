@@ -21,7 +21,6 @@ import {
 import { computeGrossEstate } from "@/engine/death-event/estate-tax";
 import type { ClientData, EstateTaxResult, DeathTransfer } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
-import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
 
 // ── Output types ──────────────────────────────────────────────────────────────
 
@@ -114,7 +113,7 @@ function buildBeneficiaryCards(
     )
       continue;
 
-    const key: Key = `${t.recipientKind}|${t.recipientId ?? ""}|${t.recipientLabel}`;
+    const key: Key = `${t.recipientKind}|${t.recipientId ?? ""}`;
     const existing = grouped.get(key);
     if (existing) {
       existing.value += t.amount;
