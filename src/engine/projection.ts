@@ -1569,7 +1569,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // Plan 3b's drop popup will populate this when wired.
       const isPrivate = beneficiary.charityType === "private";
       charityGiftsThisYear.push({
-        amount: Number(g.amount ?? 0),
+        amount: g.amount,
         bucket: isPrivate ? "cashPrivate" : "cashPublic",
       });
     }
@@ -1594,6 +1594,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // Add the charitable deduction (already gated by willItemize inside the module) to the itemized total.
     itemizedDeductions += charityResult.deductionThisYear;
+
+    // Patch the drill-down breakdown so the UI reflects gift-event charitable deductions
+    // alongside expense-tagged ones. Tax math already handled above via itemizedDeductions.
+    if (deductionBreakdownResult && charityResult.deductionThisYear > 0) {
+      const newCharitable = deductionBreakdownResult.belowLine.charitable + charityResult.deductionThisYear;
+      const newItemizedTotal = deductionBreakdownResult.belowLine.itemizedTotal + charityResult.deductionThisYear;
+      deductionBreakdownResult = {
+        ...deductionBreakdownResult,
+        belowLine: {
+          ...deductionBreakdownResult.belowLine,
+          charitable: newCharitable,
+          itemizedTotal: newItemizedTotal,
+          taxDeductions: Math.max(newItemizedTotal, deductionBreakdownResult.belowLine.standardDeduction),
+        },
+      };
+    }
 
     // Split realization OI out of the generic ordinaryIncome bucket so NIIT
     // (IRC §1411) can see investment interest while still excluding RMDs,
@@ -2208,7 +2224,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       ...(income.socialSecurityDetail ? { socialSecurityDetail: income.socialSecurityDetail } : {}),
       taxDetail,
       taxResult,
-      charityCarryforward: charityResult.carryforwardOut,
+      charityCarryforward,
       deductionBreakdown: deductionBreakdownResult,
       withdrawals,
       expenses,
