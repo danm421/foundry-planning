@@ -335,6 +335,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     accountBalances[acct.id] = acct.value;
   }
 
+  // Per-year end-of-year balance snapshots. Keyed by year so death-event
+  // accountValueAtYear callbacks can return the gift-year balance instead of
+  // always the death-year balance. Populated just before years.push().
+  const yearEndAccountBalances = new Map<number, Record<string, number>>();
+
   // Basis tracking for transfers and sales
   const basisMap: Record<string, number> = {};
   for (const acct of data.accounts) {
@@ -2117,6 +2122,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const hasTechniques = saleResult.breakdown.length > 0 || purchaseBreakdown.length > 0;
     const txnNameMap = new Map((data.assetTransactions ?? []).map((t) => [t.id, t.name]));
 
+    // Snapshot end-of-year account balances for gift-year value lookups at death.
+    yearEndAccountBalances.set(year, { ...accountBalances });
+
     // 4d-2: hypothetical estate tax — computed on the pre-real-death snapshot
     // of year-N state, so the report always displays consistent "both die in
     // year N" numbers regardless of where real deaths land. Attached to the
@@ -2140,6 +2148,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       planSettings,
       gifts: data.gifts ?? [],
       giftEvents: data.giftEvents,
+      yearEndAccountBalances,
       annualExclusionsByYear,
     });
 
@@ -2230,6 +2239,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         planSettings,
         gifts: data.gifts ?? [],
         giftEvents: data.giftEvents,
+        yearEndAccountBalances,
         annualExclusionsByYear,
         dsueReceived: 0, // first decedent has no prior DSUE
       });
@@ -2292,6 +2302,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         planSettings,
         gifts: data.gifts ?? [],
         giftEvents: data.giftEvents,
+        yearEndAccountBalances,
         annualExclusionsByYear,
         dsueReceived: stashedDSUE,
       });

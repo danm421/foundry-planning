@@ -40,6 +40,9 @@ export interface HypotheticalEstateTaxInput {
   /** Phase 3 gift events (asset + liability transfers) for lifetime exemption consumption.
    *  Optional; defaults to [] when absent. */
   giftEvents?: GiftEvent[];
+  /** Per-year end-of-year account balance snapshots for gift-year value lookups.
+   *  Optional; when absent, accountValueAtYear falls back to the current-year balance. */
+  yearEndAccountBalances?: Map<number, Record<string, number>>;
 }
 
 function sumTotals(results: EstateTaxResult[]) {
@@ -81,6 +84,7 @@ function runOrdering(
     planSettings: input.planSettings,
     gifts: input.gifts,
     giftEvents: input.giftEvents ?? [],
+    yearEndAccountBalances: input.yearEndAccountBalances,
     annualExclusionsByYear: input.annualExclusionsByYear,
     dsueReceived: 0,
   });
@@ -115,6 +119,7 @@ function runOrdering(
     planSettings: input.planSettings,
     gifts: input.gifts,
     giftEvents: input.giftEvents ?? [],
+    yearEndAccountBalances: input.yearEndAccountBalances,
     annualExclusionsByYear: input.annualExclusionsByYear,
     dsueReceived: firstResult.dsueGenerated,
   });

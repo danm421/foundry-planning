@@ -883,6 +883,10 @@ export interface DeathEventInput {
    *  exemption consumption. Optional for backwards compat with test fixtures
    *  that don't set it; defaults to [] in the consumer. */
   giftEvents?: GiftEvent[];
+  /** Per-year end-of-year account balance snapshots, keyed by year then account id.
+   *  Used by accountValueAtYear to return the balance at the gift year rather than
+   *  the death year. Optional for backwards compat with test fixtures. */
+  yearEndAccountBalances?: Map<number, Record<string, number>>;
   /** Stashed DSUE from a prior first-death event. 0 at first death;
    *  survivor's DSUE balance at final death. */
   dsueReceived: number;

@@ -342,10 +342,15 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     estateAdminExpenses: input.planSettings.estateAdminExpenses ?? 0,
   };
 
-  // accountValueAtYear: at final death, accountBalances holds the death-year snapshot.
+  // accountValueAtYear: returns the balance at the gift year when per-year
+  // snapshots are available; falls back to the death-year balance otherwise.
   const finalDeathBalances = accountBalances;
-  const accountValueAtYear = (accountId: string, _year: number) =>
-    finalDeathBalances[accountId] ?? 0;
+  const accountValueAtYear = (accountId: string, year: number): number => {
+    const yearMap = input.yearEndAccountBalances?.get(year);
+    if (yearMap && yearMap[accountId] != null) return yearMap[accountId];
+    // Fallback: death-year balance (preserves current behavior when no per-year history).
+    return finalDeathBalances[accountId] ?? 0;
+  };
   const adjustedGifts = computeAdjustedTaxableGifts(
     input.deceased,
     input.gifts,

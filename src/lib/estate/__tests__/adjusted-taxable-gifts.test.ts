@@ -128,8 +128,9 @@ describe("computeAdjustedTaxableGifts (Phase 3 — asset/liability giftEvents)",
     expect(computeAdjustedTaxableGifts("client", [], [], ann, noAccountValue, giftEvents)).toBe(0);
   });
 
-  it("includes cash giftEvents unchanged (legacy cash-gift path still works)", () => {
-    // $19K cash gift at 2028 — annual exclusion for 2028 is not in `ann`, so no subtraction.
+  it("skips one-time cash giftEvents (no seriesId) — they come from the legacy gifts array", () => {
+    // One-time cash gift with no seriesId should be skipped in the giftEvents path
+    // to avoid double-counting (it would also appear in the legacy gifts array).
     const giftEvents: GiftEvent[] = [
       {
         kind: "cash",
@@ -138,9 +139,59 @@ describe("computeAdjustedTaxableGifts (Phase 3 — asset/liability giftEvents)",
         grantor: "client",
         recipientEntityId: "trust-1",
         useCrummeyPowers: false,
+        // seriesId is absent — one-time cash gift
       },
     ];
+    expect(computeAdjustedTaxableGifts("client", [], [], ann, noAccountValue, giftEvents)).toBe(0);
+  });
+
+  it("counts series-fanned cash events from giftEvents (with seriesId) but not duplicate legacy gifts", () => {
+    // $19K series cash gift at 2028 — annual exclusion not in ann for 2028, so no subtraction.
+    const giftEvents: GiftEvent[] = [
+      {
+        kind: "cash",
+        year: 2028,
+        amount: 19_000,
+        grantor: "client",
+        recipientEntityId: "trust-1",
+        useCrummeyPowers: false,
+        seriesId: "gs1",
+      },
+    ];
+    // Annual exclusion = not set for 2028 (defaults to 0), gift = $19K, so consumed = $19K.
     expect(computeAdjustedTaxableGifts("client", [], [], ann, noAccountValue, giftEvents)).toBeCloseTo(19_000, 2);
+  });
+
+  it("does not double-count one-time cash gifts when both legacy gifts AND giftEvents are populated", () => {
+    // Simulates the loader path: same cash row appears in both arrays.
+    const result = computeAdjustedTaxableGifts(
+      "client",
+      [{ id: "g1", year: 2028, amount: 100_000, grantor: "client", recipientEntityId: "trust-1", useCrummeyPowers: false }],
+      [],
+      { 2028: 19_000 },
+      () => 0,
+      [{ kind: "cash", year: 2028, amount: 100_000, grantor: "client", recipientEntityId: "trust-1", useCrummeyPowers: false }], // duplicate of the legacy row, no seriesId
+    );
+    // Expect $81K (100K - 19K exclusion), not $162K.
+    expect(result).toBe(81_000);
+  });
+
+  it("uses the gift-year balance, not the death-year balance, for asset transfers", () => {
+    // Account: $1M at year 2030, $4M at year 2055 (death year).
+    // Gift in 2030: 50% transferred. Should contribute $500K, NOT $2M.
+    const accountValueAtYear = (id: string, year: number): number => {
+      if (id !== "acct-1") return 0;
+      return year === 2030 ? 1_000_000 : year === 2055 ? 4_000_000 : 0;
+    };
+    const result = computeAdjustedTaxableGifts(
+      "client",
+      [],
+      [],
+      {},
+      accountValueAtYear,
+      [{ kind: "asset", year: 2030, accountId: "acct-1", percent: 0.5, grantor: "client", recipientEntityId: "trust-1" }],
+    );
+    expect(result).toBe(500_000); // not 2_000_000
   });
 
   it("excludes asset giftEvents from a different grantor", () => {

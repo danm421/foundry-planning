@@ -288,11 +288,15 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   // then rebuild after drains with the debits populated. buildEstateTaxResult
   // is pure, so calling it twice is safe.
   //
-  // accountValueAtYear: returns the year-N balance for a given account.
-  // At first-death the balances in accountBalances are the death-year snapshot.
+  // accountValueAtYear: returns the balance at the gift year when per-year
+  // snapshots are available; falls back to the death-year balance otherwise.
   const deathYearBalances = chainResult.accountBalances;
-  const accountValueAtYear = (accountId: string, _year: number) =>
-    deathYearBalances[accountId] ?? 0;
+  const accountValueAtYear = (accountId: string, year: number): number => {
+    const yearMap = input.yearEndAccountBalances?.get(year);
+    if (yearMap && yearMap[accountId] != null) return yearMap[accountId];
+    // Fallback: death-year balance (preserves current behavior when no per-year history).
+    return deathYearBalances[accountId] ?? 0;
+  };
   const adjustedGifts = computeAdjustedTaxableGifts(
     input.deceased,
     input.gifts,

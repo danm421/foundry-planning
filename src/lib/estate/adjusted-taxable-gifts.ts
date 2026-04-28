@@ -10,6 +10,9 @@ import type { Gift, GiftEvent, EntitySummary } from "@/engine/types";
  *   (attributed equally to both spouses).
  * - For each asset `GiftEvent` where `event.grantor === decedent`: add the gift-year value
  *   (amountOverride if set, otherwise accountValueAtYear(accountId, year) × percent).
+ * - For each cash `GiftEvent` with `seriesId` set (series fan-out): apply the same
+ *   annual-exclusion logic as the legacy `Gift` rows. One-time cash gifts (no `seriesId`)
+ *   come through the legacy `gifts` array and are NOT counted here to avoid double-counting.
  * - For each liability `GiftEvent`: contribute $0 — debt assumption is not a gift of value.
  * - For each entity where `entity.grantor === decedent`: add the entire
  *   `exemptionConsumed` opening advisor-entered balance. Third-party-grantor
@@ -18,8 +21,9 @@ import type { Gift, GiftEvent, EntitySummary } from "@/engine/types";
  * @param accountValueAtYear - callback that returns the projected account balance
  *   for a given accountId at a given year. Used only for asset-transfer giftEvents
  *   without an amountOverride. Pass `() => 0` when no giftEvents are provided.
- * @param giftEvents - discriminated-union gift events (Phase 3+). Asset and liability
- *   transfer rows live here; cash rows may appear here OR in the legacy `gifts` array.
+ * @param giftEvents - discriminated-union gift events. Asset and liability transfer rows are
+ *   exclusively here. Cash rows here are SERIES FAN-OUTS only (seriesId set); one-time cash
+ *   gifts come through the legacy `gifts` array to avoid double-counting.
  */
 export function computeAdjustedTaxableGifts(
   decedent: "client" | "spouse",
@@ -47,8 +51,9 @@ export function computeAdjustedTaxableGifts(
     if (ev.grantor !== decedent) continue;
 
     if (ev.kind === "cash") {
-      // Cash giftEvents (series fan-outs or one-off cash) follow the same
-      // annual-exclusion logic as legacy Gift rows.
+      // One-time cash gifts come through the legacy `gifts` array (counted above).
+      // Only series-fanned cash events (which have seriesId) need to be counted here.
+      if (ev.seriesId == null) continue;
       const exclusion = annualExclusionsByYear[ev.year] ?? 0;
       total += Math.max(0, ev.amount - exclusion);
     } else if (ev.kind === "asset") {
