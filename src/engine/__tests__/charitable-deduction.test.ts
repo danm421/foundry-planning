@@ -71,3 +71,73 @@ describe("computeCharitableDeductionForYear — single bucket within limits", ()
     expect(result.carryforwardOut.cashPublic).toEqual([]);
   });
 });
+
+describe("computeCharitableDeductionForYear — carryforward consumption", () => {
+  it("uses prior-year carryforward before current-year gift (FIFO)", () => {
+    const result = computeCharitableDeductionForYear(
+      baseInput({
+        giftsThisYear: [{ amount: 100_000, bucket: "cashPublic" }],
+        agi: 500_000,
+        carryforwardIn: {
+          cashPublic: [{ amount: 200_000, originYear: 2024 }],
+          cashPrivate: [],
+          appreciatedPublic: [],
+          appreciatedPrivate: [],
+        },
+        currentYear: 2026,
+      }),
+    );
+    // 60% × 500K = 300K capacity
+    // Carryforward 200K consumed first, then 100K of this-year gift
+    expect(result.deductionThisYear).toBe(300_000);
+    expect(result.carryforwardOut.cashPublic).toEqual([]);
+  });
+
+  it("partial carryforward consumption preserves remaining FIFO order", () => {
+    const result = computeCharitableDeductionForYear(
+      baseInput({
+        giftsThisYear: [],
+        agi: 100_000,
+        carryforwardIn: {
+          cashPublic: [
+            { amount: 100_000, originYear: 2024 },
+            { amount: 50_000, originYear: 2025 },
+          ],
+          cashPrivate: [],
+          appreciatedPublic: [],
+          appreciatedPrivate: [],
+        },
+        currentYear: 2026,
+      }),
+    );
+    // 60% × 100K = 60K capacity. Consumes 60K of the 2024 entry; 2024 has 40K left, 2025 untouched.
+    expect(result.deductionThisYear).toBe(60_000);
+    expect(result.carryforwardOut.cashPublic).toEqual([
+      { amount: 40_000, originYear: 2024 },
+      { amount: 50_000, originYear: 2025 },
+    ]);
+  });
+
+  it("drops carryforward entries older than 5 years", () => {
+    const result = computeCharitableDeductionForYear(
+      baseInput({
+        giftsThisYear: [],
+        agi: 1_000_000,
+        carryforwardIn: {
+          cashPublic: [
+            { amount: 100_000, originYear: 2020 }, // 6 years old → expired
+            { amount: 100_000, originYear: 2021 }, // 5 years old → boundary, still valid
+            { amount: 100_000, originYear: 2025 },
+          ],
+          cashPrivate: [],
+          appreciatedPublic: [],
+          appreciatedPrivate: [],
+        },
+        currentYear: 2026,
+      }),
+    );
+    // 2020 entry expired before consumption. 2021 + 2025 entries fully consumed.
+    expect(result.deductionThisYear).toBe(200_000);
+    expect(result.carryforwardOut.cashPublic).toEqual([]);
+  });
+});

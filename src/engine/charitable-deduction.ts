@@ -85,33 +85,50 @@ export function computeCharitableDeductionForYear(
     giftsByBucket[g.bucket] += g.amount;
   }
 
-  const carryforwardOut: CharityCarryforward = {
-    cashPublic: [...carryforwardIn.cashPublic],
-    cashPrivate: [...carryforwardIn.cashPrivate],
-    appreciatedPublic: [...carryforwardIn.appreciatedPublic],
-    appreciatedPrivate: [...carryforwardIn.appreciatedPrivate],
+  // Decay: drop carryforward entries older than CARRYFORWARD_MAX_YEARS
+  const carryforwardWorking: Record<CharityBucket, CarryforwardEntry[]> = {
+    cashPublic: dropExpired(carryforwardIn.cashPublic, currentYear).map(cloneEntry),
+    cashPrivate: dropExpired(carryforwardIn.cashPrivate, currentYear).map(cloneEntry),
+    appreciatedPublic: dropExpired(carryforwardIn.appreciatedPublic, currentYear).map(cloneEntry),
+    appreciatedPrivate: dropExpired(carryforwardIn.appreciatedPrivate, currentYear).map(cloneEntry),
   };
 
   let deductionThisYear = 0;
 
   for (const bucket of BUCKET_ORDER) {
     const limit = AGI_LIMITS[bucket] * agi;
-    const giftThisYear = giftsByBucket[bucket];
+    let remainingCapacity = limit;
 
-    const deductFromGift = Math.min(giftThisYear, limit);
-    byBucket[bucket] += deductFromGift;
+    // Consume carryforward FIFO (oldest first)
+    const cf = carryforwardWorking[bucket];
+    while (cf.length > 0 && remainingCapacity > 0) {
+      const head = cf[0];
+      const consume = Math.min(head.amount, remainingCapacity);
+      remainingCapacity -= consume;
+      head.amount -= consume;
+      deductionThisYear += consume;
+      byBucket[bucket] += consume;
+      if (head.amount === 0) {
+        cf.shift();
+      }
+    }
+
+    // Then consume this-year gift
+    const giftThisYear = giftsByBucket[bucket];
+    const deductFromGift = Math.min(giftThisYear, remainingCapacity);
     deductionThisYear += deductFromGift;
+    byBucket[bucket] += deductFromGift;
     const overflow = giftThisYear - deductFromGift;
 
     if (overflow > 0) {
-      carryforwardOut[bucket].push({ amount: overflow, originYear: currentYear });
+      cf.push({ amount: overflow, originYear: currentYear });
     }
   }
 
   if (!willItemize) {
     return {
       deductionThisYear: 0,
-      carryforwardOut,
+      carryforwardOut: carryforwardWorking,
       byBucket: {
         cashPublic: 0,
         cashPrivate: 0,
@@ -121,5 +138,18 @@ export function computeCharitableDeductionForYear(
     };
   }
 
-  return { deductionThisYear, carryforwardOut, byBucket };
+  return { deductionThisYear, carryforwardOut: carryforwardWorking, byBucket };
+}
+
+function dropExpired(
+  entries: CarryforwardEntry[],
+  currentYear: number,
+): CarryforwardEntry[] {
+  return entries.filter(
+    (e) => currentYear - e.originYear <= CARRYFORWARD_MAX_YEARS,
+  );
+}
+
+function cloneEntry(e: CarryforwardEntry): CarryforwardEntry {
+  return { amount: e.amount, originYear: e.originYear };
 }
