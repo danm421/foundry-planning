@@ -107,6 +107,8 @@ describe("TransfersTab", () => {
       />
     );
     expect(screen.getByText(/19,000/)).toBeInTheDocument();
+    // Verify the grantor label is rendered in the cash row (swapping "client" → "spouse" would fail this)
+    expect(screen.getAllByText(/client/i).length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders asset transfer with bundled liability sub-row", () => {
@@ -174,7 +176,7 @@ describe("TransfersTab", () => {
       <TransfersTab events={[]} series={[]} exemption={mockExemption()} {...h} />
     );
     fireEvent.click(screen.getByRole("button", { name: /add transfer/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /cash gift/i }));
+    fireEvent.click(screen.getByRole("button", { name: /cash gift/i }));
     expect(h.onAdd).toHaveBeenCalledWith("cash");
   });
 });

@@ -1,38 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // ── Money formatters ──────────────────────────────────────────────────────────
 
-const fmtFull = new Intl.NumberFormat("en-US", {
-  style: "decimal",
+const fmtCurrency = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
   maximumFractionDigits: 0,
 });
 
-/** "19,000" */
+/** "-$19,000" or "$19,000" — sign before the $ */
 function formatMoney(value: number): string {
-  return fmtFull.format(value);
+  return fmtCurrency.format(value);
 }
 
-/** "$4.2M", "$120K", "$500" — compact form for the exemption bar */
+/**
+ * Compact currency: "$4.2M", "$120K", "$999K", "$1.0M", "$1.0B".
+ * Thresholds: >= 999_500 → M branch; >= 999_500_000 → B branch.
+ * Values < $1K render as "$X" (full integer, no K suffix).
+ * Zero renders as "$0".
+ * Negative values render with sign before $: "-$4.2M".
+ */
 function formatCompact(value: number): string {
+  const sign = value < 0 ? "-" : "";
   const abs = Math.abs(value);
-  if (abs >= 1_000_000) {
-    const m = value / 1_000_000;
-    // Show one decimal only when it's non-zero
-    const str = Number.isInteger(m) || m.toFixed(1).endsWith(".0")
-      ? m.toFixed(1).replace(/\.0$/, "")
-      : m.toFixed(1);
-    return `$${str}M`;
+  if (abs >= 999_500_000) {
+    const b = abs / 1_000_000_000;
+    return `${sign}$${b.toFixed(1)}B`;
+  }
+  if (abs >= 999_500) {
+    const m = abs / 1_000_000;
+    return `${sign}$${m.toFixed(1)}M`;
   }
   if (abs >= 1_000) {
-    const k = value / 1_000;
+    const k = abs / 1_000;
     const str = Number.isInteger(k) || k.toFixed(1).endsWith(".0")
       ? k.toFixed(1).replace(/\.0$/, "")
       : k.toFixed(1);
-    return `$${str}K`;
+    return `${sign}$${str}K`;
   }
-  return `$${fmtFull.format(value)}`;
+  return `${sign}$${Math.round(abs)}`;
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -157,9 +165,37 @@ function AddTransferMenu({
   setOpen: (v: boolean) => void;
   onAdd: (kind: "asset" | "cash" | "series") => void;
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (
+        !menuRef.current?.contains(e.target as Node) &&
+        !triggerRef.current?.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, setOpen]);
+
   return (
     <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-label="Add transfer"
         aria-haspopup="true"
@@ -170,33 +206,26 @@ function AddTransferMenu({
         + Add transfer
       </button>
       {open && (
-        <>
-          {/* Backdrop to close on outside click */}
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setOpen(false)}
-          />
-          <div
-            role="menu"
-            className="absolute right-0 z-20 mt-1 w-48 rounded-[var(--radius-sm)] border border-hair bg-card shadow-lg py-1"
-          >
-            {ADD_MENU_ITEMS.map((item) => (
-              <button
-                key={item.kind}
-                type="button"
-                role="menuitem"
-                aria-label={item.label}
-                onClick={() => {
-                  setOpen(false);
-                  onAdd(item.kind);
-                }}
-                className="w-full text-left px-3 py-1.5 text-[13px] text-ink hover:bg-card-hover"
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </>
+        <div
+          ref={menuRef}
+          className="absolute right-0 z-20 mt-1 w-48 rounded-[var(--radius-sm)] border border-hair bg-card shadow-lg py-1"
+        >
+          {ADD_MENU_ITEMS.map((item) => (
+            <button
+              key={item.kind}
+              type="button"
+              aria-label={item.label}
+              onClick={() => {
+                setOpen(false);
+                triggerRef.current?.focus();
+                onAdd(item.kind);
+              }}
+              className="w-full text-left px-3 py-1.5 text-[13px] text-ink hover:bg-card-hover"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -205,6 +234,8 @@ function AddTransferMenu({
 // ── TransfersList ─────────────────────────────────────────────────────────────
 
 function pctLabel(fraction: number): string {
+  const abs = Math.abs(fraction);
+  if (abs > 0 && abs < 0.01) return "<1%";
   return `${Math.round(fraction * 100)}%`;
 }
 
@@ -224,7 +255,7 @@ function EventRow({
           <div className="flex items-center gap-2">
             <span className="text-[12px] text-ink-4 tabular w-10 shrink-0">{event.year}</span>
             <span className="flex-1 text-[13px] text-ink">
-              ${formatMoney(event.amount)} gift to trust
+              {formatMoney(event.amount)} gift to trust
             </span>
             <span className="text-[11px] text-ink-4 capitalize">{event.grantor}</span>
             {event.useCrummeyPowers && (
@@ -242,9 +273,9 @@ function EventRow({
           <div className="flex items-center gap-2">
             <span className="text-[12px] text-ink-4 tabular w-10 shrink-0">{event.year}</span>
             <span className="flex-1 text-[13px] text-ink">
-              {event.accountName} {pct}
+              {event.accountName} — {pct}
             </span>
-            <span className="text-[12px] text-ink-2 tabular">${formatMoney(event.value)}</span>
+            <span className="text-[12px] text-ink-2 tabular">{formatMoney(event.value)}</span>
             <span className="text-[11px] text-ink-4 capitalize">{event.grantor}</span>
             <RowActions item={event} onEdit={onEdit} onDelete={onDelete} />
           </div>
@@ -264,7 +295,7 @@ function EventRow({
           <span className="flex-1 text-[13px] text-ink">
             {event.liabilityName} {pctLabel(event.percent)}
           </span>
-          <span className="text-[12px] text-ink-2 tabular">${formatMoney(event.value)}</span>
+          <span className="text-[12px] text-ink-2 tabular">{formatMoney(event.value)}</span>
           <span className="text-[11px] text-ink-4 capitalize">{event.grantor}</span>
           <RowActions item={event} onEdit={onEdit} onDelete={onDelete} />
         </li>
@@ -295,7 +326,7 @@ function SeriesRow({
           {series.startYear} – {series.endYear}
         </span>
         <span className="flex-1 text-[13px] text-ink">
-          ${formatMoney(series.annualAmount)}/yr
+          {formatMoney(series.annualAmount)}/yr
           {series.inflationAdjust && (
             <span className="ml-1 text-[11px] text-ink-4">(inflation-adj.)</span>
           )}
@@ -434,7 +465,7 @@ export default function TransfersTab({
       {/* Total consumed by this trust */}
       {!isEmpty && (
         <div className="text-[12px] text-ink-4 border-t border-hair pt-2">
-          Exemption consumed by this trust:{" "}
+          Total exemption consumed by this trust:{" "}
           {formatCompact(totalConsumedByThisTrust.client)} (client)
           {totalConsumedByThisTrust.spouse > 0 &&
             ` · ${formatCompact(totalConsumedByThisTrust.spouse)} (spouse)`}
