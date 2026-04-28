@@ -320,8 +320,7 @@ export function CanvasDndProvider({
         const grantorName = grantor === "client" ? clientFirstName : (spouseFirstName ?? "spouse");
         label = `Bequest added: ${account.name} → ${trust.name ?? "trust"} at ${grantorName}'s death`;
       } else {
-        // gift_future_year, recurring_gift, sale_to_trust: no-op until Phase 3
-        // replaces the chooser with the unified DropPopup.
+        // sale_to_trust is rendered as disabled in the chooser; defensive no-op.
         setPending(null);
         return;
       }

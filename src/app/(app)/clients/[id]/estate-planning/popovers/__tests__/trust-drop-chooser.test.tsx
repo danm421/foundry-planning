@@ -6,7 +6,7 @@ import "@testing-library/jest-dom/vitest";
 import { TrustDropChooser } from "@/app/(app)/clients/[id]/estate-planning/popovers/trust-drop-chooser";
 
 describe("TrustDropChooser", () => {
-  it("renders all 6 options with the correct labels", () => {
+  it("renders the available options with the correct labels", () => {
     render(
       <TrustDropChooser
         anchor={{ clientX: 100, clientY: 100 }}
@@ -20,11 +20,11 @@ describe("TrustDropChooser", () => {
     );
     expect(screen.getByRole("button", { name: /already owned/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /gift this year/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /gift in a future year/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /recurring annual gift/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /bequest at tom/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /bequest at linda/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /sale to trust/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /gift in a future year/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /recurring annual gift/i })).toBeNull();
   });
 
   it("invokes onSelect with the picked option", async () => {

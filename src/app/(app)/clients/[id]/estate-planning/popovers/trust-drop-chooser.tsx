@@ -6,8 +6,6 @@ import { clampToViewport } from "./clamp-to-viewport";
 export type TrustDropOption =
   | "already_owned"
   | "gift_this_year"
-  | "gift_future_year"
-  | "recurring_gift"
   | "bequest_client"
   | "bequest_spouse"
   | "sale_to_trust";
@@ -65,8 +63,6 @@ export function TrustDropChooser({
         <ul className="py-1">
           <Option label="Already owned" sub="No tax effect — pure data correction" onClick={() => onSelect("already_owned")} />
           <Option label="Gift this year" sub="Records a gift at current FMV" onClick={() => onSelect("gift_this_year")} />
-          <Option label="Gift in a future year" sub="Pick a target year" onClick={() => onSelect("gift_future_year")} />
-          <Option label="Recurring annual gift" sub="Annual amount × N years" onClick={() => onSelect("recurring_gift")} />
           <Option
             label={`Bequest at ${clientFirstName}'s death`}
             sub="Adds a will bequest to the trust"
