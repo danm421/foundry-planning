@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { synthesizeNoPlanClientData } from "../counterfactual";
+import { runProjection } from "@/engine/projection";
 import type { ClientData, ClientInfo, FamilyMember, EntitySummary, Gift } from "@/engine/types";
 
 const FM_CLIENT = "fm-client";
 const FM_SPOUSE = "fm-spouse";
+const FM_CHILD = "fm-child";
 const TRUST_SLAT = "trust-slat";
 
 function fixture(): ClientData {
@@ -21,7 +23,11 @@ function fixture(): ClientData {
         id: "acc-1",
         name: "Brokerage A",
         category: "taxable",
+        subType: "brokerage",
         value: 1_000_000,
+        basis: 1_000_000,
+        growthRate: 0,
+        rmdEnabled: false,
         owners: [
           { kind: "family_member", familyMemberId: FM_CLIENT, percent: 0.6 },
           { kind: "entity", entityId: TRUST_SLAT, percent: 0.4 },
@@ -42,10 +48,11 @@ function fixture(): ClientData {
     familyMembers: [
       { id: FM_CLIENT, firstName: "Client", lastName: "Test", relationship: "other", role: "client", dateOfBirth: "1970-01-01" } satisfies FamilyMember,
       { id: FM_SPOUSE, firstName: "Spouse", lastName: "Test", relationship: "other", role: "spouse", dateOfBirth: "1972-01-01" } satisfies FamilyMember,
+      { id: FM_CHILD, firstName: "Child", lastName: "Test", relationship: "child", role: "dependent", dateOfBirth: "2005-01-01" } satisfies FamilyMember,
     ],
     gifts: [
       { id: "g1", year: 2026, amount: 100_000, grantor: "client", recipientEntityId: TRUST_SLAT, useCrummeyPowers: true } satisfies Gift,
-      { id: "g2", year: 2026, amount: 50_000, grantor: "client", recipientFamilyMemberId: "fm-child", useCrummeyPowers: false } satisfies Gift,
+      { id: "g2", year: 2026, amount: 50_000, grantor: "client", recipientFamilyMemberId: FM_CHILD, useCrummeyPowers: false } satisfies Gift,
     ],
     giftEvents: [],
     incomes: [],
@@ -53,7 +60,22 @@ function fixture(): ClientData {
     liabilities: [],
     savingsRules: [],
     withdrawalStrategy: [],
-    planSettings: {} as ClientData["planSettings"],
+    deductions: [],
+    transfers: [],
+    assetTransactions: [],
+    wills: [],
+    externalBeneficiaries: [],
+    planSettings: {
+      flatFederalRate: 0,
+      flatStateRate: 0,
+      inflationRate: 0,
+      planStartYear: 2026,
+      planEndYear: 2030,
+      taxEngineMode: "flat",
+      taxInflationRate: 0.025,
+      estateAdminExpenses: 0,
+      flatStateEstateRate: 0,
+    },
   } as ClientData;
 }
 
@@ -98,5 +120,35 @@ describe("synthesizeNoPlanClientData", () => {
       ]),
     );
     expect(result.accounts[0].owners.length).toBe(2);
+  });
+});
+
+describe("synthesizeNoPlanClientData — round-trip with runProjection", () => {
+  it("synthesized variant runs runProjection without trust-related warnings", () => {
+    const tree = fixture();
+    const synthesized = synthesizeNoPlanClientData(tree);
+    const result = runProjection(synthesized);
+
+    expect(result.length).toBeGreaterThan(0);
+
+    const trustIds = new Set(
+      (tree.entities ?? []).filter((e) => e.entityType === "trust").map((e) => e.id),
+    );
+    const offendingWarnings: string[] = [];
+    for (const year of result) {
+      for (const w of year.deathWarnings ?? []) {
+        for (const id of trustIds) {
+          if (w.includes(id)) offendingWarnings.push(`year ${year.year}: ${w}`);
+        }
+      }
+      for (const w of year.trustWarnings ?? []) {
+        for (const id of trustIds) {
+          if ("entityId" in w && w.entityId === id) {
+            offendingWarnings.push(`year ${year.year}: trust warning ${w.code} on ${id}`);
+          }
+        }
+      }
+    }
+    expect(offendingWarnings).toEqual([]);
   });
 });
