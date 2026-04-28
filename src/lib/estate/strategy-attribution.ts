@@ -111,3 +111,70 @@ function compoundedTrustValueAtFinalYear(
   }
   return total;
 }
+
+export interface TrustCard {
+  trustId: string;
+  tagLine: string;
+  primaryAmount: number;
+  narrative: string;
+}
+
+export interface ComputeTrustCardArgs {
+  ranked: RankedTrust;
+  tree: ClientData;
+  withResult: ProjectionYear[];
+  finalDeathYear: number;
+}
+
+export function computeTrustCardData(args: ComputeTrustCardArgs): TrustCard {
+  const { ranked, tree, withResult, finalDeathYear } = args;
+  if (ranked.cardKind === "ilit") {
+    return {
+      trustId: ranked.trustId,
+      tagLine: `${ranked.trustName.toUpperCase()} · $${formatM(ranked.primaryAmount)} POLICY`,
+      primaryAmount: ranked.primaryAmount,
+      narrative:
+        "Death benefit paid outside the estate. Full face value to heirs tax-free.",
+    };
+  }
+
+  const giftEvent = (tree.gifts ?? []).find(
+    (g) => g.recipientEntityId === ranked.trustId,
+  );
+  const giftAmount = giftEvent ? Number(giftEvent.amount) : 0;
+  const giftYear = giftEvent?.year ?? withResult[0]?.year ?? finalDeathYear;
+  const years = finalDeathYear - giftYear;
+  const growthRate = inferGrowthRateFromTrust(tree, ranked.trustId);
+
+  const subTypeLabel = (ranked.trustSubType ?? "TRUST").toUpperCase();
+
+  return {
+    trustId: ranked.trustId,
+    tagLine: `${subTypeLabel} · $${formatM(giftAmount)} GIFT IN ${giftYear}`,
+    primaryAmount: ranked.primaryAmount,
+    narrative: `Compounded at ${(growthRate * 100).toFixed(1)}% for ${years} years, never taxed.`,
+  };
+}
+
+function inferGrowthRateFromTrust(tree: ClientData, entityId: string): number {
+  let topAccount: { value: number; growthRate: number } | null = null;
+  for (const a of tree.accounts) {
+    const slice = a.owners.find(
+      (o) => o.kind === "entity" && o.entityId === entityId,
+    );
+    if (!slice) continue;
+    const sliceValue = a.value * slice.percent;
+    if (!topAccount || sliceValue > topAccount.value) {
+      topAccount = { value: sliceValue, growthRate: a.growthRate ?? 0.06 };
+    }
+  }
+  return topAccount?.growthRate ?? 0.06;
+}
+
+function formatM(amount: number): string {
+  // Drop trailing zeros: 2,400,000 → "2.4M", 5,000,000 → "5M", 9,870,000 → "9.87M",
+  // 12,000,000 → "12M". Cap at 2 fractional digits.
+  const m = amount / 1_000_000;
+  const fixed = m >= 10 ? m.toFixed(0) : m.toFixed(2);
+  return parseFloat(fixed).toString() + "M";
+}

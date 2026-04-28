@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rankTrustsByContribution } from "../strategy-attribution";
+import { rankTrustsByContribution, computeTrustCardData } from "../strategy-attribution";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 
 const ILIT_ID = "trust-ilit";
@@ -67,5 +67,38 @@ describe("rankTrustsByContribution", () => {
     const withResult = [] as unknown as ProjectionYear[];
     const ranked = rankTrustsByContribution(tree, withResult);
     expect(ranked).toEqual([]);
+  });
+});
+
+describe("computeTrustCardData", () => {
+  it("ILIT card: tag line, primary = face value, narrative", () => {
+    const { tree, withResult } = fixture();
+    const ranked = rankTrustsByContribution(tree, withResult);
+    const ilitRanked = ranked.find((r) => r.cardKind === "ilit");
+    const card = computeTrustCardData({
+      ranked: ilitRanked!,
+      tree,
+      withResult,
+      finalDeathYear: 2054,
+    });
+    expect(card.tagLine).toContain("ILIT");
+    expect(card.primaryAmount).toBe(5_000_000);
+    expect(card.narrative).toContain("Death benefit paid outside the estate");
+  });
+
+  it("SLAT card: tag line, primary = compounded, narrative shows growth + years", () => {
+    const { tree, withResult } = fixture();
+    const ranked = rankTrustsByContribution(tree, withResult);
+    const slatRanked = ranked.find((r) => r.cardKind === "gifting");
+    const card = computeTrustCardData({
+      ranked: slatRanked!,
+      tree,
+      withResult,
+      finalDeathYear: 2054,
+    });
+    expect(card.tagLine).toContain("SLAT");
+    expect(card.tagLine).toContain("$2.4M GIFT IN 2026");
+    expect(card.primaryAmount).toBe(9_870_000);
+    expect(card.narrative).toMatch(/Compounded/);
   });
 });
