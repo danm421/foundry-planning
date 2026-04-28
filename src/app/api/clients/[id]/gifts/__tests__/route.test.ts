@@ -17,6 +17,13 @@
  *
  *  DELETE
  *  6. Deleting a parent gift cascades to child gifts (ON DELETE CASCADE).
+ *
+ *  T16 — Past-dated dual-write to junction tables
+ *  7. Past-dated asset transfer (year < projectionStartYear) updates account_owners.
+ *  8. Future-dated asset transfer (year >= projectionStartYear) leaves account_owners unchanged.
+ *  9. Past-dated asset transfer with linked liability updates both account_owners AND liability_owners.
+ * 10. Drained-household guard — returns 500 when household owns 0 and transfer is attempted.
+ * 11. Mid-stream household scaling — proportional preservation with client + spouse.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -755,5 +762,436 @@ d("DELETE /api/clients/[id]/gifts/[giftId]", () => {
       .from(gifts)
       .where(drizzleOrm.eq(gifts.id, parentRow.id));
     expect(parentAfter).toHaveLength(0);
+  });
+});
+
+// ── T16: Past-dated dual-write to junction tables ─────────────────────────────
+
+d("POST /api/clients/[id]/gifts — T16 past-dated dual-write", () => {
+  let dbMod: typeof import("@/db");
+  let schema: typeof import("@/db/schema");
+  let helpers: typeof import("@/lib/db-helpers");
+  let drizzleOrm: typeof import("drizzle-orm");
+  let POST: (typeof import("../route"))["POST"];
+
+  beforeAll(async () => {
+    dbMod = await import("@/db");
+    schema = await import("@/db/schema");
+    helpers = await import("@/lib/db-helpers");
+    drizzleOrm = await import("drizzle-orm");
+    ({ POST } = await import("../route"));
+  });
+
+  async function cleanup() {
+    const { db } = dbMod;
+    const { clients, scenarios, familyMembers, entities } = schema;
+    const { sql } = drizzleOrm;
+
+    const testClients = await db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+    const ids = testClients.map((c) => c.id);
+    if (ids.length === 0) return;
+
+    // The account_owners / liability_owners sum-check triggers fire at commit and raise if
+    // any row is deleted while its parent account/liability still exists with zero remaining
+    // owners. Disable them for the cleanup transaction, then re-enable. Mirrors the pattern
+    // in src/app/api/clients/[id]/accounts/__tests__/owners.test.ts.
+    await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_sum_check`);
+    await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_retirement_check`);
+    await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_default_checking_check`);
+    await db.execute(sql`ALTER TABLE liability_owners DISABLE TRIGGER liability_owners_sum_check`);
+    try {
+      // gifts.account_id has ON DELETE SET NULL — delete gifts first to avoid the
+      // gifts_event_kind check constraint firing when accounts are cascade-deleted.
+      await db.delete(schema.gifts).where(drizzleOrm.inArray(schema.gifts.clientId, ids));
+      // Deleting clients cascades to accounts → account_owners, liabilities → liability_owners,
+      // scenarios → plan_settings, entities, family_members automatically.
+      await db.delete(entities).where(drizzleOrm.inArray(entities.clientId, ids));
+      await db.delete(scenarios).where(drizzleOrm.inArray(scenarios.clientId, ids));
+      await db.delete(familyMembers).where(drizzleOrm.inArray(familyMembers.clientId, ids));
+      await db.delete(clients).where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+    } finally {
+      await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_sum_check`);
+      await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_retirement_check`);
+      await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_default_checking_check`);
+      await db.execute(sql`ALTER TABLE liability_owners ENABLE TRIGGER liability_owners_sum_check`);
+    }
+  }
+
+  /**
+   * Sets up a client + scenario + plan_settings (planStartYear = 2026) + two
+   * family members (client + spouse) + one irrevocable trust entity.
+   * Returns IDs needed by tests.
+   */
+  async function setupClientWithPlanSettings(planStartYear = 2026) {
+    const { db } = dbMod;
+    const { clients, scenarios, familyMembers, entities } = schema;
+
+    const [client] = await db
+      .insert(clients)
+      .values({
+        firmId: TEST_FIRM,
+        advisorId: "advisor_t16_test",
+        firstName: "T16",
+        lastName: "Test",
+        dateOfBirth: "1970-01-01",
+        retirementAge: 65,
+        planEndAge: 90,
+        lifeExpectancy: 90,
+        filingStatus: "single",
+      })
+      .returning();
+
+    const [scenario] = await db
+      .insert(scenarios)
+      .values({ clientId: client.id, name: "base", isBaseCase: true })
+      .returning();
+
+    await db.insert(schema.planSettings).values({
+      clientId: client.id,
+      scenarioId: scenario.id,
+      planStartYear,
+      planEndYear: planStartYear + 30,
+    });
+
+    const [clientFm] = await db
+      .insert(familyMembers)
+      .values({
+        clientId: client.id,
+        firstName: "T16Client",
+        lastName: "Test",
+        role: "client" as const,
+      })
+      .returning();
+
+    const [spouseFm] = await db
+      .insert(familyMembers)
+      .values({
+        clientId: client.id,
+        firstName: "T16Spouse",
+        lastName: "Test",
+        role: "spouse" as const,
+      })
+      .returning();
+
+    const [entity] = await db
+      .insert(entities)
+      .values({
+        clientId: client.id,
+        name: "T16 Trust",
+        entityType: "trust" as const,
+        isIrrevocable: true,
+      })
+      .returning();
+
+    return {
+      clientId: client.id,
+      scenarioId: scenario.id,
+      clientFmId: clientFm.id,
+      spouseFmId: spouseFm.id,
+      entityId: entity.id,
+    };
+  }
+
+  /**
+   * Seeds a brokerage account with client 100% ownership + account_owners row.
+   */
+  async function setupAccountWithOwner(
+    clientId: string,
+    scenarioId: string,
+    clientFmId: string,
+  ) {
+    const { db } = dbMod;
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({
+        clientId,
+        scenarioId,
+        name: "T16 Brokerage",
+        category: "taxable" as const,
+        subType: "brokerage",
+        value: "100000",
+        basis: "80000",
+      })
+      .returning();
+    await db.insert(schema.accountOwners).values({
+      accountId: account.id,
+      familyMemberId: clientFmId,
+      entityId: null,
+      percent: "1.0000",
+    });
+    return account;
+  }
+
+  /**
+   * Seeds a real-estate account with joint (client 60%, spouse 40%) ownership + liability.
+   */
+  async function setupRealEstateWithJointOwners(
+    clientId: string,
+    scenarioId: string,
+    clientFmId: string,
+    spouseFmId: string,
+  ) {
+    const { db } = dbMod;
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({
+        clientId,
+        scenarioId,
+        name: "T16 Real Estate",
+        category: "real_estate" as const,
+        subType: "rental_property",
+        value: "500000",
+        basis: "200000",
+      })
+      .returning();
+    await db.insert(schema.accountOwners).values([
+      { accountId: account.id, familyMemberId: clientFmId, entityId: null, percent: "0.6000" },
+      { accountId: account.id, familyMemberId: spouseFmId, entityId: null, percent: "0.4000" },
+    ]);
+
+    const [liability] = await db
+      .insert(schema.liabilities)
+      .values({
+        clientId,
+        scenarioId,
+        name: "T16 Mortgage",
+        balance: "250000",
+        interestRate: "0.065",
+        monthlyPayment: "1500",
+        startYear: 2020,
+        termMonths: 360,
+        linkedPropertyId: account.id,
+      })
+      .returning();
+    await db.insert(schema.liabilityOwners).values([
+      { liabilityId: liability.id, familyMemberId: clientFmId, entityId: null, percent: "0.6000" },
+      { liabilityId: liability.id, familyMemberId: spouseFmId, entityId: null, percent: "0.4000" },
+    ]);
+
+    return { account, liability };
+  }
+
+  function makePostReq(clientId: string, body: object): Request {
+    return new Request(`http://localhost/api/clients/${clientId}/gifts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  beforeEach(async () => {
+    await cleanup();
+    vi.mocked(helpers.getOrgId).mockResolvedValue(TEST_FIRM);
+  });
+
+  it("7. Past-dated asset transfer (year < projectionStartYear) updates account_owners", async () => {
+    const { clientId, scenarioId, clientFmId, entityId } = await setupClientWithPlanSettings(2026);
+    const { db } = dbMod;
+    const account = await setupAccountWithOwner(clientId, scenarioId, clientFmId);
+
+    const res = await POST(
+      makePostReq(clientId, {
+        year: 2024,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 0.5,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(201);
+
+    const owners = await db
+      .select()
+      .from(schema.accountOwners)
+      .where(drizzleOrm.eq(schema.accountOwners.accountId, account.id));
+
+    // Should have 2 rows: client 50% + trust 50%
+    expect(owners).toHaveLength(2);
+    const total = owners.reduce((s, o) => s + Number(o.percent), 0);
+    expect(total).toBeCloseTo(1.0, 4);
+
+    const trustRow = owners.find((o) => o.entityId === entityId);
+    expect(trustRow).toBeDefined();
+    expect(Number(trustRow!.percent)).toBeCloseTo(0.5, 4);
+
+    const clientRow = owners.find((o) => o.familyMemberId === clientFmId);
+    expect(clientRow).toBeDefined();
+    expect(Number(clientRow!.percent)).toBeCloseTo(0.5, 4);
+  });
+
+  it("8. Future-dated asset transfer (year >= projectionStartYear) leaves account_owners unchanged", async () => {
+    const { clientId, scenarioId, clientFmId, entityId } = await setupClientWithPlanSettings(2026);
+    const { db } = dbMod;
+    const account = await setupAccountWithOwner(clientId, scenarioId, clientFmId);
+
+    const res = await POST(
+      makePostReq(clientId, {
+        year: 2030,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 0.5,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(201);
+
+    const owners = await db
+      .select()
+      .from(schema.accountOwners)
+      .where(drizzleOrm.eq(schema.accountOwners.accountId, account.id));
+
+    // account_owners unchanged — still 1 row: client 100%
+    expect(owners).toHaveLength(1);
+    expect(owners[0].familyMemberId).toBe(clientFmId);
+    expect(Number(owners[0].percent)).toBeCloseTo(1.0, 4);
+    expect(owners[0].entityId).toBeNull();
+  });
+
+  it("9. Past-dated asset transfer with linked liability updates both account_owners AND liability_owners", async () => {
+    const { clientId, scenarioId, clientFmId, spouseFmId, entityId } =
+      await setupClientWithPlanSettings(2026);
+    const { db } = dbMod;
+    const { account, liability } = await setupRealEstateWithJointOwners(
+      clientId,
+      scenarioId,
+      clientFmId,
+      spouseFmId,
+    );
+
+    const res = await POST(
+      makePostReq(clientId, {
+        year: 2023,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 0.5,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(201);
+
+    // account_owners: trust 50%, client+spouse share the remaining 50% proportionally
+    const acctOwners = await db
+      .select()
+      .from(schema.accountOwners)
+      .where(drizzleOrm.eq(schema.accountOwners.accountId, account.id));
+    expect(acctOwners).toHaveLength(3); // trust + client + spouse
+    const acctTotal = acctOwners.reduce((s, o) => s + Number(o.percent), 0);
+    expect(acctTotal).toBeCloseTo(1.0, 4);
+    const acctTrust = acctOwners.find((o) => o.entityId === entityId);
+    expect(Number(acctTrust!.percent)).toBeCloseTo(0.5, 4);
+    // client was 60% of 100%; now 60% of 50% = 0.30
+    const acctClient = acctOwners.find((o) => o.familyMemberId === clientFmId);
+    expect(Number(acctClient!.percent)).toBeCloseTo(0.3, 4);
+    // spouse was 40% of 100%; now 40% of 50% = 0.20
+    const acctSpouse = acctOwners.find((o) => o.familyMemberId === spouseFmId);
+    expect(Number(acctSpouse!.percent)).toBeCloseTo(0.2, 4);
+
+    // liability_owners: same proportions
+    const liabOwners = await db
+      .select()
+      .from(schema.liabilityOwners)
+      .where(drizzleOrm.eq(schema.liabilityOwners.liabilityId, liability.id));
+    expect(liabOwners).toHaveLength(3);
+    const liabTotal = liabOwners.reduce((s, o) => s + Number(o.percent), 0);
+    expect(liabTotal).toBeCloseTo(1.0, 4);
+    const liabTrust = liabOwners.find((o) => o.entityId === entityId);
+    expect(Number(liabTrust!.percent)).toBeCloseTo(0.5, 4);
+    const liabClient = liabOwners.find((o) => o.familyMemberId === clientFmId);
+    expect(Number(liabClient!.percent)).toBeCloseTo(0.3, 4);
+    const liabSpouse = liabOwners.find((o) => o.familyMemberId === spouseFmId);
+    expect(Number(liabSpouse!.percent)).toBeCloseTo(0.2, 4);
+  });
+
+  it("10. Drained-household guard — returns 500 when household owns 0%", async () => {
+    const { clientId, scenarioId, clientFmId, entityId } = await setupClientWithPlanSettings(2026);
+    const account = await setupAccountWithOwner(clientId, scenarioId, clientFmId);
+
+    // Transfer all 100% to trust first (past-dated)
+    const res1 = await POST(
+      makePostReq(clientId, {
+        year: 2024,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 1.0,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res1.status).toBe(201);
+
+    // Now try to transfer another 50% — household is drained
+    const res2 = await POST(
+      makePostReq(clientId, {
+        year: 2024,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 0.5,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    // Drained household throws inside the transaction → 500
+    expect(res2.status).toBe(500);
+  });
+
+  it("11. Mid-stream household scaling — proportional preservation (client 60%, spouse 40%, transfer 50%)", async () => {
+    const { clientId, scenarioId, clientFmId, spouseFmId, entityId } =
+      await setupClientWithPlanSettings(2026);
+    const { db } = dbMod;
+    // Seed a brokerage account with client 60% / spouse 40%
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({
+        clientId,
+        scenarioId,
+        name: "T16 Joint Brokerage",
+        category: "taxable" as const,
+        subType: "brokerage",
+        value: "200000",
+        basis: "100000",
+      })
+      .returning();
+    await db.insert(schema.accountOwners).values([
+      { accountId: account.id, familyMemberId: clientFmId, entityId: null, percent: "0.6000" },
+      { accountId: account.id, familyMemberId: spouseFmId, entityId: null, percent: "0.4000" },
+    ]);
+
+    const res = await POST(
+      makePostReq(clientId, {
+        year: 2025,
+        grantor: "client",
+        recipientEntityId: entityId,
+        accountId: account.id,
+        percent: 0.5,
+      }) as never,
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(201);
+
+    const owners = await db
+      .select()
+      .from(schema.accountOwners)
+      .where(drizzleOrm.eq(schema.accountOwners.accountId, account.id));
+    expect(owners).toHaveLength(3);
+    const total = owners.reduce((s, o) => s + Number(o.percent), 0);
+    expect(total).toBeCloseTo(1.0, 4);
+
+    // trust: 50%
+    const trustRow = owners.find((o) => o.entityId === entityId);
+    expect(Number(trustRow!.percent)).toBeCloseTo(0.5, 4);
+
+    // client: 60% of (1 - 0.5) = 0.30
+    const clientRow = owners.find((o) => o.familyMemberId === clientFmId);
+    expect(Number(clientRow!.percent)).toBeCloseTo(0.3, 4);
+
+    // spouse: 40% of (1 - 0.5) = 0.20
+    const spouseRow = owners.find((o) => o.familyMemberId === spouseFmId);
+    expect(Number(spouseRow!.percent)).toBeCloseTo(0.2, 4);
   });
 });

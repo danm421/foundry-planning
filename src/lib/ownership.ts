@@ -6,8 +6,19 @@
  * DB and may import Drizzle / Next.js helpers.
  */
 import { db } from "@/db";
-import { familyMembers, entities } from "@/db/schema";
+import {
+  familyMembers,
+  entities,
+  accountOwners,
+  liabilityOwners,
+  planSettings,
+} from "@/db/schema";
 import { eq, and } from "drizzle-orm";
+
+// ── Transaction type ──────────────────────────────────────────────────────────
+
+/** Inferred from db.transaction callback to avoid coupling to internal Drizzle generics. */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -218,4 +229,182 @@ export async function synthesizeLegacyLiabilityOwners(
   }
 
   return [];
+}
+
+// ── Past-dated transfer dual-write ────────────────────────────────────────────
+
+/**
+ * Returns the projection start year for the given scenario by reading
+ * plan_settings.plan_start_year inside the supplied transaction.
+ * Returns null if no plan_settings row exists (dual-write is skipped in that case).
+ */
+export async function getProjectionStartYearForScenario(
+  tx: Tx,
+  scenarioId: string,
+): Promise<number | null> {
+  const [row] = await tx
+    .select({ planStartYear: planSettings.planStartYear })
+    .from(planSettings)
+    .where(eq(planSettings.scenarioId, scenarioId));
+  return row?.planStartYear ?? null;
+}
+
+/**
+ * Applies a past-dated ownership transfer to the static junction table.
+ *
+ * Called only when gift.year < projectionStartYear. For future-dated transfers
+ * the engine fans the event at projection time and these tables stay untouched.
+ *
+ * Algorithm (mirrors engine/ownership.ts `ownersForYear`):
+ *  1. Load current owners from the DB.
+ *  2. Sum household (family_member) share.
+ *  3. Guard: drained household or overdraw → throw with a descriptive message.
+ *  4. Scale each household row by factor = (householdShare - percent) / householdShare.
+ *  5. Drop rows that scaled to ≈ 0.
+ *  6. Merge the recipient entity row (add to existing percent if already present).
+ *
+ * The caller must pass the enclosing transaction (`tx`) so all writes are atomic.
+ */
+export async function applyOwnershipTransfer(
+  tx: Tx,
+  kind: "account" | "liability",
+  rowId: string,
+  percent: number,
+  recipientEntityId: string,
+): Promise<void> {
+  if (kind === "account") {
+    await _applyToAccount(tx, rowId, percent, recipientEntityId);
+  } else {
+    await _applyToLiability(tx, rowId, percent, recipientEntityId);
+  }
+}
+
+// ── per-table helpers (avoids `as any` via separate code paths) ───────────────
+
+async function _applyToAccount(
+  tx: Tx,
+  accountId: string,
+  percent: number,
+  recipientEntityId: string,
+): Promise<void> {
+  const owners = await tx
+    .select()
+    .from(accountOwners)
+    .where(eq(accountOwners.accountId, accountId));
+
+  const householdShare = owners
+    .filter((o) => o.familyMemberId != null)
+    .reduce((s, o) => s + Number(o.percent), 0);
+
+  if (householdShare <= 1e-9) {
+    throw new Error(
+      `applyOwnershipTransfer(account ${accountId}): no household share remaining (available ${householdShare})`,
+    );
+  }
+  if (percent > householdShare + 1e-9) {
+    throw new Error(
+      `applyOwnershipTransfer(account ${accountId}): transfer ${percent} exceeds household share ${householdShare}`,
+    );
+  }
+
+  const factor = (householdShare - percent) / householdShare;
+
+  // Delete all existing rows for this account, then reinsert scaled rows.
+  await tx.delete(accountOwners).where(eq(accountOwners.accountId, accountId));
+
+  for (const o of owners) {
+    if (o.familyMemberId != null) {
+      const newPercent = Number(o.percent) * factor;
+      if (newPercent > 1e-9) {
+        await tx.insert(accountOwners).values({
+          accountId,
+          familyMemberId: o.familyMemberId,
+          entityId: null,
+          percent: newPercent.toString(),
+        });
+      }
+    } else if (o.entityId != null && o.entityId !== recipientEntityId) {
+      // Preserve non-recipient entity rows unchanged.
+      await tx.insert(accountOwners).values({
+        accountId,
+        familyMemberId: null,
+        entityId: o.entityId,
+        percent: o.percent,
+      });
+    }
+    // Recipient entity row is handled by the merge step below.
+  }
+
+  // Merge: accumulate existing recipient percent (if any) plus the new transfer.
+  const existingRecipient = owners.find((o) => o.entityId === recipientEntityId);
+  const finalPercent = percent + (existingRecipient ? Number(existingRecipient.percent) : 0);
+
+  await tx.insert(accountOwners).values({
+    accountId,
+    familyMemberId: null,
+    entityId: recipientEntityId,
+    percent: finalPercent.toString(),
+  });
+}
+
+async function _applyToLiability(
+  tx: Tx,
+  liabilityId: string,
+  percent: number,
+  recipientEntityId: string,
+): Promise<void> {
+  const owners = await tx
+    .select()
+    .from(liabilityOwners)
+    .where(eq(liabilityOwners.liabilityId, liabilityId));
+
+  const householdShare = owners
+    .filter((o) => o.familyMemberId != null)
+    .reduce((s, o) => s + Number(o.percent), 0);
+
+  if (householdShare <= 1e-9) {
+    throw new Error(
+      `applyOwnershipTransfer(liability ${liabilityId}): no household share remaining (available ${householdShare})`,
+    );
+  }
+  if (percent > householdShare + 1e-9) {
+    throw new Error(
+      `applyOwnershipTransfer(liability ${liabilityId}): transfer ${percent} exceeds household share ${householdShare}`,
+    );
+  }
+
+  const factor = (householdShare - percent) / householdShare;
+
+  await tx.delete(liabilityOwners).where(eq(liabilityOwners.liabilityId, liabilityId));
+
+  for (const o of owners) {
+    if (o.familyMemberId != null) {
+      const newPercent = Number(o.percent) * factor;
+      if (newPercent > 1e-9) {
+        await tx.insert(liabilityOwners).values({
+          liabilityId,
+          familyMemberId: o.familyMemberId,
+          entityId: null,
+          percent: newPercent.toString(),
+        });
+      }
+    } else if (o.entityId != null && o.entityId !== recipientEntityId) {
+      await tx.insert(liabilityOwners).values({
+        liabilityId,
+        familyMemberId: null,
+        entityId: o.entityId,
+        percent: o.percent,
+      });
+    }
+  }
+
+  const existingRecipient = owners.find((o) => o.entityId === recipientEntityId);
+  const finalPercent = percent + (existingRecipient ? Number(existingRecipient.percent) : 0);
+
+  await tx.insert(liabilityOwners).values({
+    liabilityId,
+    familyMemberId: null,
+    entityId: recipientEntityId,
+    percent: finalPercent.toString(),
+  });
 }

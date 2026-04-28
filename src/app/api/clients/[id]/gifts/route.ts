@@ -4,6 +4,7 @@ import {
   clients,
   gifts,
   liabilities,
+  accounts,
   entities,
   familyMembers,
   externalBeneficiaries,
@@ -11,6 +12,10 @@ import {
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { giftCreateSchema } from "@/lib/schemas/gifts";
+import {
+  applyOwnershipTransfer,
+  getProjectionStartYearForScenario,
+} from "@/lib/ownership";
 
 export const dynamic = "force-dynamic";
 
@@ -167,11 +172,13 @@ export async function POST(
 
       // If this is an asset transfer (accountId set, no explicit liabilityId),
       // check for a linked liability and auto-create a bundled child gift row.
+      let linkedLiabilityId: string | null = null;
       if (data.accountId != null && data.liabilityId == null) {
         const linked = await tx.query.liabilities.findFirst({
           where: eq(liabilities.linkedPropertyId, data.accountId),
         });
         if (linked) {
+          linkedLiabilityId = linked.id;
           await tx.insert(gifts).values({
             clientId: id,
             year: data.year,
@@ -190,6 +197,73 @@ export async function POST(
           });
         }
       }
+
+      // ── Past-dated dual-write to junction tables ──────────────────────────
+      // For transfers where year < projectionStartYear, the engine won't replay
+      // the event at projection time, so we must persist the post-transfer
+      // ownership state in account_owners / liability_owners right now.
+      // For future-dated transfers (year >= projectionStartYear) the engine fans
+      // the event dynamically — junction tables stay untouched.
+      //
+      // Only fires for asset/liability transfers to a recipient entity (not cash gifts).
+      if (
+        data.recipientEntityId != null &&
+        data.percent != null &&
+        (data.accountId != null || data.liabilityId != null || linkedLiabilityId != null)
+      ) {
+        // Resolve the scenario from the account or liability being transferred.
+        let scenarioId: string | null = null;
+        if (data.accountId != null) {
+          const [acctRow] = await tx
+            .select({ scenarioId: accounts.scenarioId })
+            .from(accounts)
+            .where(eq(accounts.id, data.accountId));
+          scenarioId = acctRow?.scenarioId ?? null;
+        } else if (data.liabilityId != null) {
+          const [liabRow] = await tx
+            .select({ scenarioId: liabilities.scenarioId })
+            .from(liabilities)
+            .where(eq(liabilities.id, data.liabilityId));
+          scenarioId = liabRow?.scenarioId ?? null;
+        }
+
+        if (scenarioId != null) {
+          const projectionStartYear = await getProjectionStartYearForScenario(tx, scenarioId);
+          // If no plan_settings row exists yet, skip the dual-write entirely.
+          if (projectionStartYear != null && data.year < projectionStartYear) {
+            if (data.accountId != null) {
+              await applyOwnershipTransfer(
+                tx,
+                "account",
+                data.accountId,
+                data.percent,
+                data.recipientEntityId,
+              );
+            }
+
+            if (data.liabilityId != null) {
+              await applyOwnershipTransfer(
+                tx,
+                "liability",
+                data.liabilityId,
+                data.percent,
+                data.recipientEntityId,
+              );
+            }
+
+            if (linkedLiabilityId != null) {
+              await applyOwnershipTransfer(
+                tx,
+                "liability",
+                linkedLiabilityId,
+                data.percent,
+                data.recipientEntityId,
+              );
+            }
+          }
+        }
+      }
+      // ── end past-dated dual-write ─────────────────────────────────────────
 
       return parent;
     });
