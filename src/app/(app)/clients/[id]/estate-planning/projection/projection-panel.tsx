@@ -7,7 +7,7 @@ import { ChipBar } from "./chip-bar";
 import { AssumptionsModal } from "./assumptions-modal";
 import { YearScrubber } from "./year-scrubber";
 import { ComparisonGrid } from "./comparison-grid";
-// import { TrajectoryChart } from "./trajectory-chart";  // Phase 7 — Task 28
+import { TrajectoryChart } from "./trajectory-chart";
 // import { StrategyCards } from "./strategy-cards";      // Phase 8 — Task 29
 
 interface Props {
@@ -71,8 +71,12 @@ export function ProjectionPanel({
         withoutResult={withoutResult}
         scrubberYear={scrubberYear}
       />
-      {/* Phase 7 — Task 28 */}
-      {/* <TrajectoryChart withResult={withResult} withoutResult={withoutResult} firstDeathYear={firstDeathYear} secondDeathYear={secondDeathYear} scrubberYear={scrubberYear} /> */}
+      <TrajectoryChart
+        tree={tree}
+        withResult={withResult}
+        withoutResult={withoutResult}
+        scrubberYear={scrubberYear}
+      />
       {/* Phase 8 — Task 29 */}
       {/* <StrategyCards tree={tree} withResult={withResult} procrastinatedResult={procrastinatedResult} /> */}
 
