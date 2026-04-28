@@ -125,6 +125,10 @@ describe("synthesizeNoPlanClientData", () => {
 
 describe("synthesizeNoPlanClientData — round-trip with runProjection", () => {
   it("synthesized variant runs runProjection without trust-related warnings", () => {
+    // Smoke test: verifies the synthesized variant doesn't fail through runProjection.
+    // Full death-event warning coverage (trust_beneficiaries_incomplete and
+    // trust_pour_out_fallback_fired) lives in plan-3a-integration.test.ts (Task 19,
+    // Cooper-Sample fixture, which uses a 2026–2066 window that does hit death events).
     const tree = fixture();
     const synthesized = synthesizeNoPlanClientData(tree);
     const result = runProjection(synthesized);
