@@ -77,14 +77,6 @@ function sumToHeirs(transfers: DeathTransfer[]): number {
   );
 }
 
-/** Sum `amount` for all spouse transfers (marital deduction flows). */
-function sumToSpouse(transfers: DeathTransfer[]): number {
-  return transfers.reduce(
-    (acc, t) => acc + (t.recipientKind === "spouse" && t.amount > 0 ? t.amount : 0),
-    0,
-  );
-}
-
 /**
  * Group transfers by (recipientKind, recipientId) and produce BeneficiaryCards.
  * Excludes spouse transfers (those are the marital deduction, shown separately).
@@ -278,15 +270,16 @@ export function deriveSpineData(args: {
     const spouseNetWorth =
       firstDeceasedRole === "spouse" ? deceasedGrossEstate : survivorGrossEstate;
 
-    // Combined value at second death entry point
-    const combinedValue = secondEvent?.grossEstate ?? 0;
+    // Combined value: survivor holds everything at the year immediately after first death
+    // (post-marital-deduction). Use portfolioAssets.total from that year row.
+    const firstYearIndex = withResult.years.findIndex((y) => y.year === firstDeathYear);
+    const combinedValue =
+      firstYearIndex >= 0
+        ? (withResult.years[firstYearIndex + 1]?.portfolioAssets.total ?? 0)
+        : 0;
 
-    // First-death transfers
-    const firstDeathYearRow = withResult.years.find((y) => y.year === firstDeathYear);
-    const firstDeathTransfers = (firstDeathYearRow?.deathTransfers ?? []).filter(
-      (t) => t.deathOrder === 1,
-    );
-    const firstToSpouse = sumToSpouse(firstDeathTransfers);
+    // First-death: marital deduction flows directly from EstateTaxResult
+    const firstToSpouse = firstEvent?.maritalDeduction ?? 0;
     const firstTax = firstEvent?.totalTaxesAndExpenses ?? 0;
 
     // Second-death transfers
@@ -350,16 +343,33 @@ export function deriveSpineData(args: {
     if (!hasSpouse) {
       survivorName = client.firstName;
     } else {
-      // One of the two deaths is outside the plan window — use finalDeathYear
-      // to determine who the last surviving principal is.
-      const firstDeceasedRole = firstDeathYear != null
-        ? identifyDeceased(client, firstDeathYear)
-        : null;
-      const finalDeceasedRole = identifyFinalDeceased(client, firstDeceasedRole);
-      survivorName =
-        finalDeceasedRole === "client"
-          ? client.firstName
-          : client.spouseName ?? "Spouse";
+      // One of the two deaths is outside the plan window — determine who the
+      // surviving grantor is by checking which principal died before the plan start.
+      const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
+      const spouseBirthYear = parseInt((client.spouseDob as string).slice(0, 4), 10);
+      const clientDeathYear = clientBirthYear + (client.lifeExpectancy ?? 95);
+      const spouseDeathYear = spouseBirthYear + (client.spouseLifeExpectancy ?? 95);
+      const clientDead = clientDeathYear < planStartYear;
+      const spouseDead = spouseDeathYear < planStartYear;
+
+      if (clientDead && !spouseDead) {
+        // Client pre-deceased the plan start; survivor is the spouse
+        survivorName = client.spouseName ?? "Spouse";
+      } else if (spouseDead && !clientDead) {
+        // Spouse pre-deceased the plan start; survivor is the client
+        survivorName = client.firstName;
+      } else {
+        // Both in-window but only the final death lands in the window
+        // (first death is post-plan-end). Use identifyFinalDeceased.
+        const firstDeceasedRole = firstDeathYear != null
+          ? identifyDeceased(client, firstDeathYear)
+          : null;
+        const finalDeceasedRole = identifyFinalDeceased(client, firstDeceasedRole);
+        survivorName =
+          finalDeceasedRole === "client"
+            ? client.firstName
+            : client.spouseName ?? "Spouse";
+      }
     }
 
     // Death-year transfers

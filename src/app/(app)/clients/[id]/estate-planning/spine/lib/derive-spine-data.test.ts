@@ -231,8 +231,19 @@ describe("deriveSpineData", () => {
     expect(data.pair.spouse.name).toBe("Linda");
     expect(data.pair.spouse.netWorth).toBeGreaterThanOrEqual(0);
 
+    // First-death marital deduction should be non-zero (married couple, everything passes to survivor)
+    expect(data.firstDeath.toSpouse).toBeGreaterThan(0);
+
     // Beneficiaries list has at least one entry (the child, via fallback)
     expect(data.beneficiaries.length).toBeGreaterThan(0);
+
+    // First beneficiary card shape
+    const card = data.beneficiaries[0];
+    expect(card.name).toBeTruthy();
+    expect(typeof card.value).toBe("number");
+    expect(card.value).toBeGreaterThan(0);
+    expect(card.pctOfHeirs).toBeGreaterThan(0);
+    expect(card.pctOfHeirs).toBeLessThanOrEqual(1);
 
     // Totals are numbers
     expect(typeof data.totals.taxesAndExpenses).toBe("number");
@@ -255,6 +266,15 @@ describe("deriveSpineData", () => {
     expect(typeof data.death.tax).toBe("number");
     expect(typeof data.death.toHeirs).toBe("number");
     expect(data.beneficiaries.length).toBeGreaterThan(0);
+
+    // First beneficiary card shape
+    const card = data.beneficiaries[0];
+    expect(card.name).toBeTruthy();
+    expect(typeof card.value).toBe("number");
+    expect(card.value).toBeGreaterThan(0);
+    expect(card.pctOfHeirs).toBeGreaterThan(0);
+    expect(card.pctOfHeirs).toBeLessThanOrEqual(1);
+
     expect(typeof data.totals.taxesAndExpenses).toBe("number");
     expect(typeof data.totals.toHeirs).toBe("number");
   });
