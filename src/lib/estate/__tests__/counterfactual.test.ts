@@ -1,0 +1,87 @@
+import { describe, it, expect } from "vitest";
+import { synthesizeNoPlanClientData } from "../counterfactual";
+import type { ClientData, ClientInfo, FamilyMember, EntitySummary, Gift } from "@/engine/types";
+
+const FM_CLIENT = "fm-client";
+const FM_SPOUSE = "fm-spouse";
+const TRUST_SLAT = "trust-slat";
+
+function fixture(): ClientData {
+  return {
+    client: {
+      firstName: "T",
+      lastName: "C",
+      dateOfBirth: "1970-01-01",
+      retirementAge: 65,
+      planEndAge: 88,
+      filingStatus: "married_joint",
+    } satisfies ClientInfo,
+    accounts: [
+      {
+        id: "acc-1",
+        name: "Brokerage A",
+        category: "taxable",
+        value: 1_000_000,
+        owners: [
+          { kind: "family_member", familyMemberId: FM_CLIENT, percent: 0.6 },
+          { kind: "entity", entityId: TRUST_SLAT, percent: 0.4 },
+        ],
+      } as unknown as ClientData["accounts"][number],
+    ],
+    entities: [
+      {
+        id: TRUST_SLAT,
+        name: "SLAT",
+        entityType: "trust",
+        isIrrevocable: true,
+        isGrantor: true,
+        includeInPortfolio: false,
+        grantor: "client",
+      } satisfies EntitySummary,
+    ],
+    familyMembers: [
+      { id: FM_CLIENT, firstName: "Client", lastName: "Test", relationship: "other", role: "client", dateOfBirth: "1970-01-01" } satisfies FamilyMember,
+      { id: FM_SPOUSE, firstName: "Spouse", lastName: "Test", relationship: "other", role: "spouse", dateOfBirth: "1972-01-01" } satisfies FamilyMember,
+    ],
+    gifts: [
+      { id: "g1", year: 2026, amount: 100_000, grantor: "client", recipientEntityId: TRUST_SLAT, useCrummeyPowers: true } satisfies Gift,
+      { id: "g2", year: 2026, amount: 50_000, grantor: "client", recipientFamilyMemberId: "fm-child", useCrummeyPowers: false } satisfies Gift,
+    ],
+    giftEvents: [],
+    incomes: [],
+    expenses: [],
+    liabilities: [],
+    savingsRules: [],
+    withdrawalStrategy: [],
+    planSettings: {} as ClientData["planSettings"],
+  } as ClientData;
+}
+
+describe("synthesizeNoPlanClientData", () => {
+  it("reassigns trust-owned slices back to grantor family member", () => {
+    const tree = fixture();
+    const result = synthesizeNoPlanClientData(tree);
+    const acc = result.accounts[0];
+    expect(acc.owners).toEqual([
+      { kind: "family_member", familyMemberId: FM_CLIENT, percent: 1.0 },
+    ]);
+  });
+
+  it("drops gifts targeting trusts but keeps gifts to people", () => {
+    const tree = fixture();
+    const result = synthesizeNoPlanClientData(tree);
+    const giftIds = (result.gifts ?? []).map((g) => g.id);
+    expect(giftIds).toEqual(["g2"]);
+  });
+
+  it("preserves gifts to charities (not trust-related)", () => {
+    const tree = fixture();
+    tree.gifts = [
+      ...(tree.gifts ?? []),
+      { id: "g3", year: 2026, amount: 10_000, grantor: "client", recipientExternalBeneficiaryId: "charity-1", useCrummeyPowers: false },
+    ];
+    const result = synthesizeNoPlanClientData(tree);
+    const giftIds = (result.gifts ?? []).map((g) => g.id);
+    expect(giftIds).toContain("g3");
+  });
+});
