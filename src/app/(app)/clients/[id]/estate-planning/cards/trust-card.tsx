@@ -120,7 +120,7 @@ function HeldAssetRow({
       {onRemoveSlice && (
         <button
           type="button"
-          aria-label="Remove slice"
+          aria-label={`Remove slice of ${row.accountName}`}
           onClick={(e) => {
             e.stopPropagation();
             onRemoveSlice({ accountId: row.accountId, trustEntityId });
