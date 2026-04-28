@@ -8,7 +8,7 @@ import { AssumptionsModal } from "./assumptions-modal";
 import { YearScrubber } from "./year-scrubber";
 import { ComparisonGrid } from "./comparison-grid";
 import { TrajectoryChart } from "./trajectory-chart";
-// import { StrategyCards } from "./strategy-cards";      // Phase 8 — Task 29
+import { StrategyCards } from "./strategy-cards";
 
 interface Props {
   tree: ClientData;
@@ -46,11 +46,6 @@ export function ProjectionPanel({
   const [scrubberYear, setScrubberYear] = useState<number>(finalDeathYear);
   const [assumptionsOpen, setAssumptionsOpen] = useState(false);
 
-  // Phase 7-8 will read this — referenced here so the prop stays live
-  // and TypeScript flags any later breaking change to ProjectionResult.
-  // (withoutResult is now consumed by ComparisonGrid below.)
-  void procrastinatedResult;
-
   return (
     <section className="space-y-6 rounded border border-hair bg-card p-6">
       <ChipBar
@@ -77,8 +72,11 @@ export function ProjectionPanel({
         withoutResult={withoutResult}
         scrubberYear={scrubberYear}
       />
-      {/* Phase 8 — Task 29 */}
-      {/* <StrategyCards tree={tree} withResult={withResult} procrastinatedResult={procrastinatedResult} /> */}
+      <StrategyCards
+        tree={tree}
+        withResult={withResult}
+        procrastinatedResult={procrastinatedResult}
+      />
 
       <AssumptionsModal
         open={assumptionsOpen}
