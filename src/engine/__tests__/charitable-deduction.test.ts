@@ -141,3 +141,27 @@ describe("computeCharitableDeductionForYear — carryforward consumption", () =>
     expect(result.carryforwardOut.cashPublic).toEqual([]);
   });
 });
+
+describe("computeCharitableDeductionForYear — itemize-vs-standard branch", () => {
+  it("returns zero deduction when willItemize=false, but preserves carryforward", () => {
+    const result = computeCharitableDeductionForYear(
+      baseInput({
+        giftsThisYear: [{ amount: 100_000, bucket: "cashPublic" }],
+        agi: 1_000_000,
+        willItemize: false,
+        currentYear: 2026,
+      }),
+    );
+    expect(result.deductionThisYear).toBe(0);
+  });
+
+  it("standard path zeros byBucket too", () => {
+    const result = computeCharitableDeductionForYear(
+      baseInput({
+        giftsThisYear: [{ amount: 100_000, bucket: "cashPublic" }],
+        willItemize: false,
+      }),
+    );
+    expect(result.byBucket.cashPublic).toBe(0);
+  });
+});
