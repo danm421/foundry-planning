@@ -38,6 +38,20 @@ interface AddTrustFormProps {
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
 }
 
+// ── Fetch helper ─────────────────────────────────────────────────────────────
+
+/** Fetch JSON, throwing on non-2xx responses with the server's error message. */
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error((j as { error?: string }).error ?? `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+// ── Trust type labels ─────────────────────────────────────────────────────────
+
 const TRUST_TYPE_LABELS: Record<TrustSubType, string> = {
   revocable: "Revocable",
   irrevocable: "Irrevocable (generic)",
@@ -110,6 +124,7 @@ export default function AddTrustForm({
   const [openModal, setOpenModal] = useState<"asset" | "cash" | "series" | null>(null);
   const [transferEvents, setTransferEvents] = useState<TransferEvent[]>([]);
   const [transferSeries, setTransferSeries] = useState<TransferSeries[]>([]);
+  const [transferFetchError, setTransferFetchError] = useState<string | null>(null);
   // refetchTick is bumped after a successful save so the useEffect re-runs.
   const [refetchTick, setRefetchTick] = useState(0);
 
@@ -119,17 +134,22 @@ export default function AddTrustForm({
   useEffect(() => {
     if (activeTab !== "transfers" || !editing) return;
     let alive = true;
+    setTransferFetchError(null);
     Promise.all([
-      fetch(`/api/clients/${clientId}/gifts`).then((r) => r.json()),
-      fetch(`/api/clients/${clientId}/gifts/series`).then((r) => r.json()),
-    ]).then(([allGifts, allSeries]: [GiftRow[], GiftSeriesRow[]]) => {
+      fetchJson<GiftRow[]>(`/api/clients/${clientId}/gifts`),
+      fetchJson<GiftSeriesRow[]>(`/api/clients/${clientId}/gifts/series`),
+    ]).then(([allGifts, allSeries]) => {
       if (!alive) return;
-      setTransferEvents(toTransferEvents(allGifts, editing.id, accounts ?? []));
+      setTransferEvents(toTransferEvents(allGifts, editing.id, accounts ?? [], liabilities ?? []));
       setTransferSeries(toTransferSeries(allSeries, editing.id));
-    }).catch(() => { /* fetch errors are silent in the tab; data stays empty */ });
+    }).catch((err: Error) => {
+      if (!alive) return;
+      console.error("[transfers-tab] fetch failed:", err);
+      setTransferFetchError(err.message);
+    });
     return () => { alive = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, editing?.id, clientId, refetchTick]);
+  }, [activeTab, editing?.id, clientId, refetchTick, accounts, liabilities]);
 
   // ── Asset tab op handler ───────────────────────────────────────────────────
   const handleAssetTabOp = useCallback(async (op: AssetTabOp) => {
@@ -440,31 +460,46 @@ export default function AddTrustForm({
 
       <div className={activeTab !== "transfers" ? "hidden" : ""}>
         {editing ? (
-          <TransfersTab
-            events={transferEvents}
-            series={transferSeries}
-            // T21 scope: exemption + total-consumed are deferred.
-            // See future-work/estate.md — needs compute-ledger integration.
-            exemption={{}}
-            totalConsumedByThisTrust={{ client: 0, spouse: 0 }}
-            onAdd={(kind) => setOpenModal(kind)}
-            onEdit={() => {
-              // T21 scope: edit mode is a no-op stub. Each modal form needs an
-              // `editing` prop and a PATCH path. Tracked in future-work/estate.md.
-            }}
-            onDelete={async (item) => {
-              const isSeries = "annualAmount" in item;
-              const url = isSeries
-                ? `/api/clients/${clientId}/gifts/series/${item.id}`
-                : `/api/clients/${clientId}/gifts/${item.id}`;
-              await fetch(url, { method: "DELETE" });
-              if (isSeries) {
-                setTransferSeries((prev) => prev.filter((s) => s.id !== item.id));
-              } else {
-                setTransferEvents((prev) => prev.filter((e) => e.id !== item.id));
-              }
-            }}
-          />
+          <>
+            {transferFetchError && (
+              <div role="alert" className="text-xs text-red-400 mb-2">
+                Couldn&apos;t load transfers: {transferFetchError}
+              </div>
+            )}
+            <TransfersTab
+              events={transferEvents}
+              series={transferSeries}
+              // T21 scope: exemption + total-consumed are deferred.
+              // See future-work/estate.md — needs compute-ledger integration.
+              exemption={{}}
+              totalConsumedByThisTrust={{ client: 0, spouse: 0 }}
+              onAdd={(kind) => setOpenModal(kind)}
+              // onEdit intentionally omitted — edit mode not yet implemented.
+              // Each modal form needs an `editing` prop and a PATCH path.
+              // Tracked in future-work/estate.md.
+              onDelete={async (item) => {
+                const isSeries = "annualAmount" in item;
+                const url = isSeries
+                  ? `/api/clients/${clientId}/gifts/series/${item.id}`
+                  : `/api/clients/${clientId}/gifts/${item.id}`;
+                try {
+                  const res = await fetch(url, { method: "DELETE" });
+                  if (!res.ok) {
+                    const j = await res.json().catch(() => ({}));
+                    throw new Error((j as { error?: string }).error ?? `HTTP ${res.status}`);
+                  }
+                  if (isSeries) {
+                    setTransferSeries((prev) => prev.filter((s) => s.id !== item.id));
+                  } else {
+                    setTransferEvents((prev) => prev.filter((e) => e.id !== item.id));
+                  }
+                } catch (err) {
+                  console.error("[transfers-tab] delete failed:", err);
+                  setTransferFetchError(err instanceof Error ? err.message : "Delete failed");
+                }
+              }}
+            />
+          </>
         ) : (
           <p className="text-[13px] text-ink-3 text-center py-6">
             Transfer management is available when editing an existing trust.
@@ -515,11 +550,7 @@ export default function AddTrustForm({
             clientId={clientId}
             trustId={editing.id}
             trustGrantor={(grantor as "client" | "spouse") || "client"}
-            accounts={(accounts ?? []).map((a) => ({
-              id: a.id,
-              name: a.name,
-              isDefaultChecking: a.isDefaultChecking ?? false,
-            }))}
+            accounts={toBasicAccountOptions(accounts ?? [])}
             currentYear={new Date().getFullYear()}
             onClose={() => setOpenModal(null)}
             onSaved={() => {
@@ -541,11 +572,7 @@ export default function AddTrustForm({
             clientId={clientId}
             trustId={editing.id}
             trustGrantor={(grantor as "client" | "spouse") || "client"}
-            accounts={(accounts ?? []).map((a) => ({
-              id: a.id,
-              name: a.name,
-              isDefaultChecking: a.isDefaultChecking ?? false,
-            }))}
+            accounts={toBasicAccountOptions(accounts ?? [])}
             currentYear={new Date().getFullYear()}
             onClose={() => setOpenModal(null)}
             onSaved={() => {
@@ -601,6 +628,8 @@ function toTransferEvents(
   all: GiftRow[],
   trustId: string,
   assetsTabAccounts: AssetsTabAccount[],
+  // liabilities reserved for future display of transferred liability balances
+  _assetsTabLiabilities: AssetsTabLiability[],
 ): TransferEvent[] {
   const forTrust = all.filter((g) => g.recipientEntityId === trustId);
   // Build a map of parentGiftId → child rows (for bundled liabilities)
@@ -723,6 +752,20 @@ function toAssetAccountOptions(
       linkedLiability: undefined,
     };
   });
+}
+
+/**
+ * Minimal account option shape used by TransferCashForm and TransferSeriesForm.
+ * For the richer shape required by TransferAssetForm use toAssetAccountOptions().
+ */
+function toBasicAccountOptions(
+  accounts: AssetsTabAccount[],
+): { id: string; name: string; isDefaultChecking: boolean }[] {
+  return accounts.map((a) => ({
+    id: a.id,
+    name: a.name,
+    isDefaultChecking: a.isDefaultChecking ?? false,
+  }));
 }
 
 // ── Designation helpers ───────────────────────────────────────────────────────

@@ -167,4 +167,20 @@ describe("AddTrustForm — Transfers tab (T21)", () => {
       expect(screen.getByRole("dialog", { name: /recurring gift series/i })).toBeInTheDocument();
     });
   });
+
+  it("shows error banner when the transfers fetch returns 401", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: () => Promise.resolve({ error: "Unauthorized" }),
+    }));
+
+    render(<AddTrustForm {...defaultProps("transfers")} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(/Couldn't load transfers/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/Unauthorized/i);
+  });
 });

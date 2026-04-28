@@ -96,7 +96,8 @@ interface Props {
   exemption: ExemptionDisplay;
   totalConsumedByThisTrust: { client: number; spouse: number };
   onAdd: (kind: "asset" | "cash" | "series") => void;
-  onEdit: (item: TransferEvent | TransferSeries) => void;
+  /** When omitted the Edit affordance is hidden on every row. */
+  onEdit?: (item: TransferEvent | TransferSeries) => void;
   onDelete: (item: TransferEvent | TransferSeries) => void;
 }
 
@@ -245,7 +246,7 @@ function EventRow({
   onDelete,
 }: {
   event: TransferEvent;
-  onEdit: (e: TransferEvent) => void;
+  onEdit?: (e: TransferEvent) => void;
   onDelete: (e: TransferEvent) => void;
 }) {
   switch (event.kind) {
@@ -316,7 +317,7 @@ function SeriesRow({
   onDelete,
 }: {
   series: TransferSeries;
-  onEdit: (s: TransferSeries) => void;
+  onEdit?: (s: TransferSeries) => void;
   onDelete: (s: TransferSeries) => void;
 }) {
   return (
@@ -335,14 +336,16 @@ function SeriesRow({
         {series.useCrummeyPowers && (
           <span className="text-[11px] text-accent font-medium">Crummey powers ✓</span>
         )}
-        <button
-          type="button"
-          aria-label="Edit series"
-          onClick={() => onEdit(series)}
-          className="text-[12px] text-ink-4 hover:text-ink"
-        >
-          Edit
-        </button>
+        {onEdit && (
+          <button
+            type="button"
+            aria-label="Edit series"
+            onClick={() => onEdit(series)}
+            className="text-[12px] text-ink-4 hover:text-ink"
+          >
+            Edit
+          </button>
+        )}
         <button
           type="button"
           aria-label="Delete series"
@@ -362,19 +365,21 @@ function RowActions<T extends TransferEvent | TransferSeries>({
   onDelete,
 }: {
   item: T;
-  onEdit: (item: T) => void;
+  onEdit?: (item: T) => void;
   onDelete: (item: T) => void;
 }) {
   return (
     <>
-      <button
-        type="button"
-        aria-label="Edit"
-        onClick={() => onEdit(item)}
-        className="text-[12px] text-ink-4 hover:text-ink"
-      >
-        Edit
-      </button>
+      {onEdit && (
+        <button
+          type="button"
+          aria-label="Edit"
+          onClick={() => onEdit(item)}
+          className="text-[12px] text-ink-4 hover:text-ink"
+        >
+          Edit
+        </button>
+      )}
       <button
         type="button"
         aria-label="Delete"
@@ -395,7 +400,7 @@ function TransfersList({
 }: {
   events: TransferEvent[];
   series: TransferSeries[];
-  onEdit: (item: TransferEvent | TransferSeries) => void;
+  onEdit?: (item: TransferEvent | TransferSeries) => void;
   onDelete: (item: TransferEvent | TransferSeries) => void;
 }) {
   return (
