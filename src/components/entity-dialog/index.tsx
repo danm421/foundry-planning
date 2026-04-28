@@ -56,7 +56,7 @@ export default function EntityDialog({
     canSubmit: true,
     loading: false,
   });
-  const [trustTab, setTrustTab] = useState<"details" | "assets" | "notes">("details");
+  const [trustTab, setTrustTab] = useState<"details" | "assets" | "transfers" | "notes">("details");
 
   if (!open) return null;
 
@@ -74,13 +74,13 @@ export default function EntityDialog({
       size="md"
       tabs={
         kind === "trust"
-          ? [{ id: "details", label: "Details" }, { id: "assets", label: "Assets" }, { id: "notes", label: "Notes" }]
+          ? [{ id: "details", label: "Details" }, { id: "assets", label: "Assets" }, { id: "transfers", label: "Transfers" }, { id: "notes", label: "Notes" }]
           : undefined
       }
       activeTab={kind === "trust" ? trustTab : undefined}
-      onTabChange={kind === "trust" ? (tab) => setTrustTab(tab as "details" | "assets" | "notes") : undefined}
+      onTabChange={kind === "trust" ? (tab) => setTrustTab(tab as "details" | "assets" | "transfers" | "notes") : undefined}
       primaryAction={
-        kind === "trust" && trustTab === "assets"
+        kind === "trust" && (trustTab === "assets" || trustTab === "transfers")
           ? undefined
           : {
               label: isEdit ? "Save Changes" : kind === "trust" ? "Add Trust" : "Add Business",

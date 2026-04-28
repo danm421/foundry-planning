@@ -12,6 +12,11 @@ import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName
 import AssetsTab, { type AssetsTabAccount, type AssetsTabLiability, type AssetsTabIncome, type AssetsTabExpense, type AssetsTabFamilyMember } from "./assets-tab";
 import { applyAssetTabOp } from "./asset-tab-ops";
 import type { AssetTabOp } from "./asset-tab-ops";
+import TransfersTab, { type TransferEvent, type TransferSeries } from "./transfers-tab";
+import TransferAssetForm, { type AccountOption as AssetAccountOption } from "./transfer-asset-form";
+import TransferCashForm from "./transfer-cash-form";
+import TransferSeriesForm from "./transfer-series-form";
+import DialogShell from "../dialog-shell";
 
 interface AddTrustFormProps {
   clientId: string;
@@ -21,7 +26,7 @@ interface AddTrustFormProps {
   externals: ExternalBeneficiary[];
   entities: { id: string; name: string }[];  // for remainder picker
   initialDesignations?: Designation[];        // pre-loaded for edit mode
-  activeTab: "details" | "assets" | "notes";
+  activeTab: "details" | "assets" | "transfers" | "notes";
   /** Assets tab data — when absent the tab degrades gracefully */
   accounts?: AssetsTabAccount[];
   liabilities?: AssetsTabLiability[];
@@ -100,6 +105,31 @@ export default function AddTrustForm({
 
   const isIrrevocable = trustSubType !== "" && deriveIsIrrevocable(trustSubType);
   const showDistributionAndIncome = isIrrevocable;
+
+  // ── Transfers tab state ────────────────────────────────────────────────────
+  const [openModal, setOpenModal] = useState<"asset" | "cash" | "series" | null>(null);
+  const [transferEvents, setTransferEvents] = useState<TransferEvent[]>([]);
+  const [transferSeries, setTransferSeries] = useState<TransferSeries[]>([]);
+  // refetchTick is bumped after a successful save so the useEffect re-runs.
+  const [refetchTick, setRefetchTick] = useState(0);
+
+  // Self-fetch gifts and gift_series when the Transfers tab is active.
+  // Mirrors the pattern used in beneficiaries-tab.tsx (per-account self-fetch on mount).
+  // Fetches ALL gifts for the client then filters to this trust on the client side.
+  useEffect(() => {
+    if (activeTab !== "transfers" || !editing) return;
+    let alive = true;
+    Promise.all([
+      fetch(`/api/clients/${clientId}/gifts`).then((r) => r.json()),
+      fetch(`/api/clients/${clientId}/gifts/series`).then((r) => r.json()),
+    ]).then(([allGifts, allSeries]: [GiftRow[], GiftSeriesRow[]]) => {
+      if (!alive) return;
+      setTransferEvents(toTransferEvents(allGifts, editing.id, accounts ?? []));
+      setTransferSeries(toTransferSeries(allSeries, editing.id));
+    }).catch(() => { /* fetch errors are silent in the tab; data stays empty */ });
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, editing?.id, clientId, refetchTick]);
 
   // ── Asset tab op handler ───────────────────────────────────────────────────
   const handleAssetTabOp = useCallback(async (op: AssetTabOp) => {
@@ -408,13 +438,294 @@ export default function AddTrustForm({
         )}
       </div>
 
+      <div className={activeTab !== "transfers" ? "hidden" : ""}>
+        {editing ? (
+          <TransfersTab
+            events={transferEvents}
+            series={transferSeries}
+            // T21 scope: exemption + total-consumed are deferred.
+            // See future-work/estate.md — needs compute-ledger integration.
+            exemption={{}}
+            totalConsumedByThisTrust={{ client: 0, spouse: 0 }}
+            onAdd={(kind) => setOpenModal(kind)}
+            onEdit={() => {
+              // T21 scope: edit mode is a no-op stub. Each modal form needs an
+              // `editing` prop and a PATCH path. Tracked in future-work/estate.md.
+            }}
+            onDelete={async (item) => {
+              const isSeries = "annualAmount" in item;
+              const url = isSeries
+                ? `/api/clients/${clientId}/gifts/series/${item.id}`
+                : `/api/clients/${clientId}/gifts/${item.id}`;
+              await fetch(url, { method: "DELETE" });
+              if (isSeries) {
+                setTransferSeries((prev) => prev.filter((s) => s.id !== item.id));
+              } else {
+                setTransferEvents((prev) => prev.filter((e) => e.id !== item.id));
+              }
+            }}
+          />
+        ) : (
+          <p className="text-[13px] text-ink-3 text-center py-6">
+            Transfer management is available when editing an existing trust.
+          </p>
+        )}
+      </div>
+
       <div className={activeTab !== "notes" ? "hidden" : ""}>
         <label className={fieldLabelClassName} htmlFor="trust-notes">Notes</label>
         <textarea id="trust-notes" rows={8} value={notes} onChange={(e) => setNotes(e.target.value)} className={textareaClassName} />
       </div>
+
+      {/* ── Transfer modals ─────────────────────────────────────────────────── */}
+      {editing && openModal === "asset" && (
+        <DialogShell
+          open
+          onOpenChange={() => setOpenModal(null)}
+          title="Asset Transfer"
+          size="md"
+        >
+          <TransferAssetForm
+            clientId={clientId}
+            trustId={editing.id}
+            // T21 scope: trustGrantor defaults to grantor field or "client".
+            // Proper derivation tracked in future-work/estate.md.
+            trustGrantor={(grantor as "client" | "spouse") || "client"}
+            accounts={toAssetAccountOptions(accounts ?? [], editing.id)}
+            currentYear={new Date().getFullYear()}
+            projectionStartYear={new Date().getFullYear()}
+            onClose={() => setOpenModal(null)}
+            onSaved={() => {
+              setOpenModal(null);
+              // Trigger refetch by bumping a version counter
+              setRefetchTick((t) => t + 1);
+            }}
+          />
+        </DialogShell>
+      )}
+
+      {editing && openModal === "cash" && (
+        <DialogShell
+          open
+          onOpenChange={() => setOpenModal(null)}
+          title="Cash Gift"
+          size="md"
+        >
+          <TransferCashForm
+            clientId={clientId}
+            trustId={editing.id}
+            trustGrantor={(grantor as "client" | "spouse") || "client"}
+            accounts={(accounts ?? []).map((a) => ({
+              id: a.id,
+              name: a.name,
+              isDefaultChecking: a.isDefaultChecking ?? false,
+            }))}
+            currentYear={new Date().getFullYear()}
+            onClose={() => setOpenModal(null)}
+            onSaved={() => {
+              setOpenModal(null);
+              setRefetchTick((t) => t + 1);
+            }}
+          />
+        </DialogShell>
+      )}
+
+      {editing && openModal === "series" && (
+        <DialogShell
+          open
+          onOpenChange={() => setOpenModal(null)}
+          title="Recurring Gift Series"
+          size="md"
+        >
+          <TransferSeriesForm
+            clientId={clientId}
+            trustId={editing.id}
+            trustGrantor={(grantor as "client" | "spouse") || "client"}
+            accounts={(accounts ?? []).map((a) => ({
+              id: a.id,
+              name: a.name,
+              isDefaultChecking: a.isDefaultChecking ?? false,
+            }))}
+            currentYear={new Date().getFullYear()}
+            onClose={() => setOpenModal(null)}
+            onSaved={() => {
+              setOpenModal(null);
+              setRefetchTick((t) => t + 1);
+            }}
+          />
+        </DialogShell>
+      )}
     </form>
   );
 }
+
+// ── Raw API row shapes (minimal — only the fields we read) ───────────────────
+
+interface GiftRow {
+  id: string;
+  year: number;
+  amount: string | null;
+  grantor: "client" | "spouse" | "joint";
+  recipientEntityId: string | null;
+  accountId: string | null;
+  liabilityId: string | null;
+  percent: string | null;
+  parentGiftId: string | null;
+  useCrummeyPowers: boolean;
+  notes: string | null;
+}
+
+interface GiftSeriesRow {
+  id: string;
+  grantor: "client" | "spouse" | "joint";
+  recipientEntityId: string;
+  startYear: number;
+  endYear: number;
+  annualAmount: string;
+  inflationAdjust: boolean;
+  useCrummeyPowers: boolean;
+}
+
+// ── Transfer mappers ─────────────────────────────────────────────────────────
+
+/**
+ * Map raw gift rows to TransferEvent discriminated union rows.
+ *
+ * Rules (matching how the API creates gift rows):
+ * - accountId != null && parentGiftId == null  → kind="asset" (main asset row)
+ * - liabilityId != null && parentGiftId != null → skip (auto-bundled child of asset)
+ * - liabilityId != null && parentGiftId == null → kind="liability_only"
+ * - everything else (no accountId, no liabilityId) → kind="cash"
+ */
+function toTransferEvents(
+  all: GiftRow[],
+  trustId: string,
+  assetsTabAccounts: AssetsTabAccount[],
+): TransferEvent[] {
+  const forTrust = all.filter((g) => g.recipientEntityId === trustId);
+  // Build a map of parentGiftId → child rows (for bundled liabilities)
+  const childrenByParent = new Map<string, GiftRow[]>();
+  for (const g of forTrust) {
+    if (g.parentGiftId) {
+      const arr = childrenByParent.get(g.parentGiftId) ?? [];
+      arr.push(g);
+      childrenByParent.set(g.parentGiftId, arr);
+    }
+  }
+
+  const results: TransferEvent[] = [];
+  for (const g of forTrust) {
+    // Skip auto-bundled liability children — they are displayed as sub-rows of asset rows.
+    if (g.liabilityId && g.parentGiftId) continue;
+
+    if (g.accountId && !g.parentGiftId) {
+      // Asset transfer row
+      const account = assetsTabAccounts.find((a) => a.id === g.accountId);
+      const pct = g.percent != null ? Number(g.percent) : 0;
+      // Look for a bundled liability child
+      const bundledChild = childrenByParent.get(g.id)?.[0];
+      const event: TransferEvent = {
+        kind: "asset",
+        id: g.id,
+        year: g.year,
+        accountName: account?.name ?? g.accountId,
+        percent: pct,
+        value: account != null
+          ? account.value * pct
+          : 0,
+        grantor: g.grantor === "joint" ? "client" : g.grantor,
+        bundledLiability: bundledChild
+          ? {
+              name: bundledChild.notes ?? "Linked liability",
+              value: 0, // balance not available in gifts row; display only
+              percent: pct,
+            }
+          : undefined,
+      };
+      results.push(event);
+    } else if (g.liabilityId && !g.parentGiftId) {
+      // Standalone liability-only transfer
+      const pct = g.percent != null ? Number(g.percent) : 0;
+      results.push({
+        kind: "liability_only",
+        id: g.id,
+        year: g.year,
+        liabilityName: g.notes ?? g.liabilityId,
+        percent: pct,
+        value: 0,
+        grantor: g.grantor === "joint" ? "client" : g.grantor,
+      });
+    } else {
+      // Cash gift
+      results.push({
+        kind: "cash",
+        id: g.id,
+        year: g.year,
+        amount: g.amount != null ? Number(g.amount) : 0,
+        grantor: g.grantor === "joint" ? "client" : g.grantor,
+        useCrummeyPowers: g.useCrummeyPowers,
+        notes: g.notes ?? undefined,
+      });
+    }
+  }
+  return results;
+}
+
+/** Map raw gift_series rows for this trust to TransferSeries display shape. */
+function toTransferSeries(all: GiftSeriesRow[], trustId: string): TransferSeries[] {
+  return all
+    .filter((s) => s.recipientEntityId === trustId)
+    .map((s) => ({
+      id: s.id,
+      startYear: s.startYear,
+      endYear: s.endYear,
+      annualAmount: Number(s.annualAmount),
+      inflationAdjust: s.inflationAdjust,
+      useCrummeyPowers: s.useCrummeyPowers,
+      grantor: s.grantor === "joint" ? "client" : s.grantor,
+    }));
+}
+
+/**
+ * Adapt AssetsTabAccount[] to the AccountOption shape expected by TransferAssetForm.
+ * Fields without a direct equivalent are defaulted conservatively.
+ */
+function toAssetAccountOptions(
+  accounts: AssetsTabAccount[],
+  trustId: string,
+): AssetAccountOption[] {
+  return accounts.map((a) => {
+    // Compute trustPercent: fraction of the account currently owned by this trust
+    const trustOwner = a.owners.find(
+      (o) => o.kind === "entity" && o.entityId === trustId
+    );
+    const trustPercent = trustOwner?.percent ?? 0;
+    // Determine if this account is pinned to a different entity (not this trust)
+    const ownedByOtherEntity = a.owners.some(
+      (o) => o.kind === "entity" && o.entityId !== trustId && (o.percent ?? 0) > 0
+    );
+    return {
+      id: a.id,
+      name: a.name,
+      value: a.value,
+      growthRate: 0, // AssetsTabAccount doesn't carry growthRate — transfer form uses it for preview only
+      subType: a.subType ?? "investment",
+      isDefaultChecking: a.isDefaultChecking ?? false,
+      ownerSummary: a.owners
+        .map((o) =>
+          o.kind === "family_member"
+            ? `${o.familyMemberId.slice(0, 6)} ${Math.round((o.percent ?? 0) * 100)}%`
+            : `entity ${Math.round((o.percent ?? 0) * 100)}%`
+        )
+        .join(" / "),
+      trustPercent,
+      ownedByOtherEntity,
+      linkedLiability: undefined,
+    };
+  });
+}
+
+// ── Designation helpers ───────────────────────────────────────────────────────
 
 function designationsToRows(d: Designation[], tier: "income" | "remainder"): BeneficiaryRow[] {
   return d
