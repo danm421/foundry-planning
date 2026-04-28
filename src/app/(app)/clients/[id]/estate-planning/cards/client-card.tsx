@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import MoneyText from "@/components/money-text";
-import type { ClientCardData, AssetRow } from "../lib/derive-card-data";
+import type { ClientCardData } from "../lib/derive-card-data";
+import type { RenderRow } from "../lib/render-rows";
 import type { DragPayload } from "../dnd-context-provider";
-import { useAllocateRequest } from "../dnd-context-provider";
 
 interface Props {
   data: ClientCardData;
@@ -14,7 +14,6 @@ interface Props {
 
 export function ClientCard({ data, defaultExpanded = false }: Props) {
   const [open, setOpen] = useState(defaultExpanded);
-  const total = data.outrightTotal + data.jointHalfTotal;
   const initial = data.name.charAt(0).toUpperCase();
 
   return (
@@ -36,33 +35,32 @@ export function ClientCard({ data, defaultExpanded = false }: Props) {
           <span className="text-xs text-[var(--color-ink-3)]">{data.ageDescriptor}</span>
         </div>
         <div className="ml-auto flex flex-col items-end">
-          <MoneyText value={total} className="text-[15px] font-semibold tabular-nums" />
-          <span className="text-[10.5px] text-[var(--color-ink-3)]">solo + ½ joint</span>
+          <MoneyText value={data.total} className="text-[15px] font-semibold tabular-nums" />
         </div>
         <span aria-hidden className={`ml-2 transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
       </button>
 
       {open && (
         <div className="bg-[var(--color-card-2)] px-5 py-3">
-          {data.outrightAssets.length > 0 && (
-            <Section
-              title="Owned outright"
-              assets={data.outrightAssets}
-              kind="outright"
-              ownerKey={data.ownerKey}
-            />
-          )}
-          {data.jointAssets.length > 0 && (
-            <Section
-              title="Jointly held"
-              assets={data.jointAssets}
-              kind="joint-locked"
-              ownerKey={data.ownerKey}
-            />
+          {data.rows.length === 0 ? (
+            <div className="rounded-md border border-dashed border-[var(--color-hair-2)] px-3 py-3 text-center text-xs text-[var(--color-ink-3)]">
+              No assets
+            </div>
+          ) : (
+            <ul className="flex flex-col">
+              {data.rows.map((row) => (
+                <DraggableRow
+                  key={`${row.accountId}-${data.familyMemberId}`}
+                  row={row}
+                  ownerName={data.name}
+                  ownerKey={data.ownerKey}
+                />
+              ))}
+            </ul>
           )}
           <div className="mt-3 flex justify-between text-xs text-[var(--color-ink-3)]">
-            <span>{data.outrightAssets.length + data.jointAssets.length} assets</span>
-            <MoneyText value={total} className="tabular-nums" />
+            <span>{data.rows.length} asset{data.rows.length === 1 ? "" : "s"}</span>
+            <MoneyText value={data.total} className="tabular-nums" />
           </div>
         </div>
       )}
@@ -70,84 +68,30 @@ export function ClientCard({ data, defaultExpanded = false }: Props) {
   );
 }
 
-function Section({
-  title,
-  assets,
-  kind,
+function DraggableRow({
+  row,
+  ownerName,
   ownerKey,
 }: {
-  title: string;
-  assets: AssetRow[];
-  kind: "outright" | "joint-locked";
-  ownerKey: ClientCardData["ownerKey"];
+  row: RenderRow;
+  ownerName: string;
+  ownerKey: "client" | "spouse";
 }) {
-  return (
-    <div className="mt-2 first:mt-0">
-      <div className="flex items-center gap-2 text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-ink-3)]">
-        <span>{title}</span>
-        <span className="h-px flex-1 bg-[var(--color-hair)]" />
-      </div>
-      <ul className="mt-1.5 flex flex-col">
-        {assets.map((a) =>
-          kind === "outright" ? (
-            <DraggableRow key={a.id} asset={a} ownerKey={ownerKey} />
-          ) : (
-            <JointLockedRow key={a.id} asset={a} />
-          ),
-        )}
-      </ul>
-    </div>
-  );
-}
-
-function JointLockedRow({ asset }: { asset: AssetRow }) {
-  const { onAllocateRequest } = useAllocateRequest();
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={(e) =>
-          onAllocateRequest({
-            accountId: asset.id,
-            assetName: asset.name,
-            totalValue: asset.value,
-            anchor: { clientX: e.clientX, clientY: e.clientY },
-          })
-        }
-        data-row-kind="joint-locked"
-        className="flex w-full items-center gap-2 py-1.5 text-[12px] opacity-[0.72] hover:opacity-100"
-      >
-        <span className="h-1.5 w-1.5 shrink-0 bg-[var(--color-cat-portfolio)]" aria-hidden />
-        <span className="truncate text-[var(--color-ink-2)]">{asset.name}</span>
-        {asset.tag && (
-          <span className="rounded-sm bg-[var(--color-card)] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-[var(--color-ink-3)]">
-            {asset.tag}
-          </span>
-        )}
-        <span aria-hidden className="text-[var(--color-ink-3)]" title="Click to allocate before moving">
-          ⇋
-        </span>
-        <MoneyText value={asset.value} className="ml-auto tabular-nums text-[var(--color-ink)]" />
-      </button>
-    </li>
-  );
-}
-
-function DraggableRow({ asset, ownerKey }: { asset: AssetRow; ownerKey: "client" | "spouse" }) {
   const payload: DragPayload = {
-    assetId: asset.id,
-    assetName: asset.name,
-    assetValue: asset.value,
+    assetId: row.accountId,
+    assetName: row.accountName,
+    assetValue: row.sliceValue,
     ownerKey,
   };
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `asset:${asset.id}`,
+    id: `asset:${row.accountId}`,
     data: payload,
   });
+
   return (
     <li
       ref={setNodeRef}
-      data-row-kind="outright"
+      data-row
       {...attributes}
       {...listeners}
       className={`flex items-center gap-2 py-1.5 text-[12px] cursor-grab select-none hover:text-[var(--color-ink)] ${
@@ -155,13 +99,27 @@ function DraggableRow({ asset, ownerKey }: { asset: AssetRow; ownerKey: "client"
       }`}
     >
       <span className="h-1.5 w-1.5 shrink-0 bg-[var(--color-cat-portfolio)]" aria-hidden />
-      <span className="truncate text-[var(--color-ink-2)]">{asset.name}</span>
-      {asset.tag && (
-        <span className="rounded-sm bg-[var(--color-card)] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-[var(--color-ink-3)]">
-          {asset.tag}
-        </span>
-      )}
-      <MoneyText value={asset.value} className="ml-auto tabular-nums text-[var(--color-ink)]" />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-[var(--color-ink-2)]">{row.accountName}</span>
+          {row.hasMultipleOwners && (
+            <span className="rounded-sm bg-[var(--color-accent)]/15 px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-accent-ink)] whitespace-nowrap">
+              {ownerName} {Math.round(row.ownerPercent * 100)}%
+            </span>
+          )}
+          {row.taxTag && (
+            <span className="rounded-sm bg-[var(--color-card)] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-[var(--color-ink-3)]">
+              {row.taxTag}
+            </span>
+          )}
+        </div>
+        {row.hasMultipleOwners && row.coOwners.length > 0 && (
+          <div data-sub-line className="text-[10px] text-[var(--color-ink-3)] mt-0.5">
+            {row.coOwners.map((c) => `${c.label} ${Math.round(c.percent * 100)}%`).join(" · ")}
+          </div>
+        )}
+      </div>
+      <MoneyText value={row.sliceValue} className="ml-auto tabular-nums text-[var(--color-ink)]" />
     </li>
   );
 }
