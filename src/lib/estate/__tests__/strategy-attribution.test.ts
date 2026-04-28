@@ -140,3 +140,36 @@ describe("computeProcrastinationCardData", () => {
     expect(card.narrative).toMatch(/cost of procrastination/i);
   });
 });
+
+describe("strategy-attribution — edge cases", () => {
+  it("0 irrevocable trusts → empty ranking", () => {
+    const tree = {
+      entities: [
+        { id: "rev-1", name: "Revocable", entityType: "trust", isIrrevocable: false },
+      ],
+      accounts: [],
+      gifts: [],
+    } as unknown as ClientData;
+    const withResult = [] as unknown as ProjectionYear[];
+    expect(rankTrustsByContribution(tree, withResult)).toEqual([]);
+  });
+
+  it("1 trust → single-element ranking", () => {
+    const { tree, withResult } = fixture();
+    tree.entities = tree.entities!.filter((e) => e.id === SLAT_ID);
+    tree.accounts = tree.accounts.filter((a) =>
+      a.owners.some((o) => o.kind === "entity" && o.entityId === SLAT_ID),
+    );
+    const ranked = rankTrustsByContribution(tree, withResult);
+    expect(ranked.length).toBe(1);
+    expect(ranked[0].trustId).toBe(SLAT_ID);
+  });
+
+  it("N trusts → top entries first (monotonic descent)", () => {
+    const { tree, withResult } = fixture();
+    const ranked = rankTrustsByContribution(tree, withResult);
+    for (let i = 1; i < ranked.length; i++) {
+      expect(ranked[i - 1].primaryAmount).toBeGreaterThanOrEqual(ranked[i].primaryAmount);
+    }
+  });
+});
