@@ -9,6 +9,7 @@ import {
 } from "@/lib/estate/strategy-attribution";
 import { CanvasFrame } from "./canvas-frame";
 import { CanvasDndProvider } from "./dnd-context-provider";
+import { ProjectionPanel } from "./projection/projection-panel";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -42,11 +43,6 @@ export default async function EstatePlanningPage({ params }: PageProps) {
       ? runProjectionWithEvents(synthesizeDelayedTopGift(tree, 10))
       : null;
 
-  // withoutResult + procrastinatedResult will be threaded into <ProjectionPanel />
-  // in Task 24; computing them here surfaces any compute errors at page render.
-  void withoutResult;
-  void procrastinatedResult;
-
   const clientFirstName = tree.client.firstName;
   // spouseName from ClientInfo is the full spouse name; use it as the display name
   const spouseFirstName = tree.client.spouseName ?? null;
@@ -59,6 +55,13 @@ export default async function EstatePlanningPage({ params }: PageProps) {
       tree={tree}
     >
       <CanvasFrame tree={tree} withResult={withResult} />
+      <ProjectionPanel
+        tree={tree}
+        withResult={withResult}
+        withoutResult={withoutResult}
+        procrastinatedResult={procrastinatedResult}
+        clientId={clientId}
+      />
     </CanvasDndProvider>
   );
 }
