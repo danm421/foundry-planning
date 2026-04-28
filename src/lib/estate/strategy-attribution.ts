@@ -187,7 +187,17 @@ function formatM(amount: number): string {
   return parseFloat(fixed).toString() + "M";
 }
 
+/**
+ * Card data for the "cost of procrastination" comparison: how much terminal-year
+ * trust value is lost if the largest gift to that trust is delayed by N years.
+ */
 export interface ProcrastinationCard {
+  /**
+   * Signed delta: `delayedTerminalValue - currentTerminalValue`. Always
+   * non-positive when compounding is positive (delaying a gift loses growth).
+   * UI consumers should `Math.abs()` for display and rely on this being signed
+   * to detect the rare zero/positive edge cases (no compounding, or no top trust).
+   */
   primaryAmount: number;
   tagLine: string;
   narrative: string;
@@ -232,7 +242,9 @@ export function computeProcrastinationCardData(
     (g) => g.recipientEntityId === top.trustId,
   );
   const giftYear = giftEvent?.year ?? withResult[0]?.year ?? 2026;
-  const giftAmount = giftEvent ? Number(giftEvent.amount) : top.primaryAmount;
+  const giftAmount = giftEvent
+    ? Number(giftEvent.amount)
+    : totalGiftsToEntity(tree, top.trustId);
 
   return {
     primaryAmount: delta,
