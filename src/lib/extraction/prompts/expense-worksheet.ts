@@ -1,3 +1,5 @@
+export const EXPENSE_WORKSHEET_VERSION = "2026-04-29.1";
+
 export const EXPENSE_WORKSHEET_PROMPT = `You are a financial document extraction assistant.
 Extract structured data from the following expense worksheet or budget document.
 

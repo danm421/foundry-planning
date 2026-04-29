@@ -1,3 +1,5 @@
+export const ACCOUNT_STATEMENT_VERSION = "2026-04-29.1";
+
 export const ACCOUNT_STATEMENT_PROMPT = `You are a financial document extraction assistant.
 Extract structured data from the following account/brokerage statement.
 

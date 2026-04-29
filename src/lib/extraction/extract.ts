@@ -6,11 +6,18 @@ import { extractExcelText } from "./excel-parser";
 import { classifyDocument } from "./classify";
 import type { UploadKind } from "./validate-upload";
 import { extractedPayloadSchema } from "./extraction-schema";
-import { ACCOUNT_STATEMENT_PROMPT } from "./prompts/account-statement";
-import { PAY_STUB_PROMPT } from "./prompts/pay-stub";
-import { INSURANCE_PROMPT } from "./prompts/insurance";
-import { EXPENSE_WORKSHEET_PROMPT } from "./prompts/expense-worksheet";
-import { TAX_RETURN_PROMPT } from "./prompts/tax-return";
+import {
+    ACCOUNT_STATEMENT_PROMPT,
+    ACCOUNT_STATEMENT_VERSION,
+} from "./prompts/account-statement";
+import { PAY_STUB_PROMPT, PAY_STUB_VERSION } from "./prompts/pay-stub";
+import { INSURANCE_PROMPT, INSURANCE_VERSION } from "./prompts/insurance";
+import {
+    EXPENSE_WORKSHEET_PROMPT,
+    EXPENSE_WORKSHEET_VERSION,
+} from "./prompts/expense-worksheet";
+import { TAX_RETURN_PROMPT, TAX_RETURN_VERSION } from "./prompts/tax-return";
+import { FACT_FINDER_CLASSIFIER_VERSION } from "./prompts/fact-finder-classifier";
 import { redactSsns } from "./redact-ssn";
 import { extractWithMultiPass, type MultiPassResult } from "./multi-pass";
 
@@ -24,6 +31,20 @@ const PROMPTS: Record<DocumentType, string> = {
     // Fact-finder routes through multi-pass; this is a single-pass fallback.
     fact_finder: ACCOUNT_STATEMENT_PROMPT,
 };
+
+const PROMPT_VERSIONS: Record<DocumentType, string> = {
+    account_statement: ACCOUNT_STATEMENT_VERSION,
+    pay_stub: PAY_STUB_VERSION,
+    insurance: INSURANCE_VERSION,
+    expense_worksheet: EXPENSE_WORKSHEET_VERSION,
+    tax_return: TAX_RETURN_VERSION,
+    excel_import: ACCOUNT_STATEMENT_VERSION,
+    fact_finder: ACCOUNT_STATEMENT_VERSION,
+};
+
+function promptVersionFor(documentType: DocumentType): string {
+    return `${documentType}:${PROMPT_VERSIONS[documentType]}`;
+}
 
 function emptyExtracted(): ExtractionResult["extracted"] {
     return { accounts: [], incomes: [], expenses: [], liabilities: [], entities: [] };
@@ -110,11 +131,14 @@ export async function extractDocument(
         warnings.push(
             "Very little text could be extracted from this document. It may be a scanned image — try uploading a text-based PDF."
         );
+        const fallbackType: DocumentType =
+            documentType === "auto" ? "account_statement" : documentType;
         return {
-            documentType: documentType === "auto" ? "account_statement" : documentType,
+            documentType: fallbackType,
             fileName,
             extracted: { accounts: [], incomes: [], expenses: [], liabilities: [], entities: [] },
             warnings,
+            promptVersion: promptVersionFor(fallbackType),
         };
     }
 
@@ -152,7 +176,13 @@ export async function extractDocument(
         if (multi) {
             const extracted = flattenMultiPass(multi);
             warnings.push(...multi.warnings);
-            return { documentType, fileName, extracted, warnings };
+            return {
+                documentType,
+                fileName,
+                extracted,
+                warnings,
+                promptVersion: `multi-pass:${FACT_FINDER_CLASSIFIER_VERSION}`,
+            };
         }
         warnings.push(
             "Could not classify the fact-finder document — falling back to single-pass extraction."
@@ -223,5 +253,11 @@ export async function extractDocument(
         warnings.push("No data could be extracted from this document. Try a different document type or the Detailed model.");
     }
 
-    return { documentType, fileName, extracted, warnings };
+    return {
+        documentType,
+        fileName,
+        extracted,
+        warnings,
+        promptVersion: promptVersionFor(documentType),
+    };
 }

@@ -1,3 +1,5 @@
+export const TAX_RETURN_VERSION = "2026-04-29.1";
+
 export const TAX_RETURN_PROMPT = `You are a financial document extraction assistant.
 Extract structured data from the following tax return (1040, K-1, or related schedules).
 

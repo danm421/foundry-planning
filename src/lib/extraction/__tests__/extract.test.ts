@@ -89,6 +89,17 @@ describe("extractDocument", () => {
         expect(result.warnings.some((w) => w.toLowerCase().includes("ssn"))).toBe(true);
     });
 
+    it("returns the prompt version used for the extraction", async () => {
+        const result = await extractDocument(
+            Buffer.from("fake pdf"),
+            "statement.pdf",
+            "account_statement",
+            "mini"
+        );
+        expect(typeof result.promptVersion).toBe("string");
+        expect(result.promptVersion).toMatch(/^account_statement:/);
+    });
+
     it("does not add SSN warning when no SSN is present", async () => {
         mockedPdf.mockResolvedValueOnce(
             "Account Statement\nSchwab Brokerage\nMarket Value: $150,000"

@@ -1,3 +1,5 @@
+export const INSURANCE_VERSION = "2026-04-29.1";
+
 export const INSURANCE_PROMPT = `You are a financial document extraction assistant.
 Extract structured data from the following insurance policy document.
 

@@ -128,6 +128,7 @@ export interface ExtractionResult {
     entities: ExtractedEntity[];
   };
   warnings: string[];
+  promptVersion: string;
 }
 
 export interface ExtractionRequest {
