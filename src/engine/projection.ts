@@ -93,13 +93,12 @@ function legacyTaxType(
   }
 }
 
-// Tax-efficiency ranking applied when the user hasn't configured a withdrawal strategy.
-// Lower number = tapped first. Household checking is excluded because it's the target
-// account, not a source. Real estate / business / life-insurance accounts are skipped
-// (they can't be liquidated cleanly).
-function defaultWithdrawalPriorityFor(acct: Account): number | null {
-  if (controllingEntity(acct) != null) return null;
-  if (acct.isDefaultChecking) return null;
+// Tax-efficiency ranking by category alone — Cash → Taxable → Tax-Deferred → Roth.
+// Returns null for categories that can't be cleanly liquidated at year boundaries
+// (real estate, business, life insurance). Shared by household and entity-scoped
+// withdrawal strategies; callers layer on their own ownership / default-checking
+// exclusions before consulting it.
+function categoryWithdrawalPriority(acct: Account): number | null {
   if (acct.category === "cash") return 1;
   if (acct.category === "taxable") return 2;
   if (acct.category === "retirement") {
@@ -110,37 +109,31 @@ function defaultWithdrawalPriorityFor(acct: Account): number | null {
   return null;
 }
 
-// Categories that step 12c (entity gap-fill) cannot liquidate to cover an
-// entity's checking shortfall. Mirrors the household withdrawal-priority
-// exclusion: real estate, businesses, and life insurance can't be sold cleanly
-// at year boundaries.
-const UNTAPPABLE_ENTITY_CATEGORIES = new Set<Account["category"]>([
-  "real_estate",
-  "business",
-  "life_insurance",
-]);
+// Tax-efficiency ranking applied when the user hasn't configured a withdrawal
+// strategy. Household checking is excluded because it's the target account,
+// not a source. Entity-owned accounts are excluded because they sit under
+// step 12c's per-entity gap-fill, not the household pool.
+function defaultWithdrawalPriorityFor(acct: Account): number | null {
+  if (controllingEntity(acct) != null) return null;
+  if (acct.isDefaultChecking) return null;
+  return categoryWithdrawalPriority(acct);
+}
 
 // Mirror of `buildDefaultWithdrawalStrategy` scoped to a single entity. Used by
 // step 12c to build a per-entity liquidation order when the entity's checking
-// goes negative. Excludes the entity's own default-checking and untappable
-// categories.
+// goes negative. Excludes the entity's own default-checking and the untappable
+// categories baked into `categoryWithdrawalPriority`.
 function buildEntityWithdrawalStrategy(
   entityId: string,
   accounts: Account[],
   planSettings: PlanSettings,
 ): WithdrawalPriority[] {
   const strategy: WithdrawalPriority[] = [];
+  const valueById = new Map(accounts.map((a) => [a.id, a.value ?? 0]));
   for (const acct of accounts) {
     if (controllingEntity(acct) !== entityId) continue;
     if (acct.isDefaultChecking) continue;
-    if (UNTAPPABLE_ENTITY_CATEGORIES.has(acct.category)) continue;
-    let priority: number | null = null;
-    if (acct.category === "cash") priority = 1;
-    else if (acct.category === "taxable") priority = 2;
-    else if (acct.category === "retirement") {
-      if (acct.subType === "roth_ira" || acct.subType === "roth_401k") priority = 4;
-      else priority = 3;
-    }
+    const priority = categoryWithdrawalPriority(acct);
     if (priority == null) continue;
     strategy.push({
       accountId: acct.id,
@@ -152,9 +145,7 @@ function buildEntityWithdrawalStrategy(
   // Largest balance first within a tier — same heuristic the household default uses.
   strategy.sort((a, b) => {
     if (a.priorityOrder !== b.priorityOrder) return a.priorityOrder - b.priorityOrder;
-    const va = accounts.find((x) => x.id === a.accountId)?.value ?? 0;
-    const vb = accounts.find((x) => x.id === b.accountId)?.value ?? 0;
-    return vb - va;
+    return (valueById.get(b.accountId) ?? 0) - (valueById.get(a.accountId) ?? 0);
   });
   return strategy;
 }
@@ -535,15 +526,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // 1040 cap-gains; non-grantor → trust-tax pass via assetTransactionGains.
     let grantorCarryInCapGains = 0;
     const nonGrantorCarryInGains: AssetTransactionGain[] = [];
-    if (deferredEntityLiquidationGains.length > 0) {
-      const drained = deferredEntityLiquidationGains.splice(0);
-      for (const g of drained) {
-        if (g.gain <= 0) continue;
-        if (isGrantorEntity(g.entityId)) {
-          grantorCarryInCapGains += g.gain;
-        } else {
-          nonGrantorCarryInGains.push({ ownerEntityId: g.entityId, gain: g.gain });
-        }
+    for (const g of deferredEntityLiquidationGains.splice(0)) {
+      if (g.gain <= 0) continue;
+      if (isGrantorEntity(g.entityId)) {
+        grantorCarryInCapGains += g.gain;
+      } else {
+        nonGrantorCarryInGains.push({ ownerEntityId: g.entityId, gain: g.gain });
       }
     }
 
@@ -2131,14 +2119,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const shortfall = -balance;
 
       // Per-entity balance pool: 100% entity-owned accounts only (controllingEntity
-      // returns the lone entity owner when share is exactly 100%). The entity's
-      // own checking is excluded — it's the target, not a source.
+      // returns the lone entity owner when share is exactly 100%). Excludes the
+      // entity's own checking (target, not source) and untappable categories
+      // (categoryWithdrawalPriority returns null for real-estate, business,
+      // life-insurance — they can't be liquidated cleanly at year boundaries).
       const entityBalances: Record<string, number> = {};
+      const liquidatableAcctById = new Map<string, Account>();
       for (const acct of workingAccounts) {
         if (controllingEntity(acct) !== entityId) continue;
         if (acct.id === checkingId) continue;
-        if (UNTAPPABLE_ENTITY_CATEGORIES.has(acct.category)) continue;
+        if (categoryWithdrawalPriority(acct) == null) continue;
         entityBalances[acct.id] = accountBalances[acct.id] ?? 0;
+        liquidatableAcctById.set(acct.id, acct);
       }
 
       const entityStrategy = buildEntityWithdrawalStrategy(
@@ -2191,7 +2183,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // Routing (grantor → household 1040 vs non-grantor → trust 1041)
         // happens at drain time in next year's loop iteration so a grantor
         // flip in the intervening year is honored.
-        const acct = workingAccounts.find((a) => a.id === acctId);
+        const acct = liquidatableAcctById.get(acctId);
         if (acct?.category === "taxable" && preBalance > 0) {
           const acctBasis = basisMap[acctId] ?? preBalance;
           const fraction = Math.min(1, amount / preBalance);
