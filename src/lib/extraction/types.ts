@@ -5,6 +5,7 @@ export const DOCUMENT_TYPES = [
   "expense_worksheet",
   "tax_return",
   "excel_import",
+  "fact_finder",
 ] as const;
 
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
@@ -16,6 +17,7 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   expense_worksheet: "Expense Worksheet",
   tax_return: "Tax Return",
   excel_import: "Excel Import",
+  fact_finder: "Fact Finder",
 };
 
 export type AccountCategory =

@@ -1,7 +1,7 @@
 import type { DocumentType, ExtractionResult } from "./types";
 import { callAIExtraction } from "./azure-client";
 import { parseAIResponse } from "./parse-response";
-import { extractPdfText } from "./pdf-parser";
+import { extractPdfText, extractPdfPages } from "./pdf-parser";
 import { extractExcelText } from "./excel-parser";
 import { classifyDocument } from "./classify";
 import type { UploadKind } from "./validate-upload";
@@ -12,6 +12,7 @@ import { INSURANCE_PROMPT } from "./prompts/insurance";
 import { EXPENSE_WORKSHEET_PROMPT } from "./prompts/expense-worksheet";
 import { TAX_RETURN_PROMPT } from "./prompts/tax-return";
 import { redactSsns } from "./redact-ssn";
+import { extractWithMultiPass, type MultiPassResult } from "./multi-pass";
 
 const PROMPTS: Record<DocumentType, string> = {
     account_statement: ACCOUNT_STATEMENT_PROMPT,
@@ -20,7 +21,38 @@ const PROMPTS: Record<DocumentType, string> = {
     expense_worksheet: EXPENSE_WORKSHEET_PROMPT,
     tax_return: TAX_RETURN_PROMPT,
     excel_import: ACCOUNT_STATEMENT_PROMPT,
+    // Fact-finder routes through multi-pass; this is a single-pass fallback.
+    fact_finder: ACCOUNT_STATEMENT_PROMPT,
 };
+
+function emptyExtracted(): ExtractionResult["extracted"] {
+    return { accounts: [], incomes: [], expenses: [], liabilities: [], entities: [] };
+}
+
+/**
+ * Flatten a multi-pass section result into the existing ExtractionResult
+ * shape. Only sections that map cleanly to the v1 schema are kept;
+ * family / wills / insurance flow through Phase 4 once the schema is
+ * extended. Insurance policy rows arrive on the `insurance` section but
+ * shape-match v1 accounts, so they fold into accounts here.
+ */
+function flattenMultiPass(
+    result: MultiPassResult
+): ExtractionResult["extracted"] {
+    const out = emptyExtracted();
+    const merge = (target: keyof ReturnType<typeof emptyExtracted>, rows: unknown[]) => {
+        for (const row of rows) {
+            (out[target] as unknown[]).push(row);
+        }
+    };
+    merge("accounts", result.sections.accounts);
+    merge("accounts", result.sections.insurance);
+    merge("incomes", result.sections.incomes);
+    merge("expenses", result.sections.expenses);
+    merge("liabilities", result.sections.liabilities);
+    merge("entities", result.sections.entities);
+    return out;
+}
 
 function getFileExtension(fileName: string): string {
     return fileName.split(".").pop()?.toLowerCase() ?? "";
@@ -53,14 +85,19 @@ export async function extractDocument(
         uploadKind ??
         (ext === "csv" ? "csv" : ["xlsx", "xls"].includes(ext) ? "xlsx" : "pdf");
 
-    // 1. Parse file to text
+    // 1. Parse file to text. Fact-finder PDFs go through page-level
+    // extraction so the multi-pass orchestrator can target page ranges.
     let text: string;
+    let pdfPages: string[] | null = null;
     if (kind === "csv") {
         text = fileBuffer.toString("utf-8");
         if (documentType === "auto") documentType = "excel_import";
     } else if (kind === "xlsx") {
         text = await extractExcelText(fileBuffer);
         if (documentType === "auto") documentType = "excel_import";
+    } else if (documentType === "fact_finder") {
+        pdfPages = await extractPdfPages(fileBuffer);
+        text = pdfPages.join("\n");
     } else {
         text = await extractPdfText(fileBuffer);
     }
@@ -98,13 +135,38 @@ export async function extractDocument(
     }
     text = redacted.text;
 
-    // 4. Truncate very long documents
+    // 4. Multi-pass route for fact-finder documents.
+    if (documentType === "fact_finder" && pdfPages && pdfPages.length > 0) {
+        const redactedPages = pdfPages.map((p) => redactSsns(p).text);
+        const anchors =
+            redactedPages.slice(0, 3).join("\n") +
+            "\n...\n" +
+            redactedPages.slice(-1).join("\n");
+        const outline = ""; // pdf-parser doesn't yet surface the outline; ok for now
+        const multi = await extractWithMultiPass({
+            pages: redactedPages,
+            outline,
+            anchors,
+            model,
+        });
+        if (multi) {
+            const extracted = flattenMultiPass(multi);
+            warnings.push(...multi.warnings);
+            return { documentType, fileName, extracted, warnings };
+        }
+        warnings.push(
+            "Could not classify the fact-finder document — falling back to single-pass extraction."
+        );
+        // fall through to single-pass below
+    }
+
+    // 5. Truncate very long documents
     if (text.length > 100000) {
         text = text.slice(0, 100000) + "\n... [truncated]";
         warnings.push("Document was very long and was truncated. Some data at the end may be missing.");
     }
 
-    // 5. Call AI. We wrap the document text in delimiter tags and tell
+    // 6. Call AI. We wrap the document text in delimiter tags and tell
      // the model, via the system prompt wrapper, to treat anything
      // inside as data — never as further instructions. This is a
      // defense-in-depth measure against prompt-injection attacks
@@ -123,7 +185,7 @@ export async function extractDocument(
     const raw = await callAIExtraction(prompt, safeUser, model);
     console.log(`[extract] ${logName}: AI returned ${raw.length} chars`);
 
-    // 6. Parse response and validate against strict schema. Unknown
+    // 7. Parse response and validate against strict schema. Unknown
      // shapes are rejected up-front so a compromised or hallucinated
      // response can't smuggle unexpected top-level fields through.
     const parsed = parseAIResponse(raw);

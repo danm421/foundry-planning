@@ -59,3 +59,51 @@ export async function extractPdfText(
     return "";
   }
 }
+
+/**
+ * Extract page-level text from a PDF buffer. Returns one string per page,
+ * 0-indexed, capped at MAX_PAGES. Used by the multi-pass fact-finder
+ * pipeline so the section classifier can target specific page ranges.
+ */
+export async function extractPdfPages(
+  buffer: Buffer,
+  opts: { timeoutMs?: number } = {}
+): Promise<string[]> {
+  if (buffer.length === 0) return [];
+
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+  try {
+    const { getDocumentProxy, extractText } = await import("unpdf");
+    const data = new Uint8Array(buffer);
+
+    const extractionPromise = (async () => {
+      const pdf = await getDocumentProxy(data);
+      const pageCount = pdf.numPages;
+      const result = await extractText(pdf, { mergePages: false });
+      const pages = Array.isArray(result.text) ? result.text : [result.text];
+      if (pageCount > MAX_PAGES) {
+        console.warn(
+          `[pdf-parser] document has ${pageCount} pages, truncating to ${MAX_PAGES}`
+        );
+        return pages.slice(0, MAX_PAGES);
+      }
+      return pages;
+    })();
+
+    return await Promise.race<string[]>([
+      extractionPromise,
+      new Promise<string[]>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("PDF extraction timed out")),
+          timeoutMs
+        )
+      ),
+    ]);
+  } catch (err) {
+    const msg =
+      err instanceof Error ? err.message.slice(0, 200) : "unknown pdf error";
+    console.error("[pdf-parser] Failed to extract pages:", msg);
+    return [];
+  }
+}
