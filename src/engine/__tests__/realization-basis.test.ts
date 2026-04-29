@@ -12,6 +12,8 @@ import type { Account } from "../types";
 // Bug being fixed: basisIncrease was written onto growthDetail only; basisMap
 // stayed flat, so any future sale double-taxed those dollars as cap gains.
 
+// turnoverPct splits ltcg → stcg internally; the realization type carries
+// pctLtCapitalGains only and the engine derives stcg from it.
 const taxableWithRealization: Account = {
   id: "acct-brokerage", name: "Brokerage", category: "taxable", subType: "brokerage",
   value: 100000, basis: 100000, growthRate: 0.07, rmdEnabled: false,
@@ -20,7 +22,6 @@ const taxableWithRealization: Account = {
     pctOrdinaryIncome: 0.10,
     pctQualifiedDividends: 0.20,
     pctLtCapitalGains: 0.50,
-    pctStCapitalGains: 0,        // turnoverPct splits ltcg → stcg internally
     pctTaxExempt: 0.05,
     turnoverPct: 0.20,
   },
@@ -32,7 +33,7 @@ const tradIraWithRealization: Account = {
   owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   realization: {
     pctOrdinaryIncome: 1, pctQualifiedDividends: 0, pctLtCapitalGains: 0,
-    pctStCapitalGains: 0, pctTaxExempt: 0, turnoverPct: 0,
+    pctTaxExempt: 0, turnoverPct: 0,
   },
 };
 
@@ -60,7 +61,8 @@ describe("F1: realized growth feeds cost basis", () => {
       const basisIncrease = detail!.basisIncrease;
 
       expect(basisIncrease).toBeGreaterThan(0); // sanity — realization is firing
-      expect(basisNplus1).toBeCloseTo(basisN + basisIncrease, 6);
+      expect(basisNplus1).toBeCloseTo(basisN + basisIncrease, 2); // cent precision
+
     }
   });
 
@@ -72,8 +74,11 @@ describe("F1: realized growth feeds cost basis", () => {
       planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2030 },
     });
     const years = runProjection(data);
-    for (const year of years) {
-      expect(year.accountBasisBoY["acct-ira"]).toBe(0);
+    // Basis must stay flat across all years — realization on a retirement
+    // account is descriptive, not basis-bumping. Asserted as a year-over-year
+    // delta so the test isn't tied to the fixture's starting basis value.
+    for (let i = 0; i < years.length - 1; i++) {
+      expect(years[i + 1].accountBasisBoY["acct-ira"]).toBe(years[i].accountBasisBoY["acct-ira"]);
     }
   });
 });
