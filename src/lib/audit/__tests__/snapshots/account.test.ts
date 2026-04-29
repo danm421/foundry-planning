@@ -34,6 +34,8 @@ const baseRow: typeof accounts.$inferSelect = {
   annualPropertyTax: "0",
   propertyTaxGrowthRate: "0.03",
   source: "manual",
+  accountNumberLast4: null,
+  custodian: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
