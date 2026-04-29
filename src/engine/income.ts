@@ -108,7 +108,7 @@ export function computeIncome(
 
     let amount: number;
     if (inc.scheduleOverrides) {
-      amount = inc.scheduleOverrides.get(year) ?? 0;
+      amount = inc.scheduleOverrides[year] ?? 0;
     } else {
       // Inflation compounds from `inflationStartYear` when set (today's-dollars
       // semantics), otherwise from the entry's own start year.

@@ -1420,7 +1420,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const resolvedByRuleId: Record<string, number> = {};
     for (const rule of data.savingsRules) {
       if (year < rule.startYear || year > rule.endYear) continue;
-      const override = rule.scheduleOverrides?.get(year);
+      const override = rule.scheduleOverrides?.[year];
       if (override != null) {
         resolvedByRuleId[rule.id] = override;
         continue;
@@ -1639,7 +1639,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (inc.ownerEntityId != null && !isGrantorEntity(inc.ownerEntityId)) continue;
       let amount: number;
       if (inc.scheduleOverrides) {
-        amount = inc.scheduleOverrides.get(year) ?? 0;
+        amount = inc.scheduleOverrides[year] ?? 0;
       } else {
         const inflateFrom = inc.inflationStartYear ?? inc.startYear;
         amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);

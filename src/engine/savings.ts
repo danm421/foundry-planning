@@ -76,7 +76,7 @@ export function applySavingsRules(
       overridden != null
         ? overridden
         : rule.scheduleOverrides
-          ? (rule.scheduleOverrides.get(year) ?? 0)
+          ? (rule.scheduleOverrides[year] ?? 0)
           : resolveContributionAmount(rule, ruleSalary);
     if (baseAmount === 0) continue;
     const contribution = Math.min(baseAmount, remaining);

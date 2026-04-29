@@ -338,21 +338,57 @@ export default function SavingsRuleDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <ContributionAmountFields
-                mode={contribMode}
-                onModeChange={setContribMode}
-                showModeToggle={showContributionModeToggle}
-                showMaxToggle={showMaxToggle}
-                initialAmount={editing?.annualAmount}
-                initialPercent={editing?.annualPercent ?? null}
-                idPrefix="sr"
-                required
-              />
-              {hasSchedule && (
-                <p className="mt-1 text-xs text-accent cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
-              )}
-            </div>
+            {hasSchedule ? (
+              // Schedule overrides bypass annual amount + growth rate. Hide
+              // those inputs so the only edit path is the Schedule tab itself.
+              // Hidden inputs preserve the prior values on FormData so save
+              // doesn't null them — the engine ignores both fields when a
+              // schedule is present, but we keep them around in case the user
+              // later clears the schedule.
+              <>
+                <input type="hidden" name="annualAmount" value={String(editing?.annualAmount ?? "0")} />
+                <input type="hidden" name="annualPercent" value={String(editing?.annualPercent ?? "")} />
+                <div className="col-span-2 flex items-center justify-between rounded-md border border-accent/40 bg-accent/10 px-3 py-2.5">
+                  <div>
+                    <p className="text-sm font-medium text-accent">Using custom schedule</p>
+                    <p className="text-xs text-gray-400">Annual contribution and growth rate are overridden by the schedule. Employer match still applies.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("schedule")}
+                    className="text-xs font-medium text-accent underline hover:text-accent-deep"
+                  >
+                    View schedule
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="col-span-2">
+                  <ContributionAmountFields
+                    mode={contribMode}
+                    onModeChange={setContribMode}
+                    showModeToggle={showContributionModeToggle}
+                    showMaxToggle={showMaxToggle}
+                    initialAmount={editing?.annualAmount}
+                    initialPercent={editing?.annualPercent ?? null}
+                    idPrefix="sr"
+                    required
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className={fieldLabelClassName}>Growth Rate</label>
+                  <div className="mt-1">
+                    <GrowthSourceRadio
+                      value={growthSource}
+                      customRate={growthRateDisplay}
+                      resolvedInflationRate={resolvedInflationRate}
+                      onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
             {showDeductibleCheckbox && (
               <div className="col-span-2">
                 <DeductibleContributionCheckbox
@@ -371,17 +407,6 @@ export default function SavingsRuleDialog({
                 />
               </div>
             )}
-            <div className="col-span-2">
-              <label className={fieldLabelClassName}>Growth Rate</label>
-              <div className="mt-1">
-                <GrowthSourceRadio
-                  value={growthSource}
-                  customRate={growthRateDisplay}
-                  resolvedInflationRate={resolvedInflationRate}
-                  onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
-                />
-              </div>
-            </div>
             {showEmployerMatch && (
               <div className="col-span-2">
                 <EmployerMatchFields

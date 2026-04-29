@@ -696,44 +696,64 @@ function IncomeDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="inc-amount">
-                Annual Amount ($) <span className="text-red-500">*</span>
-              </label>
-              <CurrencyInput
-                id="inc-amount"
-                name="annualAmount"
-                required
-                defaultValue={editing?.annualAmount ?? 0}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-            </div>
-
             {hasSchedule ? (
-              <div className="flex items-end">
-                <p className="text-xs text-accent cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
-              </div>
+              // When a custom schedule is active, the Annual Amount + Growth
+              // inputs aren't used by the projection engine — surface that
+              // state instead of showing fields the user can't influence.
+              // The hidden input preserves any prior annualAmount on the row
+              // so the API doesn't null it out on save (the form's FormData
+              // is what the submit handler reads).
+              <>
+                <input type="hidden" name="annualAmount" value={String(editing?.annualAmount ?? 0)} />
+                <div className="col-span-2 flex items-center justify-between rounded-md border border-accent/40 bg-accent/10 px-3 py-2.5">
+                  <div>
+                    <p className="text-sm font-medium text-accent">Using custom schedule</p>
+                    <p className="text-xs text-gray-400">Annual amount and growth rate are overridden by the schedule.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("schedule")}
+                    className="text-xs font-medium text-accent underline hover:text-accent-deep"
+                  >
+                    View schedule
+                  </button>
+                </div>
+              </>
             ) : (
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
-                <div className="mt-1">
-                  <GrowthSourceRadio
-                    value={growthSource}
-                    customRate={growthRateDisplay}
-                    resolvedInflationRate={resolvedInflationRate}
-                    onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="inc-amount">
+                    Annual Amount ($) <span className="text-red-500">*</span>
+                  </label>
+                  <CurrencyInput
+                    id="inc-amount"
+                    name="annualAmount"
+                    required
+                    defaultValue={editing?.annualAmount ?? 0}
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
-                <label className="mt-2 flex items-center gap-1.5 text-xs text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={todaysDollars}
-                    onChange={(e) => setTodaysDollars(e.target.checked)}
-                    className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
-                  />
-                  Amount in today&apos;s dollars (inflate from {planStartYear})
-                </label>
-              </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
+                  <div className="mt-1">
+                    <GrowthSourceRadio
+                      value={growthSource}
+                      customRate={growthRateDisplay}
+                      resolvedInflationRate={resolvedInflationRate}
+                      onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
+                    />
+                  </div>
+                  <label className="mt-2 flex items-center gap-1.5 text-xs text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={todaysDollars}
+                      onChange={(e) => setTodaysDollars(e.target.checked)}
+                      className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                    />
+                    Amount in today&apos;s dollars (inflate from {planStartYear})
+                  </label>
+                </div>
+              </>
             )}
 
             {clientInfo?.milestones ? (
@@ -1076,44 +1096,58 @@ function ExpenseDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="exp-amount">
-                Annual Amount ($) <span className="text-red-500">*</span>
-              </label>
-              <CurrencyInput
-                id="exp-amount"
-                name="annualAmount"
-                required
-                defaultValue={editing?.annualAmount ?? 0}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-            </div>
-
             {hasSchedule ? (
-              <div className="flex items-end">
-                <p className="text-xs text-accent cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
-              </div>
+              <>
+                <input type="hidden" name="annualAmount" value={String(editing?.annualAmount ?? 0)} />
+                <div className="col-span-2 flex items-center justify-between rounded-md border border-accent/40 bg-accent/10 px-3 py-2.5">
+                  <div>
+                    <p className="text-sm font-medium text-accent">Using custom schedule</p>
+                    <p className="text-xs text-gray-400">Annual amount and growth rate are overridden by the schedule.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("schedule")}
+                    className="text-xs font-medium text-accent underline hover:text-accent-deep"
+                  >
+                    View schedule
+                  </button>
+                </div>
+              </>
             ) : (
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
-                <div className="mt-1">
-                  <GrowthSourceRadio
-                    value={growthSource}
-                    customRate={growthRateDisplay}
-                    resolvedInflationRate={resolvedInflationRate}
-                    onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="exp-amount">
+                    Annual Amount ($) <span className="text-red-500">*</span>
+                  </label>
+                  <CurrencyInput
+                    id="exp-amount"
+                    name="annualAmount"
+                    required
+                    defaultValue={editing?.annualAmount ?? 0}
+                    className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
-                <label className="mt-2 flex items-center gap-1.5 text-xs text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={todaysDollars}
-                    onChange={(e) => setTodaysDollars(e.target.checked)}
-                    className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
-                  />
-                  Amount in today&apos;s dollars (inflate from {planStartYear})
-                </label>
-              </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-300">Growth Rate</label>
+                  <div className="mt-1">
+                    <GrowthSourceRadio
+                      value={growthSource}
+                      customRate={growthRateDisplay}
+                      resolvedInflationRate={resolvedInflationRate}
+                      onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
+                    />
+                  </div>
+                  <label className="mt-2 flex items-center gap-1.5 text-xs text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={todaysDollars}
+                      onChange={(e) => setTodaysDollars(e.target.checked)}
+                      className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                    />
+                    Amount in today&apos;s dollars (inflate from {planStartYear})
+                  </label>
+                </div>
+              </>
             )}
 
             {clientInfo?.milestones ? (
