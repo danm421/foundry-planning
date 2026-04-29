@@ -88,7 +88,7 @@ describe("ComparePanel", () => {
     ).toBeNull();
   });
 
-  it("shows EmptyComparePrompt when left === right and hides it when they differ", () => {
+  it("renders nothing in the body when left === right and shows summary + toggles when they differ", () => {
     mockLeft = "base";
     mockRight = "base";
     const { rerender } = render(
@@ -105,7 +105,7 @@ describe("ComparePanel", () => {
         deltaFetcher={() => new Promise<never>(() => {})}
       />,
     );
-    expect(screen.getByTestId("compare-empty-prompt")).toBeInTheDocument();
+    expect(screen.queryByTestId("compare-empty-prompt")).toBeNull();
     expect(screen.queryByTestId("net-delta-summary")).toBeNull();
     expect(screen.queryByTestId("toggle-list")).toBeNull();
 
@@ -125,7 +125,8 @@ describe("ComparePanel", () => {
         deltaFetcher={() => new Promise<never>(() => {})}
       />,
     );
-    expect(screen.queryByTestId("compare-empty-prompt")).toBeNull();
+    expect(screen.getByTestId("net-delta-summary")).toBeInTheDocument();
+    expect(screen.getByTestId("toggle-list")).toBeInTheDocument();
   });
 
   it("renders NetDeltaSummary only when netDelta is non-null and left !== right", () => {

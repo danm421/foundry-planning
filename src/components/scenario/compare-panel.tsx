@@ -101,41 +101,24 @@ export function ComparePanel({
         </button>
       </div>
       <div className="flex-1 overflow-y-auto">
-        {left === right ? (
-          <EmptyComparePrompt />
-        ) : (
-          <>
-            {netDelta && (
-              <NetDeltaSummary
-                delta={netDelta.value}
-                metricLabel={netDelta.metricLabel}
-                sparklineData={netDelta.sparkline}
-              />
-            )}
-            {rightToggleGroups.length > 0 && (
-              <ToggleList
-                clientId={clientId}
-                groups={rightToggleGroups}
-                deltaFetcher={deltaFetcher}
-                interactive={!isRightSnapshot}
-              />
-            )}
-          </>
+        {left !== right && netDelta && (
+          <NetDeltaSummary
+            delta={netDelta.value}
+            metricLabel={netDelta.metricLabel}
+            sparklineData={netDelta.sparkline}
+          />
+        )}
+        {left !== right && rightToggleGroups.length > 0 && (
+          <ToggleList
+            clientId={clientId}
+            groups={rightToggleGroups}
+            deltaFetcher={deltaFetcher}
+            interactive={!isRightSnapshot}
+          />
         )}
       </div>
       <SnapshotButton clientId={clientId} disabled={isRightSnapshot} />
     </aside>
-  );
-}
-
-function EmptyComparePrompt() {
-  return (
-    <div
-      data-testid="compare-empty-prompt"
-      className="m-4 p-6 border border-dashed border-[#7a5b29] rounded text-center text-[12px] text-[#a09c92]"
-    >
-      Pick two different plans to compare.
-    </div>
   );
 }
 
