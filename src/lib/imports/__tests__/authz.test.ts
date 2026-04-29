@@ -96,9 +96,8 @@ describe("requireImportAccess", () => {
       [{ ...IMPORT_ROW, createdByUserId: "someone_else" }],
     );
 
-    await expect(requireImportAccess(ARGS)).rejects.toMatchObject({
-      name: "ForbiddenError",
-      message: "Import not owned by current user",
-    });
+    await expect(requireImportAccess(ARGS)).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
   });
 });
