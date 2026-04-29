@@ -365,4 +365,37 @@ describe("projection: iterative gap-fill (audit F5)", () => {
     const bothNonZero = ledger.contributions > 0.01 && ledger.distributions > 0.01;
     expect(bothNonZero).toBe(false);
   });
+
+  it("(j) supplemental withdrawal attributes external distribution to the source account, not cash", () => {
+    // Deficit year: $10k expense, $5k cash, $20k brokerage. Engine pulls ~$5k
+    // supplemental from the brokerage to refill cash. The supplemental amount
+    // should surface as an external distribution on the brokerage (so Portfolio
+    // Activity shows the funding source), and cash's external distribution
+    // should drop by the pass-through amount (so the same dollars aren't
+    // double-counted).
+    const data = buildScenario({
+      birthYear: 1955,
+      accounts: [checking(5_000), taxable(20_000, 20_000)],
+      strategyOrder: ["acct-taxable"],
+      expense: 10_000,
+    });
+    const year = runProjection(data)[0];
+
+    const supplementalTotal = year.withdrawals.byAccount["acct-taxable"] ?? 0;
+    expect(supplementalTotal).toBeGreaterThan(0);
+
+    const brokerage = year.accountLedgers["acct-taxable"];
+    const cash = year.accountLedgers["acct-checking"];
+    expect(brokerage).toBeDefined();
+    expect(cash).toBeDefined();
+
+    // Source: external distribution = supplemental amount, no longer hidden as internal.
+    expect(brokerage.distributions - brokerage.internalDistributions).toBeCloseTo(supplementalTotal, 2);
+    expect(brokerage.internalDistributions).toBe(0);
+
+    // Cash: refill credit AND matching pass-through debit are both internal so the
+    // supplemental flow nets out of cash's external activity.
+    expect(cash.internalContributions).toBeCloseTo(supplementalTotal, 2);
+    expect(cash.internalDistributions).toBeCloseTo(supplementalTotal, 2);
+  });
 });

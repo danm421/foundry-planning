@@ -2132,6 +2132,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     if (hasChecking) {
       const checkingId = defaultChecking!.id;
 
+      // Supplemental draws are attributed to the source account in Portfolio
+      // Activity (not flagged internal) so the user sees which account funded
+      // the shortfall. The cash side is symmetric: the refill credit is
+      // internal, AND a matching slice of cash's distribution is also marked
+      // internal — that pass-through portion is bookkeeping for money routed
+      // through cash, not a real cash outflow.
       for (const draw of supplementalPlan.draws) {
         if (draw.amount <= 0) continue;
         accountBalances[draw.accountId] -= draw.amount;
@@ -2140,13 +2146,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         withdrawals.total += draw.amount;
         if (accountLedgers[draw.accountId]) {
           accountLedgers[draw.accountId].distributions += draw.amount;
-          accountLedgers[draw.accountId].internalDistributions += draw.amount;
           accountLedgers[draw.accountId].endingValue -= draw.amount;
           accountLedgers[draw.accountId].entries.push({
             category: "withdrawal",
             label: "Withdrawal to cover household shortfall",
             amount: -draw.amount,
-            isInternalTransfer: true,
           });
         }
       }
@@ -2156,6 +2160,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (accountLedgers[checkingId]) {
           accountLedgers[checkingId].contributions += supplementalPlan.total;
           accountLedgers[checkingId].internalContributions += supplementalPlan.total;
+          accountLedgers[checkingId].internalDistributions += supplementalPlan.total;
           accountLedgers[checkingId].endingValue += supplementalPlan.total;
           accountLedgers[checkingId].entries.push({
             category: "withdrawal",
@@ -2286,20 +2291,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           (entityWithdrawals.byAccount[acctId] ?? 0) + amount;
         entityWithdrawals.total += amount;
 
+        // Symmetric to the supplemental-draw block above: entity gap-fill draws
+        // are attributed to the source so Portfolio Activity surfaces the real
+        // funding account, and a matching slice of cash's distribution is
+        // marked internal to neutralize the pass-through.
         if (accountLedgers[acctId]) {
           accountLedgers[acctId].distributions += amount;
-          accountLedgers[acctId].internalDistributions += amount;
           accountLedgers[acctId].endingValue -= amount;
           accountLedgers[acctId].entries.push({
             category: "withdrawal",
             label: "Entity gap-fill",
             amount: -amount,
-            isInternalTransfer: true,
           });
         }
         if (accountLedgers[checkingId]) {
           accountLedgers[checkingId].contributions += amount;
           accountLedgers[checkingId].internalContributions += amount;
+          accountLedgers[checkingId].internalDistributions += amount;
           accountLedgers[checkingId].endingValue += amount;
           accountLedgers[checkingId].entries.push({
             category: "withdrawal",
