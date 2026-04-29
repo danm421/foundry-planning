@@ -858,6 +858,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
         growthDetail = { ordinaryIncome: oi, qualifiedDividends: qdiv, stCapitalGains: stcg, ltCapitalGains: ltcg, taxExempt, basisIncrease };
 
+        // Recognized in-year growth bumps cost basis on taxable & cash accounts —
+        // those dollars were already taxed in-year via taxDetail, so on later sale
+        // they must not be double-counted as cap gains. Retirement accounts defer
+        // tax until withdrawal and use `basis` for post-tax contribution tracking,
+        // not realization, so they stay flat here. (Audit F1.)
+        if ((acct.category === "taxable" || acct.category === "cash") && basisIncrease > 0) {
+          basisMap[acct.id] = (basisMap[acct.id] ?? 0) + basisIncrease;
+        }
+
         // Only taxable accounts generate current-year tax from realization.
         // Retirement accounts defer all tax until withdrawal; cash accounts
         // are always 100% OI but that's baked into the realization model.
