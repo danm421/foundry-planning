@@ -1,18 +1,26 @@
 /**
- * Golden fixture inputs and expected-year tables for the three canonical
- * projection scenarios used as PR1 baselines (audit F5).
+ * Golden fixture inputs and expected-year tables for three canonical
+ * projection scenarios (audit F5 baselines).
  *
  * G1 — Pre-retirement, no deficit
  *   Client + spouse still working 2026-2035; income > expenses every year;
- *   gap-fill never fires. After PR2 the numbers should be UNCHANGED.
+ *   gap-fill never fires.
  *
  * G2 — Early retiree, taxable + Roth basis deficit, pre-59.5
  *   Both retired (age 50/48 in 2026); deficit covered by brokerage then
- *   Roth-basis pulls. Today's gross-up overcounts tax; PR2 will reduce it.
+ *   Roth-basis pulls.
  *
  * G3 — Late retiree, Trad IRA deficit + RMDs, post-72
  *   Both retired (age 75/73 in 2026); RMDs from 401k + deficit draws.
- *   Trad pulls are already marginal-rate; PR2 change is smaller here.
+ *
+ * NOTE on PR2 (audit F5): the underlying `sampleAccounts` fixture has no
+ * `isDefaultChecking: true` account, so all three goldens currently
+ * exercise the legacy no-checking branch (`projection.ts:else { ... }`).
+ * The new iterative convergence loop covers the with-checking path only and
+ * is regression-tested by `projection-gap-fill-iterative.test.ts` (cases
+ * a-h). Updating these goldens to add a default-checking account would
+ * change every captured number wholesale — deferred (see future-work/engine.md
+ * "Default-checking variant of golden fixtures G2/G3").
  */
 
 import type { ClientData, PlanSettings } from "../types";
@@ -162,8 +170,11 @@ export const g1ExpectedYears: GoldenExpectedYear[] = [
   { year: 2030, expensesTaxes: 75971.844675,   withdrawalsTotal: 0, taxDetailEarned: 281377.2025, taxDetailOrdinary: 0, taxDetailCapGains: 0 },
 ];
 
-// G2: brokerage + Roth basis pulls cover deficit; today's engine applies 0 tax
-// on pure-basis withdrawals (no taxable gain flagged). PR2 will add cap-gains tax.
+// G2: brokerage + Roth basis pulls cover deficit. Legacy no-checking branch:
+// `executeWithdrawals` runs without categorization, so cap gains aren't recognized
+// and expensesTaxes stays 0. The new iterative convergence loop (audit F5) does
+// recognize gains, but it's gated on `hasChecking` and this fixture has no
+// default-checking account.
 export const g2ExpectedYears: GoldenExpectedYear[] = [
   { year: 2026, expensesTaxes: 0, withdrawalsTotal: 85000,            taxDetailEarned: 0, taxDetailOrdinary: 0, taxDetailCapGains: 0 },
   { year: 2027, expensesTaxes: 0, withdrawalsTotal: 87500,            taxDetailEarned: 0, taxDetailOrdinary: 0, taxDetailCapGains: 0 },
@@ -173,8 +184,8 @@ export const g2ExpectedYears: GoldenExpectedYear[] = [
 ];
 
 // G3: RMDs + deficit draws from Trad 401k produce ordinary income; SS partial
-// tax. expensesTaxes and taxDetailOrdinary are non-zero and will shift slightly
-// under PR2's iterative re-tax (marginal-rate effect is smaller here).
+// tax. Legacy no-checking branch: same caveat as G2 — the new convergence loop
+// is gated on hasChecking and isn't exercised by this fixture.
 export const g3ExpectedYears: GoldenExpectedYear[] = [
   { year: 2026, expensesTaxes: 5487.80487804878,    withdrawalsTotal: 34162.60162601626,  taxDetailEarned: 0, taxDetailOrdinary: 20325.20325203252,  taxDetailCapGains: 0 },
   { year: 2027, expensesTaxes: 5863.3837604198825,  withdrawalsTotal: 34927.14761071661,  taxDetailEarned: 0, taxDetailOrdinary: 21716.23614970327,  taxDetailCapGains: 0 },

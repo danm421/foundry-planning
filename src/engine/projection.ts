@@ -1995,6 +1995,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     if (hasChecking) {
       let checkingAfterTax = preSupplementalChecking - taxOutForIter.taxes;
 
+      const initialTaxes = taxOut.taxes;
       for (let iter = 0; iter < MAX_ITER; iter++) {
         if (Math.abs(checkingAfterTax) <= TOLERANCE) break;
         // Initial-surplus / final-surplus case with no draws-to-undo: nothing to do.
@@ -2002,10 +2003,27 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // emits a spurious convergenceWarning at the last iteration.
         if (checkingAfterTax > 0 && cumulativeShortfall === 0) break;
 
+        // Newton-style step. Each unit of supplemental withdrawal produces
+        // (taxOnIncrement + penaltyOnIncrement) of new tax burden, leaving
+        // (1 - effectiveRate) units of net cash in checking. Divide the residual
+        // by (1 - effectiveRate) so we converge in 1-2 iters under linear regimes
+        // (typical) instead of 10+ under simple fixed-point. First iter uses the
+        // unscaled residual since supplementalPlan is still empty.
+        const supplementalCost =
+          supplementalPlan.total > 0
+            ? taxOutForIter.taxes - initialTaxes + supplementalPlan.recognizedIncome.earlyWithdrawalPenalty
+            : 0;
+        const effectiveRate =
+          supplementalPlan.total > 0 ? supplementalCost / supplementalPlan.total : 0;
+        const stepDenominator = Math.max(0.01, 1 - effectiveRate);
+
         if (checkingAfterTax < 0) {
-          cumulativeShortfall += -checkingAfterTax;
+          cumulativeShortfall += -checkingAfterTax / stepDenominator;
         } else if (cumulativeShortfall > 0) {
-          cumulativeShortfall = Math.max(0, cumulativeShortfall - checkingAfterTax);
+          cumulativeShortfall = Math.max(
+            0,
+            cumulativeShortfall - checkingAfterTax / stepDenominator,
+          );
         }
 
         supplementalPlan = planSupplementalWithdrawal({
