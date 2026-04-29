@@ -587,6 +587,16 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     new Set(years.flatMap((y) => Object.keys(y.savings.byAccount)))
   );
 
+  const rmdAccountIds = Array.from(
+    new Set(
+      years.flatMap((y) =>
+        Object.entries(y.accountLedgers)
+          .filter(([, l]) => l.rmdAmount > 0)
+          .map(([id]) => id)
+      )
+    )
+  );
+
   // ── Derived income/expense source maps from clientData ────────────────────
 
   // incomesByType: segment key → array of income IDs with that type
@@ -1031,38 +1041,10 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       return [
         ...baseColumns,
         numCol("income_total", () => <DrillBtn segment="income" label="Income" />, (r) => r.income.total),
-        col(
+        numCol(
           "rmds_total",
-          "RMDs",
-          (r) => Object.values(r.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0),
-          (info) => {
-            const v = info.getValue() as number;
-            if (v === 0) return <span className="tabular-nums text-gray-400">&mdash;</span>;
-            const row = info.row.original;
-            return (
-              <button
-                onClick={() => {
-                  const details = Object.entries(row.accountLedgers)
-                    .filter(([, l]) => l.rmdAmount > 0)
-                    .map(([id, l]) => ({
-                      label: accountNames[id] ?? id,
-                      amount: l.rmdAmount,
-                    }))
-                    .sort((a, b) => b.amount - a.amount);
-                  setSourceDetailModal({
-                    name: "RMDs",
-                    year: row.year,
-                    amount: v,
-                    details,
-                  });
-                }}
-                className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
-                title="View RMDs by account"
-              >
-                {fmtNum(v)}
-              </button>
-            );
-          }
+          () => <DrillBtn segment="rmds" label="RMDs" />,
+          (r) => Object.values(r.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0)
         ),
         numCol(
           "other_income_l0",
@@ -1456,6 +1438,27 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ),
         numCol("savings_total", "Total", (r) => r.savings.total, true),
         numCol("savings_employer", "Employer Total", (r) => r.savings.employerTotal),
+      ];
+    }
+
+    // ── RMDs drill-down ────────────────────────────────────────────────────
+
+    if (level === "rmds") {
+      return [
+        ...baseColumns,
+        ...rmdAccountIds.map((accId) =>
+          numCol(
+            `rmd_${accId}`,
+            accountNames[accId] ?? accId,
+            (r) => r.accountLedgers[accId]?.rmdAmount ?? 0
+          )
+        ),
+        numCol(
+          "rmd_total",
+          "Total",
+          (r) => Object.values(r.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0),
+          true
+        ),
       ];
     }
 
