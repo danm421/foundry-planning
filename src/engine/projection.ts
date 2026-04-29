@@ -36,7 +36,7 @@ import {
 } from "../lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
 import { applyContributionLimits, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
-import { executeWithdrawals, computeWithdrawalPenalty } from "./withdrawal";
+import { executeWithdrawals, planSupplementalWithdrawal } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
 import { applyAssetSales, applyAssetPurchases, _resetSyntheticIdCounter } from "./asset-transactions";
@@ -1695,13 +1695,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       deductionBreakdownIn: deductionBreakdownResult ?? null,
     });
 
-    const taxResult = taxOut.taxResult;
+    // `taxes` is the pre-supplemental tax. The legacy no-checking path (else branch
+    // in phase 12 below) uses it directly; the hasChecking path runs the convergence
+    // loop and ends up with `finalTaxes` from `taxOutForIter` instead.
     const taxes = taxOut.taxes;
-    const marginalRate = taxOut.marginalCombinedRate;
-    charityCarryforward = taxOut.charityCarryforwardOut;
-    // taxOut.deductionBreakdown is `DeductionBreakdown | null`; the projection
-    // uses `DeductionBreakdown | undefined` so coerce null → undefined to match.
-    deductionBreakdownResult = taxOut.deductionBreakdown ?? undefined;
+    // `charityCarryforward` and `deductionBreakdownResult` are reassigned AFTER the
+    // convergence loop (phase 12 below) so iteration restarts each time from the
+    // pre-this-year carryforward / breakdown values.
 
     // 6. Route each income to its cash account (override or default for owner).
     // Prefer the per-source amount already resolved by `computeIncome` — that
@@ -1920,27 +1920,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    // 11b. Capture pre-tax checking baseline, then apply tax expense.
-    // `preSupplementalChecking` is the post-non-tax-flow / pre-tax balance — it's the
-    // baseline the iterative convergence loop in Task 11 will use to compute the
-    // shortfall fed into `planSupplementalWithdrawal`. The tax application is
-    // intentionally split from the rest of cashDelta so this capture point exists.
+    // 11b. Pre-tax checking-balance baseline for the iterative convergence loop.
+    // `preSupplementalChecking` is the checking balance after all non-tax flows but
+    // BEFORE this year's tax expense. The convergence loop in phase 12 uses it as
+    // the starting point and applies the converged tax + supplemental at the end.
     const preSupplementalChecking = hasChecking
       ? (accountBalances[defaultChecking!.id] ?? 0)
       : 0;
-    if (hasChecking && taxes !== 0) {
-      const checkingId = defaultChecking!.id;
-      accountBalances[checkingId] -= taxes;
-      if (accountLedgers[checkingId]) {
-        accountLedgers[checkingId].distributions += taxes;
-        accountLedgers[checkingId].endingValue -= taxes;
-        accountLedgers[checkingId].entries.push({
-          category: "tax",
-          label: "Federal + state taxes",
-          amount: -taxes,
-        });
-      }
-    }
 
     // 12. Withdrawals + gap-fill. Household checking should never end the year
     // negative: any deficit after income/expenses/taxes/savings (and the BoY
@@ -1984,86 +1970,180 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       householdWithdrawBalances[acct.id] = balance * householdShare;
     }
 
+    // Iterative tax + supplemental convergence (audit F5).
+    //
+    // Goal: settle on a (supplemental withdrawal, total tax) pair such that
+    // checking ends within $1 of zero. Each iteration grows the cumulative
+    // shortfall, plans a categorized supplemental withdrawal against that
+    // shortfall, layers the recognized income on top of the baseline taxDetail,
+    // and reruns the full tax pipeline. Converges in 1-3 iterations on typical
+    // deficit years; MAX_ITER is a safety cap.
+    const baselineTaxDetail = { ...taxDetail, bySource: { ...taxDetail.bySource } };
+    const MAX_ITER = 5;
+    const TOLERANCE = 1;
+
+    let cumulativeShortfall = 0;
+    let supplementalPlan: ReturnType<typeof planSupplementalWithdrawal> = {
+      byAccount: {},
+      total: 0,
+      draws: [],
+      recognizedIncome: { ordinaryIncome: 0, capitalGains: 0, earlyWithdrawalPenalty: 0 },
+    };
+    let taxOutForIter = taxOut;
+    let convergenceWarning: TrustWarning | null = null;
+
+    if (hasChecking) {
+      let checkingAfterTax = preSupplementalChecking - taxOutForIter.taxes;
+
+      for (let iter = 0; iter < MAX_ITER; iter++) {
+        if (Math.abs(checkingAfterTax) <= TOLERANCE) break;
+        // Initial-surplus / final-surplus case with no draws-to-undo: nothing to do.
+        // Without this, the loop spins MAX_ITER times on every non-deficit year and
+        // emits a spurious convergenceWarning at the last iteration.
+        if (checkingAfterTax > 0 && cumulativeShortfall === 0) break;
+
+        if (checkingAfterTax < 0) {
+          cumulativeShortfall += -checkingAfterTax;
+        } else if (cumulativeShortfall > 0) {
+          cumulativeShortfall = Math.max(0, cumulativeShortfall - checkingAfterTax);
+        }
+
+        supplementalPlan = planSupplementalWithdrawal({
+          shortfall: cumulativeShortfall,
+          strategy: effectiveWithdrawalStrategy,
+          householdBalances: householdWithdrawBalances,
+          basisMap,
+          accounts: workingAccounts,
+          ages: { client: ages.client, spouse: ages.spouse ?? null },
+          isSpouseAccount,
+          year,
+        });
+
+        const taxDetailWithSupp: typeof taxDetail = {
+          ...baselineTaxDetail,
+          ordinaryIncome:
+            baselineTaxDetail.ordinaryIncome + supplementalPlan.recognizedIncome.ordinaryIncome,
+          capitalGains:
+            baselineTaxDetail.capitalGains + supplementalPlan.recognizedIncome.capitalGains,
+          bySource: { ...baselineTaxDetail.bySource },
+        };
+
+        taxOutForIter = computeTaxForYear({
+          taxDetail: taxDetailWithSupp,
+          socialSecurityGross: income.socialSecurity,
+          totalIncome: income.total,
+          taxableIncome:
+            taxableIncome
+            + supplementalPlan.recognizedIncome.ordinaryIncome
+            + supplementalPlan.recognizedIncome.capitalGains,
+          filingStatus,
+          year,
+          planSettings,
+          resolved: resolved ?? null,
+          useBracket,
+          aboveLineDeductions,
+          itemizedDeductions,
+          charityCarryforwardIn: charityCarryforward,
+          charityGiftsThisYear,
+          secaResult,
+          transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
+          interestIncomeForTax,
+          deductionBreakdownIn: deductionBreakdownResult ?? null,
+        });
+
+        const taxAndPenalty =
+          taxOutForIter.taxes + supplementalPlan.recognizedIncome.earlyWithdrawalPenalty;
+        checkingAfterTax = preSupplementalChecking + supplementalPlan.total - taxAndPenalty;
+
+        if (iter === MAX_ITER - 1 && Math.abs(checkingAfterTax) > TOLERANCE) {
+          convergenceWarning = {
+            code: "engine_iteration_limit",
+            year,
+            residual: checkingAfterTax,
+            iterations: MAX_ITER,
+          };
+        }
+      }
+    }
+
+    const finalTaxResult = taxOutForIter.taxResult;
+    const finalTaxes = taxOutForIter.taxes;
+    charityCarryforward = taxOutForIter.charityCarryforwardOut;
+    deductionBreakdownResult = taxOutForIter.deductionBreakdown ?? undefined;
+    const supplementalEarlyPenalty = supplementalPlan.recognizedIncome.earlyWithdrawalPenalty;
+
+    // Layer supplemental recognized income onto taxDetail for the year output.
+    const finalTaxDetail =
+      supplementalPlan.total > 0
+        ? {
+            ...taxDetail,
+            ordinaryIncome:
+              taxDetail.ordinaryIncome + supplementalPlan.recognizedIncome.ordinaryIncome,
+            capitalGains:
+              taxDetail.capitalGains + supplementalPlan.recognizedIncome.capitalGains,
+            bySource: { ...taxDetail.bySource },
+          }
+        : taxDetail;
+
+    // Audit F5/F6: drill-down reconciliation. Each draw with non-zero recognized
+    // income gets a `withdrawal:<acctId>` bySource entry so taxDetail.bySource sums
+    // to the bucket totals.
+    for (const draw of supplementalPlan.draws) {
+      const recognized = draw.ordinaryIncome + draw.capitalGains;
+      if (recognized <= 0) continue;
+      const type: "ordinary_income" | "capital_gains" =
+        draw.ordinaryIncome > 0 ? "ordinary_income" : "capital_gains";
+      finalTaxDetail.bySource[`withdrawal:${draw.accountId}`] = { type, amount: recognized };
+    }
+
+    // Apply converged supplemental + taxes to balances and ledgers.
     if (hasChecking) {
       const checkingId = defaultChecking!.id;
 
-      // If checking went negative (from P&L and/or a purchase), pull from the
-      // withdrawal strategy to refill. Gross up by the marginal rate so the
-      // post-tax amount covers the gap; the extra tax is added to the year's
-      // tax expense.
-      if (accountBalances[checkingId] < 0) {
-        const shortfall = -accountBalances[checkingId];
-        const grossNeeded = shortfall / (1 - marginalRate);
-        const supplemental = executeWithdrawals(
-          grossNeeded,
-          effectiveWithdrawalStrategy,
-          householdWithdrawBalances,
-          year
-        );
-
-        let supplementalEarlyPenalty = 0;
-
-        for (const [acctId, amount] of Object.entries(supplemental.byAccount)) {
-          accountBalances[acctId] -= amount;
-          withdrawals.byAccount[acctId] = (withdrawals.byAccount[acctId] ?? 0) + amount;
-          withdrawals.total += amount;
-          if (accountLedgers[acctId]) {
-            accountLedgers[acctId].distributions += amount;
-            accountLedgers[acctId].endingValue -= amount;
-            accountLedgers[acctId].entries.push({
-              category: "withdrawal",
-              label: "Withdrawal to cover household shortfall",
-              amount: -amount,
-            });
-          }
-
-          // Audit F3: supplemental gap-fill withdrawals were not running through
-          // computeWithdrawalPenalty, so pre-59.5 draws from a Traditional IRA
-          // owed nothing extra in the model. Reuse the function-scope `accountById`
-          // (built from `data.accounts`) and the `isSpouseAccount` closure for the
-          // age resolution, matching how RMDs and applyTransfers route owner age.
-          const acct = accountById.get(acctId);
-          if (acct) {
-            const ownerAge = isSpouseAccount(acct) && ages.spouse != null ? ages.spouse : ages.client;
-            supplementalEarlyPenalty += computeWithdrawalPenalty({
-              amount,
-              accountCategory: acct.category,
-              accountSubType: acct.subType,
-              ownerAge,
-              rothBasis: basisMap[acctId] ?? 0,
-            });
-          }
+      for (const draw of supplementalPlan.draws) {
+        if (draw.amount <= 0) continue;
+        accountBalances[draw.accountId] -= draw.amount;
+        withdrawals.byAccount[draw.accountId] =
+          (withdrawals.byAccount[draw.accountId] ?? 0) + draw.amount;
+        withdrawals.total += draw.amount;
+        if (accountLedgers[draw.accountId]) {
+          accountLedgers[draw.accountId].distributions += draw.amount;
+          accountLedgers[draw.accountId].endingValue -= draw.amount;
+          accountLedgers[draw.accountId].entries.push({
+            category: "withdrawal",
+            label: "Withdrawal to cover household shortfall",
+            amount: -draw.amount,
+          });
         }
+      }
 
-        // Gross supplemental withdrawal lands in checking.
-        accountBalances[checkingId] += supplemental.total;
+      if (supplementalPlan.total > 0) {
+        accountBalances[checkingId] += supplementalPlan.total;
         if (accountLedgers[checkingId]) {
-          accountLedgers[checkingId].contributions += supplemental.total;
-          accountLedgers[checkingId].endingValue += supplemental.total;
+          accountLedgers[checkingId].contributions += supplementalPlan.total;
+          accountLedgers[checkingId].endingValue += supplementalPlan.total;
           accountLedgers[checkingId].entries.push({
             category: "withdrawal",
             label: "Withdrawal to cover shortfall",
-            amount: supplemental.total,
+            amount: supplementalPlan.total,
           });
         }
+      }
 
-        // Marginal tax on the gross supplemental withdrawal + 10% early-withdrawal
-        // penalty come back out of checking and are reported as additional taxes.
-        // NOTE: gross-up only accounts for marginalRate, not penalty (audit F5).
-        // Pre-59.5 deficit years may end with checking slightly negative; next
-        // year's projection sees that deficit and recovers via another gap-fill.
-        withdrawalTax = supplemental.total * marginalRate + supplementalEarlyPenalty;
-        accountBalances[checkingId] -= withdrawalTax;
+      const taxAndPenalty = finalTaxes + supplementalEarlyPenalty;
+      withdrawalTax = supplementalEarlyPenalty;
+      if (taxAndPenalty !== 0) {
+        accountBalances[checkingId] -= taxAndPenalty;
         if (accountLedgers[checkingId]) {
-          accountLedgers[checkingId].distributions += withdrawalTax;
-          accountLedgers[checkingId].endingValue -= withdrawalTax;
-          const label = supplementalEarlyPenalty > 0
-            ? `Tax on withdrawal (${(marginalRate * 100).toFixed(1)}% + 10% early)`
-            : `Tax on withdrawal (${(marginalRate * 100).toFixed(1)}%)`;
+          accountLedgers[checkingId].distributions += taxAndPenalty;
+          accountLedgers[checkingId].endingValue -= taxAndPenalty;
           accountLedgers[checkingId].entries.push({
-            category: "withdrawal_tax",
-            label,
-            amount: -withdrawalTax,
+            category: "tax",
+            label:
+              supplementalEarlyPenalty > 0
+                ? "Income tax + 10% early-withdrawal penalty"
+                : "Federal + state taxes",
+            amount: -taxAndPenalty,
           });
         }
       }
@@ -2326,7 +2406,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     income.total += techniqueIncome;
     Object.assign(income.bySource, techniqueIncomeBySource);
 
-    const totalTaxes = taxes + withdrawalTax;
+    // Audit F5: surface withdrawal penalties so expenses.bySource drill-down
+    // reconciles with the converged tax line.
+    const penaltyBySource: Record<string, number> = {};
+    for (const draw of supplementalPlan.draws) {
+      if (draw.earlyWithdrawalPenalty > 0) {
+        penaltyBySource[`withdrawal_penalty:${draw.accountId}`] = draw.earlyWithdrawalPenalty;
+      }
+    }
+
+    const totalTaxes = hasChecking ? finalTaxes + supplementalEarlyPenalty : taxes;
     // Property tax only counts toward the household realEstate bucket for the
     // household-share synthetic rows. Entity-owned shares are tagged with
     // ownerEntityId and route to the entity's checking via resolveCashAccount.
@@ -2356,6 +2445,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             .map((s) => [s.id, s.annualAmount])
         ),
         ...techniqueExpenseBySource,
+        ...penaltyBySource,
       },
       byLiability: liabResult.byLiability,
       interestByLiability: liabResult.interestByLiability,
@@ -2404,8 +2494,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       ages,
       income,
       ...(income.socialSecurityDetail ? { socialSecurityDetail: income.socialSecurityDetail } : {}),
-      taxDetail,
-      taxResult,
+      taxDetail: finalTaxDetail,
+      taxResult: finalTaxResult,
       charityCarryforward,
       deductionBreakdown: deductionBreakdownResult,
       withdrawals,
@@ -2446,6 +2536,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       ...(trustPassResult != null
        || grantorDistributionWarnings.length > 0
        || entityGapFillWarnings.length > 0
+       || convergenceWarning != null
         ? {
             ...(trustPassResult != null ? {
               trustTaxByEntity: trustPassResult.taxByEntity,
@@ -2456,6 +2547,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 ...(trustPassResult?.warnings ?? []),
                 ...grantorDistributionWarnings,
                 ...entityGapFillWarnings,
+                ...(convergenceWarning != null ? [convergenceWarning] : []),
               ];
               return all.length > 0 ? all : undefined;
             })(),
