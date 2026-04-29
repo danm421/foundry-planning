@@ -1049,12 +1049,17 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol(
           "other_income_l0",
           () => <DrillBtn segment="other_income_detail" label="Other Inflows" />,
-          // `income.other` already includes technique-proceeds (engine folds
-          // the sale surplus into `.other` and separately records the per-txn
-          // amount in `bySource`). Adding the bySource sum back in doubled the
-          // technique contribution. Engine-level invariant is guarded by the
-          // "sale-only surplus contributes exactly once" test in projection.test.
-          (r) => r.income.other
+          // Top-level "Other Inflows" surfaces technique-generated proceeds
+          // (asset sale surpluses) only. User-entered `type=other` income is
+          // already represented under Income > Other in the income drill, so
+          // showing it here would double-display the same row. Matches the
+          // drill-down breakdown at level=other_income_detail, which itself
+          // sums only `techniqueIncomeIds` from `bySource`.
+          (r) =>
+            techniqueIncomeIds.reduce(
+              (sum, id) => sum + (r.income.bySource[id] ?? 0),
+              0,
+            )
         ),
         numCol("totalIncome", "Total Income", (r) => r.totalIncome, true),
         numCol("expenses_total", () => <DrillBtn segment="expenses" label="Expenses" />, (r) => r.expenses.total),
