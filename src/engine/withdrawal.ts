@@ -5,6 +5,25 @@ interface WithdrawalResult {
   total: number;
 }
 
+export interface SupplementalDraw {
+  accountId: string;
+  amount: number;                 // gross amount drawn from this account
+  ordinaryIncome: number;         // contribution to taxDetail.ordinaryIncome
+  capitalGains: number;           // contribution to taxDetail.capitalGains (LTCG)
+  earlyWithdrawalPenalty: number; // 10% on Trad pre-59.5 / Roth earnings pre-59.5
+}
+
+export interface SupplementalWithdrawalPlan {
+  byAccount: Record<string, number>;   // gross amounts (compatible with current `withdrawals.byAccount`)
+  total: number;
+  draws: SupplementalDraw[];
+  recognizedIncome: {
+    ordinaryIncome: number;
+    capitalGains: number;
+    earlyWithdrawalPenalty: number;
+  };
+}
+
 export function executeWithdrawals(
   deficit: number,
   strategy: WithdrawalPriority[],
