@@ -1780,11 +1780,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    // 9. Taxes are paid from household checking.
-    creditCash(defaultChecking?.id, -taxes, {
-      category: "tax",
-      label: "Federal + state taxes",
-    });
+    // 9. Tax expense application is deferred to phase 11b (after the cash-delta apply
+    // loop) so the iterative convergence loop in Task 11 can capture a pre-tax
+    // `preSupplementalChecking` baseline. See phase 11b below.
 
     // 10. Savings contributions — with a default checking account, savings apply at the
     // full rule amount (cash leaves checking). Without one, fall back to the legacy
@@ -1919,6 +1917,28 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
         const entries = pendingEntries[acctId];
         if (entries) accountLedgers[acctId].entries.push(...entries);
+      }
+    }
+
+    // 11b. Capture pre-tax checking baseline, then apply tax expense.
+    // `preSupplementalChecking` is the post-non-tax-flow / pre-tax balance — it's the
+    // baseline the iterative convergence loop in Task 11 will use to compute the
+    // shortfall fed into `planSupplementalWithdrawal`. The tax application is
+    // intentionally split from the rest of cashDelta so this capture point exists.
+    const preSupplementalChecking = hasChecking
+      ? (accountBalances[defaultChecking!.id] ?? 0)
+      : 0;
+    if (hasChecking && taxes !== 0) {
+      const checkingId = defaultChecking!.id;
+      accountBalances[checkingId] -= taxes;
+      if (accountLedgers[checkingId]) {
+        accountLedgers[checkingId].distributions += taxes;
+        accountLedgers[checkingId].endingValue -= taxes;
+        accountLedgers[checkingId].entries.push({
+          category: "tax",
+          label: "Federal + state taxes",
+          amount: -taxes,
+        });
       }
     }
 
