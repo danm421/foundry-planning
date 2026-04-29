@@ -298,36 +298,119 @@ function ownerForName(
   return result.deceased === "client" ? names.clientName : names.spouseName ?? "Spouse";
 }
 
-function Row({
+function formatAmount(amount: number, opts: { negate?: boolean } = {}): string {
+  const n = opts.negate ? -amount : amount;
+  return n < 0 ? `(${fmt.format(-n)})` : fmt.format(n);
+}
+
+function LineRow({
   label,
   amount,
+  hint,
   muted = false,
-  bold = false,
+  showAsDeduction = false,
+  hideIfZero = false,
 }: {
   label: string;
   amount: number;
+  hint?: string;
   muted?: boolean;
-  bold?: boolean;
+  showAsDeduction?: boolean;
+  hideIfZero?: boolean;
 }) {
+  if (hideIfZero && amount === 0) return null;
+  const value = showAsDeduction
+    ? amount === 0
+      ? fmt.format(0)
+      : `(${fmt.format(amount)})`
+    : formatAmount(amount);
+  const negative = showAsDeduction && amount > 0;
   return (
     <div
       className={
-        "flex items-center justify-between border-b border-gray-800 py-1.5 text-sm " +
-        (bold ? "font-semibold text-gray-100" : muted ? "text-gray-400" : "text-gray-200")
+        "flex items-baseline justify-between gap-4 py-1.5 text-sm " +
+        (muted ? "text-gray-500" : "text-gray-300")
       }
     >
-      <span>{label}</span>
-      <span className="font-mono tabular-nums">
-        {amount < 0 ? `(${fmt.format(-amount)})` : fmt.format(amount)}
+      <span className="truncate">
+        {label}
+        {hint && <span className="ml-2 text-xs text-gray-500">{hint}</span>}
+      </span>
+      <span
+        className={
+          "shrink-0 font-mono tabular-nums " +
+          (negative ? "text-rose-300/90" : muted ? "text-gray-500" : "text-gray-200")
+        }
+      >
+        {value}
       </span>
     </div>
   );
 }
 
-function GroupHeading({ children }: { children: React.ReactNode }) {
+type SubtotalAccent = "neutral" | "primary" | "tax";
+
+function SubtotalRow({
+  label,
+  amount,
+  accent = "neutral",
+}: {
+  label: string;
+  amount: number;
+  accent?: SubtotalAccent;
+}) {
+  const accentClass =
+    accent === "tax"
+      ? amount > 0
+        ? "text-rose-200"
+        : "text-emerald-200"
+      : accent === "primary"
+        ? "text-gray-50"
+        : "text-gray-100";
   return (
-    <div className="mt-4 text-xs font-semibold uppercase tracking-wider text-gray-300">
-      {children}
+    <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-gray-700/70 pt-2.5 text-sm">
+      <span className={"font-medium " + accentClass}>{label}</span>
+      <span className={"font-mono text-base font-semibold tabular-nums " + accentClass}>
+        {formatAmount(amount)}
+      </span>
+    </div>
+  );
+}
+
+function SectionCard({
+  step,
+  title,
+  caption,
+  children,
+  subtotal,
+  subtotalLabel,
+  subtotalAccent,
+}: {
+  step?: string;
+  title: string;
+  caption?: string;
+  children: React.ReactNode;
+  subtotal: number;
+  subtotalLabel: string;
+  subtotalAccent?: SubtotalAccent;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-800/80 bg-gray-900/60 px-5 py-4">
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <div className="flex items-baseline gap-2">
+          {step && (
+            <span className="font-mono text-[10px] tracking-widest text-gray-600">
+              {step}
+            </span>
+          )}
+          <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-300">
+            {title}
+          </h3>
+        </div>
+        {caption && <span className="text-[11px] text-gray-500">{caption}</span>}
+      </div>
+      <div className="divide-y divide-gray-800/60">{children}</div>
+      <SubtotalRow label={subtotalLabel} amount={subtotal} accent={subtotalAccent} />
     </div>
   );
 }
@@ -341,121 +424,289 @@ function DecedentBreakdown({
   tax: EstateTaxResult;
   showDsueGenerated: boolean;
 }) {
+  const headlineTax = tax.totalEstateTax;
+  const headlineColor =
+    headlineTax > 0 ? "text-rose-200" : "text-emerald-200";
+  const headlineRing =
+    headlineTax > 0
+      ? "ring-rose-500/20 bg-rose-950/20"
+      : "ring-emerald-500/20 bg-emerald-950/15";
+
   return (
-    <section className="rounded border border-gray-700 bg-gray-900 p-5">
-      <h2 className="text-sm font-semibold text-gray-100">{heading}</h2>
+    <section className="overflow-hidden rounded-2xl border border-gray-800 bg-gradient-to-b from-gray-900 to-gray-950 shadow-2xl shadow-black/30">
+      {/* Header */}
+      <header className="flex flex-wrap items-start justify-between gap-6 border-b border-gray-800 bg-gradient-to-r from-gray-900 via-gray-900 to-gray-900/60 px-6 py-5">
+        <div>
+          <div className="text-[10px] font-medium uppercase tracking-[0.24em] text-gray-500">
+            Form 706 · Federal estate tax worksheet
+          </div>
+          <h2 className="mt-1.5 text-xl font-semibold text-gray-50">{heading}</h2>
+        </div>
+        <div
+          className={
+            "rounded-lg px-4 py-2 text-right ring-1 " + headlineRing
+          }
+        >
+          <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
+            Total estate tax
+          </div>
+          <div
+            className={
+              "mt-1 font-mono text-2xl font-semibold tabular-nums " + headlineColor
+            }
+          >
+            {fmt.format(headlineTax)}
+          </div>
+        </div>
+      </header>
 
       {tax.grossEstate < 0 && (
-        <p className="mt-1 text-xs text-amber-400/80">
-          Gross estate is negative because attributed household debt exceeds this decedent&apos;s individual assets. Taxable estate clamps to $0.
-        </p>
-      )}
-
-      <GroupHeading>Gross estate</GroupHeading>
-      {tax.grossEstateLines.map((line, idx) => (
-        <div
-          key={`${line.accountId ?? line.liabilityId ?? "line"}-${idx}`}
-          className="flex items-center justify-between border-b border-gray-800 py-1.5 text-sm text-gray-200"
-        >
-          <span>
-            {line.label}
-            {line.percentage !== 1 && (
-              <span className="ml-2 text-xs text-gray-400">
-                {pct.format(line.percentage)}
-              </span>
-            )}
-          </span>
-          <span className="font-mono tabular-nums">
-            {line.amount < 0
-              ? `(${fmt.format(-line.amount)})`
-              : fmt.format(line.amount)}
-          </span>
+        <div className="border-b border-amber-900/40 bg-amber-950/30 px-6 py-3 text-xs text-amber-200/90">
+          Gross estate is negative because attributed household debt exceeds
+          this decedent&apos;s individual assets. Taxable estate clamps to $0.
         </div>
-      ))}
-      <Row label="Gross estate" amount={tax.grossEstate} bold />
-
-      <GroupHeading>Deductions</GroupHeading>
-      <Row label="Estate admin expenses" amount={tax.estateAdminExpenses} />
-      <Row label="Marital deduction" amount={tax.maritalDeduction} />
-      <Row label="Charitable deduction" amount={tax.charitableDeduction} />
-      <Row label="Taxable estate" amount={tax.taxableEstate} bold />
-
-      <GroupHeading>Tentative tax base</GroupHeading>
-      <Row label="Adjusted taxable gifts" amount={tax.adjustedTaxableGifts} />
-      <Row label="Tentative tax base" amount={tax.tentativeTaxBase} bold />
-
-      <GroupHeading>Federal estate tax</GroupHeading>
-      <Row label="Tentative tax" amount={tax.tentativeTax} />
-      <Row label="BEA at death year" amount={tax.beaAtDeathYear} muted />
-      <Row label="DSUE received" amount={tax.dsueReceived} muted />
-      <Row label="Applicable exclusion" amount={tax.applicableExclusion} muted />
-      <Row label="Unified credit" amount={tax.unifiedCredit} muted />
-      <Row label="Federal estate tax" amount={tax.federalEstateTax} bold />
-
-      <GroupHeading>State estate tax</GroupHeading>
-      <div className="flex items-center justify-between border-b border-gray-800 py-1.5 text-sm text-gray-400">
-        <span>State rate</span>
-        <span className="font-mono tabular-nums">{pct.format(tax.stateEstateTaxRate)}</span>
-      </div>
-      <Row label="State estate tax" amount={tax.stateEstateTax} bold />
-
-      <GroupHeading>Totals</GroupHeading>
-      <Row label="Total estate tax" amount={tax.totalEstateTax} />
-      <Row label="Admin expenses" amount={tax.estateAdminExpenses} />
-      <Row
-        label="Total taxes & expenses"
-        amount={tax.totalTaxesAndExpenses}
-        bold
-      />
-      {showDsueGenerated && (
-        <Row
-          label="DSUE generated (ported to survivor)"
-          amount={tax.dsueGenerated}
-          muted
-        />
       )}
+
+      <div className="space-y-4 p-6">
+        {/* 1 — Gross estate */}
+        <SectionCard
+          step="01"
+          title="Gross estate"
+          subtotal={tax.grossEstate}
+          subtotalLabel="Gross estate"
+          subtotalAccent="primary"
+        >
+          {tax.grossEstateLines.map((line, idx) => (
+            <LineRow
+              key={`${line.accountId ?? line.liabilityId ?? "line"}-${idx}`}
+              label={line.label}
+              hint={line.percentage !== 1 ? pct.format(line.percentage) : undefined}
+              amount={line.amount}
+            />
+          ))}
+        </SectionCard>
+
+        {/* 2 — Deductions → Taxable estate */}
+        <SectionCard
+          step="02"
+          title="Deductions"
+          caption="§2053–§2056"
+          subtotal={tax.taxableEstate}
+          subtotalLabel="Taxable estate"
+          subtotalAccent="primary"
+        >
+          <LineRow
+            label="Estate admin expenses"
+            amount={tax.estateAdminExpenses}
+            showAsDeduction
+            hideIfZero
+          />
+          <LineRow
+            label="Marital deduction"
+            amount={tax.maritalDeduction}
+            showAsDeduction
+            hideIfZero
+          />
+          <LineRow
+            label="Charitable deduction"
+            amount={tax.charitableDeduction}
+            showAsDeduction
+            hideIfZero
+          />
+          {tax.estateAdminExpenses === 0 &&
+            tax.maritalDeduction === 0 &&
+            tax.charitableDeduction === 0 && (
+              <LineRow label="No deductions" amount={0} muted />
+            )}
+        </SectionCard>
+
+        {/* 3 — Tentative tax base */}
+        <SectionCard
+          step="03"
+          title="Tentative tax base"
+          subtotal={tax.tentativeTaxBase}
+          subtotalLabel="Tentative tax base"
+          subtotalAccent="primary"
+        >
+          <LineRow label="Taxable estate" amount={tax.taxableEstate} muted />
+          <LineRow
+            label="Adjusted taxable gifts"
+            amount={tax.adjustedTaxableGifts}
+            hideIfZero
+          />
+          {tax.adjustedTaxableGifts === 0 && (
+            <LineRow label="Adjusted taxable gifts" amount={0} muted />
+          )}
+        </SectionCard>
+
+        {/* 4 — Federal estate tax */}
+        <SectionCard
+          step="04"
+          title="Federal estate tax"
+          caption="Unified rate − unified credit"
+          subtotal={tax.federalEstateTax}
+          subtotalLabel="Federal estate tax"
+          subtotalAccent="tax"
+        >
+          <LineRow label="Tentative tax (rate × base)" amount={tax.tentativeTax} />
+          <LineRow
+            label="Unified credit"
+            amount={tax.unifiedCredit}
+            showAsDeduction
+          />
+          <div className="mt-2 rounded-md border border-gray-800/70 bg-gray-950/50 px-3 py-2 text-[11px] text-gray-500">
+            <div className="flex items-baseline justify-between gap-2">
+              <span>BEA at death year</span>
+              <span className="font-mono tabular-nums">
+                {fmt.format(tax.beaAtDeathYear)}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-2">
+              <span>DSUE received</span>
+              <span className="font-mono tabular-nums">
+                {fmt.format(tax.dsueReceived)}
+              </span>
+            </div>
+            <div className="mt-1 flex items-baseline justify-between gap-2 border-t border-gray-800/70 pt-1 text-gray-400">
+              <span>Applicable exclusion</span>
+              <span className="font-mono tabular-nums">
+                {fmt.format(tax.applicableExclusion)}
+              </span>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* 5 — State estate tax (only when relevant) */}
+        {(tax.stateEstateTaxRate > 0 || tax.stateEstateTax > 0) && (
+          <SectionCard
+            step="05"
+            title="State estate tax"
+            caption={`Flat rate · ${pct.format(tax.stateEstateTaxRate)}`}
+            subtotal={tax.stateEstateTax}
+            subtotalLabel="State estate tax"
+            subtotalAccent="tax"
+          >
+            <LineRow
+              label={`Taxable estate × ${pct.format(tax.stateEstateTaxRate)}`}
+              amount={tax.stateEstateTax}
+              muted
+            />
+          </SectionCard>
+        )}
+
+        {/* 6 — Totals */}
+        <div className="rounded-lg border border-gray-700 bg-gradient-to-br from-gray-800/80 to-gray-900 px-5 py-4 ring-1 ring-gray-700/50">
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <div className="flex items-baseline gap-2">
+              <span className="font-mono text-[10px] tracking-widest text-gray-500">
+                06
+              </span>
+              <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-200">
+                Total taxes &amp; expenses
+              </h3>
+            </div>
+          </div>
+          <div className="divide-y divide-gray-800/60">
+            <LineRow label="Federal estate tax" amount={tax.federalEstateTax} />
+            <LineRow
+              label="State estate tax"
+              amount={tax.stateEstateTax}
+              hideIfZero
+            />
+            <LineRow
+              label="Estate admin expenses"
+              amount={tax.estateAdminExpenses}
+              hideIfZero
+            />
+          </div>
+          <div className="mt-3 flex items-baseline justify-between gap-4 border-t border-gray-600/70 pt-3">
+            <span className="text-sm font-semibold uppercase tracking-wider text-gray-100">
+              Grand total
+            </span>
+            <span
+              className={
+                "font-mono text-lg font-semibold tabular-nums " +
+                (tax.totalTaxesAndExpenses > 0 ? "text-rose-200" : "text-emerald-200")
+              }
+            >
+              {fmt.format(tax.totalTaxesAndExpenses)}
+            </span>
+          </div>
+          {showDsueGenerated && tax.dsueGenerated > 0 && (
+            <div className="mt-3 flex items-baseline justify-between gap-4 rounded-md bg-indigo-950/30 px-3 py-2 ring-1 ring-indigo-900/40">
+              <span className="text-xs uppercase tracking-wider text-indigo-300">
+                DSUE generated · ported to survivor
+              </span>
+              <span className="font-mono text-sm font-semibold tabular-nums text-indigo-200">
+                {fmt.format(tax.dsueGenerated)}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TotalsCard({
+  heading,
+  federal,
+  state,
+  admin,
+  total,
+}: {
+  heading: string;
+  federal: number;
+  state: number;
+  admin: number;
+  total: number;
+}) {
+  const accent = total > 0 ? "text-rose-200" : "text-emerald-200";
+  return (
+    <section className="overflow-hidden rounded-2xl border border-indigo-900/50 bg-gradient-to-br from-indigo-950/40 via-gray-900 to-gray-950 shadow-2xl shadow-black/30 ring-1 ring-indigo-500/10">
+      <header className="border-b border-indigo-900/40 px-6 py-4">
+        <div className="text-[10px] font-medium uppercase tracking-[0.24em] text-indigo-300/80">
+          Combined household
+        </div>
+        <h2 className="mt-1 text-lg font-semibold text-gray-50">{heading}</h2>
+      </header>
+      <div className="space-y-1 px-6 py-4">
+        <LineRow label="Total federal estate tax" amount={federal} />
+        <LineRow label="Total state estate tax" amount={state} hideIfZero />
+        <LineRow label="Total admin expenses" amount={admin} hideIfZero />
+      </div>
+      <div className="flex items-baseline justify-between gap-4 border-t border-indigo-900/40 bg-indigo-950/20 px-6 py-4">
+        <span className="text-sm font-semibold uppercase tracking-[0.18em] text-gray-100">
+          Grand total · taxes &amp; expenses
+        </span>
+        <span className={"font-mono text-2xl font-semibold tabular-nums " + accent}>
+          {fmt.format(total)}
+        </span>
+      </div>
     </section>
   );
 }
 
 function GrandTotals({ ordering }: { ordering: HypotheticalEstateTaxOrdering }) {
   return (
-    <section className="rounded border border-gray-600 bg-gray-800 p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-300">
-        Grand totals
-      </h2>
-      <div className="mt-3 space-y-1">
-        <Row label="Total federal estate tax" amount={ordering.totals.federal} />
-        <Row label="Total state estate tax" amount={ordering.totals.state} />
-        <Row label="Total admin expenses" amount={ordering.totals.admin} />
-        <div className="mt-2 flex items-center justify-between border-t border-gray-600 pt-2 text-base font-semibold text-gray-100">
-          <span>Grand total taxes & expenses</span>
-          <span className="font-mono tabular-nums">{fmt.format(ordering.totals.total)}</span>
-        </div>
-      </div>
-    </section>
+    <TotalsCard
+      heading="Grand totals"
+      federal={ordering.totals.federal}
+      state={ordering.totals.state}
+      admin={ordering.totals.admin}
+      total={ordering.totals.total}
+    />
   );
 }
 
 function SplitTotals({ first, second }: { first: EstateTaxResult; second: EstateTaxResult }) {
-  const federal = first.federalEstateTax + second.federalEstateTax;
-  const state = first.stateEstateTax + second.stateEstateTax;
-  const admin = first.estateAdminExpenses + second.estateAdminExpenses;
-  const total = first.totalTaxesAndExpenses + second.totalTaxesAndExpenses;
   return (
-    <section className="rounded border border-gray-600 bg-gray-800 p-5">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-300">
-        Grand totals — Split death
-      </h2>
-      <div className="mt-3 space-y-1">
-        <Row label="Total federal estate tax" amount={federal} />
-        <Row label="Total state estate tax" amount={state} />
-        <Row label="Total admin expenses" amount={admin} />
-        <div className="mt-2 flex items-center justify-between border-t border-gray-600 pt-2 text-base font-semibold text-gray-100">
-          <span>Grand total taxes &amp; expenses</span>
-          <span className="font-mono tabular-nums">{fmt.format(total)}</span>
-        </div>
-      </div>
-    </section>
+    <TotalsCard
+      heading="Grand totals — Split death"
+      federal={first.federalEstateTax + second.federalEstateTax}
+      state={first.stateEstateTax + second.stateEstateTax}
+      admin={first.estateAdminExpenses + second.estateAdminExpenses}
+      total={first.totalTaxesAndExpenses + second.totalTaxesAndExpenses}
+    />
   );
 }
