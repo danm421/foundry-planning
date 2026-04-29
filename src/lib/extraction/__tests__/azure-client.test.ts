@@ -49,4 +49,10 @@ describe("callAIExtraction", () => {
       "AZURE_API_KEY"
     );
   });
+
+  it("tags requests with x-ms-azureai-sensitivity: high header", async () => {
+    await callAIExtraction("sys", "user", "mini");
+    const requestOptions = mockCreate.mock.calls[0][1];
+    expect(requestOptions?.headers?.["x-ms-azureai-sensitivity"]).toBe("high");
+  });
 });
