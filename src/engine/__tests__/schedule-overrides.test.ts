@@ -12,12 +12,12 @@ describe("expense schedule overrides", () => {
     startYear: 2030,
     endYear: 2035,
     growthRate: 0.03,
-    scheduleOverrides: new Map([
-      [2030, 55000],
-      [2031, 57000],
-      [2032, 59000],
-      [2033, 61000],
-    ]),
+    scheduleOverrides: {
+      2030: 55000,
+      2031: 57000,
+      2032: 59000,
+      2033: 61000,
+    },
   };
 
   it("uses override amount for years with overrides", () => {
@@ -47,11 +47,11 @@ describe("savings rule schedule overrides", () => {
     endYear: 2035,
     employerMatchPct: 0.5,
     employerMatchCap: 0.06,
-    scheduleOverrides: new Map([
-      [2026, 23500],
-      [2027, 23500],
-      [2028, 10000],
-    ]),
+    scheduleOverrides: {
+      2026: 23500,
+      2027: 23500,
+      2028: 10000,
+    },
   };
 
   it("uses override amount instead of annualAmount", () => {

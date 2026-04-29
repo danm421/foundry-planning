@@ -407,8 +407,11 @@ export interface Income {
   // household default checking (or the entity's default checking if ownerEntityId is set).
   cashAccountId?: string;
   taxType?: "earned_income" | "ordinary_income" | "dividends" | "capital_gains" | "qbi" | "tax_exempt" | "stcg";
-  /** Year-by-year amount overrides. When present, bypasses growth-rate calc. */
-  scheduleOverrides?: Map<number, number>;
+  /** Year-by-year amount overrides. When present, bypasses growth-rate calc.
+   *  Plain object keyed by year (number). Maps were tried, but they JSON-
+   *  serialize to `{}`, which broke client-side projection runs that go
+   *  through the projection-data API or a frozen scenario snapshot. */
+  scheduleOverrides?: Record<number, number>;
   /** SS-specific. When unset, engine treats as "manual_amount" (legacy). */
   ssBenefitMode?: "manual_amount" | "pia_at_fra" | "no_benefit";
   /** SS-specific. Monthly PIA in today's dollars. Required when ssBenefitMode=pia_at_fra. */
@@ -447,7 +450,7 @@ export interface Expense {
   cashAccountId?: string;
   deductionType?: "charitable" | "above_line" | "below_line" | "property_tax" | null;
   /** Year-by-year amount overrides. When present, bypasses growth-rate calc. */
-  scheduleOverrides?: Map<number, number>;
+  scheduleOverrides?: Record<number, number>;
   /** Provenance. "manual" = user-entered, "extracted" = from a parsed document,
    *  "policy" = synthesized from a life-insurance policy's premium. */
   source?: "manual" | "extracted" | "policy";
@@ -520,7 +523,7 @@ export interface SavingsRule {
   /** Flat annual dollar amount. When set, overrides the percentage/cap style. */
   employerMatchAmount?: number;
   /** Year-by-year amount overrides. When present, bypasses growth-rate calc. */
-  scheduleOverrides?: Map<number, number>;
+  scheduleOverrides?: Record<number, number>;
   // ── View-only metadata ─────────────────────────────────────────────
   // Carried through from the DB row so page-level adapters can render
   // milestone-relative editing UI. Engine math ignores these fields.

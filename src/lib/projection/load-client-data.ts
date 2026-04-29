@@ -154,23 +154,29 @@ export const loadClientData = cache(
         : Promise.resolve([]),
     ]);
 
-    // Build lookup maps: entityId → Map<year, amount>
-    const incomeOverrideMap = new Map<string, Map<number, number>>();
+    // Build lookup maps: entityId → Record<year, amount>. Plain objects (not
+    // Maps) so the tree round-trips cleanly through JSON — Maps serialize to
+    // `{}`, which would break any client that fetches `effectiveTree` via the
+    // projection-data API or reads it back from a frozen scenario snapshot.
+    const incomeOverrideMap = new Map<string, Record<number, number>>();
     for (const row of incomeOverrideRows) {
-      if (!incomeOverrideMap.has(row.incomeId)) incomeOverrideMap.set(row.incomeId, new Map());
-      incomeOverrideMap.get(row.incomeId)!.set(row.year, parseFloat(row.amount));
+      const bucket = incomeOverrideMap.get(row.incomeId) ?? {};
+      bucket[row.year] = parseFloat(row.amount);
+      incomeOverrideMap.set(row.incomeId, bucket);
     }
 
-    const expenseOverrideMap = new Map<string, Map<number, number>>();
+    const expenseOverrideMap = new Map<string, Record<number, number>>();
     for (const row of expenseOverrideRows) {
-      if (!expenseOverrideMap.has(row.expenseId)) expenseOverrideMap.set(row.expenseId, new Map());
-      expenseOverrideMap.get(row.expenseId)!.set(row.year, parseFloat(row.amount));
+      const bucket = expenseOverrideMap.get(row.expenseId) ?? {};
+      bucket[row.year] = parseFloat(row.amount);
+      expenseOverrideMap.set(row.expenseId, bucket);
     }
 
-    const savingsOverrideMap = new Map<string, Map<number, number>>();
+    const savingsOverrideMap = new Map<string, Record<number, number>>();
     for (const row of savingsOverrideRows) {
-      if (!savingsOverrideMap.has(row.savingsRuleId)) savingsOverrideMap.set(row.savingsRuleId, new Map());
-      savingsOverrideMap.get(row.savingsRuleId)!.set(row.year, parseFloat(row.amount));
+      const bucket = savingsOverrideMap.get(row.savingsRuleId) ?? {};
+      bucket[row.year] = parseFloat(row.amount);
+      savingsOverrideMap.set(row.savingsRuleId, bucket);
     }
 
     const [settings] = planSettingsRows;

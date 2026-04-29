@@ -29,7 +29,7 @@ export function computeExpenses(
 
     let amount: number;
     if (exp.scheduleOverrides) {
-      amount = exp.scheduleOverrides.get(year) ?? 0;
+      amount = exp.scheduleOverrides[year] ?? 0;
     } else {
       // Inflation compounds from `inflationStartYear` when set (today's-dollars
       // semantics), otherwise from the entry's own start year.
