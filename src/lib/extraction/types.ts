@@ -175,6 +175,22 @@ export interface ExtractedLifePolicy {
   accountName: string;
 }
 
+export type WillBequestCondition = "none" | "if_predeceased" | "per_stirpes";
+
+export interface ExtractedWillBequest {
+  recipientNameHint: string;
+  assetDescriptionHint: string;
+  percentage: number;
+  condition?: WillBequestCondition;
+}
+
+export interface ExtractedWill {
+  grantor: "client" | "spouse";
+  executor?: string;
+  executionDate?: string;
+  bequests: ExtractedWillBequest[];
+}
+
 export interface ExtractionResult {
   documentType: DocumentType;
   fileName: string;
