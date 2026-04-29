@@ -5,6 +5,7 @@ import type { Account, Transfer, AccountLedger } from "../types";
 function makeLedger(value: number): AccountLedger {
   return {
     beginningValue: value, growth: 0, contributions: 0, distributions: 0,
+    internalContributions: 0, internalDistributions: 0,
     rmdAmount: 0, fees: 0, endingValue: value, entries: [],
   };
 }

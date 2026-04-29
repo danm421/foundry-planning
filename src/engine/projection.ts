@@ -568,6 +568,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         growth: 0,
         contributions: 0,
         distributions: 0,
+        internalContributions: 0,
+        internalDistributions: 0,
         rmdAmount: 0,
         fees: 0,
         endingValue: beginningValue,
@@ -831,6 +833,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           growth: 0,
           contributions: 0,
           distributions: 0,
+          internalContributions: 0,
+          internalDistributions: 0,
           rmdAmount: 0,
           fees: 0,
           endingValue: currentBalance,
@@ -1933,6 +1937,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // purchase equity) is refilled from the withdrawal strategy (grossed up
     // for tax).
     let withdrawals = { byAccount: {} as Record<string, number>, total: 0 };
+    const entityWithdrawals = { byAccount: {} as Record<string, number>, total: 0 };
     let withdrawalTax = 0;
 
     // 12a. Cash drawdown reporting — when this year's net flow ate into a
@@ -2126,11 +2131,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         withdrawals.total += draw.amount;
         if (accountLedgers[draw.accountId]) {
           accountLedgers[draw.accountId].distributions += draw.amount;
+          accountLedgers[draw.accountId].internalDistributions += draw.amount;
           accountLedgers[draw.accountId].endingValue -= draw.amount;
           accountLedgers[draw.accountId].entries.push({
             category: "withdrawal",
             label: "Withdrawal to cover household shortfall",
             amount: -draw.amount,
+            isInternalTransfer: true,
           });
         }
       }
@@ -2139,11 +2146,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accountBalances[checkingId] += supplementalPlan.total;
         if (accountLedgers[checkingId]) {
           accountLedgers[checkingId].contributions += supplementalPlan.total;
+          accountLedgers[checkingId].internalContributions += supplementalPlan.total;
           accountLedgers[checkingId].endingValue += supplementalPlan.total;
           accountLedgers[checkingId].entries.push({
             category: "withdrawal",
             label: "Withdrawal to cover shortfall",
             amount: supplementalPlan.total,
+            isInternalTransfer: true,
           });
         }
       }
@@ -2245,28 +2254,35 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accountBalances[acctId] -= amount;
         accountBalances[checkingId] += amount;
 
-        // Track the liquidation as a real withdrawal in the year's totals so
-        // cash-flow drill-down attributes the cap-gain-bearing draw to the
-        // entity's account. Mirrors household gap-fill convention.
-        withdrawals.byAccount[acctId] = (withdrawals.byAccount[acctId] ?? 0) + amount;
-        withdrawals.total += amount;
+        // Track the liquidation under entityWithdrawals so cap-gain attribution
+        // still has a per-account total to point at, but kept separate from
+        // household `withdrawals` — the Net Cash Flow drill is supposed to
+        // surface household supplemental draws only, not entity-internal
+        // refills.
+        entityWithdrawals.byAccount[acctId] =
+          (entityWithdrawals.byAccount[acctId] ?? 0) + amount;
+        entityWithdrawals.total += amount;
 
         if (accountLedgers[acctId]) {
           accountLedgers[acctId].distributions += amount;
+          accountLedgers[acctId].internalDistributions += amount;
           accountLedgers[acctId].endingValue -= amount;
           accountLedgers[acctId].entries.push({
             category: "withdrawal",
             label: "Entity gap-fill",
             amount: -amount,
+            isInternalTransfer: true,
           });
         }
         if (accountLedgers[checkingId]) {
           accountLedgers[checkingId].contributions += amount;
+          accountLedgers[checkingId].internalContributions += amount;
           accountLedgers[checkingId].endingValue += amount;
           accountLedgers[checkingId].entries.push({
             category: "withdrawal",
             label: "Refill from entity liquidation",
             amount,
+            isInternalTransfer: true,
           });
         }
 
@@ -2520,6 +2536,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       charityCarryforward,
       deductionBreakdown: deductionBreakdownResult,
       withdrawals,
+      entityWithdrawals,
       expenses,
       savings,
       totalIncome,

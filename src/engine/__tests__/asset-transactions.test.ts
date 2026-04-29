@@ -9,6 +9,8 @@ function makeLedger(value: number): AccountLedger {
     growth: 0,
     contributions: 0,
     distributions: 0,
+    internalContributions: 0,
+    internalDistributions: 0,
     rmdAmount: 0,
     fees: 0,
     endingValue: value,

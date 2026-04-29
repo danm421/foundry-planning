@@ -655,6 +655,17 @@ export interface ProjectionYear {
     total: number;
   };
 
+  /** Liquidations triggered by entity gap-fill — when an entity's own
+   * checking goes negative we drain the entity's other liquid assets to
+   * refill it. Tracked separately from `withdrawals` because the household
+   * Net Cash Flow drill is supposed to surface household supplemental
+   * withdrawals only; mixing in entity-internal liquidations made the
+   * "Withdrawal %" column overstate household stress. */
+  entityWithdrawals: {
+    byAccount: Record<string, number>;
+    total: number;
+  };
+
   expenses: {
     living: number;
     liabilities: number;
@@ -757,6 +768,16 @@ export interface AccountLedger {
   growth: number;
   contributions: number;
   distributions: number;
+  /**
+   * Subset of `contributions` / `distributions` that originated from internal
+   * portfolio-to-portfolio transfers (supplemental withdrawal refill, entity
+   * gap-fill refill). Reports use these to derive "external" flows by
+   * subtracting from the gross totals — the supplemental draw against a
+   * taxable account and its mirror credit to checking should net to zero in
+   * Portfolio Activity rather than show as gross movement on both sides.
+   */
+  internalContributions: number;
+  internalDistributions: number;
   rmdAmount: number;
   fees: number;
   endingValue: number;
@@ -791,6 +812,11 @@ export interface AccountLedgerEntry {
   label: string;
   amount: number;
   sourceId?: string;
+  /** True for the source/target legs of pure portfolio-to-portfolio
+   * transfers (supplemental withdrawal refill, entity gap-fill refill).
+   * Reports filter these out so the same dollars don't appear as both an
+   * addition and a distribution at the aggregate level. */
+  isInternalTransfer?: boolean;
 }
 
 export interface DeductionBreakdown {

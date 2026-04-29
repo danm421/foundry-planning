@@ -322,6 +322,8 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
       growth: 0,
       contributions: purchasePrice,
       distributions: 0,
+      internalContributions: 0,
+      internalDistributions: 0,
       rmdAmount: 0,
       fees: 0,
       endingValue: purchasePrice,

@@ -832,15 +832,34 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   // ── Portfolio activity helpers ─────────────────────────────────────────────
 
+  // External (non-internal-transfer) inflows/outflows for a single account.
+  // Internal transfers — supplemental withdrawal refill, entity gap-fill refill —
+  // post matching contribution/distribution legs that should net to zero in
+  // Portfolio Activity. Subtracting `internalContributions` / `internalDistributions`
+  // keeps the drill numbers honest: the supplemental draw against a taxable
+  // account no longer shows as a $X distribution while its mirror credit shows
+  // as a $X addition on cash.
+  function externalContributions(r: ProjectionYear, id: string): number {
+    const led = r.accountLedgers[id];
+    if (!led) return 0;
+    return led.contributions - (led.internalContributions ?? 0);
+  }
+
+  function externalDistributions(r: ProjectionYear, id: string): number {
+    const led = r.accountLedgers[id];
+    if (!led) return 0;
+    return led.distributions - (led.internalDistributions ?? 0);
+  }
+
   function additionsTotal(r: ProjectionYear): number {
     let sum = 0;
-    for (const id of portfolioAccountIds(r)) sum += r.accountLedgers[id]?.contributions ?? 0;
+    for (const id of portfolioAccountIds(r)) sum += externalContributions(r, id);
     return sum;
   }
 
   function distributionsTotal(r: ProjectionYear): number {
     let sum = 0;
-    for (const id of portfolioAccountIds(r)) sum += r.accountLedgers[id]?.distributions ?? 0;
+    for (const id of portfolioAccountIds(r)) sum += externalDistributions(r, id);
     return sum;
   }
 
@@ -850,7 +869,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     new Set(
       years.flatMap((y) =>
         [...portfolioAccountIds(y)].filter(
-          (id) => (y.accountLedgers[id]?.contributions ?? 0) > 0
+          (id) => externalContributions(y, id) > 0
         )
       )
     )
@@ -859,7 +878,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     new Set(
       years.flatMap((y) =>
         [...portfolioAccountIds(y)].filter(
-          (id) => (y.accountLedgers[id]?.distributions ?? 0) > 0
+          (id) => externalDistributions(y, id) > 0
         )
       )
     )
@@ -1611,7 +1630,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         return [
           ...baseColumns,
           ...additionAccountIds.map((id) =>
-            accountLedgerCell(id, (r) => r.accountLedgers[id]?.contributions ?? 0)
+            accountLedgerCell(id, (r) => externalContributions(r, id))
           ),
           numCol("additions_total", "Total Additions", (r) => additionsTotal(r), true),
         ];
@@ -1620,7 +1639,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         return [
           ...baseColumns,
           ...distributionAccountIds.map((id) =>
-            accountLedgerCell(id, (r) => r.accountLedgers[id]?.distributions ?? 0)
+            accountLedgerCell(id, (r) => externalDistributions(r, id))
           ),
           numCol("distributions_total", "Total Distributions", (r) => distributionsTotal(r), true),
         ];
