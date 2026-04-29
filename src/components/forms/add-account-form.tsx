@@ -380,11 +380,11 @@ export default function AddAccountForm({
   const defaultSavingsRefs = defaultSavingsRuleRefs();
   const initialSavingsStartYear =
     milestones && defaultSavingsRefs.startYearRef
-      ? resolveMilestone(defaultSavingsRefs.startYearRef, milestones) ?? currentYear
+      ? resolveMilestone(defaultSavingsRefs.startYearRef, milestones, "start") ?? currentYear
       : currentYear;
   const initialSavingsEndYear =
     milestones && defaultSavingsRefs.endYearRef
-      ? resolveMilestone(defaultSavingsRefs.endYearRef, milestones) ?? currentYear + 20
+      ? resolveMilestone(defaultSavingsRefs.endYearRef, milestones, "end") ?? currentYear + 20
       : currentYear + 20;
   const [savingsStartYear, setSavingsStartYear] = useState<number>(initialSavingsStartYear);
   const [savingsEndYear, setSavingsEndYear] = useState<number>(initialSavingsEndYear);
@@ -971,6 +971,7 @@ export default function AddAccountForm({
                   label="Start Year"
                   clientFirstName={clientFirstName}
                   spouseFirstName={spouseFirstName}
+                  position="start"
                 />
               ) : (
                 <div>
@@ -1006,6 +1007,7 @@ export default function AddAccountForm({
                   clientFirstName={clientFirstName}
                   spouseFirstName={spouseFirstName}
                   startYearForDuration={savingsStartYear}
+                  position="end"
                 />
               ) : (
                 <div>

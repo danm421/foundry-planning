@@ -42,6 +42,7 @@ import { fanOutGiftSeries } from "@/engine/series-fanout";
 import type { AccountOwner } from "@/engine/ownership";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
 import { resolveInflationRate } from "@/lib/inflation";
+import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/milestones";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
 import { synthesizePremiumExpenses } from "@/lib/insurance-policies/premium-expense";
 import { createGrowthSourceResolver } from "./resolve-growth-source";
@@ -184,6 +185,36 @@ export const loadClientData = cache(
     if (!settings) {
       throw new ProjectionInputError(`Client ${clientId} has no plan_settings row`);
     }
+
+    // Position-aware milestone resolution. When a row has a startYearRef /
+    // endYearRef set, re-derive its numeric year so the engine sees the
+    // correct value even if the stored startYear/endYear is stale (e.g.,
+    // retirement age changed, or row was saved before the position-aware
+    // resolution rule landed). Transition refs (`*_retirement`, `*_end`,
+    // `*_ss_*`) returned for `position: "end"` are `year - 1`, so a stream
+    // ending at retirement stops the year *before* the retirement year and
+    // doesn't overlap with streams starting at retirement.
+    const refMilestones = buildClientMilestones(
+      client,
+      settings.planStartYear,
+      settings.planEndYear,
+    );
+    const resolvedStart = (
+      ref: string | null,
+      stored: number,
+    ): number => {
+      if (!ref) return stored;
+      const r = resolveMilestone(ref as YearRef, refMilestones, "start");
+      return r ?? stored;
+    };
+    const resolvedEnd = (
+      ref: string | null,
+      stored: number,
+    ): number => {
+      if (!ref) return stored;
+      const r = resolveMilestone(ref as YearRef, refMilestones, "end");
+      return r ?? stored;
+    };
 
     // Load tax year parameters for the projection engine
     const taxYearRows = await db
@@ -539,8 +570,8 @@ export const loadClientData = cache(
       type: i.type,
       name: i.name,
       annualAmount: parseFloat(i.annualAmount),
-      startYear: i.startYear,
-      endYear: i.endYear,
+      startYear: resolvedStart(i.startYearRef, i.startYear),
+      endYear: resolvedEnd(i.endYearRef, i.endYear),
       growthRate: i.growthSource === "inflation" ? resolvedInflationRate : parseFloat(i.growthRate),
       owner: i.owner,
       claimingAge: i.claimingAge ?? undefined,
@@ -564,8 +595,8 @@ export const loadClientData = cache(
       type: e.type,
       name: e.name,
       annualAmount: parseFloat(e.annualAmount),
-      startYear: e.startYear,
-      endYear: e.endYear,
+      startYear: resolvedStart(e.startYearRef, e.startYear),
+      endYear: resolvedEnd(e.endYearRef, e.endYear),
       growthRate: e.growthSource === "inflation" ? resolvedInflationRate : parseFloat(e.growthRate),
       ownerEntityId: e.ownerEntityId ?? undefined,
       cashAccountId: e.cashAccountId ?? undefined,
@@ -627,8 +658,8 @@ export const loadClientData = cache(
       isDeductible: s.isDeductible,
       applyContributionLimit: s.applyContributionLimit,
       contributeMax: s.contributeMax,
-      startYear: s.startYear,
-      endYear: s.endYear,
+      startYear: resolvedStart(s.startYearRef, s.startYear),
+      endYear: resolvedEnd(s.endYearRef, s.endYear),
       growthRate: s.growthSource === "inflation" ? resolvedInflationRate : Number(s.growthRate ?? 0),
       employerMatchPct: s.employerMatchPct != null ? parseFloat(s.employerMatchPct) : undefined,
       employerMatchCap: s.employerMatchCap != null ? parseFloat(s.employerMatchCap) : undefined,
@@ -643,8 +674,8 @@ export const loadClientData = cache(
     const mappedWithdrawalStrategy = withdrawalRows.map((w) => ({
       accountId: w.accountId,
       priorityOrder: w.priorityOrder,
-      startYear: w.startYear,
-      endYear: w.endYear,
+      startYear: resolvedStart(w.startYearRef, w.startYear),
+      endYear: resolvedEnd(w.endYearRef, w.endYear),
     }));
 
     const mappedPlanSettings = {
@@ -736,6 +767,9 @@ export const loadClientData = cache(
       const schedules = transferScheduleRows
         .filter((s) => s.transferId === t.id)
         .map((s) => ({ year: s.year, amount: parseFloat(s.amount) }));
+      const resolvedTransferEnd = t.endYear == null
+        ? undefined
+        : resolvedEnd(t.endYearRef ?? null, t.endYear);
       return {
         id: t.id,
         name: t.name,
@@ -743,8 +777,8 @@ export const loadClientData = cache(
         targetAccountId: t.targetAccountId,
         amount: parseFloat(t.amount),
         mode: t.mode,
-        startYear: t.startYear,
-        endYear: t.endYear ?? undefined,
+        startYear: resolvedStart(t.startYearRef ?? null, t.startYear),
+        endYear: resolvedTransferEnd,
         growthRate: parseFloat(t.growthRate),
         schedules,
         startYearRef: t.startYearRef ?? null,

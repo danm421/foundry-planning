@@ -124,10 +124,10 @@ export default function SavingsRuleDialog({
   const initialStartRef = (editing?.startYearRef as YearRef | null) ?? defaultRefs.startYearRef ?? null;
   const initialEndRef = (editing?.endYearRef as YearRef | null) ?? defaultRefs.endYearRef ?? null;
   const initialStartYear = editing?.startYear
-    ?? (initialStartRef && clientInfo?.milestones ? resolveMilestone(initialStartRef, clientInfo.milestones) : null)
+    ?? (initialStartRef && clientInfo?.milestones ? resolveMilestone(initialStartRef, clientInfo.milestones, "start") : null)
     ?? currentYear;
   const initialEndYear = editing?.endYear
-    ?? (initialEndRef && clientInfo?.milestones ? resolveMilestone(initialEndRef, clientInfo.milestones) : null)
+    ?? (initialEndRef && clientInfo?.milestones ? resolveMilestone(initialEndRef, clientInfo.milestones, "end") : null)
     ?? currentYear + 20;
 
   const [startYear, setStartYear] = useState<number>(initialStartYear);
@@ -433,6 +433,7 @@ export default function SavingsRuleDialog({
                 label="Start Year"
                 clientFirstName={srClientFirstName}
                 spouseFirstName={srSpouseFirstName}
+                position="start"
               />
             ) : (
               <div>
@@ -468,6 +469,7 @@ export default function SavingsRuleDialog({
                 clientFirstName={srClientFirstName}
                 spouseFirstName={srSpouseFirstName}
                 startYearForDuration={startYear}
+                position="end"
               />
             ) : (
               <div>

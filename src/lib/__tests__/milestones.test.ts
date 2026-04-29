@@ -61,6 +61,43 @@ describe("resolveMilestone", () => {
     );
     expect(resolveMilestone("spouse_retirement", noSpouse)).toBeUndefined();
   });
+
+  describe("position-aware resolution", () => {
+    it("transition refs return year - 1 when used as end position (last year of prior state)", () => {
+      // Retirement year is 2027 — first retired year. As an endYear,
+      // the salary's last working year is 2026 (year before retirement).
+      expect(resolveMilestone("client_retirement", m, "end")).toBe(2026);
+      expect(resolveMilestone("spouse_retirement", m, "end")).toBe(2032);
+      expect(resolveMilestone("client_end", m, "end")).toBe(2059);
+      expect(resolveMilestone("spouse_end", m, "end")).toBe(2062);
+      expect(resolveMilestone("client_ss_fra", m, "end")).toBe(2031);
+    });
+
+    it("transition refs return the milestone year when used as start position", () => {
+      expect(resolveMilestone("client_retirement", m, "start")).toBe(2027);
+      expect(resolveMilestone("spouse_end", m, "start")).toBe(2063);
+      expect(resolveMilestone("client_ss_fra", m, "start")).toBe(2032);
+    });
+
+    it("plan_start and plan_end are absolute bounds (not transitions) — no offset for end position", () => {
+      expect(resolveMilestone("plan_start", m, "end")).toBe(2026);
+      expect(resolveMilestone("plan_end", m, "end")).toBe(2060);
+    });
+
+    it("default position is 'start' (preserves prior behavior)", () => {
+      expect(resolveMilestone("client_retirement", m)).toBe(
+        resolveMilestone("client_retirement", m, "start")
+      );
+    });
+
+    it("returns undefined for missing spouse refs regardless of position", () => {
+      const noSpouse = buildClientMilestones(
+        { dateOfBirth: "1970-01-01", retirementAge: 65, planEndAge: 90 },
+        2026, 2060
+      );
+      expect(resolveMilestone("spouse_retirement", noSpouse, "end")).toBeUndefined();
+    });
+  });
 });
 
 describe("availableRefs", () => {
@@ -84,6 +121,15 @@ describe("availableRefs", () => {
     const refs = availableRefs(m, true);
     expect(refs.some((r) => r.ref === "client_ss_62")).toBe(true);
     expect(refs.some((r) => r.ref === "spouse_ss_fra")).toBe(true);
+  });
+
+  it("displays end-position years for transition refs (year - 1)", () => {
+    const m = buildClientMilestones(CLIENT, 2026, 2060);
+    const refs = availableRefs(m, false, "end");
+    const retirement = refs.find((r) => r.ref === "client_retirement");
+    expect(retirement?.year).toBe(2026); // 2027 - 1
+    const planEnd = refs.find((r) => r.ref === "plan_end");
+    expect(planEnd?.year).toBe(2060); // absolute bound, no offset
   });
 });
 

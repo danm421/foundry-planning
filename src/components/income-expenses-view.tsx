@@ -441,10 +441,10 @@ function IncomeDialog({
     (editing?.endYearRef as YearRef) ?? incDefaultRefs?.endYearRef ?? null
   );
   const [startYear, setStartYear] = useState<number>(
-    editing?.startYear ?? (startYearRef && clientInfo?.milestones ? resolveMilestone(startYearRef, clientInfo.milestones) ?? currentYear : currentYear)
+    editing?.startYear ?? (startYearRef && clientInfo?.milestones ? resolveMilestone(startYearRef, clientInfo.milestones, "start") ?? currentYear : currentYear)
   );
   const [endYear, setEndYear] = useState<number>(
-    editing?.endYear ?? (endYearRef && clientInfo?.milestones ? resolveMilestone(endYearRef, clientInfo.milestones) ?? (currentYear + 20) : currentYear + 20)
+    editing?.endYear ?? (endYearRef && clientInfo?.milestones ? resolveMilestone(endYearRef, clientInfo.milestones, "end") ?? (currentYear + 20) : currentYear + 20)
   );
   const [name, setName] = useState<string>(
     editing?.name ?? makeDefaultIncomeName(owner, type, ownerNames)
@@ -464,14 +464,14 @@ function IncomeDialog({
     if (!startYearTouchedRef.current && refs.startYearRef) {
       setStartYearRef(refs.startYearRef);
       if (clientInfo?.milestones) {
-        const y = resolveMilestone(refs.startYearRef, clientInfo.milestones);
+        const y = resolveMilestone(refs.startYearRef, clientInfo.milestones, "start");
         if (y != null) setStartYear(y);
       }
     }
     if (!endYearTouchedRef.current && refs.endYearRef) {
       setEndYearRef(refs.endYearRef);
       if (clientInfo?.milestones) {
-        const y = resolveMilestone(refs.endYearRef, clientInfo.milestones);
+        const y = resolveMilestone(refs.endYearRef, clientInfo.milestones, "end");
         if (y != null) setEndYear(y);
       }
     }
@@ -769,6 +769,7 @@ function IncomeDialog({
                   label="Start Year"
                   clientFirstName={ownerNames.clientName.split(" ")[0]}
                   spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+                  position="start"
                 />
                 <MilestoneYearPicker
                   name="endYear"
@@ -782,6 +783,7 @@ function IncomeDialog({
                   clientFirstName={ownerNames.clientName.split(" ")[0]}
                   spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
                   startYearForDuration={startYear}
+                  position="end"
                 />
               </>
             ) : (
@@ -961,10 +963,10 @@ function ExpenseDialog({
     (editing?.endYearRef as YearRef) ?? expDefaultRefs?.endYearRef ?? null
   );
   const [startYear, setStartYear] = useState<number>(
-    editing?.startYear ?? (startYearRef && clientInfo?.milestones ? resolveMilestone(startYearRef, clientInfo.milestones) ?? currentYear : currentYear)
+    editing?.startYear ?? (startYearRef && clientInfo?.milestones ? resolveMilestone(startYearRef, clientInfo.milestones, "start") ?? currentYear : currentYear)
   );
   const [endYear, setEndYear] = useState<number>(
-    editing?.endYear ?? (endYearRef && clientInfo?.milestones ? resolveMilestone(endYearRef, clientInfo.milestones) ?? (currentYear + 20) : currentYear + 20)
+    editing?.endYear ?? (endYearRef && clientInfo?.milestones ? resolveMilestone(endYearRef, clientInfo.milestones, "end") ?? (currentYear + 20) : currentYear + 20)
   );
 
   if (!open) return null;
@@ -1163,6 +1165,7 @@ function ExpenseDialog({
                   label="Start Year"
                   clientFirstName={ownerNames.clientName.split(" ")[0]}
                   spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
+                  position="start"
                 />
                 <MilestoneYearPicker
                   name="endYear"
@@ -1176,6 +1179,7 @@ function ExpenseDialog({
                   clientFirstName={ownerNames.clientName.split(" ")[0]}
                   spouseFirstName={ownerNames.spouseName?.split(" ")[0]}
                   startYearForDuration={startYear}
+                  position="end"
                 />
               </>
             ) : (

@@ -148,6 +148,7 @@ export default function TransferSeriesForm({
           setStartYearRef(ref);
         }}
         label="Start year"
+        position="start"
       />
 
       {/* End year */}
@@ -163,6 +164,7 @@ export default function TransferSeriesForm({
         }}
         label="End year"
         startYearForDuration={startYear}
+        position="end"
       />
 
       {/* Inline year validation */}

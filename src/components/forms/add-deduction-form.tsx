@@ -221,6 +221,7 @@ export function AddDeductionForm({
               label="Start year"
               clientFirstName={clientFirstName}
               spouseFirstName={spouseFirstName}
+              position="start"
             />
           ) : (
             <div>
@@ -254,6 +255,7 @@ export function AddDeductionForm({
               clientFirstName={clientFirstName}
               spouseFirstName={spouseFirstName}
               startYearForDuration={startYear}
+              position="end"
             />
           ) : (
             <div>

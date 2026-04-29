@@ -31,6 +31,14 @@ interface MilestoneYearPickerProps {
    * Intended for end-year pickers. Typically the start year of the same record.
    */
   startYearForDuration?: number;
+  /**
+   * Whether this picker is choosing a start year or end year. Drives
+   * position-aware milestone resolution: transition refs (retirement, death,
+   * SS-claim ages) used as `end` resolve to `year - 1` so the picked stream
+   * stops the year before the transition rather than overlapping it.
+   * Defaults to "start" for backwards compatibility.
+   */
+  position?: "start" | "end";
 }
 
 const INPUT_CLASS =
@@ -68,6 +76,7 @@ export default function MilestoneYearPicker({
   clientFirstName,
   spouseFirstName,
   startYearForDuration,
+  position = "start",
 }: MilestoneYearPickerProps) {
   type Mode = "manual" | "milestone" | "duration";
   const [currentRef, setCurrentRef] = useState<YearRef | null>(yearRef);
@@ -83,13 +92,13 @@ export default function MilestoneYearPicker({
   // Re-resolve milestone when milestones change
   useEffect(() => {
     if (currentRef) {
-      const resolved = resolveMilestone(currentRef, milestones);
+      const resolved = resolveMilestone(currentRef, milestones, position);
       if (resolved != null && resolved !== currentYear) {
         setCurrentYear(resolved);
         onChange(resolved, currentRef);
       }
     }
-  }, [milestones, currentRef]);
+  }, [milestones, currentRef, position]);
 
   // When in duration mode, recompute year when startYearForDuration or duration changes
   useEffect(() => {
@@ -103,7 +112,7 @@ export default function MilestoneYearPicker({
   }, [mode, duration, startYearForDuration]);
 
   const labels = buildLabels(clientFirstName, spouseFirstName);
-  const refs = availableRefs(milestones, showSSRefs).map((r) => ({
+  const refs = availableRefs(milestones, showSSRefs, position).map((r) => ({
     ...r,
     label: labels[r.ref],
   }));
@@ -123,7 +132,7 @@ export default function MilestoneYearPicker({
       }
     } else {
       const ref = newMode as YearRef;
-      const resolved = resolveMilestone(ref, milestones);
+      const resolved = resolveMilestone(ref, milestones, position);
       if (resolved != null) {
         setMode("milestone");
         setCurrentRef(ref);

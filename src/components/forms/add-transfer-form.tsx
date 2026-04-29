@@ -340,6 +340,7 @@ export default function AddTransferForm({
                 label="Start Year"
                 clientFirstName={clientFirstName}
                 spouseFirstName={spouseFirstName}
+                position="start"
               />
             ) : (
               <>
@@ -372,6 +373,7 @@ export default function AddTransferForm({
                   clientFirstName={clientFirstName}
                   spouseFirstName={spouseFirstName}
                   startYearForDuration={startYear}
+                  position="end"
                 />
               ) : (
                 <>

@@ -81,58 +81,91 @@ export function buildClientMilestones(client: {
   return milestones;
 }
 
-/** Resolve a milestone ref to a year number. Returns undefined if ref requires spouse data that's missing. */
-export function resolveMilestone(ref: YearRef, m: ClientMilestones): number | undefined {
+/**
+ * Refs that mark a *transition* into a new state (retirement, death, SS-claim).
+ * For these, the milestone year is the first year of the new state, so when
+ * used as an `endYear`, the inclusive last year of the prior state is `year - 1`.
+ * `plan_start` / `plan_end` are absolute window bounds, not transitions.
+ */
+const TRANSITION_REFS: ReadonlySet<YearRef> = new Set<YearRef>([
+  "client_retirement",
+  "spouse_retirement",
+  "client_end",
+  "spouse_end",
+  "client_ss_62",
+  "client_ss_fra",
+  "client_ss_70",
+  "spouse_ss_62",
+  "spouse_ss_fra",
+  "spouse_ss_70",
+]);
+
+/**
+ * Resolve a milestone ref to a year number, taking position into account so the
+ * retirement year (etc.) isn't double-counted between an ending and a starting
+ * stream. `position: "end"` on a transition ref returns `year - 1` (last year
+ * of the prior state); `"start"` returns the milestone year itself.
+ *
+ * Returns undefined if ref requires spouse data that's missing.
+ */
+export function resolveMilestone(
+  ref: YearRef,
+  m: ClientMilestones,
+  position: "start" | "end" = "start",
+): number | undefined {
+  let year: number | undefined;
   switch (ref) {
-    case "plan_start": return m.planStart;
-    case "plan_end": return m.planEnd;
-    case "client_retirement": return m.clientRetirement;
-    case "spouse_retirement": return m.spouseRetirement;
-    case "client_end": return m.clientEnd;
-    case "spouse_end": return m.spouseEnd;
-    case "client_ss_62": return m.clientSS62;
-    case "client_ss_fra": return m.clientSSFRA;
-    case "client_ss_70": return m.clientSS70;
-    case "spouse_ss_62": return m.spouseSS62;
-    case "spouse_ss_fra": return m.spouseSSFRA;
-    case "spouse_ss_70": return m.spouseSS70;
+    case "plan_start": year = m.planStart; break;
+    case "plan_end": year = m.planEnd; break;
+    case "client_retirement": year = m.clientRetirement; break;
+    case "spouse_retirement": year = m.spouseRetirement; break;
+    case "client_end": year = m.clientEnd; break;
+    case "spouse_end": year = m.spouseEnd; break;
+    case "client_ss_62": year = m.clientSS62; break;
+    case "client_ss_fra": year = m.clientSSFRA; break;
+    case "client_ss_70": year = m.clientSS70; break;
+    case "spouse_ss_62": year = m.spouseSS62; break;
+    case "spouse_ss_fra": year = m.spouseSSFRA; break;
+    case "spouse_ss_70": year = m.spouseSS70; break;
   }
+  if (year == null) return undefined;
+  if (position === "end" && TRANSITION_REFS.has(ref)) return year - 1;
+  return year;
 }
 
-/** Which milestone refs are available (filters out spouse refs when no spouse) */
-export function availableRefs(m: ClientMilestones, includeSSRefs = false): { ref: YearRef; label: string; year: number }[] {
+/**
+ * Which milestone refs are available (filters out spouse refs when no spouse).
+ * `position` controls how each ref's displayed `year` is resolved — pass `"end"`
+ * when the picker is choosing an end-year so transition refs render as
+ * `year - 1` (last year of the prior state) for accurate UI.
+ */
+export function availableRefs(
+  m: ClientMilestones,
+  includeSSRefs = false,
+  position: "start" | "end" = "start",
+): { ref: YearRef; label: string; year: number }[] {
+  const make = (ref: YearRef): { ref: YearRef; label: string; year: number } => ({
+    ref,
+    label: YEAR_REF_LABELS[ref],
+    year: resolveMilestone(ref, m, position)!,
+  });
+
   const refs: { ref: YearRef; label: string; year: number }[] = [
-    { ref: "plan_start", label: YEAR_REF_LABELS.plan_start, year: m.planStart },
-    { ref: "plan_end", label: YEAR_REF_LABELS.plan_end, year: m.planEnd },
-    { ref: "client_retirement", label: YEAR_REF_LABELS.client_retirement, year: m.clientRetirement },
-    { ref: "client_end", label: YEAR_REF_LABELS.client_end, year: m.clientEnd },
+    make("plan_start"),
+    make("plan_end"),
+    make("client_retirement"),
+    make("client_end"),
   ];
 
-  if (m.spouseRetirement != null) {
-    refs.push(
-      { ref: "spouse_retirement", label: YEAR_REF_LABELS.spouse_retirement, year: m.spouseRetirement },
-    );
-  }
-  if (m.spouseEnd != null) {
-    refs.push(
-      { ref: "spouse_end", label: YEAR_REF_LABELS.spouse_end, year: m.spouseEnd },
-    );
-  }
+  if (m.spouseRetirement != null) refs.push(make("spouse_retirement"));
+  if (m.spouseEnd != null) refs.push(make("spouse_end"));
 
   if (includeSSRefs) {
     if (m.clientSS62 != null) {
-      refs.push(
-        { ref: "client_ss_62", label: YEAR_REF_LABELS.client_ss_62, year: m.clientSS62 },
-        { ref: "client_ss_fra", label: YEAR_REF_LABELS.client_ss_fra, year: m.clientSSFRA! },
-        { ref: "client_ss_70", label: YEAR_REF_LABELS.client_ss_70, year: m.clientSS70! },
-      );
+      refs.push(make("client_ss_62"), make("client_ss_fra"), make("client_ss_70"));
     }
     if (m.spouseSS62 != null) {
-      refs.push(
-        { ref: "spouse_ss_62", label: YEAR_REF_LABELS.spouse_ss_62, year: m.spouseSS62 },
-        { ref: "spouse_ss_fra", label: YEAR_REF_LABELS.spouse_ss_fra, year: m.spouseSSFRA! },
-        { ref: "spouse_ss_70", label: YEAR_REF_LABELS.spouse_ss_70, year: m.spouseSS70! },
-      );
+      refs.push(make("spouse_ss_62"), make("spouse_ss_fra"), make("spouse_ss_70"));
     }
   }
 

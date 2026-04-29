@@ -98,10 +98,10 @@ function WithdrawalDialog({
     (editing?.endYearRef as YearRef) ?? wdDefaultRefs?.endYearRef ?? null
   );
   const [startYear, setStartYear] = useState<number>(
-    editing?.startYear ?? (startYearRef && milestones ? resolveMilestone(startYearRef, milestones) ?? currentYear : currentYear)
+    editing?.startYear ?? (startYearRef && milestones ? resolveMilestone(startYearRef, milestones, "start") ?? currentYear : currentYear)
   );
   const [endYear, setEndYear] = useState<number>(
-    editing?.endYear ?? (endYearRef && milestones ? resolveMilestone(endYearRef, milestones) ?? (currentYear + 30) : currentYear + 30)
+    editing?.endYear ?? (endYearRef && milestones ? resolveMilestone(endYearRef, milestones, "end") ?? (currentYear + 30) : currentYear + 30)
   );
 
   if (!open) return null;
@@ -252,6 +252,7 @@ function WithdrawalDialog({
                   label="Start Year"
                   clientFirstName={clientFirstName}
                   spouseFirstName={spouseFirstName}
+                  position="start"
                 />
                 <MilestoneYearPicker
                   name="endYear"
@@ -265,6 +266,7 @@ function WithdrawalDialog({
                   clientFirstName={clientFirstName}
                   spouseFirstName={spouseFirstName}
                   startYearForDuration={startYear}
+                  position="end"
                 />
               </>
             ) : (

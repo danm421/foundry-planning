@@ -118,7 +118,7 @@ export default function AddLiabilityForm({
     (initial?.startYearRef as YearRef) ?? (!isEdit ? "plan_start" as YearRef : null)
   );
   const [startYear, setStartYear] = useState<number>(
-    initial?.startYear ?? (startYearRef && milestones ? resolveMilestone(startYearRef, milestones) ?? currentYear : currentYear)
+    initial?.startYear ?? (startYearRef && milestones ? resolveMilestone(startYearRef, milestones, "start") ?? currentYear : currentYear)
   );
   const [startMonth, setStartMonth] = useState<number>(initial?.startMonth ?? 1);
   const [balanceAsOfMonth, setBalanceAsOfMonth] = useState<number>(initial?.balanceAsOfMonth ?? new Date().getMonth() + 1);
@@ -401,6 +401,7 @@ export default function AddLiabilityForm({
                   label=""
                   clientFirstName={clientFirstName}
                   spouseFirstName={spouseFirstName}
+                  position="start"
                 />
               </div>
             ) : (
