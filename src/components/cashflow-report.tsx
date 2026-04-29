@@ -1595,9 +1595,13 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // Summed across portfolio-eligible accounts; ledger modal on cell click shows
     // the itemized per-account activity for the year.
 
-    const accountLedgerCell = (id: string, accessor: (r: ProjectionYear) => number) =>
+    const accountLedgerCell = (
+      id: string,
+      accessor: (r: ProjectionYear) => number,
+      colIdPrefix: string,
+    ) =>
       col(
-        `activity_${id}`,
+        `${colIdPrefix}_${id}`,
         accountNames[id] ?? id,
         accessor,
         (info) => {
@@ -1630,7 +1634,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         return [
           ...baseColumns,
           ...additionAccountIds.map((id) =>
-            accountLedgerCell(id, (r) => externalContributions(r, id))
+            accountLedgerCell(id, (r) => externalContributions(r, id), "additions")
           ),
           numCol("additions_total", "Total Additions", (r) => additionsTotal(r), true),
         ];
@@ -1639,7 +1643,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         return [
           ...baseColumns,
           ...distributionAccountIds.map((id) =>
-            accountLedgerCell(id, (r) => externalDistributions(r, id))
+            accountLedgerCell(id, (r) => externalDistributions(r, id), "distributions")
           ),
           numCol("distributions_total", "Total Distributions", (r) => distributionsTotal(r), true),
         ];

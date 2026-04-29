@@ -304,4 +304,65 @@ describe("projection: iterative gap-fill (audit F5)", () => {
     );
     expect(limitWarning).toBeUndefined();
   });
+
+  it("(i) household checking ledger nets income, expenses, and tax to a single signed entry", () => {
+    // Surplus year: $200k salary - $100k expense - tax ≈ +$46k net into checking.
+    // Pre-fix bug: pre-tax flows post as a $100k contribution and tax posts as
+    // a separate $54k distribution, so Portfolio Activity reports $100k of
+    // additions to cash even though the cash ledger only grew by $46k.
+    // Post-fix: contributions and distributions for the household checking are
+    // mutually exclusive — one is zero, the other equals |net flow|.
+    const { client, familyMembers } = singleClient(1970);
+    const data: ClientData = {
+      client,
+      accounts: [checking(50_000)],
+      incomes: [
+        {
+          id: "inc-salary",
+          type: "salary",
+          name: "Salary",
+          annualAmount: 200_000,
+          startYear: 2026,
+          endYear: 2026,
+          growthRate: 0,
+          owner: "client",
+        },
+      ],
+      expenses: [
+        {
+          id: "exp-living",
+          name: "Living",
+          type: "living",
+          annualAmount: 100_000,
+          growthRate: 0,
+          startYear: 2026,
+          endYear: 2026,
+        },
+      ],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: SINGLE_YEAR_PLAN,
+      familyMembers,
+      giftEvents: [],
+    };
+    const year = runProjection(data)[0];
+
+    const ledger = year.accountLedgers["acct-checking"];
+    expect(ledger).toBeDefined();
+
+    // Sanity: tax was actually charged (otherwise the test wouldn't exercise the bug).
+    expect(year.expenses.taxes).toBeGreaterThan(0);
+
+    // Net change = ending - beginning matches contributions - distributions.
+    const netLedger = ledger.contributions - ledger.distributions;
+    const netBalance = ledger.endingValue - ledger.beginningValue;
+    expect(netLedger).toBeCloseTo(netBalance, 2);
+
+    // Single signed entry: either all contribution (surplus) or all distribution
+    // (deficit), never both. Pre-fix this assertion fails because tax posts as
+    // a separate distribution alongside a positive contribution.
+    const bothNonZero = ledger.contributions > 0.01 && ledger.distributions > 0.01;
+    expect(bothNonZero).toBe(false);
+  });
 });

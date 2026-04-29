@@ -1909,15 +1909,24 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // 11. Apply the accumulated cash deltas to balances and ledgers. Itemized entries
     // collected during creditCash are flushed onto the ledger in the order they were
     // recorded so the modal can show a per-year transaction list.
+    //
+    // For the household checking, contributions/distributions netting is deferred
+    // until step 12 has applied taxes. Pre-tax flows (income, expenses, mortgage,
+    // savings) and post-tax taxes then post as a single signed entry — Portfolio
+    // Activity reports the true net change in cash instead of gross inflows split
+    // from gross tax outflows.
+    const householdCheckingId = hasChecking ? defaultChecking!.id : null;
+    let checkingExternalDelta = 0;
     for (const [acctId, delta] of Object.entries(cashDelta)) {
       accountBalances[acctId] = (accountBalances[acctId] ?? 0) + delta;
       if (accountLedgers[acctId]) {
-        if (delta >= 0) {
+        accountLedgers[acctId].endingValue += delta;
+        if (acctId === householdCheckingId) {
+          checkingExternalDelta += delta;
+        } else if (delta >= 0) {
           accountLedgers[acctId].contributions += delta;
-          accountLedgers[acctId].endingValue += delta;
         } else {
           accountLedgers[acctId].distributions += -delta;
-          accountLedgers[acctId].endingValue += delta;
         }
         const entries = pendingEntries[acctId];
         if (entries) accountLedgers[acctId].entries.push(...entries);
@@ -2162,7 +2171,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (taxAndPenalty !== 0) {
         accountBalances[checkingId] -= taxAndPenalty;
         if (accountLedgers[checkingId]) {
-          accountLedgers[checkingId].distributions += taxAndPenalty;
           accountLedgers[checkingId].endingValue -= taxAndPenalty;
           accountLedgers[checkingId].entries.push({
             category: "tax",
@@ -2172,6 +2180,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 : "Federal + state taxes",
             amount: -taxAndPenalty,
           });
+        }
+        checkingExternalDelta -= taxAndPenalty;
+      }
+
+      // Flush the deferred external net for the household checking. Pre-tax
+      // flows from cashDelta and post-tax taxes converge into a single signed
+      // contribution or distribution so Portfolio Activity reports true net
+      // change in cash. Internal supplemental and entity-gap-fill flows are
+      // posted to internalContributions/internalDistributions earlier in this
+      // block and aren't part of the external net.
+      if (accountLedgers[checkingId] && checkingExternalDelta !== 0) {
+        if (checkingExternalDelta > 0) {
+          accountLedgers[checkingId].contributions += checkingExternalDelta;
+        } else {
+          accountLedgers[checkingId].distributions += -checkingExternalDelta;
         }
       }
     } else {
