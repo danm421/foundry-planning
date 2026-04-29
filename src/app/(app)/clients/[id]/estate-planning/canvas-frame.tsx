@@ -85,18 +85,31 @@ export function CanvasFrame({
   // keeps the spine anchored at planStartYear.
   const spinePairRowYear = isSplit ? tree.planSettings.planStartYear : resolvedYear;
 
+  // "Today" (the explicit dropdown shortcut) shows BoY-of-planStart balances —
+  // the advisor-entered values, matching the Balance Sheet's Today view.
+  // Every other selection (including "End of {planStartYear}") is EoY of that
+  // year. Split mode targets death years that are necessarily future, so EoY.
+  const balanceMode: "boy" | "eoy" =
+    !isSplit && selectedAsOf === "today" ? "boy" : "eoy";
+
   const spineData = useMemo(
-    () => deriveSpineData({ tree, withResult, pairRowYear: spinePairRowYear }),
-    [tree, withResult, spinePairRowYear],
+    () =>
+      deriveSpineData({
+        tree,
+        withResult,
+        pairRowYear: spinePairRowYear,
+        pairRowMode: balanceMode,
+      }),
+    [tree, withResult, spinePairRowYear, balanceMode],
   );
 
   const inEstateTree = useMemo(
-    () => treeAsOfYear(tree, withResult, inEstateYear),
-    [tree, withResult, inEstateYear],
+    () => treeAsOfYear(tree, withResult, inEstateYear, balanceMode),
+    [tree, withResult, inEstateYear, balanceMode],
   );
   const outOfEstateTree = useMemo(
-    () => treeAsOfYear(tree, withResult, outOfEstateYear),
-    [tree, withResult, outOfEstateYear],
+    () => treeAsOfYear(tree, withResult, outOfEstateYear, balanceMode),
+    [tree, withResult, outOfEstateYear, balanceMode],
   );
 
   return (

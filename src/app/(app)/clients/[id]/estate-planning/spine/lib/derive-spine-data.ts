@@ -21,7 +21,7 @@ import {
 import { computeGrossEstate } from "@/engine/death-event/estate-tax";
 import type { ClientData, EstateTaxResult, DeathTransfer } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
-import { treeAsOfYear } from "../../lib/tree-as-of-year";
+import { treeAsOfYear, type BalanceMode } from "../../lib/tree-as-of-year";
 
 // ── Output types ──────────────────────────────────────────────────────────────
 
@@ -175,13 +175,14 @@ function computeGrossEstateAtYear(
   withResult: ProjectionResult,
   principal: "client" | "spouse",
   year: number,
+  mode: BalanceMode,
 ): number {
   const planStartYear = tree.planSettings.planStartYear;
   if (year > planStartYear && !withResult.years.find((y) => y.year === year)) {
     return 0;
   }
 
-  const overlaid = treeAsOfYear(tree, withResult, year);
+  const overlaid = treeAsOfYear(tree, withResult, year, mode);
 
   const principalFm = (overlaid.familyMembers ?? []).find((fm) => fm.role === principal);
   const principalFmId = principalFm?.id ?? null;
@@ -216,11 +217,17 @@ export function deriveSpineData(args: {
    * the spine anchors its net-worth snapshot to the same year for visual
    * consistency. */
   pairRowYear?: number;
+  /** Balance mode for the PairRow. "boy" reproduces the Balance Sheet's
+   * Today view (advisor-entered balances at planStart); "eoy" reads the
+   * year's projected end-of-year balances. Defaults to "boy" so the test
+   * suite's omitted-arg call sites preserve the original anchor behavior. */
+  pairRowMode?: BalanceMode;
 }): SpineData {
   const { tree, withResult } = args;
   const { client, planSettings } = tree;
   const { planStartYear, planEndYear } = planSettings;
   const anchorYear = args.pairRowYear ?? planStartYear;
+  const anchorMode: BalanceMode = args.pairRowMode ?? "boy";
 
   const firstDeathYear = computeFirstDeathYear(client, planStartYear, planEndYear);
   const finalDeathYear = computeFinalDeathYear(client, planStartYear, planEndYear);
@@ -267,8 +274,8 @@ export function deriveSpineData(args: {
     // overrides this when the as-of dropdown picks a future year). Computed
     // from the projection's accountLedgers so it stays in sync with the
     // left/right columns, which read the same year's overlaid balances.
-    const clientNetWorth = computeGrossEstateAtYear(tree, withResult, "client", anchorYear);
-    const spouseNetWorth = computeGrossEstateAtYear(tree, withResult, "spouse", anchorYear);
+    const clientNetWorth = computeGrossEstateAtYear(tree, withResult, "client", anchorYear, anchorMode);
+    const spouseNetWorth = computeGrossEstateAtYear(tree, withResult, "spouse", anchorYear, anchorMode);
 
     // Combined value: survivor holds everything at the year immediately after first death
     // (post-marital-deduction). Use portfolioAssets.total from that year row.
