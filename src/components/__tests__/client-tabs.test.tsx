@@ -82,7 +82,7 @@ describe("ClientTabs", () => {
     );
     const { container } = render(<ClientTabs clientId="c1" />);
     const links = Array.from(container.querySelectorAll("a"));
-    expect(links).toHaveLength(9);
+    expect(links).toHaveLength(10);
     for (const a of links) {
       expect(a.getAttribute("href")).toContain("?scenario=sc-1");
     }

@@ -22,6 +22,7 @@ import { computeGrossEstate } from "@/engine/death-event/estate-tax";
 import type { ClientData, EstateTaxResult, DeathTransfer } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
 import { treeAsOfYear, type BalanceMode } from "../../lib/tree-as-of-year";
+import { resolveRecipientLabel } from "@/lib/estate/recipient-label";
 
 // ── Output types ──────────────────────────────────────────────────────────────
 
@@ -98,12 +99,6 @@ function buildBeneficiaryCards(
   const famById = new Map(
     (tree.familyMembers ?? []).map((fm) => [fm.id, fm]),
   );
-  const entityById = new Map(
-    (tree.entities ?? []).map((e) => [e.id, e]),
-  );
-  const extById = new Map(
-    (tree.externalBeneficiaries ?? []).map((e) => [e.id, e]),
-  );
 
   for (const t of transfers) {
     if (t.recipientKind === "spouse") continue;
@@ -129,27 +124,13 @@ function buildBeneficiaryCards(
     if (existing) {
       existing.value += t.amount;
     } else {
-      let name = t.recipientLabel;
-      let relationship: string | null = null;
-      let isTrustRemainder = false;
-
-      if (t.recipientKind === "family_member" && t.recipientId) {
-        const fm = famById.get(t.recipientId);
-        if (fm) {
-          name = `${fm.firstName}${fm.lastName ? " " + fm.lastName : ""}`;
-          relationship = fm.relationship === "other" ? null : fm.relationship;
-        }
-      } else if (t.recipientKind === "entity" && t.recipientId) {
-        const ent = entityById.get(t.recipientId);
-        name = ent?.name ? `${ent.name} remainder` : `${t.recipientLabel} remainder`;
-        isTrustRemainder = true;
-      } else if (t.recipientKind === "external_beneficiary" && t.recipientId) {
-        const ext = extById.get(t.recipientId);
-        if (ext) name = ext.name;
-      }
-      // system_default: use recipientLabel (e.g. "Other Heirs")
-
-      grouped.set(key, { name, relationship, value: t.amount, isTrustRemainder });
+      const resolved = resolveRecipientLabel(t, tree);
+      grouped.set(key, {
+        name: resolved.name,
+        relationship: resolved.relationship,
+        value: t.amount,
+        isTrustRemainder: resolved.isTrustRemainder,
+      });
     }
   }
 

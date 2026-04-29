@@ -95,6 +95,8 @@ function makeOrdering(
     firstDecedent,
     firstDeath: first,
     finalDeath: final,
+    firstDeathTransfers: [],
+    finalDeathTransfers: final ? [] : undefined,
     totals: { ...computed, ...totals },
   };
 }

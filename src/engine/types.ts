@@ -169,6 +169,12 @@ export interface HypotheticalEstateTaxOrdering {
   firstDecedent: "client" | "spouse";
   firstDeath: EstateTaxResult;
   finalDeath?: EstateTaxResult;
+  /** Death-transfer ledger from the first-death event in this ordering.
+   *  Mirrors `DeathEventResult.transfers` — always populated. */
+  firstDeathTransfers: DeathTransfer[];
+  /** Death-transfer ledger from the final-death event. Populated only for
+   *  married households (matches the optionality of `finalDeath`). */
+  finalDeathTransfers?: DeathTransfer[];
   totals: {
     federal: number;
     state: number;
