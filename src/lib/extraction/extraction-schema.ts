@@ -23,6 +23,7 @@ const maxLenPerList = {
   liabilities: 200,
   entities: 50,
   dependents: 30,
+  lifePolicies: 50,
 } as const;
 
 const row = z.looseObject({});
@@ -46,6 +47,7 @@ export const extractedPayloadSchema = z
     liabilities: z.array(row).max(maxLenPerList.liabilities).optional(),
     entities: z.array(row).max(maxLenPerList.entities).optional(),
     family: familyPayloadSchema,
+    lifePolicies: z.array(row).max(maxLenPerList.lifePolicies).optional(),
   })
   .strict();
 

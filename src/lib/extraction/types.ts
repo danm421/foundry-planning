@@ -159,6 +159,22 @@ export interface ExtractedFamilyPayload {
   dependents?: ExtractedDependent[];
 }
 
+export type LifePolicyType = "term" | "whole" | "universal" | "variable";
+
+export interface ExtractedLifePolicy {
+  carrier?: string;
+  policyNumberLast4?: string;
+  policyType: LifePolicyType;
+  insuredPerson: "client" | "spouse" | "joint";
+  faceValue: number;
+  costBasis?: number;
+  premiumAmount?: number;
+  premiumYears?: number;
+  termIssueYear?: number;
+  termLengthYears?: number;
+  accountName: string;
+}
+
 export interface ExtractionResult {
   documentType: DocumentType;
   fileName: string;
