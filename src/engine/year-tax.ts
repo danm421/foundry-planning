@@ -6,10 +6,12 @@ import type {
 } from "./types";
 import type { TaxResult, TaxYearParameters } from "../lib/tax/types";
 import type { CharityBucket } from "./charitable-deduction";
+import { calculateTaxYearBracket, calculateTaxYearFlat, makeEmptyTaxParams } from "./tax";
+import { computeCharitableDeductionForYear } from "./charitable-deduction";
 
 export interface YearTaxInput {
   /** taxDetail with all scheduled income + (optionally) supplemental withdrawal income layered in */
-  taxDetail: ProjectionYear["taxDetail"];
+  taxDetail: NonNullable<ProjectionYear["taxDetail"]>;
   /** for SS gross used by bracket SS taxability */
   socialSecurityGross: number;
   /** for the Math.max(0, income.total - taxableIncome) flat-mode non-taxable line */
@@ -56,6 +58,98 @@ export interface YearTaxOutput {
   charityDeductionThisYear: number;
 }
 
-export function computeTaxForYear(_input: YearTaxInput): YearTaxOutput {
-  throw new Error("computeTaxForYear: not implemented yet (Task 5)");
+export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
+  const {
+    taxDetail, socialSecurityGross, totalIncome, taxableIncome,
+    filingStatus, year, planSettings, resolved, useBracket,
+    aboveLineDeductions, itemizedDeductions: itemizedIn,
+    charityCarryforwardIn, charityGiftsThisYear, secaResult,
+    transferEarlyWithdrawalPenalty, interestIncomeForTax, deductionBreakdownIn,
+  } = input;
+
+  // Deductible-half-of-SE-tax is an above-the-line adjustment per §164(f).
+  const aboveLineWithSeca = aboveLineDeductions + secaResult.deductibleHalf;
+
+  // Approximate AGI for §170(b) bucket math (exact AGI is computed inside calculateTaxYearBracket).
+  const charityAgi = Math.max(0, taxableIncome - aboveLineWithSeca);
+  const willItemize = useBracket
+    ? itemizedIn > (resolved?.params.stdDeduction[filingStatus] ?? 0)
+    : false;
+
+  const charityResult = computeCharitableDeductionForYear({
+    giftsThisYear: charityGiftsThisYear,
+    agi: charityAgi,
+    carryforwardIn: charityCarryforwardIn,
+    currentYear: year,
+    willItemize,
+  });
+
+  const itemizedDeductions = itemizedIn + charityResult.deductionThisYear;
+
+  // Patch deduction breakdown for charity (mirrors projection.ts:1703-1715)
+  let deductionBreakdownOut = deductionBreakdownIn;
+  if (deductionBreakdownIn && charityResult.deductionThisYear > 0) {
+    const newCharitable = deductionBreakdownIn.belowLine.charitable + charityResult.deductionThisYear;
+    const newItemizedTotal = deductionBreakdownIn.belowLine.itemizedTotal + charityResult.deductionThisYear;
+    deductionBreakdownOut = {
+      ...deductionBreakdownIn,
+      belowLine: {
+        ...deductionBreakdownIn.belowLine,
+        charitable: newCharitable,
+        itemizedTotal: newItemizedTotal,
+        taxDeductions: Math.max(newItemizedTotal, deductionBreakdownIn.belowLine.standardDeduction),
+      },
+    };
+  }
+
+  const taxResult = useBracket
+    ? calculateTaxYearBracket({
+        year, filingStatus,
+        earnedIncome: taxDetail.earnedIncome,
+        ordinaryIncome: Math.max(0, taxDetail.ordinaryIncome - interestIncomeForTax),
+        interestIncome: interestIncomeForTax,
+        qualifiedDividends: taxDetail.dividends,
+        longTermCapitalGains: taxDetail.capitalGains,
+        shortTermCapitalGains: taxDetail.stCapitalGains,
+        qbiIncome: taxDetail.qbi,
+        taxExemptIncome: taxDetail.taxExempt,
+        socialSecurityGross,
+        aboveLineDeductions: aboveLineWithSeca,
+        itemizedDeductions,
+        flatStateRate: planSettings.flatStateRate,
+        taxParams: resolved!.params,
+        inflationFactor: resolved!.inflationFactor,
+      })
+    : calculateTaxYearFlat({
+        taxableIncome,
+        flatFederalRate: planSettings.flatFederalRate,
+        flatStateRate: planSettings.flatStateRate,
+        taxParams: resolved?.params ?? makeEmptyTaxParams(year),
+        nonTaxableIncome: Math.max(0, totalIncome - taxableIncome),
+      });
+
+  // Add transfer early-withdrawal penalty
+  if (transferEarlyWithdrawalPenalty > 0) {
+    taxResult.flow.totalTax += transferEarlyWithdrawalPenalty;
+    taxResult.flow.totalFederalTax += transferEarlyWithdrawalPenalty;
+  }
+  // Add SECA tax (federal payroll)
+  if (secaResult.seTax > 0) {
+    taxResult.flow.totalTax += secaResult.seTax;
+    taxResult.flow.totalFederalTax += secaResult.seTax;
+  }
+
+  const marginalFedRate = useBracket ? taxResult.diag.marginalFederalRate : planSettings.flatFederalRate;
+  const marginalCombinedRate = Math.min(0.99, marginalFedRate + planSettings.flatStateRate);
+
+  return {
+    taxResult,
+    taxes: taxResult.flow.totalTax,
+    marginalFedRate,
+    marginalCombinedRate,
+    charityCarryforwardOut: charityResult.carryforwardOut,
+    deductionBreakdown: deductionBreakdownOut,
+    charityAgi,
+    charityDeductionThisYear: charityResult.deductionThisYear,
+  };
 }
