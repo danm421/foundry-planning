@@ -7,6 +7,7 @@ import { InEstateColumn } from "./in-estate-column";
 import { OutOfEstateColumn } from "./out-of-estate-column";
 import { DeathSpine } from "./spine/death-spine";
 import { deriveSpineData } from "./spine/lib/derive-spine-data";
+import { treeAsOfYear } from "./lib/tree-as-of-year";
 import { AsOfDropdown, type AsOfValue } from "@/components/report-controls/as-of-dropdown";
 import { TimePeriodButtons } from "@/components/report-controls/time-period-buttons";
 
@@ -79,9 +80,23 @@ export function CanvasFrame({
   const inEstateYear = isSplit ? (firstDeathYear ?? todayYear) : resolvedYear;
   const outOfEstateYear = isSplit ? (lastDeathYear ?? todayYear) : resolvedYear;
 
+  // The spine's PairRow + TODAY tick reflect the selected as-of year so net
+  // worth in the middle column matches the left/right columns. Split mode
+  // keeps the spine anchored at planStartYear.
+  const spinePairRowYear = isSplit ? tree.planSettings.planStartYear : resolvedYear;
+
   const spineData = useMemo(
-    () => deriveSpineData({ tree, withResult }),
-    [tree, withResult],
+    () => deriveSpineData({ tree, withResult, pairRowYear: spinePairRowYear }),
+    [tree, withResult, spinePairRowYear],
+  );
+
+  const inEstateTree = useMemo(
+    () => treeAsOfYear(tree, withResult, inEstateYear),
+    [tree, withResult, inEstateYear],
+  );
+  const outOfEstateTree = useMemo(
+    () => treeAsOfYear(tree, withResult, outOfEstateYear),
+    [tree, withResult, outOfEstateYear],
   );
 
   return (
@@ -124,13 +139,13 @@ export function CanvasFrame({
 
       <div className="grid grid-cols-[320px_1fr_360px] gap-0 rounded-[10px] border border-[var(--color-hair)] bg-[var(--color-card)]">
         <div className="border-r border-[var(--color-hair)]">
-          <InEstateColumn tree={tree} asOfYear={inEstateYear} />
+          <InEstateColumn tree={inEstateTree} asOfYear={inEstateYear} />
         </div>
         <div className="min-h-[480px]">
           <DeathSpine data={spineData} />
         </div>
         <div className="border-l border-[var(--color-hair)]">
-          <OutOfEstateColumn tree={tree} asOfYear={outOfEstateYear} />
+          <OutOfEstateColumn tree={outOfEstateTree} asOfYear={outOfEstateYear} />
         </div>
       </div>
     </div>

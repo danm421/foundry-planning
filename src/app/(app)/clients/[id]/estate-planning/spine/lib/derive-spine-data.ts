@@ -207,10 +207,17 @@ function computeGrossEstateAtYear(
 export function deriveSpineData(args: {
   tree: ClientData;
   withResult: ProjectionResult;
+  /** Year used for the PairRow + TODAY tick at the top of the spine. Defaults
+   * to planStartYear (today). When the canvas's as-of dropdown is set to a
+   * future year (e.g. retirement), the column values reflect that year, and
+   * the spine anchors its net-worth snapshot to the same year for visual
+   * consistency. */
+  pairRowYear?: number;
 }): SpineData {
   const { tree, withResult } = args;
   const { client, planSettings } = tree;
   const { planStartYear, planEndYear } = planSettings;
+  const anchorYear = args.pairRowYear ?? planStartYear;
 
   const firstDeathYear = computeFirstDeathYear(client, planStartYear, planEndYear);
   const finalDeathYear = computeFinalDeathYear(client, planStartYear, planEndYear);
@@ -253,11 +260,12 @@ export function deriveSpineData(args: {
     const firstEvent = withResult.firstDeathEvent;
     const secondEvent = withResult.secondDeathEvent;
 
-    // Net worth at TODAY (planStartYear) — both principals' gross estates as of
-    // the plan's first projection year. The PairRow renders under a "TODAY ${year}"
-    // tick, so the values must reflect today, not the future at-first-death snapshot.
-    const clientNetWorth = computeGrossEstateAtYear(tree, withResult, "client", planStartYear);
-    const spouseNetWorth = computeGrossEstateAtYear(tree, withResult, "spouse", planStartYear);
+    // Net worth at the anchor year (planStartYear by default; the canvas
+    // overrides this when the as-of dropdown picks a future year). Computed
+    // from the projection's accountLedgers so it stays in sync with the
+    // left/right columns, which read the same year's overlaid balances.
+    const clientNetWorth = computeGrossEstateAtYear(tree, withResult, "client", anchorYear);
+    const spouseNetWorth = computeGrossEstateAtYear(tree, withResult, "spouse", anchorYear);
 
     // Combined value: survivor holds everything at the year immediately after first death
     // (post-marital-deduction). Use portfolioAssets.total from that year row.
@@ -291,7 +299,7 @@ export function deriveSpineData(args: {
 
     return {
       kind: "two-grantor",
-      today: { year: planStartYear },
+      today: { year: anchorYear },
       pair: {
         client: { name: client.firstName, netWorth: clientNetWorth },
         spouse: { name: spouseDisplayName, netWorth: spouseNetWorth },
@@ -375,7 +383,7 @@ export function deriveSpineData(args: {
     return {
       kind: "single-grantor",
       survivorName,
-      today: { year: planStartYear },
+      today: { year: anchorYear },
       death: { year: deathYear, tax, toHeirs },
       beneficiaries,
       totals: { taxesAndExpenses: tax, toHeirs },
