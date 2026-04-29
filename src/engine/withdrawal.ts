@@ -1,4 +1,4 @@
-import type { WithdrawalPriority } from "./types";
+import type { WithdrawalPriority, Account } from "./types";
 
 interface WithdrawalResult {
   byAccount: Record<string, number>;
@@ -22,6 +22,60 @@ export interface SupplementalWithdrawalPlan {
     capitalGains: number;
     earlyWithdrawalPenalty: number;
   };
+}
+
+export interface CategorizeDrawInput {
+  account: Account;
+  amount: number;
+  basisMap: Record<string, number>;
+  ownerAge: number;
+}
+
+export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
+  const { account, amount, basisMap, ownerAge } = input;
+  const accountId = account.id;
+  const empty: SupplementalDraw = { accountId, amount, ordinaryIncome: 0, capitalGains: 0, earlyWithdrawalPenalty: 0 };
+
+  if (amount <= 0) return empty;
+
+  // Cash: 0% tax, no penalty
+  if (account.category === "cash") return empty;
+
+  // Taxable brokerage: pro-rata gain = (1 - basis/value) * amount
+  if (account.category === "taxable") {
+    const basis = basisMap[accountId] ?? 0;
+    const value = account.value;
+    if (value <= 0) return { ...empty, capitalGains: amount };
+    const gainRatio = Math.max(0, Math.min(1, 1 - basis / value));
+    const capGain = amount * gainRatio;
+    return { ...empty, capitalGains: capGain };
+  }
+
+  // Retirement: traditional vs Roth vs HSA
+  if (account.category === "retirement") {
+    // HSA: v1 — assume qualified-medical, treat as tax-free
+    if (account.subType === "hsa") return empty;
+
+    const isRoth = account.subType === "roth_ira" || account.subType === "roth_401k";
+    const isPreAge = ownerAge < 59.5;
+
+    if (isRoth) {
+      // F2 ordering: contributions/basis come out first, tax- and penalty-free
+      const basis = basisMap[accountId] ?? 0;
+      const earningsWithdrawn = Math.max(0, amount - basis);
+      const ordinaryIncome = isPreAge ? earningsWithdrawn : 0; // post-59.5 qualified Roth earnings are tax-free
+      const penalty = isPreAge ? earningsWithdrawn * 0.1 : 0;
+      return { ...empty, ordinaryIncome, earlyWithdrawalPenalty: penalty };
+    }
+
+    // Traditional IRA / 401k / 403b / 457: full draw is ordinary income; 10% penalty pre-59.5
+    const penalty = isPreAge ? amount * 0.1 : 0;
+    return { ...empty, ordinaryIncome: amount, earlyWithdrawalPenalty: penalty };
+  }
+
+  // real_estate / business / life_insurance — strategy walk filters these via categoryWithdrawalPriority,
+  // so they should never reach categorizeDraw. Return empty defensively.
+  return empty;
 }
 
 export function executeWithdrawals(
