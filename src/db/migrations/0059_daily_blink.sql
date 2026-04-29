@@ -1,0 +1,1 @@
+ALTER TABLE "accounts" ADD COLUMN "prior_year_end_value" numeric(15, 2);

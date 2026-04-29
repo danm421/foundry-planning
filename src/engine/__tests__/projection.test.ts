@@ -231,6 +231,77 @@ describe("runProjection", () => {
     expect(yr.accountLedgers["acct-401k-rmd"].endingValue).toBeCloseTo(500000 - expectedRmd, 0);
   });
 
+  it("priorYearEndValue overrides the Year-1 RMD basis but not later years", () => {
+    // Mid-year balance entered as `value` is 600k; the true Dec-31 balance was
+    // 550k. Without the override, Year-1 RMD = 600k / 24.6. With override the
+    // Year-1 RMD should match the custodian's letter (550k / 24.6). Year 2 must
+    // ignore the override and use the engine's own end-of-year balance.
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-trad",
+          name: "Traditional IRA",
+          category: "retirement",
+          subType: "traditional_ira",
+          value: 600000,
+          basis: 600000,
+          growthRate: 0.0,
+          rmdEnabled: true,
+          priorYearEndValue: 550000,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2045, planEndYear: 2046 },
+    });
+    const result = runProjection(data);
+
+    // Year 1 (planStartYear 2045): RMD computed off the override (550k),
+    // not `value` (600k).
+    const yr1 = result[0];
+    const yr1Expected = 550000 / 24.6;
+    expect(yr1.accountLedgers["acct-trad"].rmdAmount).toBeCloseTo(yr1Expected, 0);
+    // Ending value: started at 600k, no growth, RMD pulled out.
+    expect(yr1.accountLedgers["acct-trad"].endingValue).toBeCloseTo(600000 - yr1Expected, 0);
+
+    // Year 2: override is ignored. RMD basis = engine's end-of-year-1 balance.
+    const yr2 = result[1];
+    const yr2Basis = 600000 - yr1Expected;
+    const yr2Expected = yr2Basis / 23.7; // age 76 divisor
+    expect(yr2.accountLedgers["acct-trad"].rmdAmount).toBeCloseTo(yr2Expected, 0);
+  });
+
+  it("priorYearEndValue is ignored when the account is not RMD-enabled", () => {
+    const data = buildClientData({
+      accounts: [
+        {
+          id: "acct-roth",
+          name: "Roth IRA",
+          category: "retirement",
+          subType: "roth_ira",
+          value: 600000,
+          basis: 600000,
+          growthRate: 0.0,
+          rmdEnabled: false,
+          priorYearEndValue: 550000,
+          owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: { ...basePlanSettings, planStartYear: 2045, planEndYear: 2046 },
+    });
+    const result = runProjection(data);
+    expect(result[0].accountLedgers["acct-roth"].rmdAmount).toBe(0);
+  });
+
   it("splits growth by realization model when account has realization data", () => {
     const data = buildClientData({
       accounts: [

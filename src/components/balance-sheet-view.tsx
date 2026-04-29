@@ -27,6 +27,7 @@ export interface AccountRow {
   basis: string;
   growthRate: string | null;
   rmdEnabled?: boolean | null;
+  priorYearEndValue?: string | null;
   ownerEntityId?: string | null;
   growthSource?: string;
   modelPortfolioId?: string | null;
@@ -148,6 +149,7 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     basis: a.basis,
     growthRate: a.growthRate,
     rmdEnabled: a.rmdEnabled ?? null,
+    priorYearEndValue: a.priorYearEndValue ?? null,
     ownerEntityId: a.ownerEntityId ?? null,
     growthSource: a.growthSource,
     modelPortfolioId: a.modelPortfolioId ?? null,

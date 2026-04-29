@@ -15,6 +15,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "lifeInsurance": undefined,
       "name": "Joint Brokerage",
       "owners": [],
+      "priorYearEndValue": undefined,
       "propertyTaxGrowthRate": 0.03,
       "realization": undefined,
       "rmdEnabled": false,
@@ -33,6 +34,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "lifeInsurance": undefined,
       "name": "Checking",
       "owners": [],
+      "priorYearEndValue": undefined,
       "propertyTaxGrowthRate": 0.03,
       "realization": {
         "pctLtCapitalGains": 0,

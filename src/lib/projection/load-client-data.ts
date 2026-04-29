@@ -516,6 +516,7 @@ export const loadClientData = cache(
         basis: parseFloat(a.basis),
         growthRate,
         rmdEnabled: a.rmdEnabled,
+        priorYearEndValue: a.priorYearEndValue != null ? parseFloat(a.priorYearEndValue) : undefined,
         beneficiaries: accountBens.get(a.id) ?? undefined,
         isDefaultChecking: a.isDefaultChecking,
         realization,

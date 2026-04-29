@@ -56,6 +56,7 @@ export const accountCreateSchema = z
     basis: money.optional(),
     growthRate: growthRate.optional().nullable(),
     rmdEnabled: z.boolean().optional(),
+    priorYearEndValue: money.optional().nullable(),
     ownerEntityId: uuidLike.optional().nullable(),
     growthSource: z.string().max(40).optional(),
     modelPortfolioId: uuidLike.optional().nullable(),
