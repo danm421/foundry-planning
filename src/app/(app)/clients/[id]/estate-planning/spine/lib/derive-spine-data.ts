@@ -21,6 +21,7 @@ import {
 import { computeGrossEstate } from "@/engine/death-event/estate-tax";
 import type { ClientData, EstateTaxResult, DeathTransfer } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
+import { treeAsOfYear } from "../../lib/tree-as-of-year";
 
 // ── Output types ──────────────────────────────────────────────────────────────
 
@@ -161,13 +162,13 @@ function buildBeneficiaryCards(
 }
 
 /**
- * Compute one principal's gross estate as if they died at `year`, reading
- * end-of-year balances from the projection's accountLedgers. Used to compute
- * "today" net-worth values for the PairRow under the TODAY tick (year =
- * planStartYear), and previously also used for the survivor's at-first-death
- * snapshot.
+ * Compute one principal's gross estate at `year` using the same
+ * year-overlay convention as the In Estate / Out of Estate columns
+ * (`treeAsOfYear`): BoY balances at planStartYear (advisor-entered values,
+ * matching the Balance Sheet's Today view) and EoY balances for future
+ * years. Used by the PairRow under the TODAY/AS-OF tick.
  *
- * Returns 0 when the year row isn't found in the projection.
+ * Returns 0 when the requested future year isn't in the projection.
  */
 function computeGrossEstateAtYear(
   tree: ClientData,
@@ -175,27 +176,29 @@ function computeGrossEstateAtYear(
   principal: "client" | "spouse",
   year: number,
 ): number {
-  const principalFm = (tree.familyMembers ?? []).find((fm) => fm.role === principal);
+  const planStartYear = tree.planSettings.planStartYear;
+  if (year > planStartYear && !withResult.years.find((y) => y.year === year)) {
+    return 0;
+  }
+
+  const overlaid = treeAsOfYear(tree, withResult, year);
+
+  const principalFm = (overlaid.familyMembers ?? []).find((fm) => fm.role === principal);
   const principalFmId = principalFm?.id ?? null;
   const otherRole = principal === "client" ? "spouse" : "client";
-  const otherFm = (tree.familyMembers ?? []).find((fm) => fm.role === otherRole);
+  const otherFm = (overlaid.familyMembers ?? []).find((fm) => fm.role === otherRole);
   const otherFmId = otherFm?.id ?? null;
 
-  const yearRow = withResult.years.find((y) => y.year === year);
-  if (!yearRow) return 0;
-
   const accountBalances: Record<string, number> = {};
-  for (const [id, ledger] of Object.entries(yearRow.accountLedgers)) {
-    accountBalances[id] = ledger.endingValue;
-  }
+  for (const a of overlaid.accounts) accountBalances[a.id] = a.value;
 
   const result = computeGrossEstate({
     deceased: principal,
     deathOrder: 1,
-    accounts: tree.accounts,
+    accounts: overlaid.accounts,
     accountBalances,
-    liabilities: tree.liabilities,
-    entities: tree.entities ?? [],
+    liabilities: overlaid.liabilities,
+    entities: overlaid.entities ?? [],
     deceasedFmId: principalFmId,
     survivorFmId: otherFmId,
   });

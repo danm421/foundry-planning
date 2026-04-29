@@ -11,6 +11,7 @@ import type {
   DeductionBreakdown,
   Income,
   EstateTaxResult,
+  HypotheticalEstateTax,
 } from "./types";
 import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
@@ -2420,6 +2421,67 @@ export interface ProjectionResult {
   years: ProjectionYear[];
   firstDeathEvent?: EstateTaxResult;
   secondDeathEvent?: EstateTaxResult;
+  /** Hypothetical estate tax computed against the BoY-of-planStartYear
+   * snapshot (advisor-entered balances, before any growth/income runs).
+   * Used by the Estate Tax report's "Today" view so it agrees with the
+   * Balance Sheet's "Today" mode. The per-year `hypotheticalEstateTax`
+   * on each ProjectionYear is EoY and remains the source for future-year
+   * snapshots. */
+  todayHypotheticalEstateTax: HypotheticalEstateTax;
+}
+
+/**
+ * Compute the "as of today" hypothetical estate tax — both grantors die at
+ * the start of planStartYear, before any projected growth or income. The
+ * inputs mirror the BoY initialization inside `runProjection` so values
+ * align with the advisor-entered balances surfaced on the Balance Sheet's
+ * Today view.
+ */
+function computeTodayHypotheticalEstateTax(
+  data: ClientData,
+): HypotheticalEstateTax {
+  const planStartYear = data.planSettings.planStartYear;
+
+  const accountBalances: Record<string, number> = {};
+  const basisMap: Record<string, number> = {};
+  for (const acct of data.accounts) {
+    accountBalances[acct.id] = acct.value;
+    basisMap[acct.id] = acct.basis;
+  }
+
+  // Match the runProjection liability-init: each balance is the schedule's
+  // BoY balance at planStartYear, falling back to the raw balance when the
+  // liability has no schedule.
+  const liabilitySchedules = buildLiabilitySchedules(data.liabilities);
+  const liabilities = data.liabilities.map((l) => {
+    const sched = liabilitySchedules.get(l.id);
+    const boyBalance = sched
+      ? scheduleBoYBalance(sched, planStartYear)
+      : l.balance;
+    return { ...l, balance: boyBalance };
+  });
+
+  const filingStatus = (data.client.filingStatus ?? "single") as FilingStatus;
+  const isMarried =
+    filingStatus === "married_joint" || filingStatus === "married_separate";
+
+  return computeHypotheticalEstateTax({
+    year: planStartYear,
+    isMarried,
+    accounts: data.accounts,
+    accountBalances,
+    basisMap,
+    incomes: data.incomes,
+    liabilities,
+    familyMembers: data.familyMembers ?? [],
+    externalBeneficiaries: data.externalBeneficiaries ?? [],
+    entities: data.entities ?? [],
+    wills: data.wills ?? [],
+    planSettings: data.planSettings,
+    gifts: data.gifts ?? [],
+    giftEvents: data.giftEvents,
+    annualExclusionsByYear: buildAnnualExclusionsMap(data.taxYearRows ?? []),
+  });
 }
 
 /**
@@ -2439,5 +2501,6 @@ export function runProjectionWithEvents(
     years,
     firstDeathEvent: firstIdx >= 0 ? years[firstIdx].estateTax! : undefined,
     secondDeathEvent: secondIdx >= 0 ? years[secondIdx].estateTax! : undefined,
+    todayHypotheticalEstateTax: computeTodayHypotheticalEstateTax(data),
   };
 }

@@ -104,7 +104,13 @@ export default function EstateTaxReportView({
     return projectionYears.find((y) => y.year === resolvedYear) ?? null;
   }, [projectionYears, resolvedYear]);
 
-  const hypothetical = selectedProjectionYear?.hypotheticalEstateTax ?? null;
+  // "Today" pulls the BoY-of-planStartYear hypothetical so the gross-estate
+  // line items match the Balance Sheet's Today view (advisor-entered balances).
+  // Future years use the per-year EoY hypothetical attached to that year row.
+  const hypothetical =
+    selectedAsOf === "today"
+      ? projection?.todayHypotheticalEstateTax ?? null
+      : selectedProjectionYear?.hypotheticalEstateTax ?? null;
 
   if (loadError) {
     return (

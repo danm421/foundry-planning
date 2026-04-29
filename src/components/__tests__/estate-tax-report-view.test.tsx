@@ -154,10 +154,21 @@ function setProjectionFixture(years: ProjectionYear[]) {
   vi.mocked(runProjection).mockReturnValue(years);
   const firstIdx = years.findIndex((y) => y.estateTax?.deathOrder === 1);
   const secondIdx = years.findIndex((y) => y.estateTax?.deathOrder === 2);
+  // Reuse the first year's hypothetical as the BoY-of-planStart fixture; the
+  // tests in this file don't exercise the Today view distinctly from the
+  // first-year EoY snapshot, so a shared object keeps the fixture minimal.
+  const firstYear = years[0];
+  const todayHypo: HypotheticalEstateTax =
+    firstYear?.hypotheticalEstateTax ??
+    ({
+      year: firstYear?.year ?? 0,
+      primaryFirst: {} as HypotheticalEstateTaxOrdering,
+    } as HypotheticalEstateTax);
   vi.mocked(runProjectionWithEvents).mockReturnValue({
     years,
     firstDeathEvent: firstIdx >= 0 ? years[firstIdx].estateTax : undefined,
     secondDeathEvent: secondIdx >= 0 ? years[secondIdx].estateTax : undefined,
+    todayHypotheticalEstateTax: todayHypo,
   });
 }
 
