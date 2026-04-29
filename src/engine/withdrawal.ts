@@ -78,6 +78,69 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
   return empty;
 }
 
+export interface PlanSupplementalWithdrawalInput {
+  shortfall: number;
+  strategy: WithdrawalPriority[];
+  householdBalances: Record<string, number>;
+  basisMap: Record<string, number>;
+  accounts: Account[];
+  ages: { client: number; spouse: number | null };
+  isSpouseAccount: (account: Account) => boolean;
+  year: number;
+}
+
+export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInput): SupplementalWithdrawalPlan {
+  const { shortfall, strategy, householdBalances, basisMap, accounts, ages, isSpouseAccount, year } = input;
+
+  const empty: SupplementalWithdrawalPlan = {
+    byAccount: {}, total: 0, draws: [],
+    recognizedIncome: { ordinaryIncome: 0, capitalGains: 0, earlyWithdrawalPenalty: 0 },
+  };
+  if (shortfall <= 0) return empty;
+
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+  const sorted = [...strategy]
+    .filter((s) => year >= s.startYear && year <= s.endYear)
+    .sort((a, b) => a.priorityOrder - b.priorityOrder);
+
+  const draws: SupplementalDraw[] = [];
+  const byAccount: Record<string, number> = {};
+  let remaining = shortfall;
+  let totalOrdinary = 0;
+  let totalCapGains = 0;
+  let totalPenalty = 0;
+
+  for (const entry of sorted) {
+    if (remaining <= 0) break;
+
+    const account = accountById.get(entry.accountId);
+    if (!account) continue;
+    const available = householdBalances[entry.accountId] ?? 0;
+    if (available <= 0) continue;
+
+    const drawAmount = Math.min(remaining, available);
+    const ownerAge = isSpouseAccount(account) && ages.spouse != null ? ages.spouse : ages.client;
+    const draw = categorizeDraw({ account, amount: drawAmount, basisMap, ownerAge });
+
+    draws.push(draw);
+    byAccount[entry.accountId] = drawAmount;
+    totalOrdinary += draw.ordinaryIncome;
+    totalCapGains += draw.capitalGains;
+    totalPenalty += draw.earlyWithdrawalPenalty;
+    remaining -= drawAmount;
+  }
+
+  const total = draws.reduce((sum, d) => sum + d.amount, 0);
+  return {
+    byAccount, total, draws,
+    recognizedIncome: {
+      ordinaryIncome: totalOrdinary,
+      capitalGains: totalCapGains,
+      earlyWithdrawalPenalty: totalPenalty,
+    },
+  };
+}
+
 export function executeWithdrawals(
   deficit: number,
   strategy: WithdrawalPriority[],
