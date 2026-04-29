@@ -90,7 +90,7 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
       allTraditionalIraBasis,
       allTraditionalIraBalance,
       ownerAge,
-      rothBasis: basisMap[transfer.targetAccountId] ?? 0,
+      rothBasis: basisMap[transfer.sourceAccountId] ?? 0,
     });
 
     // ── Update balances ──────────────────────────────────────────────────────

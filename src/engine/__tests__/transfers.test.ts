@@ -143,4 +143,59 @@ describe("applyTransfers", () => {
     expect(balances["ira-1"]).toBe(0);
     expect(balances["roth-1"]).toBe(600000);
   });
+
+  it("treats a Roth → cash transfer as contributions-first when source has basis (F2)", () => {
+    // Roth has $60k basis (contributions) on $100k value. Withdraw $50k pre-59.5.
+    // Per Roth ordering rules: $50k comes from contributions → no OI, no penalty.
+    // Bug being fixed: rothBasis was sourced from basisMap[target] (cash, ~$50k)
+    // instead of basisMap[source]. Result depended on whatever basis happened to
+    // sit on the target. Make the target's basis a value that would tax the wrong
+    // amount under the bug — anything < amount triggers earnings tax + penalty.
+    const transfers: Transfer[] = [{
+      id: "t1", name: "Roth to checking", sourceAccountId: "roth-1",
+      targetAccountId: "checking-1", amount: 50000, mode: "one_time",
+      startYear: 2028, growthRate: 0, schedules: [],
+    }];
+    const balances: Record<string, number> = { "roth-1": 100000, "checking-1": 50000 };
+    // target basis = 0 → under the bug, every dollar above 0 is taxed earnings + 10% penalty
+    const basisMap: Record<string, number> = { "roth-1": 60000, "checking-1": 0 };
+    const ledgers: Record<string, AccountLedger> = {
+      "roth-1": makeLedger(100000),
+      "checking-1": makeLedger(50000),
+    };
+
+    const result = applyTransfers({
+      transfers, accounts: [rothAccount, checkingAccount], accountBalances: balances,
+      basisMap, accountLedgers: ledgers, year: 2028, ownerAges: { client: 50 },
+    });
+
+    expect(result.taxableOrdinaryIncome).toBe(0);
+    expect(result.earlyWithdrawalPenalty).toBe(0);
+    expect(balances["roth-1"]).toBe(50000);
+    expect(balances["checking-1"]).toBe(100000);
+  });
+
+  it("taxes earnings + penalizes when Roth → cash exceeds source basis (F2)", () => {
+    // Roth basis = $60k, value = $100k, withdraw $80k pre-59.5.
+    // Expected: $60k from basis (tax-free), $20k earnings → OI + 10% penalty.
+    const transfers: Transfer[] = [{
+      id: "t1", name: "Roth to checking", sourceAccountId: "roth-1",
+      targetAccountId: "checking-1", amount: 80000, mode: "one_time",
+      startYear: 2028, growthRate: 0, schedules: [],
+    }];
+    const balances: Record<string, number> = { "roth-1": 100000, "checking-1": 50000 };
+    const basisMap: Record<string, number> = { "roth-1": 60000, "checking-1": 0 };
+    const ledgers: Record<string, AccountLedger> = {
+      "roth-1": makeLedger(100000),
+      "checking-1": makeLedger(50000),
+    };
+
+    const result = applyTransfers({
+      transfers, accounts: [rothAccount, checkingAccount], accountBalances: balances,
+      basisMap, accountLedgers: ledgers, year: 2028, ownerAges: { client: 50 },
+    });
+
+    expect(result.taxableOrdinaryIncome).toBe(20000);
+    expect(result.earlyWithdrawalPenalty).toBeCloseTo(2000, 6); // 10% of $20k
+  });
 });
