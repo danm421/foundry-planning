@@ -93,13 +93,12 @@ function legacyTaxType(
   }
 }
 
-// Tax-efficiency ranking applied when the user hasn't configured a withdrawal strategy.
-// Lower number = tapped first. Household checking is excluded because it's the target
-// account, not a source. Real estate / business / life-insurance accounts are skipped
-// (they can't be liquidated cleanly).
-function defaultWithdrawalPriorityFor(acct: Account): number | null {
-  if (controllingEntity(acct) != null) return null;
-  if (acct.isDefaultChecking) return null;
+// Tax-efficiency ranking by category alone — Cash → Taxable → Tax-Deferred → Roth.
+// Returns null for categories that can't be cleanly liquidated at year boundaries
+// (real estate, business, life insurance). Shared by household and entity-scoped
+// withdrawal strategies; callers layer on their own ownership / default-checking
+// exclusions before consulting it.
+function categoryWithdrawalPriority(acct: Account): number | null {
   if (acct.category === "cash") return 1;
   if (acct.category === "taxable") return 2;
   if (acct.category === "retirement") {
@@ -108,6 +107,47 @@ function defaultWithdrawalPriorityFor(acct: Account): number | null {
     return 3;
   }
   return null;
+}
+
+// Tax-efficiency ranking applied when the user hasn't configured a withdrawal
+// strategy. Household checking is excluded because it's the target account,
+// not a source. Entity-owned accounts are excluded because they sit under
+// step 12c's per-entity gap-fill, not the household pool.
+function defaultWithdrawalPriorityFor(acct: Account): number | null {
+  if (controllingEntity(acct) != null) return null;
+  if (acct.isDefaultChecking) return null;
+  return categoryWithdrawalPriority(acct);
+}
+
+// Mirror of `buildDefaultWithdrawalStrategy` scoped to a single entity. Used by
+// step 12c to build a per-entity liquidation order when the entity's checking
+// goes negative. Excludes the entity's own default-checking and the untappable
+// categories baked into `categoryWithdrawalPriority`.
+function buildEntityWithdrawalStrategy(
+  entityId: string,
+  accounts: Account[],
+  planSettings: PlanSettings,
+): WithdrawalPriority[] {
+  const strategy: WithdrawalPriority[] = [];
+  const valueById = new Map(accounts.map((a) => [a.id, a.value ?? 0]));
+  for (const acct of accounts) {
+    if (controllingEntity(acct) !== entityId) continue;
+    if (acct.isDefaultChecking) continue;
+    const priority = categoryWithdrawalPriority(acct);
+    if (priority == null) continue;
+    strategy.push({
+      accountId: acct.id,
+      priorityOrder: priority,
+      startYear: planSettings.planStartYear,
+      endYear: planSettings.planEndYear,
+    });
+  }
+  // Largest balance first within a tier — same heuristic the household default uses.
+  strategy.sort((a, b) => {
+    if (a.priorityOrder !== b.priorityOrder) return a.priorityOrder - b.priorityOrder;
+    return (valueById.get(b.accountId) ?? 0) - (valueById.get(a.accountId) ?? 0);
+  });
+  return strategy;
 }
 
 function buildDefaultWithdrawalStrategy(
@@ -447,6 +487,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? []);
   let charityCarryforward: CharityCarryforward = emptyCharityCarryforward();
 
+  // Cap-gains realized by step 12c (entity gap-fill) liquidations of trust-owned
+  // taxable accounts. Tax on the gain is recognized in the FOLLOWING year — at
+  // gap-fill time the trust marginal rate isn't available (trust-tax pass has
+  // already run for the current year), so the gain is stashed here and drained
+  // at the start of the next year. Non-grantor entries flow into that year's
+  // `assetTransactionGains` (trust pays its own 1041 cap-gains tax). Grantor
+  // entries flow into household `taxDetail.capitalGains` (taxed at 1040). The
+  // grantor / non-grantor decision is re-evaluated at drain time using the
+  // entity's CURRENT-year status — a death-event grantor flip in the
+  // intervening year correctly redirects the gain.
+  const deferredEntityLiquidationGains: Array<{
+    entityId: string;
+    accountId: string;
+    gain: number;
+  }> = [];
+
   for (
     let year = planSettings.planStartYear;
     year <= planSettings.planEndYear;
@@ -464,6 +520,20 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // death event picks up the post-flip classification.
     const nonGrantorTrusts: NonGrantorTrustInput[] = buildNonGrantorTrusts(currentEntities);
     const grantorTrusts: GrantorTrustEntry[] = buildGrantorTrusts(currentEntities);
+
+    // Drain prior-year entity-liquidation cap gains (step 12c carry-over).
+    // Routed by the entity's CURRENT-year grantor status: grantor → household
+    // 1040 cap-gains; non-grantor → trust-tax pass via assetTransactionGains.
+    let grantorCarryInCapGains = 0;
+    const nonGrantorCarryInGains: AssetTransactionGain[] = [];
+    for (const g of deferredEntityLiquidationGains.splice(0)) {
+      if (g.gain <= 0) continue;
+      if (isGrantorEntity(g.entityId)) {
+        grantorCarryInCapGains += g.gain;
+      } else {
+        nonGrantorCarryInGains.push({ ownerEntityId: g.entityId, gain: g.gain });
+      }
+    }
 
     // 1. Compute income breakdowns. Household and grantor-trust streams are kept
     // separate because grantor income flows to the entity checking but is still
@@ -1039,7 +1109,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // Add transfer and sale income to tax detail
     taxDetail.ordinaryIncome += transferResult.taxableOrdinaryIncome;
-    taxDetail.capitalGains += transferResult.capitalGains + saleResult.capitalGains;
+    taxDetail.capitalGains +=
+      transferResult.capitalGains + saleResult.capitalGains + grantorCarryInCapGains;
+    if (grantorCarryInCapGains > 0) {
+      taxDetail.bySource["entity_gap_fill_prior_year:capital_gains"] = {
+        type: "capital_gains",
+        amount: grantorCarryInCapGains,
+      };
+    }
 
     // Track sources for drill-down
     for (const [tid, info] of Object.entries(transferResult.byTransfer)) {
@@ -1083,11 +1160,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
       }
 
-      // Subtract trust-owned recognized gains from household taxDetail.capitalGains so
-      // the bracket engine doesn't tax them again (trust pays its own cap-gains tax).
-      const trustCapGainsTotal = assetTransactionGains.reduce((s, g) => s + g.gain, 0);
-      if (trustCapGainsTotal > 0) {
-        taxDetail.capitalGains = Math.max(0, taxDetail.capitalGains - trustCapGainsTotal);
+      // Step 12c carry-over: prior-year entity gap-fill liquidations of trust
+      // taxable accounts surface here so this year's trust-tax pass picks up
+      // the recognized gain. (Grantor entries were routed to household above.)
+      if (nonGrantorCarryInGains.length > 0) {
+        assetTransactionGains.push(...nonGrantorCarryInGains);
+      }
+
+      // Trust-owned gains from same-year sales were added to household taxDetail
+      // at line ~1124 (full saleResult.capitalGains) and need to be subtracted
+      // back out so the bracket engine doesn't tax them twice (trust pays its
+      // own 1041 cap-gains tax). Carry-in gains were never added to household
+      // taxDetail in the first place, so exclude them from the subtraction.
+      const carryInTotal = nonGrantorCarryInGains.reduce((s, g) => s + g.gain, 0);
+      const sameYearTrustGains = assetTransactionGains.reduce((s, g) => s + g.gain, 0) - carryInTotal;
+      if (sameYearTrustGains > 0) {
+        taxDetail.capitalGains = Math.max(0, taxDetail.capitalGains - sameYearTrustGains);
       }
 
       // Build trustLiquidity from current accountBalances for each trust.
@@ -1148,6 +1236,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxDetail.taxExempt += trustPassResult.householdIncomeDelta.taxExempt;
 
       // Apply trust cash debits (distributions drawn from cash + trust tax paid).
+      // We deliberately allow checking to go negative here — step 12c (entity
+      // gap-fill) runs later in the year and will liquidate the trust's other
+      // liquid assets to cover the deficit, emitting `entity_overdraft` if the
+      // remaining liquid pool is insufficient. The previous force-zero behavior
+      // here would mask deficits that gap-fill could legitimately recover from.
       for (const trust of nonGrantorTrusts) {
         const checkingId = entityCheckingByEntityId[trust.entityId];
         if (!checkingId) continue;
@@ -1157,17 +1250,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (debit <= 0) continue;
         const currentCash = accountBalances[checkingId] ?? 0;
         accountBalances[checkingId] = currentCash - debit;
-        if (accountBalances[checkingId] < 0) {
-          // Push a warning if the trust runs short on cash for its own tax bill.
-          // (Distribution shortfall is already pushed by computeDistribution.)
-          const shortfall = -accountBalances[checkingId];
-          accountBalances[checkingId] = 0;
-          trustPassResult.warnings.push({
-            code: "trust_tax_insufficient_cash",
-            entityId: trust.entityId,
-            shortfall,
-          });
-        }
       }
     }
 
@@ -2021,6 +2103,111 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // 12c. Entity gap-fill — when an entity-owned expense or liability payment
+    // drains the entity's default checking past zero, liquidate the entity's
+    // own liquid assets to refill it. Mirrors the household gap-fill above but
+    // scoped per-entity. Tax gross-up is intentionally skipped (v1): trust
+    // marginal rate isn't available at this point in the year, and the trust
+    // 1041 tax on the realized gain is paid the following year via the
+    // deferred-realization carry-over (see notes below). When the entity has
+    // no remaining liquid assets, checking stays negative and an
+    // `entity_overdraft` warning surfaces.
+    const entityGapFillWarnings: TrustWarning[] = [];
+    for (const [entityId, checkingId] of Object.entries(entityCheckingByEntityId)) {
+      const balance = accountBalances[checkingId] ?? 0;
+      if (balance >= 0) continue;
+      const shortfall = -balance;
+
+      // Per-entity balance pool: 100% entity-owned accounts only (controllingEntity
+      // returns the lone entity owner when share is exactly 100%). Excludes the
+      // entity's own checking (target, not source) and untappable categories
+      // (categoryWithdrawalPriority returns null for real-estate, business,
+      // life-insurance — they can't be liquidated cleanly at year boundaries).
+      const entityBalances: Record<string, number> = {};
+      const liquidatableAcctById = new Map<string, Account>();
+      for (const acct of workingAccounts) {
+        if (controllingEntity(acct) !== entityId) continue;
+        if (acct.id === checkingId) continue;
+        if (categoryWithdrawalPriority(acct) == null) continue;
+        entityBalances[acct.id] = accountBalances[acct.id] ?? 0;
+        liquidatableAcctById.set(acct.id, acct);
+      }
+
+      const entityStrategy = buildEntityWithdrawalStrategy(
+        entityId,
+        workingAccounts,
+        planSettings,
+      );
+      const liquidations = executeWithdrawals(
+        shortfall,
+        entityStrategy,
+        entityBalances,
+        year,
+      );
+
+      for (const [acctId, amount] of Object.entries(liquidations.byAccount)) {
+        if (amount <= 0) continue;
+        const preBalance = entityBalances[acctId] ?? 0;
+        accountBalances[acctId] -= amount;
+        accountBalances[checkingId] += amount;
+
+        // Track the liquidation as a real withdrawal in the year's totals so
+        // cash-flow drill-down attributes the cap-gain-bearing draw to the
+        // entity's account. Mirrors household gap-fill convention.
+        withdrawals.byAccount[acctId] = (withdrawals.byAccount[acctId] ?? 0) + amount;
+        withdrawals.total += amount;
+
+        if (accountLedgers[acctId]) {
+          accountLedgers[acctId].distributions += amount;
+          accountLedgers[acctId].endingValue -= amount;
+          accountLedgers[acctId].entries.push({
+            category: "withdrawal",
+            label: "Entity gap-fill",
+            amount: -amount,
+          });
+        }
+        if (accountLedgers[checkingId]) {
+          accountLedgers[checkingId].contributions += amount;
+          accountLedgers[checkingId].endingValue += amount;
+          accountLedgers[checkingId].entries.push({
+            category: "withdrawal",
+            label: "Refill from entity liquidation",
+            amount,
+          });
+        }
+
+        // Cap-gains realization wiring for taxable liquidations. Compute the
+        // pro-rata gain against the pre-liquidation balance, reduce basis by
+        // the same fraction, and stash the gain for NEXT year's trust-tax pass
+        // (deferred — trust marginal rate isn't available at gap-fill time).
+        // Routing (grantor → household 1040 vs non-grantor → trust 1041)
+        // happens at drain time in next year's loop iteration so a grantor
+        // flip in the intervening year is honored.
+        const acct = liquidatableAcctById.get(acctId);
+        if (acct?.category === "taxable" && preBalance > 0) {
+          const acctBasis = basisMap[acctId] ?? preBalance;
+          const fraction = Math.min(1, amount / preBalance);
+          const gain = Math.max(0, amount - acctBasis * fraction);
+          basisMap[acctId] = Math.max(0, acctBasis * (1 - fraction));
+          if (gain > 0) {
+            deferredEntityLiquidationGains.push({
+              entityId,
+              accountId: acctId,
+              gain,
+            });
+          }
+        }
+      }
+
+      if (accountBalances[checkingId] < 0) {
+        entityGapFillWarnings.push({
+          code: "entity_overdraft",
+          entityId,
+          shortfall: -accountBalances[checkingId],
+        });
+      }
+    }
+
     // 13. Portfolio snapshot. An account is included if it has no entity owner or if
     // its entity is flagged to roll into portfolio assets.
     const portfolioAssets = {
@@ -2263,7 +2450,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             },
           }
         : {}),
-      ...(trustPassResult != null || grantorDistributionWarnings.length > 0
+      ...(trustPassResult != null
+       || grantorDistributionWarnings.length > 0
+       || entityGapFillWarnings.length > 0
         ? {
             ...(trustPassResult != null ? {
               trustTaxByEntity: trustPassResult.taxByEntity,
@@ -2273,6 +2462,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               const all = [
                 ...(trustPassResult?.warnings ?? []),
                 ...grantorDistributionWarnings,
+                ...entityGapFillWarnings,
               ];
               return all.length > 0 ? all : undefined;
             })(),

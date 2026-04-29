@@ -37,7 +37,8 @@ export interface DistributionResult {
 
 export type TrustWarning =
   | { code: "trust_distribution_insufficient_liquid"; entityId: string; shortfall: number }
-  | { code: "trust_tax_insufficient_cash"; entityId: string; shortfall: number };
+  | { code: "trust_tax_insufficient_cash"; entityId: string; shortfall: number }
+  | { code: "entity_overdraft"; entityId: string; shortfall: number };
 
 export interface TrustTaxBreakdown {
   entityId: string;
