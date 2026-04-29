@@ -89,6 +89,7 @@ d("POST /api/clients/[id]/gifts", () => {
   async function cleanup() {
     const { db } = dbMod;
     const { clients, scenarios, familyMembers, entities } = schema;
+    const { sql } = drizzleOrm;
 
     const testClients = await db
       .select({ id: clients.id })
@@ -97,15 +98,25 @@ d("POST /api/clients/[id]/gifts", () => {
     const ids = testClients.map((c) => c.id);
     if (ids.length === 0) return;
 
-    // Delete gifts first to avoid the gifts_event_kind check constraint firing
-    // when accounts cascade-set-null on account_id (which would leave percent
-    // set on a row with no amount/accountId/liabilityId).
-    await db.delete(schema.gifts).where(drizzleOrm.inArray(schema.gifts.clientId, ids));
-    // Delete entities before cascading clients (avoids FK issues with client cascade)
-    await db.delete(entities).where(drizzleOrm.inArray(entities.clientId, ids));
-    await db.delete(scenarios).where(drizzleOrm.inArray(scenarios.clientId, ids));
-    await db.delete(familyMembers).where(drizzleOrm.inArray(familyMembers.clientId, ids));
-    await db.delete(clients).where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+    // The account_owners / liability_owners sum-check triggers fire at commit and raise if
+    // any row is deleted while its parent account/liability still exists with zero remaining
+    // owners. Disable them for cleanup, then re-enable. Mirrors the T16 cleanup below.
+    await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_sum_check`);
+    await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_retirement_check`);
+    await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_default_checking_check`);
+    await db.execute(sql`ALTER TABLE liability_owners DISABLE TRIGGER liability_owners_sum_check`);
+    try {
+      await db.delete(schema.gifts).where(drizzleOrm.inArray(schema.gifts.clientId, ids));
+      await db.delete(entities).where(drizzleOrm.inArray(entities.clientId, ids));
+      await db.delete(scenarios).where(drizzleOrm.inArray(scenarios.clientId, ids));
+      await db.delete(familyMembers).where(drizzleOrm.inArray(familyMembers.clientId, ids));
+      await db.delete(clients).where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+    } finally {
+      await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_sum_check`);
+      await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_retirement_check`);
+      await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_default_checking_check`);
+      await db.execute(sql`ALTER TABLE liability_owners ENABLE TRIGGER liability_owners_sum_check`);
+    }
   }
 
   /**
@@ -338,6 +349,7 @@ d("PATCH /api/clients/[id]/gifts/[giftId]", () => {
   async function cleanup() {
     const { db } = dbMod;
     const { clients, scenarios, familyMembers, entities } = schema;
+    const { sql } = drizzleOrm;
 
     const testClients = await db
       .select({ id: clients.id })
@@ -346,11 +358,25 @@ d("PATCH /api/clients/[id]/gifts/[giftId]", () => {
     const ids = testClients.map((c) => c.id);
     if (ids.length === 0) return;
 
-    await db.delete(schema.gifts).where(drizzleOrm.inArray(schema.gifts.clientId, ids));
-    await db.delete(entities).where(drizzleOrm.inArray(entities.clientId, ids));
-    await db.delete(scenarios).where(drizzleOrm.inArray(scenarios.clientId, ids));
-    await db.delete(familyMembers).where(drizzleOrm.inArray(familyMembers.clientId, ids));
-    await db.delete(clients).where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+    // The account_owners / liability_owners sum-check triggers fire at commit and raise if
+    // any row is deleted while its parent account/liability still exists with zero remaining
+    // owners. Disable them for cleanup, then re-enable.
+    await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_sum_check`);
+    await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_retirement_check`);
+    await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_default_checking_check`);
+    await db.execute(sql`ALTER TABLE liability_owners DISABLE TRIGGER liability_owners_sum_check`);
+    try {
+      await db.delete(schema.gifts).where(drizzleOrm.inArray(schema.gifts.clientId, ids));
+      await db.delete(entities).where(drizzleOrm.inArray(entities.clientId, ids));
+      await db.delete(scenarios).where(drizzleOrm.inArray(scenarios.clientId, ids));
+      await db.delete(familyMembers).where(drizzleOrm.inArray(familyMembers.clientId, ids));
+      await db.delete(clients).where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+    } finally {
+      await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_sum_check`);
+      await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_retirement_check`);
+      await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_default_checking_check`);
+      await db.execute(sql`ALTER TABLE liability_owners ENABLE TRIGGER liability_owners_sum_check`);
+    }
   }
 
   async function setupClient() {
@@ -596,6 +622,7 @@ d("DELETE /api/clients/[id]/gifts/[giftId]", () => {
   async function cleanup() {
     const { db } = dbMod;
     const { clients, scenarios, familyMembers, entities } = schema;
+    const { sql } = drizzleOrm;
 
     const testClients = await db
       .select({ id: clients.id })
@@ -604,11 +631,25 @@ d("DELETE /api/clients/[id]/gifts/[giftId]", () => {
     const ids = testClients.map((c) => c.id);
     if (ids.length === 0) return;
 
-    await db.delete(schema.gifts).where(drizzleOrm.inArray(schema.gifts.clientId, ids));
-    await db.delete(entities).where(drizzleOrm.inArray(entities.clientId, ids));
-    await db.delete(scenarios).where(drizzleOrm.inArray(scenarios.clientId, ids));
-    await db.delete(familyMembers).where(drizzleOrm.inArray(familyMembers.clientId, ids));
-    await db.delete(clients).where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+    // The account_owners / liability_owners sum-check triggers fire at commit and raise if
+    // any row is deleted while its parent account/liability still exists with zero remaining
+    // owners. Disable them for cleanup, then re-enable.
+    await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_sum_check`);
+    await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_retirement_check`);
+    await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_default_checking_check`);
+    await db.execute(sql`ALTER TABLE liability_owners DISABLE TRIGGER liability_owners_sum_check`);
+    try {
+      await db.delete(schema.gifts).where(drizzleOrm.inArray(schema.gifts.clientId, ids));
+      await db.delete(entities).where(drizzleOrm.inArray(entities.clientId, ids));
+      await db.delete(scenarios).where(drizzleOrm.inArray(scenarios.clientId, ids));
+      await db.delete(familyMembers).where(drizzleOrm.inArray(familyMembers.clientId, ids));
+      await db.delete(clients).where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
+    } finally {
+      await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_sum_check`);
+      await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_retirement_check`);
+      await db.execute(sql`ALTER TABLE account_owners ENABLE TRIGGER account_owners_default_checking_check`);
+      await db.execute(sql`ALTER TABLE liability_owners ENABLE TRIGGER liability_owners_sum_check`);
+    }
   }
 
   async function setupClient() {

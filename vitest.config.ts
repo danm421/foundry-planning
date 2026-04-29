@@ -11,6 +11,13 @@ export default defineConfig({
     // same dev Neon branch via .env.local) hits FK races that surface as
     // spurious failures on `main`.
     exclude: [...configDefaults.exclude, "**/.worktrees/**"],
+    // Several test files clean up by toggling user triggers on shared tables
+    // (e.g. account_owners_sum_check) via `ALTER TABLE ... DISABLE TRIGGER`,
+    // which is database-global. When two such files run in parallel one's
+    // `finally` re-enables the trigger while the other is mid-cleanup, raising
+    // spurious sum-check violations. Disable file-level parallelism so
+    // DB-touching tests can't race each other on the shared dev Neon branch.
+    fileParallelism: false,
   },
   resolve: {
     alias: {
