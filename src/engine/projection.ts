@@ -37,7 +37,7 @@ import {
 } from "../lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
 import { applyContributionLimits, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
-import { executeWithdrawals } from "./withdrawal";
+import { executeWithdrawals, computeWithdrawalPenalty } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
 import { applyAssetSales, applyAssetPurchases, _resetSyntheticIdCounter } from "./asset-transactions";
@@ -2042,6 +2042,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           year
         );
 
+        let supplementalEarlyPenalty = 0;
+        const accountById = new Map(workingAccounts.map((a) => [a.id, a]));
+
         for (const [acctId, amount] of Object.entries(supplemental.byAccount)) {
           accountBalances[acctId] -= amount;
           withdrawals.byAccount[acctId] = (withdrawals.byAccount[acctId] ?? 0) + amount;
@@ -2053,6 +2056,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               category: "withdrawal",
               label: "Withdrawal to cover household shortfall",
               amount: -amount,
+            });
+          }
+
+          // Audit F3: supplemental gap-fill withdrawals were not running through
+          // computeWithdrawalPenalty, so pre-59.5 draws from a Traditional IRA
+          // owed nothing extra in the model. Mirror the per-account age resolution
+          // used by applyTransfers (controllingFamilyMember → spouseFmId → ages).
+          const acct = accountById.get(acctId);
+          if (acct) {
+            const isSpouseOwned = spouseFmId != null && controllingFamilyMember(acct) === spouseFmId;
+            const ownerAge = isSpouseOwned && ages.spouse != null ? ages.spouse : ages.client;
+            supplementalEarlyPenalty += computeWithdrawalPenalty({
+              amount,
+              accountCategory: acct.category,
+              accountSubType: acct.subType,
+              ownerAge,
+              rothBasis: basisMap[acctId] ?? 0,
             });
           }
         }
@@ -2069,16 +2089,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           });
         }
 
-        // Marginal tax on the gross supplemental withdrawal comes back out of
-        // checking and is reported as additional taxes for the year.
-        withdrawalTax = supplemental.total * marginalRate;
+        // Marginal tax on the gross supplemental withdrawal + 10% early-withdrawal
+        // penalty come back out of checking and are reported as additional taxes.
+        // NOTE: gross-up only accounts for marginalRate, not penalty (audit F5).
+        // Pre-59.5 deficit years may end with checking slightly negative; next
+        // year's projection sees that deficit and recovers via another gap-fill.
+        withdrawalTax = supplemental.total * marginalRate + supplementalEarlyPenalty;
         accountBalances[checkingId] -= withdrawalTax;
         if (accountLedgers[checkingId]) {
           accountLedgers[checkingId].distributions += withdrawalTax;
           accountLedgers[checkingId].endingValue -= withdrawalTax;
+          const label = supplementalEarlyPenalty > 0
+            ? `Tax on withdrawal (${(marginalRate * 100).toFixed(1)}% + 10% early)`
+            : `Tax on withdrawal (${(marginalRate * 100).toFixed(1)}%)`;
           accountLedgers[checkingId].entries.push({
             category: "withdrawal_tax",
-            label: `Tax on withdrawal (${(marginalRate * 100).toFixed(1)}%)`,
+            label,
             amount: -withdrawalTax,
           });
         }
