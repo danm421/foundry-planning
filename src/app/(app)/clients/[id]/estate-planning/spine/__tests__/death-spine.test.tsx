@@ -18,6 +18,7 @@ const twoGrantorData: SpineData = {
     deceasedName: "Tom",
     tax: 120_000,
     toSpouse: 2_800_000,
+    toHeirs: 0,
   },
   combined: { value: 4_800_000 },
   secondDeath: {
@@ -80,9 +81,13 @@ describe("DeathSpine", () => {
     // PairRow: Tom's and Linda's net worth cards — two "Net Worth" elements
     expect(screen.getAllByText(/Net Worth/).length).toBeGreaterThanOrEqual(2);
 
+    // First death TimelineTick: anchors the inheritance-to-spouse band so the
+    // user can see WHEN the marital transfer happens.
+    expect(screen.getByText(/FIRST DEATH · TOM/)).toBeInTheDocument();
+    expect(screen.getByText(/2048/)).toBeInTheDocument();
+
     // Second death TimelineTick: label contains "SECOND DEATH · LINDA"
     expect(screen.getByText(/SECOND DEATH · LINDA/)).toBeInTheDocument();
-    // Year 2054 should appear (distinct from 2026/2048 already on page)
     expect(screen.getByText(/2054/)).toBeInTheDocument();
   });
 

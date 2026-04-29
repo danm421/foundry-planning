@@ -46,6 +46,9 @@ export type SpineData =
         deceasedName: string;
         tax: number;
         toSpouse: number;
+        /** Non-spouse outflows at first death (direct bequests to heirs,
+         * trust funding, charity). Zero for the typical full-marital case. */
+        toHeirs: number;
       };
       combined: { value: number };
       secondDeath: {
@@ -285,9 +288,17 @@ export function deriveSpineData(args: {
         ? (withResult.years[firstYearIndex + 1]?.portfolioAssets.total ?? 0)
         : 0;
 
-    // First-death: marital deduction flows directly from EstateTaxResult
+    // First-death: marital deduction flows directly from EstateTaxResult.
+    // Non-spouse outflows (direct bequests, trust funding) are captured
+    // separately so they roll up into the bottom heir cards alongside
+    // second-death transfers.
     const firstToSpouse = firstEvent?.maritalDeduction ?? 0;
     const firstTax = firstEvent?.totalTaxesAndExpenses ?? 0;
+    const firstDeathYearRow = withResult.years.find((y) => y.year === firstDeathYear);
+    const firstDeathTransfers = (firstDeathYearRow?.deathTransfers ?? []).filter(
+      (t) => t.deathOrder === 1,
+    );
+    const firstToHeirs = sumToHeirs(firstDeathTransfers);
 
     // Second-death transfers
     const secondDeathYearRow = withResult.years.find((y) => y.year === finalDeathYear);
@@ -297,11 +308,17 @@ export function deriveSpineData(args: {
     const secondToHeirs = sumToHeirs(secondDeathTransfers);
     const secondTax = secondEvent?.totalTaxesAndExpenses ?? 0;
 
-    // Beneficiary cards from second-death transfers
-    const beneficiaries = buildBeneficiaryCards(secondDeathTransfers, tree, secondToHeirs);
+    // Heir cards aggregate non-spouse transfers across BOTH deaths and trust
+    // distributions, grouped by recipient. A child receiving from Cooper at
+    // first death AND from Susan at second death sees a single combined card.
+    const totalToHeirs = firstToHeirs + secondToHeirs;
+    const beneficiaries = buildBeneficiaryCards(
+      [...firstDeathTransfers, ...secondDeathTransfers],
+      tree,
+      totalToHeirs,
+    );
 
     const totalTaxesAndExpenses = firstTax + secondTax;
-    const totalToHeirs = secondToHeirs;
 
     const spouseFm = (tree.familyMembers ?? []).find((fm) => fm.role === "spouse");
     const spouseDisplayName =
@@ -319,6 +336,7 @@ export function deriveSpineData(args: {
         deceasedName: firstDeceasedName,
         tax: firstTax,
         toSpouse: firstToSpouse,
+        toHeirs: firstToHeirs,
       },
       combined: { value: combinedValue },
       secondDeath: {

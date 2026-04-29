@@ -38,15 +38,22 @@ export function DeathSpine({ data }: { data: SpineData }) {
       <TimelineTick label="TODAY" year={data.today.year} />
       <PairRow client={data.pair.client} spouse={data.pair.spouse} />
       <Chevron />
+      <TimelineTick
+        label={`FIRST DEATH · ${data.firstDeath.deceasedName.toUpperCase()}`}
+        year={data.firstDeath.year}
+      />
       <StageBand kind="tax" label="Taxes & Expenses" value={-data.firstDeath.tax} />
       <StageBand kind="inherit" label="Inheritance to spouse" value={data.firstDeath.toSpouse} />
+      {data.firstDeath.toHeirs > 0 && (
+        <StageBand kind="heirs" label="To heirs at first death" value={data.firstDeath.toHeirs} />
+      )}
       <CombinedBlock value={data.combined.value} />
       <TimelineTick
         label={`SECOND DEATH · ${data.secondDeath.deceasedName.toUpperCase()}`}
         year={data.secondDeath.year}
       />
       <StageBand kind="tax" label="Taxes & Expenses" value={-data.secondDeath.tax} />
-      <StageBand kind="heirs" label="To heirs (gross)" value={data.secondDeath.toHeirs} />
+      <StageBand kind="heirs" label="To heirs at second death" value={data.secondDeath.toHeirs} />
       <BeneficiaryStrip cards={data.beneficiaries} />
       <TotalsRow
         taxesAndExpenses={data.totals.taxesAndExpenses}
