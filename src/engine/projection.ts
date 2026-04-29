@@ -110,6 +110,55 @@ function defaultWithdrawalPriorityFor(acct: Account): number | null {
   return null;
 }
 
+// Categories that step 12c (entity gap-fill) cannot liquidate to cover an
+// entity's checking shortfall. Mirrors the household withdrawal-priority
+// exclusion: real estate, businesses, and life insurance can't be sold cleanly
+// at year boundaries.
+const UNTAPPABLE_ENTITY_CATEGORIES = new Set<Account["category"]>([
+  "real_estate",
+  "business",
+  "life_insurance",
+]);
+
+// Mirror of `buildDefaultWithdrawalStrategy` scoped to a single entity. Used by
+// step 12c to build a per-entity liquidation order when the entity's checking
+// goes negative. Excludes the entity's own default-checking and untappable
+// categories.
+function buildEntityWithdrawalStrategy(
+  entityId: string,
+  accounts: Account[],
+  planSettings: PlanSettings,
+): WithdrawalPriority[] {
+  const strategy: WithdrawalPriority[] = [];
+  for (const acct of accounts) {
+    if (controllingEntity(acct) !== entityId) continue;
+    if (acct.isDefaultChecking) continue;
+    if (UNTAPPABLE_ENTITY_CATEGORIES.has(acct.category)) continue;
+    let priority: number | null = null;
+    if (acct.category === "cash") priority = 1;
+    else if (acct.category === "taxable") priority = 2;
+    else if (acct.category === "retirement") {
+      if (acct.subType === "roth_ira" || acct.subType === "roth_401k") priority = 4;
+      else priority = 3;
+    }
+    if (priority == null) continue;
+    strategy.push({
+      accountId: acct.id,
+      priorityOrder: priority,
+      startYear: planSettings.planStartYear,
+      endYear: planSettings.planEndYear,
+    });
+  }
+  // Largest balance first within a tier — same heuristic the household default uses.
+  strategy.sort((a, b) => {
+    if (a.priorityOrder !== b.priorityOrder) return a.priorityOrder - b.priorityOrder;
+    const va = accounts.find((x) => x.id === a.accountId)?.value ?? 0;
+    const vb = accounts.find((x) => x.id === b.accountId)?.value ?? 0;
+    return vb - va;
+  });
+  return strategy;
+}
+
 function buildDefaultWithdrawalStrategy(
   accounts: Account[],
   planSettings: PlanSettings
@@ -2021,6 +2070,89 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // 12c. Entity gap-fill — when an entity-owned expense or liability payment
+    // drains the entity's default checking past zero, liquidate the entity's
+    // own liquid assets to refill it. Mirrors the household gap-fill above but
+    // scoped per-entity. Tax gross-up is intentionally skipped (v1): trust
+    // marginal rate isn't available at this point in the year, and the trust
+    // 1041 tax on the realized gain is paid the following year via the
+    // deferred-realization carry-over (see notes below). When the entity has
+    // no remaining liquid assets, checking stays negative and an
+    // `entity_overdraft` warning surfaces.
+    const entityGapFillWarnings: TrustWarning[] = [];
+    for (const [entityId, checkingId] of Object.entries(entityCheckingByEntityId)) {
+      const balance = accountBalances[checkingId] ?? 0;
+      if (balance >= 0) continue;
+      const shortfall = -balance;
+
+      // Per-entity balance pool: 100% entity-owned accounts only (controllingEntity
+      // returns the lone entity owner when share is exactly 100%). The entity's
+      // own checking is excluded — it's the target, not a source.
+      const entityBalances: Record<string, number> = {};
+      for (const acct of workingAccounts) {
+        if (controllingEntity(acct) !== entityId) continue;
+        if (acct.id === checkingId) continue;
+        if (UNTAPPABLE_ENTITY_CATEGORIES.has(acct.category)) continue;
+        entityBalances[acct.id] = accountBalances[acct.id] ?? 0;
+      }
+
+      const entityStrategy = buildEntityWithdrawalStrategy(
+        entityId,
+        workingAccounts,
+        planSettings,
+      );
+      const liquidations = executeWithdrawals(
+        shortfall,
+        entityStrategy,
+        entityBalances,
+        year,
+      );
+
+      for (const [acctId, amount] of Object.entries(liquidations.byAccount)) {
+        if (amount <= 0) continue;
+        accountBalances[acctId] -= amount;
+        accountBalances[checkingId] += amount;
+
+        // Track the liquidation as a real withdrawal in the year's totals so
+        // cash-flow drill-down attributes the cap-gain-bearing draw to the
+        // entity's account. Mirrors household gap-fill convention.
+        withdrawals.byAccount[acctId] = (withdrawals.byAccount[acctId] ?? 0) + amount;
+        withdrawals.total += amount;
+
+        if (accountLedgers[acctId]) {
+          accountLedgers[acctId].distributions += amount;
+          accountLedgers[acctId].endingValue -= amount;
+          accountLedgers[acctId].entries.push({
+            category: "withdrawal",
+            label: "Entity gap-fill",
+            amount: -amount,
+          });
+        }
+        if (accountLedgers[checkingId]) {
+          accountLedgers[checkingId].contributions += amount;
+          accountLedgers[checkingId].endingValue += amount;
+          accountLedgers[checkingId].entries.push({
+            category: "withdrawal",
+            label: "Refill from entity liquidation",
+            amount,
+          });
+        }
+
+        // TODO (Step 4): wire `taxable` liquidations into the per-account
+        // realization carry-over so next year's trust-tax pass picks up the
+        // recognized cap gain (or — for grantor entities — household 1040
+        // capitalGains the following year).
+      }
+
+      if (accountBalances[checkingId] < 0) {
+        entityGapFillWarnings.push({
+          code: "entity_overdraft",
+          entityId,
+          shortfall: -accountBalances[checkingId],
+        });
+      }
+    }
+
     // 13. Portfolio snapshot. An account is included if it has no entity owner or if
     // its entity is flagged to roll into portfolio assets.
     const portfolioAssets = {
@@ -2263,7 +2395,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             },
           }
         : {}),
-      ...(trustPassResult != null || grantorDistributionWarnings.length > 0
+      ...(trustPassResult != null
+       || grantorDistributionWarnings.length > 0
+       || entityGapFillWarnings.length > 0
         ? {
             ...(trustPassResult != null ? {
               trustTaxByEntity: trustPassResult.taxByEntity,
@@ -2273,6 +2407,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
               const all = [
                 ...(trustPassResult?.warnings ?? []),
                 ...grantorDistributionWarnings,
+                ...entityGapFillWarnings,
               ];
               return all.length > 0 ? all : undefined;
             })(),
