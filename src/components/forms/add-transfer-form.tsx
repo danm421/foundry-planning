@@ -233,7 +233,7 @@ export default function AddTransferForm({
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg space-y-3 rounded-xl border border-gray-700 bg-gray-900 p-5 shadow-xl"
+        className="w-full max-w-lg space-y-3 rounded-xl border-2 border-ink-4 bg-gray-900 p-5 shadow-xl"
         style={{ maxHeight: "90vh", overflowY: "auto" }}
       >
         <div className="flex items-center justify-between">

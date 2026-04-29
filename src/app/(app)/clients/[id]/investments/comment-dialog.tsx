@@ -43,7 +43,7 @@ export default function CommentDialog({ open, onClose, clientId, reportKey, init
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg rounded-lg border border-gray-600 bg-gray-900 p-6 shadow-xl">
+      <div className="relative z-10 w-full max-w-lg rounded-lg border-2 border-ink-4 bg-gray-900 p-6 shadow-xl">
         <h3 className="mb-3 text-lg font-semibold text-gray-100">Advisor Comment</h3>
         <textarea
           value={body}

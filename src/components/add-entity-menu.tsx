@@ -43,7 +43,7 @@ export default function AddEntityMenu({ onPick }: AddEntityMenuProps) {
         + Add Entity <ChevronDown />
       </button>
       {open && (
-        <div className="absolute right-0 z-20 mt-1 w-40 overflow-hidden rounded-md border border-gray-700 bg-gray-900 shadow-lg">
+        <div className="absolute right-0 z-20 mt-1 w-40 overflow-hidden rounded-md border border-ink-4 bg-gray-900 shadow-lg">
           <button
             onClick={() => pick("trust")}
             className="block w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-gray-800"

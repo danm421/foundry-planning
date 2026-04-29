@@ -115,7 +115,7 @@ describe("DialogShell", () => {
     );
     const surface = screen.getByRole("dialog");
     expect(surface.className).toContain("bg-card");
-    expect(surface.className).toContain("border-hair-2");
+    expect(surface.className).toContain("border-ink-4");
   });
 
   it("renders a tab strip when tabs is provided and switches active tab", () => {

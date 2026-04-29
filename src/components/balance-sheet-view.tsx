@@ -224,7 +224,7 @@ function AddAssetMenu({ onPick }: { onPick: (cat: AccountCategory) => void }) {
         + Add Asset <ChevronDown />
       </button>
       {open && (
-        <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-md border border-gray-700 bg-gray-900 shadow-lg">
+        <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-md border border-ink-4 bg-gray-900 shadow-lg">
           {ADDABLE_CATEGORIES.map((cat) => (
             <button
               key={cat}

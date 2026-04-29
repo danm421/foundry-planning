@@ -469,7 +469,7 @@ export default function AddAssetTransactionForm({
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-lg border border-gray-700 bg-gray-900 p-6"
+        className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-lg border-2 border-ink-4 bg-gray-900 p-6 shadow-xl"
       >
         {/* Header */}
         <div className="mb-5 flex items-center justify-between">

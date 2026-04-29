@@ -42,7 +42,7 @@ export function DetailsRowGutter({
       {hovered && (
         <div
           role="tooltip"
-          className="absolute z-20 left-5 top-0 w-[280px] bg-[#101114] border border-[#1f2024] rounded p-3 text-[12px]"
+          className="absolute z-20 left-5 top-0 w-[280px] bg-[#101114] border border-ink-4 rounded p-3 text-[12px] shadow-lg"
         >
           {diff.kind === "edit" && (
             <div className="space-y-1">

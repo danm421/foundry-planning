@@ -131,7 +131,7 @@ export function AddDeductionForm({
       <form
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md space-y-3 rounded-xl border border-gray-700 bg-gray-900 p-5 shadow-xl"
+        className="w-full max-w-md space-y-3 rounded-xl border-2 border-ink-4 bg-gray-900 p-5 shadow-xl"
       >
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-gray-100">{existing ? "Edit deduction" : "Add deduction"}</h3>

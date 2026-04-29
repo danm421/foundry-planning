@@ -93,7 +93,7 @@ export default function ClientSearch(): ReactElement {
         <ul
           id="client-search-listbox"
           role="listbox"
-          className="absolute left-[var(--pad-card)] right-[var(--pad-card)] top-full mt-1 rounded bg-card-2 border border-hair shadow-lg overflow-hidden z-30"
+          className="absolute left-[var(--pad-card)] right-[var(--pad-card)] top-full mt-1 rounded bg-card-2 border border-ink-4 shadow-lg overflow-hidden z-30"
         >
           {results.length === 0 ? (
             <li className="px-3 py-2 text-[13px] text-ink-4">No matches</li>

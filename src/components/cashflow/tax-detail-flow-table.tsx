@@ -345,7 +345,7 @@ function SourcePopover({ sources, onClose }: {
   onClose: () => void;
 }) {
   return (
-    <div className="absolute right-0 top-full z-50 mt-1 min-w-[200px] rounded-md border border-gray-700 bg-gray-900 p-2 shadow-xl">
+    <div className="absolute right-0 top-full z-50 mt-1 min-w-[200px] rounded-md border border-ink-4 bg-gray-900 p-2 shadow-xl">
       <div className="mb-1 flex items-center justify-between">
         <span className="text-xs font-medium text-gray-300">Sources</span>
         <button

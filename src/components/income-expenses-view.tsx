@@ -560,7 +560,7 @@ function IncomeDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg border border-gray-600 bg-gray-900 p-6 shadow-xl">
+      <div className="relative z-10 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg border-2 border-ink-4 bg-gray-900 p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-100">{isEdit ? "Edit Income" : "Add Income"}</h2>
           <button onClick={() => onOpenChange(false)} className="text-gray-300 hover:text-gray-200">
@@ -1001,7 +1001,7 @@ function ExpenseDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={() => onOpenChange(false)} />
-      <div className="relative z-10 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg border border-gray-600 bg-gray-900 p-6 shadow-xl">
+      <div className="relative z-10 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg border-2 border-ink-4 bg-gray-900 p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-100">{isEdit ? "Edit Expense" : "Add Expense"}</h2>
           <button onClick={() => onOpenChange(false)} className="text-gray-300 hover:text-gray-200">

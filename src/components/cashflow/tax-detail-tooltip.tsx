@@ -36,7 +36,7 @@ export function TaxDetailTooltip({ text, label }: TaxDetailTooltipProps) {
         {open && (
           <span
             role="tooltip"
-            className="absolute top-full left-1/2 z-50 mt-1 w-64 -translate-x-1/2 rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-xs font-normal text-gray-200 shadow-lg"
+            className="absolute top-full left-1/2 z-50 mt-1 w-64 -translate-x-1/2 rounded-md border border-ink-4 bg-gray-900 px-3 py-2 text-xs font-normal text-gray-200 shadow-lg"
           >
             {text}
           </span>
