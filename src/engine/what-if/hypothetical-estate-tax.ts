@@ -93,6 +93,7 @@ function runOrdering(
     return {
       firstDecedent,
       firstDeath: firstResult.estateTax,
+      firstDeathTransfers: firstResult.transfers,
       totals: sumTotals([firstResult.estateTax]),
     };
   }
@@ -128,6 +129,8 @@ function runOrdering(
     firstDecedent,
     firstDeath: firstResult.estateTax,
     finalDeath: finalResult.estateTax,
+    firstDeathTransfers: firstResult.transfers,
+    finalDeathTransfers: finalResult.transfers,
     totals: sumTotals([firstResult.estateTax, finalResult.estateTax]),
   };
 }
