@@ -276,12 +276,15 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     survivorFmId,
   });
 
-  // Phase 4 — deductions (marital + charitable + admin).
+  // Phase 4 — deductions (marital + charitable + admin). Pass the post-chain
+  // liabilities so encumbrances that follow assets to the surviving spouse
+  // reduce the marital deduction (§2056(b)(4)(B)).
   const deductions = computeDeductions({
     transferLedger: chainResult.transfers,
     externalBeneficiaries: input.externalBeneficiaries,
     planSettings: input.planSettings,
     deathOrder: 1,
+    resultingLiabilities: chainResult.liabilities,
   });
 
   // Phase 5 — tax computation. Preview first so we know the drain amount,

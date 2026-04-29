@@ -173,10 +173,25 @@ export function computeDeductions(input: {
   externalBeneficiaries: ExternalBeneficiarySummary[];
   planSettings: PlanSettings;
   deathOrder: 1 | 2;
+  /** Post-chain liabilities. When a debt-encumbered asset passes to the
+   *  surviving spouse, the linked liability follows it; IRC §2056(b)(4)(B)
+   *  reduces the marital deduction by that encumbrance. */
+  resultingLiabilities?: Liability[];
 }): DeductionOutput {
   const externalKindById = new Map(
     input.externalBeneficiaries.map((e) => [e.id, e.kind] as const),
   );
+
+  // Map asset id → linked liability balance. Each split share produces a
+  // unique resulting account id, so this is 1:1 across the ledger.
+  const encumbranceByAssetId = new Map<string, number>();
+  for (const l of input.resultingLiabilities ?? []) {
+    if (!l.linkedPropertyId || l.balance <= 0) continue;
+    encumbranceByAssetId.set(
+      l.linkedPropertyId,
+      (encumbranceByAssetId.get(l.linkedPropertyId) ?? 0) + l.balance,
+    );
+  }
 
   let maritalDeduction = 0;
   let charitableDeduction = 0;
@@ -184,7 +199,10 @@ export function computeDeductions(input: {
   for (const t of input.transferLedger) {
     if (t.amount <= 0) continue;
     if (input.deathOrder === 1 && t.recipientKind === "spouse") {
-      maritalDeduction += t.amount;
+      const encumbrance = t.resultingAccountId
+        ? encumbranceByAssetId.get(t.resultingAccountId) ?? 0
+        : 0;
+      maritalDeduction += Math.max(0, t.amount - encumbrance);
     } else if (t.recipientKind === "external_beneficiary" && t.recipientId) {
       if (externalKindById.get(t.recipientId) === "charity") {
         charitableDeduction += t.amount;

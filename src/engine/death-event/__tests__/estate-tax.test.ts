@@ -274,6 +274,47 @@ describe("computeDeductions", () => {
     expect(r.maritalDeduction).toBe(0);
   });
 
+  it("marital deduction nets out encumbrances on spouse-routed assets (§2056(b)(4)(B))", () => {
+    // Spouse inherits a $950k home with a $600k mortgage and a $750k account
+    // with no liability. Marital deduction = (950k - 600k) + 750k = $1.1M.
+    const ledger = [
+      transfer({
+        recipientKind: "spouse",
+        amount: 950_000,
+        resultingAccountId: "homeAfter",
+      }),
+      transfer({
+        recipientKind: "spouse",
+        amount: 750_000,
+        resultingAccountId: "schwabAfter",
+      }),
+    ];
+    const resultingLiabilities: Liability[] = [
+      {
+        id: "mortgageAfter",
+        name: "Home Mortgage",
+        balance: 600_000,
+        interestRate: 0.04,
+        monthlyPayment: 0,
+        startYear: 2020,
+        startMonth: 1,
+        termMonths: 360,
+        extraPayments: [],
+        isInterestDeductible: true,
+        owners: [],
+        linkedPropertyId: "homeAfter",
+      },
+    ];
+    const r = computeDeductions({
+      transferLedger: ledger,
+      externalBeneficiaries: [],
+      planSettings: planSettings as PlanSettings,
+      deathOrder: 1,
+      resultingLiabilities,
+    });
+    expect(r.maritalDeduction).toBeCloseTo(1_100_000, 2);
+  });
+
   it("charitable deduction = sum of external_beneficiary transfers whose kind is charity", () => {
     const ledger = [
       transfer({ recipientKind: "external_beneficiary", recipientId: "eb1", amount: 50_000 }),
