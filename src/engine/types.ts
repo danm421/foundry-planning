@@ -361,6 +361,13 @@ export interface Account {
   basis: number;
   growthRate: number;
   rmdEnabled: boolean;
+  /**
+   * Optional override of the prior calendar-year-end balance used for the
+   * first projection year's RMD calculation. Set when the user-entered
+   * `value` is not a true Dec-31 snapshot. Ignored after Year 1 — the
+   * engine's own end-of-year balances are authoritative.
+   */
+  priorYearEndValue?: number;
   beneficiaries?: BeneficiaryRef[];
   isDefaultChecking?: boolean;
   annualPropertyTax?: number;

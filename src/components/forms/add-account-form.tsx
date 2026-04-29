@@ -50,6 +50,10 @@ export interface AccountFormInitial {
   // null means "use the default for this category" from plan_settings
   growthRate: string | null;
   rmdEnabled?: boolean | null;
+  /** Optional Dec-31 prior balance used for Year-1 RMD calculation. Stored as
+   * a decimal string (or null when unset). Only meaningful for RMD-eligible
+   * retirement accounts. */
+  priorYearEndValue?: string | null;
   ownerEntityId?: string | null;
   owners?: AccountOwner[];
   annualPropertyTax?: string;
@@ -110,7 +114,7 @@ interface AddAccountFormProps {
   /** Existing account names for auto-increment default naming on create. */
   existingAccountNames?: string[];
   resolvedInflationRate?: number;
-  initialTab?: "details" | "savings" | "realization" | "asset_mix" | "beneficiaries";
+  initialTab?: "details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries";
   /**
    * When true, only the Beneficiaries tab button renders and all other panels
    * are unmounted. Prevents accidental overwrite when `initial` is a lite shape
@@ -288,7 +292,7 @@ export default function AddAccountForm({
     initial?.basis != null ? String(initial.basis) : "",
   );
   const [userEditedBasis, setUserEditedBasis] = useState<boolean>(mode === "edit");
-  const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix" | "beneficiaries">(
+  const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries">(
     initialTab ?? "details",
   );
   const [subType, setSubType] = useState(
@@ -298,6 +302,9 @@ export default function AddAccountForm({
     initial?.rmdEnabled ?? RMD_ELIGIBLE_SUB_TYPES.has(
       initial?.subType ?? SUB_TYPE_BY_CATEGORY[defaultCategory ?? "taxable"][0]
     )
+  );
+  const [priorYearEndValue, setPriorYearEndValue] = useState<string>(
+    initial?.priorYearEndValue ?? "",
   );
   const [annualPropertyTax, setAnnualPropertyTax] = useState(initial?.annualPropertyTax ?? "0");
   const [propertyTaxGrowthRate, setPropertyTaxGrowthRate] = useState(
@@ -470,6 +477,7 @@ export default function AddAccountForm({
       basis: data.get("basis") as string,
       growthRate,
       rmdEnabled,
+      priorYearEndValue: rmdEnabled && priorYearEndValue !== "" ? priorYearEndValue : null,
       growthSource: isInvestable ? growthSource : "custom",
       modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
       turnoverPct: toPctOrNull("turnoverPct") ?? "0",
@@ -681,6 +689,19 @@ export default function AddAccountForm({
             }`}
           >
             Asset Mix
+          </button>
+        )}
+        {!lockTab && showRmdCheckbox && (
+          <button
+            type="button"
+            onClick={() => setActiveTab("rmd")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+              activeTab === "rmd"
+                ? "border-accent text-accent"
+                : "border-transparent text-gray-300 hover:text-gray-200"
+            }`}
+          >
+            RMD
           </button>
         )}
         <button
@@ -903,22 +924,6 @@ export default function AddAccountForm({
             </>
           )}
 
-          {showRmdCheckbox && (
-            <div className="mt-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={rmdEnabled}
-                  onChange={(e) => setRmdEnabled(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
-                />
-                <span className="text-sm font-medium text-gray-300">Subject to RMDs</span>
-              </label>
-              <p className="mt-1 ml-6 text-xs text-gray-400">
-                Required Minimum Distributions apply to pre-tax retirement accounts starting at age 73 or 75.
-              </p>
-            </div>
-          )}
         </div>
       </div>
 
@@ -1131,6 +1136,50 @@ export default function AddAccountForm({
             allocations={customAllocations}
             onChange={setCustomAllocations}
           />
+        </div>
+      )}
+
+      {/* RMD tab — only present when subType is RMD-eligible */}
+      {!lockTab && showRmdCheckbox && (
+        <div className={activeTab === "rmd" ? "" : "hidden"}>
+          <div className="space-y-4">
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rmdEnabled}
+                  onChange={(e) => setRmdEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                />
+                <span className="text-sm font-medium text-gray-300">Subject to RMDs</span>
+              </label>
+              <p className="mt-1 ml-6 text-xs text-gray-400">
+                Required Minimum Distributions apply to pre-tax retirement accounts starting at age 73 or 75.
+              </p>
+            </div>
+
+            {rmdEnabled && (
+              <div>
+                <label className={fieldLabelClassName} htmlFor="priorYearEndValue">
+                  Prior Dec 31 Balance
+                </label>
+                <CurrencyInput
+                  id="priorYearEndValue"
+                  value={priorYearEndValue}
+                  onChange={(raw) => setPriorYearEndValue(raw)}
+                  className={inputClassName}
+                  placeholder="Leave blank to use current value"
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  IRS RMDs are calculated off the prior calendar year-end balance. If
+                  the account value above isn&apos;t a true Dec 31 snapshot, set this to
+                  align the first projection year&apos;s RMD with the custodian&apos;s
+                  letter. Ignored after Year 1 — later years use the engine&apos;s own
+                  year-end balances.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

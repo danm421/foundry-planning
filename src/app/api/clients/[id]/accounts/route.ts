@@ -88,6 +88,7 @@ export async function POST(
       basis,
       growthRate,
       rmdEnabled,
+      priorYearEndValue,
       ownerEntityId,
       growthSource,
       modelPortfolioId,
@@ -162,6 +163,7 @@ export async function POST(
           // null = inherit the default growth rate for this category from plan_settings
           growthRate: growthRate ?? null,
           rmdEnabled: rmdEnabled ?? false,
+          priorYearEndValue: priorYearEndValue ?? null,
           growthSource: growthSource ?? "default",
           modelPortfolioId: modelPortfolioId ?? null,
           turnoverPct: turnoverPct ?? "0",

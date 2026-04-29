@@ -182,6 +182,7 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
       basis: String(a.basis),
       growthRate: a.growthRate == null ? null : String(a.growthRate),
       rmdEnabled: a.rmdEnabled ?? null,
+      priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,
       ownerEntityId: controllingEntity(a) ?? null,
       growthSource: meta?.growthSource ?? "default",
       modelPortfolioId: meta?.modelPortfolioId ?? null,

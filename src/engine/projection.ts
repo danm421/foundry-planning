@@ -999,7 +999,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // year (before growth/transfers), captured on the ledger as
       // `beginningValue`. Using the post-growth current balance slightly
       // overstates the required amount in up markets.
-      const rmdBasis = accountLedgers[acct.id]?.beginningValue ?? accountBalances[acct.id] ?? 0;
+      //
+      // Year-1 override: when `acct.value` is entered mid-year it isn't a
+      // true Dec-31 snapshot, which throws off Year-1 RMDs vs the custodian's
+      // letter. `priorYearEndValue`, if provided, replaces beginningValue for
+      // the first projection year only — Year 2+ uses the engine's own
+      // year-end balances.
+      const isFirstProjectionYear = year === planSettings.planStartYear;
+      const rmdBasis =
+        isFirstProjectionYear && acct.priorYearEndValue != null
+          ? acct.priorYearEndValue
+          : accountLedgers[acct.id]?.beginningValue ?? accountBalances[acct.id] ?? 0;
       const currentBalance = accountBalances[acct.id] ?? 0;
       const rmd = Math.min(currentBalance, calculateRMD(rmdBasis, ownerAge, ownerBirthYear));
       if (rmd <= 0) continue;

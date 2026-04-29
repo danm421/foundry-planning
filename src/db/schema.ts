@@ -727,6 +727,13 @@ export const accounts = pgTable("accounts", {
   // Null means: inherit the default for this category from plan_settings.
   growthRate: decimal("growth_rate", { precision: 5, scale: 4 }),
   rmdEnabled: boolean("rmd_enabled").notNull().default(false),
+  // Optional override of the prior calendar-year-end balance used for the
+  // first projection year's RMD calculation. The IRS requires RMDs to be
+  // computed off the Dec-31 balance; if `value` was entered mid-year (so it
+  // isn't a true Dec-31 snapshot), set this to align Year-1 RMDs with the
+  // custodian's letter. Ignored after Year 1 (the engine tracks year-end
+  // balances itself).
+  priorYearEndValue: decimal("prior_year_end_value", { precision: 15, scale: 2 }),
   // Exactly one account per (client, scenario) has this flag set. Household income is
   // paid into this account and expenses, taxes, and savings are drawn from it; when it
   // goes negative the engine pulls from the withdrawal strategy to top it up.
