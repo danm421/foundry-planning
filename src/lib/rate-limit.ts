@@ -67,3 +67,43 @@ export async function checkExtractRateLimit(
   if (!success) return { allowed: false, reason: "exceeded", remaining, reset };
   return { allowed: true, remaining, reset };
 }
+
+// Per-op limiters for the import tool v2. The flow has very different
+// expected request shapes per operation: bursty multi-file uploads, a
+// small number of expensive extraction calls, frequent file/preview
+// fetches, and rarer match/commit clicks. Splitting the budgets keeps
+// one runaway op (e.g. a stuck retry loop on extraction) from starving
+// the rest.
+const getImportUploadLimiter = buildLimiter(30, "1 m", "rl:import:upload");
+const getImportExtractLimiter = buildLimiter(5, "1 m", "rl:import:extract");
+const getImportViewLimiter = buildLimiter(60, "1 m", "rl:import:view");
+const getImportMatchLimiter = buildLimiter(10, "1 m", "rl:import:match");
+const getImportCommitLimiter = buildLimiter(20, "1 m", "rl:import:commit");
+
+export type ImportRateLimitOp = "upload" | "extract" | "view" | "match" | "commit";
+
+/**
+ * Multi-bucket rate-limit dispatcher for the import tool v2. The `op`
+ * selects the bucket; `key` is suffixed with `:${op}` so callers can
+ * pass a single firm-scoped key without bleeding budgets across ops.
+ */
+export async function checkImportRateLimit(
+  key: string,
+  op: ImportRateLimitOp,
+): Promise<
+  | { allowed: true; remaining: number; reset: number }
+  | { allowed: false; reason: "unconfigured" | "exceeded"; remaining?: number; reset?: number }
+> {
+  const factories = {
+    upload: getImportUploadLimiter,
+    extract: getImportExtractLimiter,
+    view: getImportViewLimiter,
+    match: getImportMatchLimiter,
+    commit: getImportCommitLimiter,
+  } as const;
+  const limiter = factories[op]();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  const { success, remaining, reset } = await limiter.limit(`${key}:${op}`);
+  if (!success) return { allowed: false, reason: "exceeded", remaining, reset };
+  return { allowed: true, remaining, reset };
+}
