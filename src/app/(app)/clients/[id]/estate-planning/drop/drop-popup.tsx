@@ -125,7 +125,7 @@ export function DropPopup(props: DropPopupProps) {
         role="dialog"
         aria-label={`Transfer ${source.ownerLabel}'s slice of ${source.accountName}`}
         style={{ left, top, width: POPUP_WIDTH }}
-        className="absolute rounded-md border-2 border-[var(--color-ink-4)] bg-[var(--color-card)] shadow-xl"
+        className="absolute rounded-md border-2 border-[var(--color-ink-3)] ring-1 ring-black/60 bg-[var(--color-card)] shadow-xl"
       >
         <header className="flex items-baseline justify-between border-b border-[var(--color-hair)] px-3 py-2">
           <h3 className="text-sm font-medium text-[var(--color-ink)]">

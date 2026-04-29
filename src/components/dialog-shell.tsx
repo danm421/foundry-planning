@@ -94,7 +94,7 @@ export default function DialogShell({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`relative z-10 w-full ${sizeClass[size]} max-h-[min(80vh,720px)] flex flex-col rounded-[var(--radius)] bg-card border-2 border-ink-4 shadow-2xl outline-none`}
+        className={`relative z-10 w-full ${sizeClass[size]} max-h-[min(80vh,720px)] flex flex-col rounded-[var(--radius)] bg-card border-2 border-ink-3 ring-1 ring-black/60 shadow-2xl outline-none`}
       >
         {/* Header */}
         <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-hair">

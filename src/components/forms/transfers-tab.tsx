@@ -209,7 +209,7 @@ function AddTransferMenu({
       {open && (
         <div
           ref={menuRef}
-          className="absolute right-0 z-20 mt-1 w-48 rounded-[var(--radius-sm)] border border-ink-4 bg-card shadow-lg py-1"
+          className="absolute right-0 z-20 mt-1 w-48 rounded-[var(--radius-sm)] border border-ink-3 bg-card shadow-lg py-1"
         >
           {ADD_MENU_ITEMS.map((item) => (
             <button

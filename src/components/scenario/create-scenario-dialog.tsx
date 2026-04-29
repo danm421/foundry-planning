@@ -122,7 +122,7 @@ export function CreateScenarioDialog({
       onClick={onClose}
     >
       <div
-        className="w-[420px] bg-[#101114] border-2 border-ink-4 rounded-md p-6 shadow-xl"
+        className="w-[420px] bg-[#101114] border-2 border-ink-3 ring-1 ring-black/60 rounded-md p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <form

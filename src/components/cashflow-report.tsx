@@ -1926,7 +1926,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           onClick={() => setLedgerModal(null)}
         >
           <div
-            className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border-2 border-ink-4 bg-gray-900 shadow-xl"
+            className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between border-b border-gray-800 p-6 pb-4">
@@ -2050,7 +2050,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       {/* Source Detail Modal */}
       {sourceDetailModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setSourceDetailModal(null)}>
-          <div className="w-full max-w-md rounded-lg border-2 border-ink-4 bg-gray-900 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-md rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-100">{sourceDetailModal.name}</h3>
               <button onClick={() => setSourceDetailModal(null)} className="text-gray-300 hover:text-gray-200 focus:outline-none" aria-label="Close">
@@ -2140,7 +2140,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           onClick={() => { setTaxDrillModal(null); setTaxDrillExpanded(new Set()); }}
         >
           <div
-            className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border-2 border-ink-4 bg-gray-900 p-6 shadow-xl"
+            className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">

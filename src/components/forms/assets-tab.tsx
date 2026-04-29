@@ -70,7 +70,7 @@ function RemoveConfirm({ name, onConfirm, onCancel }: RemoveConfirmProps) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-paper/70 backdrop-blur-sm" onClick={onCancel} />
-      <div className="relative z-10 w-full max-w-[400px] rounded-[var(--radius)] border-2 border-ink-4 bg-card p-6 shadow-2xl">
+      <div className="relative z-10 w-full max-w-[400px] rounded-[var(--radius)] border-2 border-ink-3 ring-1 ring-black/60 bg-card p-6 shadow-2xl">
         <p className="text-[14px] text-ink-2">
           Remove <strong className="text-ink">{name}</strong> from this trust?
           <span className="mt-1 block text-[12px] text-ink-4">

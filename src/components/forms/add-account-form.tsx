@@ -1165,8 +1165,8 @@ export default function AddAccountForm({
 
     {deletingSr && (
       <div className="fixed inset-0 z-50 flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/40" onClick={() => setDeletingSr(null)} />
-        <div className="relative z-10 w-full max-w-sm rounded-lg border-2 border-ink-4 bg-gray-900 p-6 shadow-xl">
+        <div className="absolute inset-0 bg-black/70" onClick={() => setDeletingSr(null)} />
+        <div className="relative z-10 w-full max-w-sm rounded-lg border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl">
           <h3 className="mb-2 text-base font-semibold text-gray-100">Delete Savings Rule</h3>
           <p className="mb-4 text-sm text-gray-300">Remove this savings rule? This cannot be undone.</p>
           <div className="flex justify-end gap-3">
