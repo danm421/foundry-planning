@@ -496,6 +496,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? []);
   let charityCarryforward: CharityCarryforward = emptyCharityCarryforward();
 
+  // Cap-gains realized by step 12c (entity gap-fill) liquidations of trust-owned
+  // taxable accounts. Tax on the gain is recognized in the FOLLOWING year — at
+  // gap-fill time the trust marginal rate isn't available (trust-tax pass has
+  // already run for the current year), so the gain is stashed here and drained
+  // at the start of the next year. Non-grantor entries flow into that year's
+  // `assetTransactionGains` (trust pays its own 1041 cap-gains tax). Grantor
+  // entries flow into household `taxDetail.capitalGains` (taxed at 1040). The
+  // grantor / non-grantor decision is re-evaluated at drain time using the
+  // entity's CURRENT-year status — a death-event grantor flip in the
+  // intervening year correctly redirects the gain.
+  const deferredEntityLiquidationGains: Array<{
+    entityId: string;
+    accountId: string;
+    gain: number;
+  }> = [];
+
   for (
     let year = planSettings.planStartYear;
     year <= planSettings.planEndYear;
@@ -513,6 +529,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // death event picks up the post-flip classification.
     const nonGrantorTrusts: NonGrantorTrustInput[] = buildNonGrantorTrusts(currentEntities);
     const grantorTrusts: GrantorTrustEntry[] = buildGrantorTrusts(currentEntities);
+
+    // Drain prior-year entity-liquidation cap gains (step 12c carry-over).
+    // Routed by the entity's CURRENT-year grantor status: grantor → household
+    // 1040 cap-gains; non-grantor → trust-tax pass via assetTransactionGains.
+    let grantorCarryInCapGains = 0;
+    const nonGrantorCarryInGains: AssetTransactionGain[] = [];
+    if (deferredEntityLiquidationGains.length > 0) {
+      const drained = deferredEntityLiquidationGains.splice(0);
+      for (const g of drained) {
+        if (g.gain <= 0) continue;
+        if (isGrantorEntity(g.entityId)) {
+          grantorCarryInCapGains += g.gain;
+        } else {
+          nonGrantorCarryInGains.push({ ownerEntityId: g.entityId, gain: g.gain });
+        }
+      }
+    }
 
     // 1. Compute income breakdowns. Household and grantor-trust streams are kept
     // separate because grantor income flows to the entity checking but is still
@@ -1088,7 +1121,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // Add transfer and sale income to tax detail
     taxDetail.ordinaryIncome += transferResult.taxableOrdinaryIncome;
-    taxDetail.capitalGains += transferResult.capitalGains + saleResult.capitalGains;
+    taxDetail.capitalGains +=
+      transferResult.capitalGains + saleResult.capitalGains + grantorCarryInCapGains;
+    if (grantorCarryInCapGains > 0) {
+      taxDetail.bySource["entity_gap_fill_prior_year:capital_gains"] = {
+        type: "capital_gains",
+        amount: grantorCarryInCapGains,
+      };
+    }
 
     // Track sources for drill-down
     for (const [tid, info] of Object.entries(transferResult.byTransfer)) {
@@ -1132,11 +1172,22 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
       }
 
-      // Subtract trust-owned recognized gains from household taxDetail.capitalGains so
-      // the bracket engine doesn't tax them again (trust pays its own cap-gains tax).
-      const trustCapGainsTotal = assetTransactionGains.reduce((s, g) => s + g.gain, 0);
-      if (trustCapGainsTotal > 0) {
-        taxDetail.capitalGains = Math.max(0, taxDetail.capitalGains - trustCapGainsTotal);
+      // Step 12c carry-over: prior-year entity gap-fill liquidations of trust
+      // taxable accounts surface here so this year's trust-tax pass picks up
+      // the recognized gain. (Grantor entries were routed to household above.)
+      if (nonGrantorCarryInGains.length > 0) {
+        assetTransactionGains.push(...nonGrantorCarryInGains);
+      }
+
+      // Trust-owned gains from same-year sales were added to household taxDetail
+      // at line ~1124 (full saleResult.capitalGains) and need to be subtracted
+      // back out so the bracket engine doesn't tax them twice (trust pays its
+      // own 1041 cap-gains tax). Carry-in gains were never added to household
+      // taxDetail in the first place, so exclude them from the subtraction.
+      const carryInTotal = nonGrantorCarryInGains.reduce((s, g) => s + g.gain, 0);
+      const sameYearTrustGains = assetTransactionGains.reduce((s, g) => s + g.gain, 0) - carryInTotal;
+      if (sameYearTrustGains > 0) {
+        taxDetail.capitalGains = Math.max(0, taxDetail.capitalGains - sameYearTrustGains);
       }
 
       // Build trustLiquidity from current accountBalances for each trust.
@@ -1197,6 +1248,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxDetail.taxExempt += trustPassResult.householdIncomeDelta.taxExempt;
 
       // Apply trust cash debits (distributions drawn from cash + trust tax paid).
+      // We deliberately allow checking to go negative here — step 12c (entity
+      // gap-fill) runs later in the year and will liquidate the trust's other
+      // liquid assets to cover the deficit, emitting `entity_overdraft` if the
+      // remaining liquid pool is insufficient. The previous force-zero behavior
+      // here would mask deficits that gap-fill could legitimately recover from.
       for (const trust of nonGrantorTrusts) {
         const checkingId = entityCheckingByEntityId[trust.entityId];
         if (!checkingId) continue;
@@ -1206,17 +1262,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (debit <= 0) continue;
         const currentCash = accountBalances[checkingId] ?? 0;
         accountBalances[checkingId] = currentCash - debit;
-        if (accountBalances[checkingId] < 0) {
-          // Push a warning if the trust runs short on cash for its own tax bill.
-          // (Distribution shortfall is already pushed by computeDistribution.)
-          const shortfall = -accountBalances[checkingId];
-          accountBalances[checkingId] = 0;
-          trustPassResult.warnings.push({
-            code: "trust_tax_insufficient_cash",
-            entityId: trust.entityId,
-            shortfall,
-          });
-        }
       }
     }
 
@@ -2110,6 +2155,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       for (const [acctId, amount] of Object.entries(liquidations.byAccount)) {
         if (amount <= 0) continue;
+        const preBalance = entityBalances[acctId] ?? 0;
         accountBalances[acctId] -= amount;
         accountBalances[checkingId] += amount;
 
@@ -2138,10 +2184,27 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           });
         }
 
-        // TODO (Step 4): wire `taxable` liquidations into the per-account
-        // realization carry-over so next year's trust-tax pass picks up the
-        // recognized cap gain (or — for grantor entities — household 1040
-        // capitalGains the following year).
+        // Cap-gains realization wiring for taxable liquidations. Compute the
+        // pro-rata gain against the pre-liquidation balance, reduce basis by
+        // the same fraction, and stash the gain for NEXT year's trust-tax pass
+        // (deferred — trust marginal rate isn't available at gap-fill time).
+        // Routing (grantor → household 1040 vs non-grantor → trust 1041)
+        // happens at drain time in next year's loop iteration so a grantor
+        // flip in the intervening year is honored.
+        const acct = workingAccounts.find((a) => a.id === acctId);
+        if (acct?.category === "taxable" && preBalance > 0) {
+          const acctBasis = basisMap[acctId] ?? preBalance;
+          const fraction = Math.min(1, amount / preBalance);
+          const gain = Math.max(0, amount - acctBasis * fraction);
+          basisMap[acctId] = Math.max(0, acctBasis * (1 - fraction));
+          if (gain > 0) {
+            deferredEntityLiquidationGains.push({
+              entityId,
+              accountId: acctId,
+              gain,
+            });
+          }
+        }
       }
 
       if (accountBalances[checkingId] < 0) {
