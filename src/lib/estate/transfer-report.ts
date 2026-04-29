@@ -430,13 +430,107 @@ function buildAggregateTotals(
 }
 
 export function detectConflicts(
-  _clientData: ClientData,
-  _transfers: DeathTransfer[],
-  _decedent: "client" | "spouse",
+  clientData: ClientData,
+  transfers: DeathTransfer[],
+  decedent: "client" | "spouse",
 ): ConflictEntry[] {
-  // Real implementation in Task 10. Returning [] keeps the section builder
-  // functional in the meantime.
-  return [];
+  const conflicts: ConflictEntry[] = [];
+  const wills = (clientData as unknown as { wills?: Will[] }).wills ?? [];
+  const decedentWill = wills.find((w) => w.grantor === decedent);
+
+  let nextId = 0;
+  const idFor = (account: string) => `conflict-${account}-${nextId++}`;
+
+  for (const t of transfers) {
+    if (!t.sourceAccountId) continue;
+    if (t.amount <= 0) continue;
+
+    // Override 1: governing mechanism is upstream of the will, but a specific
+    // bequest exists for this account in the decedent's will.
+    if (
+      decedentWill &&
+      (t.via === "titling" ||
+        t.via === "beneficiary_designation" ||
+        t.via === "fallback_spouse" ||
+        t.via === "fallback_children" ||
+        t.via === "fallback_other_heirs")
+    ) {
+      const matchingBequest = decedentWill.bequests.find(
+        (b: WillBequest) =>
+          b.kind === "asset" &&
+          b.assetMode === "specific" &&
+          b.accountId === t.sourceAccountId &&
+          conditionApplies(b.condition, decedent),
+      );
+      if (matchingBequest) {
+        const intended = describeRecipients(matchingBequest.recipients, clientData);
+        conflicts.push({
+          id: idFor(t.sourceAccountId),
+          accountId: t.sourceAccountId,
+          accountLabel: t.sourceAccountName ?? "—",
+          governingMechanism: t.via,
+          governingRecipient: resolveRecipientLabel(t, clientData).name,
+          overriddenBy: [
+            {
+              mechanism: "will_specific_bequest",
+              intendedRecipient: intended,
+              note: `Will leaves this asset to ${intended}, but ${MECHANISM_LABELS[t.via]} routes it to ${resolveRecipientLabel(t, clientData).name}.`,
+            },
+          ],
+        });
+      }
+    }
+  }
+
+  return conflicts;
+}
+
+// ── Conflict-detection helpers ───────────────────────────────────────────────
+
+function conditionApplies(
+  condition: WillBequest["condition"],
+  decedent: "client" | "spouse",
+): boolean {
+  switch (condition) {
+    case "always":
+      return true;
+    case "if_spouse_survives":
+      // The decedent's spouse must survive — at the decedent's death this is
+      // true unless we're modeling spouse-died-first. The conflict pass runs
+      // per-decedent, so "decedent === spouse" means this is the second death
+      // and the original spouse (the client) has predeceased — condition fails.
+      return decedent === "client";
+    case "if_spouse_predeceased":
+      return decedent === "spouse";
+    default:
+      return true;
+  }
+}
+
+function describeRecipients(
+  recipients: WillBequestRecipient[],
+  clientData: ClientData,
+): string {
+  if (recipients.length === 0) return "(unspecified)";
+  const names = recipients.map((r) => {
+    if (r.recipientKind === "family_member" && r.recipientId) {
+      const fm = (clientData.familyMembers ?? []).find((f) => f.id === r.recipientId);
+      if (fm) return `${fm.firstName}${fm.lastName ? " " + fm.lastName : ""}`;
+    }
+    if (r.recipientKind === "external_beneficiary" && r.recipientId) {
+      const ext = (clientData.externalBeneficiaries ?? []).find(
+        (e) => e.id === r.recipientId,
+      );
+      if (ext) return ext.name;
+    }
+    if (r.recipientKind === "entity" && r.recipientId) {
+      const ent = (clientData.entities ?? []).find((e) => e.id === r.recipientId);
+      if (ent?.name) return ent.name;
+    }
+    if (r.recipientKind === "spouse") return "Spouse";
+    return "(recipient)";
+  });
+  return names.join(", ");
 }
 
 // ── Type-only re-uses (silence unused-import errors in future tasks) ──────────

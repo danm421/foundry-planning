@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildEstateTransferReportData,
+  detectConflicts,
   type EstateTransferReportInput,
 } from "../transfer-report";
 import type {
@@ -9,6 +10,7 @@ import type {
   EstateTaxResult,
   HypotheticalEstateTax,
   HypotheticalEstateTaxOrdering,
+  Will,
 } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
 
@@ -540,5 +542,168 @@ describe("buildEstateTransferReportData", () => {
     expect(out.firstDeath!.grossEstate).toBe(1_000_000);
     expect(out.secondDeath!.year).toBe(2040);
     expect(out.secondDeath!.recipients[0].recipientLabel).toBe("Alex");
+  });
+});
+
+describe("detectConflicts", () => {
+  function willWithSpecificBequest(opts: {
+    accountId: string;
+    recipientKind?: "family_member" | "external_beneficiary" | "entity" | "spouse";
+    recipientId?: string;
+    condition?: "always" | "if_spouse_survives" | "if_spouse_predeceased";
+  }): Will {
+    return {
+      grantor: "client",
+      bequests: [
+        {
+          kind: "asset",
+          assetMode: "specific",
+          accountId: opts.accountId,
+          percentage: 100,
+          condition: opts.condition ?? "always",
+          recipients: [
+            {
+              recipientKind: opts.recipientKind ?? "family_member",
+              recipientId: opts.recipientId ?? "fm-child-1",
+              percentage: 100,
+            },
+          ],
+        },
+      ],
+    } as unknown as Will;
+  }
+
+  function withWill(t: ClientData, will: Will): ClientData {
+    return { ...t, wills: [will] } as unknown as ClientData;
+  }
+
+  it("returns no conflicts when no will or bene-designation exists for a fallback transfer", () => {
+    const out = detectConflicts(
+      tree(),
+      [
+        transfer({
+          via: "fallback_spouse",
+          recipientKind: "spouse",
+          sourceAccountId: "acc-1",
+        }),
+      ],
+      "client",
+    );
+    expect(out).toEqual([]);
+  });
+
+  it("flags a will-bequest overridden by JT titling", () => {
+    const data = withWill(
+      tree(),
+      willWithSpecificBequest({
+        accountId: "acc-house",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+      }),
+    );
+    const transfers = [
+      transfer({
+        sourceAccountId: "acc-house",
+        sourceAccountName: "Home",
+        via: "titling",
+        recipientKind: "spouse",
+        recipientLabel: "Sam",
+      }),
+    ];
+
+    const out = detectConflicts(data, transfers, "client");
+    expect(out).toHaveLength(1);
+    expect(out[0].accountId).toBe("acc-house");
+    expect(out[0].governingMechanism).toBe("titling");
+    expect(out[0].overriddenBy[0].mechanism).toBe("will_specific_bequest");
+    expect(out[0].overriddenBy[0].intendedRecipient).toContain("Alex");
+  });
+
+  it("flags a will-bequest overridden by beneficiary designation", () => {
+    const data = withWill(
+      tree(),
+      willWithSpecificBequest({
+        accountId: "acc-ira",
+        recipientKind: "family_member",
+        recipientId: "fm-child-2",
+      }),
+    );
+    const transfers = [
+      transfer({
+        sourceAccountId: "acc-ira",
+        sourceAccountName: "Pat IRA",
+        via: "beneficiary_designation",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+        recipientLabel: "Alex",
+      }),
+    ];
+    const out = detectConflicts(data, transfers, "client");
+    expect(out).toHaveLength(1);
+    expect(out[0].overriddenBy[0].mechanism).toBe("will_specific_bequest");
+    expect(out[0].overriddenBy[0].intendedRecipient).toContain("Riley");
+  });
+
+  it("does NOT flag conflict when the bequest is overridden by another bequest of higher precedence (governing == will)", () => {
+    const data = withWill(
+      tree(),
+      willWithSpecificBequest({ accountId: "acc-1", recipientId: "fm-child-1" }),
+    );
+    const transfers = [
+      transfer({
+        sourceAccountId: "acc-1",
+        via: "will",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+        recipientLabel: "Alex",
+      }),
+    ];
+    const out = detectConflicts(data, transfers, "client");
+    expect(out).toEqual([]);
+  });
+
+  it("respects the will bequest's condition (if_spouse_survives) — no conflict when condition fails", () => {
+    const data = withWill(
+      tree(),
+      willWithSpecificBequest({
+        accountId: "acc-1",
+        recipientId: "fm-child-1",
+        condition: "if_spouse_survives",
+      }),
+    );
+    // Decedent is spouse — at the spouse's death, the spouse no longer survives
+    // themselves, so the if_spouse_survives bequest doesn't apply.
+    const transfers = [
+      transfer({
+        sourceAccountId: "acc-1",
+        deceased: "spouse",
+        deathOrder: 2,
+        via: "fallback_children",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+      }),
+    ];
+    const out = detectConflicts(data, transfers, "spouse");
+    expect(out).toEqual([]);
+  });
+
+  it("ignores wills whose grantor isn't the decedent", () => {
+    const spouseWill = willWithSpecificBequest({
+      accountId: "acc-1",
+      recipientId: "fm-child-1",
+    });
+    (spouseWill as unknown as { grantor: string }).grantor = "spouse";
+    const data = withWill(tree(), spouseWill);
+
+    const transfers = [
+      transfer({
+        sourceAccountId: "acc-1",
+        deceased: "client",
+        via: "titling",
+        recipientKind: "spouse",
+      }),
+    ];
+    const out = detectConflicts(data, transfers, "client");
+    expect(out).toEqual([]);
   });
 });
