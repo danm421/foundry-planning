@@ -637,7 +637,7 @@ export default function AddAccountForm({
             onClick={() => setActiveTab("details")}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
               activeTab === "details"
-                ? "border-blue-600 text-blue-600"
+                ? "border-accent text-accent"
                 : "border-transparent text-gray-300 hover:text-gray-200"
             }`}
           >
@@ -650,7 +650,7 @@ export default function AddAccountForm({
             onClick={() => setActiveTab("savings")}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
               activeTab === "savings"
-                ? "border-blue-600 text-blue-600"
+                ? "border-accent text-accent"
                 : "border-transparent text-gray-300 hover:text-gray-200"
             }`}
           >
@@ -663,7 +663,7 @@ export default function AddAccountForm({
             onClick={() => setActiveTab("realization")}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
               activeTab === "realization"
-                ? "border-blue-600 text-blue-600"
+                ? "border-accent text-accent"
                 : "border-transparent text-gray-300 hover:text-gray-200"
             }`}
           >
@@ -676,7 +676,7 @@ export default function AddAccountForm({
             onClick={() => setActiveTab("asset_mix")}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
               activeTab === "asset_mix"
-                ? "border-blue-600 text-blue-600"
+                ? "border-accent text-accent"
                 : "border-transparent text-gray-300 hover:text-gray-200"
             }`}
           >
@@ -688,7 +688,7 @@ export default function AddAccountForm({
           onClick={() => setActiveTab("beneficiaries")}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
             activeTab === "beneficiaries"
-              ? "border-blue-600 text-blue-600"
+              ? "border-accent text-accent"
               : "border-transparent text-gray-300 hover:text-gray-200"
           }`}
         >

@@ -162,6 +162,24 @@ const pctFromDecimal = (v: string | null | undefined, fallback: number): number 
   return Math.round(Number(v) * 10000) / 100;
 };
 
+function PillToggle({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={
+        "px-3 py-1.5 text-[12px] font-medium rounded-[var(--radius-sm)] border transition-colors " +
+        (active
+          ? "bg-accent text-accent-on border-accent"
+          : "bg-card-2 text-ink-3 border-hair hover:border-hair-2 hover:text-ink")
+      }
+    >
+      {label}
+    </button>
+  );
+}
+
 const INCOME_GROUPS: { label: string; types: IncomeType[] }[] = [
   { label: "Salaries", types: ["salary"] },
   { label: "Business", types: ["business"] },
@@ -284,10 +302,10 @@ interface CashAccountPickerProps {
 }
 
 /**
- * Pick the cash account an income deposits into or an expense is paid from.
- * Shows every cash-category account; entity-owned accounts are grouped under the
- * entity so advisors can pick a trust's cash without hunting for it. The empty
- * value means "use the default checking for this owner".
+ * Pick the cash account an income deposits into. Shows every cash-category
+ * account; entity-owned accounts are grouped under the entity so advisors can
+ * pick a trust's cash without hunting for it. The empty value means "use the
+ * default checking for this owner".
  */
 function CashAccountPicker({
   id,
@@ -323,7 +341,7 @@ function CashAccountPicker({
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
       >
         <option value="">Default ({defaultLabel})</option>
         {household.length > 0 && (
@@ -571,8 +589,8 @@ function IncomeDialog({
         </div>
 
         <div className="mb-4 flex border-b border-gray-700">
-          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Details</button>
-          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Schedule</button>
+          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-accent text-accent" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Details</button>
+          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-accent text-accent" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Schedule</button>
         </div>
 
         {activeTab === "details" && (<form onSubmit={handleSubmit} className="space-y-4">
@@ -611,20 +629,53 @@ function IncomeDialog({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="inc-owner">Owner</label>
-              <select
-                id="inc-owner"
-                name="owner"
-                value={owner}
-                onChange={(e) => setOwner(e.target.value as Owner)}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="client">{ownerNames.clientName}</option>
-                <option value="spouse" disabled={!ownerNames.spouseName}>
-                  {ownerNames.spouseName ?? "Spouse (none on file)"}
-                </option>
-                <option value="joint">Joint</option>
-              </select>
+              <label className="block text-sm font-medium text-gray-300">Owner</label>
+              <input type="hidden" name="owner" value={owner} />
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                <PillToggle
+                  label={ownerNames.clientName.split(" ")[0]}
+                  active={!ownerEntityId && owner === "client"}
+                  onClick={() => { setOwner("client"); setOwnerEntityId(""); }}
+                />
+                {ownerNames.spouseName && (
+                  <PillToggle
+                    label={ownerNames.spouseName.split(" ")[0]}
+                    active={!ownerEntityId && owner === "spouse"}
+                    onClick={() => { setOwner("spouse"); setOwnerEntityId(""); }}
+                  />
+                )}
+                {ownerNames.spouseName && (
+                  <PillToggle
+                    label="Joint 50/50"
+                    active={!ownerEntityId && owner === "joint"}
+                    onClick={() => { setOwner("joint"); setOwnerEntityId(""); }}
+                  />
+                )}
+                {entities && entities.length > 0 && (
+                  <PillToggle
+                    label="Custom"
+                    active={!!ownerEntityId}
+                    onClick={() => {
+                      if (!ownerEntityId && entities[0]) setOwnerEntityId(entities[0].id);
+                    }}
+                  />
+                )}
+              </div>
+              {ownerEntityId && entities && entities.length > 0 && (
+                <>
+                  <select
+                    id="inc-entity"
+                    value={ownerEntityId}
+                    onChange={(e) => setOwnerEntityId(e.target.value)}
+                    className="mt-2 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                  >
+                    {entities.map((ent) => (
+                      <option key={ent.id} value={ent.id}>{ent.name}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-amber-400">Counted as out of estate.</p>
+                </>
+              )}
             </div>
           </div>
 
@@ -660,7 +711,7 @@ function IncomeDialog({
 
             {hasSchedule ? (
               <div className="flex items-end">
-                <p className="text-xs text-blue-400 cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
+                <p className="text-xs text-accent cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
               </div>
             ) : (
               <div className="col-span-2">
@@ -766,28 +817,6 @@ function IncomeDialog({
             </div>
           )}
 
-          {entities && entities.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="inc-entity">
-                Received by entity (out of estate)
-              </label>
-              <select
-                id="inc-entity"
-                value={ownerEntityId}
-                onChange={(e) => setOwnerEntityId(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="">Household (individual owner)</option>
-                {entities.map((ent) => (
-                  <option key={ent.id} value={ent.id}>{ent.name}</option>
-                ))}
-              </select>
-              {ownerEntityId && (
-                <p className="mt-1 text-xs text-amber-400">Counted as out of estate.</p>
-              )}
-            </div>
-          )}
-
           <CashAccountPicker
             id="inc-cash"
             label="Deposits to"
@@ -812,7 +841,7 @@ function IncomeDialog({
             <button
               type="submit"
               disabled={loading}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
             >
               {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Income"}
             </button>
@@ -854,7 +883,6 @@ function IncomeDialog({
 interface ExpenseDialogProps {
   clientId: string;
   defaultType?: ExpenseType;
-  accounts: Account[];
   entities?: Entity[];
   clientInfo?: ClientInfo;
   ownerNames: OwnerNames;
@@ -870,7 +898,6 @@ interface ExpenseDialogProps {
 function ExpenseDialog({
   clientId,
   defaultType = "living",
-  accounts,
   entities,
   clientInfo,
   ownerNames,
@@ -890,7 +917,6 @@ function ExpenseDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ownerEntityId, setOwnerEntityId] = useState<string>(editing?.ownerEntityId ?? "");
-  const [cashAccountId, setCashAccountId] = useState<string>(editing?.cashAccountId ?? "");
   const [deductionType, setDeductionType] = useState<string>(editing?.deductionType ?? "");
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
@@ -938,7 +964,7 @@ function ExpenseDialog({
       growthRate: String(Number(growthRateDisplay) / 100),
       growthSource,
       ownerEntityId: ownerEntityId || null,
-      cashAccountId: cashAccountId || null,
+      cashAccountId: null,
       inflationStartYear: todaysDollars ? planStartYear : null,
       startYearRef,
       endYearRef,
@@ -1012,8 +1038,8 @@ function ExpenseDialog({
         </div>
 
         <div className="mb-4 flex border-b border-gray-700">
-          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Details</button>
-          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-blue-500 text-blue-400" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Schedule</button>
+          <button type="button" onClick={() => setActiveTab("details")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-accent text-accent" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Details</button>
+          <button type="button" onClick={() => setActiveTab("schedule")} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "schedule" ? "border-accent text-accent" : "border-transparent text-gray-300 hover:text-gray-200"}`}>Schedule</button>
         </div>
 
         {activeTab === "details" && (<form onSubmit={handleSubmit} className="space-y-4">
@@ -1065,7 +1091,7 @@ function ExpenseDialog({
 
             {hasSchedule ? (
               <div className="flex items-end">
-                <p className="text-xs text-blue-400 cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
+                <p className="text-xs text-accent cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
               </div>
             ) : (
               <div className="col-span-2">
@@ -1154,34 +1180,38 @@ function ExpenseDialog({
 
           {entities && entities.length > 0 && (
             <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="exp-entity">
-                Paid by entity (out of estate)
-              </label>
-              <select
-                id="exp-entity"
-                value={ownerEntityId}
-                onChange={(e) => setOwnerEntityId(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="">Household</option>
-                {entities.map((ent) => (
-                  <option key={ent.id} value={ent.id}>{ent.name}</option>
-                ))}
-              </select>
+              <label className="block text-sm font-medium text-gray-300">Paid by</label>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                <PillToggle
+                  label="Household"
+                  active={!ownerEntityId}
+                  onClick={() => setOwnerEntityId("")}
+                />
+                <PillToggle
+                  label="Custom"
+                  active={!!ownerEntityId}
+                  onClick={() => {
+                    if (!ownerEntityId && entities[0]) setOwnerEntityId(entities[0].id);
+                  }}
+                />
+              </div>
               {ownerEntityId && (
-                <p className="mt-1 text-xs text-amber-400">Counted as out of estate.</p>
+                <>
+                  <select
+                    id="exp-entity"
+                    value={ownerEntityId}
+                    onChange={(e) => setOwnerEntityId(e.target.value)}
+                    className="mt-2 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                  >
+                    {entities.map((ent) => (
+                      <option key={ent.id} value={ent.id}>{ent.name}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-amber-400">Counted as out of estate.</p>
+                </>
               )}
             </div>
           )}
-
-          <CashAccountPicker
-            id="exp-cash"
-            label="Paid from"
-            accounts={accounts}
-            ownerEntityId={ownerEntityId || null}
-            value={cashAccountId}
-            onChange={setCashAccountId}
-          />
 
           <div>
             <label className="block text-sm font-medium text-gray-300" htmlFor="exp-deductionType">Tax Treatment</label>
@@ -1214,7 +1244,7 @@ function ExpenseDialog({
             <button
               type="submit"
               disabled={loading}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
             >
               {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Expense"}
             </button>
@@ -1561,7 +1591,6 @@ export default function IncomeExpensesView({
         <ExpenseDialog
           key={expenseDialog.editing?.id ?? "new"}
           clientId={clientId}
-          accounts={accounts}
           entities={entities}
           clientInfo={clientInfo}
           ownerNames={ownerNames}
