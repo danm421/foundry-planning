@@ -2043,7 +2043,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         );
 
         let supplementalEarlyPenalty = 0;
-        const accountById = new Map(workingAccounts.map((a) => [a.id, a]));
 
         for (const [acctId, amount] of Object.entries(supplemental.byAccount)) {
           accountBalances[acctId] -= amount;
@@ -2061,12 +2060,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
           // Audit F3: supplemental gap-fill withdrawals were not running through
           // computeWithdrawalPenalty, so pre-59.5 draws from a Traditional IRA
-          // owed nothing extra in the model. Mirror the per-account age resolution
-          // used by applyTransfers (controllingFamilyMember → spouseFmId → ages).
+          // owed nothing extra in the model. Reuse the function-scope `accountById`
+          // (built from `data.accounts`) and the `isSpouseAccount` closure for the
+          // age resolution, matching how RMDs and applyTransfers route owner age.
           const acct = accountById.get(acctId);
           if (acct) {
-            const isSpouseOwned = spouseFmId != null && controllingFamilyMember(acct) === spouseFmId;
-            const ownerAge = isSpouseOwned && ages.spouse != null ? ages.spouse : ages.client;
+            const ownerAge = isSpouseAccount(acct) && ages.spouse != null ? ages.spouse : ages.client;
             supplementalEarlyPenalty += computeWithdrawalPenalty({
               amount,
               accountCategory: acct.category,
