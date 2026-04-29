@@ -251,6 +251,38 @@ export const openItemPriorityEnum = pgEnum("open_item_priority", [
   "high",
 ]);
 
+export const importModeEnum = pgEnum("import_mode", ["onboarding", "updating"]);
+
+export const importStatusEnum = pgEnum("import_status", [
+  "draft",
+  "extracting",
+  "review",
+  "committed",
+  "discarded",
+]);
+
+export const extractionStatusEnum = pgEnum("extraction_status", [
+  "queued",
+  "extracting",
+  "success",
+  "failed",
+]);
+
+export const importDocumentTypeEnum = pgEnum("import_document_type", [
+  "auto",
+  "account_statement",
+  "pay_stub",
+  "insurance",
+  "expense_worksheet",
+  "tax_return",
+  "excel_import",
+  "fact_finder",
+  "will",
+  "family_fact_finder",
+]);
+
+export const extractionModelEnum = pgEnum("extraction_model", ["mini", "full"]);
+
 // ── Tables ───────────────────────────────────────────────────────────────────
 
 export const clients = pgTable("clients", {
@@ -1742,4 +1774,85 @@ export const auditLog = pgTable(
     index("audit_log_firm_created_idx").on(t.firmId, t.createdAt),
     index("audit_log_resource_idx").on(t.resourceType, t.resourceId),
   ],
+);
+
+export const clientImports = pgTable("client_imports", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  orgId: text("org_id").notNull(),
+  scenarioId: uuid("scenario_id").references(() => scenarios.id, {
+    onDelete: "set null",
+  }),
+  mode: importModeEnum("mode").notNull(),
+  status: importStatusEnum("status").notNull().default("draft"),
+  createdByUserId: text("created_by_user_id").notNull(),
+  committedByUserId: text("committed_by_user_id"),
+  committedAt: timestamp("committed_at"),
+  discardedAt: timestamp("discarded_at"),
+  notes: text("notes"),
+  payloadJson: jsonb("payload_json").notNull().default(sql`'{}'::jsonb`),
+  perTabCommittedAt: jsonb("per_tab_committed_at")
+    .notNull()
+    .default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const clientImportFiles = pgTable("client_import_files", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  importId: uuid("import_id")
+    .notNull()
+    .references(() => clientImports.id, { onDelete: "cascade" }),
+  blobUrl: text("blob_url").notNull(),
+  blobPathname: text("blob_pathname").notNull(),
+  originalFilename: text("original_filename").notNull(),
+  contentHash: text("content_hash").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  detectedKind: text("detected_kind").notNull(),
+  documentType: importDocumentTypeEnum("document_type").notNull().default("auto"),
+  ssnRedactionCount: integer("ssn_redaction_count").notNull().default(0),
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+});
+
+export const clientImportExtractions = pgTable("client_import_extractions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  fileId: uuid("file_id")
+    .notNull()
+    .references(() => clientImportFiles.id, { onDelete: "cascade" }),
+  model: extractionModelEnum("model").notNull(),
+  promptVersion: text("prompt_version").notNull(),
+  status: extractionStatusEnum("status").notNull().default("queued"),
+  rawResponseJson: jsonb("raw_response_json"),
+  warnings: jsonb("warnings"),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at"),
+  finishedAt: timestamp("finished_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const clientImportsRelations = relations(clientImports, ({ one, many }) => ({
+  client: one(clients, { fields: [clientImports.clientId], references: [clients.id] }),
+  scenario: one(scenarios, { fields: [clientImports.scenarioId], references: [scenarios.id] }),
+  files: many(clientImportFiles),
+}));
+
+export const clientImportFilesRelations = relations(clientImportFiles, ({ one, many }) => ({
+  import: one(clientImports, {
+    fields: [clientImportFiles.importId],
+    references: [clientImports.id],
+  }),
+  extractions: many(clientImportExtractions),
+}));
+
+export const clientImportExtractionsRelations = relations(
+  clientImportExtractions,
+  ({ one }) => ({
+    file: one(clientImportFiles, {
+      fields: [clientImportExtractions.fileId],
+      references: [clientImportFiles.id],
+    }),
+  }),
 );
