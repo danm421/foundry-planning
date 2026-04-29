@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../azure-client", () => ({
     callAIExtraction: vi.fn().mockResolvedValue(
@@ -10,7 +10,7 @@ vi.mock("../azure-client", () => ({
 }));
 
 vi.mock("../pdf-parser", () => ({
-    extractPdfText: vi.fn().mockResolvedValue("Account Statement\nSchwab Brokerage\nMarket Value: $150,000"),
+    extractPdfText: vi.fn(),
 }));
 
 vi.mock("../excel-parser", () => ({
@@ -18,6 +18,17 @@ vi.mock("../excel-parser", () => ({
 }));
 
 import { extractDocument } from "../extract";
+import { callAIExtraction } from "../azure-client";
+import { extractPdfText } from "../pdf-parser";
+
+const mockedCallAI = vi.mocked(callAIExtraction);
+const mockedPdf = vi.mocked(extractPdfText);
+
+beforeEach(() => {
+    mockedPdf.mockResolvedValue(
+        "Account Statement\nSchwab Brokerage\nMarket Value: $150,000"
+    );
+});
 
 describe("extractDocument", () => {
     it("extracts from a PDF with auto-detection", async () => {
@@ -56,5 +67,40 @@ describe("extractDocument", () => {
         expect(result.extracted.incomes).toEqual([]);
         expect(result.extracted.expenses).toEqual([]);
         expect(result.extracted.entities).toEqual([]);
+    });
+
+    it("redacts SSNs from text before the AI call", async () => {
+        mockedPdf.mockResolvedValueOnce(
+            "Taxpayer SSN: 123-45-6789. Account balance: $50,000.\n" +
+                "Schwab Brokerage holdings of various securities."
+        );
+
+        const result = await extractDocument(
+            Buffer.from("fake pdf"),
+            "statement.pdf",
+            "account_statement",
+            "mini"
+        );
+
+        const lastCall = mockedCallAI.mock.calls.at(-1);
+        const userPrompt = lastCall?.[1] ?? "";
+        expect(userPrompt).not.toContain("123-45-6789");
+        expect(userPrompt).toContain("[REDACTED-SSN]");
+        expect(result.warnings.some((w) => w.toLowerCase().includes("ssn"))).toBe(true);
+    });
+
+    it("does not add SSN warning when no SSN is present", async () => {
+        mockedPdf.mockResolvedValueOnce(
+            "Account Statement\nSchwab Brokerage\nMarket Value: $150,000"
+        );
+
+        const result = await extractDocument(
+            Buffer.from("fake pdf"),
+            "clean.pdf",
+            "account_statement",
+            "mini"
+        );
+
+        expect(result.warnings.some((w) => w.toLowerCase().includes("ssn"))).toBe(false);
     });
 });

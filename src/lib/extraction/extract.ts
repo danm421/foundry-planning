@@ -11,6 +11,7 @@ import { PAY_STUB_PROMPT } from "./prompts/pay-stub";
 import { INSURANCE_PROMPT } from "./prompts/insurance";
 import { EXPENSE_WORKSHEET_PROMPT } from "./prompts/expense-worksheet";
 import { TAX_RETURN_PROMPT } from "./prompts/tax-return";
+import { redactSsns } from "./redact-ssn";
 
 const PROMPTS: Record<DocumentType, string> = {
     account_statement: ACCOUNT_STATEMENT_PROMPT,
@@ -85,13 +86,25 @@ export async function extractDocument(
         documentType = classifyDocument(text);
     }
 
-    // 3. Truncate very long documents
+    // 3. Redact SSNs before any AI call. Defense in depth — even though
+    // Azure OpenAI runs with zero data retention, we don't want SSNs
+    // leaving the process boundary at all if we can avoid it.
+    const redacted = redactSsns(text);
+    if (redacted.count > 0) {
+        console.log(`[extract] ${logName}: redacted ${redacted.count} SSN(s) before AI call`);
+        warnings.push(
+            `Redacted ${redacted.count} SSN-like value(s) from this document before sending it to the AI extractor.`
+        );
+    }
+    text = redacted.text;
+
+    // 4. Truncate very long documents
     if (text.length > 100000) {
         text = text.slice(0, 100000) + "\n... [truncated]";
         warnings.push("Document was very long and was truncated. Some data at the end may be missing.");
     }
 
-    // 4. Call AI. We wrap the document text in delimiter tags and tell
+    // 5. Call AI. We wrap the document text in delimiter tags and tell
      // the model, via the system prompt wrapper, to treat anything
      // inside as data — never as further instructions. This is a
      // defense-in-depth measure against prompt-injection attacks
@@ -110,7 +123,7 @@ export async function extractDocument(
     const raw = await callAIExtraction(prompt, safeUser, model);
     console.log(`[extract] ${logName}: AI returned ${raw.length} chars`);
 
-    // 5. Parse response and validate against strict schema. Unknown
+    // 6. Parse response and validate against strict schema. Unknown
      // shapes are rejected up-front so a compromised or hallucinated
      // response can't smuggle unexpected top-level fields through.
     const parsed = parseAIResponse(raw);
