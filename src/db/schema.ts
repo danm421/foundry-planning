@@ -753,6 +753,8 @@ export const accounts = pgTable("accounts", {
   name: text("name").notNull(),
   category: accountCategoryEnum("category").notNull(),
   subType: accountSubTypeEnum("sub_type").notNull().default("other"),
+  accountNumberLast4: text("account_number_last4"),
+  custodian: text("custodian"),
   insuredPerson: insuredPersonEnum("insured_person"),
   value: decimal("value", { precision: 15, scale: 2 }).notNull().default("0"),
   basis: decimal("basis", { precision: 15, scale: 2 }).notNull().default("0"),
@@ -818,6 +820,8 @@ export const lifeInsurancePolicies = pgTable("life_insurance_policies", {
   accountId: uuid("account_id")
     .primaryKey()
     .references(() => accounts.id, { onDelete: "cascade" }),
+  carrier: text("carrier"),
+  policyNumberLast4: text("policy_number_last4"),
   faceValue: decimal("face_value", { precision: 15, scale: 2 }).notNull().default("0"),
   costBasis: decimal("cost_basis", { precision: 15, scale: 2 }).notNull().default("0"),
   premiumAmount: decimal("premium_amount", { precision: 15, scale: 2 }).notNull().default("0"),
@@ -1263,6 +1267,8 @@ export const wills = pgTable(
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),
     grantor: willGrantorEnum("grantor").notNull(),
+    executor: text("executor"),
+    executionDate: date("execution_date"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
