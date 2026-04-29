@@ -22,9 +22,21 @@ const maxLenPerList = {
   expenses: 500,
   liabilities: 200,
   entities: 50,
+  dependents: 30,
 } as const;
 
 const row = z.looseObject({});
+
+const familyMember = z.looseObject({});
+
+const familyPayloadSchema = z
+  .object({
+    primary: familyMember.optional(),
+    spouse: familyMember.optional(),
+    dependents: z.array(familyMember).max(maxLenPerList.dependents).optional(),
+  })
+  .strict()
+  .optional();
 
 export const extractedPayloadSchema = z
   .object({
@@ -33,6 +45,7 @@ export const extractedPayloadSchema = z
     expenses: z.array(row).max(maxLenPerList.expenses).optional(),
     liabilities: z.array(row).max(maxLenPerList.liabilities).optional(),
     entities: z.array(row).max(maxLenPerList.entities).optional(),
+    family: familyPayloadSchema,
   })
   .strict();
 

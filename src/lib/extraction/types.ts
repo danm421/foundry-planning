@@ -117,6 +117,48 @@ export interface ExtractedEntity {
   entityType?: EntityType;
 }
 
+export type FilingStatus =
+  | "single"
+  | "married_filing_jointly"
+  | "married_filing_separately"
+  | "head_of_household";
+
+export type FamilyRelationship =
+  | "child"
+  | "grandchild"
+  | "parent"
+  | "sibling"
+  | "other";
+
+export type FamilyMemberRole = "child" | "other";
+
+export interface ExtractedPrimaryFamilyMember {
+  firstName: string;
+  lastName?: string;
+  dateOfBirth?: string;
+  filingStatus?: FilingStatus;
+}
+
+export interface ExtractedSpouseFamilyMember {
+  firstName: string;
+  lastName?: string;
+  dateOfBirth?: string;
+}
+
+export interface ExtractedDependent {
+  firstName: string;
+  lastName?: string;
+  dateOfBirth?: string;
+  relationship?: FamilyRelationship;
+  role?: FamilyMemberRole;
+}
+
+export interface ExtractedFamilyPayload {
+  primary?: ExtractedPrimaryFamilyMember;
+  spouse?: ExtractedSpouseFamilyMember;
+  dependents?: ExtractedDependent[];
+}
+
 export interface ExtractionResult {
   documentType: DocumentType;
   fileName: string;
