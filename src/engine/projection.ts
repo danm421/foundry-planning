@@ -22,7 +22,6 @@ import {
   scheduleBoYBalance,
   type LiabilityScheduleMap,
 } from "./liability-schedules";
-import { calculateTaxYearBracket, calculateTaxYearFlat, makeEmptyTaxParams } from "./tax";
 import { createTaxResolver } from "../lib/tax/resolver";
 import type { TaxYearParameters, FilingStatus } from "../lib/tax/types";
 import {
@@ -69,14 +68,12 @@ import {
   controllingFamilyMember,
   controllingEntity,
 } from "./ownership";
-import {
-  computeCharitableDeductionForYear,
-  type CharityBucket,
-} from "./charitable-deduction";
+import { type CharityBucket } from "./charitable-deduction";
 import {
   emptyCharityCarryforward,
   type CharityCarryforward,
 } from "./types";
+import { computeTaxForYear } from "./year-tax";
 
 // Map legacy income type to the new tax type categories.
 function legacyTaxType(
@@ -1655,11 +1652,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           ficaSsWages: taxDetail.earnedIncome,
         })
       : { seTax: 0, deductibleHalf: 0 };
-    // Deductible-half-of-SE-tax is an above-the-line adjustment per §164(f).
-    const aboveLineWithSeca = aboveLineDeductions + secaResult.deductibleHalf;
-
-    // Plan 3a — charitable-deduction pass on gift events targeting external beneficiaries
-    // (kind='charity'). Decay + FIFO consumption + AGI-limit per IRC §170(b).
+    // Plan 3a — collect external-charity gifts so the tax helper can apply IRC §170(b)
+    // AGI limits + decay + FIFO carryforward consumption. Bucket cash gifts as
+    // public/private; v1 simplification: gift events carry no asset-class metadata yet.
     const charityGiftsThisYear: { amount: number; bucket: CharityBucket }[] = [];
     for (const g of data.gifts ?? []) {
       if (g.year !== year) continue;
@@ -1668,8 +1663,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         (eb) => eb.id === g.recipientExternalBeneficiaryId,
       );
       if (!beneficiary || beneficiary.kind !== "charity") continue;
-      // v1 simplification: gift events carry no asset-class metadata yet, so all are treated as "cash".
-      // Plan 3b's drop popup will populate this when wired.
       const isPrivate = beneficiary.charityType === "private";
       charityGiftsThisYear.push({
         amount: g.amount,
@@ -1677,102 +1670,38 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       });
     }
 
-    // Approximate AGI as taxable income minus above-line adjustments. Close enough for §170(b) bucket math
-    // (the exact AGI is computed inside calculateTaxYearBracket; this approximation lives upstream of that).
-    const charityAgi = Math.max(0, taxableIncome - aboveLineWithSeca);
-    const willItemize = useBracket
-      ? itemizedDeductions > (resolved?.params.stdDeduction[filingStatus] ?? 0)
-      : false;
-
-    const charityResult = computeCharitableDeductionForYear({
-      giftsThisYear: charityGiftsThisYear,
-      agi: charityAgi,
-      carryforwardIn: charityCarryforward,
-      currentYear: year,
-      willItemize,
-    });
-
-    // Carryforward state advances year-to-year regardless of itemize/standard outcome.
-    charityCarryforward = charityResult.carryforwardOut;
-
-    // Add the charitable deduction (already gated by willItemize inside the module) to the itemized total.
-    itemizedDeductions += charityResult.deductionThisYear;
-
-    // Patch the drill-down breakdown so the UI reflects gift-event charitable deductions
-    // alongside expense-tagged ones. Tax math already handled above via itemizedDeductions.
-    if (deductionBreakdownResult && charityResult.deductionThisYear > 0) {
-      const newCharitable = deductionBreakdownResult.belowLine.charitable + charityResult.deductionThisYear;
-      const newItemizedTotal = deductionBreakdownResult.belowLine.itemizedTotal + charityResult.deductionThisYear;
-      deductionBreakdownResult = {
-        ...deductionBreakdownResult,
-        belowLine: {
-          ...deductionBreakdownResult.belowLine,
-          charitable: newCharitable,
-          itemizedTotal: newItemizedTotal,
-          taxDeductions: Math.max(newItemizedTotal, deductionBreakdownResult.belowLine.standardDeduction),
-        },
-      };
-    }
-
     // Split realization OI out of the generic ordinaryIncome bucket so NIIT
     // (IRC §1411) can see investment interest while still excluding RMDs,
     // IRA distributions, and SE earnings which ride in ordinaryIncome.
     const interestIncomeForTax = realizationOI;
-    const taxResult = useBracket
-      ? calculateTaxYearBracket({
-          year,
-          filingStatus,
-          earnedIncome: taxDetail.earnedIncome,
-          ordinaryIncome: Math.max(0, taxDetail.ordinaryIncome - interestIncomeForTax),
-          interestIncome: interestIncomeForTax,
-          qualifiedDividends: taxDetail.dividends,
-          longTermCapitalGains: taxDetail.capitalGains,
-          shortTermCapitalGains: taxDetail.stCapitalGains,
-          qbiIncome: taxDetail.qbi,
-          taxExemptIncome: taxDetail.taxExempt,
-          socialSecurityGross: income.socialSecurity,
-          aboveLineDeductions: aboveLineWithSeca,
-          itemizedDeductions,
-          flatStateRate: planSettings.flatStateRate,
-          taxParams: resolved!.params,
-          inflationFactor: resolved!.inflationFactor,
-        })
-      : calculateTaxYearFlat({
-          taxableIncome,
-          flatFederalRate: planSettings.flatFederalRate,
-          flatStateRate: planSettings.flatStateRate,
-          taxParams: resolved?.params ?? makeEmptyTaxParams(year),
-          // Flat mode doesn't model SS taxability, so SS (and anything else
-          // not rolled into `taxableIncome` above) surfaces as non-taxable so
-          // the UI's "Non-Taxable" / "Gross Total Income" columns reflect the
-          // advisor's actual cash picture instead of reading as stub zeros.
-          nonTaxableIncome: Math.max(0, income.total - taxableIncome),
-        });
 
-    // Early withdrawal penalty from transfers
-    if (transferResult.earlyWithdrawalPenalty > 0) {
-      taxResult.flow.totalTax += transferResult.earlyWithdrawalPenalty;
-      taxResult.flow.totalFederalTax += transferResult.earlyWithdrawalPenalty;
-    }
+    const taxOut = computeTaxForYear({
+      taxDetail,
+      socialSecurityGross: income.socialSecurity,
+      totalIncome: income.total,
+      taxableIncome,
+      filingStatus,
+      year,
+      planSettings,
+      resolved: resolved ?? null,
+      useBracket,
+      aboveLineDeductions,
+      itemizedDeductions,
+      charityCarryforwardIn: charityCarryforward,
+      charityGiftsThisYear,
+      secaResult,
+      transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
+      interestIncomeForTax,
+      deductionBreakdownIn: deductionBreakdownResult ?? null,
+    });
 
-    // SECA tax rolls up into both totals — it's federal payroll tax.
-    if (secaResult.seTax > 0) {
-      taxResult.flow.totalTax += secaResult.seTax;
-      taxResult.flow.totalFederalTax += secaResult.seTax;
-    }
-
-    const taxes = taxResult.flow.totalTax;
-
-    // Marginal rate for withdrawal gross-up. In bracket mode, use the true marginal
-    // federal rate from the tax result so high-income clients aren't systematically
-    // under-grossed. Fall back to the flat rate when bracket engine is not active.
-    const marginalFedRate = useBracket
-      ? taxResult.diag.marginalFederalRate
-      : planSettings.flatFederalRate;
-    const marginalRate = Math.min(
-      0.99,
-      marginalFedRate + planSettings.flatStateRate
-    );
+    const taxResult = taxOut.taxResult;
+    const taxes = taxOut.taxes;
+    const marginalRate = taxOut.marginalCombinedRate;
+    charityCarryforward = taxOut.charityCarryforwardOut;
+    // taxOut.deductionBreakdown is `DeductionBreakdown | null`; the projection
+    // uses `DeductionBreakdown | undefined` so coerce null → undefined to match.
+    deductionBreakdownResult = taxOut.deductionBreakdown ?? undefined;
 
     // 6. Route each income to its cash account (override or default for owner).
     // Prefer the per-source amount already resolved by `computeIncome` — that
