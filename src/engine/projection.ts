@@ -2166,6 +2166,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         }
       }
     } else {
+      // TODO(F5-followup): unify with the iterative convergence path. This branch
+      // doesn't gross up or model withdrawal tax — see future-work/engine.md
+      // "Unify legacy no-checking path with iterative tax convergence".
       // Legacy path: no default checking → deficit triggers withdrawal directly
       // (no gross-up because the legacy path doesn't model the withdrawal tax
       // separately). Purchase equity is folded into outflows so a purchase-driven
