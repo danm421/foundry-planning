@@ -264,7 +264,7 @@ describe("grantor trust distribution pass", () => {
     const years = runProjection(data);
     for (const y of years) {
       const warnings = y.trustWarnings ?? [];
-      expect(warnings.filter((w) => w.entityId === "idgt")).toHaveLength(0);
+      expect(warnings.filter((w) => "entityId" in w && w.entityId === "idgt")).toHaveLength(0);
     }
   });
 });

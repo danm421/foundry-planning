@@ -213,6 +213,7 @@ describe("Trust tax — edge cases", () => {
       warnings.find(
         (w) =>
           w.code.startsWith("trust_distribution_insufficient") &&
+          "entityId" in w &&
           w.entityId === "t1",
       ),
     ).toBeUndefined();
