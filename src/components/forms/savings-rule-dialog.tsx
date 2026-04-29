@@ -350,7 +350,7 @@ export default function SavingsRuleDialog({
                 required
               />
               {hasSchedule && (
-                <p className="mt-1 text-xs text-blue-400 cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
+                <p className="mt-1 text-xs text-accent cursor-pointer" onClick={() => setActiveTab("schedule")}>Using custom schedule</p>
               )}
             </div>
             {showDeductibleCheckbox && (
