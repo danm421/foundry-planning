@@ -112,7 +112,19 @@ export type AuditAction =
   | "toggle_group.move_change"
   // Scenario snapshots (frozen comparisons; survive scenario deletion).
   | "snapshot.create"
-  | "snapshot.delete";
+  | "snapshot.delete"
+  // Import tool v2 (durable draft-state import flow)
+  | "import.created"
+  | "import.discarded"
+  | "import.payload.edited"
+  | "import.file.uploaded"
+  | "import.file.viewed"
+  | "import.file.deleted"
+  | "import.extraction.started"
+  | "import.extraction.completed"
+  | "import.extraction.failed"
+  | "import.match.run"
+  | "import.commit.tab";
 
 type Args = {
   action: AuditAction;
