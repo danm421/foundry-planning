@@ -1,0 +1,95 @@
+// src/engine/__tests__/categorizeDraw.test.ts
+import { describe, it, expect } from "vitest";
+import { categorizeDraw } from "../withdrawal";
+import type { Account } from "../types";
+
+const baseAccount = (overrides: Partial<Account>): Account => ({
+  id: "a1",
+  name: "Test",
+  category: "cash",
+  subType: "checking",
+  value: 100_000,
+  basis: 100_000,
+  growthRate: 0,
+  rmdEnabled: false,
+  owners: [],
+  ...overrides,
+});
+
+describe("categorizeDraw", () => {
+  it("cash → no recognized income, no penalty", () => {
+    const acct = baseAccount({ category: "cash", subType: "savings" });
+    const draw = categorizeDraw({ account: acct, amount: 10_000, basisMap: { a1: 10_000 }, ownerAge: 50 });
+    expect(draw).toEqual({ accountId: "a1", amount: 10_000, ordinaryIncome: 0, capitalGains: 0, earlyWithdrawalPenalty: 0 });
+  });
+
+  it("taxable: pro-rata gain → LTCG only on gain portion", () => {
+    const acct = baseAccount({ id: "a2", category: "taxable", subType: "brokerage", value: 100_000, basis: 40_000 });
+    // Pull $20k of $100k account with $40k basis → 60% gain ratio → $12k cap gain, $8k basis (no tax)
+    const draw = categorizeDraw({ account: acct, amount: 20_000, basisMap: { a2: 40_000 }, ownerAge: 50 });
+    expect(draw.amount).toBe(20_000);
+    expect(draw.capitalGains).toBeCloseTo(12_000, 6);
+    expect(draw.ordinaryIncome).toBe(0);
+    expect(draw.earlyWithdrawalPenalty).toBe(0);
+  });
+
+  it("taxable: zero-basis account → 100% LTCG", () => {
+    const acct = baseAccount({ id: "a3", category: "taxable", subType: "brokerage", value: 100_000 });
+    const draw = categorizeDraw({ account: acct, amount: 10_000, basisMap: { a3: 0 }, ownerAge: 50 });
+    expect(draw.capitalGains).toBe(10_000);
+    expect(draw.ordinaryIncome).toBe(0);
+  });
+
+  it("taxable: full-basis account → 0% LTCG", () => {
+    const acct = baseAccount({ id: "a4", category: "taxable", subType: "brokerage", value: 100_000, basis: 100_000 });
+    const draw = categorizeDraw({ account: acct, amount: 10_000, basisMap: { a4: 100_000 }, ownerAge: 50 });
+    expect(draw.capitalGains).toBe(0);
+  });
+
+  it("traditional IRA, pre-59.5 → full ordinary + 10% penalty", () => {
+    const acct = baseAccount({ id: "a5", category: "retirement", subType: "traditional_ira", value: 200_000 });
+    const draw = categorizeDraw({ account: acct, amount: 10_000, basisMap: { a5: 0 }, ownerAge: 55 });
+    expect(draw.ordinaryIncome).toBe(10_000);
+    expect(draw.capitalGains).toBe(0);
+    expect(draw.earlyWithdrawalPenalty).toBeCloseTo(1_000, 6);
+  });
+
+  it("traditional IRA, post-59.5 → full ordinary, no penalty", () => {
+    const acct = baseAccount({ id: "a6", category: "retirement", subType: "traditional_ira", value: 200_000 });
+    const draw = categorizeDraw({ account: acct, amount: 10_000, basisMap: { a6: 0 }, ownerAge: 65 });
+    expect(draw.ordinaryIncome).toBe(10_000);
+    expect(draw.earlyWithdrawalPenalty).toBe(0);
+  });
+
+  it("Roth IRA, basis-only draw, pre-59.5 → no income, no penalty (F2 ordering)", () => {
+    const acct = baseAccount({ id: "a7", category: "retirement", subType: "roth_ira", value: 100_000 });
+    // basis = 30k; pulling 20k stays in basis → tax-free
+    const draw = categorizeDraw({ account: acct, amount: 20_000, basisMap: { a7: 30_000 }, ownerAge: 50 });
+    expect(draw.ordinaryIncome).toBe(0);
+    expect(draw.capitalGains).toBe(0);
+    expect(draw.earlyWithdrawalPenalty).toBe(0);
+  });
+
+  it("Roth IRA, mixed basis + earnings, pre-59.5 → ordinary + 10% on earnings only", () => {
+    const acct = baseAccount({ id: "a8", category: "retirement", subType: "roth_ira", value: 100_000 });
+    // basis = 30k; pulling 50k → 30k basis (free) + 20k earnings (ord + 10% penalty)
+    const draw = categorizeDraw({ account: acct, amount: 50_000, basisMap: { a8: 30_000 }, ownerAge: 50 });
+    expect(draw.ordinaryIncome).toBe(20_000);
+    expect(draw.earlyWithdrawalPenalty).toBeCloseTo(2_000, 6);
+  });
+
+  it("Roth IRA, earnings draw, post-59.5 → no tax, no penalty", () => {
+    const acct = baseAccount({ id: "a9", category: "retirement", subType: "roth_ira", value: 100_000 });
+    const draw = categorizeDraw({ account: acct, amount: 50_000, basisMap: { a9: 30_000 }, ownerAge: 65 });
+    expect(draw.ordinaryIncome).toBe(0);
+    expect(draw.earlyWithdrawalPenalty).toBe(0);
+  });
+
+  it("HSA → tax-free in v1 (qualified-medical assumption)", () => {
+    const acct = baseAccount({ id: "a10", category: "retirement", subType: "hsa", value: 50_000 });
+    const draw = categorizeDraw({ account: acct, amount: 10_000, basisMap: { a10: 0 }, ownerAge: 50 });
+    expect(draw.ordinaryIncome).toBe(0);
+    expect(draw.capitalGains).toBe(0);
+    expect(draw.earlyWithdrawalPenalty).toBe(0);
+  });
+});
