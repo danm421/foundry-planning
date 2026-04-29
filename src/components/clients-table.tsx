@@ -120,7 +120,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
               onClick={() => setEditMode((v) => !v)}
               className={`rounded-md border px-4 py-2 text-sm font-medium ${
                 editMode
-                  ? "border-blue-600 bg-blue-900/40 text-blue-300"
+                  ? "border-accent bg-accent/15 text-accent-ink"
                   : "border-gray-600 bg-gray-800 text-gray-200 hover:bg-gray-700"
               }`}
             >
@@ -138,7 +138,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name or spouse"
-            className="w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:max-w-md"
+            className="w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent sm:max-w-md"
           />
           <div className="flex items-center gap-4 text-sm text-gray-300">
             <label className="flex cursor-pointer items-center gap-2">
@@ -148,7 +148,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
                 value="recent"
                 checked={view === "recent"}
                 onChange={() => setView("recent")}
-                className="h-4 w-4 accent-blue-500"
+                className="h-4 w-4 accent-accent"
               />
               Recent
             </label>
@@ -159,7 +159,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
                 value="all"
                 checked={view === "all"}
                 onChange={() => setView("all")}
-                className="h-4 w-4 accent-blue-500"
+                className="h-4 w-4 accent-accent"
               />
               All Clients
             </label>
@@ -204,7 +204,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
                         <button
                           type="button"
                           onClick={() => setEditing(client)}
-                          className="font-medium text-blue-500 hover:text-blue-400"
+                          className="font-medium text-accent hover:text-accent"
                         >
                           {client.firstName} {client.lastName}
                           {spouseLabel && <span className="text-gray-300"> &amp; {spouseLabel}</span>}
@@ -213,7 +213,7 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
                         <Link
                           href={`/clients/${client.id}/overview`}
                           onClick={onClickName}
-                          className="font-medium text-blue-500 hover:text-blue-400"
+                          className="font-medium text-accent hover:text-accent"
                         >
                           {client.firstName} {client.lastName}
                           {spouseLabel && <span className="text-gray-300"> &amp; {spouseLabel}</span>}

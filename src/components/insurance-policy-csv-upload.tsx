@@ -42,7 +42,7 @@ export default function InsurancePolicyCsvUpload({
           type="file"
           accept=".csv,text/csv"
           onChange={handleFile}
-          className="mt-1 block w-full text-xs text-gray-200 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-blue-500"
+          className="mt-1 block w-full text-xs text-gray-200 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-accent-on hover:file:bg-accent-deep"
         />
       </label>
       {success && (

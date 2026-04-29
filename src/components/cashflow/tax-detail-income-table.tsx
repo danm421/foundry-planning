@@ -157,7 +157,7 @@ export function TaxDetailIncomeTable({
             return (
               <tr key={y.year} className="group">
                 <td
-                  className={`sticky left-0 z-10 cursor-pointer border-b border-gray-800 bg-gray-900 px-3 py-2 text-left hover:text-blue-400 group-hover:bg-gray-800/40 ${borderClass}`}
+                  className={`sticky left-0 z-10 cursor-pointer border-b border-gray-800 bg-gray-900 px-3 py-2 text-left hover:text-accent group-hover:bg-gray-800/40 ${borderClass}`}
                   onClick={() => onYearClick(y)}
                   title={tooltip ?? `View per-source breakdown for ${y.year}`}
                 >

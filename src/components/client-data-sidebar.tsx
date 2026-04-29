@@ -123,7 +123,7 @@ export default function ClientDataSidebar({ clientId }: ClientDataSidebarProps) 
             : "text-gray-300 hover:bg-gray-800/50 hover:text-gray-200"
         }`}
       >
-        <span className={isActive ? "text-blue-400" : "text-gray-400"}>{tab.icon}</span>
+        <span className={isActive ? "text-accent" : "text-gray-400"}>{tab.icon}</span>
         <span>{tab.label}</span>
       </Link>
     );

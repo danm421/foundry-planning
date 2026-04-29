@@ -49,7 +49,7 @@ export default function CommentDialog({ open, onClose, clientId, reportKey, init
           value={body}
           onChange={(e) => setBody(e.target.value)}
           rows={6}
-          className="w-full rounded border border-gray-700 bg-gray-800 p-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+          className="w-full rounded border border-gray-700 bg-gray-800 p-2 text-sm text-gray-100 focus:border-accent focus:outline-none"
           placeholder="Notes for this report…"
         />
         {error && (
@@ -68,7 +68,7 @@ export default function CommentDialog({ open, onClose, clientId, reportKey, init
           <button
             onClick={handleSave}
             disabled={saving}
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-60"
+            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-60"
           >
             {saving ? "Saving…" : "Save"}
           </button>

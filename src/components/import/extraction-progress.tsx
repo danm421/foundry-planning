@@ -31,7 +31,7 @@ export default function ExtractionProgress({ files, onRetry }: ExtractionProgres
               {onRetry && (
                 <button
                   onClick={() => onRetry(f.id)}
-                  className="rounded px-2 py-0.5 text-xs text-blue-400 hover:bg-gray-800"
+                  className="rounded px-2 py-0.5 text-xs text-accent hover:bg-gray-800"
                 >
                   Retry
                 </button>
@@ -50,7 +50,7 @@ export default function ExtractionProgress({ files, onRetry }: ExtractionProgres
 function StatusIndicator({ status }: { status: FileStatus }) {
   if (status === "extracting") {
     return (
-      <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-600 border-t-blue-400" />
+      <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-600 border-t-accent" />
     );
   }
   if (status === "done") {

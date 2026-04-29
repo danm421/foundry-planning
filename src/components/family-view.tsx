@@ -327,7 +327,7 @@ export default function FamilyView({
                 onClick={() => setMembersEdit((v) => !v)}
                 className={`rounded-md border px-3 py-1 text-xs font-medium ${
                   membersEdit
-                    ? "border-blue-600 bg-blue-900/40 text-blue-300"
+                    ? "border-accent bg-accent/15 text-accent-ink"
                     : "border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-800"
                 }`}
               >
@@ -339,7 +339,7 @@ export default function FamilyView({
                 setEditingMember(undefined);
                 setMemberDialogOpen(true);
               }}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+              className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
             >
               + Add
             </button>
@@ -416,7 +416,7 @@ export default function FamilyView({
                 onClick={() => setEntitiesEdit((v) => !v)}
                 className={`rounded-md border px-3 py-1 text-xs font-medium ${
                   entitiesEdit
-                    ? "border-blue-600 bg-blue-900/40 text-blue-300"
+                    ? "border-accent bg-accent/15 text-accent-ink"
                     : "border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-800"
                 }`}
               >
@@ -710,7 +710,7 @@ function GiftsSection(props: {
         <button
           type="button"
           onClick={() => setAdding((v) => !v)}
-          className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-500"
+          className="rounded bg-accent px-3 py-1 text-sm text-accent-on hover:bg-accent-deep"
         >
           {adding ? "Cancel" : "+ Add gift"}
         </button>
@@ -958,7 +958,7 @@ function GiftRowForm(props: {
           type="button"
           disabled={saving}
           onClick={save}
-          className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+          className="rounded bg-accent px-3 py-1 text-sm text-accent-on disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save"}
         </button>
@@ -1014,7 +1014,7 @@ function ExternalBeneficiariesSection({
               onClick={() => setEditMode((v) => !v)}
               className={`rounded-md border px-3 py-1 text-xs font-medium ${
                 editMode
-                  ? "border-blue-600 bg-blue-900/40 text-blue-300"
+                  ? "border-accent bg-accent/15 text-accent-ink"
                   : "border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-800"
               }`}
             >
@@ -1026,7 +1026,7 @@ function ExternalBeneficiariesSection({
               setEditingId(null);
               setAdding(true);
             }}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
           >
             + Add
           </button>
@@ -1193,14 +1193,14 @@ function ExternalBeneficiaryRowForm({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Name"
-          className="w-full rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+          className="w-full rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
         />
       </td>
       <td className="px-4 py-2">
         <select
           value={kind}
           onChange={(e) => setKind(e.target.value as "charity" | "individual")}
-          className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+          className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
         >
           <option value="charity">Charity</option>
           <option value="individual">Individual</option>
@@ -1211,14 +1211,14 @@ function ExternalBeneficiaryRowForm({
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Notes"
-          className="w-full rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+          className="w-full rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
         />
       </td>
       <td className="px-4 py-2 text-right whitespace-nowrap">
         <button
           onClick={submit}
           disabled={saving}
-          className="mr-2 rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="mr-2 rounded-md bg-accent px-3 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
         >
           {saving ? "…" : "Save"}
         </button>

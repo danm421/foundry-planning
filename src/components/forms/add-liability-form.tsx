@@ -298,7 +298,7 @@ export default function AddLiabilityForm({
       <button
         type="button"
         onClick={onClick}
-        className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded text-gray-300 hover:bg-gray-700 hover:text-blue-400"
+        className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded text-gray-300 hover:bg-gray-700 hover:text-accent"
         title={title}
       >
         <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -518,7 +518,7 @@ export default function AddLiabilityForm({
             type="checkbox"
             checked={isInterestDeductible}
             onChange={(e) => setIsInterestDeductible(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
           />
           Interest is tax-deductible
         </label>

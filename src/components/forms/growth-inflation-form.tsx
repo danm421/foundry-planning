@@ -207,7 +207,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                 name="inflationRate"
                 defaultValue={pct(rates.inflationRate)}
                 disabled={inflationRateSource !== "custom"}
-                className={`ml-2 w-28 rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500${inflationRateSource !== "custom" ? " opacity-50" : ""}`}
+                className={`ml-2 w-28 rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent${inflationRateSource !== "custom" ? " opacity-50" : ""}`}
               />
             </label>
           </div>
@@ -240,7 +240,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                     <select
                       value={selectVal}
                       onChange={(e) => setSource(cat.category, e.target.value)}
-                      className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                      className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
                     >
                       {modelPortfolios?.map((mp) => (
                         <option key={mp.id} value={`mp:${mp.id}`}>
@@ -258,7 +258,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                         <PercentInput
                           name={cat.rateKey}
                           defaultValue={pct((rates as Record<string, string>)[cat.rateKey])}
-                          className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                         />
                       </div>
                     )}
@@ -289,7 +289,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
                   id={field.key}
                   name={field.key}
                   defaultValue={pct((rates as Record<string, string>)[field.key])}
-                  className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                 />
               </div>
             </div>
@@ -350,7 +350,7 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
         >
           {resetting ? "Resetting..." : "Reset all accounts to defaults"}
         </button>
-        <button type="submit" disabled={loading} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+        <button type="submit" disabled={loading} className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50">
           {loading ? "Saving..." : "Save"}
         </button>
       </div>

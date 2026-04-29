@@ -156,7 +156,7 @@ export default function ImportPageClient({
                 <select
                   value={model}
                   onChange={(e) => setModel(e.target.value as "mini" | "full")}
-                  className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-300 focus:border-blue-500 focus:outline-none"
+                  className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-300 focus:border-accent focus:outline-none"
                 >
                   <option value="mini">Fast (GPT 5.4 Mini)</option>
                   <option value="full">Detailed (GPT 5.4)</option>
@@ -165,7 +165,7 @@ export default function ImportPageClient({
 
               <button
                 onClick={handleExtract}
-                className="rounded-md bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                className="rounded-md bg-accent px-5 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep"
               >
                 Extract ({queuedFiles.length} file{queuedFiles.length !== 1 ? "s" : ""})
               </button>

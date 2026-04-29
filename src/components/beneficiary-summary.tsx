@@ -120,7 +120,7 @@ export default function BeneficiarySummary({
                         </span>
                         {isTOD && (
                           <span
-                            className="inline-flex items-center rounded border border-blue-500/40 bg-blue-500/10 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-blue-300"
+                            className="inline-flex items-center rounded border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-accent-ink"
                             title="Transfer on Death"
                           >
                             TOD

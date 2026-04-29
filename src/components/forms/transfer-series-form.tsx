@@ -275,7 +275,7 @@ export default function TransferSeriesForm({
         <button
           type="submit"
           disabled={saving || !amountValid || !endYearValid}
-          className="rounded-[var(--radius-sm)] bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50"
+          className="rounded-[var(--radius-sm)] bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent/90 disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save"}
         </button>

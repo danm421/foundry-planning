@@ -320,7 +320,7 @@ function AssetClassesTab({ assetClasses, onUpdate, onSave, onAdd, onDelete, savi
 
       <button
         onClick={onAdd}
-        className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        className="mt-4 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep"
       >
         + Add Asset Class
       </button>
@@ -358,7 +358,7 @@ function AssetClassRow({
           value={ac.name}
           onChange={(e) => onUpdate(ac.id, "name", e.target.value)}
           onBlur={() => onSave(ac)}
-          className="w-full rounded border border-gray-700 bg-transparent px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+          className="w-full rounded border border-gray-700 bg-transparent px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
         />
       </td>
       <td className="px-3 py-2">
@@ -370,7 +370,7 @@ function AssetClassRow({
             // and the immediate onSave would read the stale row.
             onSave({ ...ac, assetType: e.target.value as AssetTypeId });
           }}
-          className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+          className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
         >
           {ASSET_TYPE_IDS.map((id) => (
             <option key={id} value={id}>{ASSET_TYPE_LABELS[id]}</option>
@@ -384,7 +384,7 @@ function AssetClassRow({
               decimalValue={ac[field] as string}
               onChange={(next) => onUpdate(ac.id, field, next)}
               onBlur={() => onSave(ac)}
-              className="w-16 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+              className="w-16 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-accent focus:outline-none"
             />
             {field === "arithmeticMean" && (
               <button
@@ -402,7 +402,7 @@ function AssetClassRow({
                   onSave({ ...ac, arithmeticMean: next });
                 }}
                 title="Estimate from Geometric Return and Standard Deviation (Arith ≈ Geo + SD²/2)"
-                className="rounded border border-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:border-blue-500 hover:text-gray-100"
+                className="rounded border border-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:border-accent hover:text-gray-100"
               >
                 Est
               </button>
@@ -516,7 +516,7 @@ function ModelPortfoliosTab({ portfolios, assetClasses, onRefresh }: ModelPortfo
             onClick={() => setSelectedId(p.id)}
             className={`cursor-pointer rounded-lg border px-3 py-2 text-sm ${
               selectedId === p.id
-                ? "border-blue-500 bg-blue-500/10 text-blue-300"
+                ? "border-accent bg-accent/10 text-accent-ink"
                 : "border-gray-700 text-gray-300 hover:border-gray-600"
             }`}
           >
@@ -659,7 +659,7 @@ function PortfolioAllocationEditor({
                         step="0.01"
                         value={a.weight}
                         onChange={(e) => updateWeight(idx, e.target.value)}
-                        className="w-24 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                        className="w-24 rounded border border-gray-700 bg-transparent px-2 py-1 text-right text-sm text-gray-100 focus:border-accent focus:outline-none"
                       />
                     </div>
                   </td>
@@ -701,7 +701,7 @@ function PortfolioAllocationEditor({
         <button
           onClick={handleSave}
           disabled={Math.abs(currentTotal - 100) > 0.1}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
         >
           Save Allocations
         </button>

@@ -861,7 +861,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     return (
       <button
         onClick={() => drillInto(segment)}
-        className="inline text-left font-medium text-blue-500 hover:text-blue-400 focus:outline-none"
+        className="inline text-left font-medium text-accent hover:text-accent focus:outline-none"
         title={`Drill into ${label}`}
       >
         {label}
@@ -1056,7 +1056,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                     details,
                   });
                 }}
-                className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
                 title="View RMDs by account"
               >
                 {fmtNum(v)}
@@ -1138,7 +1138,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                     groups: buildTechniqueYearGroups(row.year, "income"),
                   });
                 }}
-                className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
                 title="View transaction breakdown"
               >
                 {fmtNum(v)}
@@ -1275,7 +1275,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                           details,
                         });
                       }}
-                      className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                      className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
                       title="View source details"
                     >
                       {fmtNum(v)}
@@ -1384,7 +1384,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                             groups: buildTechniqueYearGroups(row.year, "expense"),
                           });
                         }}
-                        className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                        className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
                         title="View transaction breakdown"
                       >
                         {fmtNum(v)}
@@ -1420,7 +1420,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               e.stopPropagation();
               setShowTaxDetailModal(true);
             }}
-            className="hover:text-blue-400 hover:underline"
+            className="hover:text-accent hover:underline"
             title="View multi-year tax detail"
           >
             Taxes
@@ -1430,7 +1430,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           const v = fmtNum(info.getValue() as number);
           return row.taxDetail ? (
             <button
-              className="text-right hover:text-blue-400 hover:underline"
+              className="text-right hover:text-accent hover:underline"
               title="View tax detail"
               onClick={() => setTaxDrillModal({ year: row.year, detail: row.taxDetail!, totalTaxes: row.expenses.taxes })}
             >
@@ -1532,7 +1532,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                         });
                       }
                     }}
-                    className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                    className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
                     title="View account ledger"
                   >
                     {fmtNum(v)}
@@ -1589,7 +1589,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   });
                 }
               }}
-              className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+              className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
               title="View account ledger"
             >
               {fmtNum(v)}
@@ -1678,7 +1678,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                         });
                       }
                     }}
-                    className="text-blue-400 hover:text-blue-300 tabular-nums focus:outline-none"
+                    className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
                     title="View account ledger"
                   >
                     {fmtNum(v)}
@@ -1762,7 +1762,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       <div className="mb-4 flex items-center gap-3">
         <label className="text-sm font-medium text-gray-300">Scenario:</label>
         <select
-          className="rounded-md border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 shadow-sm focus:border-blue-500 focus:outline-none"
+          className="rounded-md border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 shadow-sm focus:border-accent focus:outline-none"
           value="base"
           disabled
         >
@@ -1794,7 +1794,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               onClick={() => setChartView("portfolio")}
               className={`px-3 py-1.5 rounded-l-md ${
                 chartView === "portfolio"
-                  ? "bg-blue-600 text-white"
+                  ? "bg-accent text-accent-on"
                   : "text-gray-300 hover:text-gray-200"
               }`}
             >
@@ -1804,7 +1804,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               onClick={() => setChartView("cashflow")}
               className={`px-3 py-1.5 rounded-r-md ${
                 chartView === "cashflow"
-                  ? "bg-blue-600 text-white"
+                  ? "bg-accent text-accent-on"
                   : "text-gray-300 hover:text-gray-200"
               }`}
             >
@@ -1832,7 +1832,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           <div className="flex items-center gap-1 text-sm">
             <button
               onClick={() => drillTo(0)}
-              className="text-blue-500 hover:text-blue-400 font-medium"
+              className="text-accent hover:text-accent font-medium"
             >
               Cash Flow
             </button>
@@ -1842,7 +1842,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 {i < drillPath.length - 1 ? (
                   <button
                     onClick={() => drillTo(i + 1)}
-                    className="text-blue-500 hover:text-blue-400 font-medium"
+                    className="text-accent hover:text-accent font-medium"
                   >
                     {DRILL_LABELS[segment] ?? segment}
                   </button>

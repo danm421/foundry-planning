@@ -214,7 +214,7 @@ function AccountBeneficiaryEditor({
                     updateRow(r.id, { familyMemberId: null, externalBeneficiaryId: null });
                   }
                 }}
-                className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
               >
                 <option value="">— select beneficiary —</option>
                 <optgroup label="Family">
@@ -239,7 +239,7 @@ function AccountBeneficiaryEditor({
                 max={100}
                 value={r.percentage}
                 onChange={(e) => changePercentage(r.id, tier, parseFloat(e.target.value) || 0)}
-                className="w-24 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                className="w-24 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 focus:border-accent focus:outline-none"
               />
               <span className="text-sm text-gray-300">%</span>
               <button
@@ -256,7 +256,7 @@ function AccountBeneficiaryEditor({
           <button
             type="button"
             onClick={() => addRow(tier)}
-            className="text-xs text-blue-400 hover:text-blue-300"
+            className="text-xs text-accent hover:text-accent-ink"
           >
             + add {tier}
           </button>
@@ -284,7 +284,7 @@ function AccountBeneficiaryEditor({
         type="button"
         disabled={saving}
         onClick={save}
-        className="mt-3 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        className="mt-3 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
       >
         {saving ? "Saving…" : "Save beneficiaries"}
       </button>

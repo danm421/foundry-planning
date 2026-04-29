@@ -195,7 +195,7 @@ export default function BeneficiaryRowList({
         ))}
       </ul>
       <div className="mt-2 flex items-center gap-3">
-        <button type="button" onClick={add} className="text-xs text-blue-400 hover:text-blue-300">
+        <button type="button" onClick={add} className="text-xs text-accent hover:text-accent-ink">
           + Add beneficiary
         </button>
         {children.length > 0 && (

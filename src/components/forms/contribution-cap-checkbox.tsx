@@ -42,7 +42,7 @@ export default function ContributionCapCheckbox({
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-1 focus:ring-blue-500"
+        className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-1 focus:ring-accent"
       />
       <span>
         <span className="font-medium text-gray-200">Apply IRS contribution limit</span>

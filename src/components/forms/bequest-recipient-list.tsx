@@ -210,7 +210,7 @@ export default function BequestRecipientList({
       <button
         type="button"
         onClick={add}
-        className="mt-2 text-xs text-blue-400 hover:text-blue-300"
+        className="mt-2 text-xs text-accent hover:text-accent-ink"
       >
         + Add recipient
       </button>

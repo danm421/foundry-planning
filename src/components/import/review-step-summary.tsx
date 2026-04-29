@@ -94,7 +94,7 @@ export default function ReviewStepSummary({
       <button
         onClick={onCommit}
         disabled={!hasData || isCommitting}
-        className="w-full rounded-md bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        className="w-full rounded-md bg-accent px-4 py-3 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
       >
         {isCommitting ? "Adding to Details..." : "Add to Details"}
       </button>

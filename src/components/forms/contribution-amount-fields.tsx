@@ -101,7 +101,7 @@ export default function ContributionAmountFields({
                 onClick={() => onModeChange(m)}
                 className={`rounded-md border px-2 py-0.5 text-xs font-medium ${
                   mode === m
-                    ? "border-blue-600 bg-blue-900/40 text-blue-300"
+                    ? "border-accent bg-accent/15 text-accent-ink"
                     : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800"
                 }`}
               >
@@ -117,7 +117,7 @@ export default function ContributionAmountFields({
           name="annualAmount"
           required={required}
           defaultValue={initialAmount ?? 0}
-          className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         />
       )}
       {mode === "percent" && (
@@ -128,7 +128,7 @@ export default function ContributionAmountFields({
             required={required}
             placeholder="e.g., 10"
             defaultValue={initialPercent ? pctFromDecimal(initialPercent, 0) : ""}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
           <p className="mt-1 text-xs text-gray-400">
             Resolves against the account owner&rsquo;s salary each year. No salary that year → no contribution.
@@ -136,7 +136,7 @@ export default function ContributionAmountFields({
         </>
       )}
       {mode === "max" && (
-        <div className="mt-1 rounded-md border border-blue-900/40 bg-blue-950/30 px-3 py-2 text-sm text-blue-200">
+        <div className="mt-1 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-accent-ink">
           Contributes the IRS limit each year for the account owner&rsquo;s age
           (base + age-50 catch-up + SECURE 2.0 60-63 super catch-up when
           applicable).

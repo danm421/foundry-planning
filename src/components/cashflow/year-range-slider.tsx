@@ -78,14 +78,14 @@ export function YearRangeSlider({
         aria-label="Year range"
       >
         <Slider.Track className="relative h-1 w-full grow rounded-full bg-gray-700">
-          <Slider.Range className="absolute h-full rounded-full bg-blue-500" />
+          <Slider.Range className="absolute h-full rounded-full bg-accent" />
         </Slider.Track>
         <Slider.Thumb
-          className="block h-4 w-4 rounded-full border border-gray-300 bg-white shadow focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="block h-4 w-4 rounded-full border border-gray-300 bg-white shadow focus:outline-none focus:ring-2 focus:ring-accent"
           aria-label="From year"
         />
         <Slider.Thumb
-          className="block h-4 w-4 rounded-full border border-gray-300 bg-white shadow focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="block h-4 w-4 rounded-full border border-gray-300 bg-white shadow focus:outline-none focus:ring-2 focus:ring-accent"
           aria-label="To year"
         />
       </Slider.Root>

@@ -34,9 +34,9 @@ interface MilestoneYearPickerProps {
 }
 
 const INPUT_CLASS =
-  "block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+  "block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 const SELECT_CLASS =
-  "block w-full rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-300 focus:border-blue-500 focus:outline-none";
+  "block w-full rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-300 focus:border-accent focus:outline-none";
 
 /** Build display labels for this picker, personalized if names are provided. */
 function buildLabels(
@@ -194,7 +194,7 @@ export default function MilestoneYearPicker({
           />
           {currentRef && (
             <span className="absolute inset-y-0 right-2 flex items-center">
-              <span className="rounded bg-blue-900/50 px-1.5 py-0.5 text-xs text-blue-400">
+              <span className="rounded bg-accent/15 px-1.5 py-0.5 text-xs text-accent">
                 {labels[currentRef]}
               </span>
             </span>

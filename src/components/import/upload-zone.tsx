@@ -92,13 +92,13 @@ export default function UploadZone({ onFilesQueued, disabled }: UploadZoneProps)
           disabled
             ? "cursor-not-allowed border-gray-700 bg-gray-900/50 opacity-50"
             : isDragging
-              ? "border-blue-400 bg-blue-900/20"
+              ? "border-accent bg-accent/10"
               : "border-gray-600 bg-gray-900/30 hover:border-gray-500 hover:bg-gray-900/50"
         }`}
       >
         <UploadIcon />
         <p className="mt-3 text-sm text-gray-300">
-          Drag & drop files here, or <span className="text-blue-400 underline">browse</span>
+          Drag & drop files here, or <span className="text-accent underline">browse</span>
         </p>
         <p className="mt-1 text-xs text-gray-400">
           PDF, Excel, CSV, PNG, JPG — up to 20MB each
@@ -129,7 +129,7 @@ export default function UploadZone({ onFilesQueued, disabled }: UploadZoneProps)
                 value={qf.detectedType}
                 onChange={(e) => updateFileType(qf.id, e.target.value as DocumentType | "auto")}
                 disabled={disabled}
-                className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 focus:border-blue-500 focus:outline-none"
+                className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 focus:border-accent focus:outline-none"
               >
                 <option value="auto">Auto-detect</option>
                 {DOCUMENT_TYPES.map((dt) => (

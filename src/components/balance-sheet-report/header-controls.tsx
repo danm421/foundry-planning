@@ -73,7 +73,7 @@ export default function HeaderControls({
             <select
               value={view}
               onChange={(e) => onViewChange(e.target.value as OwnershipView)}
-              className="rounded border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+              className="rounded border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
             >
               {viewOptions.map((v) => (
                 <option key={v} value={v}>{VIEW_LABELS[v]}</option>
@@ -86,7 +86,7 @@ export default function HeaderControls({
           type="button"
           onClick={onExportPdf}
           disabled={exportInProgress}
-          className="rounded bg-blue-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded bg-accent px-4 py-1.5 text-sm font-medium text-accent-on transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-50"
         >
           {exportInProgress ? "Exporting..." : "Export PDF"}
         </button>

@@ -34,7 +34,7 @@ export default function AddClientDialog({ open, onOpenChange, editing, onRequest
       {!isControlled && (
         <button
           onClick={() => setInternalOpen(true)}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep"
         >
           Add Client
         </button>

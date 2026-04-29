@@ -79,7 +79,7 @@ export default function PlanSettingsForm({ clientId, initialSettings }: PlanSett
             min={0}
             max={50}
             defaultValue={(Number(initialSettings.flatFederalRate) * 100).toFixed(2)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
 
@@ -95,7 +95,7 @@ export default function PlanSettingsForm({ clientId, initialSettings }: PlanSett
             min={0}
             max={20}
             defaultValue={(Number(initialSettings.flatStateRate) * 100).toFixed(2)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
 
@@ -111,7 +111,7 @@ export default function PlanSettingsForm({ clientId, initialSettings }: PlanSett
             min={0}
             max={20}
             defaultValue={(Number(initialSettings.inflationRate) * 100).toFixed(2)}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
 
@@ -128,7 +128,7 @@ export default function PlanSettingsForm({ clientId, initialSettings }: PlanSett
             min={2000}
             max={2100}
             defaultValue={initialSettings.planStartYear}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
 
@@ -143,7 +143,7 @@ export default function PlanSettingsForm({ clientId, initialSettings }: PlanSett
             min={2000}
             max={2100}
             defaultValue={initialSettings.planEndYear}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
       </div>
@@ -152,7 +152,7 @@ export default function PlanSettingsForm({ clientId, initialSettings }: PlanSett
         <button
           type="submit"
           disabled={loading}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
         >
           {loading ? "Saving..." : "Save Settings"}
         </button>

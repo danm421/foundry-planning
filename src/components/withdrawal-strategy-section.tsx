@@ -214,7 +214,7 @@ function WithdrawalDialog({
                 name="accountId"
                 required
                 defaultValue={editing?.accountId ?? (eligible[0]?.id ?? "")}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 {eligible.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -235,7 +235,7 @@ function WithdrawalDialog({
                 min={1}
                 required
                 defaultValue={editing?.priorityOrder ?? nextPriority}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               />
             </div>
 
@@ -280,7 +280,7 @@ function WithdrawalDialog({
                     required
                     value={startYear}
                     onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
                 <div>
@@ -294,7 +294,7 @@ function WithdrawalDialog({
                     required
                     value={endYear}
                     onChange={(e) => { setEndYear(Number(e.target.value)); setEndYearRef(null); }}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
               </>
@@ -316,7 +316,7 @@ function WithdrawalDialog({
             <button
               type="submit"
               disabled={loading}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
             >
               {loading ? "Saving…" : isEdit ? "Save Changes" : "Add Entry"}
             </button>
@@ -387,7 +387,7 @@ export default function WithdrawalStrategySection({
               onClick={() => setEditMode((v) => !v)}
               className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
                 editMode
-                  ? "border-blue-600 bg-blue-900/40 text-blue-300"
+                  ? "border-accent bg-accent/15 text-accent-ink"
                   : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800"
               }`}
             >
@@ -397,7 +397,7 @@ export default function WithdrawalStrategySection({
           <button
             onClick={() => setDialog({ open: true })}
             disabled={accounts.length === 0}
-            className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+            className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep disabled:opacity-40"
           >
             + Add
           </button>

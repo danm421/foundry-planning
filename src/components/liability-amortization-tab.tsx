@@ -316,7 +316,7 @@ export default function LiabilityAmortizationTab({
                   key={row.year}
                   className={`border-b border-gray-800 ${
                     isCurrentYear
-                      ? "bg-blue-900/20 border-l-2 border-l-blue-500"
+                      ? "bg-accent/10 border-l-2 border-l-accent"
                       : ""
                   } ${
                     isPaidOff ? "text-green-400" : "text-gray-100"
@@ -334,7 +334,7 @@ export default function LiabilityAmortizationTab({
                           onChange={(e) =>
                             setEpType(e.target.value as "per_payment" | "lump_sum")
                           }
-                          className="rounded border border-gray-600 bg-gray-800 px-1 py-0.5 text-xs text-gray-100 focus:border-blue-500 focus:outline-none"
+                          className="rounded border border-gray-600 bg-gray-800 px-1 py-0.5 text-xs text-gray-100 focus:border-accent focus:outline-none"
                         >
                           <option value="lump_sum">Lump sum</option>
                           <option value="per_payment">Per payment</option>
@@ -344,7 +344,7 @@ export default function LiabilityAmortizationTab({
                           value={epAmount}
                           onChange={(e) => setEpAmount(e.target.value)}
                           placeholder="$"
-                          className="w-20 rounded border border-gray-600 bg-gray-800 px-1 py-0.5 text-xs text-gray-100 text-right focus:border-blue-500 focus:outline-none"
+                          className="w-20 rounded border border-gray-600 bg-gray-800 px-1 py-0.5 text-xs text-gray-100 text-right focus:border-accent focus:outline-none"
                           autoFocus
                           onKeyDown={(e) => {
                             if (e.key === "Enter") handleSaveExtra();
@@ -393,7 +393,7 @@ export default function LiabilityAmortizationTab({
                           setEpType("lump_sum");
                           setEpAmount("");
                         }}
-                        className="text-blue-400 hover:text-blue-300 text-xs"
+                        className="text-accent hover:text-accent-ink text-xs"
                       >
                         + add
                       </button>

@@ -106,10 +106,10 @@ const FUNDING_SPECIAL_OPTIONS = [
 // ── Shared class names ────────────────────────────────────────────────────────
 
 const INPUT_CLASS =
-  "mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+  "mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 const SELECT_CLASS =
-  "mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+  "mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 const LABEL_CLASS = "block text-sm font-medium text-gray-300";
 
@@ -668,7 +668,7 @@ export default function AddAssetTransactionForm({
                     type="checkbox"
                     checked={qualifiesForHomeSaleExclusion}
                     onChange={(e) => setQualifiesForHomeSaleExclusion(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-1 focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-1 focus:ring-accent"
                   />
                   <span>
                     <span className="font-medium text-gray-200">
@@ -997,7 +997,7 @@ export default function AddAssetTransactionForm({
           <button
             type="submit"
             disabled={loading || (!sellHasData && !buyHasData)}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
           >
             {loading ? "Saving..." : isEdit ? "Save Changes" : "Save"}
           </button>

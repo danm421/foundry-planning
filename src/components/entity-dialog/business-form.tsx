@@ -207,7 +207,7 @@ export default function BusinessForm({
             type="checkbox"
             checked={includeInPortfolio}
             onChange={(e) => setIncludeInPortfolio(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+            className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
           />
           <span className="text-sm text-gray-200">
             Include this entity&apos;s accounts in portfolio assets
@@ -221,7 +221,7 @@ export default function BusinessForm({
             type="checkbox"
             checked={isGrantor}
             onChange={(e) => setIsGrantor(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+            className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
           />
           <span className="text-sm text-gray-200">
             Grantor trust (taxes paid by household)

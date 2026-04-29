@@ -201,7 +201,7 @@ export default function ReviewWizard({
             onClick={() => setCurrentStepIndex(i)}
             className={`flex-1 rounded-md px-2 py-1.5 text-center text-xs font-medium transition-colors ${
               i === currentStepIndex
-                ? "bg-blue-600 text-white"
+                ? "bg-accent text-accent-on"
                 : i < currentStepIndex
                   ? "bg-gray-700 text-gray-300"
                   : "bg-gray-800 text-gray-400"
@@ -271,7 +271,7 @@ export default function ReviewWizard({
         {currentStep?.id !== "summary" && (
           <button
             onClick={goNext}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep"
           >
             Next
           </button>

@@ -131,7 +131,7 @@ export default function InsurancePolicyCashValueGrid({
                     onChange={(e) =>
                       updateRow(i, { year: toInt(e.target.value) })
                     }
-                    className="w-24 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                    className="w-24 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
                   />
                 </td>
                 <td className="py-1 pr-2 text-right">
@@ -143,7 +143,7 @@ export default function InsurancePolicyCashValueGrid({
                     onChange={(e) =>
                       updateRow(i, { cashValue: toNum(e.target.value) })
                     }
-                    className="w-32 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+                    className="w-32 rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-right text-sm text-gray-100 focus:border-accent focus:outline-none"
                   />
                 </td>
                 <td className="py-1 text-right">
@@ -165,7 +165,7 @@ export default function InsurancePolicyCashValueGrid({
       <button
         type="button"
         onClick={addRow}
-        className="text-xs text-blue-400 hover:text-blue-300"
+        className="text-xs text-accent hover:text-accent-ink"
       >
         + Add row
       </button>

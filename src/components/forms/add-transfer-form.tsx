@@ -38,9 +38,9 @@ interface AddTransferFormProps {
 }
 
 const INPUT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 const SELECT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none";
+  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none";
 
 function getTransferTaxLabel(
   sourceCategory: string,
@@ -413,7 +413,7 @@ export default function AddTransferForm({
               <button
                 type="button"
                 onClick={addScheduleRow}
-                className="rounded px-2 py-0.5 text-xs text-blue-400 hover:text-blue-300"
+                className="rounded px-2 py-0.5 text-xs text-accent hover:text-accent-ink"
               >
                 + Add row
               </button>
@@ -439,14 +439,14 @@ export default function AddTransferForm({
                           max={2100}
                           value={row.year}
                           onChange={(e) => updateScheduleRow(row.id, "year", e.target.value)}
-                          className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-gray-100 focus:border-blue-500 focus:outline-none"
+                          className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-gray-100 focus:border-accent focus:outline-none"
                         />
                       </td>
                       <td className="pr-2 pb-1">
                         <CurrencyInput
                           value={row.amount}
                           onChange={(raw) => updateScheduleRow(row.id, "amount", raw)}
-                          className="w-full rounded border border-gray-700 bg-gray-800 pr-2 py-1 text-xs text-gray-100 focus:border-blue-500 focus:outline-none"
+                          className="w-full rounded border border-gray-700 bg-gray-800 pr-2 py-1 text-xs text-gray-100 focus:border-accent focus:outline-none"
                         />
                       </td>
                       <td className="pb-1">
@@ -478,7 +478,7 @@ export default function AddTransferForm({
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
           >
             {submitting ? "Saving..." : "Save"}
           </button>

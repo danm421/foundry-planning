@@ -62,7 +62,7 @@ export default function AddLiabilityDialog({
       {!isControlled && (
         <button
           onClick={() => setInternalOpen(true)}
-          className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-800 text-gray-300 hover:bg-blue-900 hover:text-blue-400"
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-800 text-gray-300 hover:bg-accent/15 hover:text-accent"
           aria-label="Add liability"
           title="Add liability"
         >

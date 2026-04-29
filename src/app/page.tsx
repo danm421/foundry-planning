@@ -13,7 +13,7 @@ export default function Home() {
         <div className="mt-8 flex gap-4 justify-center">
           <Link
             href="/sign-in"
-            className="rounded-md bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700"
+            className="rounded-md bg-accent px-6 py-3 text-sm font-semibold text-accent-on hover:bg-accent-deep"
           >
             Sign In
           </Link>

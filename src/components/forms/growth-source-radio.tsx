@@ -30,7 +30,7 @@ export default function GrowthSourceRadio({
           className={
             "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors " +
             (value === "inflation"
-              ? "border-blue-600 bg-blue-900/40 text-blue-300"
+              ? "border-accent bg-accent/15 text-accent-ink"
               : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800") +
             (disabled ? " opacity-50" : "")
           }
@@ -44,7 +44,7 @@ export default function GrowthSourceRadio({
           className={
             "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors " +
             (value === "custom"
-              ? "border-blue-600 bg-blue-900/40 text-blue-300"
+              ? "border-accent bg-accent/15 text-accent-ink"
               : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800") +
             (disabled ? " opacity-50" : "")
           }

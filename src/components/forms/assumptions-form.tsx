@@ -108,7 +108,7 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
               id="flatFederalRate"
               name="flatFederalRate"
               defaultValue={pct(initial.flatFederalRate)}
-              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
 
@@ -120,7 +120,7 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
               id="flatStateRate"
               name="flatStateRate"
               defaultValue={pct(initial.flatStateRate)}
-              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
 
@@ -132,7 +132,7 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
               id="inflationRate"
               name="inflationRate"
               defaultValue={pct(initial.inflationRate)}
-              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
         </div>
@@ -155,7 +155,7 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
               min={2000}
               max={2100}
               defaultValue={initial.planStartYear}
-              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
           <div>
@@ -169,7 +169,7 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
               min={2000}
               max={2100}
               defaultValue={initial.planEndYear}
-              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
         </div>
@@ -196,7 +196,7 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
                   id={field.key}
                   name={field.key}
                   defaultValue={pct(initial[field.key] as string)}
-                  className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                 />
               </div>
             </div>
@@ -208,7 +208,7 @@ export default function AssumptionsForm({ clientId, initial }: AssumptionsFormPr
         <button
           type="submit"
           disabled={loading}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
         >
           {loading ? "Saving…" : "Save Assumptions"}
         </button>

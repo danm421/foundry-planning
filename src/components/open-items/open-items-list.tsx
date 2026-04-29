@@ -14,7 +14,7 @@ type Item = {
 
 const PRIORITY_STYLES: Record<Item["priority"], string> = {
   low: "bg-gray-700 text-gray-200",
-  medium: "bg-blue-900/60 text-blue-200",
+  medium: "bg-accent/15 text-accent-ink",
   high: "bg-red-900/60 text-red-200",
 };
 
@@ -67,7 +67,7 @@ export default function OpenItemsList({
           Open Items ({open.length} open · {done.length} completed)
         </h3>
         <button
-          className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white"
+          className="rounded bg-accent px-3 py-1.5 text-sm text-accent-on"
           onClick={() => { setEditing(null); setDialogOpen(true); }}
         >
           Add item

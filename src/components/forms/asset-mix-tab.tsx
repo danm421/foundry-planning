@@ -85,7 +85,7 @@ export function AssetMixTab({
 
       {/* Info banner when allocations are inherited from a portfolio */}
       {inheritedPortfolioName && (
-        <div className="rounded-md border border-blue-700 bg-blue-950 px-3 py-2 text-sm text-blue-200">
+        <div className="rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent-ink">
           Pre-filled from <strong>{inheritedPortfolioName}</strong>. Edit to customize.
         </div>
       )}
@@ -98,7 +98,7 @@ export function AssetMixTab({
             type="checkbox"
             checked={hideZero}
             onChange={(e) => setHideZero(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
           />
           <span className="text-sm text-gray-300">Hide 0% allocations</span>
         </label>
@@ -126,7 +126,7 @@ export function AssetMixTab({
                   value={weight > 0 ? (weight * 100).toFixed(1) : ""}
                   placeholder="0"
                   onChange={(e) => handleWeightChange(ac.id, e.target.value)}
-                  className="h-7 w-full rounded-md border border-gray-600 bg-gray-800 px-2 text-right text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="h-7 w-full rounded-md border border-gray-600 bg-gray-800 px-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                 />
                 <span className="text-sm text-gray-400">%</span>
               </div>

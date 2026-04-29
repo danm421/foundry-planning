@@ -13,7 +13,7 @@ export interface RetitleSubFormProps {
 }
 
 const INPUT_CLASS =
-  "block w-full rounded-md border border-[var(--color-hair-2)] bg-[var(--color-card)] px-2 py-1 text-sm text-[var(--color-ink)] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+  "block w-full rounded-md border border-[var(--color-hair-2)] bg-[var(--color-card)] px-2 py-1 text-sm text-[var(--color-ink)] focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
 export function RetitleSubForm({ onSubmit, onCancel }: RetitleSubFormProps) {
   const [percent, setPercent] = useState(100);
@@ -62,7 +62,7 @@ export function RetitleSubForm({ onSubmit, onCancel }: RetitleSubFormProps) {
         </button>
         <button
           type="submit"
-          className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-500"
+          className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep"
         >
           Save
         </button>

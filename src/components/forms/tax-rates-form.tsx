@@ -108,12 +108,12 @@ export default function TaxRatesForm({
         {mode === "flat" && (
           <div>
             <label className="block text-xs font-medium text-gray-300" htmlFor="flatFederalRate">Federal rate</label>
-            <PercentInput id="flatFederalRate" name="flatFederalRate" defaultValue={pct(flatFederalRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            <PercentInput id="flatFederalRate" name="flatFederalRate" defaultValue={pct(flatFederalRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent" />
           </div>
         )}
         <div>
           <label className="block text-xs font-medium text-gray-300" htmlFor="flatStateRate">State rate</label>
-          <PercentInput id="flatStateRate" name="flatStateRate" defaultValue={pct(flatStateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <PercentInput id="flatStateRate" name="flatStateRate" defaultValue={pct(flatStateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent" />
         </div>
       </div>
 
@@ -132,12 +132,12 @@ export default function TaxRatesForm({
             min="0"
             step="100"
             defaultValue={estateAdminExpenses}
-            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-300" htmlFor="flatStateEstateRate">State estate tax rate</label>
-          <PercentInput id="flatStateEstateRate" name="flatStateEstateRate" defaultValue={pct(flatStateEstateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <PercentInput id="flatStateEstateRate" name="flatStateEstateRate" defaultValue={pct(flatStateEstateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent" />
         </div>
       </div>
 
@@ -153,14 +153,14 @@ export default function TaxRatesForm({
             id="outOfHouseholdDniRate"
             name="outOfHouseholdDniRate"
             defaultValue={pct(outOfHouseholdDniRate)}
-            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
           <p className="mt-1 text-xs text-gray-400">Records an estimated recipient-side tax in the plan&apos;s tax summary. Defaults to top federal bracket (37%).</p>
         </div>
       </div>
 
       <div className="flex justify-end pt-2">
-        <button type="submit" disabled={loading} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+        <button type="submit" disabled={loading} className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50">
           {loading ? "Saving…" : "Save"}
         </button>
       </div>

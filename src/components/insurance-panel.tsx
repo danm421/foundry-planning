@@ -120,7 +120,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
         <h1 className="text-2xl font-semibold text-gray-100">Insurance</h1>
         <button
           type="button"
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep"
           onClick={() => setDialogState({ mode: "create" })}
         >
           + Add policy
@@ -176,7 +176,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
                       <button
                         type="button"
                         aria-label={`Edit ${account.name}`}
-                        className="text-blue-400 hover:underline"
+                        className="text-accent hover:underline"
                         onClick={() =>
                           setDialogState({ mode: "edit", policyId: account.id })
                         }

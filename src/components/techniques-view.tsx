@@ -400,7 +400,7 @@ function AssetTransactionCard({
   let badgeClass: string;
   if (hasSell && hasBuy) {
     badgeLabel = "Sell + Buy";
-    badgeClass = "bg-blue-900/40 text-blue-300 border border-blue-700/50";
+    badgeClass = "bg-accent/15 text-accent-ink border border-accent/40";
   } else if (hasBuy) {
     badgeLabel = "Buy";
     badgeClass = "bg-green-900/40 text-green-300 border border-green-700/50";
@@ -609,7 +609,7 @@ export default function TechniquesView({
           action={
             <button
               onClick={() => setShowAddTransfer(true)}
-              className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+              className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
             >
               + Add Transfer
             </button>
@@ -640,7 +640,7 @@ export default function TechniquesView({
           action={
             <button
               onClick={() => setShowAddTransaction(true)}
-              className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+              className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
             >
               + Add Transaction
             </button>

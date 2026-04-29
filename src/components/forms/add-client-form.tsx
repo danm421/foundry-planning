@@ -262,7 +262,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onS
             type="checkbox"
             checked={showSpouse}
             onChange={(e) => setShowSpouse(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
           />
           <span className="text-sm font-medium text-gray-300">Add Spouse</span>
         </label>
@@ -426,7 +426,7 @@ function TabButton({
       onClick={onClick}
       className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
         active
-          ? "border-blue-500 text-gray-100"
+          ? "border-accent text-gray-100"
           : "border-transparent text-gray-300 hover:text-gray-200"
       }`}
     >

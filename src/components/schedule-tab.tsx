@@ -124,9 +124,9 @@ export default function ScheduleTab({
   const total = years.reduce((sum, [, amt]) => sum + amt, 0);
 
   const inputClass =
-    "w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+    "w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
   const smallInputClass =
-    "w-24 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+    "w-24 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 
   return (
     <div className="flex flex-col gap-4">
@@ -140,7 +140,7 @@ export default function ScheduleTab({
               onClick={() => setFillMode(m)}
               className={`rounded-md px-3 py-1 text-xs font-medium capitalize ${
                 fillMode === m
-                  ? "bg-blue-600 text-white"
+                  ? "bg-accent text-accent-on"
                   : "bg-gray-700 text-gray-300 hover:bg-gray-600"
               }`}
             >
@@ -287,7 +287,7 @@ export default function ScheduleTab({
           type="button"
           onClick={handleSave}
           disabled={!dirty || saving}
-          className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
         >
           {saving ? "Saving\u2026" : "Save Schedule"}
         </button>

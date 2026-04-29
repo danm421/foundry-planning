@@ -80,7 +80,7 @@ export default function EmployerMatchFields({
               onClick={() => onModeChange(m)}
               className={`rounded-md border px-2 py-0.5 text-xs font-medium ${
                 mode === m
-                  ? "border-blue-600 bg-blue-900/40 text-blue-300"
+                  ? "border-accent bg-accent/15 text-accent-ink"
                   : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800"
               }`}
             >
@@ -101,7 +101,7 @@ export default function EmployerMatchFields({
               name="employerMatchPct"
               placeholder="e.g., 50 or 3"
               defaultValue={initialPct ? pctFromDecimal(initialPct, 0) : ""}
-              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
           <div>
@@ -113,7 +113,7 @@ export default function EmployerMatchFields({
               name="employerMatchCap"
               placeholder="e.g., 6"
               defaultValue={initialCap ? pctFromDecimal(initialCap, 0) : ""}
-              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
           <p className="col-span-2 text-xs text-gray-400">
@@ -133,7 +133,7 @@ export default function EmployerMatchFields({
             name="employerMatchAmount"
             placeholder="5000"
             defaultValue={initialAmount ?? ""}
-            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
           <p className="mt-1 text-xs text-gray-400">
             The employer deposits this flat amount each year, regardless of salary.

@@ -210,7 +210,7 @@ export default function InvestmentsClient({
           >
             Advisor Comment
             {hasComment && (
-              <span className="absolute -right-1 -top-1 inline-block h-2 w-2 rounded-full bg-blue-400" />
+              <span className="absolute -right-1 -top-1 inline-block h-2 w-2 rounded-full bg-accent" />
             )}
           </button>
         </div>

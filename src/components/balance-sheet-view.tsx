@@ -219,7 +219,7 @@ function AddAssetMenu({ onPick }: { onPick: (cat: AccountCategory) => void }) {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+        className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
       >
         + Add Asset <ChevronDown />
       </button>
@@ -691,7 +691,7 @@ function EditToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       onClick={onToggle}
       className={`rounded-md border px-3 py-1 text-xs font-medium ${
         on
-          ? "border-blue-600 bg-blue-900/40 text-blue-300"
+          ? "border-accent bg-accent/15 text-accent-ink"
           : "border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-800"
       }`}
     >

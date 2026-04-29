@@ -43,7 +43,7 @@ export type GiftSubFormSubmit =
     };
 
 const INPUT_CLASS =
-  "block w-full rounded-md border border-[var(--color-hair-2)] bg-[var(--color-card)] px-2 py-1 text-sm text-[var(--color-ink)] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60";
+  "block w-full rounded-md border border-[var(--color-hair-2)] bg-[var(--color-card)] px-2 py-1 text-sm text-[var(--color-ink)] focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-60";
 
 export function GiftSubForm(props: GiftSubFormProps) {
   const isEntity = props.recipientKind === "entity";
@@ -282,7 +282,7 @@ export function GiftSubForm(props: GiftSubFormProps) {
         </button>
         <button
           type="submit"
-          className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-500"
+          className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep"
         >
           Save
         </button>

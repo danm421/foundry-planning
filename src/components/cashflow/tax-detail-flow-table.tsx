@@ -275,7 +275,7 @@ function DrillHeader({ label, onClick }: { label: string; onClick: () => void })
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1 font-semibold normal-case text-blue-400 hover:text-blue-300 hover:underline"
+      className="inline-flex items-center gap-1 font-semibold normal-case text-accent hover:text-accent-ink hover:underline"
     >
       {label} <span className="text-xs">▸</span>
     </button>
@@ -393,7 +393,7 @@ function DrillCell({
           : value === 0
             ? "text-gray-600"
             : ""
-      } ${hasDetail ? "cursor-pointer hover:text-blue-400" : ""} ${extraClassName ?? ""}`}
+      } ${hasDetail ? "cursor-pointer hover:text-accent" : ""} ${extraClassName ?? ""}`}
       onClick={hasDetail ? () => setOpen(!open) : undefined}
     >
       {formatter(value)}
@@ -463,7 +463,7 @@ export function TaxDetailFlowTable({
           <button
             type="button"
             onClick={() => setDrillLevel("top")}
-            className="text-blue-400 hover:text-blue-300"
+            className="text-accent hover:text-accent-ink"
           >
             Federal Tax Breakdown
           </button>
@@ -507,7 +507,7 @@ export function TaxDetailFlowTable({
               return (
                 <tr key={y.year} className="group">
                   <td
-                    className={`sticky left-0 z-10 cursor-pointer border-b border-gray-800 bg-gray-900 px-3 py-2 text-left hover:text-blue-400 group-hover:bg-gray-800/40 ${borderClass}`}
+                    className={`sticky left-0 z-10 cursor-pointer border-b border-gray-800 bg-gray-900 px-3 py-2 text-left hover:text-accent group-hover:bg-gray-800/40 ${borderClass}`}
                     onClick={() => onYearClick(y)}
                     title={tooltip ?? `View per-source breakdown for ${y.year}`}
                   >

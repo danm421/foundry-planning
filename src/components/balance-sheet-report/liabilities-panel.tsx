@@ -116,7 +116,7 @@ export default function LiabilitiesPanel({
       )}
 
       <div className={`${SCREEN_THEME.surface.netWorthAccent} rounded-lg p-5`}>
-        <div className="text-xs font-semibold uppercase tracking-wide text-blue-300">
+        <div className="text-xs font-semibold uppercase tracking-wide text-accent-ink">
           Net Worth
         </div>
         <div className="mt-2 flex items-center gap-3">

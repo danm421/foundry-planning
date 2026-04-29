@@ -38,7 +38,7 @@ export default function AddEntityMenu({ onPick }: AddEntityMenuProps) {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label="Add Entity"
-        className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+        className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
       >
         + Add Entity <ChevronDown />
       </button>

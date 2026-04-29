@@ -37,9 +37,9 @@ const TYPE_OPTIONS: Array<{ value: DeductionRow["type"]; label: string }> = [
 ];
 
 const INPUT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";
 const SELECT_CLASS =
-  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none";
+  "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none";
 
 export function AddDeductionForm({
   clientId,
@@ -285,7 +285,7 @@ export function AddDeductionForm({
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
           >
             {submitting ? "Saving..." : "Save"}
           </button>

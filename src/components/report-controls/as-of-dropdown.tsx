@@ -69,7 +69,7 @@ export function AsOfDropdown({
       }}
       className={
         className ??
-        "rounded border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-blue-500 focus:outline-none"
+        "rounded border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
       }
     >
       <option value="today">Today · {todayYear}{ageStr(todayYear)}</option>

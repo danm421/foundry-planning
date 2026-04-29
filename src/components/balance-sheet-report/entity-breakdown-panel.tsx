@@ -59,7 +59,7 @@ export default function EntityBreakdownPanel({ viewModel }: EntityBreakdownPanel
               </span>
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-xs uppercase tracking-wide text-blue-300">
+              <span className="text-xs uppercase tracking-wide text-accent-ink">
                 Net Worth
               </span>
               <span className="text-base font-bold text-gray-100">

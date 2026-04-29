@@ -910,7 +910,7 @@ export default function AddAccountForm({
                   type="checkbox"
                   checked={rmdEnabled}
                   onChange={(e) => setRmdEnabled(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
                 />
                 <span className="text-sm font-medium text-gray-300">Subject to RMDs</span>
               </label>

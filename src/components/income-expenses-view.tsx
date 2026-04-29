@@ -268,7 +268,7 @@ function EditToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       onClick={onToggle}
       className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
         on
-          ? "border-blue-600 bg-blue-900/40 text-blue-300"
+          ? "border-accent bg-accent/15 text-accent-ink"
           : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800"
       }`}
     >
@@ -281,7 +281,7 @@ function AddGroupButton({ onClick, label = "Add" }: { onClick: () => void; label
   return (
     <button
       onClick={onClick}
-      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:bg-blue-900 hover:text-blue-400"
+      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:bg-accent/15 hover:text-accent"
       aria-label={label}
       title={label}
     >
@@ -605,7 +605,7 @@ function IncomeDialog({
                 required
                 value={type}
                 onChange={(e) => setType(e.target.value as IncomeType)}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 {Object.entries(INCOME_TYPE_LABELS).map(([v, l]) => (
                   <option key={v} value={v}>{l}</option>
@@ -620,7 +620,7 @@ function IncomeDialog({
                 name="taxType"
                 value={taxType}
                 onChange={(e) => setTaxType(e.target.value as IncomeTaxType)}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 {Object.entries(INCOME_TAX_TYPE_LABELS).map(([v, l]) => (
                   <option key={v} value={v}>{l}</option>
@@ -691,7 +691,7 @@ function IncomeDialog({
               value={name}
               onChange={(e) => { nameTouchedRef.current = true; setName(e.target.value); }}
               placeholder="e.g., Base Salary"
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
 
@@ -705,7 +705,7 @@ function IncomeDialog({
                 name="annualAmount"
                 required
                 defaultValue={editing?.annualAmount ?? 0}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               />
             </div>
 
@@ -729,7 +729,7 @@ function IncomeDialog({
                     type="checkbox"
                     checked={todaysDollars}
                     onChange={(e) => setTodaysDollars(e.target.checked)}
-                    className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+                    className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
                   />
                   Amount in today&apos;s dollars (inflate from {planStartYear})
                 </label>
@@ -777,7 +777,7 @@ function IncomeDialog({
                     required
                     value={startYear}
                     onChange={(e) => { startYearTouchedRef.current = true; setStartYear(Number(e.target.value)); setStartYearRef(null); }}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
                 <div>
@@ -791,7 +791,7 @@ function IncomeDialog({
                     required
                     value={endYear}
                     onChange={(e) => { endYearTouchedRef.current = true; setEndYear(Number(e.target.value)); setEndYearRef(null); }}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
               </>
@@ -807,7 +807,7 @@ function IncomeDialog({
                 id="inc-linked"
                 name="linkedEntityId"
                 defaultValue={editing?.linkedEntityId ?? ""}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 <option value="">None</option>
                 {accounts.map((a) => (
@@ -1052,7 +1052,7 @@ function ExpenseDialog({
               name="type"
               required
               defaultValue={editing?.type ?? defaultType}
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             >
               <option value="living">Living Expense</option>
               <option value="insurance">Insurance</option>
@@ -1071,7 +1071,7 @@ function ExpenseDialog({
               required
               defaultValue={editing?.name ?? ""}
               placeholder="e.g., Housing"
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
 
@@ -1085,7 +1085,7 @@ function ExpenseDialog({
                 name="annualAmount"
                 required
                 defaultValue={editing?.annualAmount ?? 0}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               />
             </div>
 
@@ -1109,7 +1109,7 @@ function ExpenseDialog({
                     type="checkbox"
                     checked={todaysDollars}
                     onChange={(e) => setTodaysDollars(e.target.checked)}
-                    className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+                    className="h-3 w-3 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
                   />
                   Amount in today&apos;s dollars (inflate from {planStartYear})
                 </label>
@@ -1157,7 +1157,7 @@ function ExpenseDialog({
                     required
                     value={startYear}
                     onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
                 <div>
@@ -1171,7 +1171,7 @@ function ExpenseDialog({
                     required
                     value={endYear}
                     onChange={(e) => { setEndYear(Number(e.target.value)); setEndYearRef(null); }}
-                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
               </>
@@ -1219,7 +1219,7 @@ function ExpenseDialog({
               id="exp-deductionType"
               value={deductionType}
               onChange={(e) => setDeductionType(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             >
               <option value="">None (not a deduction)</option>
               <option value="charitable">Charitable Gift</option>
@@ -1426,7 +1426,7 @@ export default function IncomeExpensesView({
                 {nonSsIncomeList.length > 0 && <EditToggle on={incomeEdit} onToggle={() => setIncomeEdit((v) => !v)} />}
                 <button
                   onClick={() => setIncomeDialog({ open: true, defaultType: "salary" })}
-                  className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                  className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep"
                 >
                   + Add
                 </button>
@@ -1498,7 +1498,7 @@ export default function IncomeExpensesView({
                 {expenseList.length > 0 && <EditToggle on={expenseEdit} onToggle={() => setExpenseEdit((v) => !v)} />}
                 <button
                   onClick={() => setExpenseDialog({ open: true, defaultType: "living" })}
-                  className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                  className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-on hover:bg-accent-deep"
                 >
                   + Add
                 </button>
