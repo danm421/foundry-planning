@@ -7,6 +7,9 @@ vi.mock("../azure-client", () => ({
 import { callAIExtraction } from "../azure-client";
 import { extractWithMultiPass } from "../multi-pass";
 import { FACT_FINDER_CLASSIFIER_PROMPT } from "../prompts/fact-finder-classifier";
+import { FAMILY_PROMPT } from "../prompts/family";
+import { WILL_PROMPT } from "../prompts/will";
+import { LIFE_INSURANCE_PROMPT } from "../prompts/life-insurance";
 
 const mockedCallAI = vi.mocked(callAIExtraction);
 
@@ -132,16 +135,54 @@ describe("extractWithMultiPass", () => {
         expect(ranges).toContainEqual([5, 6]);
     });
 
-    it("returns empty arrays for sections without registered prompts (Phase 4 fills these in)", async () => {
+    it("routes family section to FAMILY_PROMPT and stores the parsed object as a single SectionRow", async () => {
         mockedCallAI.mockImplementation(async (systemPrompt) => {
             if (systemPrompt === FACT_FINDER_CLASSIFIER_PROMPT) {
+                return JSON.stringify({ family: [[3, 5]] });
+            }
+            if (systemPrompt === FAMILY_PROMPT) {
                 return JSON.stringify({
-                    family: [[3, 5]],
-                    wills: [[31, 32]],
+                    primary: { firstName: "John", lastName: "Smith" },
+                    spouse: { firstName: "Jane", lastName: "Smith" },
+                    dependents: [{ firstName: "Sam" }],
                 });
             }
-            // No per-section AI call should fire for family or wills
-            throw new Error("unexpected AI call for un-prompted section");
+            throw new Error("unexpected prompt: " + systemPrompt.slice(0, 40));
+        });
+
+        const pages = Array.from({ length: 6 }, (_, i) => pageText(i + 1));
+        const result = await extractWithMultiPass({
+            pages,
+            outline: "o",
+            anchors: "a",
+            model: "mini",
+        });
+        expect(result?.sections.family).toHaveLength(1);
+        const row = result!.sections.family[0];
+        expect((row as Record<string, unknown>).primary).toMatchObject({
+            firstName: "John",
+        });
+        expect((row as Record<string, unknown>).spouse).toMatchObject({
+            firstName: "Jane",
+        });
+        expect(row.__provenance.section).toBe("family");
+        expect(row.__provenance.pageRange).toEqual([3, 5]);
+    });
+
+    it("routes wills section to WILL_PROMPT and emits one SectionRow per will", async () => {
+        mockedCallAI.mockImplementation(async (systemPrompt) => {
+            if (systemPrompt === FACT_FINDER_CLASSIFIER_PROMPT) {
+                return JSON.stringify({ wills: [[31, 32]] });
+            }
+            if (systemPrompt === WILL_PROMPT) {
+                return JSON.stringify({
+                    wills: [
+                        { grantor: "client", bequests: [] },
+                        { grantor: "spouse", bequests: [] },
+                    ],
+                });
+            }
+            throw new Error("unexpected prompt");
         });
 
         const pages = Array.from({ length: 35 }, (_, i) => pageText(i + 1));
@@ -151,7 +192,42 @@ describe("extractWithMultiPass", () => {
             anchors: "a",
             model: "mini",
         });
-        expect(result?.sections.family).toEqual([]);
-        expect(result?.sections.wills).toEqual([]);
+        expect(result?.sections.wills).toHaveLength(2);
+        expect((result!.sections.wills[0] as Record<string, unknown>).grantor).toBe("client");
+        expect(result!.sections.wills[0].__provenance.section).toBe("wills");
+    });
+
+    it("routes insurance section to LIFE_INSURANCE_PROMPT and emits lifePolicies rows", async () => {
+        mockedCallAI.mockImplementation(async (systemPrompt) => {
+            if (systemPrompt === FACT_FINDER_CLASSIFIER_PROMPT) {
+                return JSON.stringify({ insurance: [[12, 14]] });
+            }
+            if (systemPrompt === LIFE_INSURANCE_PROMPT) {
+                return JSON.stringify({
+                    lifePolicies: [
+                        {
+                            policyType: "term",
+                            insuredPerson: "client",
+                            faceValue: 1000000,
+                            accountName: "MetLife Term — 9012",
+                        },
+                    ],
+                });
+            }
+            throw new Error("unexpected prompt");
+        });
+
+        const pages = Array.from({ length: 20 }, (_, i) => pageText(i + 1));
+        const result = await extractWithMultiPass({
+            pages,
+            outline: "o",
+            anchors: "a",
+            model: "mini",
+        });
+        expect(result?.sections.insurance).toHaveLength(1);
+        const row = result!.sections.insurance[0] as Record<string, unknown>;
+        expect(row.policyType).toBe("term");
+        expect(row.faceValue).toBe(1000000);
+        expect(result!.sections.insurance[0].__provenance.section).toBe("insurance");
     });
 });

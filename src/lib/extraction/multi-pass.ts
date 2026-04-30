@@ -8,18 +8,27 @@ import {
 import { ACCOUNT_STATEMENT_PROMPT } from "./prompts/account-statement";
 import { PAY_STUB_PROMPT } from "./prompts/pay-stub";
 import { EXPENSE_WORKSHEET_PROMPT } from "./prompts/expense-worksheet";
-import { INSURANCE_PROMPT } from "./prompts/insurance";
+import { LIFE_INSURANCE_PROMPT } from "./prompts/life-insurance";
+import { WILL_PROMPT } from "./prompts/will";
+import { FAMILY_PROMPT } from "./prompts/family";
 
-// Per-section prompt + payload key. Sections without an entry are skipped
-// in Phase 3 — Phase 4 wires in family / wills / entities prompts.
+// Per-section prompt + payload key. Phase 4 wires in family / wills /
+// life-insurance prompts. Family is special-cased: its prompt returns a
+// single object {primary, spouse, dependents} rather than an array, so we
+// wrap that object as a single SectionRow downstream.
 const SECTION_PROMPTS: Partial<
-    Record<SectionEntityType, { prompt: string; responseKey: string }>
+    Record<
+        SectionEntityType,
+        { prompt: string; responseKey: string; shape?: "array" | "object" }
+    >
 > = {
     accounts: { prompt: ACCOUNT_STATEMENT_PROMPT, responseKey: "accounts" },
     liabilities: { prompt: ACCOUNT_STATEMENT_PROMPT, responseKey: "liabilities" },
     incomes: { prompt: PAY_STUB_PROMPT, responseKey: "incomes" },
     expenses: { prompt: EXPENSE_WORKSHEET_PROMPT, responseKey: "expenses" },
-    insurance: { prompt: INSURANCE_PROMPT, responseKey: "accounts" },
+    insurance: { prompt: LIFE_INSURANCE_PROMPT, responseKey: "lifePolicies" },
+    wills: { prompt: WILL_PROMPT, responseKey: "wills" },
+    family: { prompt: FAMILY_PROMPT, responseKey: "__self__", shape: "object" },
 };
 
 export interface SectionRow {
@@ -71,6 +80,14 @@ async function runPromptForSection(
     }
 
     const parsed = parseAIResponse(raw);
+    if (config.shape === "object") {
+        // Object-shaped sections (family) wrap the entire parsed payload as
+        // a single SectionRow so downstream merging stays uniform.
+        if (parsed && typeof parsed === "object" && Object.keys(parsed).length > 0) {
+            return [parsed as Record<string, unknown>];
+        }
+        return [];
+    }
     const rows = parsed[config.responseKey];
     return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
 }

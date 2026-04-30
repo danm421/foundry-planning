@@ -1,4 +1,11 @@
-import type { DocumentType, ExtractionResult } from "./types";
+import type {
+    DocumentType,
+    ExtractedDependent,
+    ExtractedFamilyPayload,
+    ExtractedPrimaryFamilyMember,
+    ExtractedSpouseFamilyMember,
+    ExtractionResult,
+} from "./types";
 import { callAIExtraction } from "./azure-client";
 import { parseAIResponse } from "./parse-response";
 import { extractPdfText, extractPdfPages } from "./pdf-parser";
@@ -59,11 +66,11 @@ function emptyExtracted(): ExtractionResult["extracted"] {
 }
 
 /**
- * Flatten a multi-pass section result into the existing ExtractionResult
- * shape. Only sections that map cleanly to the v1 schema are kept;
- * family / wills / insurance flow through Phase 4 once the schema is
- * extended. Insurance policy rows arrive on the `insurance` section but
- * shape-match v1 accounts, so they fold into accounts here.
+ * Flatten a multi-pass section result into ExtractionResult["extracted"].
+ * The Phase 4 prompts route insurance → lifePolicies and wills → wills.
+ * Family arrives as a single object row containing {primary, spouse,
+ * dependents}; we lift it onto extracted.family and let mergeExtractionResults
+ * (Phase 4.4) flatten dependents to the top-level array later.
  */
 function flattenMultiPass(
     result: MultiPassResult
@@ -75,11 +82,30 @@ function flattenMultiPass(
         }
     };
     merge("accounts", result.sections.accounts);
-    merge("accounts", result.sections.insurance);
     merge("incomes", result.sections.incomes);
     merge("expenses", result.sections.expenses);
     merge("liabilities", result.sections.liabilities);
     merge("entities", result.sections.entities);
+    merge("lifePolicies", result.sections.insurance);
+    merge("wills", result.sections.wills);
+
+    const familyRows = result.sections.family;
+    if (familyRows.length > 0) {
+        const first = familyRows[0] as Record<string, unknown>;
+        const family: ExtractedFamilyPayload = {};
+        if (first.primary && typeof first.primary === "object") {
+            family.primary = first.primary as ExtractedPrimaryFamilyMember;
+        }
+        if (first.spouse && typeof first.spouse === "object") {
+            family.spouse = first.spouse as ExtractedSpouseFamilyMember;
+        }
+        if (Array.isArray(first.dependents)) {
+            family.dependents = first.dependents as ExtractedDependent[];
+        }
+        if (family.primary || family.spouse || family.dependents?.length) {
+            out.family = family;
+        }
+    }
     return out;
 }
 

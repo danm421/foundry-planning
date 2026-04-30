@@ -141,4 +141,65 @@ describe("extraction pipeline integration", () => {
     expect(result.extracted.expenses).toHaveLength(1);
     expect(result.extracted.accounts[0].name).toBe("FF Account 1");
   });
+
+  it("multi-pass surfaces family / lifePolicies / wills onto ExtractionResult.extracted", async () => {
+    const pages = Array.from(
+      { length: 35 },
+      (_, i) => `--- page ${i + 1} ---\ncontent for page ${i + 1}`
+    );
+    mockedPdfPages.mockResolvedValueOnce(pages);
+
+    mockedCallAI.mockReset();
+    mockedCallAI.mockImplementation(async (systemPrompt: string) => {
+      if (systemPrompt === FACT_FINDER_CLASSIFIER_PROMPT) {
+        return JSON.stringify({
+          family: [[2, 4]],
+          insurance: [[14, 16]],
+          wills: [[31, 33]],
+        });
+      }
+      if (systemPrompt.includes("household family structure")) {
+        return JSON.stringify({
+          primary: { firstName: "John", lastName: "Smith" },
+          spouse: { firstName: "Jane", lastName: "Smith" },
+          dependents: [{ firstName: "Sam", relationship: "child", role: "child" }],
+        });
+      }
+      if (systemPrompt.includes("life insurance policy")) {
+        return JSON.stringify({
+          lifePolicies: [
+            {
+              policyType: "term",
+              insuredPerson: "client",
+              faceValue: 1000000,
+              accountName: "Term — 6789",
+            },
+          ],
+        });
+      }
+      if (systemPrompt.includes("last will and testament")) {
+        return JSON.stringify({
+          wills: [{ grantor: "client", bequests: [] }],
+        });
+      }
+      return JSON.stringify({});
+    });
+
+    const result = await extractDocument(
+      Buffer.from("fake pdf"),
+      "fact-finder.pdf",
+      "fact_finder",
+      "full"
+    );
+
+    expect(result.extracted.family?.primary?.firstName).toBe("John");
+    expect(result.extracted.family?.spouse?.firstName).toBe("Jane");
+    expect(result.extracted.family?.dependents).toHaveLength(1);
+    expect(result.extracted.lifePolicies).toHaveLength(1);
+    expect(result.extracted.lifePolicies[0].faceValue).toBe(1000000);
+    expect(result.extracted.wills).toHaveLength(1);
+    expect(result.extracted.wills[0].grantor).toBe("client");
+    // Insurance no longer folds into accounts
+    expect(result.extracted.accounts).toHaveLength(0);
+  });
 });
