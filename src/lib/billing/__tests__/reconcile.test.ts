@@ -74,15 +74,22 @@ describe("diffReconciliation", () => {
   });
 
   it("treats removed items as not present in the entitlement comparison", () => {
+    const removedAddon = {
+      kind: "addon" as const,
+      addonKey: "ai_import",
+      quantity: 1,
+      removed: true,
+    };
+    const seat = {
+      kind: "seat" as const,
+      addonKey: null,
+      quantity: 3,
+      removed: false,
+    };
     const input = {
       ...ok,
-      stripe: {
-        ...ok.stripe,
-        items: [
-          { kind: "seat" as const, addonKey: null, quantity: 3, removed: false },
-          { kind: "addon" as const, addonKey: "ai_import", quantity: 1, removed: true },
-        ],
-      },
+      stripe: { ...ok.stripe, items: [seat, removedAddon] },
+      db: { ...ok.db, items: [seat, removedAddon] },
       clerk: { ...ok.clerk, entitlements: [] },
     };
     expect(diffReconciliation(input)).toEqual([]);
