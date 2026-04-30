@@ -1752,6 +1752,35 @@ export const auditLog = pgTable(
 );
 
 // ── Billing & SOC 2 (Phase 1) ────────────────────────────────────────────────
+// Note: this section uses `timestamp(..., { withTimezone: true })` (timestamptz)
+// per the billing spec. The legacy tables above use plain `timestamp` (no tz);
+// future work tracks backfilling them. Mixing is intentional — do not "fix" by
+// stripping withTimezone here without updating the spec + the legacy tables.
+
+export const subscriptionItemKindEnum = pgEnum("subscription_item_kind", [
+  "seat",
+  "addon",
+]);
+
+export const acceptanceSourceEnum = pgEnum("acceptance_source", [
+  "stripe_checkout",
+  "clerk_signup",
+  "in_app_modal",
+]);
+
+export const reconciliationRunStatusEnum = pgEnum("reconciliation_run_status", [
+  "running",
+  "ok",
+  "drift_detected",
+  "error",
+]);
+
+export const billingEventResultEnum = pgEnum("billing_event_result", [
+  "ok",
+  "error",
+  "ignored",
+  "skipped_duplicate",
+]);
 
 // Root row per Clerk org. Holds firm-level metadata that doesn't fit on
 // a Stripe object (founder flag, archival lifecycle, DPA acceptance).
@@ -1817,7 +1846,7 @@ export const subscriptionItems = pgTable(
       .references(() => firms.firmId, { onDelete: "cascade" }),
     stripeItemId: text("stripe_item_id").notNull().unique(),
     stripePriceId: text("stripe_price_id").notNull(),
-    kind: text("kind").notNull(), // 'seat' | 'addon'
+    kind: subscriptionItemKindEnum("kind").notNull(),
     addonKey: text("addon_key"),
     quantity: integer("quantity").default(1).notNull(),
     unitAmount: integer("unit_amount").notNull(), // cents
@@ -1828,10 +1857,6 @@ export const subscriptionItems = pgTable(
   },
   (t) => [
     index("subscription_items_firm_kind_idx").on(t.firmId, t.kind),
-    check(
-      "subscription_items_kind_check",
-      sql`${t.kind} IN ('seat','addon')`,
-    ),
     check(
       "subscription_items_addon_key_when_addon",
       sql`(${t.kind} = 'addon' AND ${t.addonKey} IS NOT NULL) OR (${t.kind} = 'seat' AND ${t.addonKey} IS NULL)`,
@@ -1883,7 +1908,7 @@ export const billingEvents = pgTable(
     receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
     processedAt: timestamp("processed_at", { withTimezone: true }),
     processingDurationMs: integer("processing_duration_ms"),
-    result: text("result"), // 'ok' | 'error' | 'ignored' | 'skipped_duplicate' | null while pending
+    result: billingEventResultEnum("result"),
     errorMessage: text("error_message"),
     payloadRedacted: jsonb("payload_redacted"),
   },
@@ -1910,14 +1935,10 @@ export const tosAcceptances = pgTable(
     acceptedAt: timestamp("accepted_at", { withTimezone: true }).defaultNow().notNull(),
     ipAddress: inet("ip_address"),
     userAgent: text("user_agent"),
-    acceptanceSource: text("acceptance_source").notNull(),
+    acceptanceSource: acceptanceSourceEnum("acceptance_source").notNull(),
   },
   (t) => [
     index("tos_acceptances_user_accepted_idx").on(t.userId, t.acceptedAt),
-    check(
-      "tos_acceptances_source_check",
-      sql`${t.acceptanceSource} IN ('stripe_checkout','clerk_signup','in_app_modal')`,
-    ),
   ],
 );
 
@@ -1931,7 +1952,7 @@ export const reconciliationRuns = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
-    status: text("status").notNull(), // 'running' | 'ok' | 'drift_detected' | 'error'
+    status: reconciliationRunStatusEnum("status").notNull(),
     firmsChecked: integer("firms_checked"),
     discrepanciesFound: integer("discrepancies_found"),
     discrepancies: jsonb("discrepancies"),
