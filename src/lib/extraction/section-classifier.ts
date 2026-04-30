@@ -22,15 +22,22 @@ export const ENTITY_SECTIONS = [
 
 export type SectionEntityType = (typeof ENTITY_SECTIONS)[number];
 
+// Per-section caps bound the classifier's output so a runaway response
+// can't dispatch 1000s of per-section AI calls. 20 is generous: a 50-page
+// fact-finder rarely needs more than ~5 ranges per section, but the
+// Ethos Tools format produces non-contiguous fragments that pushed the
+// prior tighter limits (<=3) over the edge during Phase 8 smoke. The
+// classifier prompt could be tightened to consolidate adjacent ranges,
+// but bumping the cap unblocks real-world docs without re-prompting.
 const sectionsSchema = z.object({
-    family: z.array(pageRangeSchema).max(3).default([]),
-    accounts: z.array(pageRangeSchema).max(5).default([]),
-    incomes: z.array(pageRangeSchema).max(3).default([]),
-    expenses: z.array(pageRangeSchema).max(3).default([]),
-    liabilities: z.array(pageRangeSchema).max(3).default([]),
-    insurance: z.array(pageRangeSchema).max(3).default([]),
-    wills: z.array(pageRangeSchema).max(2).default([]),
-    entities: z.array(pageRangeSchema).max(2).default([]),
+    family: z.array(pageRangeSchema).max(20).default([]),
+    accounts: z.array(pageRangeSchema).max(20).default([]),
+    incomes: z.array(pageRangeSchema).max(20).default([]),
+    expenses: z.array(pageRangeSchema).max(20).default([]),
+    liabilities: z.array(pageRangeSchema).max(20).default([]),
+    insurance: z.array(pageRangeSchema).max(20).default([]),
+    wills: z.array(pageRangeSchema).max(20).default([]),
+    entities: z.array(pageRangeSchema).max(20).default([]),
 });
 
 export type Sections = z.infer<typeof sectionsSchema>;
