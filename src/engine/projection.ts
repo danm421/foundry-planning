@@ -1909,15 +1909,24 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // 11. Apply the accumulated cash deltas to balances and ledgers. Itemized entries
     // collected during creditCash are flushed onto the ledger in the order they were
     // recorded so the modal can show a per-year transaction list.
+    //
+    // For the household checking, contributions/distributions netting is deferred
+    // until step 12 has applied taxes. Pre-tax flows (income, expenses, mortgage,
+    // savings) and post-tax taxes then post as a single signed entry — Portfolio
+    // Activity reports the true net change in cash instead of gross inflows split
+    // from gross tax outflows.
+    const householdCheckingId = hasChecking ? defaultChecking!.id : null;
+    let checkingExternalDelta = 0;
     for (const [acctId, delta] of Object.entries(cashDelta)) {
       accountBalances[acctId] = (accountBalances[acctId] ?? 0) + delta;
       if (accountLedgers[acctId]) {
-        if (delta >= 0) {
+        accountLedgers[acctId].endingValue += delta;
+        if (acctId === householdCheckingId) {
+          checkingExternalDelta += delta;
+        } else if (delta >= 0) {
           accountLedgers[acctId].contributions += delta;
-          accountLedgers[acctId].endingValue += delta;
         } else {
           accountLedgers[acctId].distributions += -delta;
-          accountLedgers[acctId].endingValue += delta;
         }
         const entries = pendingEntries[acctId];
         if (entries) accountLedgers[acctId].entries.push(...entries);
@@ -2123,6 +2132,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     if (hasChecking) {
       const checkingId = defaultChecking!.id;
 
+      // Supplemental draws are attributed to the source account in Portfolio
+      // Activity (not flagged internal) so the user sees which account funded
+      // the shortfall. The cash side is symmetric: the refill credit is
+      // internal, AND a matching slice of cash's distribution is also marked
+      // internal — that pass-through portion is bookkeeping for money routed
+      // through cash, not a real cash outflow.
       for (const draw of supplementalPlan.draws) {
         if (draw.amount <= 0) continue;
         accountBalances[draw.accountId] -= draw.amount;
@@ -2131,13 +2146,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         withdrawals.total += draw.amount;
         if (accountLedgers[draw.accountId]) {
           accountLedgers[draw.accountId].distributions += draw.amount;
-          accountLedgers[draw.accountId].internalDistributions += draw.amount;
           accountLedgers[draw.accountId].endingValue -= draw.amount;
           accountLedgers[draw.accountId].entries.push({
             category: "withdrawal",
             label: "Withdrawal to cover household shortfall",
             amount: -draw.amount,
-            isInternalTransfer: true,
           });
         }
       }
@@ -2147,6 +2160,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         if (accountLedgers[checkingId]) {
           accountLedgers[checkingId].contributions += supplementalPlan.total;
           accountLedgers[checkingId].internalContributions += supplementalPlan.total;
+          accountLedgers[checkingId].internalDistributions += supplementalPlan.total;
           accountLedgers[checkingId].endingValue += supplementalPlan.total;
           accountLedgers[checkingId].entries.push({
             category: "withdrawal",
@@ -2162,7 +2176,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (taxAndPenalty !== 0) {
         accountBalances[checkingId] -= taxAndPenalty;
         if (accountLedgers[checkingId]) {
-          accountLedgers[checkingId].distributions += taxAndPenalty;
           accountLedgers[checkingId].endingValue -= taxAndPenalty;
           accountLedgers[checkingId].entries.push({
             category: "tax",
@@ -2172,6 +2185,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
                 : "Federal + state taxes",
             amount: -taxAndPenalty,
           });
+        }
+        checkingExternalDelta -= taxAndPenalty;
+      }
+
+      // Flush the deferred external net for the household checking. Pre-tax
+      // flows from cashDelta and post-tax taxes converge into a single signed
+      // contribution or distribution so Portfolio Activity reports true net
+      // change in cash. Internal supplemental and entity-gap-fill flows are
+      // posted to internalContributions/internalDistributions earlier in this
+      // block and aren't part of the external net.
+      if (accountLedgers[checkingId] && checkingExternalDelta !== 0) {
+        if (checkingExternalDelta > 0) {
+          accountLedgers[checkingId].contributions += checkingExternalDelta;
+        } else {
+          accountLedgers[checkingId].distributions += -checkingExternalDelta;
         }
       }
     } else {
@@ -2263,20 +2291,23 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           (entityWithdrawals.byAccount[acctId] ?? 0) + amount;
         entityWithdrawals.total += amount;
 
+        // Symmetric to the supplemental-draw block above: entity gap-fill draws
+        // are attributed to the source so Portfolio Activity surfaces the real
+        // funding account, and a matching slice of cash's distribution is
+        // marked internal to neutralize the pass-through.
         if (accountLedgers[acctId]) {
           accountLedgers[acctId].distributions += amount;
-          accountLedgers[acctId].internalDistributions += amount;
           accountLedgers[acctId].endingValue -= amount;
           accountLedgers[acctId].entries.push({
             category: "withdrawal",
             label: "Entity gap-fill",
             amount: -amount,
-            isInternalTransfer: true,
           });
         }
         if (accountLedgers[checkingId]) {
           accountLedgers[checkingId].contributions += amount;
           accountLedgers[checkingId].internalContributions += amount;
+          accountLedgers[checkingId].internalDistributions += amount;
           accountLedgers[checkingId].endingValue += amount;
           accountLedgers[checkingId].entries.push({
             category: "withdrawal",

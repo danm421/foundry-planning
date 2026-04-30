@@ -53,11 +53,22 @@ export async function POST(request: NextRequest, { params }: Params) {
 
         const rl = await checkImportRateLimit(firmId, "commit");
         if (!rl.allowed) {
-            const status = rl.reason === "unconfigured" ? 503 : 429;
-            const message =
-                rl.reason === "unconfigured"
-                    ? "Rate limiting is not configured — commits are disabled."
-                    : "Too many commit requests. Please wait and try again.";
+            let status: number;
+            let message: string;
+            switch (rl.reason) {
+                case "unconfigured":
+                    status = 503;
+                    message = "Rate limiting is not configured — commits are disabled.";
+                    break;
+                case "redis_error":
+                    status = 503;
+                    message = "Rate limiting is temporarily unavailable. Please retry in a moment.";
+                    break;
+                case "exceeded":
+                    status = 429;
+                    message = "Too many commit requests. Please wait and try again.";
+                    break;
+            }
             const headers: Record<string, string> = {};
             if (rl.reset) {
                 headers["Retry-After"] = String(

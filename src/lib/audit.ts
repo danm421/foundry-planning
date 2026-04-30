@@ -124,7 +124,24 @@ export type AuditAction =
   | "import.extraction.completed"
   | "import.extraction.failed"
   | "import.match.run"
-  | "import.commit.tab";
+  | "import.commit.tab"
+  // Billing (Phase 1+ — written by webhook handlers and admin endpoints)
+  | "billing.checkout_started"
+  | "billing.subscription_created"
+  | "billing.subscription_updated"
+  | "billing.canceled"
+  | "billing.addon_added"
+  | "billing.addon_removed"
+  | "billing.payment_failed"
+  | "billing.payment_recovered"
+  // Org membership lifecycle (mirrors Clerk events)
+  | "member.invited"
+  | "member.removed"
+  | "member.role_changed"
+  // Firm-level lifecycle
+  | "firm.name_changed"
+  | "firm.archived"
+  | "firm.founder_initialized";
 
 type Args = {
   action: AuditAction;

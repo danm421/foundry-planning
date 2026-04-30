@@ -4,8 +4,13 @@ import { Redis } from "@upstash/redis";
 /**
  * Upstash-backed rate limiters for expensive, abusable endpoints.
  *
- * We fail-closed: if UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are
- * missing at runtime, the rate-limit helpers return `allowed: false`.
+ * We fail-closed in three cases, all of which return `allowed: false`:
+ *   - `unconfigured`: UPSTASH_REDIS_REST_URL / _TOKEN missing at runtime.
+ *   - `exceeded`:     the limiter denied the request (over budget).
+ *   - `redis_error`:  Redis itself threw (NOPERM, network, transient
+ *                     outage). Caught in `safeLimit` and surfaced as
+ *                     a typed result instead of bubbling.
+ *
  * In-memory fallbacks reset per serverless container and are inadequate
  * for a SOC-2-bound financial-PII app — we'd rather block the request
  * than pretend we rate-limited it.
@@ -46,26 +51,51 @@ function buildLimiter(limit: number, window: `${number} ${"s" | "m" | "h"}`, pre
   };
 }
 
+type RateLimitOk = { allowed: true; remaining: number; reset: number };
+type RateLimitDenied = {
+  allowed: false;
+  reason: "unconfigured" | "exceeded" | "redis_error";
+  remaining?: number;
+  reset?: number;
+};
+export type RateLimitResult = RateLimitOk | RateLimitDenied;
+
+/**
+ * Wraps a single `limiter.limit(key)` call so a Redis-side throw
+ * (NOPERM, network, transient outage) returns a typed result rather
+ * than bubbling. Preserves fail-closed posture.
+ */
+async function safeLimit(
+  limiter: Ratelimit,
+  key: string,
+): Promise<RateLimitResult> {
+  try {
+    const { success, remaining, reset } = await limiter.limit(key);
+    return success
+      ? { allowed: true, remaining, reset }
+      : { allowed: false, reason: "exceeded", remaining, reset };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.slice(0, 200) : "unknown";
+    console.error("[rate-limit] Redis call failed:", msg);
+    return { allowed: false, reason: "redis_error" };
+  }
+}
+
 const getExtractLimiter = buildLimiter(5, "1 m", "rl:extract");
 
 /**
  * Check whether `key` may invoke the document-extraction pipeline.
  * Budget: 5 calls per rolling minute per key (typically the firm id).
  *
- * Returns `{ allowed: false, reason: "unconfigured" }` when Upstash env
- * vars are missing, so callers block the request.
+ * Returns `{ allowed: false, reason: ... }` for any failure mode —
+ * see the file-level comment for the full discriminant.
  */
 export async function checkExtractRateLimit(
-  key: string
-): Promise<
-  | { allowed: true; remaining: number; reset: number }
-  | { allowed: false; reason: "unconfigured" | "exceeded"; remaining?: number; reset?: number }
-> {
+  key: string,
+): Promise<RateLimitResult> {
   const limiter = getExtractLimiter();
   if (!limiter) return { allowed: false, reason: "unconfigured" };
-  const { success, remaining, reset } = await limiter.limit(key);
-  if (!success) return { allowed: false, reason: "exceeded", remaining, reset };
-  return { allowed: true, remaining, reset };
+  return safeLimit(limiter, key);
 }
 
 // Per-op limiters for the import tool v2. The flow has very different
@@ -86,14 +116,14 @@ export type ImportRateLimitOp = "upload" | "extract" | "view" | "match" | "commi
  * Multi-bucket rate-limit dispatcher for the import tool v2. The `op`
  * selects the bucket; `key` is suffixed with `:${op}` so callers can
  * pass a single firm-scoped key without bleeding budgets across ops.
+ *
+ * Returns `{ allowed: false, reason: ... }` for any failure mode —
+ * see the file-level comment for the full discriminant.
  */
 export async function checkImportRateLimit(
   key: string,
   op: ImportRateLimitOp,
-): Promise<
-  | { allowed: true; remaining: number; reset: number }
-  | { allowed: false; reason: "unconfigured" | "exceeded"; remaining?: number; reset?: number }
-> {
+): Promise<RateLimitResult> {
   const factories = {
     upload: getImportUploadLimiter,
     extract: getImportExtractLimiter,
@@ -103,7 +133,5 @@ export async function checkImportRateLimit(
   } as const;
   const limiter = factories[op]();
   if (!limiter) return { allowed: false, reason: "unconfigured" };
-  const { success, remaining, reset } = await limiter.limit(`${key}:${op}`);
-  if (!success) return { allowed: false, reason: "exceeded", remaining, reset };
-  return { allowed: true, remaining, reset };
+  return safeLimit(limiter, `${key}:${op}`);
 }

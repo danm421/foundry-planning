@@ -210,6 +210,10 @@ const DRILL_LABELS: Record<string, string> = {
   realEstate: "Real Estate",
   business_assets: "Business",
   lifeInsurance: "Life Insurance",
+  // Net Cash Flow sub-types (raw account category values)
+  real_estate: "Real Estate",
+  business: "Business",
+  life_insurance: "Life Insurance",
 };
 
 // Map from income drill segment → income type value in ClientData
@@ -1448,6 +1452,42 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       ];
     }
 
+    // Per-account cell that opens the ledger modal — shared by Net Cash Flow,
+    // Portfolio Activity, and Portfolio Growth Level-2 drills.
+    const accountLedgerCell = (
+      id: string,
+      accessor: (r: ProjectionYear) => number,
+      colIdPrefix: string,
+    ) =>
+      col(
+        `${colIdPrefix}_${id}`,
+        accountNames[id] ?? id,
+        accessor,
+        (info) => {
+          const v = info.getValue() as number;
+          const row = info.row.original;
+          return (
+            <button
+              onClick={() => {
+                const ledger = row.accountLedgers[id];
+                if (ledger) {
+                  setLedgerModal({
+                    accountId: id,
+                    accountName: accountNames[id] ?? id,
+                    year: row.year,
+                    ledger,
+                  });
+                }
+              }}
+              className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
+              title="View account ledger"
+            >
+              {fmtNum(v)}
+            </button>
+          );
+        }
+      );
+
     // ── Savings drill-down ─────────────────────────────────────────────────
 
     if (level === "savings") {
@@ -1493,10 +1533,41 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // plus the beginning-of-year portfolio and the withdrawal rate.
 
     if (level === "cashflow") {
+      // Level 2: per-account withdrawals for a single asset category.
+      // Only include accounts that had any withdrawal across the projection so
+      // empty columns don't clutter the view.
+      if (subLevel) {
+        const acctIds = Array.from(
+          new Set(
+            years.flatMap((y) =>
+              Object.keys(y.withdrawals.byAccount).filter(
+                (id) => accountCategoryById[id] === subLevel
+              )
+            )
+          )
+        );
+        return [
+          ...baseColumns,
+          ...acctIds.map((id) =>
+            accountLedgerCell(id, (r) => r.withdrawals.byAccount[id] ?? 0, "wd")
+          ),
+          numCol(
+            "wd_subtype_total",
+            `${DRILL_LABELS[subLevel] ?? subLevel} Total`,
+            (r) => withdrawalByCategory(r, subLevel),
+            true
+          ),
+        ];
+      }
+
       const categoryCols = NET_CASH_FLOW_CATEGORIES.filter((c) =>
         withdrawalCategoriesUsed.has(c.key)
       ).map((c) =>
-        numCol(`wd_${c.key}`, c.label, (r) => withdrawalByCategory(r, c.key))
+        numCol(
+          `wd_${c.key}`,
+          () => <DrillBtn segment={c.key} label={c.label} />,
+          (r) => withdrawalByCategory(r, c.key)
+        )
       );
 
       return [
@@ -1595,42 +1666,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // Summed across portfolio-eligible accounts; ledger modal on cell click shows
     // the itemized per-account activity for the year.
 
-    const accountLedgerCell = (id: string, accessor: (r: ProjectionYear) => number) =>
-      col(
-        `activity_${id}`,
-        accountNames[id] ?? id,
-        accessor,
-        (info) => {
-          const v = info.getValue() as number;
-          const row = info.row.original;
-          return (
-            <button
-              onClick={() => {
-                const ledger = row.accountLedgers[id];
-                if (ledger) {
-                  setLedgerModal({
-                    accountId: id,
-                    accountName: accountNames[id] ?? id,
-                    year: row.year,
-                    ledger,
-                  });
-                }
-              }}
-              className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
-              title="View account ledger"
-            >
-              {fmtNum(v)}
-            </button>
-          );
-        }
-      );
-
     if (level === "activity") {
       if (subLevel === "additions") {
         return [
           ...baseColumns,
           ...additionAccountIds.map((id) =>
-            accountLedgerCell(id, (r) => externalContributions(r, id))
+            accountLedgerCell(id, (r) => externalContributions(r, id), "additions")
           ),
           numCol("additions_total", "Total Additions", (r) => additionsTotal(r), true),
         ];
@@ -1639,7 +1680,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         return [
           ...baseColumns,
           ...distributionAccountIds.map((id) =>
-            accountLedgerCell(id, (r) => externalDistributions(r, id))
+            accountLedgerCell(id, (r) => externalDistributions(r, id), "distributions")
           ),
           numCol("distributions_total", "Total Distributions", (r) => distributionsTotal(r), true),
         ];

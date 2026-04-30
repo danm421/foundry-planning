@@ -191,11 +191,22 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     const rl = await checkImportRateLimit(firmId, "view");
     if (!rl.allowed) {
-      const status = rl.reason === "unconfigured" ? 503 : 429;
-      const message =
-        rl.reason === "unconfigured"
-          ? "Rate limiting is not configured — import listing is disabled."
-          : "Too many requests. Please wait and try again.";
+      let status: number;
+      let message: string;
+      switch (rl.reason) {
+        case "unconfigured":
+          status = 503;
+          message = "Rate limiting is not configured — import listing is disabled.";
+          break;
+        case "redis_error":
+          status = 503;
+          message = "Rate limiting is temporarily unavailable. Please retry in a moment.";
+          break;
+        case "exceeded":
+          status = 429;
+          message = "Too many requests. Please wait and try again.";
+          break;
+      }
       const headers: Record<string, string> = {};
       if (rl.reset) {
         headers["Retry-After"] = String(
