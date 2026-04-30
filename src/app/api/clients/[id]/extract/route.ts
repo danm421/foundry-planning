@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOrgId } from "@/lib/db-helpers";
+import { requireActiveSubscription } from "@/lib/authz";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -23,6 +24,7 @@ export async function POST(
 ) {
   try {
     const firmId = await requireOrgId();
+    await requireActiveSubscription();
     const { id } = await params;
 
     const rl = await checkExtractRateLimit(firmId);
