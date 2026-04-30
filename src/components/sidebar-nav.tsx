@@ -41,7 +41,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { icon: <BarChartIcon />, label: "Reports", placeholder: true },
       { icon: <FolderIcon />, label: "Documents", placeholder: true },
-      { icon: <SettingsIcon />, label: "Settings", placeholder: true },
+      { icon: <SettingsIcon />, label: "Settings", href: "/settings" },
     ],
   },
 ];
