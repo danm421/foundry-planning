@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 import type { ExtractedAccount, AccountCategory, AccountSubType } from "@/lib/extraction/types";
+import type { MatchAnnotation } from "@/lib/imports/types";
+import type { FieldMap } from "@/lib/imports/merge-strategies";
+import MatchColumn from "./match-column";
+import type { MatchCandidate } from "./match-link-picker";
+import DiffPreview from "./diff-preview";
 
 const CATEGORY_OPTIONS: { value: AccountCategory; label: string }[] = [
   { value: "taxable", label: "Taxable" },
@@ -43,10 +48,50 @@ const OWNER_OPTIONS = [
   { value: "joint", label: "Joint" },
 ];
 
+// Mirrors the field map in src/lib/imports/commit/accounts.ts so the diff
+// preview matches what the commit step will actually write.
+const ACCOUNT_FIELD_MAP: FieldMap<ExtractedAccount> = {
+  name: "keep-existing",
+  category: "replace",
+  subType: "replace",
+  value: "replace",
+  basis: "replace",
+  accountNumberLast4: "replace",
+  custodian: "replace",
+  growthRate: "replace-if-non-null",
+  rmdEnabled: "replace-if-non-null",
+};
+
+const ACCOUNT_FIELD_LABELS: Partial<Record<keyof ExtractedAccount, string>> = {
+  category: "Category",
+  subType: "Type",
+  value: "Value",
+  basis: "Cost basis",
+  accountNumberLast4: "Account ####",
+  custodian: "Custodian",
+  growthRate: "Growth rate",
+  rmdEnabled: "RMD",
+};
+
 interface ReviewStepAccountsProps {
   accounts: ExtractedAccount[];
   onChange: (accounts: ExtractedAccount[]) => void;
   existingAccountNames?: string[];
+  /**
+   * Per-row match annotation. When omitted the match column stays hidden
+   * and the component behaves like v1 (used by the legacy review-wizard
+   * until 8.9 swaps it). Index aligns with `accounts`.
+   */
+  matches?: Array<MatchAnnotation | undefined>;
+  /** Called when the user resolves a match via the link picker. */
+  onMatchChange?: (index: number, match: MatchAnnotation) => void;
+  /** Candidate list passed to the match-link picker (typically all client accounts). */
+  candidates?: MatchCandidate[];
+  /**
+   * Existing canonical rows keyed by id, used by the diff preview when a
+   * row is matched exact. Only the fields in ACCOUNT_FIELD_MAP are read.
+   */
+  existingAccountsById?: Record<string, Partial<ExtractedAccount> & { name?: string }>;
 }
 
 const INPUT_CLASS =
@@ -60,8 +105,15 @@ export default function ReviewStepAccounts({
   accounts,
   onChange,
   existingAccountNames = [],
+  matches,
+  onMatchChange,
+  candidates = [],
+  existingAccountsById,
 }: ReviewStepAccountsProps) {
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const matchingEnabled = Boolean(matches && onMatchChange);
 
   const updateField = (index: number, field: keyof ExtractedAccount, value: unknown) => {
     const updated = accounts.map((a, i) =>
@@ -80,6 +132,15 @@ export default function ReviewStepAccounts({
 
   const toggleExclude = (index: number) => {
     setExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const toggleExpanded = (index: number) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
       else next.add(index);
@@ -111,8 +172,14 @@ export default function ReviewStepAccounts({
 
       <div className="space-y-3">
         {accounts.map((account, i) => {
-          const duplicate = findDuplicate(account.name);
+          const match = matches?.[i];
+          const existingId = match?.kind === "exact" ? match.existingId : null;
+          const existingRow = existingId ? existingAccountsById?.[existingId] : undefined;
+          const isExpanded = expanded.has(i);
           const isExcluded = excluded.has(i);
+          // Suppress the v1 name-overlap heuristic when match annotations are
+          // present — the match column is the authoritative signal.
+          const duplicate = matchingEnabled ? null : findDuplicate(account.name);
 
           return (
             <div
@@ -123,26 +190,48 @@ export default function ReviewStepAccounts({
                   : "border-gray-700 bg-gray-900"
               }`}
             >
-              {duplicate && !isExcluded && (
-                <div className="mb-2 flex items-center gap-2 rounded bg-amber-900/30 px-2 py-1 text-xs text-amber-400">
-                  <span>Possible duplicate of &quot;{duplicate}&quot;</span>
-                  <button
-                    onClick={() => toggleExclude(i)}
-                    className="ml-auto text-amber-400 underline hover:text-amber-300"
-                  >
-                    Skip
-                  </button>
-                </div>
-              )}
-              {isExcluded && (
-                <div className="mb-2 flex items-center gap-2 text-xs text-gray-400">
-                  <span>Skipped</span>
-                  <button
-                    onClick={() => toggleExclude(i)}
-                    className="text-accent underline hover:text-accent-ink"
-                  >
-                    Include
-                  </button>
+              {(matchingEnabled || duplicate || isExcluded) && (
+                <div className="mb-2 flex items-center gap-2">
+                  {matchingEnabled && (
+                    <MatchColumn
+                      match={match}
+                      existingName={existingRow?.name}
+                      candidates={candidates}
+                      entityKind="account"
+                      onChange={(next) => onMatchChange?.(i, next)}
+                    />
+                  )}
+                  {existingRow && (
+                    <button
+                      onClick={() => toggleExpanded(i)}
+                      className="text-xs text-accent underline hover:text-accent-ink"
+                      aria-expanded={isExpanded}
+                    >
+                      {isExpanded ? "Hide diff" : "Show diff"}
+                    </button>
+                  )}
+                  {duplicate && !isExcluded && (
+                    <div className="ml-auto flex items-center gap-2 rounded bg-amber-900/30 px-2 py-1 text-xs text-amber-400">
+                      <span>Possible duplicate of &quot;{duplicate}&quot;</span>
+                      <button
+                        onClick={() => toggleExclude(i)}
+                        className="text-amber-400 underline hover:text-amber-300"
+                      >
+                        Skip
+                      </button>
+                    </div>
+                  )}
+                  {isExcluded && (
+                    <div className="ml-auto flex items-center gap-2 text-xs text-gray-400">
+                      <span>Skipped</span>
+                      <button
+                        onClick={() => toggleExclude(i)}
+                        className="text-accent underline hover:text-accent-ink"
+                      >
+                        Include
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -225,6 +314,25 @@ export default function ReviewStepAccounts({
                     placeholder="Use default"
                   />
                 </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-300">Acct ####</label>
+                  <input
+                    value={account.accountNumberLast4 ?? ""}
+                    onChange={(e) => updateField(i, "accountNumberLast4", e.target.value || undefined)}
+                    className={INPUT_CLASS}
+                    placeholder="Last 4"
+                    maxLength={4}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-300">Custodian</label>
+                  <input
+                    value={account.custodian ?? ""}
+                    onChange={(e) => updateField(i, "custodian", e.target.value || undefined)}
+                    className={INPUT_CLASS}
+                    placeholder="e.g. Fidelity"
+                  />
+                </div>
                 <div className="col-span-2 flex items-end gap-2">
                   <label className="flex items-center gap-1.5 pb-1.5 text-xs text-gray-300">
                     <input
@@ -244,6 +352,21 @@ export default function ReviewStepAccounts({
                   </button>
                 </div>
               </div>
+
+              {isExpanded && existingRow && (
+                <div className="mt-3 rounded border border-hair bg-gray-950/40 p-3">
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-4">
+                    Changes vs. existing
+                    {existingRow.name ? <span className="ml-1 text-ink-3">— {existingRow.name}</span> : null}
+                  </div>
+                  <DiffPreview<ExtractedAccount>
+                    existing={existingRow as ExtractedAccount}
+                    incoming={account}
+                    fieldMap={ACCOUNT_FIELD_MAP}
+                    fieldLabels={ACCOUNT_FIELD_LABELS}
+                  />
+                </div>
+              )}
             </div>
           );
         })}
