@@ -143,12 +143,15 @@ describe("applyFounderState", () => {
       entitlements: ["ai_import"],
     });
 
+    // Clerk SDK signature: updateOrganization(organizationId, params).
     expect(mockUpdateOrg).toHaveBeenCalledWith(
-      expect.objectContaining({ organizationId: TEST_FIRM_ID, name: "Foundry HQ" }),
+      TEST_FIRM_ID,
+      expect.objectContaining({ name: "Foundry HQ" }),
     );
+    // Clerk SDK signature: updateOrganizationMetadata(organizationId, params).
     expect(mockUpdateOrgMetadata).toHaveBeenCalledWith(
+      TEST_FIRM_ID,
       expect.objectContaining({
-        organizationId: TEST_FIRM_ID,
         publicMetadata: expect.objectContaining({
           is_founder: true,
           subscription_status: "founder",
