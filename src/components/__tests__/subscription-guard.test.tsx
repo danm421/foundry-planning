@@ -31,11 +31,13 @@ async function renderGuard(
 describe("<SubscriptionGuard>", () => {
   it("renders nothing for founder", async () => {
     await renderGuard({ kind: "founder" });
+    expect(screen.queryByRole("status")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("renders nothing for active", async () => {
     await renderGuard({ kind: "active" });
+    expect(screen.queryByRole("status")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -44,8 +46,8 @@ describe("<SubscriptionGuard>", () => {
       kind: "trialing",
       trialEndsAt: new Date("2026-05-15T00:00:00Z"),
     });
-    expect(screen.getByRole("alert")).toHaveTextContent("Trial ends");
-    expect(screen.getByRole("alert")).toHaveTextContent("payment method");
+    expect(screen.getByRole("status")).toHaveTextContent("Trial ends");
+    expect(screen.getByRole("status")).toHaveTextContent("payment method");
   });
 
   it("renders past_due banner with persistent (non-dismissible) variant", async () => {
@@ -71,7 +73,7 @@ describe("<SubscriptionGuard>", () => {
 
   it("renders missing banner", async () => {
     await renderGuard({ kind: "missing", reason: "no_metadata" });
-    expect(screen.getByRole("alert")).toHaveTextContent("Couldn't read");
+    expect(screen.getByRole("status")).toHaveTextContent("Couldn't read");
   });
 
   it("short-circuits to null when dismissal cookie matches state key", async () => {
@@ -85,7 +87,7 @@ describe("<SubscriptionGuard>", () => {
       kind: "trialing",
       trialEndsAt: new Date("2026-05-15T00:00:00Z"),
     });
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("ignores preview override when isFounder=false", async () => {
@@ -93,6 +95,7 @@ describe("<SubscriptionGuard>", () => {
       { kind: "active" },
       { isFounder: false, previewKind: "trialing", previewDate: "2026-05-15" },
     );
+    expect(screen.queryByRole("status")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -101,7 +104,7 @@ describe("<SubscriptionGuard>", () => {
       { kind: "active" },
       { isFounder: true, previewKind: "trialing", previewDate: "2026-05-15" },
     );
-    expect(screen.getByRole("alert")).toHaveTextContent("Trial ends");
+    expect(screen.getByRole("status")).toHaveTextContent("Trial ends");
   });
 
   it("renders dismiss button only for info-severity banners", async () => {

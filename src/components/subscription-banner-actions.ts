@@ -14,7 +14,7 @@ export async function dismissBanner(dismissKey: string): Promise<void> {
   jar.set(COOKIE_NAME, dismissKey, {
     path: "/",
     sameSite: "lax",
-    httpOnly: false,
+    httpOnly: true,
     secure: true,
     maxAge: 60 * 60 * 24 * 30, // 30d cap; state-change short-circuits sooner
   });

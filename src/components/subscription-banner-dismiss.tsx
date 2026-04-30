@@ -21,7 +21,7 @@ export default function SubscriptionBannerDismiss({ dismissKey }: Props) {
           await dismissBanner(dismissKey);
         });
       }}
-      className="ml-auto text-ink-3 hover:text-ink-1"
+      className="ml-auto text-ink-3 hover:text-ink"
     >
       ×
     </button>

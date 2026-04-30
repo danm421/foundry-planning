@@ -109,9 +109,15 @@ const PREVIEW_STATES: Record<string, (date?: string) => SubscriptionState> = {
 };
 
 const SEVERITY_CLASS: Record<Banner["severity"], string> = {
-  "info-yellow": "bg-warn-bg text-warn-fg border-warn-fg/20",
+  "info-yellow": "bg-warn/10 text-warn border-warn/30",
   "info-gray": "bg-paper text-ink-2 border-hair",
-  "urgent-red": "bg-danger-bg text-danger-fg border-danger-fg/20",
+  "urgent-red": "bg-crit/10 text-crit border-crit/30",
+};
+
+const SEVERITY_ROLE: Record<Banner["severity"], "alert" | "status"> = {
+  "info-yellow": "status",
+  "info-gray": "status",
+  "urgent-red": "alert",
 };
 
 export async function SubscriptionGuard({
@@ -137,9 +143,10 @@ export async function SubscriptionGuard({
 
   return (
     <div
-      role="alert"
+      role={SEVERITY_ROLE[banner.severity]}
       className={`flex items-center gap-3 rounded border px-4 py-2 text-sm ${SEVERITY_CLASS[banner.severity]}`}
     >
+      <span className="sr-only">{banner.severity === "urgent-red" ? "Action required:" : "Notice:"}</span>
       <span className="flex-1">{banner.message}</span>
       {banner.actionHref && banner.actionLabel ? (
         <Link href={banner.actionHref} className="font-medium underline">
