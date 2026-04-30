@@ -1,10 +1,13 @@
 import type Stripe from "stripe";
+import { handleSubscriptionUpsert } from "./customer-subscription-upserted";
 
 export type WebhookHandler = (event: Stripe.Event) => Promise<void>;
 
 /**
- * Dispatch table: Stripe event type → handler. Filled in by Tasks 9–17.
- * Phase 3 starts with this empty so the route's "ignored" branch is the
- * only path through new event types until each handler is wired.
+ * Dispatch table: Stripe event type → handler. Each handler is responsible
+ * for re-fetching its live object from Stripe (never trust event.data.object).
  */
-export const handlers: Partial<Record<string, WebhookHandler>> = {};
+export const handlers: Partial<Record<string, WebhookHandler>> = {
+  "customer.subscription.created": handleSubscriptionUpsert,
+  "customer.subscription.updated": handleSubscriptionUpsert,
+};
