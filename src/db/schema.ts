@@ -15,10 +15,17 @@ import {
   jsonb,
   index,
   check,
+  customType,
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import type { BracketTier } from "@/lib/tax/types";
+
+const inet = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return "inet";
+  },
+});
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
@@ -1742,4 +1749,214 @@ export const auditLog = pgTable(
     index("audit_log_firm_created_idx").on(t.firmId, t.createdAt),
     index("audit_log_resource_idx").on(t.resourceType, t.resourceId),
   ],
+);
+
+// ── Billing & SOC 2 (Phase 1) ────────────────────────────────────────────────
+// Note: this section uses `timestamp(..., { withTimezone: true })` (timestamptz)
+// per the billing spec. The legacy tables above use plain `timestamp` (no tz);
+// future work tracks backfilling them. Mixing is intentional — do not "fix" by
+// stripping withTimezone here without updating the spec + the legacy tables.
+
+export const subscriptionItemKindEnum = pgEnum("subscription_item_kind", [
+  "seat",
+  "addon",
+]);
+
+export const acceptanceSourceEnum = pgEnum("acceptance_source", [
+  "stripe_checkout",
+  "clerk_signup",
+  "in_app_modal",
+]);
+
+export const reconciliationRunStatusEnum = pgEnum("reconciliation_run_status", [
+  "running",
+  "ok",
+  "drift_detected",
+  "error",
+]);
+
+export const billingEventResultEnum = pgEnum("billing_event_result", [
+  "ok",
+  "error",
+  "ignored",
+  "skipped_duplicate",
+]);
+
+// Root row per Clerk org. Holds firm-level metadata that doesn't fit on
+// a Stripe object (founder flag, archival lifecycle, DPA acceptance).
+// `firm_id` matches the Clerk org id verbatim — no separate surrogate key,
+// because every other firm-scoped table already keys on Clerk org id.
+export const firms = pgTable("firms", {
+  firmId: text("firm_id").primaryKey(),
+  displayName: text("display_name"),
+  isFounder: boolean("is_founder").default(false).notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  dataRetentionUntil: timestamp("data_retention_until", { withTimezone: true }),
+  purgedAt: timestamp("purged_at", { withTimezone: true }),
+  dpaVersion: text("dpa_version"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// One Stripe subscription per firm. UNIQUE filter ensures a firm can only
+// have one *live* sub at a time — canceled rows stay for history.
+// `current_period_*` mirrors Stripe so middleware can compute grace
+// windows without an API call.
+export const subscriptions = pgTable(
+  "subscriptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    stripeSubscriptionId: text("stripe_subscription_id").notNull().unique(),
+    stripeCustomerId: text("stripe_customer_id").notNull(),
+    status: text("status").notNull(),
+    currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false).notNull(),
+    canceledAt: timestamp("canceled_at", { withTimezone: true }),
+    trialStart: timestamp("trial_start", { withTimezone: true }),
+    trialEnd: timestamp("trial_end", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("subscriptions_firm_status_idx").on(t.firmId, t.status),
+    uniqueIndex("subscriptions_firm_active_unique")
+      .on(t.firmId)
+      .where(sql`status IN ('trialing','active','past_due','unpaid')`),
+  ],
+);
+
+// Stripe subscription items — one per seat line + one per add-on.
+// `kind` distinguishes seats (quantity tracks org membership) from
+// add-ons (quantity is always 1, presence = entitlement).
+// `removed_at` is set when an add-on is toggled off; row stays
+// for history and to satisfy SOC 2 CC7.2 auditability.
+export const subscriptionItems = pgTable(
+  "subscription_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    subscriptionId: uuid("subscription_id")
+      .notNull()
+      .references(() => subscriptions.id, { onDelete: "cascade" }),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    stripeItemId: text("stripe_item_id").notNull().unique(),
+    stripePriceId: text("stripe_price_id").notNull(),
+    kind: subscriptionItemKindEnum("kind").notNull(),
+    addonKey: text("addon_key"),
+    quantity: integer("quantity").default(1).notNull(),
+    unitAmount: integer("unit_amount").notNull(), // cents
+    currency: text("currency").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("subscription_items_firm_kind_idx").on(t.firmId, t.kind),
+    check(
+      "subscription_items_addon_key_when_addon",
+      sql`(${t.kind} = 'addon' AND ${t.addonKey} IS NOT NULL) OR (${t.kind} = 'seat' AND ${t.addonKey} IS NULL)`,
+    ),
+  ],
+);
+
+// Mirror of Stripe invoices. We never re-render — `hosted_invoice_url`
+// and `invoice_pdf` are Stripe-hosted and good for the life of the
+// invoice. Row exists so the in-app billing page can list invoices
+// without a Stripe API roundtrip per pageload.
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    stripeInvoiceId: text("stripe_invoice_id").notNull().unique(),
+    stripeCustomerId: text("stripe_customer_id").notNull(),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    status: text("status"),
+    amountDue: integer("amount_due"),
+    amountPaid: integer("amount_paid"),
+    currency: text("currency"),
+    periodStart: timestamp("period_start", { withTimezone: true }),
+    periodEnd: timestamp("period_end", { withTimezone: true }),
+    hostedInvoiceUrl: text("hosted_invoice_url"),
+    invoicePdf: text("invoice_pdf"),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("invoices_firm_paid_idx").on(t.firmId, t.paidAt)],
+);
+
+// Webhook idempotency log + processing audit. UNIQUE on
+// `stripe_event_id` is THE idempotency key — duplicate deliveries
+// short-circuit at INSERT time. `payload_redacted` stores the
+// non-PII event body for 90 days (cron nulls it after); the row
+// itself is kept indefinitely for idempotency.
+export const billingEvents = pgTable(
+  "billing_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stripeEventId: text("stripe_event_id").notNull().unique(),
+    eventType: text("event_type").notNull(),
+    firmId: text("firm_id"),
+    receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    processingDurationMs: integer("processing_duration_ms"),
+    result: billingEventResultEnum("result"),
+    errorMessage: text("error_message"),
+    payloadRedacted: jsonb("payload_redacted"),
+  },
+  (t) => [
+    index("billing_events_firm_received_idx").on(t.firmId, t.receivedAt),
+    index("billing_events_errors_idx")
+      .on(t.receivedAt)
+      .where(sql`result = 'error'`),
+  ],
+);
+
+// Click-through ToS / DPA / Privacy consent log. P2 Privacy evidence.
+// Three sources: stripe_checkout (pre-account), clerk_signup (invite
+// accepted), in_app_modal (re-consent on version bump). firm_id is
+// nullable because Stripe Checkout fires before the Clerk org exists.
+export const tosAcceptances = pgTable(
+  "tos_acceptances",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id").notNull(),
+    firmId: text("firm_id"),
+    tosVersion: text("tos_version").notNull(),
+    dpaVersion: text("dpa_version"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }).defaultNow().notNull(),
+    ipAddress: inet("ip_address"),
+    userAgent: text("user_agent"),
+    acceptanceSource: acceptanceSourceEnum("acceptance_source").notNull(),
+  },
+  (t) => [
+    index("tos_acceptances_user_accepted_idx").on(t.userId, t.acceptedAt),
+  ],
+);
+
+// Daily reconciliation cron emits one row per run. SOC 2 CC7.1
+// detective control — drift between Stripe / DB / Clerk metadata
+// surfaces here. `discrepancies` stores per-firm drift detail as
+// JSON for ops triage.
+export const reconciliationRuns = pgTable(
+  "reconciliation_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    status: reconciliationRunStatusEnum("status").notNull(),
+    firmsChecked: integer("firms_checked"),
+    discrepanciesFound: integer("discrepancies_found"),
+    discrepancies: jsonb("discrepancies"),
+    errorMessage: text("error_message"),
+  },
+  (t) => [index("reconciliation_runs_started_idx").on(t.startedAt)],
 );
