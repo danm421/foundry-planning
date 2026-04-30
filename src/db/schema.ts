@@ -1831,3 +1831,32 @@ export const subscriptionItems = pgTable(
     ),
   ],
 );
+
+// Mirror of Stripe invoices. We never re-render — `hosted_invoice_url`
+// and `invoice_pdf` are Stripe-hosted and good for the life of the
+// invoice. Row exists so the in-app billing page can list invoices
+// without a Stripe API roundtrip per pageload.
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    stripeInvoiceId: text("stripe_invoice_id").notNull().unique(),
+    stripeCustomerId: text("stripe_customer_id").notNull(),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    status: text("status"),
+    amountDue: integer("amount_due"),
+    amountPaid: integer("amount_paid"),
+    currency: text("currency"),
+    periodStart: timestamp("period_start", { withTimezone: true }),
+    periodEnd: timestamp("period_end", { withTimezone: true }),
+    hostedInvoiceUrl: text("hosted_invoice_url"),
+    invoicePdf: text("invoice_pdf"),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("invoices_firm_paid_idx").on(t.firmId, t.paidAt)],
+);
