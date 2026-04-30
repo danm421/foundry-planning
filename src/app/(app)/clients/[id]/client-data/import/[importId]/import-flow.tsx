@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardBody, CardHeader } from "@/components/card";
 import UploadZone from "@/components/import/upload-zone";
+import ExtractionProgress from "@/components/import/extraction-progress";
 import type { ImportPayload } from "@/lib/imports/types";
 
 export interface ImportFlowFile {
@@ -120,6 +121,7 @@ function DraftStage(props: ImportFlowProps) {
 }
 
 function ExtractingStage(props: ImportFlowProps) {
+  const router = useRouter();
   return (
     <Card>
       <CardHeader>
@@ -128,13 +130,11 @@ function ExtractingStage(props: ImportFlowProps) {
         </h2>
       </CardHeader>
       <CardBody>
-        <p className="text-sm text-ink-3">
-          Extraction progress with sub-progress polling is wired in Task 8.5.
-          Refresh this page to check status.
-        </p>
-        <p className="mt-2 text-sm text-ink-3">
-          {props.files.length} file{props.files.length === 1 ? "" : "s"} queued.
-        </p>
+        <ExtractionProgress
+          clientId={props.clientId}
+          importId={props.importId}
+          onTerminal={() => router.refresh()}
+        />
       </CardBody>
     </Card>
   );
