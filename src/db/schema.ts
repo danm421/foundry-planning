@@ -1920,3 +1920,22 @@ export const tosAcceptances = pgTable(
     ),
   ],
 );
+
+// Daily reconciliation cron emits one row per run. SOC 2 CC7.1
+// detective control — drift between Stripe / DB / Clerk metadata
+// surfaces here. `discrepancies` stores per-firm drift detail as
+// JSON for ops triage.
+export const reconciliationRuns = pgTable(
+  "reconciliation_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    status: text("status").notNull(), // 'running' | 'ok' | 'drift_detected' | 'error'
+    firmsChecked: integer("firms_checked"),
+    discrepanciesFound: integer("discrepancies_found"),
+    discrepancies: jsonb("discrepancies"),
+    errorMessage: text("error_message"),
+  },
+  (t) => [index("reconciliation_runs_started_idx").on(t.startedAt)],
+);
