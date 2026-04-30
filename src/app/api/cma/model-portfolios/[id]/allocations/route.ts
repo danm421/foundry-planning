@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
+import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireOrgAdmin();
+    await requireOrgAdminOrOwner();
     const firmId = await requireOrgId();
     const { id } = await params;
 

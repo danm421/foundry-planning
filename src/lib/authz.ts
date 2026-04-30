@@ -73,26 +73,6 @@ export async function requireActiveSubscription(): Promise<void> {
 }
 
 /**
- * @deprecated Use requireOrgAdminOrOwner. Removed in Task 9 of Phase 2.
- *
- * Throw if the caller is not an org:admin. Used to gate CMA mutations:
- * asset classes and model portfolios drive every client's projections,
- * so any advisor deleting them affects the whole firm. Reserving these
- * to admin roles keeps ordinary advisors from accidentally nuking
- * firm-wide capital-market assumptions.
- *
- * Treats absence of a Clerk session as 401 (UnauthorizedError);
- * authenticated-but-non-admin as 403 (ForbiddenError).
- */
-export async function requireOrgAdmin(): Promise<void> {
-  const { userId, orgRole } = await auth();
-  if (!userId) throw new UnauthorizedError();
-  if (orgRole !== "org:admin") {
-    throw new ForbiddenError("Organization admin role required");
-  }
-}
-
-/**
  * Turn an auth-related thrown error into an HTTP response tuple that
  * route handlers can short-circuit with. Returns null when the error
  * isn't one of ours.

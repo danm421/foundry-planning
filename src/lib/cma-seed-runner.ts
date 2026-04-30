@@ -32,7 +32,7 @@ export type SeedResult = {
  * no auth checks itself.
  *
  * Called from three places:
- *   - POST /api/cma/seed (admin manual retrigger, auth via requireOrgAdmin)
+ *   - POST /api/cma/seed (admin/owner manual retrigger, auth via requireOrgAdminOrOwner)
  *   - POST /api/webhooks/clerk (organization.created event, auth via Svix signature)
  *   - /cma client on mount (advisor's lazy fallback)
  *
