@@ -81,6 +81,8 @@ export interface ExtractedAccount {
   basis?: number;
   growthRate?: number | null;
   rmdEnabled?: boolean;
+  accountNumberLast4?: string;
+  custodian?: string;
 }
 
 export interface ExtractedIncome {

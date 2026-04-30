@@ -1,4 +1,4 @@
-export const ACCOUNT_STATEMENT_VERSION = "2026-04-29.1";
+export const ACCOUNT_STATEMENT_VERSION = "2026-04-29.2";
 
 export const ACCOUNT_STATEMENT_PROMPT = `You are a financial document extraction assistant.
 Extract structured data from the following account/brokerage statement.
@@ -12,7 +12,9 @@ Return a JSON object with this exact structure:
       "subType": "one of: brokerage, savings, checking, traditional_ira, roth_ira, 401k, roth_401k, 529, trust, other",
       "owner": "one of: client, spouse, joint (infer from account title or registration)",
       "value": 0,
-      "basis": 0
+      "basis": 0,
+      "accountNumberLast4": "Last 4 characters of the account number, digits or alphanumeric",
+      "custodian": "Custodian / institution name (e.g. 'Fidelity', 'Charles Schwab', 'Vanguard')"
     }
   ],
   "liabilities": [
@@ -37,5 +39,7 @@ Extraction rules:
 - Use the total market value for "value", not individual position values
 - Extract cost basis if shown as the "basis" field
 - If a margin balance or loan appears, add it to liabilities
+- DO NOT extract the full account number. Capture only the last 4 characters and put them in "accountNumberLast4". If the statement only shows masked digits like "****5678", use "5678".
+- "custodian" is the institution that holds the account — usually visible in the document header or address block. Use a clean, normalized name without LLC/Inc suffixes (e.g. "Fidelity" not "Fidelity Brokerage Services LLC").
 
 Return ONLY valid JSON. No explanation, no markdown.`;

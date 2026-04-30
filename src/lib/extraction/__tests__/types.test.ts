@@ -23,7 +23,7 @@ describe("extraction types", () => {
         wills: [],
       },
       warnings: [],
-      promptVersion: "account_statement:2026-04-29.1",
+      promptVersion: "account_statement:2026-04-29.2",
     };
     expect(result.extracted.accounts).toHaveLength(1);
     expect(result.extracted.accounts[0].name).toBe("Checking");
