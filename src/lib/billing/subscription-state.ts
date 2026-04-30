@@ -21,6 +21,12 @@ type OrgMeta = {
   archived_at?: string;
 };
 
+function parseDate(s: string | undefined): Date | null {
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /**
  * Read Clerk org public metadata via sessionClaims and project it into
  * one of the seven banner states (or `missing` if metadata is absent).
@@ -40,24 +46,28 @@ export async function getSubscriptionState(): Promise<SubscriptionState> {
   if (meta.is_founder === true) return { kind: "founder" };
 
   const status = meta.subscription_status;
-  if (status === "trialing" && meta.trial_ends_at) {
-    return { kind: "trialing", trialEndsAt: new Date(meta.trial_ends_at) };
+  if (status === "trialing") {
+    const trialEndsAt = parseDate(meta.trial_ends_at);
+    if (trialEndsAt) {
+      return { kind: "trialing", trialEndsAt };
+    }
   }
   if (status === "active") {
-    if (meta.cancel_at_period_end === true && meta.current_period_end) {
-      return {
-        kind: "active_canceling",
-        periodEnd: new Date(meta.current_period_end),
-      };
+    if (meta.cancel_at_period_end === true) {
+      const periodEnd = parseDate(meta.current_period_end);
+      if (periodEnd) {
+        return { kind: "active_canceling", periodEnd };
+      }
     }
     return { kind: "active" };
   }
   if (status === "past_due") return { kind: "past_due" };
   if (status === "canceled") {
-    if (meta.archived_at) {
-      const archivedAt = new Date(meta.archived_at);
+    const archivedAt = parseDate(meta.archived_at);
+    if (archivedAt) {
       const ageMs = Date.now() - archivedAt.getTime();
-      if (ageMs < GRACE_WINDOW_MS) {
+      // Half-open window: [0d, 30d) is grace, day 30 onward is locked.
+      if (ageMs >= 0 && ageMs < GRACE_WINDOW_MS) {
         return { kind: "canceled_grace", archivedAt, mutationsAllowed: false };
       }
     }

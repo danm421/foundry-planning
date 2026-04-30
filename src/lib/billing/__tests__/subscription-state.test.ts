@@ -96,4 +96,35 @@ describe("getSubscriptionState", () => {
       reason: "no_metadata",
     });
   });
+
+  it("returns canceled_locked at exactly 30 days (half-open boundary)", async () => {
+    const archivedAt = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    withMeta({ subscription_status: "canceled", archived_at: archivedAt });
+    expect(await getSubscriptionState()).toEqual({ kind: "canceled_locked" });
+  });
+
+  it("returns canceled_locked when archived_at is in the future (defensive)", async () => {
+    const archivedAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    withMeta({ subscription_status: "canceled", archived_at: archivedAt });
+    expect(await getSubscriptionState()).toEqual({ kind: "canceled_locked" });
+  });
+
+  it("falls through to active when active+cancel_at_period_end has malformed current_period_end", async () => {
+    withMeta({
+      subscription_status: "active",
+      cancel_at_period_end: true,
+      current_period_end: "garbage",
+    });
+    expect(await getSubscriptionState()).toEqual({ kind: "active" });
+  });
+
+  it("falls through to missing when trialing has malformed trial_ends_at", async () => {
+    withMeta({ subscription_status: "trialing", trial_ends_at: "garbage" });
+    expect(await getSubscriptionState()).toEqual({ kind: "missing", reason: "no_metadata" });
+  });
+
+  it("returns canceled_locked when canceled has malformed archived_at", async () => {
+    withMeta({ subscription_status: "canceled", archived_at: "garbage" });
+    expect(await getSubscriptionState()).toEqual({ kind: "canceled_locked" });
+  });
 });
