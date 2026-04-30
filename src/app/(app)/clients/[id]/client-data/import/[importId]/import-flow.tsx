@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardBody, CardHeader } from "@/components/card";
 import UploadZone from "@/components/import/upload-zone";
 import ExtractionProgress from "@/components/import/extraction-progress";
+import ReviewWizard from "@/components/import/review-wizard";
 import type { ImportPayload } from "@/lib/imports/types";
 
 export interface ImportFlowFile {
@@ -141,18 +142,24 @@ function ExtractingStage(props: ImportFlowProps) {
 }
 
 function ReviewStage(props: ImportFlowProps) {
-  const counts = props.payload
-    ? {
-        accounts: props.payload.accounts.length,
-        incomes: props.payload.incomes.length,
-        expenses: props.payload.expenses.length,
-        liabilities: props.payload.liabilities.length,
-        lifePolicies: props.payload.lifePolicies.length,
-        wills: props.payload.wills.length,
-        entities: props.payload.entities.length,
-        dependents: props.payload.dependents.length,
-      }
-    : null;
+  if (!props.payload) {
+    return (
+      <Card>
+        <CardHeader>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-2">
+            Review
+          </h2>
+        </CardHeader>
+        <CardBody>
+          <p className="text-sm text-ink-4">
+            No annotated payload available. Re-run extraction.
+          </p>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  const currentYear = new Date().getFullYear();
 
   return (
     <Card>
@@ -162,26 +169,14 @@ function ReviewStage(props: ImportFlowProps) {
         </h2>
       </CardHeader>
       <CardBody>
-        <p className="text-sm text-ink-3">
-          Review wizard with partial-commit tabs is wired in Task 8.9.
-        </p>
-        {counts ? (
-          <ul className="mt-3 grid grid-cols-2 gap-2 text-sm text-ink-2 md:grid-cols-4">
-            {Object.entries(counts).map(([k, v]) => (
-              <li
-                key={k}
-                className="flex items-baseline gap-2 border-b border-hair pb-1"
-              >
-                <span className="text-xs uppercase tracking-wide text-ink-3">
-                  {k}
-                </span>
-                <span className="font-mono text-base text-ink">{v}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-sm text-ink-4">No payload available yet.</p>
-        )}
+        <ReviewWizard
+          clientId={props.clientId}
+          importId={props.importId}
+          payload={props.payload}
+          perTabCommittedAt={props.perTabCommittedAt}
+          defaultStartYear={currentYear}
+          defaultEndYear={currentYear + 30}
+        />
       </CardBody>
     </Card>
   );
