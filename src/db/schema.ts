@@ -15,10 +15,17 @@ import {
   jsonb,
   index,
   check,
+  customType,
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import type { BracketTier } from "@/lib/tax/types";
+
+const inet = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return "inet";
+  },
+});
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
@@ -1885,5 +1892,31 @@ export const billingEvents = pgTable(
     index("billing_events_errors_idx")
       .on(t.receivedAt)
       .where(sql`result = 'error'`),
+  ],
+);
+
+// Click-through ToS / DPA / Privacy consent log. P2 Privacy evidence.
+// Three sources: stripe_checkout (pre-account), clerk_signup (invite
+// accepted), in_app_modal (re-consent on version bump). firm_id is
+// nullable because Stripe Checkout fires before the Clerk org exists.
+export const tosAcceptances = pgTable(
+  "tos_acceptances",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id").notNull(),
+    firmId: text("firm_id"),
+    tosVersion: text("tos_version").notNull(),
+    dpaVersion: text("dpa_version"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }).defaultNow().notNull(),
+    ipAddress: inet("ip_address"),
+    userAgent: text("user_agent"),
+    acceptanceSource: text("acceptance_source").notNull(),
+  },
+  (t) => [
+    index("tos_acceptances_user_accepted_idx").on(t.userId, t.acceptedAt),
+    check(
+      "tos_acceptances_source_check",
+      sql`${t.acceptanceSource} IN ('stripe_checkout','clerk_signup','in_app_modal')`,
+    ),
   ],
 );
