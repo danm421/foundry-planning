@@ -27,14 +27,29 @@ export async function POST(
 
     const rl = await checkExtractRateLimit(firmId);
     if (!rl.allowed) {
-      const status = rl.reason === "unconfigured" ? 503 : 429;
-      const message =
-        rl.reason === "unconfigured"
-          ? "Rate limiting is not configured — document extraction is disabled."
-          : "Too many extraction requests. Please wait and try again.";
+      let status: number;
+      let message: string;
+      switch (rl.reason) {
+        case "unconfigured":
+          status = 503;
+          message =
+            "Rate limiting is not configured — document extraction is disabled.";
+          break;
+        case "redis_error":
+          status = 503;
+          message =
+            "Rate limiting is temporarily unavailable. Please retry in a moment.";
+          break;
+        case "exceeded":
+          status = 429;
+          message = "Too many extraction requests. Please wait and try again.";
+          break;
+      }
       const headers: Record<string, string> = {};
       if (rl.reset) {
-        headers["Retry-After"] = String(Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000)));
+        headers["Retry-After"] = String(
+          Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000)),
+        );
       }
       return NextResponse.json({ error: message }, { status, headers });
     }
