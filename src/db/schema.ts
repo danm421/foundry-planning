@@ -1743,3 +1743,21 @@ export const auditLog = pgTable(
     index("audit_log_resource_idx").on(t.resourceType, t.resourceId),
   ],
 );
+
+// ── Billing & SOC 2 (Phase 1) ────────────────────────────────────────────────
+
+// Root row per Clerk org. Holds firm-level metadata that doesn't fit on
+// a Stripe object (founder flag, archival lifecycle, DPA acceptance).
+// `firm_id` matches the Clerk org id verbatim — no separate surrogate key,
+// because every other firm-scoped table already keys on Clerk org id.
+export const firms = pgTable("firms", {
+  firmId: text("firm_id").primaryKey(),
+  displayName: text("display_name"),
+  isFounder: boolean("is_founder").default(false).notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  dataRetentionUntil: timestamp("data_retention_until", { withTimezone: true }),
+  purgedAt: timestamp("purged_at", { withTimezone: true }),
+  dpaVersion: text("dpa_version"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
