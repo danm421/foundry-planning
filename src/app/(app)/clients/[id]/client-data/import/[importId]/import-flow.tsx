@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Card, CardBody, CardHeader } from "@/components/card";
 import UploadZone from "@/components/import/upload-zone";
 import ExtractionProgress from "@/components/import/extraction-progress";
@@ -83,6 +84,34 @@ export default function ImportFlow(props: ImportFlowProps) {
 
 function DraftStage(props: ImportFlowProps) {
   const router = useRouter();
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
+
+  const startExtraction = async () => {
+    setExtracting(true);
+    setExtractError(null);
+    try {
+      const res = await fetch(
+        `/api/clients/${props.clientId}/imports/${props.importId}/extract`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: "mini" }),
+        },
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setExtractError(body.error ?? `Extraction failed (${res.status})`);
+        setExtracting(false);
+        return;
+      }
+      router.refresh();
+    } catch (err) {
+      setExtractError(err instanceof Error ? err.message : "Extraction failed");
+      setExtracting(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -95,6 +124,7 @@ function DraftStage(props: ImportFlowProps) {
           clientId={props.clientId}
           importId={props.importId}
           onUploaded={() => router.refresh()}
+          disabled={extracting}
         />
         {props.files.length > 0 ? (
           <div className="mt-4">
@@ -114,6 +144,22 @@ function DraftStage(props: ImportFlowProps) {
                 </li>
               ))}
             </ul>
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <p className="text-xs text-ink-3">
+                Extraction runs synchronously and may take 30–60 seconds per file.
+              </p>
+              <button
+                type="button"
+                onClick={startExtraction}
+                disabled={extracting}
+                className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {extracting ? "Extracting…" : "Start extraction"}
+              </button>
+            </div>
+            {extractError ? (
+              <p className="mt-2 text-xs text-bad">{extractError}</p>
+            ) : null}
           </div>
         ) : null}
       </CardBody>
