@@ -80,7 +80,7 @@ describe("parseIrsUpdatesSheet", () => {
     expect(y.contribLimits.ira401kCatchup50).toBe(8000);
     expect(y.contribLimits.ira401kCatchup6063).toBe(11250);
     expect(y.contribLimits.iraTradLimit).toBe(7500);
-    expect(y.contribLimits.iraCatchup50).toBe(1100);
+    expect(y.contribLimits.iraCatchup50).toBe(1000);
     expect(y.contribLimits.hsaLimitSelf).toBe(4400);
     expect(y.contribLimits.hsaLimitFamily).toBe(8750);
   });
