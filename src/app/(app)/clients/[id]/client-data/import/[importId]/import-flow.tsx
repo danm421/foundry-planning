@@ -120,6 +120,24 @@ function DraftStage(props: ImportFlowProps) {
         setExtracting(false);
         return;
       }
+      // Extraction wrote raw fileResults to payloadJson but the wizard
+      // reads the annotated payload. Chain the matching pass so the
+      // wizard sees data on first render — without this the user lands
+      // on "No annotated payload available. Re-run extraction."
+      const matchRes = await fetch(
+        `/api/clients/${props.clientId}/imports/${props.importId}/match`,
+        { method: "POST" },
+      );
+      if (!matchRes.ok) {
+        const matchBody = (await matchRes.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        setExtractError(
+          matchBody.error ?? `Matching failed (${matchRes.status})`,
+        );
+        setExtracting(false);
+        return;
+      }
       router.refresh();
     } catch (err) {
       setExtractError(err instanceof Error ? err.message : "Extraction failed");
