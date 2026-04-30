@@ -17,18 +17,16 @@ import {
     type FileExtraction,
 } from "@/lib/imports/merge";
 import { runMatchingPass } from "@/lib/imports/match";
-import type { ImportPayload, MatchKind } from "@/lib/imports/types";
-import type { ExtractionResult } from "@/lib/extraction/types";
+import type {
+    ImportPayload,
+    ImportPayloadJson,
+    MatchKind,
+} from "@/lib/imports/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 type Params = { params: Promise<{ id: string; importId: string }> };
-
-interface PayloadJsonShape {
-    fileResults?: Record<string, ExtractionResult>;
-    payload?: ImportPayload;
-}
 
 export async function POST(_request: NextRequest, { params }: Params) {
     try {
@@ -63,7 +61,7 @@ export async function POST(_request: NextRequest, { params }: Params) {
         });
 
         const fileResults =
-            (imp.payloadJson as PayloadJsonShape)?.fileResults ?? {};
+            (imp.payloadJson as ImportPayloadJson)?.fileResults ?? {};
         const fileExtractions: FileExtraction[] = Object.entries(fileResults).map(
             ([fileId, result]) => ({ fileId, result })
         );

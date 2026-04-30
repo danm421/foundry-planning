@@ -9,6 +9,7 @@ import type {
   ExtractedPrimaryFamilyMember,
   ExtractedSpouseFamilyMember,
   ExtractedWill,
+  ExtractionResult,
 } from "@/lib/extraction/types";
 
 export type Provenance = {
@@ -52,6 +53,26 @@ export type ImportPayload = {
   entities: Annotated<ExtractedEntity>[];
   warnings: string[];
 };
+
+/**
+ * Shape persisted to `client_imports.payloadJson`. `fileResults` is the
+ * source of truth raw per-file extraction; `payload` is the post-merge,
+ * post-match shape the review wizard reads. Defined here so the match
+ * route, commit route, and commit-time loaders all agree on field names.
+ */
+export interface ImportPayloadJson {
+  fileResults?: Record<string, ExtractionResult>;
+  payload?: ImportPayload;
+}
+
+/**
+ * Narrow an annotated row to the existingId for the "exact" match kind.
+ * Returns null for "fuzzy" or "new" — callers typically skip those rows
+ * earlier and treat null as "no canonical id to update".
+ */
+export function getExistingId<T>(row: Annotated<T>): string | null {
+  return row.match?.kind === "exact" ? row.match.existingId : null;
+}
 
 export function emptyImportPayload(): ImportPayload {
   return {
