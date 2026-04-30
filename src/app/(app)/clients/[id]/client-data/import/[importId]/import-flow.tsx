@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Card, CardBody, CardHeader } from "@/components/card";
+import UploadZone from "@/components/import/upload-zone";
 import type { ImportPayload } from "@/lib/imports/types";
 
 export interface ImportFlowFile {
@@ -78,6 +80,7 @@ export default function ImportFlow(props: ImportFlowProps) {
 }
 
 function DraftStage(props: ImportFlowProps) {
+  const router = useRouter();
   return (
     <Card>
       <CardHeader>
@@ -86,24 +89,30 @@ function DraftStage(props: ImportFlowProps) {
         </h2>
       </CardHeader>
       <CardBody>
-        <p className="text-sm text-ink-3">
-          Upload zone is wired in Task 8.4. {props.files.length} file
-          {props.files.length === 1 ? "" : "s"} uploaded so far.
-        </p>
+        <UploadZone
+          clientId={props.clientId}
+          importId={props.importId}
+          onUploaded={() => router.refresh()}
+        />
         {props.files.length > 0 ? (
-          <ul className="mt-3 flex flex-col gap-1 text-sm text-ink-2">
-            {props.files.map((f) => (
-              <li
-                key={f.id}
-                className="flex items-center justify-between border-b border-hair py-1 last:border-0"
-              >
-                <span className="truncate">{f.originalFilename}</span>
-                <span className="font-mono text-xs text-ink-4">
-                  {f.documentType}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-3">
+              Uploaded ({props.files.length})
+            </h3>
+            <ul className="mt-2 flex flex-col gap-1 text-sm text-ink-2">
+              {props.files.map((f) => (
+                <li
+                  key={f.id}
+                  className="flex items-center justify-between border-b border-hair py-1 last:border-0"
+                >
+                  <span className="truncate">{f.originalFilename}</span>
+                  <span className="font-mono text-xs text-ink-4">
+                    {f.documentType}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
       </CardBody>
     </Card>

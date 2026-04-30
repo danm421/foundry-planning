@@ -1,17 +1,33 @@
 "use client";
 
-import { useCallback, useState, useRef, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABELS } from "@/lib/extraction/types";
 import type { DocumentType } from "@/lib/extraction/types";
 
-export interface QueuedFile {
+export type UploadState = "queued" | "uploading" | "uploaded" | "failed";
+
+export interface UploadingFile {
   id: string;
   file: File;
-  detectedType: DocumentType | "auto";
+  documentType: DocumentType | "auto";
+  state: UploadState;
+  /** 0–100. Browsers don't expose download progress for fetch, so XHR is used. */
+  progress: number;
+  errorMessage?: string;
+  serverFileId?: string;
+  deduped?: boolean;
+}
+
+export interface UploadedFileInfo {
+  serverFileId: string;
+  deduped: boolean;
 }
 
 interface UploadZoneProps {
-  onFilesQueued: (files: QueuedFile[]) => void;
+  clientId: string;
+  importId: string;
+  /** Called after each successful upload — parent typically router.refresh()es. */
+  onUploaded?: (info: UploadedFileInfo) => void;
   disabled?: boolean;
 }
 
@@ -23,37 +39,151 @@ function detectTypeFromExtension(name: string): DocumentType | "auto" {
   return "auto";
 }
 
-export default function UploadZone({ onFilesQueued, disabled }: UploadZoneProps) {
+export default function UploadZone({
+  clientId,
+  importId,
+  onUploaded,
+  disabled,
+}: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [files, setFiles] = useState<QueuedFile[]>([]);
+  const [files, setFiles] = useState<UploadingFile[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Sync parent whenever files change — avoids setState-during-render
+  // Pin the latest onUploaded callback in a ref so the upload XHR closure
+  // can read it without re-running startUpload's identity (which would
+  // otherwise restart in-flight uploads if the parent re-renders).
+  const onUploadedRef = useRef(onUploaded);
   useEffect(() => {
-    onFilesQueued(files);
-  }, [files, onFilesQueued]);
+    onUploadedRef.current = onUploaded;
+  }, [onUploaded]);
 
-  const addFiles = useCallback((fileList: FileList | File[]) => {
-    const newFiles: QueuedFile[] = Array.from(fileList).map((file) => ({
-      id: crypto.randomUUID(),
-      file,
-      detectedType: detectTypeFromExtension(file.name),
-    }));
-    setFiles((prev) => [...prev, ...newFiles]);
-  }, []);
+  const updateFile = useCallback(
+    (id: string, patch: Partial<UploadingFile>) => {
+      setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+    },
+    [],
+  );
+
+  const startUpload = useCallback(
+    (target: UploadingFile) => {
+      const xhr = new XMLHttpRequest();
+      const url = `/api/clients/${clientId}/imports/${importId}/files`;
+      xhr.open("POST", url);
+      xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
+        updateFile(target.id, {
+          progress: Math.round((e.loaded / e.total) * 100),
+        });
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const body = JSON.parse(xhr.responseText) as {
+              file: { id: string };
+              deduped: boolean;
+            };
+            updateFile(target.id, {
+              state: "uploaded",
+              progress: 100,
+              serverFileId: body.file.id,
+              deduped: body.deduped,
+            });
+            onUploadedRef.current?.({
+              serverFileId: body.file.id,
+              deduped: body.deduped,
+            });
+          } catch {
+            updateFile(target.id, {
+              state: "failed",
+              errorMessage: "Bad response from server",
+            });
+          }
+          return;
+        }
+        let message = `Upload failed (${xhr.status})`;
+        try {
+          const body = JSON.parse(xhr.responseText) as { error?: string };
+          if (body.error) message = body.error;
+        } catch {
+          // keep the generic status-code message
+        }
+        updateFile(target.id, { state: "failed", errorMessage: message });
+      };
+      xhr.onerror = () => {
+        updateFile(target.id, {
+          state: "failed",
+          errorMessage: "Network error",
+        });
+      };
+
+      const fd = new FormData();
+      fd.append("file", target.file);
+      fd.append("documentType", target.documentType);
+      updateFile(target.id, { state: "uploading", progress: 0 });
+      xhr.send(fd);
+    },
+    [clientId, importId, updateFile],
+  );
+
+  const addFiles = useCallback(
+    (fileList: FileList | File[]) => {
+      const newFiles: UploadingFile[] = Array.from(fileList).map((file) => ({
+        id: crypto.randomUUID(),
+        file,
+        documentType: detectTypeFromExtension(file.name),
+        state: "queued",
+        progress: 0,
+      }));
+      if (newFiles.length === 0) return;
+      setFiles((prev) => [...prev, ...newFiles]);
+      // Kick off uploads on the next tick so the queued state renders first.
+      for (const f of newFiles) {
+        setTimeout(() => startUpload(f), 0);
+      }
+    },
+    [startUpload],
+  );
+
+  const retry = useCallback(
+    (id: string) => {
+      const target = files.find((f) => f.id === id);
+      if (!target) return;
+      const refreshed: UploadingFile = {
+        ...target,
+        state: "queued",
+        progress: 0,
+        errorMessage: undefined,
+      };
+      updateFile(id, { state: "queued", progress: 0, errorMessage: undefined });
+      setTimeout(() => startUpload(refreshed), 0);
+    },
+    [files, startUpload, updateFile],
+  );
 
   const removeFile = useCallback((id: string) => {
     setFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
-  const updateFileType = useCallback((id: string, type: DocumentType | "auto") => {
-    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, detectedType: type } : f)));
-  }, []);
+  const updateFileType = useCallback(
+    (id: string, type: DocumentType | "auto") => {
+      // Picker is only editable while the file is still queued — once the
+      // POST is in flight, the server has already accepted the type.
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === id && f.state === "queued" ? { ...f, documentType: type } : f,
+        ),
+      );
+    },
+    [],
+  );
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    if (!disabled) setIsDragging(true);
-  }, [disabled]);
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      if (!disabled) setIsDragging(true);
+    },
+    [disabled],
+  );
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -68,7 +198,7 @@ export default function UploadZone({ onFilesQueued, disabled }: UploadZoneProps)
         addFiles(e.dataTransfer.files);
       }
     },
-    [disabled, addFiles]
+    [disabled, addFiles],
   );
 
   const handleInputChange = useCallback(
@@ -78,7 +208,7 @@ export default function UploadZone({ onFilesQueued, disabled }: UploadZoneProps)
         e.target.value = "";
       }
     },
-    [addFiles]
+    [addFiles],
   );
 
   return (
@@ -116,45 +246,110 @@ export default function UploadZone({ onFilesQueued, disabled }: UploadZoneProps)
 
       {files.length > 0 && (
         <div className="space-y-2">
-          {files.map((qf) => (
-            <div
-              key={qf.id}
-              className="flex items-center gap-3 rounded-md border border-gray-700 bg-gray-900 px-3 py-2"
-            >
-              <FileIcon />
-              <span className="min-w-0 flex-1 truncate text-sm text-gray-200">
-                {qf.file.name}
-              </span>
-              <select
-                value={qf.detectedType}
-                onChange={(e) => updateFileType(qf.id, e.target.value as DocumentType | "auto")}
-                disabled={disabled}
-                className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 focus:border-accent focus:outline-none"
-              >
-                <option value="auto">Auto-detect</option>
-                {DOCUMENT_TYPES.map((dt) => (
-                  <option key={dt} value={dt}>
-                    {DOCUMENT_TYPE_LABELS[dt]}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removeFile(qf.id);
-                }}
-                disabled={disabled}
-                className="text-gray-400 hover:text-red-400 disabled:opacity-50"
-                title="Remove file"
-              >
-                <XIcon />
-              </button>
-            </div>
+          {files.map((f) => (
+            <UploadRow
+              key={f.id}
+              file={f}
+              onRetry={() => retry(f.id)}
+              onRemove={() => removeFile(f.id)}
+              onTypeChange={(t) => updateFileType(f.id, t)}
+              disabled={disabled}
+            />
           ))}
         </div>
       )}
     </div>
   );
+}
+
+interface UploadRowProps {
+  file: UploadingFile;
+  onRetry: () => void;
+  onRemove: () => void;
+  onTypeChange: (t: DocumentType | "auto") => void;
+  disabled?: boolean;
+}
+
+function UploadRow({ file, onRetry, onRemove, onTypeChange, disabled }: UploadRowProps) {
+  const pickerDisabled = disabled || file.state !== "queued";
+
+  return (
+    <div className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2">
+      <div className="flex items-center gap-3">
+        <FileIcon />
+        <span className="min-w-0 flex-1 truncate text-sm text-gray-200">
+          {file.file.name}
+        </span>
+        <select
+          value={file.documentType}
+          onChange={(e) => onTypeChange(e.target.value as DocumentType | "auto")}
+          disabled={pickerDisabled}
+          className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 focus:border-accent focus:outline-none disabled:opacity-60"
+        >
+          <option value="auto">Auto-detect</option>
+          {DOCUMENT_TYPES.map((dt) => (
+            <option key={dt} value={dt}>
+              {DOCUMENT_TYPE_LABELS[dt]}
+            </option>
+          ))}
+        </select>
+        <StateBadge file={file} />
+        {file.state === "failed" && (
+          <button
+            onClick={onRetry}
+            disabled={disabled}
+            className="text-xs text-accent underline hover:text-accent-ink disabled:opacity-50"
+          >
+            Retry
+          </button>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          disabled={disabled}
+          className="text-gray-400 hover:text-red-400 disabled:opacity-50"
+          title="Remove file"
+        >
+          <XIcon />
+        </button>
+      </div>
+
+      {file.state === "uploading" && (
+        <div className="mt-2 h-1 w-full overflow-hidden rounded bg-gray-800">
+          <div
+            className="h-full bg-accent transition-all"
+            style={{ width: `${file.progress}%` }}
+          />
+        </div>
+      )}
+      {file.state === "failed" && file.errorMessage && (
+        <p className="mt-1 text-xs text-red-400">{file.errorMessage}</p>
+      )}
+    </div>
+  );
+}
+
+function StateBadge({ file }: { file: UploadingFile }) {
+  switch (file.state) {
+    case "queued":
+      return (
+        <span className="text-xs text-gray-400">Queued</span>
+      );
+    case "uploading":
+      return (
+        <span className="text-xs text-accent">Uploading… {file.progress}%</span>
+      );
+    case "uploaded":
+      return (
+        <span className="text-xs text-good">
+          ✓ {file.deduped ? "Deduped" : "Uploaded"}
+        </span>
+      );
+    case "failed":
+      return <span className="text-xs text-red-400">Failed</span>;
+  }
 }
 
 function UploadIcon() {
