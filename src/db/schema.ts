@@ -1860,3 +1860,30 @@ export const invoices = pgTable(
   },
   (t) => [index("invoices_firm_paid_idx").on(t.firmId, t.paidAt)],
 );
+
+// Webhook idempotency log + processing audit. UNIQUE on
+// `stripe_event_id` is THE idempotency key — duplicate deliveries
+// short-circuit at INSERT time. `payload_redacted` stores the
+// non-PII event body for 90 days (cron nulls it after); the row
+// itself is kept indefinitely for idempotency.
+export const billingEvents = pgTable(
+  "billing_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stripeEventId: text("stripe_event_id").notNull().unique(),
+    eventType: text("event_type").notNull(),
+    firmId: text("firm_id"),
+    receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    processingDurationMs: integer("processing_duration_ms"),
+    result: text("result"), // 'ok' | 'error' | 'ignored' | 'skipped_duplicate' | null while pending
+    errorMessage: text("error_message"),
+    payloadRedacted: jsonb("payload_redacted"),
+  },
+  (t) => [
+    index("billing_events_firm_received_idx").on(t.firmId, t.receivedAt),
+    index("billing_events_errors_idx")
+      .on(t.receivedAt)
+      .where(sql`result = 'error'`),
+  ],
+);
