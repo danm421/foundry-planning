@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import {
-  clientImports,
-  clientImportFiles,
-  clientImportExtractions,
-  clients,
-  scenarios,
-} from "@/db/schema";
+import { clientImports, clients, scenarios } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { checkImportRateLimit } from "@/lib/rate-limit";
 import { recordAudit } from "@/lib/audit";
+import { listClientImports } from "@/lib/imports/list";
 
 export const dynamic = "force-dynamic";
 
@@ -239,93 +234,14 @@ export async function GET(request: NextRequest, { params }: Params) {
     const explicitDiscardedRequested =
       statusFilter?.includes("discarded") ?? false;
 
-    const where = and(
-      eq(clientImports.clientId, clientId),
-      eq(clientImports.orgId, firmId),
-      statusFilter ? inArray(clientImports.status, statusFilter) : undefined,
-    );
-
-    const rows = await db
-      .select()
-      .from(clientImports)
-      .where(where)
-      .orderBy(desc(clientImports.updatedAt));
-
-    // Counts only over non-empty result set. We bypass the queries
-    // entirely when there's nothing to join against — saves a round-trip
-    // for clients with no imports.
-    const importIds = rows.map((r) => r.id);
-    const fileCountMap = new Map<string, number>();
-    const extractionCountMap = new Map<string, number>();
-
-    if (importIds.length > 0) {
-      const fileCounts = await db
-        .select({
-          importId: clientImportFiles.importId,
-          fileCount: count(clientImportFiles.id),
-        })
-        .from(clientImportFiles)
-        .where(
-          and(
-            inArray(clientImportFiles.importId, importIds),
-            isNull(clientImportFiles.deletedAt),
-          ),
-        )
-        .groupBy(clientImportFiles.importId);
-
-      for (const fc of fileCounts) {
-        fileCountMap.set(fc.importId, Number(fc.fileCount));
-      }
-
-      // Extractions live on files; group by file.import_id via join.
-      const extractionCounts = await db
-        .select({
-          importId: clientImportFiles.importId,
-          extractionCount: count(clientImportExtractions.id),
-        })
-        .from(clientImportExtractions)
-        .innerJoin(
-          clientImportFiles,
-          eq(clientImportExtractions.fileId, clientImportFiles.id),
-        )
-        .where(
-          and(
-            inArray(clientImportFiles.importId, importIds),
-            isNull(clientImportFiles.deletedAt),
-          ),
-        )
-        .groupBy(clientImportFiles.importId);
-
-      for (const ec of extractionCounts) {
-        extractionCountMap.set(ec.importId, Number(ec.extractionCount));
-      }
-    }
-
-    const decorate = (r: (typeof rows)[number]) => ({
-      ...r,
-      fileCount: fileCountMap.get(r.id) ?? 0,
-      extractionCount: extractionCountMap.get(r.id) ?? 0,
+    const result = await listClientImports({
+      clientId,
+      firmId,
+      statusFilter,
+      includeDiscarded: explicitDiscardedRequested,
     });
 
-    const inProgress = rows
-      .filter(
-        (r) =>
-          r.status === "draft" ||
-          r.status === "extracting" ||
-          r.status === "review",
-      )
-      .map(decorate);
-    const completed = rows
-      .filter((r) => r.status === "committed")
-      .map(decorate);
-    // Default GET excludes discarded rows; only return them when the
-    // caller explicitly asked for them via ?status=discarded. Without
-    // this gate, soft-deleted imports would leak into the default list.
-    const discarded = explicitDiscardedRequested
-      ? rows.filter((r) => r.status === "discarded").map(decorate)
-      : [];
-
-    return NextResponse.json({ inProgress, completed, discarded });
+    return NextResponse.json(result);
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
