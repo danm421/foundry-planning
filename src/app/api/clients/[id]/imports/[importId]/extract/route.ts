@@ -18,6 +18,7 @@ import { recordAudit } from "@/lib/audit";
 import { extractDocument } from "@/lib/extraction/extract";
 import type { DocumentType, ExtractionResult } from "@/lib/extraction/types";
 import type { UploadKind } from "@/lib/extraction/validate-upload";
+import { downloadImportFile } from "@/lib/imports/blob";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -26,13 +27,6 @@ type Params = { params: Promise<{ id: string; importId: string }> };
 
 interface BodyArgs {
     model?: "mini" | "full";
-}
-
-async function fetchBlob(url: string): Promise<Buffer | null> {
-    const resp = await fetch(url);
-    if (!resp.ok) return null;
-    const arr = await resp.arrayBuffer();
-    return Buffer.from(arr);
 }
 
 export async function POST(request: NextRequest, { params }: Params) {
@@ -139,7 +133,7 @@ export async function POST(request: NextRequest, { params }: Params) {
             });
 
             try {
-                const buffer = await fetchBlob(file.blobUrl);
+                const buffer = await downloadImportFile(file.blobUrl);
                 if (!buffer) {
                     throw new Error("Blob fetch failed");
                 }
@@ -183,6 +177,10 @@ export async function POST(request: NextRequest, { params }: Params) {
                     err instanceof Error
                         ? err.message.slice(0, 500)
                         : "unknown extraction error";
+                console.error(
+                    `[import-extract] file ${file.id} (${file.originalFilename}) failed:`,
+                    safeMessage,
+                );
                 await db
                     .update(clientImportExtractions)
                     .set({

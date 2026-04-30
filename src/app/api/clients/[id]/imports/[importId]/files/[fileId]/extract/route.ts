@@ -19,6 +19,7 @@ import { extractDocument } from "@/lib/extraction/extract";
 import type { DocumentType, ExtractionResult } from "@/lib/extraction/types";
 import type { UploadKind } from "@/lib/extraction/validate-upload";
 import { DOCUMENT_TYPES } from "@/lib/extraction/types";
+import { downloadImportFile } from "@/lib/imports/blob";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -135,11 +136,10 @@ export async function POST(request: NextRequest, { params }: Params) {
         });
 
         try {
-            const upstream = await fetch(file.blobUrl);
-            if (!upstream.ok) {
+            const buffer = await downloadImportFile(file.blobUrl);
+            if (!buffer) {
                 throw new Error("Blob fetch failed");
             }
-            const buffer = Buffer.from(await upstream.arrayBuffer());
 
             const result = await extractDocument(
                 buffer,
@@ -196,6 +196,10 @@ export async function POST(request: NextRequest, { params }: Params) {
                 err instanceof Error
                     ? err.message.slice(0, 500)
                     : "unknown extraction error";
+            console.error(
+                `[import-extract] file ${fileId} (${file.originalFilename}) failed:`,
+                safeMessage,
+            );
             await db
                 .update(clientImportExtractions)
                 .set({

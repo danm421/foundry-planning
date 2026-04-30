@@ -105,6 +105,21 @@ function DraftStage(props: ImportFlowProps) {
         setExtracting(false);
         return;
       }
+      // Route is synchronous: it returns { succeeded, failed, status }.
+      // If status stayed "draft", every file failed — reset the button
+      // and surface the count so the user knows to check the server log.
+      const body = (await res.json().catch(() => ({}))) as {
+        succeeded?: number;
+        failed?: number;
+        status?: string;
+      };
+      if (body.status === "draft") {
+        setExtractError(
+          `All ${body.failed ?? props.files.length} file(s) failed to extract. Check the dev server log for details.`,
+        );
+        setExtracting(false);
+        return;
+      }
       router.refresh();
     } catch (err) {
       setExtractError(err instanceof Error ? err.message : "Extraction failed");

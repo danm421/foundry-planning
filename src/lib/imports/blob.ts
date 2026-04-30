@@ -1,4 +1,4 @@
-import { put, del } from "@vercel/blob";
+import { put, del, get } from "@vercel/blob";
 
 const SAFE_FILENAME_RE = /[^A-Za-z0-9._-]/g;
 const DOT_RUN_RE = /\.{2,}/g;
@@ -31,4 +31,22 @@ export async function uploadImportFile(
 
 export async function deleteImportFile(pathname: string): Promise<void> {
   await del(pathname);
+}
+
+/**
+ * Read a private import blob into a Buffer for server-side processing.
+ * Plain `fetch(url)` against a private blob URL 401s — `get()` from
+ * `@vercel/blob` authenticates via `BLOB_READ_WRITE_TOKEN` and returns
+ * a stream we drain into a Buffer here so callers don't deal with
+ * stream plumbing. Returns null on any non-200 (missing/expired/forbidden).
+ */
+export async function downloadImportFile(
+  urlOrPathname: string,
+): Promise<Buffer | null> {
+  const result = await get(urlOrPathname, { access: "private" });
+  if (!result || result.statusCode !== 200 || !result.stream) {
+    return null;
+  }
+  const arrayBuffer = await new Response(result.stream).arrayBuffer();
+  return Buffer.from(arrayBuffer);
 }
