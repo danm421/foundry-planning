@@ -200,6 +200,9 @@ export interface ExtractionResult {
     expenses: ExtractedExpense[];
     liabilities: ExtractedLiability[];
     entities: ExtractedEntity[];
+    family?: ExtractedFamilyPayload;
+    lifePolicies: ExtractedLifePolicy[];
+    wills: ExtractedWill[];
   };
   warnings: string[];
   promptVersion: string;

@@ -47,7 +47,15 @@ function promptVersionFor(documentType: DocumentType): string {
 }
 
 function emptyExtracted(): ExtractionResult["extracted"] {
-    return { accounts: [], incomes: [], expenses: [], liabilities: [], entities: [] };
+    return {
+        accounts: [],
+        incomes: [],
+        expenses: [],
+        liabilities: [],
+        entities: [],
+        lifePolicies: [],
+        wills: [],
+    };
 }
 
 /**
@@ -136,7 +144,7 @@ export async function extractDocument(
         return {
             documentType: fallbackType,
             fileName,
-            extracted: { accounts: [], incomes: [], expenses: [], liabilities: [], entities: [] },
+            extracted: emptyExtracted(),
             warnings,
             promptVersion: promptVersionFor(fallbackType),
         };
@@ -235,12 +243,15 @@ export async function extractDocument(
     // Cast back to the domain types here. The zod validator guarantees
      // each list is an array of plain objects with at most the capped
      // length; individual per-field typing is the downstream UI's job.
-    const extracted = {
+    const extracted: ExtractionResult["extracted"] = {
         accounts: (Array.isArray(safe.accounts) ? safe.accounts : []) as unknown as ExtractionResult["extracted"]["accounts"],
         incomes: (Array.isArray(safe.incomes) ? safe.incomes : []) as unknown as ExtractionResult["extracted"]["incomes"],
         expenses: (Array.isArray(safe.expenses) ? safe.expenses : []) as unknown as ExtractionResult["extracted"]["expenses"],
         liabilities: (Array.isArray(safe.liabilities) ? safe.liabilities : []) as unknown as ExtractionResult["extracted"]["liabilities"],
         entities: (Array.isArray(safe.entities) ? safe.entities : []) as unknown as ExtractionResult["extracted"]["entities"],
+        lifePolicies: (Array.isArray(safe.lifePolicies) ? safe.lifePolicies : []) as unknown as ExtractionResult["extracted"]["lifePolicies"],
+        wills: (Array.isArray(safe.wills) ? safe.wills : []) as unknown as ExtractionResult["extracted"]["wills"],
+        family: (safe.family ?? undefined) as ExtractionResult["extracted"]["family"],
     };
 
     if (
@@ -248,7 +259,10 @@ export async function extractDocument(
         extracted.incomes.length === 0 &&
         extracted.expenses.length === 0 &&
         extracted.liabilities.length === 0 &&
-        extracted.entities.length === 0
+        extracted.entities.length === 0 &&
+        extracted.lifePolicies.length === 0 &&
+        extracted.wills.length === 0 &&
+        !extracted.family
     ) {
         warnings.push("No data could be extracted from this document. Try a different document type or the Detailed model.");
     }
