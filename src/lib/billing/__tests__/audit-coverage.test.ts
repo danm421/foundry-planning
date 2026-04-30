@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, globSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as path from "node:path";
@@ -15,13 +15,16 @@ const repoRoot = resolve(
 
 describe("audit-coverage", () => {
   it("soc2: CC7.2 every webhook handler imports recordAudit", () => {
-    const files = globSync("src/lib/billing/webhook-handlers/*.ts", {
-      cwd: repoRoot,
-      absolute: false,
-    });
-    const handlers = files.filter((f) => !f.endsWith("index.ts"));
+    const handlerDir = path.join(
+      repoRoot,
+      "src/lib/billing/webhook-handlers",
+    );
+    const handlers = readdirSync(handlerDir).filter(
+      (f) => f.endsWith(".ts") && f !== "index.ts",
+    );
     const noAudit = handlers.filter(
-      (f) => !readFileSync(path.join(repoRoot, f), "utf8").includes("recordAudit"),
+      (f) =>
+        !readFileSync(path.join(handlerDir, f), "utf8").includes("recordAudit"),
     );
     expect(
       noAudit,

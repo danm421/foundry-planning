@@ -1,8 +1,19 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, globSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as path from "node:path";
+
+function walkRoutes(dir: string, root: string, out: string[]): void {
+  for (const entry of readdirSync(dir)) {
+    const full = path.join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      walkRoutes(full, root, out);
+    } else if (entry === "route.ts") {
+      out.push(path.relative(root, full).replace(/\\/g, "/"));
+    }
+  }
+}
 
 /**
  * Allowlist: routes that intentionally lack requireActiveSubscription.
@@ -158,14 +169,11 @@ const repoRoot = resolve(
 
 describe("active-subscription lint", () => {
   it("every mutation route either calls requireActiveSubscription or is allowlisted", () => {
-    const files = globSync("src/app/api/**/route.ts", {
-      cwd: repoRoot,
-      absolute: false,
-    });
+    const files: string[] = [];
+    walkRoutes(path.join(repoRoot, "src/app/api"), repoRoot, files);
     const violations: string[] = [];
 
-    for (const f of files) {
-      const rel = f.replace(/\\/g, "/");
+    for (const rel of files) {
       const body = readFileSync(path.join(repoRoot, rel), "utf8");
       if (!MUTATION_VERBS.test(body)) continue;
       if (ALLOWLIST[rel]) continue;
