@@ -53,7 +53,7 @@ describe("POST /api/webhooks/stripe", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 400 on signature verification failure", async () => {
+  it("soc2: CC6.6 unsigned Stripe webhook returns 400 with no DB write", async () => {
     mockConstructEvent.mockImplementation(() => {
       throw new Error("bad sig");
     });
@@ -61,7 +61,7 @@ describe("POST /api/webhooks/stripe", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 200 skipped_duplicate on idempotency hit", async () => {
+  it("soc2: CC7.5 duplicate stripe_event_id returns skipped_duplicate, no work", async () => {
     mockConstructEvent.mockReturnValue({
       id: "evt_dup",
       type: "customer.subscription.updated",
