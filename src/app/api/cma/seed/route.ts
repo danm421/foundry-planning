@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireOrgId } from "@/lib/db-helpers";
-import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
+import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import { seedCmaForFirm } from "@/lib/cma-seed-runner";
 
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 // the team can investigate.
 export async function POST() {
   try {
-    await requireOrgAdmin();
+    await requireOrgAdminOrOwner();
     const firmId = await requireOrgId();
 
     const result = await seedCmaForFirm(firmId);
