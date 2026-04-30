@@ -1792,3 +1792,42 @@ export const subscriptions = pgTable(
       .where(sql`status IN ('trialing','active','past_due','unpaid')`),
   ],
 );
+
+// Stripe subscription items — one per seat line + one per add-on.
+// `kind` distinguishes seats (quantity tracks org membership) from
+// add-ons (quantity is always 1, presence = entitlement).
+// `removed_at` is set when an add-on is toggled off; row stays
+// for history and to satisfy SOC 2 CC7.2 auditability.
+export const subscriptionItems = pgTable(
+  "subscription_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    subscriptionId: uuid("subscription_id")
+      .notNull()
+      .references(() => subscriptions.id, { onDelete: "cascade" }),
+    firmId: text("firm_id")
+      .notNull()
+      .references(() => firms.firmId, { onDelete: "cascade" }),
+    stripeItemId: text("stripe_item_id").notNull().unique(),
+    stripePriceId: text("stripe_price_id").notNull(),
+    kind: text("kind").notNull(), // 'seat' | 'addon'
+    addonKey: text("addon_key"),
+    quantity: integer("quantity").default(1).notNull(),
+    unitAmount: integer("unit_amount").notNull(), // cents
+    currency: text("currency").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("subscription_items_firm_kind_idx").on(t.firmId, t.kind),
+    check(
+      "subscription_items_kind_check",
+      sql`${t.kind} IN ('seat','addon')`,
+    ),
+    check(
+      "subscription_items_addon_key_when_addon",
+      sql`(${t.kind} = 'addon' AND ${t.addonKey} IS NOT NULL) OR (${t.kind} = 'seat' AND ${t.addonKey} IS NULL)`,
+    ),
+  ],
+);
