@@ -1,6 +1,12 @@
 "use client";
 
 import type { ExtractedLiability } from "@/lib/extraction/types";
+import { CurrencyInput } from "@/components/currency-input";
+import { PercentInput } from "@/components/percent-input";
+
+// Layered on top of CurrencyInput/PercentInput's own inputClassName baseline
+// to flag fields the AI didn't extract.
+const TINT_EMPTY = "bg-amber-900/20 border-amber-600/50";
 
 interface ReviewStepLiabilitiesProps {
   liabilities: ExtractedLiability[];
@@ -67,32 +73,28 @@ export default function ReviewStepLiabilities({
               </div>
               <div>
                 <label className="mb-1 block text-xs text-gray-300">Balance</label>
-                <input
-                  type="number"
-                  value={liability.balance ?? ""}
-                  onChange={(e) => updateField(i, "balance", e.target.value ? Number(e.target.value) : undefined)}
-                  className={liability.balance != null ? INPUT_CLASS : EMPTY_CLASS}
+                <CurrencyInput
+                  value={liability.balance != null ? String(liability.balance) : ""}
+                  onChange={(raw) => updateField(i, "balance", raw === "" ? undefined : Number(raw))}
+                  className={liability.balance != null ? "" : TINT_EMPTY}
                   placeholder="0"
                 />
               </div>
               <div>
                 <label className="mb-1 block text-xs text-gray-300">Interest Rate</label>
-                <input
-                  type="number"
-                  step="0.001"
-                  value={liability.interestRate ?? ""}
-                  onChange={(e) => updateField(i, "interestRate", e.target.value ? Number(e.target.value) : undefined)}
-                  className={EMPTY_CLASS}
-                  placeholder="0.05"
+                <PercentInput
+                  value={liability.interestRate != null ? (liability.interestRate * 100).toFixed(3) : ""}
+                  onChange={(raw) => updateField(i, "interestRate", raw === "" ? undefined : Number(raw) / 100)}
+                  className={liability.interestRate != null ? "" : TINT_EMPTY}
+                  placeholder="0"
                 />
               </div>
               <div>
                 <label className="mb-1 block text-xs text-gray-300">Monthly Payment</label>
-                <input
-                  type="number"
-                  value={liability.monthlyPayment ?? ""}
-                  onChange={(e) => updateField(i, "monthlyPayment", e.target.value ? Number(e.target.value) : undefined)}
-                  className={EMPTY_CLASS}
+                <CurrencyInput
+                  value={liability.monthlyPayment != null ? String(liability.monthlyPayment) : ""}
+                  onChange={(raw) => updateField(i, "monthlyPayment", raw === "" ? undefined : Number(raw))}
+                  className={liability.monthlyPayment != null ? "" : TINT_EMPTY}
                   placeholder="0"
                 />
               </div>

@@ -2,8 +2,12 @@
 
 import type { ExtractedLifePolicy, LifePolicyType } from "@/lib/extraction/types";
 import type { MatchAnnotation } from "@/lib/imports/types";
+import { CurrencyInput } from "@/components/currency-input";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
+
+// Layered on top of CurrencyInput's inputClassName baseline to flag empty fields.
+const TINT_EMPTY = "bg-amber-900/20 border-amber-600/50";
 
 const POLICY_TYPE_OPTIONS: { value: LifePolicyType; label: string }[] = [
   { value: "term", label: "Term" },
@@ -153,21 +157,18 @@ export default function ReviewStepInsurance({
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-gray-300">Face value</label>
-                  <input
-                    type="number"
-                    value={policy.faceValue}
-                    onChange={(e) => updateField(i, "faceValue", Number(e.target.value || 0))}
-                    className={policy.faceValue > 0 ? INPUT_CLASS : EMPTY_CLASS}
+                  <CurrencyInput
+                    value={policy.faceValue > 0 ? String(policy.faceValue) : ""}
+                    onChange={(raw) => updateField(i, "faceValue", raw === "" ? 0 : Number(raw))}
+                    className={policy.faceValue > 0 ? "" : TINT_EMPTY}
                     placeholder="0"
                   />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-gray-300">Premium</label>
-                  <input
-                    type="number"
-                    value={policy.premiumAmount ?? ""}
-                    onChange={(e) => updateField(i, "premiumAmount", e.target.value ? Number(e.target.value) : undefined)}
-                    className={INPUT_CLASS}
+                  <CurrencyInput
+                    value={policy.premiumAmount != null ? String(policy.premiumAmount) : ""}
+                    onChange={(raw) => updateField(i, "premiumAmount", raw === "" ? undefined : Number(raw))}
                     placeholder="Annual"
                   />
                 </div>

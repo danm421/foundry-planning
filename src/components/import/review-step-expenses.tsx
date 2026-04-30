@@ -1,6 +1,12 @@
 "use client";
 
 import type { ExtractedExpense, ExpenseType } from "@/lib/extraction/types";
+import { CurrencyInput } from "@/components/currency-input";
+import { PercentInput } from "@/components/percent-input";
+
+// Layered on top of CurrencyInput/PercentInput's own inputClassName baseline
+// to flag fields the AI didn't extract.
+const TINT_EMPTY = "bg-amber-900/20 border-amber-600/50";
 
 const EXPENSE_TYPE_OPTIONS: { value: ExpenseType; label: string }[] = [
   { value: "living", label: "Living" },
@@ -88,11 +94,10 @@ export default function ReviewStepExpenses({
               </div>
               <div>
                 <label className="mb-1 block text-xs text-gray-300">Annual Amount</label>
-                <input
-                  type="number"
-                  value={expense.annualAmount ?? ""}
-                  onChange={(e) => updateField(i, "annualAmount", e.target.value ? Number(e.target.value) : undefined)}
-                  className={expense.annualAmount != null ? INPUT_CLASS : EMPTY_CLASS}
+                <CurrencyInput
+                  value={expense.annualAmount != null ? String(expense.annualAmount) : ""}
+                  onChange={(raw) => updateField(i, "annualAmount", raw === "" ? undefined : Number(raw))}
+                  className={expense.annualAmount != null ? "" : TINT_EMPTY}
                   placeholder="0"
                 />
               </div>
@@ -118,13 +123,11 @@ export default function ReviewStepExpenses({
               </div>
               <div>
                 <label className="mb-1 block text-xs text-gray-300">Growth Rate</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={expense.growthRate ?? ""}
-                  onChange={(e) => updateField(i, "growthRate", e.target.value ? Number(e.target.value) : undefined)}
-                  className={EMPTY_CLASS}
-                  placeholder="0.03"
+                <PercentInput
+                  value={expense.growthRate != null ? (expense.growthRate * 100).toFixed(2) : ""}
+                  onChange={(raw) => updateField(i, "growthRate", raw === "" ? undefined : Number(raw) / 100)}
+                  className={TINT_EMPTY}
+                  placeholder="0"
                 />
               </div>
               <div className="flex items-end">

@@ -4,9 +4,16 @@ import { useState } from "react";
 import type { ExtractedAccount, AccountCategory, AccountSubType } from "@/lib/extraction/types";
 import type { MatchAnnotation } from "@/lib/imports/types";
 import type { FieldMap } from "@/lib/imports/merge-strategies";
+import { CurrencyInput } from "@/components/currency-input";
+import { PercentInput } from "@/components/percent-input";
 import MatchColumn from "./match-column";
 import type { MatchCandidate } from "./match-link-picker";
 import DiffPreview from "./diff-preview";
+
+// Layered on top of CurrencyInput/PercentInput's own inputClassName baseline
+// to flag fields the AI didn't extract — same amber cue as the legacy
+// EMPTY_CLASS on plain inputs.
+const TINT_EMPTY = "bg-amber-900/20 border-amber-600/50";
 
 const CATEGORY_OPTIONS: { value: AccountCategory; label: string }[] = [
   { value: "taxable", label: "Taxable" },
@@ -285,32 +292,27 @@ export default function ReviewStepAccounts({
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-gray-300">Value</label>
-                  <input
-                    type="number"
-                    value={account.value ?? ""}
-                    onChange={(e) => updateField(i, "value", e.target.value ? Number(e.target.value) : undefined)}
-                    className={account.value != null ? INPUT_CLASS : EMPTY_CLASS}
+                  <CurrencyInput
+                    value={account.value != null ? String(account.value) : ""}
+                    onChange={(raw) => updateField(i, "value", raw === "" ? undefined : Number(raw))}
+                    className={account.value != null ? "" : TINT_EMPTY}
                     placeholder="0"
                   />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-gray-300">Cost Basis</label>
-                  <input
-                    type="number"
-                    value={account.basis ?? ""}
-                    onChange={(e) => updateField(i, "basis", e.target.value ? Number(e.target.value) : undefined)}
-                    className={INPUT_CLASS}
+                  <CurrencyInput
+                    value={account.basis != null ? String(account.basis) : ""}
+                    onChange={(raw) => updateField(i, "basis", raw === "" ? undefined : Number(raw))}
                     placeholder="Optional"
                   />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-gray-300">Growth Rate</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={account.growthRate != null ? account.growthRate : ""}
-                    onChange={(e) => updateField(i, "growthRate", e.target.value ? Number(e.target.value) : null)}
-                    className={EMPTY_CLASS}
+                  <PercentInput
+                    value={account.growthRate != null ? (account.growthRate * 100).toFixed(2) : ""}
+                    onChange={(raw) => updateField(i, "growthRate", raw === "" ? null : Number(raw) / 100)}
+                    className={TINT_EMPTY}
                     placeholder="Use default"
                   />
                 </div>
