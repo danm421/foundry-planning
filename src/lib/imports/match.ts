@@ -184,7 +184,6 @@ async function loadCandidates(
         insuredPerson: accounts.insuredPerson,
         policyType: lifeInsurancePolicies.policyType,
         faceValue: lifeInsurancePolicies.faceValue,
-        scenarioId: accounts.scenarioId,
       })
       .from(lifeInsurancePolicies)
       .innerJoin(accounts, eq(accounts.id, lifeInsurancePolicies.accountId))
@@ -234,16 +233,20 @@ async function loadCandidates(
       lastName: r.lastName,
       dateOfBirth: r.dateOfBirth,
     })),
-    lifePolicies: policyRows
-      .filter((r) => r.insuredPerson !== null)
-      .map((r) => ({
-        id: r.id,
-        carrier: r.carrier,
-        policyNumberLast4: r.policyNumberLast4,
-        insuredPerson: r.insuredPerson as "client" | "spouse" | "joint",
-        policyType: r.policyType,
-        faceValue: Number(r.faceValue),
-      })),
+    lifePolicies: policyRows.flatMap((r) =>
+      r.insuredPerson === null
+        ? []
+        : [
+            {
+              id: r.id,
+              carrier: r.carrier,
+              policyNumberLast4: r.policyNumberLast4,
+              insuredPerson: r.insuredPerson,
+              policyType: r.policyType,
+              faceValue: Number(r.faceValue),
+            },
+          ],
+    ),
     wills: willRows.map((r) => ({ id: r.id, grantor: r.grantor })),
     entities: entityRows.map((r) => ({
       id: r.id,

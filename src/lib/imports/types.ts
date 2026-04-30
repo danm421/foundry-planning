@@ -22,6 +22,8 @@ export type MatchAnnotation =
   | { kind: "fuzzy"; candidates: Array<{ id: string; score: number }> }
   | { kind: "new" };
 
+export type MatchKind = MatchAnnotation["kind"];
+
 export type Annotated<T> = T & {
   __provenance?: Provenance;
   match?: MatchAnnotation;

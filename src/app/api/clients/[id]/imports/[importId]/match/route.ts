@@ -17,7 +17,7 @@ import {
     type FileExtraction,
 } from "@/lib/imports/merge";
 import { runMatchingPass } from "@/lib/imports/match";
-import type { ImportPayload } from "@/lib/imports/types";
+import type { ImportPayload, MatchKind } from "@/lib/imports/types";
 import type { ExtractionResult } from "@/lib/extraction/types";
 
 export const dynamic = "force-dynamic";
@@ -135,10 +135,8 @@ export async function POST(_request: NextRequest, { params }: Params) {
     }
 }
 
-function countAnnotations(payload: ImportPayload) {
-    let exact = 0;
-    let fuzzy = 0;
-    let newRows = 0;
+function countAnnotations(payload: ImportPayload): Record<MatchKind, number> {
+    const counts: Record<MatchKind, number> = { exact: 0, fuzzy: 0, new: 0 };
     const arrays = [
         payload.accounts,
         payload.incomes,
@@ -148,14 +146,12 @@ function countAnnotations(payload: ImportPayload) {
         payload.lifePolicies,
         payload.wills,
         payload.entities,
-    ] as const;
+    ];
     for (const arr of arrays) {
         for (const row of arr) {
-            const k = row.match?.kind;
-            if (k === "exact") exact += 1;
-            else if (k === "fuzzy") fuzzy += 1;
-            else if (k === "new") newRows += 1;
+            const kind = row.match?.kind;
+            if (kind) counts[kind] += 1;
         }
     }
-    return { exact, fuzzy, new: newRows };
+    return counts;
 }
