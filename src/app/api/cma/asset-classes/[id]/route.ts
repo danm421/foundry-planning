@@ -6,7 +6,7 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { isAssetTypeId } from "@/lib/investments/asset-types";
 import { parseBody } from "@/lib/schemas/common";
 import { assetClassPutSchema } from "@/lib/schemas/asset-classes";
-import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
+import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireOrgAdmin();
+    await requireOrgAdminOrOwner();
     const firmId = await requireOrgId();
     const { id } = await params;
 
@@ -86,7 +86,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireOrgAdmin();
+    await requireOrgAdminOrOwner();
     const firmId = await requireOrgId();
     const { id } = await params;
 

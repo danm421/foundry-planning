@@ -20,13 +20,19 @@ const isOrgPickerRoute = createRouteMatcher([
 ]);
 
 export default clerkMiddleware(async (auth, request) => {
-  if (isPublicRoute(request)) return;
+  // Surface the request pathname so server components (e.g. SettingsTabs)
+  // can read it via `headers().get("x-pathname")` for active-tab highlight.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", request.nextUrl.pathname);
+  const passthroughResponse = NextResponse.next({ request: { headers: requestHeaders } });
+
+  if (isPublicRoute(request)) return passthroughResponse;
 
   const { userId, orgId } = await auth();
 
   if (!userId) {
     await auth.protect();
-    return;
+    return passthroughResponse;
   }
 
   // Signed in but no active Clerk org. API routes use requireOrgId()
@@ -36,6 +42,8 @@ export default clerkMiddleware(async (auth, request) => {
   if (!orgId && !isOrgPickerRoute(request) && !request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.redirect(new URL("/select-organization", request.url));
   }
+
+  return passthroughResponse;
 });
 
 export const config = {

@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { modelPortfolios, modelPortfolioAllocations } from "@/db/schema";
 import { eq, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
-import { authErrorResponse, requireOrgAdmin } from "@/lib/authz";
+import { authErrorResponse, requireOrgAdminOrOwner } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +51,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireOrgAdmin();
+    await requireOrgAdminOrOwner();
     const firmId = await requireOrgId();
     const body = await request.json();
     const { name, description } = body;
