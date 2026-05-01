@@ -201,7 +201,7 @@ describe("estate-planning page integration (Cooper Sample)", () => {
   });
 
   it("spine-data is 'two-grantor' for Cooper Sample", () => {
-    const spine = deriveSpineData({ tree, withResult });
+    const spine = deriveSpineData({ tree, withResult, asOf: "split" });
     expect(spine.kind).toBe("two-grantor");
   });
 

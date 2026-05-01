@@ -99,8 +99,9 @@ export function CanvasFrame({
         withResult,
         pairRowYear: spinePairRowYear,
         pairRowMode: balanceMode,
+        asOf: selectedAsOf,
       }),
-    [tree, withResult, spinePairRowYear, balanceMode],
+    [tree, withResult, spinePairRowYear, balanceMode, selectedAsOf],
   );
 
   const inEstateTree = useMemo(

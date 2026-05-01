@@ -19,10 +19,17 @@ import {
   identifyFinalDeceased,
 } from "@/engine/death-event";
 import { computeGrossEstate } from "@/engine/death-event/estate-tax";
-import type { ClientData, EstateTaxResult, DeathTransfer } from "@/engine/types";
+import type {
+  ClientData,
+  EstateTaxResult,
+  DeathTransfer,
+  HypotheticalEstateTax,
+  HypotheticalEstateTaxOrdering,
+} from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
 import { treeAsOfYear, type BalanceMode } from "../../lib/tree-as-of-year";
 import { resolveRecipientLabel } from "@/lib/estate/recipient-label";
+import type { AsOfValue } from "@/components/report-controls/as-of-dropdown";
 
 // ── Output types ──────────────────────────────────────────────────────────────
 
@@ -190,6 +197,101 @@ function computeGrossEstateAtYear(
   return result.total;
 }
 
+// ── Death-stage source resolver ───────────────────────────────────────────────
+
+/**
+ * Drives the death-stage projections (first/second death year, taxes, marital
+ * deduction, transfers, combined estate). Three modes:
+ *
+ *  - "real"         — read from the projection's actual `firstDeathEvent` /
+ *                     `secondDeathEvent` (life-expectancy years). Used for
+ *                     "split", or when the user picks a year that *is* a real
+ *                     death year (the "First Death" / "Last Death" pills).
+ *  - "hypothetical" — read from `todayHypotheticalEstateTax` ("today") or
+ *                     `years[year].hypotheticalEstateTax` (any other numeric
+ *                     selection). Both deaths collapse to the same year.
+ *  - "none"         — no data available (projection has no death events).
+ */
+type DeathStageSource =
+  | {
+      kind: "real";
+      firstEvent: EstateTaxResult | undefined;
+      secondEvent: EstateTaxResult | undefined;
+      firstYear: number;
+      secondYear: number;
+      firstTransfers: DeathTransfer[];
+      secondTransfers: DeathTransfer[];
+      combinedValue: number;
+    }
+  | {
+      kind: "hypothetical";
+      collapsedYear: number;
+      branch: HypotheticalEstateTaxOrdering;
+    }
+  | { kind: "none" };
+
+function resolveDeathStageSource(
+  withResult: ProjectionResult,
+  asOf: AsOfValue,
+  firstDeathYear: number | null,
+  finalDeathYear: number | null,
+): DeathStageSource {
+  const realFirstYear = withResult.firstDeathEvent?.year ?? firstDeathYear ?? null;
+  const realSecondYear = withResult.secondDeathEvent?.year ?? finalDeathYear ?? null;
+
+  // Real-event path: "split", or numeric selection that matches a real death
+  // year (so the "First Death" / "Last Death" pills land here too).
+  const isRealYearSelection =
+    typeof asOf === "number" &&
+    (asOf === realFirstYear || asOf === realSecondYear);
+
+  if (asOf === "split" || isRealYearSelection) {
+    if (realFirstYear == null && realSecondYear == null) return { kind: "none" };
+    const firstYearRow =
+      realFirstYear != null
+        ? withResult.years.find((y) => y.year === realFirstYear)
+        : undefined;
+    const secondYearRow =
+      realSecondYear != null
+        ? withResult.years.find((y) => y.year === realSecondYear)
+        : undefined;
+    const firstYearIndex =
+      realFirstYear != null
+        ? withResult.years.findIndex((y) => y.year === realFirstYear)
+        : -1;
+    // Combined estate: survivor's portfolio total the year *after* first death
+    // (post-marital-deduction). Mirrors the prior inline computation.
+    const combinedValue =
+      firstYearIndex >= 0
+        ? (withResult.years[firstYearIndex + 1]?.portfolioAssets.total ?? 0)
+        : 0;
+    return {
+      kind: "real",
+      firstEvent: withResult.firstDeathEvent,
+      secondEvent: withResult.secondDeathEvent,
+      firstYear: realFirstYear ?? 0,
+      secondYear: realSecondYear ?? 0,
+      firstTransfers: (firstYearRow?.deathTransfers ?? []).filter(
+        (t) => t.deathOrder === 1,
+      ),
+      secondTransfers: (secondYearRow?.deathTransfers ?? []).filter(
+        (t) => t.deathOrder === 2,
+      ),
+      combinedValue,
+    };
+  }
+
+  // Hypothetical path: "today" or any non-real-death numeric selection.
+  let ht: HypotheticalEstateTax | undefined;
+  if (asOf === "today") {
+    ht = withResult.todayHypotheticalEstateTax;
+  } else if (typeof asOf === "number") {
+    ht = withResult.years.find((y) => y.year === asOf)?.hypotheticalEstateTax;
+  }
+  if (!ht) return { kind: "none" };
+  return { kind: "hypothetical", collapsedYear: ht.year, branch: ht.primaryFirst };
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function deriveSpineData(args: {
@@ -206,8 +308,10 @@ export function deriveSpineData(args: {
    * year's projected end-of-year balances. Defaults to "boy" so the test
    * suite's omitted-arg call sites preserve the original anchor behavior. */
   pairRowMode?: BalanceMode;
+  /** Drives the death-stage projections. See `resolveDeathStageSource`. */
+  asOf: AsOfValue;
 }): SpineData {
-  const { tree, withResult } = args;
+  const { tree, withResult, asOf } = args;
   const { client, planSettings } = tree;
   const { planStartYear, planEndYear } = planSettings;
   const anchorYear = args.pairRowYear ?? planStartYear;
@@ -250,10 +354,6 @@ export function deriveSpineData(args: {
       finalDeceasedFm?.firstName ??
       (finalDeceasedRole === "client" ? client.firstName : client.spouseName ?? "Spouse");
 
-    // Pull EstateTaxResult from projection
-    const firstEvent = withResult.firstDeathEvent;
-    const secondEvent = withResult.secondDeathEvent;
-
     // Net worth at the anchor year (planStartYear by default; the canvas
     // overrides this when the as-of dropdown picks a future year). Computed
     // from the projection's accountLedgers so it stays in sync with the
@@ -261,33 +361,48 @@ export function deriveSpineData(args: {
     const clientNetWorth = computeGrossEstateAtYear(tree, withResult, "client", anchorYear, anchorMode);
     const spouseNetWorth = computeGrossEstateAtYear(tree, withResult, "spouse", anchorYear, anchorMode);
 
-    // Combined value: survivor holds everything at the year immediately after first death
-    // (post-marital-deduction). Use portfolioAssets.total from that year row.
-    const firstYearIndex = withResult.years.findIndex((y) => y.year === firstDeathYear);
-    const combinedValue =
-      firstYearIndex >= 0
-        ? (withResult.years[firstYearIndex + 1]?.portfolioAssets.total ?? 0)
-        : 0;
+    const source = resolveDeathStageSource(withResult, asOf, firstDeathYear, finalDeathYear);
 
-    // First-death: marital deduction flows directly from EstateTaxResult.
-    // Non-spouse outflows (direct bequests, trust funding) are captured
-    // separately so they roll up into the bottom heir cards alongside
-    // second-death transfers.
-    const firstToSpouse = firstEvent?.maritalDeduction ?? 0;
-    const firstTax = firstEvent?.totalTaxesAndExpenses ?? 0;
-    const firstDeathYearRow = withResult.years.find((y) => y.year === firstDeathYear);
-    const firstDeathTransfers = (firstDeathYearRow?.deathTransfers ?? []).filter(
-      (t) => t.deathOrder === 1,
-    );
+    let firstStageYear: number;
+    let secondStageYear: number;
+    let firstTax: number;
+    let firstToSpouse: number;
+    let firstDeathTransfers: DeathTransfer[];
+    let secondTax: number;
+    let secondDeathTransfers: DeathTransfer[];
+    let combinedValue: number;
+
+    if (source.kind === "hypothetical") {
+      firstStageYear = source.collapsedYear;
+      secondStageYear = source.collapsedYear;
+      firstTax = source.branch.firstDeath.totalTaxesAndExpenses;
+      firstToSpouse = source.branch.firstDeath.maritalDeduction;
+      firstDeathTransfers = source.branch.firstDeathTransfers;
+      secondTax = source.branch.finalDeath?.totalTaxesAndExpenses ?? 0;
+      secondDeathTransfers = source.branch.finalDeathTransfers ?? [];
+      combinedValue = source.branch.finalDeath?.grossEstate ?? 0;
+    } else if (source.kind === "real") {
+      firstStageYear = source.firstYear;
+      secondStageYear = source.secondYear;
+      firstTax = source.firstEvent?.totalTaxesAndExpenses ?? 0;
+      firstToSpouse = source.firstEvent?.maritalDeduction ?? 0;
+      firstDeathTransfers = source.firstTransfers;
+      secondTax = source.secondEvent?.totalTaxesAndExpenses ?? 0;
+      secondDeathTransfers = source.secondTransfers;
+      combinedValue = source.combinedValue;
+    } else {
+      firstStageYear = firstDeathYear;
+      secondStageYear = finalDeathYear;
+      firstTax = 0;
+      firstToSpouse = 0;
+      firstDeathTransfers = [];
+      secondTax = 0;
+      secondDeathTransfers = [];
+      combinedValue = 0;
+    }
+
     const firstToHeirs = sumToHeirs(firstDeathTransfers);
-
-    // Second-death transfers
-    const secondDeathYearRow = withResult.years.find((y) => y.year === finalDeathYear);
-    const secondDeathTransfers = (secondDeathYearRow?.deathTransfers ?? []).filter(
-      (t) => t.deathOrder === 2,
-    );
     const secondToHeirs = sumToHeirs(secondDeathTransfers);
-    const secondTax = secondEvent?.totalTaxesAndExpenses ?? 0;
 
     // Heir cards aggregate non-spouse transfers across BOTH deaths and trust
     // distributions, grouped by recipient. A child receiving from Cooper at
@@ -313,7 +428,7 @@ export function deriveSpineData(args: {
         spouse: { name: spouseDisplayName, netWorth: spouseNetWorth },
       },
       firstDeath: {
-        year: firstDeathYear,
+        year: firstStageYear,
         deceasedName: firstDeceasedName,
         tax: firstTax,
         toSpouse: firstToSpouse,
@@ -321,7 +436,7 @@ export function deriveSpineData(args: {
       },
       combined: { value: combinedValue },
       secondDeath: {
-        year: finalDeathYear,
+        year: secondStageYear,
         deceasedName: finalDeceasedName,
         tax: secondTax,
         toHeirs: secondToHeirs,
@@ -378,24 +493,49 @@ export function deriveSpineData(args: {
       }
     }
 
-    // Death-year transfers
-    const deathYearRow = withResult.years.find((y) => y.year === deathYear);
-    const deathOrder: 1 | 2 = event?.deathOrder ?? (hasSpouse ? 2 : 1);
-    const deathTransfers = (deathYearRow?.deathTransfers ?? []).filter(
-      (t) => t.deathOrder === deathOrder,
-    );
-    const toHeirs = sumToHeirs(deathTransfers);
-    const tax = event?.totalTaxesAndExpenses ?? 0;
+    // Single-grantor only has a sole death event, so we read `branch.firstDeath`
+    // from the hypothetical payload (the engine populates only `firstDeath` in
+    // single-filer ordering).
+    const isRealYearSelection =
+      typeof asOf === "number" && asOf === deathYear;
 
-    const beneficiaries = buildBeneficiaryCards(deathTransfers, tree, toHeirs);
+    let ht: HypotheticalEstateTax | undefined;
+    if (asOf !== "split" && !isRealYearSelection) {
+      if (asOf === "today") {
+        ht = withResult.todayHypotheticalEstateTax;
+      } else if (typeof asOf === "number") {
+        ht = withResult.years.find((y) => y.year === asOf)?.hypotheticalEstateTax;
+      }
+    }
+
+    let stageDeathYear: number;
+    let stageTax: number;
+    let stageTransfers: DeathTransfer[];
+
+    if (ht) {
+      stageDeathYear = ht.year;
+      stageTax = ht.primaryFirst.firstDeath.totalTaxesAndExpenses;
+      stageTransfers = ht.primaryFirst.firstDeathTransfers;
+    } else {
+      const deathYearRow = withResult.years.find((y) => y.year === deathYear);
+      const deathOrder: 1 | 2 = event?.deathOrder ?? (hasSpouse ? 2 : 1);
+      stageDeathYear = deathYear;
+      stageTax = event?.totalTaxesAndExpenses ?? 0;
+      stageTransfers = (deathYearRow?.deathTransfers ?? []).filter(
+        (t) => t.deathOrder === deathOrder,
+      );
+    }
+
+    const toHeirs = sumToHeirs(stageTransfers);
+    const beneficiaries = buildBeneficiaryCards(stageTransfers, tree, toHeirs);
 
     return {
       kind: "single-grantor",
       survivorName,
       today: { year: anchorYear },
-      death: { year: deathYear, tax, toHeirs },
+      death: { year: stageDeathYear, tax: stageTax, toHeirs },
       beneficiaries,
-      totals: { taxesAndExpenses: tax, toHeirs },
+      totals: { taxesAndExpenses: stageTax, toHeirs },
     };
   }
 
