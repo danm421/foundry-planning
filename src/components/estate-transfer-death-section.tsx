@@ -22,16 +22,16 @@ export function EstateTransferDeathSection({
       <header className="flex flex-wrap items-start justify-between gap-6 border-b border-gray-800 px-6 py-5">
         <div>
           <div className="text-[10px] font-medium uppercase tracking-[0.24em] text-gray-500">
-            Estate transfer · {section.year}
+            Estate transfer
           </div>
           <h2 className="mt-1.5 text-xl font-semibold text-gray-50">{heading}</h2>
         </div>
         <div className="rounded-lg bg-gray-900/60 px-4 py-2 text-right ring-1 ring-gray-700/50">
           <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
-            Gross estate
+            Estate value at death
           </div>
           <div className="mt-1 font-mono text-2xl font-semibold tabular-nums text-gray-50">
-            {fmt.format(section.grossEstate)}
+            {fmt.format(section.assetEstateValue)}
           </div>
         </div>
       </header>
@@ -43,10 +43,15 @@ export function EstateTransferDeathSection({
         {section.recipients.map((r) => (
           <EstateTransferRecipientCard key={r.key} group={r} />
         ))}
-        <EstateTransferReductionsCard reductions={section.reductions} />
+        <EstateTransferReductionsCard
+          reductions={section.reductions}
+          grossEstate={section.grossEstate}
+        />
         <EstateTransferConflictsCallout conflicts={section.conflicts} />
 
-        {/* Reconciliation footer */}
+        {/* Reconciliation footer — checks ledger internal consistency
+            (assetEstateValue + sumLiabilityTransfers == sumRecipients).
+            The Form 706 chargeable estate lives in the Reductions card. */}
         <div
           className={
             "flex flex-wrap items-baseline justify-between gap-3 rounded border px-4 py-2 text-xs " +
@@ -57,9 +62,14 @@ export function EstateTransferDeathSection({
         >
           {section.reconciliation.reconciles ? (
             <span>
-              Transfers ({fmt.format(section.reconciliation.sumRecipients)}) reconcile to gross estate (
-              {fmt.format(section.grossEstate)}).
-              {section.reconciliation.sumReductions > 0 && (
+              Estate value of {fmt.format(section.assetEstateValue)} flows to recipients
+              {section.reconciliation.sumLiabilityTransfers !== 0 && (
+                <>
+                  {" "}net of {fmt.format(Math.abs(section.reconciliation.sumLiabilityTransfers))} in
+                  inherited debt (recipients receive {fmt.format(section.reconciliation.sumRecipients)} net)
+                </>
+              )}
+              .{section.reconciliation.sumReductions > 0 && (
                 <>
                   {" "}Reductions ({fmt.format(section.reconciliation.sumReductions)}) are
                   drained from recipient assets after the routing pass.
@@ -68,9 +78,10 @@ export function EstateTransferDeathSection({
             </span>
           ) : (
             <span>
-              Unattributed: {fmt.format(section.reconciliation.unattributed)} — review.
-              Transfers ({fmt.format(section.reconciliation.sumRecipients)}) do not sum to gross estate (
-              {fmt.format(section.grossEstate)}).
+              Unattributed: {fmt.format(section.reconciliation.unattributed)} — internal
+              ledger inconsistency. Asset transfers ({fmt.format(section.reconciliation.assetEstateValue)})
+              + liabilities ({fmt.format(section.reconciliation.sumLiabilityTransfers)}) do not match
+              recipient totals ({fmt.format(section.reconciliation.sumRecipients)}). Review.
             </span>
           )}
         </div>
