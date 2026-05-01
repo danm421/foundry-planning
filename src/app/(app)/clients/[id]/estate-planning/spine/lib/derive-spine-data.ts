@@ -308,16 +308,14 @@ export function deriveSpineData(args: {
    * year's projected end-of-year balances. Defaults to "boy" so the test
    * suite's omitted-arg call sites preserve the original anchor behavior. */
   pairRowMode?: BalanceMode;
-  /** Drives the death-stage projections. See `resolveDeathStageSource`.
-   * Defaults to "split" so older call sites keep the real-event behavior. */
-  asOf?: AsOfValue;
+  /** Drives the death-stage projections. See `resolveDeathStageSource`. */
+  asOf: AsOfValue;
 }): SpineData {
-  const { tree, withResult } = args;
+  const { tree, withResult, asOf } = args;
   const { client, planSettings } = tree;
   const { planStartYear, planEndYear } = planSettings;
   const anchorYear = args.pairRowYear ?? planStartYear;
   const anchorMode: BalanceMode = args.pairRowMode ?? "boy";
-  const asOf: AsOfValue = args.asOf ?? "split";
 
   const firstDeathYear = computeFirstDeathYear(client, planStartYear, planEndYear);
   const finalDeathYear = computeFinalDeathYear(client, planStartYear, planEndYear);
@@ -363,8 +361,6 @@ export function deriveSpineData(args: {
     const clientNetWorth = computeGrossEstateAtYear(tree, withResult, "client", anchorYear, anchorMode);
     const spouseNetWorth = computeGrossEstateAtYear(tree, withResult, "spouse", anchorYear, anchorMode);
 
-    // Death-stage figures: real events when "split"/death-year-pill is
-    // selected, hypothetical "both die at year X" payload otherwise.
     const source = resolveDeathStageSource(withResult, asOf, firstDeathYear, finalDeathYear);
 
     let firstStageYear: number;
@@ -497,46 +493,37 @@ export function deriveSpineData(args: {
       }
     }
 
-    // Real-event vs hypothetical resolution. Single-grantor only has a sole
-    // death event, so we read `branch.firstDeath` from the hypothetical payload
-    // (the engine populates only `firstDeath` in single-filer ordering).
-    const realDeathYear = deathYear;
+    // Single-grantor only has a sole death event, so we read `branch.firstDeath`
+    // from the hypothetical payload (the engine populates only `firstDeath` in
+    // single-filer ordering).
     const isRealYearSelection =
-      typeof asOf === "number" && asOf === realDeathYear;
+      typeof asOf === "number" && asOf === deathYear;
 
-    let stageDeathYear: number;
-    let stageTax: number;
-    let stageTransfers: DeathTransfer[];
-
-    if (asOf === "split" || isRealYearSelection) {
-      const deathYearRow = withResult.years.find((y) => y.year === realDeathYear);
-      const deathOrder: 1 | 2 = event?.deathOrder ?? (hasSpouse ? 2 : 1);
-      stageDeathYear = realDeathYear;
-      stageTax = event?.totalTaxesAndExpenses ?? 0;
-      stageTransfers = (deathYearRow?.deathTransfers ?? []).filter(
-        (t) => t.deathOrder === deathOrder,
-      );
-    } else {
-      let ht: HypotheticalEstateTax | undefined;
+    let ht: HypotheticalEstateTax | undefined;
+    if (asOf !== "split" && !isRealYearSelection) {
       if (asOf === "today") {
         ht = withResult.todayHypotheticalEstateTax;
       } else if (typeof asOf === "number") {
         ht = withResult.years.find((y) => y.year === asOf)?.hypotheticalEstateTax;
       }
-      if (ht) {
-        stageDeathYear = ht.year;
-        stageTax = ht.primaryFirst.firstDeath.totalTaxesAndExpenses;
-        stageTransfers = ht.primaryFirst.firstDeathTransfers;
-      } else {
-        // No hypothetical data for this selection — fall back to real event.
-        const deathYearRow = withResult.years.find((y) => y.year === realDeathYear);
-        const deathOrder: 1 | 2 = event?.deathOrder ?? (hasSpouse ? 2 : 1);
-        stageDeathYear = realDeathYear;
-        stageTax = event?.totalTaxesAndExpenses ?? 0;
-        stageTransfers = (deathYearRow?.deathTransfers ?? []).filter(
-          (t) => t.deathOrder === deathOrder,
-        );
-      }
+    }
+
+    let stageDeathYear: number;
+    let stageTax: number;
+    let stageTransfers: DeathTransfer[];
+
+    if (ht) {
+      stageDeathYear = ht.year;
+      stageTax = ht.primaryFirst.firstDeath.totalTaxesAndExpenses;
+      stageTransfers = ht.primaryFirst.firstDeathTransfers;
+    } else {
+      const deathYearRow = withResult.years.find((y) => y.year === deathYear);
+      const deathOrder: 1 | 2 = event?.deathOrder ?? (hasSpouse ? 2 : 1);
+      stageDeathYear = deathYear;
+      stageTax = event?.totalTaxesAndExpenses ?? 0;
+      stageTransfers = (deathYearRow?.deathTransfers ?? []).filter(
+        (t) => t.deathOrder === deathOrder,
+      );
     }
 
     const toHeirs = sumToHeirs(stageTransfers);

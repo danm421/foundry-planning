@@ -209,7 +209,7 @@ describe("deriveSpineData", () => {
   it("returns 'two-grantor' variant when both grantors alive at plan start", () => {
     const tree = twoGrantorFixture();
     const withResult = runProjectionWithEvents(tree);
-    const data = deriveSpineData({ tree, withResult });
+    const data = deriveSpineData({ tree, withResult, asOf: "split" });
 
     expect(data.kind).toBe("two-grantor");
     if (data.kind !== "two-grantor") return;
@@ -258,7 +258,7 @@ describe("deriveSpineData", () => {
     // multiples of the year-zero values.
     const tree = twoGrantorFixture();
     const withResult = runProjectionWithEvents(tree);
-    const data = deriveSpineData({ tree, withResult });
+    const data = deriveSpineData({ tree, withResult, asOf: "split" });
     if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
 
     const pairTotal = data.pair.client.netWorth + data.pair.spouse.netWorth;
@@ -276,7 +276,7 @@ describe("deriveSpineData", () => {
   it("returns 'single-grantor' when only one grantor is in the plan (no spouse)", () => {
     const tree = singleGrantorFixture();
     const withResult = runProjectionWithEvents(tree);
-    const data = deriveSpineData({ tree, withResult });
+    const data = deriveSpineData({ tree, withResult, asOf: "split" });
 
     expect(data.kind).toBe("single-grantor");
     if (data.kind !== "single-grantor") return;
@@ -398,7 +398,7 @@ describe("deriveSpineData", () => {
   it("returns 'historical' when no death events fall within the plan window", () => {
     const tree = historicalFixture();
     const withResult = runProjectionWithEvents(tree);
-    const data = deriveSpineData({ tree, withResult });
+    const data = deriveSpineData({ tree, withResult, asOf: "today" });
 
     expect(data.kind).toBe("historical");
     if (data.kind !== "historical") return;
