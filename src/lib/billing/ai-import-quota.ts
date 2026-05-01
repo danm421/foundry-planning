@@ -38,8 +38,8 @@ export async function claimAiImportCredit(
   const result = await tx.execute<{ ai_imports_used: number }>(sql`
     WITH claim AS (
       UPDATE ${clientImports}
-      SET ${clientImports.aiImportCounted} = true,
-          ${clientImports.updatedAt} = now()
+      SET ai_import_counted = true,
+          updated_at = now()
       WHERE ${clientImports.id} = ${importId}
         AND ${clientImports.mode} = 'onboarding'
         AND ${clientImports.aiImportCounted} = false
@@ -47,11 +47,11 @@ export async function claimAiImportCredit(
       RETURNING ${clientImports.orgId} AS org_id
     )
     UPDATE ${firms}
-    SET ${firms.aiImportsUsed} = ${firms.aiImportsUsed} + 1,
-        ${firms.updatedAt} = now()
+    SET ai_imports_used = ai_imports_used + 1,
+        updated_at = now()
     FROM claim
     WHERE ${firms.firmId} = claim.org_id
-    RETURNING ${firms.aiImportsUsed} AS ai_imports_used
+    RETURNING ai_imports_used
   `);
   const rows = (result as unknown as { rows?: { ai_imports_used: number }[] })
     .rows;
