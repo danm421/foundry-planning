@@ -37,6 +37,13 @@ export interface CommitTabsResult {
   results: Record<CommitTab, CommitResult>;
   /** True iff every tab in COMMIT_TABS now has a perTabCommittedAt entry. */
   allTabsCommitted: boolean;
+  /**
+   * True iff THIS commit call caused the import to transition from
+   * not-yet-fully-committed to all-tabs-committed. False on subsequent
+   * commit calls against an already-committed import (avoids double-firing
+   * post-commit hooks like the AI import quota counter).
+   */
+  firstTimeAllCommitted: boolean;
 }
 
 const FAMILY_DEPENDENT_TABS: ReadonlySet<CommitTab> = new Set([
@@ -85,8 +92,12 @@ export async function commitTabs(args: CommitTabsArgs): Promise<CommitTabsResult
       }
     }
 
-    const allTabsCommitted = await markTabsCommitted(tx, args.importId, ordered);
-    return { results, allTabsCommitted };
+    const { allTabsCommitted, firstTimeAllCommitted } = await markTabsCommitted(
+      tx,
+      args.importId,
+      ordered,
+    );
+    return { results, allTabsCommitted, firstTimeAllCommitted };
   });
 }
 
@@ -130,13 +141,16 @@ async function markTabsCommitted(
   tx: Tx,
   importId: string,
   tabs: readonly CommitTab[],
-): Promise<boolean> {
+): Promise<{ allTabsCommitted: boolean; firstTimeAllCommitted: boolean }> {
   const now = new Date();
   const patchEntries = tabs.map((t) => [t, now.toISOString()] as const);
   const patch = Object.fromEntries(patchEntries);
 
   const [existing] = await tx
-    .select({ perTabCommittedAt: clientImports.perTabCommittedAt })
+    .select({
+      perTabCommittedAt: clientImports.perTabCommittedAt,
+      committedAt: clientImports.committedAt,
+    })
     .from(clientImports)
     .where(eq(clientImports.id, importId));
 
@@ -145,15 +159,18 @@ async function markTabsCommitted(
     ...patch,
   };
   const allCommitted = COMMIT_TABS.every((t) => merged[t] != null);
+  const firstTimeAllCommitted = allCommitted && existing?.committedAt == null;
 
   await tx
     .update(clientImports)
     .set({
       perTabCommittedAt: sql`COALESCE(${clientImports.perTabCommittedAt}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
       updatedAt: now,
-      ...(allCommitted ? { status: "committed" as const, committedAt: now } : {}),
+      ...(firstTimeAllCommitted
+        ? { status: "committed" as const, committedAt: now }
+        : {}),
     })
     .where(eq(clientImports.id, importId));
 
-  return allCommitted;
+  return { allTabsCommitted: allCommitted, firstTimeAllCommitted };
 }
