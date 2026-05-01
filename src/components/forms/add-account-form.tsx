@@ -807,62 +807,6 @@ export default function AddAccountForm({
               />
             </div>
 
-            {isInvestable ? (
-              <div>
-                <label className={fieldLabelClassName}>Growth Rate</label>
-                <select
-                  value={growthSource === "model_portfolio" ? `mp:${modelPortfolioId}` : growthSource}
-                  onChange={(e) => handleGrowthSourceChange(e.target.value)}
-                  className={selectClassName}
-                >
-                  <option value="default">
-                    Use category default{catDefaultSource?.portfolioName ? ` — ${catDefaultSource.portfolioName}` : ""}{defaultPctForCategory !== null ? ` (${defaultPctForCategory}%)` : ""}
-                  </option>
-                  {modelPortfolios?.map((mp) => (
-                    <option key={mp.id} value={`mp:${mp.id}`}>
-                      {mp.name} ({(mp.blendedReturn * 100).toFixed(2)}%)
-                    </option>
-                  ))}
-                  {ASSET_MIX_CATEGORIES.includes(category) && (
-                    <option value="asset_mix">Asset mix (custom)</option>
-                  )}
-                  {(category === "cash" || category === "taxable" || category === "retirement") && (
-                    <option value="inflation">
-                      Inflation rate ({(resolvedInflationRate * 100).toFixed(2)}%)
-                    </option>
-                  )}
-                  <option value="custom">Custom %</option>
-                </select>
-                {growthSource === "inflation" && (
-                  <p className="mt-1 text-xs text-gray-400">
-                    Growth tracks plan inflation rate: {(resolvedInflationRate * 100).toFixed(2)}%
-                  </p>
-                )}
-                {growthSource === "custom" && (
-                  <div className="mt-2">
-                    <PercentInput
-                      id="growthRate"
-                      name="growthRate"
-                      defaultValue={hasExplicitGrowth ? initialGrowthPct : 7}
-                      className={inputClassName}
-                    />
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div>
-                <label className={fieldLabelClassName} htmlFor="growthRate">
-                  Growth Rate (%)
-                </label>
-                <PercentInput
-                  id="growthRate"
-                  name="growthRate"
-                  defaultValue={initialGrowthPct}
-                  className={inputClassName}
-                />
-              </div>
-            )}
-
             <div>
               <label className={fieldLabelClassName} htmlFor="value">
                 Current Value ($)
@@ -894,39 +838,94 @@ export default function AddAccountForm({
                 className={inputClassName}
               />
             </div>
+
+            <div className={`col-span-2 grid gap-4 ${category === "real_estate" ? "grid-cols-3" : "grid-cols-2"}`}>
+              {isInvestable ? (
+                <div>
+                  <label className={fieldLabelClassName}>Growth Rate</label>
+                  <select
+                    value={growthSource === "model_portfolio" ? `mp:${modelPortfolioId}` : growthSource}
+                    onChange={(e) => handleGrowthSourceChange(e.target.value)}
+                    className={selectClassName}
+                  >
+                    <option value="default">
+                      Use category default{catDefaultSource?.portfolioName ? ` — ${catDefaultSource.portfolioName}` : ""}{defaultPctForCategory !== null ? ` (${defaultPctForCategory}%)` : ""}
+                    </option>
+                    {modelPortfolios?.map((mp) => (
+                      <option key={mp.id} value={`mp:${mp.id}`}>
+                        {mp.name} ({(mp.blendedReturn * 100).toFixed(2)}%)
+                      </option>
+                    ))}
+                    {ASSET_MIX_CATEGORIES.includes(category) && (
+                      <option value="asset_mix">Asset mix (custom)</option>
+                    )}
+                    {(category === "cash" || category === "taxable" || category === "retirement") && (
+                      <option value="inflation">
+                        Inflation rate ({(resolvedInflationRate * 100).toFixed(2)}%)
+                      </option>
+                    )}
+                    <option value="custom">Custom %</option>
+                  </select>
+                  {growthSource === "inflation" && (
+                    <p className="mt-1 text-xs text-gray-400">
+                      Growth tracks plan inflation rate: {(resolvedInflationRate * 100).toFixed(2)}%
+                    </p>
+                  )}
+                  {growthSource === "custom" && (
+                    <div className="mt-2">
+                      <PercentInput
+                        id="growthRate"
+                        name="growthRate"
+                        defaultValue={hasExplicitGrowth ? initialGrowthPct : 7}
+                        className={inputClassName}
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className={fieldLabelClassName} htmlFor="growthRate">
+                    Growth Rate (%)
+                  </label>
+                  <PercentInput
+                    id="growthRate"
+                    name="growthRate"
+                    defaultValue={initialGrowthPct}
+                    className={inputClassName}
+                  />
+                </div>
+              )}
+
+              {category === "real_estate" && (
+                <>
+                  <div>
+                    <label className={fieldLabelClassName} htmlFor="annualPropertyTax">
+                      Annual Property Tax ($)
+                    </label>
+                    <CurrencyInput
+                      id="annualPropertyTax"
+                      value={annualPropertyTax}
+                      onChange={(raw) => setAnnualPropertyTax(raw)}
+                      className={inputClassName}
+                    />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClassName} htmlFor="propertyTaxGrowthRate">
+                      Property Tax Growth Rate (%)
+                    </label>
+                    <PercentInput
+                      id="propertyTaxGrowthRate"
+                      value={propertyTaxGrowthRate}
+                      onChange={(raw) => setPropertyTaxGrowthRate(raw)}
+                      className={inputClassName}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-
-          {category === "real_estate" && (
-            <>
-              <h4 className="col-span-2 mt-2 text-sm font-medium text-gray-300">Real Estate Details</h4>
-              <div>
-                <label className={fieldLabelClassName} htmlFor="annualPropertyTax">
-                  Annual Property Tax ($)
-                </label>
-                <CurrencyInput
-                  id="annualPropertyTax"
-                  value={annualPropertyTax}
-                  onChange={(raw) => setAnnualPropertyTax(raw)}
-                  className={inputClassName}
-                />
-              </div>
-              <div>
-                <label className={fieldLabelClassName} htmlFor="propertyTaxGrowthRate">
-                  Property Tax Growth Rate (%)
-                </label>
-                <PercentInput
-                  id="propertyTaxGrowthRate"
-                  value={propertyTaxGrowthRate}
-                  onChange={(raw) => setPropertyTaxGrowthRate(raw)}
-                  className={inputClassName}
-                />
-              </div>
-            </>
-          )}
-
         </div>
       </div>
-
       )}
 
       {/* Savings tab — edit mode shows rule list; create mode shows inline form */}

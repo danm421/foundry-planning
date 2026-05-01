@@ -78,102 +78,175 @@ export default function InsurancePolicyDetailsTab({
       {/* ── Basic info ─────────────────────────────────────────────── */}
       <section className={sectionCls}>
         <h3 className={sectionTitleCls}>Basic info</h3>
-        <div className={gridTwoCls}>
-          <label className="block">
-            <span className={fieldLabelClassName}>Name</span>
-            <input
-              ref={nameInputRef}
-              type="text"
-              required
-              value={state.name}
-              onChange={(e) => onChange({ name: e.target.value })}
-              className={inputClassName}
-            />
-          </label>
-          <label className="block">
-            <span className={fieldLabelClassName}>Policy type</span>
-            <select
-              value={state.policyType}
-              onChange={(e) =>
-                onChange({
-                  policyType: e.target.value as PolicyFormState["policyType"],
-                })
-              }
-              className={selectClassName}
-            >
-              <option value="term">Term</option>
-              <option value="whole">Whole Life</option>
-              <option value="universal">Universal Life</option>
-              <option value="variable">Variable Life</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className={fieldLabelClassName}>Insured person</span>
-            <select
-              value={state.insuredPerson}
-              onChange={(e) =>
-                onChange({
-                  insuredPerson: e.target.value as PolicyFormState["insuredPerson"],
-                })
-              }
-              className={selectClassName}
-            >
-              <option value="client">{clientFirstName}</option>
-              <option value="spouse" disabled={!spouseFirstName}>{spouseLabel}</option>
-              <option value="joint">Joint</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className={fieldLabelClassName}>Face value</span>
-            <CurrencyInput
-              value={state.faceValue}
-              onChange={(raw) => onChange({ faceValue: toNumber(raw) })}
-              className={inputClassName}
-              required
-            />
-          </label>
-        </div>
-      </section>
+        <div className="flex flex-col gap-3">
+          <div className={gridTwoCls}>
+            <label className="block">
+              <span className={fieldLabelClassName}>Name</span>
+              <input
+                ref={nameInputRef}
+                type="text"
+                required
+                value={state.name}
+                onChange={(e) => onChange({ name: e.target.value })}
+                className={inputClassName}
+              />
+            </label>
+            <label className="block">
+              <span className={fieldLabelClassName}>Policy type</span>
+              <select
+                value={state.policyType}
+                onChange={(e) =>
+                  onChange({
+                    policyType: e.target.value as PolicyFormState["policyType"],
+                  })
+                }
+                className={selectClassName}
+              >
+                <option value="term">Term</option>
+                <option value="whole">Whole Life</option>
+                <option value="universal">Universal Life</option>
+                <option value="variable">Variable Life</option>
+              </select>
+            </label>
+          </div>
 
-      {/* ── Ownership ──────────────────────────────────────────────── */}
-      <section className={sectionCls}>
-        <h3 className={sectionTitleCls}>Ownership</h3>
-        <div className={gridTwoCls}>
-          <label className="block">
-            <span className={fieldLabelClassName}>Owner</span>
-            <select
-              value={state.owner}
-              onChange={(e) =>
-                onChange({ owner: e.target.value as PolicyFormState["owner"] })
-              }
-              className={selectClassName}
-            >
-              <option value="client">{clientFirstName}</option>
-              <option value="spouse" disabled={!spouseFirstName}>{spouseLabel}</option>
-              <option value="joint">Joint</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className={fieldLabelClassName}>Owning entity (trust)</span>
-            <select
-              value={state.ownerEntityId ?? ""}
-              onChange={(e) =>
-                onChange({ ownerEntityId: e.target.value || null })
-              }
-              disabled={trustEntities.length === 0}
-              className={selectClassName}
-            >
-              <option value="">Individual owner</option>
-              {trustEntities.map((en) => (
-                <option key={en.id} value={en.id}>
-                  {en.name}
-                </option>
-              ))}
-            </select>
-            {trustEntities.length === 0 && (
-              <p className={helpCls}>No trusts available</p>
+          {isTerm && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <label className="block">
+                <span className={fieldLabelClassName}>Term issue year</span>
+                <input
+                  type="number"
+                  min={1900}
+                  max={2200}
+                  value={state.termIssueYear ?? ""}
+                  onChange={(e) =>
+                    onChange({ termIssueYear: toNullableInt(e.target.value) })
+                  }
+                  className={inputClassName}
+                  required
+                />
+              </label>
+              {!state.endsAtInsuredRetirement && (
+                <label className="block">
+                  <span className={fieldLabelClassName}>Term length (years)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={state.termLengthYears ?? ""}
+                    onChange={(e) =>
+                      onChange({ termLengthYears: toNullableInt(e.target.value) })
+                    }
+                    className={inputClassName}
+                    required
+                  />
+                </label>
+              )}
+              <label className="flex items-center gap-2 self-end pb-2 text-sm text-ink-2 sm:col-start-3">
+                <input
+                  type="checkbox"
+                  checked={state.endsAtInsuredRetirement === true}
+                  onChange={(e) =>
+                    onChange(
+                      e.target.checked
+                        ? { endsAtInsuredRetirement: true, termLengthYears: null }
+                        : { endsAtInsuredRetirement: false },
+                    )
+                  }
+                />
+                <span>Term ends at insured&apos;s retirement</span>
+              </label>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <label className="block">
+              <span className={fieldLabelClassName}>Insured person</span>
+              <select
+                value={state.insuredPerson}
+                onChange={(e) =>
+                  onChange({
+                    insuredPerson: e.target.value as PolicyFormState["insuredPerson"],
+                  })
+                }
+                className={selectClassName}
+              >
+                <option value="client">{clientFirstName}</option>
+                <option value="spouse" disabled={!spouseFirstName}>{spouseLabel}</option>
+                <option value="joint">Joint</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className={fieldLabelClassName}>Owner</span>
+              <select
+                value={state.owner}
+                onChange={(e) =>
+                  onChange({ owner: e.target.value as PolicyFormState["owner"] })
+                }
+                className={selectClassName}
+              >
+                <option value="client">{clientFirstName}</option>
+                <option value="spouse" disabled={!spouseFirstName}>{spouseLabel}</option>
+                <option value="joint">Joint</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className={fieldLabelClassName}>Owning entity (trust)</span>
+              <select
+                value={state.ownerEntityId ?? ""}
+                onChange={(e) =>
+                  onChange({ ownerEntityId: e.target.value || null })
+                }
+                disabled={trustEntities.length === 0}
+                className={selectClassName}
+              >
+                <option value="">Individual owner</option>
+                {trustEntities.map((en) => (
+                  <option key={en.id} value={en.id}>
+                    {en.name}
+                  </option>
+                ))}
+              </select>
+              {trustEntities.length === 0 && (
+                <p className={helpCls}>No trusts available</p>
+              )}
+            </label>
+          </div>
+
+          <div className={isTerm ? gridTwoCls : "grid grid-cols-1 gap-3 sm:grid-cols-3"}>
+            <label className="block">
+              <span className={fieldLabelClassName}>Death benefit</span>
+              <CurrencyInput
+                value={state.faceValue}
+                onChange={(raw) => onChange({ faceValue: toNumber(raw) })}
+                className={inputClassName}
+                required
+              />
+            </label>
+            {!isTerm && (
+              <>
+                <label className="block">
+                  <span className={fieldLabelClassName}>Current cash value</span>
+                  <CurrencyInput
+                    value={state.cashValue}
+                    onChange={(raw) => onChange({ cashValue: toNumber(raw) })}
+                    className={inputClassName}
+                  />
+                  <p className={helpCls}>Current cash surrender value.</p>
+                </label>
+                <label className="block">
+                  <span className={fieldLabelClassName}>Cost basis</span>
+                  <CurrencyInput
+                    value={state.costBasis}
+                    onChange={(raw) => onChange({ costBasis: toNumber(raw) })}
+                    className={inputClassName}
+                  />
+                  <p className={helpCls}>
+                    Cumulative premiums paid (reduces taxable gain on surrender).
+                  </p>
+                </label>
+              </>
             )}
-          </label>
+          </div>
         </div>
       </section>
 
@@ -203,104 +276,8 @@ export default function InsurancePolicyDetailsTab({
             />
             <p className={helpCls}>Leave empty for ongoing.</p>
           </label>
-          {!isTerm && (
-            <label className="block">
-              <span className={fieldLabelClassName}>Cost basis</span>
-              <CurrencyInput
-                value={state.costBasis}
-                onChange={(raw) => onChange({ costBasis: toNumber(raw) })}
-                className={inputClassName}
-              />
-              <p className={helpCls}>
-                Cumulative premiums paid (reduces taxable gain on surrender).
-              </p>
-            </label>
-          )}
         </div>
       </section>
-
-      {/* ── Cash value (permanent only) ────────────────────────────── */}
-      {!isTerm && (
-        <section className={sectionCls}>
-          <h3 className={sectionTitleCls}>Cash value</h3>
-          <label className="block">
-            <span className={fieldLabelClassName}>Current cash value</span>
-            <CurrencyInput
-              value={state.cashValue}
-              onChange={(raw) => onChange({ cashValue: toNumber(raw) })}
-              className={inputClassName}
-            />
-            <p className={helpCls}>Current cash surrender value.</p>
-          </label>
-        </section>
-      )}
-
-      {/* ── Term fields ────────────────────────────────────────────── */}
-      {isTerm && (
-        <section className={sectionCls}>
-          <h3 className={sectionTitleCls}>Term policy</h3>
-          <div className="flex flex-col gap-3">
-            <label className="block max-w-xs">
-              <span className={fieldLabelClassName}>Term issue year</span>
-              <input
-                type="number"
-                min={1900}
-                max={2200}
-                value={state.termIssueYear ?? ""}
-                onChange={(e) =>
-                  onChange({ termIssueYear: toNullableInt(e.target.value) })
-                }
-                className={inputClassName}
-                required
-              />
-            </label>
-
-            <fieldset className="flex flex-col gap-2">
-              <legend className={fieldLabelClassName}>Policy ends…</legend>
-              <label className="flex items-start gap-2 text-sm text-ink-2">
-                <input
-                  type="radio"
-                  name="term-end-mode"
-                  checked={state.endsAtInsuredRetirement === false}
-                  onChange={() => onChange({ endsAtInsuredRetirement: false })}
-                  className="mt-0.5"
-                />
-                <span>after a fixed number of years</span>
-              </label>
-              <label className="flex items-start gap-2 text-sm text-ink-2">
-                <input
-                  type="radio"
-                  name="term-end-mode"
-                  checked={state.endsAtInsuredRetirement === true}
-                  onChange={() =>
-                    onChange({
-                      endsAtInsuredRetirement: true,
-                      termLengthYears: null,
-                    })
-                  }
-                  className="mt-0.5"
-                />
-                <span>when the insured retires</span>
-              </label>
-            </fieldset>
-
-            {state.endsAtInsuredRetirement === false && (
-              <label className="block max-w-xs">
-                <span className={fieldLabelClassName}>Term length (years)</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={state.termLengthYears ?? ""}
-                  onChange={(e) =>
-                    onChange({ termLengthYears: toNullableInt(e.target.value) })
-                  }
-                  className={inputClassName}
-                />
-              </label>
-            )}
-          </div>
-        </section>
-      )}
 
       {/* ── Post-payout routing ────────────────────────────────────── */}
       <section className={sectionCls}>
