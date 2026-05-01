@@ -11,6 +11,7 @@ export {
   applyWillAllAssetsResidual,
   applyFallback,
   applyIncomeTermination,
+  distributeFirstDeathUnlinkedLiabilities,
   distributeUnlinkedLiabilities,
   effectiveFilingStatus,
   firesAtDeath,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeFirstDeathYear, computeFinalDeathYear, identifyDeceased, identifyFinalDeceased, firesAtDeath, distributeUnlinkedLiabilities } from "../death-event";
+import { computeFirstDeathYear, computeFinalDeathYear, identifyDeceased, identifyFinalDeceased, firesAtDeath, distributeUnlinkedLiabilities, distributeFirstDeathUnlinkedLiabilities } from "../death-event";
 import type { ClientInfo, WillBequest } from "../types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, controllingFamilyMember, controllingEntity } from "../ownership";
 
@@ -1242,6 +1242,70 @@ describe("applyFirstDeath orchestrator", () => {
     expect(result.entities[0].grantor).toBe("spouse");
   });
 
+  it("unlinked deceased-owned debt distributes to spouse via fallback; transfer ledger reconciles with gross estate", () => {
+    // Mirror the user-reported scenario: deceased owns home + mortgage (linked)
+    // + a small unlinked credit card. After fix #1 the gross estate subtracts
+    // the unlinked debt; without first-death distribution the report shows an
+    // unattributed gap because the debt has no transfer entry.
+    const home: Account = {
+      id: "acc-home", name: "Home",
+      category: "real_estate", subType: "primary_residence",
+      value: 950_000, basis: 500_000,
+      growthRate: 0.03, rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+    };
+    const mortgage: Liability = {
+      id: "liab-mortgage", name: "Home Mortgage",
+      balance: 600_000, interestRate: 0.05, monthlyPayment: 3_500,
+      startYear: 2020, startMonth: 1, termMonths: 360,
+      linkedPropertyId: "acc-home", extraPayments: [],
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+    };
+    const creditCard: Liability = {
+      id: "liab-cc", name: "Credit Card",
+      balance: 10_000, interestRate: 0.18, monthlyPayment: 250,
+      startYear: 2025, startMonth: 1, termMonths: 60,
+      extraPayments: [],
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+    };
+    const noWill: Will = { id: "w-empty", grantor: "client", bequests: [] };
+
+    const scenarioInput: DeathEventInput = {
+      ...input,
+      will: noWill,
+      accounts: [home],
+      accountBalances: { "acc-home": 950_000 },
+      basisMap: { "acc-home": 500_000 },
+      liabilities: [mortgage, creditCard],
+    };
+
+    const result = applyFirstDeath(scenarioInput);
+
+    // The unlinked credit-card debt should now show as a -$10k transfer to spouse.
+    const ccTransfer = result.transfers.find(
+      (t) => t.sourceLiabilityId === "liab-cc",
+    );
+    expect(ccTransfer).toBeDefined();
+    expect(ccTransfer!.amount).toBeCloseTo(-10_000, 2);
+    expect(ccTransfer!.recipientKind).toBe("spouse");
+    expect(ccTransfer!.via).toBe("unlinked_liability_proportional");
+
+    // Gross estate = 950k (home) - 600k (mortgage) - 10k (CC) = 340k
+    expect(result.estateTax.grossEstate).toBeCloseTo(340_000, 2);
+
+    // Sum of transfers should match gross estate (the report's reconciliation
+    // invariant). Asset $950k + linked-mortgage -$600k + unlinked-CC -$10k.
+    const ledgerTotal = result.transfers.reduce((s, t) => s + t.amount, 0);
+    expect(ledgerTotal).toBeCloseTo(340_000, 2);
+
+    // Original credit-card row removed; replaced by a spouse-owned row.
+    expect(result.liabilities.find((l) => l.id === "liab-cc")).toBeUndefined();
+    const inheritedCc = result.liabilities.find(
+      (l) => l.name.startsWith("Credit Card") && controllingFamilyMember(l) === "fm-spouse",
+    );
+    expect(inheritedCc).toBeDefined();
+    expect(inheritedCc!.balance).toBeCloseTo(10_000, 2);
+  });
 });
 
 describe("distributeUnlinkedLiabilities", () => {
@@ -1421,6 +1485,125 @@ describe("distributeUnlinkedLiabilities — negative-share filter (4e)", () => {
     );
     expect(aliceShares).toHaveLength(1);
     expect(aliceShares[0].amount).toBe(-20_000);
+  });
+});
+
+describe("distributeFirstDeathUnlinkedLiabilities", () => {
+  const mkAssetTransfer = (
+    recipient: { kind: DeathTransfer["recipientKind"]; id: string | null; label: string },
+    amount: number,
+  ): DeathTransfer => ({
+    year: 2030, deathOrder: 1, deceased: "client",
+    sourceAccountId: "acc-src", sourceAccountName: "Source",
+    sourceLiabilityId: null, sourceLiabilityName: null,
+    via: "fallback_spouse",
+    recipientKind: recipient.kind, recipientId: recipient.id, recipientLabel: recipient.label,
+    amount, basis: 0, resultingAccountId: "acc-new", resultingLiabilityId: null,
+  });
+
+  const mkLiability = (over: Partial<Liability> = {}): Liability => ({
+    id: "liab-cc", name: "Credit Card",
+    balance: 10_000, interestRate: 0.18, monthlyPayment: 250,
+    startYear: 2025, startMonth: 1, termMonths: 60,
+    extraPayments: [],
+    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    ...over,
+  });
+
+  it("distributes a deceased-only debt entirely to the surviving spouse via marital fallback", () => {
+    const liabs = [mkLiability()];
+    const transfers = [mkAssetTransfer({ kind: "spouse", id: null, label: "Spouse" }, 500_000)];
+
+    const r = distributeFirstDeathUnlinkedLiabilities(
+      liabs, transfers, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client",
+    );
+
+    expect(r.liabilityTransfers).toHaveLength(1);
+    expect(r.liabilityTransfers[0]).toMatchObject({
+      sourceLiabilityId: "liab-cc",
+      sourceLiabilityName: "Credit Card",
+      via: "unlinked_liability_proportional",
+      recipientKind: "spouse",
+      deathOrder: 1,
+    });
+    expect(r.liabilityTransfers[0].amount).toBeCloseTo(-10_000, 2);
+
+    // Original debt removed, replaced by a single spouse-owned row.
+    expect(r.updatedLiabilities.find((l) => l.id === "liab-cc")).toBeUndefined();
+    const newRow = r.updatedLiabilities.find((l) => l.id !== "liab-cc")!;
+    expect(controllingFamilyMember(newRow)).toBe(LEGACY_FM_SPOUSE);
+    expect(newRow.balance).toBeCloseTo(10_000, 2);
+  });
+
+  it("splits a joint debt: deceased's half transfers, survivor's half retitles in place", () => {
+    const liabs = [mkLiability({
+      owners: [
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+        { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+      ],
+    })];
+    const transfers = [mkAssetTransfer({ kind: "spouse", id: null, label: "Spouse" }, 500_000)];
+
+    const r = distributeFirstDeathUnlinkedLiabilities(
+      liabs, transfers, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client",
+    );
+
+    expect(r.liabilityTransfers).toHaveLength(1);
+    expect(r.liabilityTransfers[0].amount).toBeCloseTo(-5_000, 2);
+
+    // Original kept (id preserved) but balance halved + retitled to survivor.
+    const kept = r.updatedLiabilities.find((l) => l.id === "liab-cc")!;
+    expect(kept.balance).toBeCloseTo(5_000, 2);
+    expect(controllingFamilyMember(kept)).toBe(LEGACY_FM_SPOUSE);
+    // Plus a new row for the deceased's portion (also spouse-owned).
+    const newRows = r.updatedLiabilities.filter((l) => l.id !== "liab-cc");
+    expect(newRows).toHaveLength(1);
+    expect(newRows[0].balance).toBeCloseTo(5_000, 2);
+    expect(controllingFamilyMember(newRows[0])).toBe(LEGACY_FM_SPOUSE);
+  });
+
+  it("skips liabilities owned 100% by the survivor", () => {
+    const liabs = [mkLiability({
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
+    })];
+    const transfers = [mkAssetTransfer({ kind: "spouse", id: null, label: "Spouse" }, 500_000)];
+
+    const r = distributeFirstDeathUnlinkedLiabilities(
+      liabs, transfers, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client",
+    );
+
+    expect(r.liabilityTransfers).toEqual([]);
+    expect(r.updatedLiabilities).toEqual(liabs);
+  });
+
+  it("skips linked liabilities (handled by the asset precedence chain)", () => {
+    const liabs = [mkLiability({ linkedPropertyId: "acc-home" })];
+    const transfers = [mkAssetTransfer({ kind: "spouse", id: null, label: "Spouse" }, 500_000)];
+
+    const r = distributeFirstDeathUnlinkedLiabilities(
+      liabs, transfers, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client",
+    );
+
+    expect(r.liabilityTransfers).toEqual([]);
+    expect(r.updatedLiabilities).toEqual(liabs);
+  });
+
+  it("distributes proportionally across multiple asset recipients", () => {
+    const liabs = [mkLiability({ balance: 20_000 })];
+    const transfers = [
+      mkAssetTransfer({ kind: "spouse", id: null, label: "Spouse" }, 600_000),
+      mkAssetTransfer({ kind: "family_member", id: "child-a", label: "Alex" }, 400_000),
+    ];
+
+    const r = distributeFirstDeathUnlinkedLiabilities(
+      liabs, transfers, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client",
+    );
+
+    // 60% spouse / 40% Alex
+    const spouseEntry = r.liabilityTransfers.find((t) => t.recipientKind === "spouse")!;
+    const alexEntry = r.liabilityTransfers.find((t) => t.recipientId === "child-a")!;
+    expect(spouseEntry.amount).toBeCloseTo(-12_000, 2);
+    expect(alexEntry.amount).toBeCloseTo(-8_000, 2);
   });
 });
 

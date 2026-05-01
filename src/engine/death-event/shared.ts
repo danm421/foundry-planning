@@ -2,7 +2,7 @@ import type { ClientInfo, Account, Liability, DeathTransfer, EstateTaxResult, Fa
 import { nextSyntheticId } from "../asset-transactions";
 import type { FilingStatus } from "../../lib/tax/types";
 import type { AccountOwner } from "../ownership";
-import { controllingEntity, isFullyEntityOwned, ownedByHousehold } from "../ownership";
+import { controllingEntity, controllingFamilyMember, isFullyEntityOwned, ownedByHousehold } from "../ownership";
 
 /** Compute the year of the first-death event. Returns null when there is no
  *  spouse, when no lifeExpectancy is set, or when the earliest death falls
@@ -905,6 +905,187 @@ export function distributeUnlinkedLiabilities(
 
   const updatedLiabilities = [
     ...liabilities.filter((l) => !removedLiabilityIds.has(l.id)),
+    ...newLiabilityRows,
+  ];
+
+  return { updatedLiabilities, liabilityTransfers, warnings };
+}
+
+/** First-death analog of distributeUnlinkedLiabilities. The asset precedence
+ *  chain only routes assets — unlinked household debts (credit cards, personal
+ *  loans, etc.) are left untouched and orphaned on the deceased. This step
+ *  distributes the deceased's portion of each unlinked household debt to the
+ *  asset recipients (proportional to their share of the deceased's gross asset
+ *  estate), mirroring the unlinked_liability_proportional mechanism used at
+ *  final death.
+ *
+ *  Without this, the gross estate (which includes deceased-owned debts as
+ *  negative lines) won't reconcile against the transfer ledger, and the
+ *  liability rows themselves stay owned by the now-deceased FM — so they'd
+ *  also be excluded from the final-death gross estate by the
+ *  controllingFamilyMember check.
+ *
+ *  Survivor's portion of joint debts stays in the household as a single row
+ *  retitled to the survivor (owners → [survivor 1.0]). */
+export function distributeFirstDeathUnlinkedLiabilities(
+  liabilities: Liability[],
+  assetTransfers: DeathTransfer[],
+  deceasedFmId: string | null,
+  survivorFmId: string | null,
+  year: number,
+  deceased: "client" | "spouse",
+): UnlinkedLiabilityDistributionResult {
+  const candidates = liabilities.filter(
+    (l) =>
+      l.linkedPropertyId == null &&
+      !isFullyEntityOwned(l) &&
+      !l.ownerFamilyMemberId,
+  );
+  if (candidates.length === 0) {
+    return { updatedLiabilities: liabilities, liabilityTransfers: [], warnings: [] };
+  }
+
+  // Compute deceased's fraction per liability (mirrors computeGrossEstate
+  // liability logic post-fix #1).
+  type Bucket = { liab: Liability; deceasedFraction: number };
+  const buckets: Bucket[] = [];
+  for (const l of candidates) {
+    const cfm = controllingFamilyMember(l);
+    let deceasedFraction = 0;
+    if (cfm != null) {
+      if (cfm === deceasedFmId) deceasedFraction = 1;
+      else continue; // owned by survivor or non-principal heir
+    } else {
+      if (ownedByHousehold(l) < 0.0001) continue; // entity-dominated
+      deceasedFraction = 0.5; // joint household debt at first death
+    }
+    if (deceasedFraction > 0) buckets.push({ liab: l, deceasedFraction });
+  }
+  if (buckets.length === 0) {
+    return { updatedLiabilities: liabilities, liabilityTransfers: [], warnings: [] };
+  }
+
+  // Group asset transfers by recipient. Skip negative entries (linked-liability
+  // ledger rows) and rows without a sourceAccountId.
+  type Recipient = {
+    kind: DeathTransfer["recipientKind"];
+    id: string | null;
+    label: string;
+    amount: number;
+  };
+  const totalsByRecipient = new Map<string, Recipient>();
+  let estateTotal = 0;
+  for (const t of assetTransfers) {
+    if (t.amount <= 0) continue;
+    if (!t.sourceAccountId) continue;
+    estateTotal += t.amount;
+    const k = `${t.recipientKind}|${t.recipientId ?? ""}|${t.recipientLabel}`;
+    const prev = totalsByRecipient.get(k);
+    if (prev) prev.amount += t.amount;
+    else
+      totalsByRecipient.set(k, {
+        kind: t.recipientKind,
+        id: t.recipientId,
+        label: t.recipientLabel,
+        amount: t.amount,
+      });
+  }
+
+  const warnings: string[] = [];
+  const removedIds = new Set<string>();
+  const updatedById = new Map<string, Liability>();
+  for (const l of liabilities) updatedById.set(l.id, l);
+  const newLiabilityRows: Liability[] = [];
+  const liabilityTransfers: DeathTransfer[] = [];
+
+  for (const { liab, deceasedFraction } of buckets) {
+    if (estateTotal <= 0) {
+      warnings.push(`unlinked_liability_no_estate_recipient_first_death:${liab.id}`);
+      continue;
+    }
+
+    const deceasedBalance = liab.balance * deceasedFraction;
+    const deceasedPayment = liab.monthlyPayment * deceasedFraction;
+    const survivorBalance = liab.balance - deceasedBalance;
+    const survivorPayment = liab.monthlyPayment - deceasedPayment;
+
+    if (deceasedBalance <= 0) continue;
+
+    for (const rec of totalsByRecipient.values()) {
+      const share = rec.amount / estateTotal;
+      const shareBalance = deceasedBalance * share;
+      const sharePayment = deceasedPayment * share;
+
+      let resultingLiabilityId: string | null = null;
+      const recFmId =
+        rec.kind === "spouse" ? survivorFmId :
+        rec.kind === "family_member" ? rec.id :
+        null;
+      if (recFmId != null) {
+        // The ownerFamilyMemberId flag means "distributed to a non-household
+        // heir; skip in subsequent household processing." Set it only when the
+        // recipient is NOT the surviving spouse — the spouse is still a
+        // household principal, and at final death this debt should flow back
+        // through the unlinked-debt drain + distribution.
+        const isSurvivorRecipient = recFmId === survivorFmId;
+        const newId = nextSyntheticId("death-liab");
+        newLiabilityRows.push({
+          id: newId,
+          name: `${liab.name} — ${rec.label} share`,
+          balance: shareBalance,
+          interestRate: liab.interestRate,
+          monthlyPayment: sharePayment,
+          startYear: liab.startYear,
+          startMonth: liab.startMonth,
+          termMonths: liab.termMonths,
+          extraPayments: [],
+          ...(isSurvivorRecipient ? {} : { ownerFamilyMemberId: recFmId }),
+          isInterestDeductible: liab.isInterestDeductible,
+          owners: [{ kind: "family_member", familyMemberId: recFmId, percent: 1 }],
+        });
+        resultingLiabilityId = newId;
+      }
+      // External / system_default recipients: debt leaves the household with
+      // the inherited asset; no new liability row is kept.
+
+      liabilityTransfers.push({
+        year,
+        deathOrder: 1,
+        deceased,
+        sourceAccountId: null,
+        sourceAccountName: null,
+        sourceLiabilityId: liab.id,
+        sourceLiabilityName: liab.name,
+        via: "unlinked_liability_proportional",
+        recipientKind: rec.kind,
+        recipientId: rec.id,
+        recipientLabel: rec.label,
+        amount: -shareBalance,
+        basis: 0,
+        resultingAccountId: null,
+        resultingLiabilityId,
+      });
+    }
+
+    // Survivor's pre-existing portion (joint debts) stays in the household.
+    // Retitle to the survivor as a single row; if survivorBalance is zero
+    // (deceased was sole owner) or no survivor exists, drop the original.
+    if (survivorBalance > 1e-9 && survivorFmId != null) {
+      updatedById.set(liab.id, {
+        ...liab,
+        balance: survivorBalance,
+        monthlyPayment: survivorPayment,
+        owners: [{ kind: "family_member", familyMemberId: survivorFmId, percent: 1 }],
+      });
+    } else {
+      removedIds.add(liab.id);
+    }
+  }
+
+  const updatedLiabilities = [
+    ...liabilities
+      .filter((l) => !removedIds.has(l.id))
+      .map((l) => updatedById.get(l.id) ?? l),
     ...newLiabilityRows,
   ];
 
