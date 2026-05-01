@@ -289,6 +289,37 @@ describe("splitAccount", () => {
     expect(result.resultingLiabilities[0].linkedPropertyId).toBe(result.resultingAccounts[0].id);
     expect(result.resultingLiabilities[1].balance).toBeCloseTo(120000, 2);
     expect(result.resultingLiabilities[1].linkedPropertyId).toBe(result.resultingAccounts[1].id);
+    // Liability owners follow the asset's new owner so subsequent gross-estate
+    // computations attribute the debt to the recipient (regression: when these
+    // stayed on the original grantor the survivor's gross estate was inflated
+    // by the unsubtracted mortgage at second death).
+    expect(controllingFamilyMember(result.resultingLiabilities[0])).toBe(LEGACY_FM_SPOUSE);
+    expect(controllingFamilyMember(result.resultingLiabilities[1])).toBe("child-a");
+  });
+
+  it("propagates owners onto an in-place linked liability when one share takes 100%", () => {
+    const home: Account = { ...brokerage, id: "acct-home", name: "Primary Home", category: "real_estate", value: 950000, basis: 500000, owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }] };
+    const mortgage: Liability = {
+      id: "liab-mortgage",
+      name: "Home Mortgage",
+      balance: 600000,
+      interestRate: 0.05,
+      monthlyPayment: 3000,
+      startYear: 2020,
+      startMonth: 1,
+      termMonths: 360,
+      linkedPropertyId: "acct-home",
+      extraPayments: [],
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+
+    const result = splitAccount(home, [
+      { fraction: 1.0, ownerMutation: { owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }] }, ledgerMeta: { recipientKind: "spouse", recipientId: null, recipientLabel: "Spouse", via: "fallback_spouse" } },
+    ], mortgage);
+
+    expect(result.resultingLiabilities).toHaveLength(1);
+    expect(result.resultingLiabilities[0].id).toBe("liab-mortgage");
+    expect(controllingFamilyMember(result.resultingLiabilities[0])).toBe(LEGACY_FM_SPOUSE);
   });
 
   it("removes a linked liability when the account is removed (debts follow assets)", () => {

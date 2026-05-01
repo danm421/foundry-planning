@@ -250,12 +250,19 @@ export function splitAccount(
 
     resultingAccounts.push(newAccount);
 
-    // Liability follow-through: one liability per kept share, proportional
+    // Liability follow-through: one liability per kept share, proportional.
+    // The liability adopts the asset's post-transfer owners so downstream
+    // computations (computeGrossEstate at the next death, balance-sheet
+    // ownership, etc.) treat it as the new owner's debt. Without this,
+    // the linked debt stays attributed to the original (now-deceased)
+    // grantor and gets skipped at the survivor's death as "non-principal
+    // heir owned" — leaving the gross estate inflated by the debt amount.
     let resultingLiabilityId: string | null = null;
     if (linkedLiability) {
       if (inPlace) {
         resultingLiabilities.push({
           ...linkedLiability,
+          owners: newAccount.owners,
           // id and linkedPropertyId unchanged (account kept its id)
         });
         resultingLiabilityId = linkedLiability.id;
@@ -267,6 +274,7 @@ export function splitAccount(
           balance: liabBalanceShare,
           monthlyPayment: linkedLiability.monthlyPayment * share.fraction,
           linkedPropertyId: newAccount.id,
+          owners: newAccount.owners,
         });
         resultingLiabilityId = newLiabId;
       }

@@ -31,7 +31,7 @@ export function EstateTransferDeathSection({
             Estate value at death
           </div>
           <div className="mt-1 font-mono text-2xl font-semibold tabular-nums text-gray-50">
-            {fmt.format(section.assetEstateValue)}
+            {fmt.format(section.assetEstateValue + section.reconciliation.sumLiabilityTransfers)}
           </div>
         </div>
       </header>
