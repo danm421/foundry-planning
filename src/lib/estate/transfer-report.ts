@@ -43,17 +43,38 @@ export interface DeathSectionData {
   decedent: "client" | "spouse";
   decedentName: string;
   year: number;
+  /** Form 706 chargeable estate (deceased's share for federal estate tax —
+   *  50% of joint at first death, 100% at final). Used by the Reductions
+   *  card to anchor the tax track. NOT the right number for "what flows at
+   *  this death event" — see `assetEstateValue`. */
   grossEstate: number;
+  /** Sum of positive asset-source transfers — the total dollar value of
+   *  assets physically passing through this death event. Equals the full
+   *  balance of joint accounts at first death (titling routes 100% to the
+   *  survivor). This is the section header's "Estate value at death". */
+  assetEstateValue: number;
   assetCount: number;
   recipients: RecipientGroup[];
   reductions: ReductionsLine[];
   conflicts: ConflictEntry[];
   reconciliation: {
-    grossEstate: number;
+    /** Mirrors `assetEstateValue` (kept for UI symmetry). */
+    assetEstateValue: number;
+    /** Σ negative transfers (linked + unlinked debt following assets). ≤ 0. */
+    sumLiabilityTransfers: number;
+    /** Σ all per-recipient totals (net inheritance — assets minus inherited debt). */
     sumRecipients: number;
+    /** Σ reductions (federal/state/admin/debts). Informational; not part of
+     *  the reconciliation equation. */
     sumReductions: number;
+    /** `(assetEstateValue + sumLiabilityTransfers) − sumRecipients`. Should be
+     *  ~0 by construction; nonzero indicates a lib-side grouping bug. */
     unattributed: number;
     reconciles: boolean;
+    /** Form 706 chargeable estate, kept here so UI can display "informational
+     *  delta to Form 706" if useful (typically smaller than `assetEstateValue`
+     *  for couples with joint accounts at first death). */
+    grossEstate: number;
   };
 }
 
@@ -355,15 +376,35 @@ function buildDeathSection(
     reductions.push({ kind: "debts_paid", label: "Debts Paid", amount: debtsPaid });
   }
 
-  // Reconciliation. Engine invariant: the precedence chain allocates 100%
-  // of gross-estate assets to recipients, so `sumRecipients ≈ grossEstate`.
+  // F1: reconciliation contract. The Form 706 grossEstate (deceased's
+  // chargeable share) is NOT comparable to sumRecipients — at first death
+  // the titling step routes 100% of joint accounts to the survivor, while
+  // grossEstate counts only 50%. Compare ledger to itself instead:
+  //
+  //   assetEstateValue       = Σ positive asset-source transfers ("estate value")
+  //   sumLiabilityTransfers  = Σ negative transfers (linked + unlinked debt)
+  //   sumRecipients          = Σ all per-recipient totals (net inheritance)
+  //
+  // Internal consistency invariant:
+  //   sumRecipients == assetEstateValue + sumLiabilityTransfers
+  //
+  // Drift here indicates a lib-side grouping bug (transfer dropped from a
+  // recipient group), not an engine bug or a Form 706 mismatch.
+  //
   // Reductions (tax/admin/debts) are drained from recipient accounts by a
   // later engine phase — they're shown as a parallel informational track,
   // NOT subtracted in the reconciliation equation.
+  const assetEstateValue = payload.transfers
+    .filter((t) => t.amount > 0 && t.sourceAccountId != null)
+    .reduce((s, t) => s + t.amount, 0);
+  const sumLiabilityTransfers = payload.transfers
+    .filter((t) => t.sourceLiabilityId != null)
+    .reduce((s, t) => s + t.amount, 0);
   const sumRecipients = recipients.reduce((s, r) => s + r.total, 0);
   const sumReductions = reductions.reduce((s, r) => s + r.amount, 0);
   const grossEstate = tax.grossEstate;
-  const unattributed = grossEstate - sumRecipients;
+  const expectedNet = assetEstateValue + sumLiabilityTransfers;
+  const unattributed = expectedNet - sumRecipients;
   const reconciles = Math.abs(unattributed) <= RECONCILE_TOLERANCE;
 
   const conflicts = detectConflicts(clientData, payload.transfers, payload.decedent);
@@ -386,16 +427,19 @@ function buildDeathSection(
     decedentName,
     year: payload.year,
     grossEstate,
+    assetEstateValue,
     assetCount: payload.transfers.filter((t) => t.amount > 0 && t.sourceAccountId).length,
     recipients,
     reductions,
     conflicts,
     reconciliation: {
-      grossEstate,
+      assetEstateValue,
+      sumLiabilityTransfers,
       sumRecipients,
       sumReductions,
       unattributed,
       reconciles,
+      grossEstate,
     },
   };
 }
