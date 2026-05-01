@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { firms, subscriptions } from "@/db/schema";
 import { getStripe } from "@/lib/billing/stripe-client";
-import { checkCheckoutStatusRateLimit } from "@/lib/rate-limit";
+import { checkCheckoutStatusRateLimit, extractClientIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -12,14 +12,8 @@ export const dynamic = "force-dynamic";
 // burning a Stripe API call.
 const SESSION_ID_RE = /^cs_(test|live)_[a-zA-Z0-9_-]{10,}$/;
 
-function clientIp(req: Request): string {
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0]!.trim();
-  return req.headers.get("x-real-ip") ?? "unknown";
-}
-
 export async function GET(req: Request): Promise<Response> {
-  const ip = clientIp(req);
+  const ip = extractClientIp(req);
   const rl = await checkCheckoutStatusRateLimit(ip);
   if (!rl.allowed) {
     return NextResponse.json(

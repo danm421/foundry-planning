@@ -2,19 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getStripe } from "@/lib/billing/stripe-client";
 import { buildCheckoutSessionParams } from "@/lib/billing/checkout";
-import { checkCheckoutSessionRateLimit } from "@/lib/rate-limit";
+import { checkCheckoutSessionRateLimit, extractClientIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
   priceKey: z.enum(["seatMonthly", "seatAnnual"]),
 });
-
-function clientIp(req: Request): string {
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0]!.trim();
-  return req.headers.get("x-real-ip") ?? "unknown";
-}
 
 function originFor(req: Request): string {
   const fromHeader = req.headers.get("origin");
@@ -23,7 +17,7 @@ function originFor(req: Request): string {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  const ip = clientIp(req);
+  const ip = extractClientIp(req);
   const rl = await checkCheckoutSessionRateLimit(ip);
   if (!rl.allowed) {
     return NextResponse.json(

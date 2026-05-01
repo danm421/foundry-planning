@@ -165,3 +165,14 @@ export async function checkCheckoutStatusRateLimit(
   if (!limiter) return { allowed: false, reason: "unconfigured" };
   return safeLimit(limiter, key);
 }
+
+/**
+ * Extract a best-effort caller IP from request headers. Used as the bucket
+ * key for unauthenticated rate-limited endpoints (where there's no Clerk
+ * user/org to scope on yet).
+ */
+export function extractClientIp(req: Request): string {
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0]!.trim();
+  return req.headers.get("x-real-ip") ?? "unknown";
+}

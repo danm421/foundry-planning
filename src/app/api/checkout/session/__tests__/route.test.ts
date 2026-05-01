@@ -5,6 +5,7 @@ vi.mock("@/lib/billing/stripe-client", () => ({
 }));
 vi.mock("@/lib/rate-limit", () => ({
   checkCheckoutSessionRateLimit: vi.fn(),
+  extractClientIp: vi.fn(() => "203.0.113.7"),
 }));
 vi.mock("@/lib/billing/price-catalog", () => ({
   getPriceCatalog: vi.fn(() => ({
