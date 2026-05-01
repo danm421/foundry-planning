@@ -335,7 +335,7 @@ export default function AddLiabilityForm({
         />
       </div>
 
-      {/* Row 2: Balance + Balance as of */}
+      {/* Row 2: Balance + Linked property */}
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className={fieldLabelClassName} htmlFor="balance">
@@ -350,6 +350,30 @@ export default function AddLiabilityForm({
           />
         </div>
 
+        {realEstateAccounts && realEstateAccounts.length > 0 ? (
+          <div>
+            <label className={fieldLabelClassName} htmlFor="linkedPropertyId">
+              Linked Property
+            </label>
+            <select
+              id="linkedPropertyId"
+              name="linkedPropertyId"
+              defaultValue={initial?.linkedPropertyId ?? ""}
+              className={selectClassName}
+            >
+              <option value="">None</option>
+              {realEstateAccounts.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div />
+        )}
+      </div>
+
+      {/* Row 2b: Balance as of + Loan Start */}
+      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className={fieldLabelClassName}>Balance as of</label>
           <div className="mt-1 flex gap-2">
@@ -366,16 +390,13 @@ export default function AddLiabilityForm({
               type="number"
               value={balanceAsOfYear}
               onChange={(e) => setBalanceAsOfYear(Number(e.target.value))}
-              className={inputClassName + " flex-1"}
+              className={inputClassName + " min-w-0 flex-1"}
               min={1900}
               max={2100}
             />
           </div>
         </div>
-      </div>
 
-      {/* Row 2b: Start Month + Start Year */}
-      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className={fieldLabelClassName}>Loan Start</label>
           <div className="mt-1 flex gap-2">
@@ -389,7 +410,7 @@ export default function AddLiabilityForm({
               ))}
             </select>
             {milestones ? (
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <MilestoneYearPicker
                   name="startYear"
                   id="startYear"
@@ -412,15 +433,15 @@ export default function AddLiabilityForm({
                 required
                 value={startYear}
                 onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
-                className={inputClassName + " flex-1"}
+                className={inputClassName + " min-w-0 flex-1"}
               />
             )}
           </div>
         </div>
       </div>
 
-      {/* Row 3: Term with unit toggle + calc button | Interest rate + calc button */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Row 3: Term | Interest rate | Monthly payment (each with calc button) */}
+      <div className="grid grid-cols-3 gap-4">
         <div>
           <div className="flex items-center gap-1">
             <label className={fieldLabelClassName}>Term</label>
@@ -431,7 +452,7 @@ export default function AddLiabilityForm({
               type="number"
               value={termValue}
               onChange={(e) => setTermValue(e.target.value)}
-              className={inputClassName + " flex-1"}
+              className={inputClassName + " min-w-0 flex-1"}
               min="1"
               required
             />
@@ -461,10 +482,7 @@ export default function AddLiabilityForm({
             className={inputClassName}
           />
         </div>
-      </div>
 
-      {/* Row 4: Monthly payment + calc button */}
-      <div className="grid grid-cols-2 gap-4">
         <div>
           <div className="flex items-center gap-1">
             <label className={fieldLabelClassName} htmlFor="monthlyPayment">
@@ -481,26 +499,6 @@ export default function AddLiabilityForm({
           />
         </div>
       </div>
-
-      {/* Row 5: Linked property (if applicable) */}
-      {realEstateAccounts && realEstateAccounts.length > 0 && (
-        <div>
-          <label className={fieldLabelClassName} htmlFor="linkedPropertyId">
-            Linked Property
-          </label>
-          <select
-            id="linkedPropertyId"
-            name="linkedPropertyId"
-            defaultValue={initial?.linkedPropertyId ?? ""}
-            className={selectClassName}
-          >
-            <option value="">None</option>
-            {realEstateAccounts.map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
-            ))}
-          </select>
-        </div>
-      )}
 
       {/* Row 6: Ownership */}
       <div>
