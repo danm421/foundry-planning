@@ -494,7 +494,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                   {assetBequests.map((b, idx) => {
                     const assetLabel =
                       b.assetMode === "all_assets"
-                        ? "All other assets"
+                        ? "Remaining Estate Value"
                         : accounts.find((a) => a.id === b.accountId)?.name ??
                           "(unknown account)";
                     // Global index in full bequests list

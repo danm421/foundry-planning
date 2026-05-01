@@ -138,7 +138,7 @@ describe("BequestDialog", () => {
     );
   });
 
-  it("auto-derives name to 'All other assets' when assetMode is residual", async () => {
+  it("auto-derives name to 'Remaining Estate Value' when assetMode is residual", async () => {
     const onSave = vi.fn();
     const user = userEvent.setup();
     render(
@@ -168,7 +168,7 @@ describe("BequestDialog", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "All other assets",
+        name: "Remaining Estate Value",
         assetMode: "all_assets",
         accountId: null,
       }),

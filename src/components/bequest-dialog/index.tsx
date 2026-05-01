@@ -72,7 +72,7 @@ const CONDITION_OPTIONS: ReadonlyArray<{ value: WillCondition; label: string }> 
 ];
 
 function deriveBequestName(draft: BequestDraft, accounts: WillsPanelAccount[]): string {
-  if (draft.assetMode === "all_assets") return "All other assets";
+  if (draft.assetMode === "all_assets") return "Remaining Estate Value";
   const acct = accounts.find((a) => a.id === draft.accountId);
   return acct?.name?.trim() || "Asset bequest";
 }
@@ -146,7 +146,7 @@ export default function BequestDialog({
               }}
               className={selectClassName}
             >
-              <option value="__residual__">All other assets</option>
+              <option value="__residual__">Remaining Estate Value</option>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}
