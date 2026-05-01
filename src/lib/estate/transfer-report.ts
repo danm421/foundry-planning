@@ -527,7 +527,13 @@ function describeRecipients(
       const ent = (clientData.entities ?? []).find((e) => e.id === r.recipientId);
       if (ent?.name) return ent.name;
     }
-    if (r.recipientKind === "spouse") return "Spouse";
+    if (r.recipientKind === "spouse") {
+      const spouseFm = (clientData.familyMembers ?? []).find((f) => f.role === "spouse");
+      if (spouseFm) {
+        return `${spouseFm.firstName}${spouseFm.lastName ? " " + spouseFm.lastName : ""}`;
+      }
+      return "Spouse";
+    }
     return "(recipient)";
   });
   return names.join(", ");

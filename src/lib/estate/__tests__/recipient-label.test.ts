@@ -135,6 +135,49 @@ describe("resolveRecipientLabel", () => {
     expect(out.name).toBe("Charity Foo");
   });
 
+  it("resolves spouse recipients to the spouse's actual name from familyMembers", () => {
+    const data = tree([
+      {
+        id: "fm-client",
+        role: "client",
+        relationship: "other",
+        firstName: "Robert",
+        lastName: "Kleiner",
+        dateOfBirth: "1965-01-01",
+      },
+      {
+        id: "fm-spouse",
+        role: "spouse",
+        relationship: "other",
+        firstName: "Mary",
+        lastName: "Kleiner",
+        dateOfBirth: "1967-01-01",
+      },
+    ]);
+    const out = resolveRecipientLabel(
+      transfer({
+        recipientKind: "spouse",
+        recipientId: null,
+        recipientLabel: "Spouse",
+      }),
+      data,
+    );
+    expect(out.name).toBe("Mary Kleiner");
+    expect(out.kind).toBe("spouse");
+  });
+
+  it("falls back to 'Spouse' literal when no spouse-role family member exists", () => {
+    const out = resolveRecipientLabel(
+      transfer({
+        recipientKind: "spouse",
+        recipientId: null,
+        recipientLabel: "Spouse",
+      }),
+      tree(),
+    );
+    expect(out.name).toBe("Spouse");
+  });
+
   it("uses recipientLabel verbatim for system_default", () => {
     const out = resolveRecipientLabel(
       transfer({

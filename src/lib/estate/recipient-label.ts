@@ -47,7 +47,17 @@ export function resolveRecipientLabel(
     }
   }
 
-  // spouse / system_default / unresolved → use the frozen label.
+  // The engine emits spouse transfers with recipientId=null and the generic
+  // "Spouse" label, so resolve by role from the household tree.
+  if (recipientKind === "spouse") {
+    const spouseFm = (clientData.familyMembers ?? []).find((f) => f.role === "spouse");
+    if (spouseFm) {
+      const name = `${spouseFm.firstName}${spouseFm.lastName ? " " + spouseFm.lastName : ""}`;
+      return { name, kind: recipientKind, relationship: null, isTrustRemainder: false };
+    }
+  }
+
+  // system_default / unresolved → use the frozen label.
   return {
     name: recipientLabel,
     kind: recipientKind,
