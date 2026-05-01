@@ -10,6 +10,8 @@ import type { DocumentProps } from "@react-pdf/renderer";
 import { BalanceSheetPdfDocument } from "@/components/balance-sheet-report-pdf/balance-sheet-pdf-document";
 import { buildViewModel } from "@/components/balance-sheet-report/view-model";
 import type { OwnershipView } from "@/components/balance-sheet-report/ownership-filter";
+import { deriveLegacyOwnership } from "@/components/balance-sheet-report/derive-ownership";
+import type { FamilyMember } from "@/engine/types";
 import React from "react";
 
 export const dynamic = "force-dynamic";
@@ -77,9 +79,33 @@ export async function POST(
       entityType: e.entityType,
     }));
 
+    const roleById = new Map<string, FamilyMember["role"]>(
+      ((apiData.familyMembers ?? []) as FamilyMember[]).map((fm) => [fm.id, fm.role]),
+    );
+    const mappedAccounts = apiData.accounts.map((a: { id: string; name: string; category: string; owners: Parameters<typeof deriveLegacyOwnership>[0] }) => {
+      const { owner, ownerEntityId } = deriveLegacyOwnership(a.owners ?? [], roleById);
+      return {
+        id: a.id,
+        name: a.name,
+        category: a.category,
+        owner: owner ?? "client",
+        ownerEntityId,
+      } as const;
+    });
+    const mappedLiabilities = apiData.liabilities.map((l: { id: string; name: string; owners: Parameters<typeof deriveLegacyOwnership>[0]; linkedPropertyId?: string | null }) => {
+      const { owner, ownerEntityId } = deriveLegacyOwnership(l.owners ?? [], roleById);
+      return {
+        id: l.id,
+        name: l.name,
+        owner,
+        ownerEntityId,
+        linkedPropertyId: l.linkedPropertyId ?? null,
+      } as const;
+    });
+
     const viewModel = buildViewModel({
-      accounts: apiData.accounts,
-      liabilities: apiData.liabilities,
+      accounts: mappedAccounts,
+      liabilities: mappedLiabilities,
       entities: entityInfos,
       projectionYears,
       selectedYear: year,

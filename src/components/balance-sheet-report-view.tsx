@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { runProjection } from "@/engine/projection";
-import type { ProjectionYear } from "@/engine/types";
+import type { FamilyMember, ProjectionYear } from "@/engine/types";
+import type { AccountOwner } from "@/engine/ownership";
 import type { OwnerNames } from "@/lib/owner-labels";
 import type { OwnerDobs } from "./report-controls/age-helpers";
 import HeaderControls from "./balance-sheet-report/header-controls";
@@ -13,6 +14,7 @@ import CenterColumn from "./balance-sheet-report/center-column";
 import EntityBreakdownPanel from "./balance-sheet-report/entity-breakdown-panel";
 import { buildViewModel } from "./balance-sheet-report/view-model";
 import type { OwnershipView } from "./balance-sheet-report/ownership-filter";
+import { deriveLegacyOwnership } from "./balance-sheet-report/derive-ownership";
 
 interface EntityInfo { id: string; name: string; entityType: string }
 
@@ -25,8 +27,19 @@ interface BalanceSheetReportViewProps {
 }
 
 interface ProjectionApiResponse {
-  accounts: Array<{ id: string; name: string; category: string; owner: "client" | "spouse" | "joint"; ownerEntityId?: string | null }>;
-  liabilities: Array<{ id: string; name: string; owner?: "client" | "spouse" | "joint" | null; ownerEntityId?: string | null; linkedPropertyId?: string | null }>;
+  accounts: Array<{
+    id: string;
+    name: string;
+    category: string;
+    owners: AccountOwner[];
+  }>;
+  liabilities: Array<{
+    id: string;
+    name: string;
+    owners: AccountOwner[];
+    linkedPropertyId?: string | null;
+  }>;
+  familyMembers?: FamilyMember[];
   [key: string]: unknown;
 }
 
@@ -75,8 +88,40 @@ export default function BalanceSheetReportView({
     load();
   }, [clientId, searchParams]);
 
-  const hasEntityAccounts = useMemo(() => {
-    return apiData?.accounts?.some((a) => a.ownerEntityId != null) ?? false;
+  // Bridge engine `owners[]` → legacy `{ owner, ownerEntityId }` shape that
+  // the balance-sheet view-model still consumes. See derive-ownership.ts.
+  const { mappedAccounts, mappedLiabilities, hasEntityAccounts } = useMemo(() => {
+    if (!apiData) {
+      return { mappedAccounts: [], mappedLiabilities: [], hasEntityAccounts: false };
+    }
+    const roleById = new Map<string, FamilyMember["role"]>(
+      (apiData.familyMembers ?? []).map((fm) => [fm.id, fm.role]),
+    );
+    const accounts = apiData.accounts.map((a) => {
+      const { owner, ownerEntityId } = deriveLegacyOwnership(a.owners ?? [], roleById);
+      return {
+        id: a.id,
+        name: a.name,
+        category: a.category,
+        owner: owner ?? "client",
+        ownerEntityId,
+      };
+    });
+    const liabilities = apiData.liabilities.map((l) => {
+      const { owner, ownerEntityId } = deriveLegacyOwnership(l.owners ?? [], roleById);
+      return {
+        id: l.id,
+        name: l.name,
+        owner,
+        ownerEntityId,
+        linkedPropertyId: l.linkedPropertyId ?? null,
+      };
+    });
+    return {
+      mappedAccounts: accounts,
+      mappedLiabilities: liabilities,
+      hasEntityAccounts: accounts.some((a) => a.ownerEntityId != null),
+    };
   }, [apiData]);
 
   const entityLabelById = useMemo(() => {
@@ -89,15 +134,15 @@ export default function BalanceSheetReportView({
     const selectedYear =
       selectedAsOf === "today" ? projectionYears[0].year : selectedAsOf;
     return buildViewModel({
-      accounts: apiData.accounts,
-      liabilities: apiData.liabilities,
+      accounts: mappedAccounts,
+      liabilities: mappedLiabilities,
       entities,
       projectionYears,
       selectedYear,
       view,
       asOfMode,
     });
-  }, [apiData, entities, projectionYears, selectedAsOf, view]);
+  }, [apiData, mappedAccounts, mappedLiabilities, entities, projectionYears, selectedAsOf, view]);
 
   async function handleExportPdf() {
     if (!viewModel || !apiData || selectedAsOf == null) return;
