@@ -81,9 +81,10 @@ function willToSpouse(grantor: "client" | "spouse", accountId: string): Will {
 }
 
 function mkInput(over: Partial<DeathEventInput> & { accounts: Account[] }): DeathEventInput {
+  const { accounts, ...rest } = over;
   const accountBalances: Record<string, number> = {};
   const basisMap: Record<string, number> = {};
-  for (const a of over.accounts) {
+  for (const a of accounts) {
     accountBalances[a.id] = a.value;
     basisMap[a.id] = a.basis;
   }
@@ -92,9 +93,6 @@ function mkInput(over: Partial<DeathEventInput> & { accounts: Account[] }): Deat
     deceased: "client",
     survivor: "spouse",
     will: null,
-    accounts: over.accounts,
-    accountBalances,
-    basisMap,
     incomes: [],
     liabilities: [],
     familyMembers: PRINCIPAL_FMS,
@@ -104,7 +102,10 @@ function mkInput(over: Partial<DeathEventInput> & { accounts: Account[] }): Deat
     gifts: [],
     annualExclusionsByYear: {},
     dsueReceived: 0,
-    ...over,
+    ...rest,
+    accounts,
+    accountBalances,
+    basisMap,
   };
 }
 
