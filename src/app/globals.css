@@ -126,3 +126,19 @@ body {
   border-left-width: 2px;
   border-left-color: #7a5b29;
 }
+
+/* Clerk sign-in / sign-up logo size — emotion's generated rules use      */
+/* single-class specificity, so the .cl-rootBox prefix (2 classes) wins.  */
+.cl-rootBox .cl-logoBox {
+  height: 18rem !important;
+  max-height: 18rem !important;
+}
+.cl-rootBox .cl-logoBox img,
+.cl-rootBox .cl-logoBox a {
+  height: 18rem !important;
+  max-height: 18rem !important;
+  width: auto !important;
+  max-width: none !important;
+  display: block !important;
+}
+

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
+import { dark } from "@clerk/themes";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { SentryUserContext } from "@/components/sentry-user-context";
 import { ToastProvider } from "@/components/toast";
@@ -41,7 +42,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      appearance={{
+        baseTheme: dark,
+        variables: {
+          colorBackground: "#17181c",
+          colorForeground: "#f3f4f6",
+          colorInput: "#0b0c0f",
+          colorInputForeground: "#f3f4f6",
+          colorPrimary: "#f59e0b",
+        },
+        elements: {
+          card: "border border-white/10 shadow-2xl",
+        },
+      }}
+    >
       <html
         lang="en"
         className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased dark`}
