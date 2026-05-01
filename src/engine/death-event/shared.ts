@@ -372,7 +372,9 @@ export function applyTitling(
         ledgerMeta: {
           via: "titling",
           recipientKind: "spouse",
-          recipientId: null,
+          // Carries survivor's FM id so the resolver finds the right person
+          // (otherwise spouseFirst ordering mislabels the surviving client).
+          recipientId: survivorFmId,
           recipientLabel: "Spouse",
         },
       },
@@ -525,7 +527,7 @@ function resolveRecipientLabelAndMutation(
         : undefined,
       removed: false,
       recipientKind: "spouse",
-      recipientId: null,
+      recipientId: survivorFmId,
       recipientLabel: "Spouse",
     };
   }
@@ -1184,7 +1186,7 @@ export function applyFallback(
         ledgerMeta: {
           via: "fallback_spouse",
           recipientKind: "spouse",
-          recipientId: null,
+          recipientId: survivorFmId,
           recipientLabel: "Spouse",
         },
       }],

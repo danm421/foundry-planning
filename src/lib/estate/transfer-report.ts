@@ -43,13 +43,22 @@ export interface DeathSectionData {
   decedent: "client" | "spouse";
   decedentName: string;
   year: number;
+  /** Form 706 chargeable estate — 50% of joint at first death, 100% at final.
+   *  Anchors the tax track in the Reductions card. NOT comparable to the
+   *  asset-transfer total; see `assetEstateValue`. */
   grossEstate: number;
+  /** Σ positive asset-source transfers. The asset value physically passing
+   *  through this death event (full balance of joint accounts at first death,
+   *  since titling routes 100% to the survivor). */
+  assetEstateValue: number;
   assetCount: number;
   recipients: RecipientGroup[];
   reductions: ReductionsLine[];
   conflicts: ConflictEntry[];
+  /** Internal-consistency check on the ledger:
+   *  `assetEstateValue + sumLiabilityTransfers == sumRecipients` */
   reconciliation: {
-    grossEstate: number;
+    sumLiabilityTransfers: number;
     sumRecipients: number;
     sumReductions: number;
     unattributed: number;
@@ -355,15 +364,25 @@ function buildDeathSection(
     reductions.push({ kind: "debts_paid", label: "Debts Paid", amount: debtsPaid });
   }
 
-  // Reconciliation. Engine invariant: the precedence chain allocates 100%
-  // of gross-estate assets to recipients, so `sumRecipients ≈ grossEstate`.
-  // Reductions (tax/admin/debts) are drained from recipient accounts by a
-  // later engine phase — they're shown as a parallel informational track,
-  // NOT subtracted in the reconciliation equation.
+  // Reconciliation compares ledger against itself, not against Form 706
+  // grossEstate — the latter counts the deceased's chargeable share (50% of
+  // joint at first death) while titling moves 100% of the asset.
+  let assetEstateValue = 0;
+  let sumLiabilityTransfers = 0;
+  let assetCount = 0;
+  for (const t of payload.transfers) {
+    if (t.amount > 0 && t.sourceAccountId != null) {
+      assetEstateValue += t.amount;
+      assetCount += 1;
+    }
+    if (t.sourceLiabilityId != null) {
+      sumLiabilityTransfers += t.amount;
+    }
+  }
   const sumRecipients = recipients.reduce((s, r) => s + r.total, 0);
   const sumReductions = reductions.reduce((s, r) => s + r.amount, 0);
   const grossEstate = tax.grossEstate;
-  const unattributed = grossEstate - sumRecipients;
+  const unattributed = assetEstateValue + sumLiabilityTransfers - sumRecipients;
   const reconciles = Math.abs(unattributed) <= RECONCILE_TOLERANCE;
 
   const conflicts = detectConflicts(clientData, payload.transfers, payload.decedent);
@@ -386,12 +405,13 @@ function buildDeathSection(
     decedentName,
     year: payload.year,
     grossEstate,
-    assetCount: payload.transfers.filter((t) => t.amount > 0 && t.sourceAccountId).length,
+    assetEstateValue,
+    assetCount,
     recipients,
     reductions,
     conflicts,
     reconciliation: {
-      grossEstate,
+      sumLiabilityTransfers,
       sumRecipients,
       sumReductions,
       unattributed,

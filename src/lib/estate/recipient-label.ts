@@ -47,9 +47,16 @@ export function resolveRecipientLabel(
     }
   }
 
-  // The engine emits spouse transfers with recipientId=null and the generic
-  // "Spouse" label, so resolve by role from the household tree.
+  // Prefer recipientId; fall back to role lookup when it's null
+  // (final-death bequest to spouse with no surviving spouse) or stale.
   if (recipientKind === "spouse") {
+    if (recipientId) {
+      const fm = (clientData.familyMembers ?? []).find((f) => f.id === recipientId);
+      if (fm) {
+        const name = `${fm.firstName}${fm.lastName ? " " + fm.lastName : ""}`;
+        return { name, kind: recipientKind, relationship: null, isTrustRemainder: false };
+      }
+    }
     const spouseFm = (clientData.familyMembers ?? []).find((f) => f.role === "spouse");
     if (spouseFm) {
       const name = `${spouseFm.firstName}${spouseFm.lastName ? " " + spouseFm.lastName : ""}`;

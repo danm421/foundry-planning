@@ -9,10 +9,14 @@ const fmt = new Intl.NumberFormat("en-US", {
 
 export function EstateTransferReductionsCard({
   reductions,
+  grossEstate,
 }: {
   reductions: ReductionsLine[];
+  /** Form 706 chargeable estate (deceased's share for federal estate tax).
+   *  Anchors the tax track. Optional — pass when displaying the tax context. */
+  grossEstate?: number;
 }) {
-  if (reductions.length === 0) {
+  if (reductions.length === 0 && grossEstate == null) {
     return null;
   }
   const total = reductions.reduce((s, r) => s + r.amount, 0);
@@ -30,6 +34,15 @@ export function EstateTransferReductionsCard({
         Amounts that come off the gross estate before heirs receive their share.
       </p>
       <div className="divide-y divide-rose-900/30">
+        {grossEstate != null && (
+          <div
+            className="flex items-baseline justify-between gap-4 py-1.5 text-sm text-rose-100/90"
+            title="The deceased's chargeable share for federal estate tax: 50% of joint accounts at first death, 100% at final death (Form 706)."
+          >
+            <span>Form 706 chargeable estate</span>
+            <span className="font-mono tabular-nums">{fmt.format(grossEstate)}</span>
+          </div>
+        )}
         {reductions.map((r) => (
           <div
             key={r.kind}
