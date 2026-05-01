@@ -19,7 +19,7 @@ export default function PrivacyPage() {
           This Privacy Policy explains how Foundry Planning, Inc.
           (&ldquo;Foundry&rdquo;) handles personal information collected
           from advisors and Firms that use our application. For personal
-          information about a Firm's clients that the Firm uploads to
+          information about a Firm&rsquo;s clients that the Firm uploads to
           Foundry, the Firm is the controller and Foundry is the processor;
           the terms of our{" "}
           <Link href="/legal/dpa">Data Processing Addendum</Link> govern
@@ -113,7 +113,7 @@ export default function PrivacyPage() {
             docs/vendors.md
           </a>{" "}
           (also linked from our DPA). We may disclose information when
-          required by law, to protect our rights or others' safety, or in
+          required by law, to protect our rights or others&rsquo; safety, or in
           connection with a corporate transaction (with notice where
           permitted).
         </p>
@@ -134,7 +134,7 @@ export default function PrivacyPage() {
       <section>
         <h2>7. Security</h2>
         <p>
-          Foundry encrypts data in transit with TLS and at rest via Neon's
+          Foundry encrypts data in transit with TLS and at rest via Neon&rsquo;s
           managed Postgres. Access controls, audit logging, and incident
           response are described in our{" "}
           <Link href="/legal/dpa">Data Processing Addendum</Link>.
@@ -151,8 +151,8 @@ export default function PrivacyPage() {
           <a href="mailto:support@foundryplanning.com">
             support@foundryplanning.com
           </a>
-          . For requests about a Firm's client data, contact the Firm
-          directly; we will support the Firm's response.
+          . For requests about a Firm&rsquo;s client data, contact the Firm
+          directly; we will support the Firm&rsquo;s response.
         </p>
       </section>
 

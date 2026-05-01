@@ -45,7 +45,7 @@ export default function TosPage() {
           access and edit any client data within the Firm subject to
           internal Firm policy. You are responsible for maintaining the
           confidentiality of credentials and for all activity under your
-          Firm's account.
+          Firm&rsquo;s account.
         </p>
       </section>
 
@@ -91,7 +91,7 @@ export default function TosPage() {
           You may cancel at any time through the Customer Portal accessible
           from your settings. Cancellation takes effect at the end of the
           current billing period; we do not pro-rate partial periods. We may
-          change pricing on at least 30 days' written notice (email to the
+          change pricing on at least 30 days&rsquo; written notice (email to the
           Firm owner of record); changes apply to your next renewal.
         </p>
       </section>
@@ -113,9 +113,9 @@ export default function TosPage() {
       <section>
         <h2>7. Confidentiality and security</h2>
         <p>
-          Each party will protect the other's confidential information with
+          Each party will protect the other&rsquo;s confidential information with
           at least the same care it uses for its own confidential
-          information of similar sensitivity. Foundry's security measures
+          information of similar sensitivity. Foundry&rsquo;s security measures
           are described in our{" "}
           <Link href="/legal/dpa">Data Processing Addendum</Link>.
         </p>
@@ -138,12 +138,12 @@ export default function TosPage() {
         <p>
           To the maximum extent permitted by law, neither party will be
           liable for indirect, incidental, consequential, or punitive
-          damages, or for lost profits or revenue. Each party's total
+          damages, or for lost profits or revenue. Each party&rsquo;s total
           liability arising under these Terms is limited to fees paid by
           the Firm to Foundry in the twelve months immediately preceding
           the claim. These limits do not apply to: (a) breaches of
           confidentiality; (b) indemnification obligations; or (c)
-          a party's gross negligence or willful misconduct.
+          a party&rsquo;s gross negligence or willful misconduct.
         </p>
       </section>
 

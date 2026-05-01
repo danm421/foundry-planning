@@ -90,11 +90,11 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
           <span className="font-medium text-ink">{status.buyerEmail}</span>.
         </p>
         <p className="mt-2 text-sm text-ink-3">
-          Open the email, click <em>Accept invitation</em>, and you'll land in
+          Open the email, click <em>Accept invitation</em>, and you&rsquo;ll land in
           your workspace.
         </p>
         <p className="mt-8 text-xs text-ink-3">
-          Didn't get the email after a few minutes? Email{" "}
+          Didn&rsquo;t get the email after a few minutes? Email{" "}
           <a
             className="text-accent hover:underline"
             href="mailto:support@foundryplanning.com"
@@ -114,7 +114,7 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
           Provisioning is taking longer than expected.
         </h1>
         <p className="mt-4 text-ink-2">
-          Your sign-in invite will arrive within a few minutes. If you don't
+          Your sign-in invite will arrive within a few minutes. If you don&rsquo;t
           see it, email{" "}
           <a
             className="text-accent hover:underline"
@@ -134,7 +134,7 @@ export default function SuccessPolling({ sessionId }: { sessionId: string }) {
         Something went wrong.
       </h1>
       <p className="mt-4 text-ink-2">
-        We couldn't find your checkout session. If you completed a purchase,
+        We couldn&rsquo;t find your checkout session. If you completed a purchase,
         email{" "}
         <a
           className="text-accent hover:underline"

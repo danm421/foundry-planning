@@ -19,9 +19,9 @@ export default function DpaPage() {
           This Addendum forms part of the agreement between Foundry
           Planning, Inc. (&ldquo;Foundry,&rdquo; &ldquo;Processor&rdquo;)
           and the Firm identified at sign-up (&ldquo;Firm,&rdquo;
-          &ldquo;Controller&rdquo;) and governs Foundry's processing of
-          personal information about the Firm's clients (&ldquo;Client
-          Data&rdquo;) on the Firm's behalf. Where Foundry processes
+          &ldquo;Controller&rdquo;) and governs Foundry&rsquo;s processing of
+          personal information about the Firm&rsquo;s clients (&ldquo;Client
+          Data&rdquo;) on the Firm&rsquo;s behalf. Where Foundry processes
           personal information about Firm members directly, Foundry acts
           as Controller; that processing is described in our{" "}
           <Link href="/legal/privacy">Privacy Policy</Link>.
@@ -36,7 +36,7 @@ export default function DpaPage() {
             provide the Service to the Firm.
           </li>
           <li>
-            <strong>Duration:</strong> the term of the Firm's
+            <strong>Duration:</strong> the term of the Firm&rsquo;s
             subscription, plus any read-only grace and retention windows
             described in our{" "}
             <Link href="/legal/privacy">Privacy Policy</Link>.
@@ -47,7 +47,7 @@ export default function DpaPage() {
             uploaded or entered by the Firm.
           </li>
           <li>
-            <strong>Categories of data subjects:</strong> the Firm's
+            <strong>Categories of data subjects:</strong> the Firm&rsquo;s
             clients and their household members named in scenarios.
           </li>
           <li>
@@ -60,7 +60,7 @@ export default function DpaPage() {
       </section>
 
       <section>
-        <h2>3. Foundry's obligations</h2>
+        <h2>3. Foundry&rsquo;s obligations</h2>
         <ul>
           <li>
             Process Client Data only on documented instructions from the
@@ -90,14 +90,14 @@ export default function DpaPage() {
       <section>
         <h2>4. Subprocessors</h2>
         <p>
-          The Firm authorizes Foundry's use of the subprocessors listed at{" "}
+          The Firm authorizes Foundry&rsquo;s use of the subprocessors listed at{" "}
           <a
             href="https://github.com/foundry-planning/foundry-planning/blob/main/docs/vendors.md"
             rel="noopener"
           >
             docs/vendors.md
           </a>
-          . Foundry will provide at least 30 days' prior written notice
+          . Foundry will provide at least 30 days&rsquo; prior written notice
           (to the Firm owner of record) before adding or replacing a
           subprocessor that processes Client Data, during which the Firm
           may object on reasonable grounds. Foundry imposes data-protection
@@ -158,7 +158,7 @@ export default function DpaPage() {
         <p>
           Foundry will provide the Firm with up-to-date attestations
           (current SOC&nbsp;2 Type&nbsp;II report or equivalent) and
-          reasonable cooperation with the Firm's audit obligations under
+          reasonable cooperation with the Firm&rsquo;s audit obligations under
           applicable law, on no more than annual basis or as required by
           regulators or after a confirmed incident.
         </p>
