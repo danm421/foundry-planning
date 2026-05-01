@@ -47,9 +47,23 @@ export function resolveRecipientLabel(
     }
   }
 
-  // The engine emits spouse transfers with recipientId=null and the generic
-  // "Spouse" label, so resolve by role from the household tree.
+  // F2: prefer recipientId when present — it carries the actual surviving
+  // FM id (set by applyTitling/applyFallback/will-bequest emission since
+  // 2026-05-01). Without this, spouseFirst ordering mislabels the surviving
+  // client as the spouse because the role-based fallback always returns
+  // the spouse FM.
+  //
+  // Falls back to the legacy role-based lookup when:
+  //   - recipientId is null (final-death will bequests with no surviving spouse)
+  //   - recipientId points at an FM no longer in the tree (data drift)
   if (recipientKind === "spouse") {
+    if (recipientId) {
+      const fm = (clientData.familyMembers ?? []).find((f) => f.id === recipientId);
+      if (fm) {
+        const name = `${fm.firstName}${fm.lastName ? " " + fm.lastName : ""}`;
+        return { name, kind: recipientKind, relationship: null, isTrustRemainder: false };
+      }
+    }
     const spouseFm = (clientData.familyMembers ?? []).find((f) => f.role === "spouse");
     if (spouseFm) {
       const name = `${spouseFm.firstName}${spouseFm.lastName ? " " + spouseFm.lastName : ""}`;

@@ -202,4 +202,54 @@ describe("resolveRecipientLabel", () => {
     );
     expect(out.name).toBe("Frozen Label");
   });
+
+  describe("F2 — spouse recipientId is honored over role-based lookup", () => {
+    const couple: FamilyMember[] = [
+      { id: "fm-client", role: "client", relationship: "other", firstName: "Pat", lastName: null, dateOfBirth: "1970-01-01" },
+      { id: "fm-spouse", role: "spouse", relationship: "other", firstName: "Sam", lastName: null, dateOfBirth: "1972-01-01" },
+    ];
+
+    it("primaryFirst: recipientId=fm-spouse resolves to the spouse's name", () => {
+      const out = resolveRecipientLabel(
+        transfer({
+          recipientKind: "spouse",
+          recipientId: "fm-spouse",
+          recipientLabel: "Spouse",
+          deceased: "client",
+        }),
+        tree(couple),
+      );
+      expect(out.name).toBe("Sam");
+      expect(out.kind).toBe("spouse");
+    });
+
+    it("spouseFirst: recipientId=fm-client resolves to the surviving CLIENT's name", () => {
+      // This is the F2 bug: pre-fix, the resolver used role==='spouse' and
+      // returned "Sam" (the deceased) instead of "Pat" (the actual recipient).
+      const out = resolveRecipientLabel(
+        transfer({
+          recipientKind: "spouse",
+          recipientId: "fm-client",
+          recipientLabel: "Spouse",
+          deceased: "spouse",
+        }),
+        tree(couple),
+      );
+      expect(out.name).toBe("Pat");
+      expect(out.kind).toBe("spouse");
+    });
+
+    it("recipientId pointing at a missing FM falls back to role-based lookup", () => {
+      const out = resolveRecipientLabel(
+        transfer({
+          recipientKind: "spouse",
+          recipientId: "fm-stale",
+          recipientLabel: "Spouse",
+        }),
+        tree(couple),
+      );
+      // Falls back to role-based lookup; finds Sam (the spouse).
+      expect(out.name).toBe("Sam");
+    });
+  });
 });
