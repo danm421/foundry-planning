@@ -1803,6 +1803,7 @@ export const clientImports = pgTable("client_imports", {
   createdByUserId: text("created_by_user_id").notNull(),
   committedByUserId: text("committed_by_user_id"),
   committedAt: timestamp("committed_at"),
+  aiImportCounted: boolean("ai_import_counted").notNull().default(false),
   discardedAt: timestamp("discarded_at"),
   notes: text("notes"),
   payloadJson: jsonb("payload_json").notNull().default(sql`'{}'::jsonb`),
@@ -1913,6 +1914,7 @@ export const firms = pgTable("firms", {
   dataRetentionUntil: timestamp("data_retention_until", { withTimezone: true }),
   purgedAt: timestamp("purged_at", { withTimezone: true }),
   dpaVersion: text("dpa_version"),
+  aiImportsUsed: integer("ai_imports_used").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
