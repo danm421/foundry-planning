@@ -372,7 +372,10 @@ export function applyTitling(
         ledgerMeta: {
           via: "titling",
           recipientKind: "spouse",
-          recipientId: null,
+          // F2: carry survivor's FM id so the report resolves to the right
+          // person (otherwise spouseFirst ordering mislabels the surviving
+          // client as the spouse).
+          recipientId: survivorFmId,
           recipientLabel: "Spouse",
         },
       },
@@ -525,7 +528,12 @@ function resolveRecipientLabelAndMutation(
         : undefined,
       removed: false,
       recipientKind: "spouse",
-      recipientId: null,
+      // F2: when there's a surviving spouse, carry their FM id on the ledger
+      // so the resolver finds the right person. At final death survivorFmId
+      // is null — keep the legacy null behavior so the resolver's role-based
+      // fallback handles the (anomalous) "bequest to spouse with no surviving
+      // spouse" case without crashing.
+      recipientId: survivorFmId,
       recipientLabel: "Spouse",
     };
   }
@@ -1184,7 +1192,8 @@ export function applyFallback(
         ledgerMeta: {
           via: "fallback_spouse",
           recipientKind: "spouse",
-          recipientId: null,
+          // F2: carry survivor's FM id (see applyTitling).
+          recipientId: survivorFmId,
           recipientLabel: "Spouse",
         },
       }],
