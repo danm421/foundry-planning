@@ -6,7 +6,7 @@ import { fraForBirthDate } from "@/engine/socialSecurity/fra";
 import { computeOwnMonthlyBenefit } from "@/engine/socialSecurity/ownRetirement";
 import { resolveClaimAgeMonths } from "@/engine/socialSecurity/claimAge";
 import DialogShell from "./dialog-shell";
-import { inputClassName, selectClassName, fieldLabelClassName } from "./forms/input-styles";
+import { inputClassName, inputBaseClassName, selectClassName, fieldLabelClassName } from "./forms/input-styles";
 
 type SsBenefitMode = "pia_at_fra" | "manual_amount" | "no_benefit";
 type ClaimAgeMode = "fra" | "at_retirement" | "years";
@@ -289,7 +289,7 @@ export function SocialSecurityDialog({
               step="0.5"
               value={growthRate}
               onChange={(e) => setGrowthRate(e.target.value)}
-              className={`${inputClassName} w-32`}
+              className={inputBaseClassName + " w-32"}
             />
           </div>
         )}

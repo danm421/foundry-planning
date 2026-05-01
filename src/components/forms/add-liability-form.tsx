@@ -9,7 +9,7 @@ import { resolveMilestone } from "@/lib/milestones";
 import { calcPayment, calcTerm, calcRate } from "@/lib/loan-math";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
-import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
+import { inputClassName, inputBaseClassName, selectClassName, selectBaseClassName, fieldLabelClassName } from "./input-styles";
 import { OwnershipEditor } from "./ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
 
@@ -380,7 +380,7 @@ export default function AddLiabilityForm({
             <select
               value={balanceAsOfMonth}
               onChange={(e) => setBalanceAsOfMonth(Number(e.target.value))}
-              className={selectClassName + " w-24"}
+              className={selectBaseClassName + " w-20 shrink-0"}
             >
               {MONTH_NAMES.map((m, i) => (
                 <option key={i + 1} value={i + 1}>{m}</option>
@@ -390,7 +390,7 @@ export default function AddLiabilityForm({
               type="number"
               value={balanceAsOfYear}
               onChange={(e) => setBalanceAsOfYear(Number(e.target.value))}
-              className={inputClassName + " min-w-0 flex-1"}
+              className={inputBaseClassName + " flex-1 min-w-0"}
               min={1900}
               max={2100}
             />
@@ -403,14 +403,14 @@ export default function AddLiabilityForm({
             <select
               value={startMonth}
               onChange={(e) => setStartMonth(Number(e.target.value))}
-              className={selectClassName + " w-24"}
+              className={selectBaseClassName + " w-20 shrink-0"}
             >
               {MONTH_NAMES.map((m, i) => (
                 <option key={i + 1} value={i + 1}>{m}</option>
               ))}
             </select>
             {milestones ? (
-              <div className="min-w-0 flex-1">
+              <div className="flex-1 min-w-0">
                 <MilestoneYearPicker
                   name="startYear"
                   id="startYear"
@@ -433,7 +433,7 @@ export default function AddLiabilityForm({
                 required
                 value={startYear}
                 onChange={(e) => { setStartYear(Number(e.target.value)); setStartYearRef(null); }}
-                className={inputClassName + " min-w-0 flex-1"}
+                className={inputBaseClassName + " flex-1 min-w-0"}
               />
             )}
           </div>
@@ -452,14 +452,14 @@ export default function AddLiabilityForm({
               type="number"
               value={termValue}
               onChange={(e) => setTermValue(e.target.value)}
-              className={inputClassName + " min-w-0 flex-1"}
+              className={inputBaseClassName + " flex-1 min-w-0"}
               min="1"
               required
             />
             <select
               value={termUnit}
               onChange={(e) => setTermUnit(e.target.value as "monthly" | "annual")}
-              className={selectClassName}
+              className={selectBaseClassName + " w-24 shrink-0"}
             >
               <option value="annual">Years</option>
               <option value="monthly">Months</option>
