@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { seedCmaForFirm } from "@/lib/cma-seed-runner";
 import { recordAudit } from "@/lib/audit";
+import { dispatchClerkMembership } from "./membership-handlers";
 
 export type ClerkEvent = {
   type: string;
@@ -18,6 +19,8 @@ export type ClerkEvent = {
  */
 export async function handleClerkEvent(evt: ClerkEvent): Promise<Response> {
   if (evt.type !== "organization.created") {
+    const dispatched = await dispatchClerkMembership(evt);
+    if (dispatched) return dispatched;
     return NextResponse.json({ ok: true, ignored: evt.type }, { status: 200 });
   }
 

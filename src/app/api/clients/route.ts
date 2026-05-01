@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { clients, scenarios, planSettings, accounts, expenses, incomes } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
+import { requireActiveSubscription } from "@/lib/authz";
 import { computePlanEndAge } from "@/lib/plan-horizon";
 import { parseBody } from "@/lib/schemas/common";
 import { clientCreateSchema } from "@/lib/schemas/resources";
@@ -52,6 +53,7 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    await requireActiveSubscription();
 
     const parsed = await parseBody(clientCreateSchema, request);
     if (!parsed.ok) return parsed.response;

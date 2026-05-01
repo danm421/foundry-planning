@@ -134,6 +134,8 @@ export type AuditAction =
   | "billing.addon_removed"
   | "billing.payment_failed"
   | "billing.payment_recovered"
+  | "billing.email_queued"
+  | "billing.dispute_created"
   // Org membership lifecycle (mirrors Clerk events)
   | "member.invited"
   | "member.removed"
