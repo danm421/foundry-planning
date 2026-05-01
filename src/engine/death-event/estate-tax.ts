@@ -124,19 +124,30 @@ export function computeGrossEstate(input: {
       if (ent.isIrrevocable) continue;
       if (ent.grantor === input.deceased) pct = 1;
       else continue;
-    } else if (l.linkedPropertyId) {
-      const linked = accountById.get(l.linkedPropertyId);
-      if (!linked) continue;
-      const cfm = controllingFamilyMember(linked);
-      if (cfm === input.deceasedFmId) pct = 1;
-      else if (cfm === input.survivorFmId) continue; // linked to survivor
-      else {
-        // Joint linked property: split by death order
+    } else {
+      // Mirror asset logic: an explicit single family-member owner on the
+      // liability is the source of truth. Only fall back to the linked
+      // property's ownership / joint default when the liability has no
+      // controlling FM (joint, multi-FM, or empty owners[]).
+      const cfm = controllingFamilyMember(l);
+      if (cfm != null) {
+        if (cfm === input.deceasedFmId) pct = 1;
+        else if (cfm === input.survivorFmId) continue; // survivor-owned
+        else continue; // owned by a non-principal heir
+      } else if (l.linkedPropertyId) {
+        const linked = accountById.get(l.linkedPropertyId);
+        if (!linked) continue;
+        const linkedCfm = controllingFamilyMember(linked);
+        if (linkedCfm === input.deceasedFmId) pct = 1;
+        else if (linkedCfm === input.survivorFmId) continue; // linked to survivor
+        else {
+          // Joint linked property: split by death order
+          pct = input.deathOrder === 1 ? 0.5 : 1;
+        }
+      } else {
+        // Unlinked household debt: 50/50 at first death; 100% at final death.
         pct = input.deathOrder === 1 ? 0.5 : 1;
       }
-    } else {
-      // Unlinked household debt: 50/50 at first death; 100% at final death.
-      pct = input.deathOrder === 1 ? 0.5 : 1;
     }
 
     if (pct <= 0) continue;

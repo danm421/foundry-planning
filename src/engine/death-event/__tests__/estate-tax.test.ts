@@ -222,6 +222,69 @@ describe("computeGrossEstate", () => {
     });
     expect(r.total).toBeCloseTo(100_000 - 20_000, 2);
   });
+
+  it("includes 100% of liabilities individually owned by decedent at first death", () => {
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("a1", 100_000)],
+      accountBalances: { a1: 100_000 },
+      liabilities: [liab("d1", 20_000, {
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      })],
+      entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+    });
+    const debtLine = r.lines.find((l) => l.liabilityId === "d1");
+    expect(debtLine?.percentage).toBe(1);
+    expect(debtLine?.amount).toBeCloseTo(-20_000, 2);
+    expect(r.total).toBeCloseTo(100_000 - 20_000, 2);
+  });
+
+  it("excludes liabilities individually owned by survivor at first death", () => {
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("a1", 100_000)],
+      accountBalances: { a1: 100_000 },
+      liabilities: [liab("d1", 20_000, {
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
+      })],
+      entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+    });
+    expect(r.lines.find((l) => l.liabilityId === "d1")).toBeUndefined();
+    expect(r.total).toBeCloseTo(100_000, 2);
+  });
+
+  it("decedent-owned liability linked to a joint property still uses the liability's owners", () => {
+    // Regression: previously the linked-property's ownership overrode the
+    // liability's own owners[]. A loan explicitly owned by the client should
+    // be 100% in the client's estate even when the linked property is joint.
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("home", 500_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+          { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+        ],
+      })],
+      accountBalances: { home: 500_000 },
+      liabilities: [liab("mortgage", 100_000, {
+        linkedPropertyId: "home",
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      })],
+      entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+    });
+    const debtLine = r.lines.find((l) => l.liabilityId === "mortgage");
+    expect(debtLine?.percentage).toBe(1);
+    expect(debtLine?.amount).toBeCloseTo(-100_000, 2);
+  });
 });
 
 describe("computeDeductions", () => {
