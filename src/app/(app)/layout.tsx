@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import type { ReactElement } from "react";
+import Footer from "@/components/footer";
 import Sidebar from "@/components/sidebar";
 import Topbar from "@/components/topbar";
 import { countClientsForFirm } from "@/lib/client-search";
@@ -25,14 +26,8 @@ export default async function AppLayout({
       <Sidebar collapsed={collapsed} clientsCount={clientsCount} />
       <div className="flex min-h-screen flex-col">
         <Topbar />
-        <main className="flex-1 bg-paper">
-          {children}
-          <footer className="mt-8 border-t border-hair px-[var(--pad-card)] py-4 text-[12px] text-ink-4">
-            © Foundry Planning ·{" "}
-            <a href="#" className="hover:text-ink-3">Privacy</a> ·{" "}
-            <a href="#" className="hover:text-ink-3">Terms</a>
-          </footer>
-        </main>
+        <main className="flex-1 bg-paper">{children}</main>
+        <Footer />
       </div>
     </div>
   );

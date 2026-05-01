@@ -8,6 +8,7 @@ interface SidebarNavItemProps {
   count?: number;
   placeholder?: boolean;
   active: boolean;
+  collapsed?: boolean;
 }
 
 export default function SidebarNavItem({
@@ -17,21 +18,45 @@ export default function SidebarNavItem({
   count,
   placeholder = false,
   active,
+  collapsed = false,
 }: SidebarNavItemProps): ReactElement {
+  const rowBase = "relative flex items-center py-2 text-[13px] transition-colors";
+  const rowSpacing = collapsed
+    ? "justify-center px-2"
+    : "gap-3 px-[var(--pad-card)]";
+
   if (placeholder) {
     return (
-      <div className="relative flex items-center gap-3 px-[var(--pad-card)] py-2 text-[13px] text-ink-4 cursor-default">
+      <div
+        className={`${rowBase} ${rowSpacing} text-ink-4 cursor-default`}
+        title={collapsed ? `${label} (Soon)` : undefined}
+        aria-label={collapsed ? `${label} (coming soon)` : undefined}
+      >
         <span className="flex h-5 w-5 items-center justify-center">{icon}</span>
-        <span className="flex-1 truncate">{label}</span>
-        <span className="rounded-sm bg-hair px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-ink-4">
-          Soon
-        </span>
+        {collapsed ? null : (
+          <>
+            <span className="flex-1 truncate">{label}</span>
+            <span className="rounded-sm bg-hair px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-ink-4">
+              Soon
+            </span>
+          </>
+        )}
       </div>
     );
   }
 
-  const content = (
-    <>
+  const stateClass = active
+    ? "bg-card text-ink"
+    : "text-ink-2 hover:bg-card-hover hover:text-ink";
+
+  return (
+    <Link
+      href={href ?? "#"}
+      className={`${rowBase} ${rowSpacing} ${stateClass}`}
+      aria-current={active ? "page" : undefined}
+      title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
+    >
       {active ? (
         <span
           data-testid="active-bar"
@@ -40,26 +65,14 @@ export default function SidebarNavItem({
         />
       ) : null}
       <span className="flex h-5 w-5 items-center justify-center">{icon}</span>
-      <span className="flex-1 truncate">{label}</span>
-      {typeof count === "number" ? (
-        <span className="text-xs text-ink-4">{count}</span>
-      ) : null}
-    </>
-  );
-
-  const baseClass =
-    "relative flex items-center gap-3 px-[var(--pad-card)] py-2 text-[13px] transition-colors";
-  const stateClass = active
-    ? "bg-card text-ink"
-    : "text-ink-2 hover:bg-card-hover hover:text-ink";
-
-  return (
-    <Link
-      href={href ?? "#"}
-      className={`${baseClass} ${stateClass}`}
-      aria-current={active ? "page" : undefined}
-    >
-      {content}
+      {collapsed ? null : (
+        <>
+          <span className="flex-1 truncate">{label}</span>
+          {typeof count === "number" ? (
+            <span className="text-xs text-ink-4">{count}</span>
+          ) : null}
+        </>
+      )}
     </Link>
   );
 }

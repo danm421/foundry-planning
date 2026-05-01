@@ -53,18 +53,26 @@ export function isActivePath(pathname: string, href: string): boolean {
 
 interface SidebarNavProps {
   clientsCount: number;
+  collapsed?: boolean;
 }
 
-export default function SidebarNav({ clientsCount }: SidebarNavProps): ReactElement {
+export default function SidebarNav({
+  clientsCount,
+  collapsed = false,
+}: SidebarNavProps): ReactElement {
   const pathname = usePathname();
 
   return (
     <nav className="flex flex-col gap-4 py-4">
       {NAV_GROUPS.map((group) => (
         <div key={group.label} className="flex flex-col">
-          <div className="px-[var(--pad-card)] pb-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink-4">
-            {group.label}
-          </div>
+          {collapsed ? (
+            <div aria-hidden className="mx-3 mb-2 border-t border-hair" />
+          ) : (
+            <div className="px-[var(--pad-card)] pb-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink-4">
+              {group.label}
+            </div>
+          )}
           <ul className="flex flex-col">
             {group.items.map((item) => {
               const active = !item.placeholder && item.href
@@ -79,6 +87,7 @@ export default function SidebarNav({ clientsCount }: SidebarNavProps): ReactElem
                     placeholder={item.placeholder}
                     active={active}
                     count={item.href === "/clients" ? clientsCount : undefined}
+                    collapsed={collapsed}
                   />
                 </li>
               );
