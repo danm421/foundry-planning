@@ -100,7 +100,11 @@ export async function GET(req: NextRequest): Promise<Response> {
         ...diffReconciliation({
           firmId: firm.firmId,
           stripe: { status: stripeSub.status, items: stripeItems },
-          db: { status: liveSub.status, items: dbItems },
+          db: {
+            status: liveSub.status,
+            items: dbItems,
+            aiImportsUsed: firm.aiImportsUsed,
+          },
           clerk: {
             subscriptionStatus:
               typeof clerkMeta.subscription_status === "string"

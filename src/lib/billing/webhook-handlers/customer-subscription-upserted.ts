@@ -38,6 +38,13 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
     );
   }
 
+  const firmRow = await db
+    .select({ aiImportsUsed: firms.aiImportsUsed })
+    .from(firms)
+    .where(eq(firms.firmId, firmId))
+    .then((r) => r[0]);
+  const aiImportsUsed = firmRow?.aiImportsUsed ?? 0;
+
   const customerId =
     typeof sub.customer === "string" ? sub.customer : sub.customer.id;
 
@@ -60,7 +67,7 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
     addonKey: it.metadata?.addon_key ?? null,
     removed: false,
   }));
-  const entitlements = deriveEntitlements(itemsView);
+  const entitlements = deriveEntitlements({ items: itemsView, aiImportsUsed });
 
   const subRows = await db
     .insert(subscriptions)
@@ -151,6 +158,4 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
     actorId: `stripe:webhook:${event.id}`,
     metadata: { status: sub.status, item_count: sub.items.data.length },
   });
-
-  await db.select().from(firms).where(eq(firms.firmId, firmId));
 }

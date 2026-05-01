@@ -10,7 +10,7 @@ export type ReconcileItem = {
 export type ReconcileInput = {
   firmId: string;
   stripe: { status: string; items: ReconcileItem[] };
-  db: { status: string; items: ReconcileItem[] };
+  db: { status: string; items: ReconcileItem[]; aiImportsUsed: number };
   clerk: { subscriptionStatus: string; entitlements: string[] };
 };
 
@@ -31,6 +31,10 @@ export type DriftEntry = {
  * drift is flagged with Stripe's value as the reference. Auto-heal is NOT
  * implemented here — the cron only detects, ops resolves manually per
  * runbook.
+ *
+ * The `db.aiImportsUsed` counter participates in the entitlements derivation
+ * (free-quota OR-in). Drift checks compare the derived entitlements against
+ * the Clerk hot-path snapshot.
  */
 export function diffReconciliation(input: ReconcileInput): DriftEntry[] {
   const drift: DriftEntry[] = [];
@@ -65,7 +69,10 @@ export function diffReconciliation(input: ReconcileInput): DriftEntry[] {
     });
   }
 
-  const derived = deriveEntitlements(stripe.items);
+  const derived = deriveEntitlements({
+    items: stripe.items,
+    aiImportsUsed: db.aiImportsUsed,
+  });
   const clerkSorted = [...clerk.entitlements].sort();
   if (JSON.stringify(derived) !== JSON.stringify(clerkSorted)) {
     drift.push({
