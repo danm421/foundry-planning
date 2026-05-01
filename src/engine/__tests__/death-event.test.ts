@@ -300,6 +300,75 @@ describe("splitAccount", () => {
     expect(result.resultingLiabilities).toHaveLength(0);
   });
 
+  it("emits a negative-amount liability ledger entry for each share when linkedLiability is present", () => {
+    const home: Account = { ...brokerage, id: "acct-home", name: "Primary Home", category: "real_estate", value: 800000, basis: 500000 };
+    const mortgage: Liability = {
+      id: "liab-mortgage", name: "Primary Mortgage", balance: 300000, interestRate: 0.06,
+      monthlyPayment: 2000, startYear: 2020, startMonth: 1, termMonths: 360,
+      linkedPropertyId: "acct-home", extraPayments: [], owners: [],
+    };
+
+    const result = splitAccount(home, [
+      { fraction: 0.6, ownerMutation: { owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }] }, ledgerMeta: { recipientKind: "spouse", recipientId: null, recipientLabel: "Spouse", via: "will" } },
+      { fraction: 0.4, ownerMutation: { owners: [{ kind: "family_member", familyMemberId: "child-a", percent: 1 }] }, ledgerMeta: { recipientKind: "family_member", recipientId: "child-a", recipientLabel: "Child A", via: "will" } },
+    ], mortgage);
+
+    // 2 asset entries + 2 liability entries
+    expect(result.ledgerEntries).toHaveLength(4);
+
+    const liabEntries = result.ledgerEntries.filter((e) => e.sourceLiabilityId != null);
+    expect(liabEntries).toHaveLength(2);
+
+    const spouseLiab = liabEntries.find((e) => e.recipientKind === "spouse");
+    expect(spouseLiab).toMatchObject({
+      sourceAccountId: null,
+      sourceAccountName: null,
+      sourceLiabilityId: "liab-mortgage",
+      sourceLiabilityName: "Primary Mortgage",
+      via: "will",
+      recipientKind: "spouse",
+      recipientLabel: "Spouse",
+      basis: 0,
+    });
+    expect(spouseLiab!.amount).toBeCloseTo(-180000, 2);
+    expect(spouseLiab!.resultingLiabilityId).toBe(result.resultingLiabilities[0].id);
+
+    const childLiab = liabEntries.find((e) => e.recipientId === "child-a");
+    expect(childLiab!.amount).toBeCloseTo(-120000, 2);
+    expect(childLiab!.resultingLiabilityId).toBe(result.resultingLiabilities[1].id);
+  });
+
+  it("emits a liability ledger entry for a removed share so the encumbrance reduces the external recipient's net", () => {
+    const home: Account = { ...brokerage, id: "acct-home", name: "Primary Home" };
+    const mortgage: Liability = {
+      id: "liab-m", name: "Mortgage", balance: 100000, interestRate: 0.05,
+      monthlyPayment: 600, startYear: 2020, startMonth: 1, termMonths: 360,
+      linkedPropertyId: "acct-home", extraPayments: [], owners: [],
+    };
+    const result = splitAccount(home, [
+      { fraction: 1.0, removed: true, ledgerMeta: { recipientKind: "external_beneficiary", recipientId: "charity-1", recipientLabel: "Charity", via: "will" } },
+    ], mortgage);
+
+    expect(result.ledgerEntries).toHaveLength(2);
+    const liabEntry = result.ledgerEntries.find((e) => e.sourceLiabilityId != null);
+    expect(liabEntry).toMatchObject({
+      sourceLiabilityId: "liab-m",
+      sourceLiabilityName: "Mortgage",
+      recipientKind: "external_beneficiary",
+      recipientId: "charity-1",
+      via: "will",
+      resultingLiabilityId: null,
+    });
+    expect(liabEntry!.amount).toBeCloseTo(-100000, 2);
+  });
+
+  it("emits no liability ledger entries when no linked liability is present", () => {
+    const result = splitAccount(brokerage, [
+      { fraction: 1.0, ownerMutation: { owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }] }, ledgerMeta: { recipientKind: "spouse", recipientId: null, recipientLabel: "Spouse", via: "titling" } },
+    ], undefined);
+    expect(result.ledgerEntries.every((e) => e.sourceLiabilityId === null)).toBe(true);
+  });
+
   it("throws when any share has fraction <= 0 (enforces JSDoc contract)", () => {
     expect(() =>
       splitAccount(brokerage, [

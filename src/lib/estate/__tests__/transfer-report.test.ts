@@ -207,6 +207,61 @@ describe("buildEstateTransferReportData", () => {
     expect(recips[1].byMechanism[0].assets).toHaveLength(2);
   });
 
+  it("includes linked-liability transfers as negative amounts that reduce the recipient's net", () => {
+    // Mortgage on the home follows the home to the spouse via titling. The
+    // recipient's net should be (home value − mortgage balance).
+    const transfers = [
+      transfer({
+        sourceAccountId: "acc-house",
+        sourceAccountName: "Home (JT)",
+        via: "titling",
+        recipientKind: "spouse",
+        recipientLabel: "Sam",
+        amount: 800_000,
+      }),
+      transfer({
+        sourceAccountId: null,
+        sourceAccountName: null,
+        sourceLiabilityId: "liab-mortgage",
+        sourceLiabilityName: "Primary Mortgage",
+        via: "titling",
+        recipientKind: "spouse",
+        recipientLabel: "Sam",
+        amount: -200_000,
+        basis: 0,
+      }),
+    ];
+
+    const tax = emptyEstateTaxResult("client", 2030);
+    (tax as { grossEstate: number }).grossEstate = 800_000;
+
+    const ht: HypotheticalEstateTax = {
+      year: 2030,
+      primaryFirst: ordering({
+        firstDecedent: "client",
+        firstDeath: tax,
+        firstDeathTransfers: transfers,
+      }),
+    };
+
+    const out = buildEstateTransferReportData({
+      projection: projection([{ year: 2030, ht }]),
+      asOf: { kind: "today" },
+      ordering: "primaryFirst",
+      clientData: tree(),
+      ownerNames: { clientName: "Pat", spouseName: "Sam" },
+    });
+
+    const spouse = out.firstDeath!.recipients.find((r) => r.recipientKind === "spouse")!;
+    expect(spouse.total).toBe(600_000);
+    const titlingMech = spouse.byMechanism.find((m) => m.mechanism === "titling")!;
+    expect(titlingMech.total).toBe(600_000);
+    expect(titlingMech.assets).toHaveLength(2);
+    const liabAsset = titlingMech.assets.find((a) => a.sourceLiabilityId === "liab-mortgage");
+    expect(liabAsset?.label).toBe("Primary Mortgage");
+    expect(liabAsset?.amount).toBe(-200_000);
+  });
+
   it("pins spouse at top regardless of total ordering", () => {
     const transfers = [
       transfer({

@@ -182,6 +182,10 @@ export function splitAccount(
     const amount = source.value * share.fraction;
     const basisShare = source.basis * share.fraction;
 
+    const liabBalanceShare = linkedLiability
+      ? linkedLiability.balance * share.fraction
+      : 0;
+
     if (share.removed) {
       ledgerEntries.push({
         sourceAccountId: source.id,
@@ -197,6 +201,27 @@ export function splitAccount(
         resultingAccountId: null,
         resultingLiabilityId: null,
       });
+      // Linked-liability encumbrance follows the asset to the external
+      // recipient as a parallel negative-amount entry. The liability row
+      // itself is dropped (debts follow assets out of the household), but
+      // the report needs to show the encumbrance reducing the recipient's
+      // net.
+      if (linkedLiability && liabBalanceShare > 0) {
+        ledgerEntries.push({
+          sourceAccountId: null,
+          sourceAccountName: null,
+          sourceLiabilityId: linkedLiability.id,
+          sourceLiabilityName: linkedLiability.name,
+          via: share.ledgerMeta.via,
+          recipientKind: share.ledgerMeta.recipientKind,
+          recipientId: share.ledgerMeta.recipientId,
+          recipientLabel: share.ledgerMeta.recipientLabel,
+          amount: -liabBalanceShare,
+          basis: 0,
+          resultingAccountId: null,
+          resultingLiabilityId: null,
+        });
+      }
       continue;
     }
 
@@ -226,20 +251,24 @@ export function splitAccount(
     resultingAccounts.push(newAccount);
 
     // Liability follow-through: one liability per kept share, proportional
+    let resultingLiabilityId: string | null = null;
     if (linkedLiability) {
       if (inPlace) {
         resultingLiabilities.push({
           ...linkedLiability,
           // id and linkedPropertyId unchanged (account kept its id)
         });
+        resultingLiabilityId = linkedLiability.id;
       } else {
+        const newLiabId = nextSyntheticId("death-liab");
         resultingLiabilities.push({
           ...linkedLiability,
-          id: nextSyntheticId("death-liab"),
-          balance: linkedLiability.balance * share.fraction,
+          id: newLiabId,
+          balance: liabBalanceShare,
           monthlyPayment: linkedLiability.monthlyPayment * share.fraction,
           linkedPropertyId: newAccount.id,
         });
+        resultingLiabilityId = newLiabId;
       }
     }
 
@@ -257,6 +286,27 @@ export function splitAccount(
       resultingAccountId: newAccount.id,
       resultingLiabilityId: null,
     });
+
+    // Linked-liability transfer: the encumbrance follows the asset to its
+    // new owner as a parallel negative-amount entry. Mirrors the
+    // unlinked_liability_proportional and will_liability_bequest patterns
+    // so the transfer report can show the recipient's net (asset − debt).
+    if (linkedLiability && liabBalanceShare > 0) {
+      ledgerEntries.push({
+        sourceAccountId: null,
+        sourceAccountName: null,
+        sourceLiabilityId: linkedLiability.id,
+        sourceLiabilityName: linkedLiability.name,
+        via: share.ledgerMeta.via,
+        recipientKind: share.ledgerMeta.recipientKind,
+        recipientId: share.ledgerMeta.recipientId,
+        recipientLabel: share.ledgerMeta.recipientLabel,
+        amount: -liabBalanceShare,
+        basis: 0,
+        resultingAccountId: null,
+        resultingLiabilityId,
+      });
+    }
   }
 
   return { resultingAccounts, resultingLiabilities, ledgerEntries };
