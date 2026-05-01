@@ -449,6 +449,13 @@
       "when": 1777680000000,
       "tag": "0063_fix_owners_sum_cascade",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1777655824879,
+      "tag": "0064_pricing_quota_counter",
+      "breakpoints": true
     }
   ]
 }

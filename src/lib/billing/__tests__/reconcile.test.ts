@@ -16,6 +16,7 @@ const ok: ReconcileInput = {
       { kind: "seat", addonKey: null, quantity: 3, removed: false },
       { kind: "addon", addonKey: "ai_import", quantity: 1, removed: false },
     ],
+    aiImportsUsed: 3,
   },
   clerk: {
     subscriptionStatus: "active",
@@ -93,5 +94,34 @@ describe("diffReconciliation", () => {
       clerk: { ...ok.clerk, entitlements: [] },
     };
     expect(diffReconciliation(input)).toEqual([]);
+  });
+
+  it("flags drift when Clerk lacks ai_import but free quota remains", () => {
+    expect(
+      diffReconciliation({
+        firmId: "org_1",
+        stripe: { status: "active", items: [{ kind: "seat", addonKey: null, quantity: 1, removed: false }] },
+        db: { status: "active", items: [{ kind: "seat", addonKey: null, quantity: 1, removed: false }], aiImportsUsed: 0 },
+        clerk: { subscriptionStatus: "active", entitlements: [] },
+      }),
+    ).toEqual([
+      {
+        firmId: "org_1",
+        field: "entitlements",
+        stripeValue: ["ai_import"],
+        clerkValue: [],
+      },
+    ]);
+  });
+
+  it("no entitlement drift when free quota grants ai_import and Clerk reflects it", () => {
+    expect(
+      diffReconciliation({
+        firmId: "org_1",
+        stripe: { status: "active", items: [{ kind: "seat", addonKey: null, quantity: 1, removed: false }] },
+        db: { status: "active", items: [{ kind: "seat", addonKey: null, quantity: 1, removed: false }], aiImportsUsed: 1 },
+        clerk: { subscriptionStatus: "active", entitlements: ["ai_import"] },
+      }),
+    ).toEqual([]);
   });
 });

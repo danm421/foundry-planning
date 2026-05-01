@@ -68,13 +68,14 @@ describe("commitTabs orchestrator", () => {
   });
 
   it("returns allTabsCommitted=false when only some tabs ran and DB has none committed yet", async () => {
-    const { allTabsCommitted } = await commitTabs({
+    const { allTabsCommitted, firstTimeAllCommitted } = await commitTabs({
       importId: "imp-2",
       payload: emptyPayload(),
       tabs: ["entities"],
       ctx,
     });
     expect(allTabsCommitted).toBe(false);
+    expect(firstTimeAllCommitted).toBe(false);
   });
 
   it("includes a result entry for every tab in COMMIT_TABS", async () => {
