@@ -302,6 +302,99 @@ describe("deriveSpineData", () => {
     expect(typeof data.totals.toHeirs).toBe("number");
   });
 
+  it("two-grantor: asOf='today' uses todayHypotheticalEstateTax (collapsed both-die-today)", () => {
+    const tree = twoGrantorFixture();
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({ tree, withResult, asOf: "today" });
+
+    expect(data.kind).toBe("two-grantor");
+    if (data.kind !== "two-grantor") return;
+
+    const ht = withResult.todayHypotheticalEstateTax;
+    expect(ht).toBeDefined();
+    const branch = ht.primaryFirst;
+
+    // Death ticks both reference the hypothetical "both die today" year.
+    expect(data.firstDeath.year).toBe(ht.year);
+    expect(data.secondDeath.year).toBe(ht.year);
+
+    // Tax + marital deduction values come from the hypothetical payload — NOT
+    // the real future death events (which would be 2048/2054 in this fixture).
+    expect(data.firstDeath.tax).toBe(branch.firstDeath.totalTaxesAndExpenses);
+    expect(data.firstDeath.toSpouse).toBe(branch.firstDeath.maritalDeduction);
+    expect(data.secondDeath.tax).toBe(
+      branch.finalDeath?.totalTaxesAndExpenses ?? 0,
+    );
+
+    // Combined estate = survivor's gross estate at hypothetical second death.
+    expect(data.combined.value).toBe(branch.finalDeath?.grossEstate ?? 0);
+  });
+
+  it("two-grantor: asOf=<non-death year> uses years[year].hypotheticalEstateTax", () => {
+    const tree = twoGrantorFixture();
+    const withResult = runProjectionWithEvents(tree);
+    // 2030 is well clear of the real death years (2048/2054).
+    const data = deriveSpineData({ tree, withResult, asOf: 2030 });
+
+    expect(data.kind).toBe("two-grantor");
+    if (data.kind !== "two-grantor") return;
+
+    const row = withResult.years.find((y) => y.year === 2030);
+    expect(row?.hypotheticalEstateTax).toBeDefined();
+    const branch = row!.hypotheticalEstateTax!.primaryFirst;
+
+    expect(data.firstDeath.year).toBe(2030);
+    expect(data.secondDeath.year).toBe(2030);
+    expect(data.firstDeath.tax).toBe(branch.firstDeath.totalTaxesAndExpenses);
+    expect(data.combined.value).toBe(branch.finalDeath?.grossEstate ?? 0);
+  });
+
+  it("two-grantor: asOf === firstDeathYear preserves real-event behavior", () => {
+    const tree = twoGrantorFixture();
+    const withResult = runProjectionWithEvents(tree);
+    const firstDeathYear = withResult.firstDeathEvent!.year;
+    const data = deriveSpineData({ tree, withResult, asOf: firstDeathYear });
+
+    expect(data.kind).toBe("two-grantor");
+    if (data.kind !== "two-grantor") return;
+
+    // Real-event mode: ticks reflect actual death years, not collapsed.
+    expect(data.firstDeath.year).toBe(withResult.firstDeathEvent!.year);
+    expect(data.secondDeath.year).toBe(withResult.secondDeathEvent!.year);
+    expect(data.firstDeath.tax).toBe(
+      withResult.firstDeathEvent!.totalTaxesAndExpenses,
+    );
+    expect(data.secondDeath.tax).toBe(
+      withResult.secondDeathEvent!.totalTaxesAndExpenses,
+    );
+  });
+
+  it("two-grantor: asOf='split' uses real death events (existing behavior)", () => {
+    const tree = twoGrantorFixture();
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({ tree, withResult, asOf: "split" });
+
+    expect(data.kind).toBe("two-grantor");
+    if (data.kind !== "two-grantor") return;
+
+    expect(data.firstDeath.year).toBe(withResult.firstDeathEvent!.year);
+    expect(data.secondDeath.year).toBe(withResult.secondDeathEvent!.year);
+  });
+
+  it("single-grantor: asOf='today' uses todayHypotheticalEstateTax sole-death branch", () => {
+    const tree = singleGrantorFixture();
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({ tree, withResult, asOf: "today" });
+
+    expect(data.kind).toBe("single-grantor");
+    if (data.kind !== "single-grantor") return;
+
+    const ht = withResult.todayHypotheticalEstateTax;
+    expect(ht).toBeDefined();
+    expect(data.death.year).toBe(ht.year);
+    expect(data.death.tax).toBe(ht.primaryFirst.firstDeath.totalTaxesAndExpenses);
+  });
+
   it("returns 'historical' when no death events fall within the plan window", () => {
     const tree = historicalFixture();
     const withResult = runProjectionWithEvents(tree);
