@@ -49,9 +49,6 @@ export function EstateTransferDeathSection({
         />
         <EstateTransferConflictsCallout conflicts={section.conflicts} />
 
-        {/* Reconciliation footer — checks ledger internal consistency
-            (assetEstateValue + sumLiabilityTransfers == sumRecipients).
-            The Form 706 chargeable estate lives in the Reductions card. */}
         <div
           className={
             "flex flex-wrap items-baseline justify-between gap-3 rounded border px-4 py-2 text-xs " +
@@ -79,7 +76,7 @@ export function EstateTransferDeathSection({
           ) : (
             <span>
               Unattributed: {fmt.format(section.reconciliation.unattributed)} — internal
-              ledger inconsistency. Asset transfers ({fmt.format(section.reconciliation.assetEstateValue)})
+              ledger inconsistency. Asset transfers ({fmt.format(section.assetEstateValue)})
               + liabilities ({fmt.format(section.reconciliation.sumLiabilityTransfers)}) do not match
               recipient totals ({fmt.format(section.reconciliation.sumRecipients)}). Review.
             </span>

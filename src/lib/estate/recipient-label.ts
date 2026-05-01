@@ -47,15 +47,8 @@ export function resolveRecipientLabel(
     }
   }
 
-  // F2: prefer recipientId when present — it carries the actual surviving
-  // FM id (set by applyTitling/applyFallback/will-bequest emission since
-  // 2026-05-01). Without this, spouseFirst ordering mislabels the surviving
-  // client as the spouse because the role-based fallback always returns
-  // the spouse FM.
-  //
-  // Falls back to the legacy role-based lookup when:
-  //   - recipientId is null (final-death will bequests with no surviving spouse)
-  //   - recipientId points at an FM no longer in the tree (data drift)
+  // Prefer recipientId; fall back to role lookup when it's null
+  // (final-death bequest to spouse with no surviving spouse) or stale.
   if (recipientKind === "spouse") {
     if (recipientId) {
       const fm = (clientData.familyMembers ?? []).find((f) => f.id === recipientId);
