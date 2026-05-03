@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
   priceKey: z.enum(["seatMonthly", "seatAnnual"]),
+  withAiImport: z.boolean().optional(),
 });
 
 function originFor(req: Request): string {
@@ -44,6 +45,7 @@ export async function POST(req: Request): Promise<Response> {
       buildCheckoutSessionParams({
         priceKey: parsed.data.priceKey,
         origin: originFor(req),
+        withAiImport: parsed.data.withAiImport,
       }),
     );
     if (!session.url) {

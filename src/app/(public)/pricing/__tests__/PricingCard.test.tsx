@@ -14,20 +14,20 @@ describe("PricingCard", () => {
     });
   });
 
-  it("renders the monthly price by default", () => {
+  it("renders the annual per-month equivalent by default", () => {
     render(<PricingCard />);
+    expect(screen.getByText(/\$166/)).toBeInTheDocument();
+    expect(screen.getByText(/billed annually at \$1,990/i)).toBeInTheDocument();
+  });
+
+  it("switches to the monthly price when the monthly toggle is clicked", () => {
+    render(<PricingCard />);
+    fireEvent.click(screen.getByRole("button", { name: /^monthly$/i }));
     expect(screen.getByText(/\$199/)).toBeInTheDocument();
-    expect(screen.getByText(/per month/i)).toBeInTheDocument();
+    expect(screen.getByText(/billed monthly/i)).toBeInTheDocument();
   });
 
-  it("switches to the annual price when the toggle is clicked", () => {
-    render(<PricingCard />);
-    fireEvent.click(screen.getByRole("button", { name: /annual/i }));
-    expect(screen.getByText(/\$1,990/)).toBeInTheDocument();
-    expect(screen.getByText(/per year/i)).toBeInTheDocument();
-  });
-
-  it("POSTs the right priceKey and redirects on CTA click", async () => {
+  it("POSTs seatAnnual by default and redirects on CTA click", async () => {
     const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ url: "https://checkout.stripe.com/c/x" }), {
         status: 200,
@@ -47,10 +47,30 @@ describe("PricingCard", () => {
     const body = JSON.parse(
       (fetchMock.mock.calls[0]![1] as RequestInit).body as string,
     );
-    expect(body).toEqual({ priceKey: "seatMonthly" });
+    expect(body).toEqual({ priceKey: "seatAnnual", withAiImport: false });
   });
 
-  it("sends seatAnnual when annual is selected", async () => {
+  it("sends withAiImport=true when the AI Import addon is checked", async () => {
+    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ url: "https://checkout.stripe.com/c/z" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    render(<PricingCard />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /ai import/i }));
+    fireEvent.click(screen.getByRole("button", { name: /start 14-day trial/i }));
+
+    await waitFor(() => {
+      const body = JSON.parse(
+        (fetchMock.mock.calls[0]![1] as RequestInit).body as string,
+      );
+      expect(body).toEqual({ priceKey: "seatAnnual", withAiImport: true });
+    });
+  });
+
+  it("sends seatMonthly when monthly is selected", async () => {
     const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ url: "https://checkout.stripe.com/c/y" }), {
         status: 200,
@@ -59,14 +79,14 @@ describe("PricingCard", () => {
     );
 
     render(<PricingCard />);
-    fireEvent.click(screen.getByRole("button", { name: /annual/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^monthly$/i }));
     fireEvent.click(screen.getByRole("button", { name: /start 14-day trial/i }));
 
     await waitFor(() => {
       const body = JSON.parse(
         (fetchMock.mock.calls[0]![1] as RequestInit).body as string,
       );
-      expect(body).toEqual({ priceKey: "seatAnnual" });
+      expect(body).toEqual({ priceKey: "seatMonthly", withAiImport: false });
     });
   });
 });

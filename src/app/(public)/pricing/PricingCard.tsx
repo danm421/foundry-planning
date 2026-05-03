@@ -13,16 +13,17 @@ const COPY = {
     priceKey: "seatMonthly" as const,
   },
   annual: {
-    headline: "$1,990",
-    cadence: "per year",
+    headline: "$166",
+    cadence: "per month",
     perWho: "per advisor",
-    sub: "Billed annually • cancel anytime",
+    sub: "Billed annually at $1,990 • cancel anytime",
     priceKey: "seatAnnual" as const,
   },
 };
 
 export default function PricingCard() {
-  const [cycle, setCycle] = useState<Cycle>("monthly");
+  const [cycle, setCycle] = useState<Cycle>("annual");
+  const [withAiImport, setWithAiImport] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const c = COPY[cycle];
@@ -34,7 +35,7 @@ export default function PricingCard() {
         const res = await fetch("/api/checkout/session", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ priceKey: c.priceKey }),
+          body: JSON.stringify({ priceKey: c.priceKey, withAiImport }),
         });
         if (!res.ok) {
           setError("Couldn't start checkout — please try again.");
@@ -90,21 +91,39 @@ export default function PricingCard() {
 
       <ul className="mt-8 space-y-2 text-sm text-ink-2">
         <li>✓ Cash-flow projection engine</li>
-        <li>✓ Federal + state tax engine with drill-down</li>
+        <li>✓ Federal tax engine with drill-down</li>
         <li>✓ Estate planning + Monte Carlo</li>
         <li>✓ Unlimited clients per advisor</li>
         <li>✓ Branded reports + PDF export</li>
       </ul>
 
-      <div className="mt-8 rounded-md border border-dashed border-hair p-4 text-sm">
-        <p className="font-mono text-[11px] uppercase tracking-wider text-ink-3">
-          Optional add-on
-        </p>
-        <p className="mt-1 text-ink">
-          AI Import — $99/mo per firm
-        </p>
-        <p className="text-ink-3">First 3 client onboardings free</p>
-      </div>
+      <label
+        className={
+          "mt-8 flex cursor-pointer items-start gap-3 rounded-md border p-4 text-sm transition-colors " +
+          (withAiImport
+            ? "border-accent/60 bg-accent/[0.06]"
+            : "border-dashed border-hair hover:border-accent/40")
+        }
+      >
+        <input
+          type="checkbox"
+          checked={withAiImport}
+          onChange={(e) => setWithAiImport(e.target.checked)}
+          className="mt-1 h-4 w-4 cursor-pointer accent-accent"
+          aria-describedby="ai-import-desc"
+        />
+        <span className="flex-1">
+          <span className="block font-mono text-[11px] uppercase tracking-wider text-ink-3">
+            Optional add-on
+          </span>
+          <span className="mt-1 block text-ink">
+            Add AI Import — $99/mo per seat
+          </span>
+          <span id="ai-import-desc" className="block text-ink-3">
+            First 3 client onboardings free
+          </span>
+        </span>
+      </label>
 
       <button
         type="button"

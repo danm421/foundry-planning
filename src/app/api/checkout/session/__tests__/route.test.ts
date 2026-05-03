@@ -67,6 +67,27 @@ describe("POST /api/checkout/session", () => {
     expect(await res.json()).toEqual({ error: "invalid_price_key" });
   });
 
+  it("forwards withAiImport to Stripe so the addon is billed alongside the seat", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue({ id: "cs_test_xyz", url: "https://checkout.stripe.com/c/cs_test_xyz" });
+    vi.mocked(getStripe).mockReturnValue({
+      checkout: { sessions: { create } },
+    } as never);
+
+    const res = await POST(
+      makeRequest({ priceKey: "seatAnnual", withAiImport: true }),
+    );
+    expect(res.status).toBe(200);
+    const params = create.mock.calls[0]![0] as {
+      line_items: { price: string; quantity: number }[];
+    };
+    expect(params.line_items).toEqual([
+      { price: "price_test_annual", quantity: 1 },
+      { price: "price_test_ai", quantity: 1 },
+    ]);
+  });
+
   it("400s on missing body", async () => {
     const res = await POST(makeRequest({}));
     expect(res.status).toBe(400);

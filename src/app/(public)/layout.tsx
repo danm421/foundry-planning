@@ -27,6 +27,12 @@ export default function PublicLayout({
               Pricing
             </Link>
             <Link
+              href="/legal"
+              className="text-ink-2 hover:text-accent transition-colors"
+            >
+              Legal
+            </Link>
+            <Link
               href="/sign-in"
               className="text-ink-2 hover:text-accent transition-colors"
             >

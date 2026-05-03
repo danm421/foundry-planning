@@ -21,11 +21,14 @@ export default function LegalPage({
         Last updated {lastUpdated}
       </p>
 
-      <aside className="mt-8 rounded-md border border-hair bg-hair-2/30 p-4 text-sm text-ink-2">
+      <aside
+        role="note"
+        className="mt-8 rounded-md border border-warn/50 bg-warn/[0.07] p-4 text-sm text-ink-2"
+      >
         <p>
-          <strong className="text-ink">Pending counsel review.</strong> This
-          document describes Foundry Planning&rsquo;s current practices in good
-          faith but has not been reviewed by external counsel. Email{" "}
+          <strong className="text-warn">⚠ Pending counsel review.</strong>{" "}
+          This document describes Foundry Planning&rsquo;s current practices
+          in good faith but has not been reviewed by external counsel. Email{" "}
           <a
             className="text-accent hover:underline"
             href="mailto:support@foundryplanning.com"

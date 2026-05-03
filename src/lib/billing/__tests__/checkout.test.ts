@@ -46,6 +46,32 @@ describe("buildCheckoutSessionParams", () => {
     ]);
   });
 
+  it("appends the AI Import line item when withAiImport is true", () => {
+    const params = buildCheckoutSessionParams({
+      priceKey: "seatAnnual",
+      origin: "https://app.foundryplanning.com",
+      withAiImport: true,
+    });
+    expect(params.line_items).toEqual([
+      { price: "price_test_annual", quantity: 1 },
+      { price: "price_test_ai", quantity: 1 },
+    ]);
+  });
+
+  it("omits the AI Import line item when withAiImport is false or absent", () => {
+    const off = buildCheckoutSessionParams({
+      priceKey: "seatMonthly",
+      origin: "https://app.foundryplanning.com",
+      withAiImport: false,
+    });
+    expect(off.line_items).toHaveLength(1);
+    const omitted = buildCheckoutSessionParams({
+      priceKey: "seatMonthly",
+      origin: "https://app.foundryplanning.com",
+    });
+    expect(omitted.line_items).toHaveLength(1);
+  });
+
   it("sets a 14-day trial via subscription_data", () => {
     const params = buildCheckoutSessionParams({
       priceKey: "seatMonthly",

@@ -18,12 +18,19 @@ export type CheckoutPriceKey = Extract<
 export function buildCheckoutSessionParams(args: {
   priceKey: CheckoutPriceKey;
   origin: string;
+  withAiImport?: boolean;
 }): Stripe.Checkout.SessionCreateParams {
   const catalog = getPriceCatalog();
   const priceId = catalog[args.priceKey];
+  const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+    { price: priceId, quantity: 1 },
+  ];
+  if (args.withAiImport) {
+    line_items.push({ price: catalog.aiImportMonthly, quantity: 1 });
+  }
   return {
     mode: "subscription",
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items,
     subscription_data: { trial_period_days: 14 },
     consent_collection: { terms_of_service: "required" },
     custom_fields: [

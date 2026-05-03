@@ -7,7 +7,7 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/pricing(.*)",
   "/checkout/(.*)",
-  "/legal/(.*)",
+  "/legal(.*)",
   "/api/checkout/(.*)",
   // Browsers POST CSP violation reports here with no session cookie.
   "/api/csp-report",
