@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="128" viewBox="0 0 560 128" fill="none">
+  <defs>
+    <linearGradient id="cardSheenL" x1="157" y1="151" x2="1099" y2="1100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#171c26"></stop>
+      <stop offset="42%" stop-color="#10141c"></stop>
+      <stop offset="100%" stop-color="#0b0e14"></stop>
+    </linearGradient>
+    <linearGradient id="goldFrontL" x1="384" y1="342" x2="885" y2="764" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fbbf24"></stop>
+      <stop offset="42%" stop-color="#f59e0b"></stop>
+      <stop offset="100%" stop-color="#e58a00"></stop>
+    </linearGradient>
+    <linearGradient id="goldDeepL" x1="515" y1="640" x2="621" y2="997" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f59e0b"></stop>
+      <stop offset="52%" stop-color="#d97706"></stop>
+      <stop offset="100%" stop-color="#b45309"></stop>
+    </linearGradient>
+  </defs>
+  <svg x="16" y="16" width="96" height="96" viewBox="157 151 942 949" preserveAspectRatio="xMidYMid meet" overflow="visible">
+    <rect x="157" y="151" width="942" height="949" rx="178" ry="178" fill="url(#cardSheenL)"></rect>
+    <path d="M845 351 L393 351 L393 810 L476 888 L477 888 L477 434 L478 433 L762 433 Z" fill="url(#goldFrontL)"></path>
+    <path d="M800 504 L764 496 L533 496 L533 581 L757 581 L782 588 L794 596 L804 607 L810 621 L810 638 L803 653 L791 664 L769 672 L535 673 L552 690 L551 691 L533 674 L533 931 L618 998 L618 756 L768 756 L807 749 L834 737 L855 722 L874 701 L883 687 L890 671 L896 647 L897 622 L892 596 L880 569 L864 547 L846 530 L824 515 Z" fill="url(#goldFrontL)"></path>
+    <path d="M533 674 L618 756 L618 998 L533 931 Z" fill="url(#goldDeepL)"></path>
+    <path d="M393 810 L476 888 L477 433 L393 351 Z" fill="url(#goldFrontL)" opacity=".96"></path>
+    <path d="M393 351 H845 L834 362 H402 V798 L393 810 Z" fill="#fbbf24" opacity=".22"></path>
+  </svg>
+  <text x="132" y="78" font-family="Inter, system-ui, sans-serif" font-size="48" font-weight="700" letter-spacing="-1.5" fill="#f4f5f7">Foundry<tspan fill="#f59e0b" dx="-2">.</tspan></text>
+  <text x="134" y="102" font-family="&#39;JetBrains Mono&#39;, ui-monospace, monospace" font-size="11" font-weight="500" letter-spacing="3" fill="#9aa0a6">PLANNING</text>
+</svg>

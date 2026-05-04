@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="128" viewBox="0 0 560 128" fill="none">
+  <rect width="560" height="128" fill="#ffffff"></rect>
+  <svg x="16" y="16" width="96" height="96" viewBox="157 151 942 949" preserveAspectRatio="xMidYMid meet">
+    <g fill="#0f1115">
+      <path d="M845 351 L393 351 L393 810 L476 888 L477 888 L477 434 L478 433 L762 433 Z"></path>
+      <path d="M800 504 L764 496 L533 496 L533 581 L757 581 L782 588 L794 596 L804 607 L810 621 L810 638 L803 653 L791 664 L769 672 L535 673 L552 690 L551 691 L533 674 L533 931 L618 998 L618 756 L768 756 L807 749 L834 737 L855 722 L874 701 L883 687 L890 671 L896 647 L897 622 L892 596 L880 569 L864 547 L846 530 L824 515 Z"></path>
+      <path d="M533 674 L618 756 L618 998 L533 931 Z"></path>
+      <path d="M393 810 L476 888 L477 433 L393 351 Z"></path>
+    </g>
+  </svg>
+  <text x="132" y="78" font-family="Inter, system-ui, sans-serif" font-size="48" font-weight="700" letter-spacing="-1.5" fill="#0f1115">Foundry<tspan dx="-2">.</tspan></text>
+  <text x="134" y="102" font-family="&#39;JetBrains Mono&#39;, ui-monospace, monospace" font-size="11" font-weight="500" letter-spacing="3" fill="#0f1115">PLANNING</text>
+</svg>

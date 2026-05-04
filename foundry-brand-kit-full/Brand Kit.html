@@ -1,0 +1,1089 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Foundry — Brand Kit</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg"/>
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png"/>
+<template id="__bundler_thumbnail" data-bg-color="#0b0c0f">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#0b0c0f"/>
+    <rect x="450" y="200" width="300" height="400" rx="60" fill="#15171f"/>
+    <path d="M530 290H700L668 322H560V570L530 540V290Z" fill="#fbbf24"/>
+    <path d="M580 380H650C685 380 712 407 712 442C712 477 685 504 650 504H580V472H650C667 472 680 459 680 442C680 425 667 412 650 412H580V380Z" fill="#f59e0b"/>
+    <path d="M580 472H612V560L580 530V472Z" fill="#b45309"/>
+  </svg>
+</template>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0b0c0f;
+    --bg-elev: #111319;
+    --bg-card: #15171f;
+    --bg-card-2: #1a1d27;
+    --line: #23262f;
+    --line-2: #2c3040;
+    --fg: #f4f5f7;
+    --fg-dim: #b6bac3;
+    --fg-mute: #7c818d;
+    --gold-50: #fffbeb;
+    --gold-100: #fef3c7;
+    --gold-200: #fde68a;
+    --gold-300: #fcd34d;
+    --gold-400: #fbbf24;
+    --gold-500: #f59e0b;
+    --gold-600: #d97706;
+    --gold-700: #b45309;
+    --gold-800: #92400e;
+    --gold-900: #78350f;
+    --accent: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  a { color: var(--gold-400); text-decoration: none; }
+
+  /* Layout */
+  .shell { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
+  header.top {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(11,12,15,0.78);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .mk { width: 32px; height: 32px; border-radius: 8px; }
+  .brand .wm { font-weight: 700; letter-spacing: -0.02em; font-size: 18px; }
+  .brand .wm .dot { color: var(--accent); }
+  .nav { display: flex; gap: 4px; }
+  .nav a {
+    color: var(--fg-dim); font-size: 13px; padding: 8px 12px; border-radius: 8px;
+    font-weight: 500;
+  }
+  .nav a:hover { color: var(--fg); background: var(--bg-card); }
+  .topright { display: flex; gap: 8px; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--accent); color: #1a1205;
+    border: none; cursor: pointer;
+    padding: 9px 14px; border-radius: 8px;
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    transition: filter 120ms ease, transform 120ms ease;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:active { transform: translateY(1px); }
+  .btn.ghost {
+    background: transparent; color: var(--fg-dim);
+    border: 1px solid var(--line-2);
+  }
+  .btn.ghost:hover { color: var(--fg); border-color: #3a3f52; background: var(--bg-card); }
+
+  /* Hero */
+  .hero { padding: 96px 0 80px; position: relative; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      radial-gradient(1100px 500px at 80% -10%, rgba(245,158,11,0.12), transparent 60%),
+      radial-gradient(700px 400px at 10% 20%, rgba(251,191,36,0.06), transparent 70%);
+    pointer-events: none;
+  }
+  .hero-grid {
+    display: grid; grid-template-columns: 1.1fr 1fr; gap: 80px; align-items: center;
+    position: relative;
+  }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--gold-400);
+    padding: 6px 10px; border: 1px solid rgba(245,158,11,0.25);
+    background: rgba(245,158,11,0.06); border-radius: 999px;
+  }
+  .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold-400); box-shadow: 0 0 12px var(--gold-400); }
+  h1 {
+    font-size: 76px; line-height: 0.98; letter-spacing: -0.035em;
+    font-weight: 800; margin: 20px 0 18px;
+    text-wrap: balance;
+  }
+  h1 .ink { color: var(--accent); }
+  .hero p.lede {
+    font-size: 18px; color: var(--fg-dim); max-width: 540px; line-height: 1.55;
+    margin: 0 0 28px;
+  }
+  .hero-meta { display: flex; gap: 32px; margin-top: 32px; }
+  .hero-meta .cell { border-left: 1px solid var(--line-2); padding-left: 14px; }
+  .hero-meta .k { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--fg-mute); }
+  .hero-meta .v { font-size: 14px; color: var(--fg); margin-top: 4px; font-weight: 500; }
+
+  .hero-icon-wrap {
+    position: relative;
+    aspect-ratio: 1/1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .hero-icon-wrap .ring {
+    position: absolute; inset: 0;
+    border: 1px dashed var(--line-2); border-radius: 32px;
+    transform: rotate(8deg);
+  }
+  .hero-icon-wrap .ring2 {
+    position: absolute; inset: 8%;
+    border: 1px dashed var(--line); border-radius: 28px;
+    transform: rotate(-4deg);
+  }
+  .hero-icon-wrap img { width: 72%; height: 72%; filter: drop-shadow(0 30px 60px rgba(245,158,11,0.18)); }
+
+  /* Sections */
+  section { padding: 80px 0; border-top: 1px solid var(--line); }
+  .sec-head { display: flex; justify-content: space-between; align-items: end; margin-bottom: 40px; gap: 24px; flex-wrap: wrap; }
+  .sec-num {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.2em;
+    color: var(--gold-400); text-transform: uppercase;
+  }
+  .sec-title { font-size: 42px; line-height: 1.05; letter-spacing: -0.02em; font-weight: 700; margin: 8px 0 0; }
+  .sec-blurb { color: var(--fg-dim); max-width: 480px; font-size: 15px; }
+
+  /* Logo grid */
+  .logo-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 16px; }
+  .logo-grid.logo-grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .logo-card {
+    background: var(--bg-card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 32px;
+    display: flex; flex-direction: column; min-height: 320px;
+    position: relative; overflow: hidden;
+  }
+  .logo-card.light { background: #f4f5f7; color: #0f1115; border-color: #e5e7eb; }
+  .logo-card.checker {
+    background:
+      linear-gradient(45deg, #15171f 25%, transparent 25%),
+      linear-gradient(-45deg, #15171f 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #15171f 75%),
+      linear-gradient(-45deg, transparent 75%, #15171f 75%);
+    background-size: 24px 24px;
+    background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+    background-color: #1a1d27;
+  }
+  .logo-card .stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: 16px 0; }
+  .logo-card .stage img { max-width: 100%; max-height: 140px; }
+  .logo-card .stage .mark-img { max-height: 180px; }
+  .logo-card .meta { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+  .logo-card .label { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--fg-mute); }
+  .logo-card.light .label { color: #6b7280; }
+  .dl-link {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--gold-400);
+    letter-spacing: 0.05em;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .dl-link:hover { color: var(--gold-300); }
+
+  /* Clear space */
+  .clear-card {
+    background: var(--bg-card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 56px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 56px; align-items: center;
+  }
+  .clear-stage {
+    position: relative; aspect-ratio: 1/1;
+    background:
+      repeating-linear-gradient(0deg, transparent 0 23px, rgba(255,255,255,0.04) 23px 24px),
+      repeating-linear-gradient(90deg, transparent 0 23px, rgba(255,255,255,0.04) 23px 24px);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .clear-stage .icon-frame {
+    position: relative;
+    width: 50%; aspect-ratio: 1/1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .clear-stage .icon-frame::before {
+    content: ""; position: absolute; inset: -33%;
+    border: 1px dashed var(--gold-500); border-radius: 12px;
+  }
+  .clear-stage .icon-frame img { width: 100%; height: 100%; }
+  .clear-stage .x-mark {
+    position: absolute; font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--gold-400); letter-spacing: 0.1em;
+    background: var(--bg-card); padding: 2px 6px; border-radius: 4px;
+  }
+  .x-mark.t { top: 12%; left: 50%; transform: translateX(-50%); }
+  .x-mark.b { bottom: 12%; left: 50%; transform: translateX(-50%); }
+  .x-mark.l { left: 4%; top: 50%; transform: translateY(-50%); }
+  .x-mark.r { right: 4%; top: 50%; transform: translateY(-50%); }
+  .clear-info h3 { font-size: 24px; margin: 0 0 12px; letter-spacing: -0.01em; font-weight: 700; }
+  .clear-info p { color: var(--fg-dim); margin: 0 0 20px; }
+  .rules { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+  .rules li { display: flex; gap: 12px; font-size: 14px; color: var(--fg-dim); }
+  .rules li::before {
+    content: ""; flex: 0 0 6px; height: 6px; margin-top: 9px; border-radius: 50%; background: var(--gold-400);
+  }
+  .rules li b { color: var(--fg); font-weight: 600; }
+
+  /* Colors */
+  .swatch-grid {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px;
+  }
+  .swatch {
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    background: var(--bg-card); cursor: pointer;
+    transition: transform 160ms ease, border-color 160ms ease;
+  }
+  .swatch:hover { transform: translateY(-2px); border-color: var(--line-2); }
+  .swatch .chip { aspect-ratio: 1/1; display: flex; align-items: end; padding: 14px; position: relative; }
+  .swatch .chip .scale { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.1em; opacity: 0.85; }
+  .swatch .chip.dark-text .scale { color: rgba(0,0,0,0.7); }
+  .swatch .chip.light-text .scale { color: rgba(255,255,255,0.85); }
+  .swatch .info { padding: 12px 14px 14px; }
+  .swatch .name { font-size: 13px; font-weight: 600; }
+  .swatch .hex { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg-mute); margin-top: 2px; display: flex; justify-content: space-between; align-items: center; }
+  .swatch .hex .copy-hint { opacity: 0; transition: opacity 120ms ease; color: var(--gold-400); }
+  .swatch:hover .copy-hint { opacity: 1; }
+  .swatch.copied .copy-hint { color: #10b981; opacity: 1; }
+
+  .neutral-bar {
+    margin-top: 24px;
+    display: grid; grid-template-columns: repeat(8, 1fr);
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+  }
+  .neutral-bar .ncell {
+    aspect-ratio: 1/0.7; padding: 10px 12px; display: flex; flex-direction: column; justify-content: end;
+    cursor: pointer;
+  }
+  .neutral-bar .ncell .nc-name { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; opacity: 0.7; }
+  .neutral-bar .ncell .nc-hex { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; }
+
+  /* Type */
+  .type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .type-card { background: var(--bg-card); border: 1px solid var(--line); border-radius: 16px; padding: 32px; }
+  .type-card .ttitle { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; }
+  .type-card .ttitle .name { font-size: 18px; font-weight: 600; }
+  .type-card .ttitle .role { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg-mute); letter-spacing: 0.15em; text-transform: uppercase; }
+  .type-card .specimen-display {
+    font-family: 'Inter', sans-serif; font-size: 84px; line-height: 0.95;
+    letter-spacing: -0.03em; font-weight: 700; margin-bottom: 8px;
+  }
+  .type-card .specimen-display.mono { font-family: 'JetBrains Mono', monospace; font-size: 64px; letter-spacing: -0.02em; font-weight: 500; }
+  .type-card .alphabet { color: var(--fg-mute); font-size: 13px; line-height: 1.4; word-break: break-all; margin-bottom: 24px; }
+  .weights { display: flex; flex-wrap: wrap; gap: 0; border-top: 1px solid var(--line); }
+  .weights .w {
+    flex: 1 1 33%; padding: 14px 0; border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .weights .w:last-child { border-right: none; }
+  .weights .w .ws { font-size: 18px; }
+  .weights .w .wl { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: var(--fg-mute); text-transform: uppercase; }
+
+  .scale-table {
+    margin-top: 24px;
+    background: var(--bg-card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+  }
+  .scale-row {
+    display: grid; grid-template-columns: 130px 100px 100px 1fr;
+    align-items: center; padding: 18px 24px; border-bottom: 1px solid var(--line);
+    gap: 16px;
+  }
+  .scale-row:last-child { border-bottom: none; }
+  .scale-row .lbl { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--gold-400); letter-spacing: 0.1em; text-transform: uppercase; }
+  .scale-row .px { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--fg-mute); }
+  .scale-row .lh { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--fg-mute); }
+  .scale-row .preview { font-weight: 600; letter-spacing: -0.02em; color: var(--fg); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+  /* Favicons */
+  .fav-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+  .fav-card {
+    background: var(--bg-card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 12px;
+  }
+  .fav-stage {
+    background:
+      linear-gradient(45deg, #1a1d27 25%, transparent 25%),
+      linear-gradient(-45deg, #1a1d27 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #1a1d27 75%),
+      linear-gradient(-45deg, transparent 75%, #1a1d27 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    background-color: #15171f;
+    width: 100%;
+    height: 140px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; border: 1px solid var(--line);
+  }
+  .fav-stage img { image-rendering: -webkit-optimize-contrast; }
+  .fav-info { width: 100%; text-align: center; }
+  .fav-name { font-size: 13px; font-weight: 600; }
+  .fav-spec { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg-mute); margin-top: 2px; }
+  .fav-card .dl-link { margin-top: 4px; }
+
+  /* Code block */
+  .code-card {
+    background: #0a0b0e; border: 1px solid var(--line);
+    border-radius: 14px; padding: 0; overflow: hidden;
+    margin-top: 24px;
+  }
+  .code-head {
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--bg-card);
+  }
+  .code-head .fname { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--fg-dim); }
+  .code-head .copy-btn {
+    background: transparent; color: var(--fg-mute); border: 1px solid var(--line-2);
+    padding: 4px 10px; border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; cursor: pointer;
+    transition: all 120ms ease;
+  }
+  .code-head .copy-btn:hover { color: var(--gold-400); border-color: var(--gold-700); }
+  .code-head .copy-btn.copied { color: #10b981; border-color: #10b98155; }
+  pre.code {
+    margin: 0; padding: 20px 24px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+    line-height: 1.7; color: var(--fg-dim);
+    overflow-x: auto;
+  }
+  pre.code .tag { color: #6b7280; }
+  pre.code .attr { color: var(--gold-400); }
+  pre.code .str { color: #86efac; }
+  pre.code .com { color: #4b5158; font-style: italic; }
+
+  /* Do/Dont */
+  .donts-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .dont-card {
+    background: var(--bg-card); border: 1px solid var(--line); border-radius: 14px;
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .dont-stage {
+    aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center;
+    position: relative; padding: 24px;
+  }
+  .dont-stage.do { background: #0f1218; }
+  .dont-stage.do-light { background: #f4f5f7; }
+  .dont-stage.bad-grad { background: linear-gradient(135deg, #ef4444, #8b5cf6, #06b6d4); }
+  .dont-stage.bad-pat { background:
+    repeating-linear-gradient(45deg, #be185d 0 12px, #db2777 12px 24px); }
+  .dont-stage.bad-stretch img { width: 80%; height: 60% !important; object-fit: fill; }
+  .dont-stage.bad-rotate img { transform: rotate(18deg); }
+  .dont-stage.bad-color img { filter: hue-rotate(140deg) saturate(1.4); }
+  .dont-stage img { max-width: 70%; max-height: 100%; }
+  .dont-tag {
+    position: absolute; top: 10px; left: 10px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.15em;
+    text-transform: uppercase; padding: 4px 8px; border-radius: 4px;
+  }
+  .dont-tag.ok { background: rgba(16, 185, 129, 0.18); color: #34d399; border: 1px solid rgba(52,211,153,0.3); }
+  .dont-tag.no { background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(248,113,113,0.3); }
+  .dont-cap { padding: 14px 18px; border-top: 1px solid var(--line); font-size: 13px; color: var(--fg-dim); }
+  .dont-cap b { color: var(--fg); font-weight: 600; }
+
+  /* App icon strip */
+  .app-strip {
+    display: flex; align-items: end; gap: 32px; padding: 56px;
+    background: var(--bg-card); border: 1px solid var(--line); border-radius: 16px;
+    overflow-x: auto;
+  }
+  .app-tile { display: flex; flex-direction: column; align-items: center; gap: 12px; flex: 0 0 auto; }
+  .app-tile img { display: block; box-shadow: 0 16px 32px rgba(0,0,0,0.5); }
+  .app-tile .alabel { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg-mute); letter-spacing: 0.08em; }
+
+  /* Voice */
+  .voice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .voice-card { background: var(--bg-card); border: 1px solid var(--line); border-radius: 16px; padding: 32px; }
+  .voice-card h4 { margin: 0 0 16px; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .voice-card .pillrow { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill {
+    padding: 6px 12px; border-radius: 999px; font-size: 12px;
+    font-family: 'JetBrains Mono', monospace; letter-spacing: 0.04em;
+    border: 1px solid var(--line-2); color: var(--fg-dim);
+  }
+  .pill.on { color: var(--gold-400); border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.08); }
+  .pill.off { color: #f87171; border-color: rgba(248,113,113,0.3); text-decoration: line-through; opacity: 0.7; }
+  .voice-card p { margin: 16px 0 0; color: var(--fg-dim); font-size: 14px; }
+
+  /* Footer */
+  footer.foot {
+    padding: 56px 0 80px; border-top: 1px solid var(--line); margin-top: 80px;
+  }
+  .foot-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 32px; }
+  .foot-grid h5 { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg-mute); letter-spacing: 0.18em; text-transform: uppercase; margin: 0 0 14px; }
+  .foot-grid ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+  .foot-grid a { color: var(--fg-dim); font-size: 13px; }
+  .foot-grid a:hover { color: var(--gold-400); }
+  .foot-bottom {
+    margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--fg-mute); font-size: 12px;
+    font-family: 'JetBrains Mono', monospace; letter-spacing: 0.04em;
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--gold-500); color: #1a1205;
+    padding: 10px 16px; border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+    opacity: 0; pointer-events: none;
+    transition: opacity 200ms ease, transform 200ms ease;
+    z-index: 100;
+    box-shadow: 0 12px 30px rgba(245,158,11,0.4);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+
+  @media (max-width: 1080px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 48px; }
+    h1 { font-size: 56px; }
+    .logo-grid { grid-template-columns: 1fr; }
+    .swatch-grid { grid-template-columns: repeat(3, 1fr); }
+    .neutral-bar { grid-template-columns: repeat(4, 1fr); }
+    .type-grid, .voice-grid { grid-template-columns: 1fr; }
+    .donts-grid { grid-template-columns: 1fr 1fr; }
+    .fav-grid { grid-template-columns: repeat(3, 1fr); }
+    .clear-card { grid-template-columns: 1fr; }
+    .foot-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="shell topbar">
+    <div class="brand">
+      <img class="mk" src="assets/favicon.svg" alt=""/>
+      <div class="wm">Foundry<span class="dot">.</span></div>
+      <span class="mono" style="color:var(--fg-mute); font-size:11px; letter-spacing:0.18em; margin-left:12px; padding-left:14px; border-left:1px solid var(--line-2);">BRAND KIT v2.0</span>
+    </div>
+    <nav class="nav">
+      <a href="#logo">Logo</a>
+      <a href="#color">Color</a>
+      <a href="#type">Type</a>
+      <a href="#favicons">Favicons</a>
+      <a href="#app">App icons</a>
+      <a href="#usage">Usage</a>
+    </nav>
+    <div class="topright">
+      <a class="btn ghost" href="Brand Kit Light.html" style="text-decoration:none;">→ Light</a>
+      <button class="btn" id="downloadAll">Download kit</button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <section class="hero" style="border-top:none;">
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow"><span class="dot"></span>Updated · April 2026 · v2.0</span>
+        <h1>A new mark<br/>for <span class="ink">Foundry.</span></h1>
+        <p class="lede">A geometric FP monogram, cast in amber on near-black. Sharper, more confident, built for the dark interfaces our product lives in. This kit covers every asset you'll need — from 16-pixel favicons to App Store icons.</p>
+        <div style="display:flex; gap:12px;">
+          <button class="btn" id="heroDownload">Download full kit (.zip)</button>
+          <a class="btn ghost" href="#logo">Browse assets →</a>
+        </div>
+        <div class="hero-meta">
+          <div class="cell"><div class="k">Primary</div><div class="v">#F59E0B Amber</div></div>
+          <div class="cell"><div class="k">Surface</div><div class="v">#0B0C0F Obsidian</div></div>
+          <div class="cell"><div class="k">Type</div><div class="v">Inter · JetBrains Mono</div></div>
+        </div>
+      </div>
+      <div class="hero-icon-wrap">
+        <div class="ring"></div>
+        <div class="ring2"></div>
+        <img src="assets/fp-icon.svg" alt="FP icon"/>
+      </div>
+    </div>
+  </section>
+
+  <section id="logo">
+    <div class="sec-head">
+      <div>
+        <div class="sec-num">01 · Logo</div>
+        <h2 class="sec-title">Marks &amp; lockups</h2>
+      </div>
+      <p class="sec-blurb">The FP icon is the primary mark. Use the wordmark when "Foundry" needs to be read; use the lockup for first-time introductions.</p>
+    </div>
+
+    <div class="logo-grid">
+      <div class="logo-card checker">
+        <div class="stage"><img class="mark-img" src="assets/fp-icon.svg" alt=""/></div>
+        <div class="meta">
+          <span class="label">FP icon · primary</span>
+          <a class="dl-link" href="assets/fp-icon.svg" download>↓ SVG</a>
+        </div>
+      </div>
+      <div class="logo-card">
+        <div class="stage"><img src="assets/wordmark-light.svg" alt=""/></div>
+        <div class="meta">
+          <span class="label">Wordmark · dark bg</span>
+          <a class="dl-link" href="assets/wordmark-light.svg" download>↓ SVG</a>
+        </div>
+      </div>
+      <div class="logo-card light">
+        <div class="stage"><img src="assets/wordmark-dark.svg" alt=""/></div>
+        <div class="meta">
+          <span class="label">Wordmark · light bg</span>
+          <a class="dl-link" href="assets/wordmark-dark.svg" download>↓ SVG</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="logo-grid" style="margin-top:16px;">
+      <div class="logo-card">
+        <div class="stage"><img src="assets/lockup-horizontal.svg" alt=""/></div>
+        <div class="meta">
+          <span class="label">Lockup · horizontal · dark</span>
+          <a class="dl-link" href="assets/lockup-horizontal.svg" download>↓ SVG</a>
+        </div>
+      </div>
+      <div class="logo-card light">
+        <div class="stage"><img src="assets/lockup-horizontal-light.svg" alt=""/></div>
+        <div class="meta">
+          <span class="label">Lockup · horizontal · light</span>
+          <a class="dl-link" href="assets/lockup-horizontal-light.svg" download>↓ SVG</a>
+        </div>
+      </div>
+      <div class="logo-card light">
+        <div class="stage"><img src="assets/lockup-horizontal-mono.svg" alt=""/></div>
+        <div class="meta">
+          <span class="label">Lockup · horizontal · mono</span>
+          <a class="dl-link" href="assets/lockup-horizontal-mono.svg" download>↓ SVG</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="logo-grid" style="margin-top:16px;">
+      <div class="logo-card">
+        <div class="stage"><img src="assets/lockup-stacked.svg" alt="" style="max-height:240px;"/></div>
+        <div class="meta">
+          <span class="label">Lockup · stacked · dark</span>
+          <a class="dl-link" href="assets/lockup-stacked.svg" download>↓ SVG</a>
+        </div>
+      </div>
+      <div class="logo-card light">
+        <div class="stage"><img src="assets/lockup-stacked-light.svg" alt="" style="max-height:240px;"/></div>
+        <div class="meta">
+          <span class="label">Lockup · stacked · light</span>
+          <a class="dl-link" href="assets/lockup-stacked-light.svg" download>↓ SVG</a>
+        </div>
+      </div>
+      <div class="logo-card light">
+        <div class="stage"><img src="assets/lockup-stacked-mono.svg" alt="" style="max-height:240px;"/></div>
+        <div class="meta">
+          <span class="label">Lockup · stacked · mono</span>
+          <a class="dl-link" href="assets/lockup-stacked-mono.svg" download>↓ SVG</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="logo-grid logo-grid-4" style="margin-top:16px;">
+      <div class="logo-card">
+        <div class="stage"><img src="assets/fp-mark-color.svg" alt="" style="max-height:140px;"/></div>
+        <div class="meta">
+          <span class="label">FP mark · color · transparent</span>
+          <a class="dl-link" href="assets/fp-mark-color.svg" download>↓ SVG</a>
+        </div>
+      </div>
+      <div class="logo-card light">
+        <div class="stage"><img src="assets/fp-mark-black.svg" alt="" style="max-height:140px;"/></div>
+        <div class="meta">
+          <span class="label">FP mark · black · transparent</span>
+          <a class="dl-link" href="assets/fp-mark-black.svg" download>↓ SVG</a>
+        </div>
+      </div>
+      <div class="logo-card">
+        <div class="stage"><img src="assets/fp-mark-white.svg" alt="" style="max-height:140px;"/></div>
+        <div class="meta">
+          <span class="label">FP mark · white · transparent</span>
+          <a class="dl-link" href="assets/fp-mark-white.svg" download>↓ SVG</a>
+        </div>
+      </div>
+      <div class="logo-card checker">
+        <div class="stage"><img src="assets/fp-mark-color.svg" alt="" style="max-height:140px;"/></div>
+        <div class="meta">
+          <span class="label">FP mark · color on checker</span>
+          <a class="dl-link" href="assets/fp-mark-color.svg" download>↓ SVG</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="clear-space">
+    <div class="sec-head">
+      <div>
+        <div class="sec-num">02 · Clear space</div>
+        <h2 class="sec-title">Give the mark room</h2>
+      </div>
+      <p class="sec-blurb">Maintain at least <b style="color:var(--gold-400)">⅓ of the icon's width</b> of clear space on every side. Don't crowd it — the corners do work.</p>
+    </div>
+
+    <div class="clear-card">
+      <div class="clear-stage">
+        <div class="icon-frame"><img src="assets/fp-icon.svg" alt=""/></div>
+        <div class="x-mark t">x ÷ 3</div>
+        <div class="x-mark b">x ÷ 3</div>
+        <div class="x-mark l">x ÷ 3</div>
+        <div class="x-mark r">x ÷ 3</div>
+      </div>
+      <div class="clear-info">
+        <h3>Minimum sizing</h3>
+        <p>The mark holds up well at small sizes thanks to the bold counters in the F and P, but enforce a hard floor:</p>
+        <ul class="rules">
+          <li><b>Digital:</b> never below 24×24 px (use the simplified favicon below 32 px).</li>
+          <li><b>Print:</b> never below 12 mm wide for the icon, 30 mm for the lockup.</li>
+          <li><b>Wordmark:</b> 80 px or 20 mm minimum to keep the period readable.</li>
+          <li><b>Backgrounds:</b> always pair with #0B0C0F or a near-black solid; never on busy photos without a scrim.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="color">
+    <div class="sec-head">
+      <div>
+        <div class="sec-num">03 · Color</div>
+        <h2 class="sec-title">A single hot accent</h2>
+      </div>
+      <p class="sec-blurb">Amber 500 is the hero. Use it sparingly — links, primary actions, the period in the wordmark. Click any swatch to copy its hex.</p>
+    </div>
+
+    <div class="swatch-grid" id="swatchGrid"></div>
+
+    <h3 style="margin: 40px 0 12px; font-size: 18px; font-weight: 600; letter-spacing: -0.01em;">Neutrals</h3>
+    <div class="neutral-bar" id="neutralBar"></div>
+
+    <div class="code-card">
+      <div class="code-head">
+        <span class="fname">tokens.css</span>
+        <button class="copy-btn" id="copyCss">Copy</button>
+      </div>
+      <pre class="code" id="cssCode"></pre>
+    </div>
+  </section>
+
+  <section id="type">
+    <div class="sec-head">
+      <div>
+        <div class="sec-num">04 · Type</div>
+        <h2 class="sec-title">Inter &amp; JetBrains Mono</h2>
+      </div>
+      <p class="sec-blurb">Inter for everything readable. JetBrains Mono for tokens, labels, technical detail. Two faces, lots of weight contrast.</p>
+    </div>
+
+    <div class="type-grid">
+      <div class="type-card">
+        <div class="ttitle">
+          <div class="name">Inter</div>
+          <div class="role">Display · Body</div>
+        </div>
+        <div class="specimen-display">Foundry<span style="color:var(--accent)">.</span></div>
+        <div class="alphabet">ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 .,!?@#$%&amp;*</div>
+        <div class="weights">
+          <div class="w"><span class="ws" style="font-weight:400">Regular</span><span class="wl">400</span></div>
+          <div class="w"><span class="ws" style="font-weight:500">Medium</span><span class="wl">500</span></div>
+          <div class="w"><span class="ws" style="font-weight:600">Semibold</span><span class="wl">600</span></div>
+          <div class="w"><span class="ws" style="font-weight:700">Bold</span><span class="wl">700</span></div>
+          <div class="w"><span class="ws" style="font-weight:800">Extrabold</span><span class="wl">800</span></div>
+        </div>
+      </div>
+      <div class="type-card">
+        <div class="ttitle">
+          <div class="name">JetBrains Mono</div>
+          <div class="role">Code · Labels</div>
+        </div>
+        <div class="specimen-display mono">F&gt;_42</div>
+        <div class="alphabet mono" style="font-family:'JetBrains Mono', monospace;">ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 -&gt; =&gt; != ===</div>
+        <div class="weights">
+          <div class="w"><span class="ws mono" style="font-weight:400; font-family:'JetBrains Mono', monospace;">Regular</span><span class="wl">400</span></div>
+          <div class="w"><span class="ws mono" style="font-weight:500; font-family:'JetBrains Mono', monospace;">Medium</span><span class="wl">500</span></div>
+          <div class="w"><span class="ws mono" style="font-weight:600; font-family:'JetBrains Mono', monospace;">Semibold</span><span class="wl">600</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scale-table">
+      <div class="scale-row"><span class="lbl">Display</span><span class="px">76 / 800</span><span class="lh">0.98</span><span class="preview" style="font-size:32px;">Build with Foundry</span></div>
+      <div class="scale-row"><span class="lbl">Title</span><span class="px">42 / 700</span><span class="lh">1.05</span><span class="preview" style="font-size:24px;">A new mark for Foundry</span></div>
+      <div class="scale-row"><span class="lbl">Heading</span><span class="px">24 / 600</span><span class="lh">1.2</span><span class="preview" style="font-size:18px;">Color tokens and surfaces</span></div>
+      <div class="scale-row"><span class="lbl">Body</span><span class="px">15 / 400</span><span class="lh">1.55</span><span class="preview" style="font-size:14px; font-weight:400;">The quick brown fox jumps over the lazy dog.</span></div>
+      <div class="scale-row"><span class="lbl">Mono S</span><span class="px">11 / 500</span><span class="lh">1.4</span><span class="preview mono" style="font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--gold-400);">SECTION · LABEL</span></div>
+    </div>
+  </section>
+
+  <section id="favicons">
+    <div class="sec-head">
+      <div>
+        <div class="sec-num">05 · Favicons</div>
+        <h2 class="sec-title">Browser tab assets</h2>
+      </div>
+      <p class="sec-blurb">SVG is primary — sharp at every size. PNGs at 16/32/48 px for legacy compat, plus Apple touch icon at 180 px.</p>
+    </div>
+
+    <div class="fav-grid" id="favGrid"></div>
+
+    <div class="code-card">
+      <div class="code-head">
+        <span class="fname">index.html</span>
+        <button class="copy-btn" id="copyHtml">Copy</button>
+      </div>
+<pre class="code" id="htmlCode"><span class="com">&lt;!-- Drop these in your &lt;head&gt; --&gt;</span>
+<span class="tag">&lt;link</span> <span class="attr">rel</span>=<span class="str">"icon"</span> <span class="attr">type</span>=<span class="str">"image/svg+xml"</span> <span class="attr">href</span>=<span class="str">"/favicon.svg"</span><span class="tag">/&gt;</span>
+<span class="tag">&lt;link</span> <span class="attr">rel</span>=<span class="str">"icon"</span> <span class="attr">type</span>=<span class="str">"image/png"</span> <span class="attr">sizes</span>=<span class="str">"32x32"</span> <span class="attr">href</span>=<span class="str">"/favicon-32.png"</span><span class="tag">/&gt;</span>
+<span class="tag">&lt;link</span> <span class="attr">rel</span>=<span class="str">"icon"</span> <span class="attr">type</span>=<span class="str">"image/png"</span> <span class="attr">sizes</span>=<span class="str">"16x16"</span> <span class="attr">href</span>=<span class="str">"/favicon-16.png"</span><span class="tag">/&gt;</span>
+<span class="tag">&lt;link</span> <span class="attr">rel</span>=<span class="str">"apple-touch-icon"</span> <span class="attr">sizes</span>=<span class="str">"180x180"</span> <span class="attr">href</span>=<span class="str">"/apple-touch-icon.png"</span><span class="tag">/&gt;</span>
+<span class="tag">&lt;meta</span> <span class="attr">name</span>=<span class="str">"theme-color"</span> <span class="attr">content</span>=<span class="str">"#0b0c0f"</span><span class="tag">/&gt;</span></pre>
+    </div>
+  </section>
+
+  <section id="app">
+    <div class="sec-head">
+      <div>
+        <div class="sec-num">06 · App icons</div>
+        <h2 class="sec-title">iOS, Android &amp; web manifest</h2>
+      </div>
+      <p class="sec-blurb">Square master at 1024×1024. Rounded corners are baked in for the SVG; raster sizes are square — let the platform mask.</p>
+    </div>
+
+    <div class="app-strip" id="appStrip"></div>
+  </section>
+
+  <section id="usage">
+    <div class="sec-head">
+      <div>
+        <div class="sec-num">07 · Usage</div>
+        <h2 class="sec-title">Do &amp; don't</h2>
+      </div>
+      <p class="sec-blurb">The mark is geometric and intentional. Don't soften the corners, recolor it, or stretch it to fit. When in doubt, use the SVG at native ratio.</p>
+    </div>
+
+    <div class="donts-grid">
+      <div class="dont-card">
+        <div class="dont-stage do">
+          <span class="dont-tag ok">Do</span>
+          <img src="assets/fp-icon.svg" alt=""/>
+        </div>
+        <div class="dont-cap"><b>Native ratio on dark surface.</b> The mark was designed for #0B0C0F.</div>
+      </div>
+      <div class="dont-card">
+        <div class="dont-stage do-light">
+          <span class="dont-tag ok">Do</span>
+          <img src="assets/fp-icon-mono-dark.svg" alt=""/>
+        </div>
+        <div class="dont-cap"><b>Mono on light.</b> Use the 1-color variant when amber is unavailable.</div>
+      </div>
+      <div class="dont-card">
+        <div class="dont-stage do">
+          <span class="dont-tag ok">Do</span>
+          <img src="assets/fp-icon.svg" alt="" style="max-width:40%;"/>
+        </div>
+        <div class="dont-cap"><b>Respect clear space.</b> ⅓ of the icon's width on all sides.</div>
+      </div>
+
+      <div class="dont-card">
+        <div class="dont-stage bad-grad">
+          <span class="dont-tag no">Don't</span>
+          <img src="assets/fp-icon.svg" alt=""/>
+        </div>
+        <div class="dont-cap"><b>No busy backgrounds.</b> The mark needs a near-black or solid neutral.</div>
+      </div>
+      <div class="dont-card">
+        <div class="dont-stage bad-stretch do">
+          <span class="dont-tag no">Don't</span>
+          <img src="assets/fp-icon.svg" alt=""/>
+        </div>
+        <div class="dont-cap"><b>Never stretch.</b> Maintain the 1:1 aspect ratio at all sizes.</div>
+      </div>
+      <div class="dont-card">
+        <div class="dont-stage bad-color do">
+          <span class="dont-tag no">Don't</span>
+          <img src="assets/fp-icon.svg" alt=""/>
+        </div>
+        <div class="dont-cap"><b>Don't recolor.</b> The amber gradient is the brand. Use mono if you need a different hue.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="voice">
+    <div class="sec-head">
+      <div>
+        <div class="sec-num">08 · Voice</div>
+        <h2 class="sec-title">How Foundry sounds</h2>
+      </div>
+      <p class="sec-blurb">Confident, technical, never precious. We respect the reader's time.</p>
+    </div>
+
+    <div class="voice-grid">
+      <div class="voice-card">
+        <h4>We are</h4>
+        <div class="pillrow">
+          <span class="pill on">Direct</span>
+          <span class="pill on">Technical</span>
+          <span class="pill on">Calm</span>
+          <span class="pill on">Specific</span>
+          <span class="pill on">Confident</span>
+          <span class="pill on">Spare</span>
+        </div>
+        <p>"Plan a quarter in 90 seconds. Drop in your roadmap, set the constraints, ship."</p>
+      </div>
+      <div class="voice-card">
+        <h4>We aren't</h4>
+        <div class="pillrow">
+          <span class="pill off">Cute</span>
+          <span class="pill off">Hyped</span>
+          <span class="pill off">Vague</span>
+          <span class="pill off">Salesy</span>
+          <span class="pill off">Apologetic</span>
+          <span class="pill off">Wordy</span>
+        </div>
+        <p>Avoid: "🚀 Supercharge your team's planning workflow with our revolutionary AI-powered platform!"</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <div class="foot-grid">
+      <div>
+        <div class="brand" style="margin-bottom:16px;">
+          <img class="mk" src="assets/favicon.svg" alt=""/>
+          <div class="wm">Foundry<span class="dot">.</span></div>
+        </div>
+        <p style="color:var(--fg-mute); font-size:13px; max-width: 360px; margin: 0;">Brand Kit v2.0 · April 2026. Designed for product, web, and print. Questions? <a href="mailto:brand@foundry.example">brand@foundry.example</a></p>
+      </div>
+      <div>
+        <h5>Assets</h5>
+        <ul>
+          <li><a href="assets/fp-icon.svg" download>FP Icon SVG</a></li>
+          <li><a href="assets/wordmark-light.svg" download>Wordmark</a></li>
+          <li><a href="assets/lockup-horizontal.svg" download>Lockup</a></li>
+          <li><a href="assets/favicon.svg" download>Favicon</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Type</h5>
+        <ul>
+          <li><a href="https://fonts.google.com/specimen/Inter" target="_blank" rel="noopener">Inter →</a></li>
+          <li><a href="https://fonts.google.com/specimen/JetBrains+Mono" target="_blank" rel="noopener">JetBrains Mono →</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Sections</h5>
+        <ul>
+          <li><a href="#logo">Logo</a></li>
+          <li><a href="#color">Color</a></li>
+          <li><a href="#type">Type</a></li>
+          <li><a href="#app">App icons</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <div>© 2026 FOUNDRY · BRAND@FOUNDRY.EXAMPLE</div>
+      <div>BUILT IN-HOUSE · NEW MARK · APRIL 2026</div>
+    </div>
+  </footer>
+
+</div>
+
+<div class="toast" id="toast">Copied</div>
+
+<script>
+  // -----------------------------------------------------------------
+  // Color data
+  // -----------------------------------------------------------------
+  const amber = [
+    { scale: '50',  hex: '#fffbeb', dark: true },
+    { scale: '100', hex: '#fef3c7', dark: true },
+    { scale: '200', hex: '#fde68a', dark: true },
+    { scale: '300', hex: '#fcd34d', dark: true },
+    { scale: '400', hex: '#fbbf24', dark: true },
+    { scale: '500', hex: '#f59e0b', dark: false, primary: true },
+    { scale: '600', hex: '#d97706', dark: false },
+    { scale: '700', hex: '#b45309', dark: false },
+    { scale: '800', hex: '#92400e', dark: false },
+    { scale: '900', hex: '#78350f', dark: false },
+  ];
+  const neutrals = [
+    { name: 'BG',      hex: '#0b0c0f' },
+    { name: 'ELEV',    hex: '#111319' },
+    { name: 'CARD',    hex: '#15171f' },
+    { name: 'CARD-2',  hex: '#1a1d27' },
+    { name: 'LINE',    hex: '#23262f' },
+    { name: 'MUTE',    hex: '#7c818d' },
+    { name: 'DIM',     hex: '#b6bac3' },
+    { name: 'FG',      hex: '#f4f5f7' },
+  ];
+
+  // Render swatches (just the amber ramp — the hero color)
+  const swatchGrid = document.getElementById('swatchGrid');
+  amber.forEach(s => {
+    const el = document.createElement('div');
+    el.className = 'swatch';
+    el.dataset.copy = s.hex;
+    el.innerHTML = `
+      <div class="chip ${s.dark ? 'dark-text' : 'light-text'}" style="background:${s.hex}">
+        <span class="scale">${s.scale}${s.primary ? ' · PRIMARY' : ''}</span>
+      </div>
+      <div class="info">
+        <div class="name">Amber ${s.scale}</div>
+        <div class="hex"><span>${s.hex.toUpperCase()}</span><span class="copy-hint">⌘ COPY</span></div>
+      </div>`;
+    swatchGrid.appendChild(el);
+  });
+  // pad with two neutral cards so the grid fills 5 cols neatly with extra
+  // (we'll keep it 5x2 since amber has 10 items)
+
+  // Neutrals bar
+  const nb = document.getElementById('neutralBar');
+  neutrals.forEach(n => {
+    const lum = parseInt(n.hex.slice(1,3), 16);
+    const isLight = lum > 130;
+    const el = document.createElement('div');
+    el.className = 'ncell';
+    el.style.background = n.hex;
+    el.style.color = isLight ? '#0f1115' : '#f4f5f7';
+    el.dataset.copy = n.hex;
+    el.innerHTML = `<span class="nc-name">${n.name}</span><span class="nc-hex">${n.hex.toUpperCase()}</span>`;
+    nb.appendChild(el);
+  });
+
+  // CSS code
+  const cssLines = [
+    '<span class="com">/* Foundry brand tokens */</span>',
+    '<span class="tag">:root</span> {',
+    '  <span class="attr">--bg</span>:        <span class="str">#0b0c0f</span>;',
+    '  <span class="attr">--bg-elev</span>:   <span class="str">#111319</span>;',
+    '  <span class="attr">--fg</span>:        <span class="str">#f4f5f7</span>;',
+    '  <span class="attr">--fg-dim</span>:    <span class="str">#b6bac3</span>;',
+    '  <span class="attr">--accent</span>:    <span class="str">#f59e0b</span>; <span class="com">/* Amber 500 */</span>',
+    '  <span class="attr">--accent-soft</span>: <span class="str">#fbbf24</span>;',
+    '  <span class="attr">--accent-deep</span>: <span class="str">#b45309</span>;',
+    '  <span class="attr">--line</span>:      <span class="str">#23262f</span>;',
+    '',
+    '  <span class="attr">--font-sans</span>: <span class="str">"Inter"</span>, system-ui, sans-serif;',
+    '  <span class="attr">--font-mono</span>: <span class="str">"JetBrains Mono"</span>, monospace;',
+    '',
+    '  <span class="attr">--radius-sm</span>: <span class="str">6px</span>;',
+    '  <span class="attr">--radius-md</span>: <span class="str">12px</span>;',
+    '  <span class="attr">--radius-lg</span>: <span class="str">16px</span>;',
+    '}'
+  ];
+  document.getElementById('cssCode').innerHTML = cssLines.join('\n');
+
+  // Favicons
+  const favs = [
+    { name: 'Favicon · 16',  spec: '16×16 · PNG',   src: 'assets/icons/favicon-16.png',   size: 16,  href: 'assets/icons/favicon-16.png' },
+    { name: 'Favicon · 32',  spec: '32×32 · PNG',   src: 'assets/icons/favicon-32.png',   size: 32,  href: 'assets/icons/favicon-32.png' },
+    { name: 'Favicon · 48',  spec: '48×48 · PNG',   src: 'assets/icons/favicon-48.png',   size: 48,  href: 'assets/icons/favicon-48.png' },
+    { name: 'Favicon · SVG', spec: 'Vector · scalable', src: 'assets/favicon.svg',        size: 80,  href: 'assets/favicon.svg' },
+    { name: 'Apple touch',   spec: '180×180 · PNG', src: 'assets/icons/apple-touch-icon.png', size: 90, href: 'assets/icons/apple-touch-icon.png' },
+  ];
+  const fg = document.getElementById('favGrid');
+  favs.forEach(f => {
+    const el = document.createElement('div');
+    el.className = 'fav-card';
+    el.innerHTML = `
+      <div class="fav-stage">
+        <img src="${f.src}" alt="" style="width:${f.size}px; height:${f.size}px;"/>
+      </div>
+      <div class="fav-info">
+        <div class="fav-name">${f.name}</div>
+        <div class="fav-spec">${f.spec}</div>
+      </div>
+      <a class="dl-link" href="${f.href}" download>↓ Download</a>
+    `;
+    fg.appendChild(el);
+  });
+
+  // App strip
+  const appSizes = [
+    { px: 1024, label: '1024 · Master' },
+    { px: 512,  label: '512 · Play Store' },
+    { px: 256,  label: '256' },
+    { px: 192,  label: '192 · PWA' },
+    { px: 180,  label: '180 · iOS' },
+    { px: 128,  label: '128' },
+    { px: 64,   label: '64' },
+    { px: 32,   label: '32' },
+  ];
+  const strip = document.getElementById('appStrip');
+  appSizes.forEach(a => {
+    const el = document.createElement('div');
+    el.className = 'app-tile';
+    const display = Math.min(a.px, 180); // cap visible size
+    el.innerHTML = `
+      <img src="assets/icons/fp-icon-${a.px}.png" alt="" style="width:${display}px; height:${display}px; border-radius:${display * 0.18}px;"/>
+      <span class="alabel">${a.label}</span>
+      <a class="dl-link" href="assets/icons/fp-icon-${a.px}.png" download>↓ PNG</a>
+    `;
+    strip.appendChild(el);
+  });
+
+  // -----------------------------------------------------------------
+  // Copy-to-clipboard interactions
+  // -----------------------------------------------------------------
+  const toast = document.getElementById('toast');
+  let toastTimer;
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1600);
+  }
+
+  function copy(text, ok = 'Copied') {
+    navigator.clipboard?.writeText(text).then(() => showToast(ok)).catch(() => showToast('Press ⌘C'));
+  }
+
+  document.querySelectorAll('[data-copy]').forEach(el => {
+    el.addEventListener('click', () => {
+      const v = el.dataset.copy;
+      copy(v, `Copied ${v.toUpperCase()}`);
+      el.classList.add('copied');
+      setTimeout(() => el.classList.remove('copied'), 1200);
+    });
+  });
+
+  document.getElementById('copyCss').addEventListener('click', (e) => {
+    const text = document.getElementById('cssCode').innerText;
+    copy(text, 'CSS copied');
+    e.target.textContent = 'Copied ✓';
+    e.target.classList.add('copied');
+    setTimeout(() => { e.target.textContent = 'Copy'; e.target.classList.remove('copied'); }, 1500);
+  });
+  document.getElementById('copyHtml').addEventListener('click', (e) => {
+    const text = document.getElementById('htmlCode').innerText;
+    copy(text, 'HTML copied');
+    e.target.textContent = 'Copied ✓';
+    e.target.classList.add('copied');
+    setTimeout(() => { e.target.textContent = 'Copy'; e.target.classList.remove('copied'); }, 1500);
+  });
+  // Smooth scroll for nav
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      const id = a.getAttribute('href').slice(1);
+      const target = document.getElementById(id);
+      if (target) {
+        e.preventDefault();
+        const top = target.getBoundingClientRect().top + window.scrollY - 80;
+        window.scrollTo({ top, behavior: 'smooth' });
+      }
+    });
+  });
+
+  // Download kit "button" — friendly hint since we can't bundle in-browser
+  function kitDownloadHint() {
+    showToast('Use the asset list below — every file is downloadable.');
+    const target = document.getElementById('logo');
+    const top = target.getBoundingClientRect().top + window.scrollY - 80;
+    window.scrollTo({ top, behavior: 'smooth' });
+  }
+  document.getElementById('downloadAll').addEventListener('click', kitDownloadHint);
+  document.getElementById('heroDownload').addEventListener('click', kitDownloadHint);
+</script>
+</body>
+</html>
