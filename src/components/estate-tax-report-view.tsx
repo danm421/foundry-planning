@@ -378,7 +378,6 @@ function SubtotalRow({
 }
 
 function SectionCard({
-  step,
   title,
   caption,
   children,
@@ -386,7 +385,6 @@ function SectionCard({
   subtotalLabel,
   subtotalAccent,
 }: {
-  step?: string;
   title: string;
   caption?: string;
   children: React.ReactNode;
@@ -397,16 +395,9 @@ function SectionCard({
   return (
     <div className="rounded-lg border border-gray-800/80 bg-gray-900/60 px-5 py-4">
       <div className="mb-2 flex items-baseline justify-between gap-3">
-        <div className="flex items-baseline gap-2">
-          {step && (
-            <span className="font-mono text-[10px] tracking-widest text-gray-600">
-              {step}
-            </span>
-          )}
-          <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-300">
-            {title}
-          </h3>
-        </div>
+        <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-300">
+          {title}
+        </h3>
         {caption && <span className="text-[11px] text-gray-500">{caption}</span>}
       </div>
       <div className="divide-y divide-gray-800/60">{children}</div>
@@ -427,26 +418,18 @@ function DecedentBreakdown({
   const headlineTax = tax.totalEstateTax;
   const headlineColor =
     headlineTax > 0 ? "text-rose-200" : "text-emerald-200";
-  const headlineRing =
-    headlineTax > 0
-      ? "ring-rose-500/20 bg-rose-950/20"
-      : "ring-emerald-500/20 bg-emerald-950/15";
 
   return (
     <section className="overflow-hidden rounded-2xl border border-gray-800 bg-gradient-to-b from-gray-900 to-gray-950 shadow-2xl shadow-black/30">
       {/* Header */}
-      <header className="flex flex-wrap items-start justify-between gap-6 border-b border-gray-800 bg-gradient-to-r from-gray-900 via-gray-900 to-gray-900/60 px-6 py-5">
+      <header className="flex flex-wrap items-start justify-between gap-6 border-b border-gray-800 px-6 py-5">
         <div>
           <div className="text-[10px] font-medium uppercase tracking-[0.24em] text-gray-500">
             Form 706 · Federal estate tax worksheet
           </div>
           <h2 className="mt-1.5 text-xl font-semibold text-gray-50">{heading}</h2>
         </div>
-        <div
-          className={
-            "rounded-lg px-4 py-2 text-right ring-1 " + headlineRing
-          }
-        >
+        <div className="rounded-lg bg-gray-900/60 px-4 py-2 text-right ring-1 ring-gray-700/50">
           <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
             Total estate tax
           </div>
@@ -470,7 +453,6 @@ function DecedentBreakdown({
       <div className="space-y-4 p-6">
         {/* 1 — Gross estate */}
         <SectionCard
-          step="01"
           title="Gross estate"
           subtotal={tax.grossEstate}
           subtotalLabel="Gross estate"
@@ -488,7 +470,6 @@ function DecedentBreakdown({
 
         {/* 2 — Deductions → Taxable estate */}
         <SectionCard
-          step="02"
           title="Deductions"
           caption="§2053–§2056"
           subtotal={tax.taxableEstate}
@@ -522,7 +503,6 @@ function DecedentBreakdown({
 
         {/* 3 — Tentative tax base */}
         <SectionCard
-          step="03"
           title="Tentative tax base"
           subtotal={tax.tentativeTaxBase}
           subtotalLabel="Tentative tax base"
@@ -541,7 +521,6 @@ function DecedentBreakdown({
 
         {/* 4 — Federal estate tax */}
         <SectionCard
-          step="04"
           title="Federal estate tax"
           caption="Unified rate − unified credit"
           subtotal={tax.federalEstateTax}
@@ -554,32 +533,23 @@ function DecedentBreakdown({
             amount={tax.unifiedCredit}
             showAsDeduction
           />
-          <div className="mt-2 rounded-md border border-gray-800/70 bg-gray-950/50 px-3 py-2 text-[11px] text-gray-500">
-            <div className="flex items-baseline justify-between gap-2">
-              <span>BEA at death year</span>
-              <span className="font-mono tabular-nums">
-                {fmt.format(tax.beaAtDeathYear)}
-              </span>
-            </div>
-            <div className="flex items-baseline justify-between gap-2">
-              <span>DSUE received</span>
-              <span className="font-mono tabular-nums">
-                {fmt.format(tax.dsueReceived)}
-              </span>
-            </div>
-            <div className="mt-1 flex items-baseline justify-between gap-2 border-t border-gray-800/70 pt-1 text-gray-400">
-              <span>Applicable exclusion</span>
-              <span className="font-mono tabular-nums">
-                {fmt.format(tax.applicableExclusion)}
-              </span>
-            </div>
-          </div>
+          <LineRow label="BEA at death year" amount={tax.beaAtDeathYear} muted />
+          <LineRow
+            label="DSUE received"
+            amount={tax.dsueReceived}
+            muted
+            hideIfZero
+          />
+          <LineRow
+            label="Applicable exclusion"
+            amount={tax.applicableExclusion}
+            muted
+          />
         </SectionCard>
 
         {/* 5 — State estate tax (only when relevant) */}
         {(tax.stateEstateTaxRate > 0 || tax.stateEstateTax > 0) && (
           <SectionCard
-            step="05"
             title="State estate tax"
             caption={`Flat rate · ${pct.format(tax.stateEstateTaxRate)}`}
             subtotal={tax.stateEstateTax}
@@ -595,54 +565,35 @@ function DecedentBreakdown({
         )}
 
         {/* 6 — Totals */}
-        <div className="rounded-lg border border-gray-700 bg-gradient-to-br from-gray-800/80 to-gray-900 px-5 py-4 ring-1 ring-gray-700/50">
-          <div className="mb-2 flex items-baseline justify-between gap-3">
-            <div className="flex items-baseline gap-2">
-              <span className="font-mono text-[10px] tracking-widest text-gray-500">
-                06
-              </span>
-              <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-200">
-                Total taxes &amp; expenses
-              </h3>
-            </div>
-          </div>
-          <div className="divide-y divide-gray-800/60">
-            <LineRow label="Federal estate tax" amount={tax.federalEstateTax} />
-            <LineRow
-              label="State estate tax"
-              amount={tax.stateEstateTax}
-              hideIfZero
-            />
-            <LineRow
-              label="Estate admin expenses"
-              amount={tax.estateAdminExpenses}
-              hideIfZero
-            />
-          </div>
-          <div className="mt-3 flex items-baseline justify-between gap-4 border-t border-gray-600/70 pt-3">
-            <span className="text-sm font-semibold uppercase tracking-wider text-gray-100">
-              Grand total
+        <SectionCard
+          title="Total taxes & expenses"
+          subtotal={tax.totalTaxesAndExpenses}
+          subtotalLabel="Grand total"
+          subtotalAccent="tax"
+        >
+          <LineRow label="Federal estate tax" amount={tax.federalEstateTax} />
+          <LineRow
+            label="State estate tax"
+            amount={tax.stateEstateTax}
+            hideIfZero
+          />
+          <LineRow
+            label="Estate admin expenses"
+            amount={tax.estateAdminExpenses}
+            hideIfZero
+          />
+        </SectionCard>
+
+        {showDsueGenerated && tax.dsueGenerated > 0 && (
+          <div className="flex items-baseline justify-between gap-4 rounded-md bg-indigo-950/30 px-3 py-2 ring-1 ring-indigo-900/40">
+            <span className="text-xs uppercase tracking-wider text-indigo-300">
+              DSUE generated · ported to survivor
             </span>
-            <span
-              className={
-                "font-mono text-lg font-semibold tabular-nums " +
-                (tax.totalTaxesAndExpenses > 0 ? "text-rose-200" : "text-emerald-200")
-              }
-            >
-              {fmt.format(tax.totalTaxesAndExpenses)}
+            <span className="font-mono text-sm font-semibold tabular-nums text-indigo-200">
+              {fmt.format(tax.dsueGenerated)}
             </span>
           </div>
-          {showDsueGenerated && tax.dsueGenerated > 0 && (
-            <div className="mt-3 flex items-baseline justify-between gap-4 rounded-md bg-indigo-950/30 px-3 py-2 ring-1 ring-indigo-900/40">
-              <span className="text-xs uppercase tracking-wider text-indigo-300">
-                DSUE generated · ported to survivor
-              </span>
-              <span className="font-mono text-sm font-semibold tabular-nums text-indigo-200">
-                {fmt.format(tax.dsueGenerated)}
-              </span>
-            </div>
-          )}
-        </div>
+        )}
       </div>
     </section>
   );
