@@ -43,10 +43,10 @@ export interface DeathSectionData {
   decedent: "client" | "spouse";
   decedentName: string;
   year: number;
-  /** Form 706 chargeable estate — 50% of joint at first death, 100% at final.
-   *  Anchors the tax track in the Reductions card. NOT comparable to the
-   *  asset-transfer total; see `assetEstateValue`. */
-  grossEstate: number;
+  /** Form 706 taxable estate — gross estate net of marital, charitable,
+   *  and admin-expense deductions. Anchors the tax track in the Reductions
+   *  card. NOT comparable to the asset-transfer total; see `assetEstateValue`. */
+  taxableEstate: number;
   /** Σ positive asset-source transfers. The asset value physically passing
    *  through this death event (full balance of joint accounts at first death,
    *  since titling routes 100% to the survivor). */
@@ -481,7 +481,7 @@ function buildDeathSection(
   });
   const sumRecipients = recipients.reduce((s, r) => s + r.total, 0);
   const sumReductions = reductions.reduce((s, r) => s + r.amount, 0);
-  const grossEstate = tax.grossEstate;
+  const taxableEstate = tax.taxableEstate;
   const unattributed = assetEstateValue + sumLiabilityTransfers - sumRecipients;
   const reconciles = Math.abs(unattributed) <= RECONCILE_TOLERANCE;
 
@@ -504,7 +504,7 @@ function buildDeathSection(
     decedent: payload.decedent,
     decedentName,
     year: payload.year,
-    grossEstate,
+    taxableEstate,
     assetEstateValue,
     assetCount,
     recipients,

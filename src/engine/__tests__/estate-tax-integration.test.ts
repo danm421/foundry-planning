@@ -399,6 +399,114 @@ describe("4d integration — first death estate tax", () => {
     const pourOut = result.transfers.filter((t) => t.via === "trust_pour_out");
     expect(pourOut).toHaveLength(0);
   });
+
+  it("unlinked debt to spouse via default-order reduces marital deduction (§2056(b)(4)(B) extension)", () => {
+    // Reproduces the advisor-reported bug: deceased solely owns IRA + Home +
+    // Schwab; will routes home + IRA to spouse and Schwab 50/50 spouse/child.
+    // Mortgage is linked to home (follows it to spouse). An unlinked $10k
+    // personal loan flows to spouse via the default-order chain.
+    //
+    // The unlinked debt should reduce the marital deduction (not just the
+    // gross estate); otherwise it nets twice — once on Schedule K and once
+    // through marital pass-through — and taxable estate is $10k too low.
+    const accounts: Account[] = [
+      {
+        id: "ira", name: "IRA",
+        category: "retirement", subType: "traditional_ira",
+        value: 400_000, basis: 0,
+        growthRate: 0.05, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      },
+      {
+        id: "home", name: "Home",
+        category: "real_estate", subType: "primary_residence",
+        value: 950_000, basis: 600_000,
+        growthRate: 0.03, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      },
+      {
+        id: "schwab", name: "Schwab Ind. Account",
+        category: "taxable", subType: "brokerage",
+        value: 750_000, basis: 500_000,
+        growthRate: 0.05, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      },
+    ];
+    const liabilities: Liability[] = [
+      {
+        id: "mortgage", name: "Home Mortgage", balance: 600_000,
+        interestRate: 0.05, monthlyPayment: 0,
+        startYear: 2020, startMonth: 1, termMonths: 360, extraPayments: [],
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+        linkedPropertyId: "home",
+      },
+      {
+        // Unlinked household loan, sole-deceased-owned (matches the advisor's
+        // screenshot showing the full -$10k in gross estate). Falls through
+        // the default-order chain to the surviving spouse.
+        id: "loan", name: "Loan", balance: 10_000,
+        interestRate: 0.06, monthlyPayment: 0,
+        startYear: 2025, startMonth: 1, termMonths: 600, extraPayments: [],
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      },
+    ];
+    const will: Will = {
+      id: "w1", grantor: "client",
+      bequests: [
+        {
+          id: "b-ira", name: "IRA → spouse",
+          kind: "asset" as const, assetMode: "specific" as const,
+          accountId: "ira", liabilityId: null,
+          percentage: 100, condition: "always", sortOrder: 0,
+          recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
+        },
+        {
+          id: "b-home", name: "Home → spouse",
+          kind: "asset" as const, assetMode: "specific" as const,
+          accountId: "home", liabilityId: null,
+          percentage: 100, condition: "always", sortOrder: 1,
+          recipients: [{ recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 }],
+        },
+        {
+          id: "b-schwab", name: "Schwab 50/50 spouse + kid",
+          kind: "asset" as const, assetMode: "specific" as const,
+          accountId: "schwab", liabilityId: null,
+          percentage: 100, condition: "always", sortOrder: 2,
+          recipients: [
+            { recipientKind: "spouse", recipientId: null, percentage: 50, sortOrder: 0 },
+            { recipientKind: "family_member", recipientId: "kid-a", percentage: 50, sortOrder: 1 },
+          ],
+        },
+      ],
+    };
+    const input = mkFirstDeathInput({
+      accounts, liabilities, will,
+      familyMembers: [kidA],
+    });
+    const result = applyFirstDeath(input);
+
+    // Gross estate: 400 + 950 + 750 - 10 - 600 = 1,490
+    expect(result.estateTax.grossEstate).toBeCloseTo(1_490_000, 0);
+
+    // Spouse inherits IRA ($400k) + Home ($950k, encumbered by $600k mortgage)
+    // + half-Schwab ($375k) = $1,725k gross to spouse.
+    //   - §2056(b)(4)(B) primary: -$600k linked mortgage following home
+    //   - §2056(b)(4)(B) extension: -$10k unlinked loan via default-order
+    // Marital deduction = 1,725 - 600 - 10 = 1,115
+    expect(result.estateTax.maritalDeduction).toBeCloseTo(1_115_000, 0);
+
+    // Taxable estate: 1,490 - 1,115 = 375 (the kid's half-Schwab share).
+    expect(result.estateTax.taxableEstate).toBeCloseTo(375_000, 0);
+
+    // Sanity: the unlinked loan reaches the spouse via default-order.
+    const loanTransfer = result.transfers.find(
+      (t) => t.via === "unlinked_liability_proportional" &&
+             t.recipientKind === "spouse" &&
+             t.sourceLiabilityId === "loan",
+    );
+    expect(loanTransfer).toBeDefined();
+    expect(loanTransfer!.amount).toBeCloseTo(-10_000, 0);
+  });
 });
 
 // ── Describe block 2: 4d integration — final death estate tax ───────────────

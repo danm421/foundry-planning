@@ -159,7 +159,7 @@ describe("buildEstateTransferReportData", () => {
     ];
 
     const tax = emptyEstateTaxResult("client", 2030);
-    (tax as { grossEstate: number }).grossEstate = 1_200_000;
+    (tax as { taxableEstate: number }).taxableEstate = 1_200_000;
 
     const ht: HypotheticalEstateTax = {
       year: 2030,
@@ -184,7 +184,7 @@ describe("buildEstateTransferReportData", () => {
     expect(out.firstDeath).not.toBeNull();
     expect(out.firstDeath!.decedent).toBe("client");
     expect(out.firstDeath!.year).toBe(2030);
-    expect(out.firstDeath!.grossEstate).toBe(1_200_000);
+    expect(out.firstDeath!.taxableEstate).toBe(1_200_000);
 
     // Two recipients: spouse and Alex.
     const recips = out.firstDeath!.recipients;
@@ -343,14 +343,14 @@ describe("buildEstateTransferReportData", () => {
     expect(out.firstDeath!.reconciliation.reconciles).toBe(true);
   });
 
-  it("reconciles even when assetEstateValue ≠ Form 706 grossEstate (joint-account scenario, F1 contract)", () => {
-    // Pre-fix this case (transfers $500k against grossEstate $1M) flagged
-    // "unattributed: $500k" — the section reconciliation was comparing the
-    // ledger to the Form 706 chargeable share, which is the wrong concept.
-    // Post-fix, reconciliation only checks ledger internal consistency:
-    // assetEstateValue + sumLiabilityTransfers == sumRecipients.
+  it("reconciles even when assetEstateValue ≠ Form 706 taxable estate (joint-account scenario, F1 contract)", () => {
+    // Pre-fix this case (transfers $500k against the section's tax-anchor
+    // value $1M) flagged "unattributed: $500k" — the section reconciliation
+    // was comparing the ledger to the Form 706 amount, which is the wrong
+    // concept. Post-fix, reconciliation only checks ledger internal
+    // consistency: assetEstateValue + sumLiabilityTransfers == sumRecipients.
     const tax = emptyEstateTaxResult("client", 2030);
-    Object.assign(tax, { grossEstate: 1_000_000, federalEstateTax: 0 });
+    Object.assign(tax, { taxableEstate: 1_000_000, federalEstateTax: 0 });
     const transfers = [
       transfer({ amount: 500_000, recipientKind: "spouse", recipientLabel: "Sam" }),
     ];
@@ -366,7 +366,7 @@ describe("buildEstateTransferReportData", () => {
       ownerNames: { clientName: "Pat", spouseName: "Sam" },
     });
     expect(out.firstDeath!.assetEstateValue).toBe(500_000);
-    expect(out.firstDeath!.grossEstate).toBe(1_000_000);  // Form 706, preserved
+    expect(out.firstDeath!.taxableEstate).toBe(1_000_000);  // Form 706 taxable estate, preserved
     expect(out.firstDeath!.reconciliation.unattributed).toBe(0);
     expect(out.firstDeath!.reconciliation.reconciles).toBe(true);
   });
@@ -529,9 +529,9 @@ describe("buildEstateTransferReportData", () => {
 
   it("uses asOf.kind=year to resolve the matching projection year", () => {
     const tax2030 = emptyEstateTaxResult("client", 2030);
-    Object.assign(tax2030, { grossEstate: 100 });
+    Object.assign(tax2030, { taxableEstate: 100 });
     const tax2040 = emptyEstateTaxResult("client", 2040);
-    Object.assign(tax2040, { grossEstate: 200 });
+    Object.assign(tax2040, { taxableEstate: 200 });
 
     const ht2030: HypotheticalEstateTax = {
       year: 2030,
@@ -553,7 +553,7 @@ describe("buildEstateTransferReportData", () => {
       ownerNames: { clientName: "Pat", spouseName: "Sam" },
     });
 
-    expect(out.firstDeath!.grossEstate).toBe(200);
+    expect(out.firstDeath!.taxableEstate).toBe(200);
   });
 
   it("uses asOf.kind=split to read deathTransfers off the actual death-event year rows", () => {
@@ -561,9 +561,9 @@ describe("buildEstateTransferReportData", () => {
     // projection.firstDeathEvent / secondDeathEvent + the matching year rows'
     // deathTransfers. This test asserts the contract.
     const firstTax = emptyEstateTaxResult("client", 2032);
-    Object.assign(firstTax, { grossEstate: 1_000_000 });
+    Object.assign(firstTax, { taxableEstate: 1_000_000 });
     const secondTax = emptyEstateTaxResult("spouse", 2040);
-    Object.assign(secondTax, { grossEstate: 800_000, federalEstateTax: 0 });
+    Object.assign(secondTax, { taxableEstate: 800_000, federalEstateTax: 0 });
 
     const splitFirstTransfers = [
       transfer({ year: 2032, amount: 1_000_000, recipientKind: "spouse", recipientLabel: "Sam" }),
@@ -599,21 +599,21 @@ describe("buildEstateTransferReportData", () => {
     });
 
     expect(out.firstDeath!.year).toBe(2032);
-    expect(out.firstDeath!.grossEstate).toBe(1_000_000);
+    expect(out.firstDeath!.taxableEstate).toBe(1_000_000);
     expect(out.secondDeath!.year).toBe(2040);
     expect(out.secondDeath!.recipients[0].recipientLabel).toBe("Alex");
   });
 
   // ── F1 — assetEstateValue + reconciliation flip ─────────────────────────
   //
-  // The Form 706 grossEstate (deceased's chargeable share at first death) is
-  // not the right number for the section header. The transfer ledger moves
-  // the FULL balance of joint accounts via titling, so sumRecipients always
-  // exceeds Form 706 grossEstate in households with joint accounts.
+  // The Form 706 amount (deceased's gross estate or taxable estate) is not
+  // the right number for the section reconciliation. The transfer ledger
+  // moves the FULL balance of joint accounts via titling, so sumRecipients
+  // always exceeds the Form 706 figure in households with joint accounts.
   //
   // Fix: surface assetEstateValue (sum of positive asset-source transfers)
-  // and reconcile recipient flow against THAT. grossEstate stays on
-  // DeathSectionData for the reductions/tax card.
+  // and reconcile recipient flow against THAT. The Form 706 taxable estate
+  // stays on DeathSectionData for the reductions/tax card.
   describe("F1 — assetEstateValue + reconciliation flip", () => {
     it("computes assetEstateValue from positive asset-source transfers (ignoring liabilities)", () => {
       // Joint home $1M + joint brokerage $1M, mortgage $200k → ledger has
@@ -632,7 +632,7 @@ describe("buildEstateTransferReportData", () => {
                    recipientId: "fm-spouse", recipientLabel: "Sam" }),
       ];
       const tax = emptyEstateTaxResult("client", 2026);
-      Object.assign(tax, { grossEstate: 900_000 }); // Form 706 chargeable share
+      Object.assign(tax, { taxableEstate: 900_000 }); // Form 706 taxable estate
       const ht: HypotheticalEstateTax = {
         year: 2026,
         primaryFirst: ordering({ firstDeath: tax, firstDeathTransfers: transfers }),
@@ -645,8 +645,8 @@ describe("buildEstateTransferReportData", () => {
       });
 
       expect(out.firstDeath!.assetEstateValue).toBe(2_000_000);
-      // Form 706 grossEstate preserved on the section for the reductions card.
-      expect(out.firstDeath!.grossEstate).toBe(900_000);
+      // Form 706 taxable estate preserved on the section for the reductions card.
+      expect(out.firstDeath!.taxableEstate).toBe(900_000);
     });
 
     it("reconciles when sumPositiveAssets equals assetEstateValue (joint-account case)", () => {
@@ -666,7 +666,7 @@ describe("buildEstateTransferReportData", () => {
                    recipientId: "fm-spouse", recipientLabel: "Sam" }),
       ];
       const tax = emptyEstateTaxResult("client", 2026);
-      Object.assign(tax, { grossEstate: 900_000 });
+      Object.assign(tax, { taxableEstate: 900_000 });
       const ht: HypotheticalEstateTax = {
         year: 2026,
         primaryFirst: ordering({ firstDeath: tax, firstDeathTransfers: transfers }),

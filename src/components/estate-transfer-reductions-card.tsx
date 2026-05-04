@@ -9,14 +9,15 @@ const fmt = new Intl.NumberFormat("en-US", {
 
 export function EstateTransferReductionsCard({
   reductions,
-  grossEstate,
+  taxableEstate,
 }: {
   reductions: ReductionsLine[];
-  /** Form 706 chargeable estate (deceased's share for federal estate tax).
-   *  Anchors the tax track. Optional — pass when displaying the tax context. */
-  grossEstate?: number;
+  /** Form 706 taxable estate — gross estate net of marital, charitable,
+   *  and admin-expense deductions. Anchors the tax track. Optional — pass
+   *  when displaying the tax context. */
+  taxableEstate?: number;
 }) {
-  if (reductions.length === 0 && grossEstate == null) {
+  if (reductions.length === 0 && taxableEstate == null) {
     return null;
   }
   const total = reductions.reduce((s, r) => s + r.amount, 0);
@@ -34,13 +35,13 @@ export function EstateTransferReductionsCard({
         Amounts that come off the gross estate before heirs receive their share.
       </p>
       <div className="divide-y divide-rose-900/30">
-        {grossEstate != null && (
+        {taxableEstate != null && (
           <div
             className="flex items-baseline justify-between gap-4 py-1.5 text-sm text-rose-100/90"
-            title="The deceased's chargeable share for federal estate tax: 50% of joint accounts at first death, 100% at final death (Form 706)."
+            title="Form 706 taxable estate — gross estate minus marital, charitable, and admin-expense deductions. This is the amount actually subject to federal estate tax."
           >
-            <span>Form 706 chargeable estate</span>
-            <span className="font-mono tabular-nums">{fmt.format(grossEstate)}</span>
+            <span>Taxable estate (Form 706)</span>
+            <span className="font-mono tabular-nums">{fmt.format(taxableEstate)}</span>
           </div>
         )}
         {reductions.map((r) => (

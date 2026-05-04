@@ -45,7 +45,7 @@ export function EstateTransferDeathSection({
         ))}
         <EstateTransferReductionsCard
           reductions={section.reductions}
-          grossEstate={section.grossEstate}
+          taxableEstate={section.taxableEstate}
         />
         <EstateTransferConflictsCallout conflicts={section.conflicts} />
 

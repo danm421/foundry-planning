@@ -427,13 +427,28 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   pouredLiabs = unlinkedDist.updatedLiabilities;
   warnings.push(...unlinkedDist.warnings);
 
+  // Phase 10.6 — recompute deductions with the post-Phase-10.5 ledger so
+  // §2056(b)(4)(B)'s extension to unlinked debts assumed by the surviving
+  // spouse takes effect. Phase 4's preview-grade deductions only saw
+  // chainResult.transfers, which is missing the `unlinked_liability_proportional`
+  // entries that this extension keys off. The drain in Phase 8 still uses the
+  // preview-grade value (small under-drain when the extension fires AND there's
+  // a federal tax, which is rare and corrected on the next projection year).
+  const finalDeductions = computeDeductions({
+    transferLedger: ledger,
+    externalBeneficiaries: input.externalBeneficiaries,
+    planSettings: input.planSettings,
+    deathOrder: 1,
+    resultingLiabilities: pouredLiabs,
+  });
+
   // Phase 11 — final EstateTaxResult with drain debits populated.
   const estateTax = buildEstateTaxResult({
     year: input.year,
     deathOrder: 1,
     deceased: input.deceased,
     gross,
-    deductions,
+    deductions: finalDeductions,
     adjustedTaxableGifts: adjustedGifts,
     lifetimeGiftTaxAdjustment: 0,
     beaAtDeathYear,
