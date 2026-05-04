@@ -125,7 +125,7 @@ export default function EstateTransferReportView({
   const isSplit = selectedAsOf === "split";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <TimePeriodButtons
           selected={selectedAsOf}

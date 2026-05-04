@@ -22,22 +22,22 @@ export function EstateTransferReductionsCard({
   }
   const total = reductions.reduce((s, r) => s + r.amount, 0);
   return (
-    <section className="rounded-lg border border-rose-900/40 bg-rose-950/15 px-5 py-4 ring-1 ring-rose-900/20">
-      <div className="mb-2 flex items-baseline justify-between gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-200">
-          Reductions
+    <section className="rounded-lg border border-rose-900/40 bg-rose-950/15 px-4 py-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="flex items-baseline gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-rose-200">
+          <span>Reductions</span>
+          <span className="font-normal normal-case tracking-normal text-[11px] text-rose-200/70">
+            drained from heirs before they receive their share
+          </span>
         </h3>
         <span className="font-mono text-sm font-semibold tabular-nums text-rose-200">
           {fmt.format(total)}
         </span>
       </div>
-      <p className="mb-3 text-[11px] text-rose-200/70">
-        Amounts that come off the gross estate before heirs receive their share.
-      </p>
-      <div className="divide-y divide-rose-900/30">
+      <div className="mt-1.5 divide-y divide-rose-900/30">
         {taxableEstate != null && (
           <div
-            className="flex items-baseline justify-between gap-4 py-1.5 text-sm text-rose-100/90"
+            className="flex items-baseline justify-between gap-4 py-1 text-sm text-rose-100/90"
             title="Form 706 taxable estate — gross estate minus marital, charitable, and admin-expense deductions. This is the amount actually subject to federal estate tax."
           >
             <span>Taxable estate (Form 706)</span>
@@ -47,7 +47,7 @@ export function EstateTransferReductionsCard({
         {reductions.map((r) => (
           <div
             key={r.kind}
-            className="flex items-baseline justify-between gap-4 py-1.5 text-sm text-rose-100/90"
+            className="flex items-baseline justify-between gap-4 py-1 text-sm text-rose-100/90"
           >
             <span>{r.label}</span>
             <span className="font-mono tabular-nums">{fmt.format(r.amount)}</span>
