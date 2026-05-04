@@ -1340,19 +1340,6 @@ describe("applyFirstDeath orchestrator", () => {
 });
 
 describe("distributeUnlinkedLiabilities", () => {
-  const mkTransfer = (
-    recipient: { kind: DeathTransfer["recipientKind"]; id: string | null; label: string },
-    amount: number,
-    resultingAccountId: string | null = "acct-new",
-  ): DeathTransfer => ({
-    year: 2050, deathOrder: 2, deceased: "client",
-    sourceAccountId: "acct-src", sourceAccountName: "Src",
-    sourceLiabilityId: null, sourceLiabilityName: null,
-    via: "will", recipientKind: recipient.kind,
-    recipientId: recipient.id, recipientLabel: recipient.label,
-    amount, basis: 0, resultingAccountId, resultingLiabilityId: null,
-  });
-
   const mkLiability = (overrides: Partial<Liability> = {}): Liability => ({
     id: "liab-cc", name: "Credit Card", balance: 10_000,
     interestRate: 0.15, monthlyPayment: 500,
@@ -1362,176 +1349,89 @@ describe("distributeUnlinkedLiabilities", () => {
     ...overrides,
   });
 
+  const childA: FamilyMember = {
+    id: "child-a", role: "child" as const, relationship: "child",
+    firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01",
+  };
+  const childB: FamilyMember = {
+    id: "child-b", role: "child" as const, relationship: "child",
+    firstName: "Bob", lastName: "Smith", dateOfBirth: "2002-01-01",
+  };
+
   it("returns empty transfers when no unlinked liabilities exist", () => {
     const liabilities = [mkLiability({ linkedPropertyId: "acct-home" })];
-    const transfers = [mkTransfer({ kind: "family_member", id: "fm-1", label: "Sarah" }, 50_000)];
-    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
+    const result = distributeUnlinkedLiabilities(liabilities, 2050, "client", [childA]);
     expect(result.liabilityTransfers).toEqual([]);
     expect(result.updatedLiabilities).toEqual(liabilities);
   });
 
   it("skips entity-owned liabilities (4d territory)", () => {
     const liabilities = [mkLiability({ owners: [{ kind: "entity", entityId: "ent-1", percent: 1 }] })];
-    const transfers = [mkTransfer({ kind: "family_member", id: "fm-1", label: "Sarah" }, 50_000)];
-    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
+    const result = distributeUnlinkedLiabilities(liabilities, 2050, "client", [childA]);
     expect(result.liabilityTransfers).toEqual([]);
     expect(result.updatedLiabilities).toEqual(liabilities);
   });
 
-  it("distributes one unlinked liability proportionally across family-member heirs", () => {
-    const liabilities = [mkLiability()];  // $10k CC, unlinked
-    const transfers = [
-      mkTransfer({ kind: "family_member", id: "fm-a", label: "A" }, 60_000),
-      mkTransfer({ kind: "family_member", id: "fm-b", label: "B" }, 40_000),
-    ];
-    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
-
-    // fm-a inherits 60% → $6k debt; fm-b inherits 40% → $4k debt
-    expect(result.liabilityTransfers).toHaveLength(2);
-
-    const [tA, tB] = result.liabilityTransfers;
-    expect(tA.recipientId).toBe("fm-a");
-    expect(tA.amount).toBeCloseTo(-6000, 2);
-    expect(tA.via).toBe("unlinked_liability_proportional");
-    expect(tA.sourceLiabilityId).toBe("liab-cc");
-    expect(tA.resultingLiabilityId).toMatch(/^death-liab-/);
-    expect(tB.recipientId).toBe("fm-b");
-    expect(tB.amount).toBeCloseTo(-4000, 2);
-
-    // Original removed; two new family-member-owned liabilities added.
-    expect(result.updatedLiabilities).toHaveLength(2);
-    expect(result.updatedLiabilities.find((l) => l.id === "liab-cc")).toBeUndefined();
-    const newA = result.updatedLiabilities.find((l) => l.ownerFamilyMemberId === "fm-a");
-    expect(newA).toBeDefined();
-    expect(newA!.balance).toBeCloseTo(6000, 2);
-    expect(newA!.monthlyPayment).toBeCloseTo(300, 2);
-    expect(newA!.interestRate).toBe(0.15);
-  });
-
-  it("external recipient receives a ledger entry but no new liability row", () => {
+  it("routes 100% of unlinked debt to a single living child via default order", () => {
     const liabilities = [mkLiability()];
-    const transfers = [
-      mkTransfer({ kind: "family_member", id: "fm-a", label: "A" }, 50_000),
-      mkTransfer({ kind: "external_beneficiary", id: "ext-1", label: "Charity" }, 50_000, null),
-    ];
-    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
+    const result = distributeUnlinkedLiabilities(liabilities, 2050, "client", [childA]);
 
-    expect(result.liabilityTransfers).toHaveLength(2);
-    const externalEntry = result.liabilityTransfers.find(
-      (t) => t.recipientKind === "external_beneficiary",
-    );
-    expect(externalEntry).toBeDefined();
-    expect(externalEntry!.amount).toBeCloseTo(-5000, 2);
-    expect(externalEntry!.resultingLiabilityId).toBeNull();
+    expect(result.liabilityTransfers).toHaveLength(1);
+    const [t] = result.liabilityTransfers;
+    expect(t.recipientId).toBe("child-a");
+    expect(t.recipientKind).toBe("family_member");
+    expect(t.amount).toBeCloseTo(-10_000, 2);
+    expect(t.via).toBe("unlinked_liability_proportional");
+    expect(t.sourceLiabilityId).toBe("liab-cc");
+    expect(t.resultingLiabilityId).toMatch(/^death-liab-/);
 
-    // Only one new liability (for the family-member share).
-    const newLiabs = result.updatedLiabilities.filter((l) => l.id !== "liab-cc");
-    expect(newLiabs).toHaveLength(1);
-    expect(newLiabs[0].ownerFamilyMemberId).toBe("fm-a");
+    expect(result.updatedLiabilities).toHaveLength(1);
+    expect(result.updatedLiabilities.find((l) => l.id === "liab-cc")).toBeUndefined();
+    const newRow = result.updatedLiabilities[0];
+    expect(newRow.ownerFamilyMemberId).toBe("child-a");
+    expect(newRow.balance).toBeCloseTo(10_000, 2);
   });
 
-  it("system_default recipient gets ledger entry with no new liability", () => {
+  it("splits unlinked debt equally across multiple living children", () => {
+    const liabilities = [mkLiability()];
+    const result = distributeUnlinkedLiabilities(liabilities, 2050, "client", [childA, childB]);
+
+    expect(result.liabilityTransfers).toHaveLength(2);
+    const a = result.liabilityTransfers.find((t) => t.recipientId === "child-a")!;
+    const b = result.liabilityTransfers.find((t) => t.recipientId === "child-b")!;
+    expect(a.amount).toBeCloseTo(-5_000, 2);
+    expect(b.amount).toBeCloseTo(-5_000, 2);
+
+    const newRows = result.updatedLiabilities.filter((l) => l.id !== "liab-cc");
+    expect(newRows).toHaveLength(2);
+    expect(newRows.every((l) => l.balance === 5_000)).toBe(true);
+  });
+
+  it("sends to Other Heirs system_default sink when no children exist", () => {
     const liabilities = [mkLiability({ balance: 4_000, monthlyPayment: 200 })];
-    const transfers = [
-      mkTransfer({ kind: "system_default", id: null, label: "Other Heirs" }, 100_000, null),
-    ];
-    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
+    const result = distributeUnlinkedLiabilities(liabilities, 2050, "client", []);
     expect(result.liabilityTransfers).toHaveLength(1);
     expect(result.liabilityTransfers[0].recipientKind).toBe("system_default");
-    expect(result.liabilityTransfers[0].amount).toBeCloseTo(-4000, 2);
+    expect(result.liabilityTransfers[0].recipientLabel).toBe("Other Heirs");
+    expect(result.liabilityTransfers[0].amount).toBeCloseTo(-4_000, 2);
     expect(result.liabilityTransfers[0].resultingLiabilityId).toBeNull();
     expect(result.updatedLiabilities.filter((l) => l.id !== "liab-cc")).toEqual([]);
   });
 
-  it("zero-estate deceased with unlinked debt drops the debt with a warning", () => {
+  it("excludes household principals from the children chain", () => {
+    const principalChild: FamilyMember = {
+      id: "fm-client", role: "client" as const, relationship: "child",
+      firstName: "Stale", lastName: "", dateOfBirth: "1980-01-01",
+    };
     const liabilities = [mkLiability()];
-    const transfers: DeathTransfer[] = [];  // no asset transfers
-    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
-    expect(result.liabilityTransfers).toEqual([]);
-    expect(result.updatedLiabilities.filter((l) => l.id === "liab-cc")).toEqual([]);
-    expect(result.warnings).toContain("unlinked_liability_no_estate_recipient:liab-cc");
-  });
-
-  it("groups multiple transfers to the same recipient into one share", () => {
-    const liabilities = [mkLiability()];
-    // fm-a appears in 2 asset transfers (different source accounts); combined share = 75%.
-    const transfers = [
-      mkTransfer({ kind: "family_member", id: "fm-a", label: "A" }, 30_000),
-      mkTransfer({ kind: "family_member", id: "fm-a", label: "A" }, 45_000),
-      mkTransfer({ kind: "family_member", id: "fm-b", label: "B" }, 25_000),
-    ];
-    const result = distributeUnlinkedLiabilities(liabilities, transfers, 2050, "client");
-    const aTotal = result.liabilityTransfers
-      .filter((t) => t.recipientId === "fm-a")
-      .reduce((s, t) => s + t.amount, 0);
-    // $10k × 75% = $7,500, as negative
-    expect(aTotal).toBeCloseTo(-7500, 2);
-  });
-});
-
-describe("distributeUnlinkedLiabilities — negative-share filter (4e)", () => {
-  it("excludes recipients whose net ledger amount is ≤ 0 from proportional residual", () => {
-    // Bequest-only recipient: appears in ledger only via a negative transfer.
-    const bequestOnly: DeathTransfer = {
-      year: 2050, deathOrder: 2, deceased: "client",
-      sourceAccountId: null, sourceAccountName: null,
-      sourceLiabilityId: "liab-original", sourceLiabilityName: "Visa",
-      via: "will_liability_bequest",
-      recipientKind: "family_member", recipientId: "fam-debt-only", recipientLabel: "Bob",
-      amount: -5_000, basis: 0,
-      resultingAccountId: null, resultingLiabilityId: "death-liab-bequest-1",
-    };
-    // Normal heir with positive asset inheritance.
-    const normalHeir: DeathTransfer = {
-      year: 2050, deathOrder: 2, deceased: "client",
-      sourceAccountId: "acct-1", sourceAccountName: "Brokerage",
-      sourceLiabilityId: null, sourceLiabilityName: null,
-      via: "will",
-      recipientKind: "family_member", recipientId: "fam-heir", recipientLabel: "Alice",
-      amount: 100_000, basis: 50_000,
-      resultingAccountId: "death-acct-1", resultingLiabilityId: null,
-    };
-    const residualUnlinkedDebt: Liability = {
-      id: "liab-residual", name: "Student loan",
-      balance: 20_000, interestRate: 0.05, monthlyPayment: 200,
-      startYear: 2020, startMonth: 1, termMonths: 120, extraPayments: [], owners: [],
-    };
-
-    const result = distributeUnlinkedLiabilities(
-      [residualUnlinkedDebt],
-      [bequestOnly, normalHeir],
-      2050,
-      "client",
-    );
-
-    // Bob (net -5_000) should NOT receive a share of residual debt
-    const bobShares = result.liabilityTransfers.filter(
-      (t) => t.recipientId === "fam-debt-only",
-    );
-    expect(bobShares).toHaveLength(0);
-
-    // Alice (net +100_000) should get the full residual debt
-    const aliceShares = result.liabilityTransfers.filter(
-      (t) => t.recipientId === "fam-heir",
-    );
-    expect(aliceShares).toHaveLength(1);
-    expect(aliceShares[0].amount).toBe(-20_000);
+    // Only the principal in the family list — should fall through to Other Heirs.
+    const result = distributeUnlinkedLiabilities(liabilities, 2050, "client", [principalChild]);
+    expect(result.liabilityTransfers).toHaveLength(1);
+    expect(result.liabilityTransfers[0].recipientKind).toBe("system_default");
   });
 });
 
 describe("distributeFirstDeathUnlinkedLiabilities", () => {
-  const mkAssetTransfer = (
-    recipient: { kind: DeathTransfer["recipientKind"]; id: string | null; label: string },
-    amount: number,
-  ): DeathTransfer => ({
-    year: 2030, deathOrder: 1, deceased: "client",
-    sourceAccountId: "acc-src", sourceAccountName: "Source",
-    sourceLiabilityId: null, sourceLiabilityName: null,
-    via: "fallback_spouse",
-    recipientKind: recipient.kind, recipientId: recipient.id, recipientLabel: recipient.label,
-    amount, basis: 0, resultingAccountId: "acc-new", resultingLiabilityId: null,
-  });
-
   const mkLiability = (over: Partial<Liability> = {}): Liability => ({
     id: "liab-cc", name: "Credit Card",
     balance: 10_000, interestRate: 0.18, monthlyPayment: 250,
@@ -1541,12 +1441,16 @@ describe("distributeFirstDeathUnlinkedLiabilities", () => {
     ...over,
   });
 
+  const childA: FamilyMember = {
+    id: "child-a", role: "child" as const, relationship: "child",
+    firstName: "Alex", lastName: "", dateOfBirth: "2005-01-01",
+  };
+
   it("distributes a deceased-only debt entirely to the surviving spouse via marital fallback", () => {
     const liabs = [mkLiability()];
-    const transfers = [mkAssetTransfer({ kind: "spouse", id: null, label: "Spouse" }, 500_000)];
 
     const r = distributeFirstDeathUnlinkedLiabilities(
-      liabs, transfers, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client",
+      liabs, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client", [],
     );
 
     expect(r.liabilityTransfers).toHaveLength(1);
@@ -1566,17 +1470,16 @@ describe("distributeFirstDeathUnlinkedLiabilities", () => {
     expect(newRow.balance).toBeCloseTo(10_000, 2);
   });
 
-  it("splits a joint debt: deceased's half transfers, survivor's half retitles in place", () => {
+  it("splits a joint debt: deceased's half goes to spouse via default order, survivor's half retitles in place", () => {
     const liabs = [mkLiability({
       owners: [
         { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
         { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
       ],
     })];
-    const transfers = [mkAssetTransfer({ kind: "spouse", id: null, label: "Spouse" }, 500_000)];
 
     const r = distributeFirstDeathUnlinkedLiabilities(
-      liabs, transfers, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client",
+      liabs, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client", [],
     );
 
     expect(r.liabilityTransfers).toHaveLength(1);
@@ -1597,10 +1500,9 @@ describe("distributeFirstDeathUnlinkedLiabilities", () => {
     const liabs = [mkLiability({
       owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }],
     })];
-    const transfers = [mkAssetTransfer({ kind: "spouse", id: null, label: "Spouse" }, 500_000)];
 
     const r = distributeFirstDeathUnlinkedLiabilities(
-      liabs, transfers, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client",
+      liabs, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client", [],
     );
 
     expect(r.liabilityTransfers).toEqual([]);
@@ -1609,32 +1511,55 @@ describe("distributeFirstDeathUnlinkedLiabilities", () => {
 
   it("skips linked liabilities (handled by the asset precedence chain)", () => {
     const liabs = [mkLiability({ linkedPropertyId: "acc-home" })];
-    const transfers = [mkAssetTransfer({ kind: "spouse", id: null, label: "Spouse" }, 500_000)];
 
     const r = distributeFirstDeathUnlinkedLiabilities(
-      liabs, transfers, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client",
+      liabs, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client", [],
     );
 
     expect(r.liabilityTransfers).toEqual([]);
     expect(r.updatedLiabilities).toEqual(liabs);
   });
 
-  it("distributes proportionally across multiple asset recipients", () => {
+  it("routes 100% to surviving spouse regardless of how assets routed", () => {
+    // Even though half the assets went to a child, the unlinked debt follows
+    // the default-order chain — all of it lands on the surviving spouse.
     const liabs = [mkLiability({ balance: 20_000 })];
-    const transfers = [
-      mkAssetTransfer({ kind: "spouse", id: null, label: "Spouse" }, 600_000),
-      mkAssetTransfer({ kind: "family_member", id: "child-a", label: "Alex" }, 400_000),
-    ];
 
     const r = distributeFirstDeathUnlinkedLiabilities(
-      liabs, transfers, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client",
+      liabs, LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE, 2030, "client", [childA],
     );
 
-    // 60% spouse / 40% Alex
-    const spouseEntry = r.liabilityTransfers.find((t) => t.recipientKind === "spouse")!;
-    const alexEntry = r.liabilityTransfers.find((t) => t.recipientId === "child-a")!;
-    expect(spouseEntry.amount).toBeCloseTo(-12_000, 2);
-    expect(alexEntry.amount).toBeCloseTo(-8_000, 2);
+    expect(r.liabilityTransfers).toHaveLength(1);
+    expect(r.liabilityTransfers[0].recipientKind).toBe("spouse");
+    expect(r.liabilityTransfers[0].amount).toBeCloseTo(-20_000, 2);
+  });
+
+  it("falls back to children when there is no surviving spouse", () => {
+    const liabs = [mkLiability()];
+
+    const r = distributeFirstDeathUnlinkedLiabilities(
+      liabs, LEGACY_FM_CLIENT, /* survivorFmId */ null, 2030, "client", [childA],
+    );
+
+    expect(r.liabilityTransfers).toHaveLength(1);
+    expect(r.liabilityTransfers[0].recipientId).toBe("child-a");
+    expect(r.liabilityTransfers[0].amount).toBeCloseTo(-10_000, 2);
+    // child receives the debt with the heir-distribution flag set.
+    const newRow = r.updatedLiabilities.find((l) => l.ownerFamilyMemberId === "child-a");
+    expect(newRow).toBeDefined();
+  });
+
+  it("falls back to Other Heirs sink when there is no spouse and no children", () => {
+    const liabs = [mkLiability()];
+
+    const r = distributeFirstDeathUnlinkedLiabilities(
+      liabs, LEGACY_FM_CLIENT, /* survivorFmId */ null, 2030, "client", [],
+    );
+
+    expect(r.liabilityTransfers).toHaveLength(1);
+    expect(r.liabilityTransfers[0].recipientKind).toBe("system_default");
+    expect(r.liabilityTransfers[0].recipientLabel).toBe("Other Heirs");
+    expect(r.updatedLiabilities.filter((l) => l.id !== "liab-cc")).toEqual([]);
   });
 });
 

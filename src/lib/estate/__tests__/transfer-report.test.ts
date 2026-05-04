@@ -858,6 +858,42 @@ describe("detectConflicts", () => {
     expect(out).toEqual([]);
   });
 
+  it("does NOT flag conflict when the will partially bequests an account and the residual flows via fallback (will is honored)", () => {
+    // Will leaves part of acc-schwab to a child; residual flows to spouse via
+    // fallback. The fallback transfer is correct residual disposition, not a
+    // conflict — the will isn't being blocked, it's being honored alongside
+    // a residual.
+    const data = withWill(
+      tree(),
+      willWithSpecificBequest({
+        accountId: "acc-schwab",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+      }),
+    );
+    const transfers = [
+      transfer({
+        sourceAccountId: "acc-schwab",
+        sourceAccountName: "Schwab Ind. Account",
+        via: "will",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+        recipientLabel: "Alex",
+        amount: 375_000,
+      }),
+      transfer({
+        sourceAccountId: "acc-schwab",
+        sourceAccountName: "Schwab Ind. Account",
+        via: "fallback_spouse",
+        recipientKind: "spouse",
+        recipientLabel: "Sam",
+        amount: 375_000,
+      }),
+    ];
+    const out = detectConflicts(data, transfers, "client");
+    expect(out).toEqual([]);
+  });
+
   it("ignores wills whose grantor isn't the decedent", () => {
     const spouseWill = willWithSpecificBequest({
       accountId: "acc-1",
@@ -876,5 +912,295 @@ describe("detectConflicts", () => {
     ];
     const out = detectConflicts(data, transfers, "client");
     expect(out).toEqual([]);
+  });
+});
+
+// ── Drain attribution + per-recipient netting ────────────────────────────────
+
+describe("drain attribution and re-grossing", () => {
+  function taxWithDrain(opts: {
+    deathOrder: 1 | 2;
+    state?: number;
+    federal?: number;
+    debts?: { accountId: string; amount: number }[];
+    estate?: { accountId: string; amount: number }[];
+  }): EstateTaxResult {
+    const t = emptyEstateTaxResult("client", 2030);
+    (t as { deathOrder: 1 | 2 }).deathOrder = opts.deathOrder;
+    (t as { stateEstateTax: number }).stateEstateTax = opts.state ?? 0;
+    (t as { federalEstateTax: number }).federalEstateTax = opts.federal ?? 0;
+    (t as { estateTaxDebits: { accountId: string; amount: number }[] }).estateTaxDebits =
+      opts.estate ?? [];
+    (t as { creditorPayoffDebits: { accountId: string; amount: number }[] }).creditorPayoffDebits =
+      opts.debts ?? [];
+    return t;
+  }
+
+  it("re-grosses Schwab at second death so two children inherit $375k each (regression for engine drain timing)", () => {
+    // Mirrors the Susan/Cooper sample on second death: Susan owns the inherited
+    // Schwab ($750k). Engine drains $241k state estate tax + $10k debts from
+    // Schwab BEFORE chain runs, residual $499k splits 50/50 → engine emits
+    // $249,500 to each child. Report layer must re-gross to $375k each, attribute
+    // $125,500 of reductions to each child, and net to $249,500.
+    const transfers = [
+      transfer({
+        deathOrder: 2,
+        sourceAccountId: "acc-schwab",
+        sourceAccountName: "Schwab Ind. Account",
+        via: "fallback_children",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+        recipientLabel: "Alex",
+        amount: 249_500,
+      }),
+      transfer({
+        deathOrder: 2,
+        sourceAccountId: "acc-schwab",
+        sourceAccountName: "Schwab Ind. Account",
+        via: "fallback_children",
+        recipientKind: "family_member",
+        recipientId: "fm-child-2",
+        recipientLabel: "Riley",
+        amount: 249_500,
+      }),
+    ];
+
+    const tax = taxWithDrain({
+      deathOrder: 2,
+      state: 241_000,
+      estate: [{ accountId: "acc-schwab", amount: 241_000 }],
+      debts: [{ accountId: "acc-schwab", amount: 10_000 }],
+    });
+
+    const ht: HypotheticalEstateTax = {
+      year: 2030,
+      primaryFirst: ordering({
+        firstDecedent: "client",
+        firstDeath: emptyEstateTaxResult("client", 2030),
+        firstDeathTransfers: [],
+        finalDeath: tax,
+        finalDeathTransfers: transfers,
+      }),
+    };
+
+    const out = buildEstateTransferReportData({
+      projection: projection([{ year: 2030, ht }]),
+      asOf: { kind: "today" },
+      ordering: "primaryFirst",
+      clientData: tree(),
+      ownerNames: { clientName: "Pat", spouseName: "Sam" },
+    });
+
+    const second = out.secondDeath!;
+    const alex = second.recipients.find((r) => r.recipientLabel === "Alex")!;
+    const riley = second.recipients.find((r) => r.recipientLabel === "Riley")!;
+
+    // Asset row + group total = gross $375k each (re-grossed from $249.5k).
+    expect(alex.total).toBe(375_000);
+    expect(riley.total).toBe(375_000);
+    expect(alex.byMechanism[0].assets[0].amount).toBe(375_000);
+
+    // Reductions split: $125.5k each, all categorized as state estate tax
+    // (no federal, no admin in this fixture; debts go to debts_paid).
+    expect(alex.drainsByKind.state_estate_tax).toBeCloseTo(120_500, 0);
+    expect(alex.drainsByKind.debts_paid).toBeCloseTo(5_000, 0);
+    expect(alex.drainsByKind.federal_estate_tax).toBe(0);
+
+    // Net = what the recipient actually receives = engine's raw transfer amount.
+    expect(alex.netTotal).toBeCloseTo(249_500, 0);
+    expect(riley.netTotal).toBeCloseTo(249_500, 0);
+
+    // Aggregate Recipient Totals reflect net (not gross).
+    const aggAlex = out.aggregateRecipientTotals.find((r) => r.recipientLabel === "Alex");
+    expect(aggAlex?.fromSecondDeath).toBeCloseTo(249_500, 0);
+  });
+
+  it("at first death, leaves chain transfer amounts as gross (engine emits pre-drain amounts)", () => {
+    // First death: chain runs BEFORE drain, so t.amount IS gross. The drain
+    // still gets attributed for the per-recipient reductions section, but no
+    // re-grossing happens (would double the gross).
+    const transfers = [
+      transfer({
+        deathOrder: 1,
+        sourceAccountId: "acc-brokerage",
+        sourceAccountName: "Brokerage",
+        via: "fallback_children",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+        recipientLabel: "Alex",
+        amount: 500_000,
+      }),
+    ];
+
+    const tax = taxWithDrain({
+      deathOrder: 1,
+      federal: 100_000,
+      estate: [{ accountId: "acc-brokerage", amount: 100_000 }],
+    });
+
+    const ht: HypotheticalEstateTax = {
+      year: 2030,
+      primaryFirst: ordering({
+        firstDecedent: "client",
+        firstDeath: tax,
+        firstDeathTransfers: transfers,
+      }),
+    };
+
+    const out = buildEstateTransferReportData({
+      projection: projection([{ year: 2030, ht }]),
+      asOf: { kind: "today" },
+      ordering: "primaryFirst",
+      clientData: tree(),
+      ownerNames: { clientName: "Pat", spouseName: "Sam" },
+    });
+
+    const alex = out.firstDeath!.recipients.find((r) => r.recipientLabel === "Alex")!;
+
+    // Asset row stays at gross $500k (NOT re-grossed to $600k).
+    expect(alex.total).toBe(500_000);
+    expect(alex.byMechanism[0].assets[0].amount).toBe(500_000);
+
+    // Drain attribution still happens.
+    expect(alex.drainsByKind.federal_estate_tax).toBeCloseTo(100_000, 0);
+
+    // Net = gross − drain = $400k (what they realize after tax claws back).
+    expect(alex.netTotal).toBeCloseTo(400_000, 0);
+  });
+
+  it("apportions drain proportionally when one drained account routes to multiple recipients", () => {
+    // Schwab $750k routes 60/40 via will at second death; $250k drained.
+    // Post-drain residual = $500k → child A gets $300k, child B gets $200k
+    // (engine output). Re-gross: A → $300k + (250k * 300/500) = $300k + $150k
+    // = $450k gross. B → $200k + $100k = $300k gross.
+    const transfers = [
+      transfer({
+        deathOrder: 2,
+        sourceAccountId: "acc-schwab",
+        sourceAccountName: "Schwab",
+        via: "will",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+        recipientLabel: "Alex",
+        amount: 300_000,
+      }),
+      transfer({
+        deathOrder: 2,
+        sourceAccountId: "acc-schwab",
+        sourceAccountName: "Schwab",
+        via: "will",
+        recipientKind: "family_member",
+        recipientId: "fm-child-2",
+        recipientLabel: "Riley",
+        amount: 200_000,
+      }),
+    ];
+
+    const tax = taxWithDrain({
+      deathOrder: 2,
+      state: 250_000,
+      estate: [{ accountId: "acc-schwab", amount: 250_000 }],
+    });
+
+    const ht: HypotheticalEstateTax = {
+      year: 2030,
+      primaryFirst: ordering({
+        firstDecedent: "client",
+        firstDeath: emptyEstateTaxResult("client", 2030),
+        firstDeathTransfers: [],
+        finalDeath: tax,
+        finalDeathTransfers: transfers,
+      }),
+    };
+
+    const out = buildEstateTransferReportData({
+      projection: projection([{ year: 2030, ht }]),
+      asOf: { kind: "today" },
+      ordering: "primaryFirst",
+      clientData: tree(),
+      ownerNames: { clientName: "Pat", spouseName: "Sam" },
+    });
+
+    const alex = out.secondDeath!.recipients.find((r) => r.recipientLabel === "Alex")!;
+    const riley = out.secondDeath!.recipients.find((r) => r.recipientLabel === "Riley")!;
+
+    expect(alex.total).toBeCloseTo(450_000, 0);
+    expect(riley.total).toBeCloseTo(300_000, 0);
+    expect(alex.drainsByKind.state_estate_tax).toBeCloseTo(150_000, 0);
+    expect(riley.drainsByKind.state_estate_tax).toBeCloseTo(100_000, 0);
+    expect(alex.netTotal).toBeCloseTo(300_000, 0);
+    expect(riley.netTotal).toBeCloseTo(200_000, 0);
+  });
+
+  it("net + reductions invariant: sum across recipients reconciles to gross + liabilities", () => {
+    const transfers = [
+      transfer({
+        deathOrder: 2,
+        sourceAccountId: "acc-schwab",
+        sourceAccountName: "Schwab",
+        via: "fallback_children",
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+        recipientLabel: "Alex",
+        amount: 249_500,
+      }),
+      transfer({
+        deathOrder: 2,
+        sourceAccountId: "acc-schwab",
+        sourceAccountName: "Schwab",
+        via: "fallback_children",
+        recipientKind: "family_member",
+        recipientId: "fm-child-2",
+        recipientLabel: "Riley",
+        amount: 249_500,
+      }),
+    ];
+
+    const tax = taxWithDrain({
+      deathOrder: 2,
+      state: 241_000,
+      estate: [{ accountId: "acc-schwab", amount: 241_000 }],
+      debts: [{ accountId: "acc-schwab", amount: 10_000 }],
+    });
+
+    const ht: HypotheticalEstateTax = {
+      year: 2030,
+      primaryFirst: ordering({
+        firstDecedent: "client",
+        firstDeath: emptyEstateTaxResult("client", 2030),
+        firstDeathTransfers: [],
+        finalDeath: tax,
+        finalDeathTransfers: transfers,
+      }),
+    };
+
+    const out = buildEstateTransferReportData({
+      projection: projection([{ year: 2030, ht }]),
+      asOf: { kind: "today" },
+      ordering: "primaryFirst",
+      clientData: tree(),
+      ownerNames: { clientName: "Pat", spouseName: "Sam" },
+    });
+
+    const second = out.secondDeath!;
+    const sumGross = second.recipients.reduce((s, r) => s + r.total, 0);
+    const sumNet = second.recipients.reduce((s, r) => s + r.netTotal, 0);
+    const sumDrain = second.recipients.reduce(
+      (s, r) =>
+        s +
+        r.drainsByKind.federal_estate_tax +
+        r.drainsByKind.state_estate_tax +
+        r.drainsByKind.admin_expenses +
+        r.drainsByKind.debts_paid,
+      0,
+    );
+
+    // Sanity: per-recipient drain sums to the global drain.
+    expect(sumDrain).toBeCloseTo(251_000, 0);
+    // gross − drain = net at the section level too.
+    expect(sumGross - sumDrain).toBeCloseTo(sumNet, 0);
+    // Reconciliation still holds (gross == assetEstateValue).
+    expect(second.assetEstateValue).toBeCloseTo(sumGross, 0);
+    expect(second.reconciliation.reconciles).toBe(true);
   });
 });

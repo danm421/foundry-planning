@@ -785,21 +785,53 @@ export interface UnlinkedLiabilityDistributionResult {
   warnings: string[];
 }
 
-/** Feature A — proportional distribution of unlinked household liabilities.
- *  Runs after the asset precedence chain at 4c. For each unlinked liability
- *  (linkedPropertyId null AND ownerEntityId null), each final-tier recipient
- *  receives balance × (their share of the estate) either as a new
- *  family-member-owned liability row (kept in model) or as a ledger-only
- *  entry (external / system_default — liability leaves the model with the
- *  asset share).
+/** Default-order recipients for unlinked debt — mirrors the asset-side chain
+ *  in `applyFallback`. Returns shares summing to 1.
+ *    tier 1: surviving spouse (when present)
+ *    tier 2: equal split across living non-principal children
+ *    tier 3: "Other Heirs" system_default sink
+ */
+function defaultOrderDebtRecipients(
+  survivorFmId: string | null,
+  familyMembers: FamilyMember[],
+): Array<{
+  kind: DeathTransfer["recipientKind"];
+  id: string | null;
+  label: string;
+  share: number;
+}> {
+  if (survivorFmId != null) {
+    return [{ kind: "spouse", id: survivorFmId, label: "Spouse", share: 1 }];
+  }
+  const children = familyMembers.filter(
+    (f) => f.relationship === "child" && f.role !== "client" && f.role !== "spouse",
+  );
+  if (children.length > 0) {
+    const perChild = 1 / children.length;
+    return children.map((c) => ({
+      kind: "family_member" as const,
+      id: c.id,
+      label: `${c.firstName}${c.lastName ? " " + c.lastName : ""}`,
+      share: perChild,
+    }));
+  }
+  return [{ kind: "system_default", id: null, label: "Other Heirs", share: 1 }];
+}
+
+/** Default-order distribution of unlinked household liabilities at final death.
+ *  Runs after the asset precedence chain when the creditor-payoff drain leaves
+ *  residual debt. Each unlinked liability flows to default-order heirs (spouse
+ *  → children → other heirs) — NOT pro-rata to asset recipients. Will-liability
+ *  bequests have already been peeled off upstream by `applyLiabilityBequests`.
  *
- *  Deceased with zero-estate but nonzero unlinked debt: liability is
- *  dropped and a warning is emitted. */
+ *  Family-member recipients keep the debt as a new liability row tagged with
+ *  `ownerFamilyMemberId`; system_default recipients drop the row (debt leaves
+ *  the household model). */
 export function distributeUnlinkedLiabilities(
   liabilities: Liability[],
-  assetTransfers: DeathTransfer[],
   year: number,
   deceased: "client" | "spouse",
+  familyMembers: FamilyMember[],
 ): UnlinkedLiabilityDistributionResult {
   const unlinked = liabilities.filter(
     (l) => l.linkedPropertyId == null && !isFullyEntityOwned(l),
@@ -809,67 +841,19 @@ export function distributeUnlinkedLiabilities(
     return { updatedLiabilities: liabilities, liabilityTransfers: [], warnings: [] };
   }
 
-  // Group asset transfers by (recipientKind, recipientId, recipientLabel) to
-  // compute each recipient's total share. Use a composite key so recipients
-  // with null ids (spouse / system_default) don't collide.
-  type RecipientKey = string;
-  const keyOf = (t: DeathTransfer): RecipientKey =>
-    `${t.recipientKind}|${t.recipientId ?? ""}|${t.recipientLabel}`;
-
-  const totalsByRecipient = new Map<
-    RecipientKey,
-    { kind: DeathTransfer["recipientKind"]; id: string | null; label: string; amount: number }
-  >();
-  let estateTotal = 0;
-
-  for (const t of assetTransfers) {
-    estateTotal += t.amount;
-    const k = keyOf(t);
-    const prev = totalsByRecipient.get(k);
-    if (prev) {
-      prev.amount += t.amount;
-    } else {
-      totalsByRecipient.set(k, {
-        kind: t.recipientKind,
-        id: t.recipientId,
-        label: t.recipientLabel,
-        amount: t.amount,
-      });
-    }
-  }
+  // Final death: no surviving spouse possible. Pass null so the chain skips
+  // tier 1 and routes to children → other heirs.
+  const recipients = defaultOrderDebtRecipients(null, familyMembers);
 
   const warnings: string[] = [];
-
-  // 4e: Filter out recipients whose net ledger amount is ≤ 0. Liability
-  // bequests create negative ledger entries; a recipient with only a
-  // bequest debt (no asset inheritance) must not be assigned additional
-  // residual debt.
-  for (const [key, rec] of totalsByRecipient.entries()) {
-    if (rec.amount <= 0) {
-      warnings.push(`liability_bequest_recipient_no_asset_share:${rec.id ?? rec.label}`);
-      totalsByRecipient.delete(key);
-    }
-  }
-
-  // Recompute estateTotal from only the positive-net recipients so
-  // shares stay consistent.
-  estateTotal = 0;
-  for (const rec of totalsByRecipient.values()) estateTotal += rec.amount;
   const liabilityTransfers: DeathTransfer[] = [];
   const newLiabilityRows: Liability[] = [];
   const removedLiabilityIds = new Set<string>();
 
   for (const liab of unlinked) {
-    if (estateTotal <= 0) {
-      warnings.push(`unlinked_liability_no_estate_recipient:${liab.id}`);
-      removedLiabilityIds.add(liab.id);
-      continue;
-    }
-
-    for (const rec of totalsByRecipient.values()) {
-      const share = rec.amount / estateTotal;
-      const shareBalance = liab.balance * share;
-      const sharePayment = liab.monthlyPayment * share;
+    for (const rec of recipients) {
+      const shareBalance = liab.balance * rec.share;
+      const sharePayment = liab.monthlyPayment * rec.share;
 
       let resultingLiabilityId: string | null = null;
       if (rec.kind === "family_member" && rec.id != null) {
@@ -884,7 +868,7 @@ export function distributeUnlinkedLiabilities(
           startMonth: liab.startMonth,
           termMonths: liab.termMonths,
           extraPayments: [],
-          ownerFamilyMemberId: rec.id,  // kept: signals "distributed-to-heir" semantics (not a legacy owner column)
+          ownerFamilyMemberId: rec.id,  // signals "distributed-to-heir" semantics
           isInterestDeductible: liab.isInterestDeductible,
           owners: [{ kind: "family_member", familyMemberId: rec.id, percent: 1 }],
         });
@@ -939,11 +923,11 @@ export function distributeUnlinkedLiabilities(
  *  retitled to the survivor (owners → [survivor 1.0]). */
 export function distributeFirstDeathUnlinkedLiabilities(
   liabilities: Liability[],
-  assetTransfers: DeathTransfer[],
   deceasedFmId: string | null,
   survivorFmId: string | null,
   year: number,
   deceased: "client" | "spouse",
+  familyMembers: FamilyMember[],
 ): UnlinkedLiabilityDistributionResult {
   const candidates = liabilities.filter(
     (l) =>
@@ -975,31 +959,9 @@ export function distributeFirstDeathUnlinkedLiabilities(
     return { updatedLiabilities: liabilities, liabilityTransfers: [], warnings: [] };
   }
 
-  // Group asset transfers by recipient. Skip negative entries (linked-liability
-  // ledger rows) and rows without a sourceAccountId.
-  type Recipient = {
-    kind: DeathTransfer["recipientKind"];
-    id: string | null;
-    label: string;
-    amount: number;
-  };
-  const totalsByRecipient = new Map<string, Recipient>();
-  let estateTotal = 0;
-  for (const t of assetTransfers) {
-    if (t.amount <= 0) continue;
-    if (!t.sourceAccountId) continue;
-    estateTotal += t.amount;
-    const k = `${t.recipientKind}|${t.recipientId ?? ""}|${t.recipientLabel}`;
-    const prev = totalsByRecipient.get(k);
-    if (prev) prev.amount += t.amount;
-    else
-      totalsByRecipient.set(k, {
-        kind: t.recipientKind,
-        id: t.recipientId,
-        label: t.recipientLabel,
-        amount: t.amount,
-      });
-  }
+  // Default-order chain: spouse → children → other heirs. Independent of how
+  // assets routed — the will still wins via `applyLiabilityBequests` upstream.
+  const recipients = defaultOrderDebtRecipients(survivorFmId, familyMembers);
 
   const warnings: string[] = [];
   const removedIds = new Set<string>();
@@ -1009,11 +971,6 @@ export function distributeFirstDeathUnlinkedLiabilities(
   const liabilityTransfers: DeathTransfer[] = [];
 
   for (const { liab, deceasedFraction } of buckets) {
-    if (estateTotal <= 0) {
-      warnings.push(`unlinked_liability_no_estate_recipient_first_death:${liab.id}`);
-      continue;
-    }
-
     const deceasedBalance = liab.balance * deceasedFraction;
     const deceasedPayment = liab.monthlyPayment * deceasedFraction;
     const survivorBalance = liab.balance - deceasedBalance;
@@ -1021,10 +978,9 @@ export function distributeFirstDeathUnlinkedLiabilities(
 
     if (deceasedBalance <= 0) continue;
 
-    for (const rec of totalsByRecipient.values()) {
-      const share = rec.amount / estateTotal;
-      const shareBalance = deceasedBalance * share;
-      const sharePayment = deceasedPayment * share;
+    for (const rec of recipients) {
+      const shareBalance = deceasedBalance * rec.share;
+      const sharePayment = deceasedPayment * rec.share;
 
       let resultingLiabilityId: string | null = null;
       const recFmId =
@@ -1055,8 +1011,8 @@ export function distributeFirstDeathUnlinkedLiabilities(
         });
         resultingLiabilityId = newId;
       }
-      // External / system_default recipients: debt leaves the household with
-      // the inherited asset; no new liability row is kept.
+      // system_default recipients: debt leaves the household model entirely;
+      // no new liability row is kept.
 
       liabilityTransfers.push({
         year,

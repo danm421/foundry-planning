@@ -462,12 +462,14 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
 
   // Phase 8c — residual unlinked-debt distribution. Fires only if the
   // creditor-payoff drain couldn't cover everything (e.g., illiquid estate).
+  // Routes via default order (children → other heirs); no surviving spouse at
+  // final death.
   if (creditorDrain.residual > 0) {
     const residualDist = distributeUnlinkedLiabilities(
       workingLiabs,
-      ledger,
       input.year,
       input.deceased,
+      input.familyMembers,
     );
     ledger = ledger.concat(residualDist.liabilityTransfers);
     workingLiabs = residualDist.updatedLiabilities;

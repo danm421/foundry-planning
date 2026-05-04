@@ -71,8 +71,22 @@ export interface RecipientGroup {
   recipientKind: DeathTransfer["recipientKind"];
   recipientId: string | null;
   recipientLabel: string;
+  /** Sum of asset rows after re-grossing post-drain transfers. Asset rows
+   *  display this gross value; mechanism subtotals roll up to it. */
   total: number;
   byMechanism: MechanismBreakdown[];
+  /** This recipient's share of each death-event drain, attributed proportionally
+   *  to the accounts they inherited that were drained. `total - sum(values) === netTotal`. */
+  drainsByKind: {
+    federal_estate_tax: number;
+    state_estate_tax: number;
+    admin_expenses: number;
+    debts_paid: number;
+  };
+  /** What the recipient actually receives in cash after their share of the drain.
+   *  At second death this matches the engine's raw `t.amount` sum (transfers are
+   *  post-drain there); at first death it equals `total` minus chain-allocated drain. */
+  netTotal: number;
 }
 
 export interface MechanismBreakdown {
@@ -132,7 +146,7 @@ const MECHANISM_LABELS: Record<DeathTransfer["via"], string> = {
   fallback_spouse: "Default Order — Spouse",
   fallback_children: "Default Order — Children",
   fallback_other_heirs: "Default Order — Other Heirs",
-  unlinked_liability_proportional: "Proportional Debt",
+  unlinked_liability_proportional: "Unlinked Debt",
   trust_pour_out: "Trust Pour-Out",
 };
 
@@ -290,7 +304,58 @@ function buildDeathSection(
   type GroupKey = string;
   const groups = new Map<GroupKey, RecipientGroup>();
 
-  for (const t of payload.transfers) {
+  // Per-transfer drain share (computed below). Keyed by transfer index in
+  // payload.transfers — used both to re-gross asset rows and to attribute
+  // reductions to recipient groups.
+  const drainShareByTransferIdx = new Map<number, { tax: number; debts: number }>();
+
+  // Determine which transfers carry post-drain amounts (need re-grossing for
+  // display). At second death the engine drains BEFORE routing, so every
+  // transfer is post-drain. Pour-outs always run after drain, regardless of
+  // death order.
+  const isPostDrain = (t: DeathTransfer): boolean => {
+    if (t.via === "trust_pour_out") return true;
+    if (payload.estateTax.deathOrder === 2) return true;
+    return false;
+  };
+
+  // Apportion each drain debit to its recipients proportionally to their asset
+  // share of that account. We only consider positive-amount asset transfers.
+  const positiveTransfers = payload.transfers
+    .map((t, idx) => ({ t, idx }))
+    .filter(({ t }) => t.amount > 0 && t.sourceAccountId != null);
+
+  function attributeDebit(accountId: string, amount: number, kind: "tax" | "debts"): void {
+    const matches = positiveTransfers.filter(({ t }) => t.sourceAccountId === accountId);
+    if (matches.length === 0) return; // account fully drained; debit shows in global Reductions only
+    const totalRouted = matches.reduce((s, m) => s + m.t.amount, 0);
+    if (totalRouted <= 0) return;
+    for (const { t, idx } of matches) {
+      const share = amount * (t.amount / totalRouted);
+      const existing = drainShareByTransferIdx.get(idx) ?? { tax: 0, debts: 0 };
+      existing[kind] += share;
+      drainShareByTransferIdx.set(idx, existing);
+    }
+  }
+  for (const debit of payload.estateTax.estateTaxDebits ?? []) {
+    attributeDebit(debit.accountId, debit.amount, "tax");
+  }
+  for (const debit of payload.estateTax.creditorPayoffDebits ?? []) {
+    attributeDebit(debit.accountId, debit.amount, "debts");
+  }
+
+  // Per-kind ratio splits the lumped tax debit across federal / state / admin.
+  const tax = payload.estateTax;
+  const taxLumped = tax.federalEstateTax + tax.stateEstateTax + tax.estateAdminExpenses;
+  const ratios = taxLumped > 0
+    ? {
+        federal: tax.federalEstateTax / taxLumped,
+        state: tax.stateEstateTax / taxLumped,
+        admin: tax.estateAdminExpenses / taxLumped,
+      }
+    : { federal: 0, state: 0, admin: 0 };
+
+  payload.transfers.forEach((t, idx) => {
     const key: GroupKey = `${t.recipientKind}|${t.recipientId ?? ""}`;
     const resolved = resolveRecipientLabel(t, clientData);
     let group = groups.get(key);
@@ -302,10 +367,28 @@ function buildDeathSection(
         recipientLabel: resolved.name,
         total: 0,
         byMechanism: [],
+        drainsByKind: {
+          federal_estate_tax: 0,
+          state_estate_tax: 0,
+          admin_expenses: 0,
+          debts_paid: 0,
+        },
+        netTotal: 0,
       };
       groups.set(key, group);
     }
-    group.total += t.amount;
+
+    const drainShare = drainShareByTransferIdx.get(idx) ?? { tax: 0, debts: 0 };
+    const totalDrainShare = drainShare.tax + drainShare.debts;
+    // Re-gross post-drain amounts so asset rows display the gross. For pre-drain
+    // (first-death chain) transfers, t.amount is already gross and we leave it.
+    const displayAmount = isPostDrain(t) ? t.amount + totalDrainShare : t.amount;
+
+    group.total += displayAmount;
+    group.drainsByKind.federal_estate_tax += drainShare.tax * ratios.federal;
+    group.drainsByKind.state_estate_tax += drainShare.tax * ratios.state;
+    group.drainsByKind.admin_expenses += drainShare.tax * ratios.admin;
+    group.drainsByKind.debts_paid += drainShare.debts;
 
     let mech = group.byMechanism.find((m) => m.mechanism === t.via);
     if (!mech) {
@@ -317,15 +400,27 @@ function buildDeathSection(
       };
       group.byMechanism.push(mech);
     }
-    mech.total += t.amount;
+    mech.total += displayAmount;
     mech.assets.push({
       sourceAccountId: t.sourceAccountId,
       sourceLiabilityId: t.sourceLiabilityId,
       label: t.sourceAccountName ?? t.sourceLiabilityName ?? "—",
-      amount: t.amount,
+      amount: displayAmount,
       basis: t.basis,
       conflictIds: [],
     });
+  });
+
+  // netTotal = gross total − this recipient's drain share. Equivalent to the
+  // engine's actual cash routed to the recipient at second death; equivalent
+  // to gross − chain-allocated drain at first death.
+  for (const group of groups.values()) {
+    const drainTotal =
+      group.drainsByKind.federal_estate_tax +
+      group.drainsByKind.state_estate_tax +
+      group.drainsByKind.admin_expenses +
+      group.drainsByKind.debts_paid;
+    group.netTotal = group.total - drainTotal;
   }
 
   // Sort: spouse pinned to top; everyone else descending by total.
@@ -336,7 +431,6 @@ function buildDeathSection(
   });
 
   // Reductions
-  const tax = payload.estateTax;
   const debtsPaid = (tax.creditorPayoffDebits ?? []).reduce((s, d) => s + d.amount, 0);
   const reductions: ReductionsLine[] = [];
   if (tax.federalEstateTax > 0) {
@@ -367,18 +461,24 @@ function buildDeathSection(
   // Reconciliation compares ledger against itself, not against Form 706
   // grossEstate — the latter counts the deceased's chargeable share (50% of
   // joint at first death) while titling moves 100% of the asset.
+  // Asset values are re-grossed (post-drain transfers had drain shares added
+  // back) so they're directly comparable to the recipients' gross totals.
   let assetEstateValue = 0;
   let sumLiabilityTransfers = 0;
   let assetCount = 0;
-  for (const t of payload.transfers) {
+  payload.transfers.forEach((t, idx) => {
     if (t.amount > 0 && t.sourceAccountId != null) {
-      assetEstateValue += t.amount;
+      const drainShare = drainShareByTransferIdx.get(idx);
+      const grossAmount = isPostDrain(t)
+        ? t.amount + (drainShare ? drainShare.tax + drainShare.debts : 0)
+        : t.amount;
+      assetEstateValue += grossAmount;
       assetCount += 1;
     }
     if (t.sourceLiabilityId != null) {
       sumLiabilityTransfers += t.amount;
     }
-  }
+  });
   const sumRecipients = recipients.reduce((s, r) => s + r.total, 0);
   const sumReductions = reductions.reduce((s, r) => s + r.amount, 0);
   const grossEstate = tax.grossEstate;
@@ -427,18 +527,21 @@ function buildAggregateTotals(
   const map = new Map<string, RecipientTotal>();
 
   function add(group: RecipientGroup, side: "fromFirstDeath" | "fromSecondDeath") {
+    // Aggregate totals show net inheritance (post-drain) so the column reflects
+    // what the recipient actually receives, not the gross asset row sum.
+    const value = group.netTotal;
     const existing = map.get(group.key);
     if (existing) {
-      existing[side] += group.total;
-      existing.total += group.total;
+      existing[side] += value;
+      existing.total += value;
     } else {
       map.set(group.key, {
         key: group.key,
         recipientLabel: group.recipientLabel,
         recipientKind: group.recipientKind,
-        fromFirstDeath: side === "fromFirstDeath" ? group.total : 0,
-        fromSecondDeath: side === "fromSecondDeath" ? group.total : 0,
-        total: group.total,
+        fromFirstDeath: side === "fromFirstDeath" ? value : 0,
+        fromSecondDeath: side === "fromSecondDeath" ? value : 0,
+        total: value,
       });
     }
   }
@@ -458,12 +561,24 @@ export function detectConflicts(
   const wills = (clientData as unknown as { wills?: Will[] }).wills ?? [];
   const decedentWill = wills.find((w) => w.grantor === decedent);
 
+  // Accounts where the will is already being honored on at least part of the
+  // balance. Other transfers from the same account are residual disposition
+  // (the un-bequested remainder routed by titling/beneficiary/fallback) — not
+  // a conflict.
+  const willHonoredAccounts = new Set<string>();
+  for (const t of transfers) {
+    if (t.via === "will" && t.sourceAccountId && t.amount > 0) {
+      willHonoredAccounts.add(t.sourceAccountId);
+    }
+  }
+
   let nextId = 0;
   const idFor = (account: string) => `conflict-${account}-${nextId++}`;
 
   for (const t of transfers) {
     if (!t.sourceAccountId) continue;
     if (t.amount <= 0) continue;
+    if (willHonoredAccounts.has(t.sourceAccountId)) continue;
 
     // Override 1: governing mechanism is upstream of the will, but a specific
     // bequest exists for this account in the decedent's will.

@@ -409,18 +409,19 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   }
 
   // Phase 10.5 — distribute deceased's portion of unlinked household debts
-  // (credit cards, personal loans, etc.) proportionally to the asset
-  // recipients. The precedence chain only routes assets, so without this
-  // step the gross estate (which subtracts deceased-owned debts as Schedule K
-  // negatives) won't reconcile against the transfer ledger, and the original
-  // liability rows would stay owned by the now-deceased FM.
+  // (credit cards, personal loans, etc.) via the default-order chain (spouse
+  // → children → other heirs), independent of how assets routed. Will-liability
+  // bequests have already been peeled off by `applyLiabilityBequests`. Without
+  // this step the gross estate (which subtracts deceased-owned debts as
+  // Schedule K negatives) won't reconcile against the transfer ledger, and the
+  // original liability rows would stay owned by the now-deceased FM.
   const unlinkedDist = distributeFirstDeathUnlinkedLiabilities(
     pouredLiabs,
-    ledger,
     deceasedFmId,
     survivorFmId,
     input.year,
     input.deceased,
+    input.familyMembers,
   );
   ledger = ledger.concat(unlinkedDist.liabilityTransfers);
   pouredLiabs = unlinkedDist.updatedLiabilities;

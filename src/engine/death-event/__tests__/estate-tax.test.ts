@@ -378,6 +378,52 @@ describe("computeDeductions", () => {
     expect(r.maritalDeduction).toBeCloseTo(1_100_000, 2);
   });
 
+  it("marital deduction nets out unlinked debts assumed by spouse via default-order chain", () => {
+    // Spouse inherits $1,125,000 of gross assets and assumes a $10,000
+    // unlinked household debt via the default-order chain. Without netting,
+    // the $10k would deduct twice (Schedule K -> gross estate AND marital
+    // passes through gross-of-debt). Marital deduction = $1,115,000.
+    const ledger = [
+      transfer({ recipientKind: "spouse", amount: 1_125_000 }),
+      transfer({
+        recipientKind: "spouse",
+        sourceAccountId: null,
+        sourceLiabilityId: "liab-loan",
+        sourceLiabilityName: "Loan",
+        via: "unlinked_liability_proportional",
+        amount: -10_000,
+      }),
+    ];
+    const r = computeDeductions({
+      transferLedger: ledger,
+      externalBeneficiaries: [],
+      planSettings: planSettings as PlanSettings,
+      deathOrder: 1,
+    });
+    expect(r.maritalDeduction).toBeCloseTo(1_115_000, 2);
+  });
+
+  it("does not let unlinked debt push marital deduction below 0", () => {
+    const ledger = [
+      transfer({ recipientKind: "spouse", amount: 5_000 }),
+      transfer({
+        recipientKind: "spouse",
+        sourceAccountId: null,
+        sourceLiabilityId: "liab-loan",
+        sourceLiabilityName: "Loan",
+        via: "unlinked_liability_proportional",
+        amount: -10_000,
+      }),
+    ];
+    const r = computeDeductions({
+      transferLedger: ledger,
+      externalBeneficiaries: [],
+      planSettings: planSettings as PlanSettings,
+      deathOrder: 1,
+    });
+    expect(r.maritalDeduction).toBe(0);
+  });
+
   it("charitable deduction = sum of external_beneficiary transfers whose kind is charity", () => {
     const ledger = [
       transfer({ recipientKind: "external_beneficiary", recipientId: "eb1", amount: 50_000 }),

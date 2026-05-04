@@ -221,6 +221,26 @@ export function computeDeductions(input: {
     }
   }
 
+  // IRC §2056(b)(4)(B) extension to unlinked household debts: when the
+  // surviving spouse assumes an unlinked debt via the default-order chain,
+  // reduce the marital deduction by the assumed balance so the spouse's
+  // marital share reflects net inheritance. Without this, the debt deducts
+  // once on Schedule K (via gross estate) AND the marital deduction passes
+  // through gross-of-debt — effectively reducing taxable estate twice.
+  if (input.deathOrder === 1) {
+    let unlinkedDebtToSpouse = 0;
+    for (const t of input.transferLedger) {
+      if (
+        t.recipientKind === "spouse" &&
+        t.amount < 0 &&
+        t.via === "unlinked_liability_proportional"
+      ) {
+        unlinkedDebtToSpouse += -t.amount;
+      }
+    }
+    maritalDeduction = Math.max(0, maritalDeduction - unlinkedDebtToSpouse);
+  }
+
   return {
     maritalDeduction,
     charitableDeduction,
