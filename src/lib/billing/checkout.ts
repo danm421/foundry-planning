@@ -41,7 +41,6 @@ export function buildCheckoutSessionParams(args: {
       },
     ],
     automatic_tax: { enabled: true },
-    customer_creation: "always",
     success_url: `${args.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${args.origin}/pricing`,
     payment_method_types: ["card"],

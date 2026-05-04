@@ -106,13 +106,16 @@ describe("buildCheckoutSessionParams", () => {
     expect(params.cancel_url).toBe("https://example.test/pricing");
   });
 
-  it("enables automatic_tax and forces customer creation", () => {
+  it("enables automatic_tax and runs in subscription mode", () => {
     const params = buildCheckoutSessionParams({
       priceKey: "seatMonthly",
       origin: "https://example.test",
     });
     expect(params.automatic_tax).toEqual({ enabled: true });
-    expect(params.customer_creation).toBe("always");
+    // customer_creation is intentionally absent — Stripe rejects it in
+    // subscription mode (it only applies to one-time `payment` mode), and
+    // subscription Checkout always materializes a Customer automatically.
+    expect(params.customer_creation).toBeUndefined();
     expect(params.mode).toBe("subscription");
     expect(params.payment_method_types).toEqual(["card"]);
   });
