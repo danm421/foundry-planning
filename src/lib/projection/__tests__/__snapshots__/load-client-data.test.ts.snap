@@ -156,6 +156,10 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
     "outOfHouseholdRate": undefined,
     "planEndYear": 2063,
     "planStartYear": 2026,
+    "priorTaxableGifts": {
+      "client": 0,
+      "spouse": 0,
+    },
     "ssWageGrowthRate": null,
     "taxEngineMode": "bracket",
     "taxInflationRate": null,

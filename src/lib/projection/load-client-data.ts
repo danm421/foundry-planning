@@ -727,6 +727,10 @@ export const loadClientData = cache(
       taxInflationRate: settings.taxInflationRate != null ? parseFloat(settings.taxInflationRate) : null,
       ssWageGrowthRate: settings.ssWageGrowthRate != null ? parseFloat(settings.ssWageGrowthRate) : null,
       outOfHouseholdRate: settings.outOfHouseholdDniRate != null ? parseFloat(settings.outOfHouseholdDniRate) : undefined,
+      priorTaxableGifts: {
+        client: settings.priorTaxableGiftsClient != null ? parseFloat(settings.priorTaxableGiftsClient) : 0,
+        spouse: settings.priorTaxableGiftsSpouse != null ? parseFloat(settings.priorTaxableGiftsSpouse) : 0,
+      },
     };
 
     // ── Income-tier beneficiary designations grouped by entity ──────────────
