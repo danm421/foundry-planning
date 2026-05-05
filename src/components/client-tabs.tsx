@@ -13,6 +13,7 @@ const TABS = [
   { label: "Investments", href: "investments" },
   { label: "Timeline", href: "timeline" },
   { label: "Estate Planning", href: "estate-planning" },
+  { label: "Reports", href: "reports" },
   { label: "Monte Carlo", href: "monte-carlo" },
 ] as const;
 
