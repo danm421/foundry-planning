@@ -67,8 +67,11 @@ export async function POST(
 
     // Pull projection data the same way the page does by hitting the API.
     // Using an internal fetch avoids duplicating the projection-data query.
+    // 30s abort leaves headroom for the 25s render race below within the
+    // 60s maxDuration cap.
     const apiRes = await fetch(`${url.origin}/api/clients/${id}/projection-data`, {
       headers: { cookie: request.headers.get("cookie") ?? "" },
+      signal: AbortSignal.timeout(30_000),
     });
     if (!apiRes.ok) {
       return NextResponse.json({ error: "Failed to load projection data" }, { status: 500 });

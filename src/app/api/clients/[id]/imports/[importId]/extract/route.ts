@@ -111,8 +111,8 @@ export async function POST(request: NextRequest, { params }: Params) {
         let succeeded = 0;
         let failed = 0;
 
-        // Cap concurrency so we don't hammer Azure OpenAI quota or fan
-        // out unbounded HTTP requests to Neon and Blob in one batch.
+        // Bounded by Azure OpenAI per-deployment TPM and downstream Neon/Blob
+        // request concurrency. Tune in concert with rate limit budgets.
         const CONCURRENCY = 5;
 
         type FileOutcome =

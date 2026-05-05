@@ -5,7 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadMonteCarloData } from "@/lib/projection/load-monte-carlo-data";
 import { ClientNotFoundError } from "@/lib/projection/load-client-data";
-import { checkProjectionRateLimit } from "@/lib/rate-limit";
+import { checkProjectionRateLimit, rateLimitErrorResponse } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -23,15 +23,9 @@ export async function GET(
 
   const rl = await checkProjectionRateLimit(firmId);
   if (!rl.allowed) {
-    const headers: Record<string, string> = {};
-    if (rl.reset) {
-      headers["Retry-After"] = String(
-        Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000)),
-      );
-    }
-    return NextResponse.json(
-      { error: "Too many projection requests. Please wait and try again." },
-      { status: rl.reason === "exceeded" ? 429 : 503, headers },
+    return rateLimitErrorResponse(
+      rl,
+      "Too many projection requests. Please wait and try again.",
     );
   }
 
