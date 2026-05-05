@@ -423,8 +423,8 @@ function DecedentBreakdown({
   const headlineColor =
     headlineTax > 0 ? "text-rose-200" : "text-emerald-200";
   const showState = tax.stateEstateTaxRate > 0 || tax.stateEstateTax > 0;
-  const stateStep = showState ? 5 : null;
-  const totalStep = showState ? 6 : 5;
+  const stateStep = showState ? 4 : null;
+  const totalStep = showState ? 5 : 4;
 
   return (
     <section className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900/40">
@@ -475,13 +475,12 @@ function DecedentBreakdown({
           ))}
         </StepRow>
 
-        {/* 2 — Deductions → Taxable estate */}
+        {/* 2 — Deductions + lifetime gifts → Tentative tax base */}
         <StepRow
           step={2}
           title="Deductions"
-          caption="§2053–§2056"
-          subtotal={tax.taxableEstate}
-          subtotalLabel="Taxable estate"
+          subtotal={tax.tentativeTaxBase}
+          subtotalLabel="Tentative tax base"
         >
           <LineRow
             label="Gross estate"
@@ -507,34 +506,22 @@ function DecedentBreakdown({
             showAsDeduction
             hideIfZero
           />
-          {tax.estateAdminExpenses === 0 &&
-            tax.maritalDeduction === 0 &&
-            tax.charitableDeduction === 0 && (
-              <LineRow label="No deductions" amount={0} muted />
-            )}
-        </StepRow>
-
-        {/* 3 — Tentative tax base */}
-        <StepRow
-          step={3}
-          title="Tentative tax base"
-          subtotal={tax.tentativeTaxBase}
-          subtotalLabel="Tentative tax base"
-        >
-          <LineRow label="Taxable estate" amount={tax.taxableEstate} muted carry />
           <LineRow
             label="Adjusted taxable gifts"
             amount={tax.adjustedTaxableGifts}
             hideIfZero
           />
-          {tax.adjustedTaxableGifts === 0 && (
-            <LineRow label="Adjusted taxable gifts" amount={0} muted />
-          )}
+          {tax.estateAdminExpenses === 0 &&
+            tax.maritalDeduction === 0 &&
+            tax.charitableDeduction === 0 &&
+            tax.adjustedTaxableGifts === 0 && (
+              <LineRow label="No deductions or lifetime gifts" amount={0} muted />
+            )}
         </StepRow>
 
-        {/* 4 — Federal estate tax */}
+        {/* 3 — Federal estate tax */}
         <StepRow
-          step={4}
+          step={3}
           title="Federal estate tax"
           caption="Unified rate − unified credit"
           subtotal={tax.federalEstateTax}

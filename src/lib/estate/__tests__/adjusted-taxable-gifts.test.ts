@@ -55,21 +55,24 @@ describe("computeAdjustedTaxableGifts", () => {
     expect(computeAdjustedTaxableGifts("spouse", gifts, [], ann, noAccountValue)).toBeCloseTo(31_000, 2);
   });
 
-  it("adds trust exemptionConsumed when entity.grantor === decedent", () => {
+  it("does not double-count a cash gift to a grantor trust", () => {
+    // Loader path: a $50K cash gift to a grantor-client trust appears in BOTH
+    // `gifts` (legacy array) AND in `entity.exemptionConsumed` (loader sums
+    // gifts.amount per recipientEntityId). The engine must not stack them.
+    // Expected: $50K − $19K exclusion = $31K, NOT $81K (and NOT $100K).
+    const gifts = [gift({ year: 2026, amount: 50_000, grantor: "client", recipientEntityId: "trust-1" })];
+    const entities = [entity({ id: "trust-1", grantor: "client", exemptionConsumed: 50_000 })];
+    expect(computeAdjustedTaxableGifts("client", gifts, entities, ann, noAccountValue)).toBeCloseTo(31_000, 2);
+  });
+
+  it("ignores entity.exemptionConsumed (loader-derived display value, not an estate-tax input)", () => {
+    // Post-186a97a: `exemption_consumed` was dropped as an advisor-entered
+    // column. The loader derives it from the gifts ledger for trust-card UI.
+    // It must not feed back into computeAdjustedTaxableGifts or it would
+    // double-count gifts already in the `gifts`/`giftEvents` arrays.
     const entities = [entity({ grantor: "client", exemptionConsumed: 2_400_000 })];
-    expect(computeAdjustedTaxableGifts("client", [], entities, ann, noAccountValue)).toBeCloseTo(2_400_000, 2);
-    expect(computeAdjustedTaxableGifts("spouse", [], entities, ann, noAccountValue)).toBe(0);
-  });
-
-  it("third-party-grantor trust (entity.grantor === undefined) contributes 0", () => {
-    const entities = [entity({ grantor: undefined, exemptionConsumed: 2_400_000 })];
     expect(computeAdjustedTaxableGifts("client", [], entities, ann, noAccountValue)).toBe(0);
-  });
-
-  it("combined: gifts + trust exemption stacks for the same grantor", () => {
-    const gifts = [gift({ year: 2025, amount: 100_000, grantor: "client" })];
-    const entities = [entity({ grantor: "client", exemptionConsumed: 1_000_000 })];
-    expect(computeAdjustedTaxableGifts("client", gifts, entities, ann, noAccountValue)).toBeCloseTo(81_000 + 1_000_000, 2);
+    expect(computeAdjustedTaxableGifts("spouse", [], entities, ann, noAccountValue)).toBe(0);
   });
 
   it("missing annual exclusion for a year defaults to 0 (no subtraction)", () => {

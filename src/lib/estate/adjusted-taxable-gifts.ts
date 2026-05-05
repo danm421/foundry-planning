@@ -14,9 +14,12 @@ import type { Gift, GiftEvent, EntitySummary } from "@/engine/types";
  *   annual-exclusion logic as the legacy `Gift` rows. One-time cash gifts (no `seriesId`)
  *   come through the legacy `gifts` array and are NOT counted here to avoid double-counting.
  * - For each liability `GiftEvent`: contribute $0 — debt assumption is not a gift of value.
- * - For each entity where `entity.grantor === decedent`: add the entire
- *   `exemptionConsumed` opening advisor-entered balance. Third-party-grantor
- *   trusts (`entity.grantor === undefined`) contribute zero.
+ *
+ * `entities` is accepted for API symmetry but intentionally not consumed here.
+ * `entity.exemptionConsumed` is a loader-derived sum of gift rows by recipient
+ * trust used by the trust-card UI; counting it would double-count gifts that
+ * already appear in `gifts` / `giftEvents`. (See commit 186a97a — the legacy
+ * advisor-entered `exemption_consumed` column was folded into the gifts ledger.)
  *
  * @param accountValueAtYear - callback that returns the projected account balance
  *   for a given accountId at a given year. Used only for asset-transfer giftEvents
@@ -28,7 +31,7 @@ import type { Gift, GiftEvent, EntitySummary } from "@/engine/types";
 export function computeAdjustedTaxableGifts(
   decedent: "client" | "spouse",
   gifts: Gift[],
-  entities: EntitySummary[],
+  _entities: EntitySummary[],
   annualExclusionsByYear: Record<number, number>,
   accountValueAtYear: (accountId: string, year: number) => number,
   giftEvents: GiftEvent[] = [],
@@ -65,12 +68,6 @@ export function computeAdjustedTaxableGifts(
       total += contribution;
     }
     // Liability transfers: debt assumption is not a gift of value → $0.
-  }
-
-  for (const e of entities) {
-    if (e.grantor === decedent) {
-      total += e.exemptionConsumed ?? 0;
-    }
   }
 
   return total;
