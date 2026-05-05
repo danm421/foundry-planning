@@ -111,7 +111,17 @@ export async function POST(request: NextRequest, { params }: Params) {
         let succeeded = 0;
         let failed = 0;
 
-        for (const file of files) {
+        // Cap concurrency so we don't hammer Azure OpenAI quota or fan
+        // out unbounded HTTP requests to Neon and Blob in one batch.
+        const CONCURRENCY = 5;
+
+        type FileOutcome =
+            | { ok: true; fileId: string; result: ExtractionResult }
+            | { ok: false; fileId: string };
+
+        const extractOne = async (
+            file: (typeof files)[number],
+        ): Promise<FileOutcome> => {
             const startedAt = new Date();
             const [extraction] = await db
                 .insert(clientImportExtractions)
@@ -144,7 +154,7 @@ export async function POST(request: NextRequest, { params }: Params) {
                     file.originalFilename,
                     file.documentType as DocumentType | "auto",
                     model,
-                    file.detectedKind as UploadKind
+                    file.detectedKind as UploadKind,
                 );
 
                 await db
@@ -157,9 +167,6 @@ export async function POST(request: NextRequest, { params }: Params) {
                         finishedAt: new Date(),
                     })
                     .where(eq(clientImportExtractions.id, extractionId));
-
-                fileResults[file.id] = result;
-                succeeded += 1;
 
                 await recordAudit({
                     action: "import.extraction.completed",
@@ -174,6 +181,8 @@ export async function POST(request: NextRequest, { params }: Params) {
                         warningCount: result.warnings.length,
                     },
                 });
+
+                return { ok: true, fileId: file.id, result };
             } catch (err) {
                 const safeMessage =
                     err instanceof Error
@@ -191,7 +200,6 @@ export async function POST(request: NextRequest, { params }: Params) {
                         finishedAt: new Date(),
                     })
                     .where(eq(clientImportExtractions.id, extractionId));
-                failed += 1;
 
                 await recordAudit({
                     action: "import.extraction.failed",
@@ -201,6 +209,21 @@ export async function POST(request: NextRequest, { params }: Params) {
                     firmId,
                     metadata: { importId, model, error: safeMessage },
                 });
+
+                return { ok: false, fileId: file.id };
+            }
+        };
+
+        for (let i = 0; i < files.length; i += CONCURRENCY) {
+            const chunk = files.slice(i, i + CONCURRENCY);
+            const outcomes = await Promise.all(chunk.map(extractOne));
+            for (const outcome of outcomes) {
+                if (outcome.ok) {
+                    fileResults[outcome.fileId] = outcome.result;
+                    succeeded += 1;
+                } else {
+                    failed += 1;
+                }
             }
         }
 
