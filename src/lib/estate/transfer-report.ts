@@ -304,62 +304,66 @@ function buildDeathSection(
   type GroupKey = string;
   const groups = new Map<GroupKey, RecipientGroup>();
 
-  // Per-transfer drain share (computed below). Keyed by transfer index in
-  // payload.transfers — used both to re-gross asset rows and to attribute
-  // reductions to recipient groups.
-  const drainShareByTransferIdx = new Map<number, { tax: number; debts: number }>();
+  // Phase B: drainsByKind per recipient comes directly from the engine's
+  // residuary-aware allocation. Pre-Phase-B this was inferred by re-grossing
+  // post-drain amounts; post-Phase-B the chain routes gross, so the inference
+  // is unnecessary for chain transfers.
+  type DrainsByKind = RecipientGroup["drainsByKind"];
+  const drainsByKindByRecipient = new Map<GroupKey, DrainsByKind>();
+  for (const a of payload.estateTax.drainAttributions ?? []) {
+    const key: GroupKey = `${a.recipientKind}|${a.recipientId ?? ""}`;
+    let entry = drainsByKindByRecipient.get(key);
+    if (!entry) {
+      entry = {
+        federal_estate_tax: 0,
+        state_estate_tax: 0,
+        admin_expenses: 0,
+        debts_paid: 0,
+      };
+      drainsByKindByRecipient.set(key, entry);
+    }
+    entry[a.drainKind] += a.amount;
+  }
 
-  // Determine which transfers carry post-drain amounts (need re-grossing for
-  // display). At second death the engine drains BEFORE routing, so every
-  // transfer is post-drain. Pour-outs always run after drain, regardless of
-  // death order.
-  const isPostDrain = (t: DeathTransfer): boolean => {
-    if (t.via === "trust_pour_out") return true;
-    if (payload.estateTax.deathOrder === 2) return true;
-    return false;
-  };
+  // Engine quirk: at first death, pour-out reads post-drain balances (drain
+  // feeds the survivor's continuing simulation), so trust_pour_out transfers
+  // at deathOrder=1 carry net amounts and need re-grossing for display.
+  // Everywhere else, t.amount is already gross.
+  const needsRegross = (t: DeathTransfer): boolean =>
+    t.via === "trust_pour_out" && payload.estateTax.deathOrder === 1;
 
-  // Apportion each drain debit to its recipients proportionally to their asset
-  // share of that account. We only consider positive-amount asset transfers.
-  const positiveTransfers = payload.transfers
-    .map((t, idx) => ({ t, idx }))
-    .filter(({ t }) => t.amount > 0 && t.sourceAccountId != null);
-
-  function attributeDebit(accountId: string, amount: number, kind: "tax" | "debts"): void {
-    const matches = positiveTransfers.filter(({ t }) => t.sourceAccountId === accountId);
-    if (matches.length === 0) return; // account fully drained; debit shows in global Reductions only
-    const totalRouted = matches.reduce((s, m) => s + m.t.amount, 0);
-    if (totalRouted <= 0) return;
-    for (const { t, idx } of matches) {
-      const share = amount * (t.amount / totalRouted);
-      const existing = drainShareByTransferIdx.get(idx) ?? { tax: 0, debts: 0 };
-      existing[kind] += share;
-      drainShareByTransferIdx.set(idx, existing);
+  // Build per-pour-out-transfer drain share (first death only) so we can
+  // re-gross those rows. Apportion each drain debit to pour-out transfers
+  // from the same source account, in proportion to their amount share.
+  const pourOutRegrossByIdx = new Map<number, number>();
+  if (payload.estateTax.deathOrder === 1) {
+    const pourOutPositive = payload.transfers
+      .map((t, idx) => ({ t, idx }))
+      .filter(({ t }) => needsRegross(t) && t.amount > 0 && t.sourceAccountId != null);
+    const apportion = (accountId: string, amount: number): void => {
+      const matches = pourOutPositive.filter(({ t }) => t.sourceAccountId === accountId);
+      if (matches.length === 0) return;
+      const totalRouted = matches.reduce((s, m) => s + m.t.amount, 0);
+      if (totalRouted <= 0) return;
+      for (const { t, idx } of matches) {
+        const share = amount * (t.amount / totalRouted);
+        pourOutRegrossByIdx.set(idx, (pourOutRegrossByIdx.get(idx) ?? 0) + share);
+      }
+    };
+    for (const debit of payload.estateTax.estateTaxDebits ?? []) {
+      apportion(debit.accountId, debit.amount);
+    }
+    for (const debit of payload.estateTax.creditorPayoffDebits ?? []) {
+      apportion(debit.accountId, debit.amount);
     }
   }
-  for (const debit of payload.estateTax.estateTaxDebits ?? []) {
-    attributeDebit(debit.accountId, debit.amount, "tax");
-  }
-  for (const debit of payload.estateTax.creditorPayoffDebits ?? []) {
-    attributeDebit(debit.accountId, debit.amount, "debts");
-  }
-
-  // Per-kind ratio splits the lumped tax debit across federal / state / admin.
-  const tax = payload.estateTax;
-  const taxLumped = tax.federalEstateTax + tax.stateEstateTax + tax.estateAdminExpenses;
-  const ratios = taxLumped > 0
-    ? {
-        federal: tax.federalEstateTax / taxLumped,
-        state: tax.stateEstateTax / taxLumped,
-        admin: tax.estateAdminExpenses / taxLumped,
-      }
-    : { federal: 0, state: 0, admin: 0 };
 
   payload.transfers.forEach((t, idx) => {
     const key: GroupKey = `${t.recipientKind}|${t.recipientId ?? ""}`;
     const resolved = resolveRecipientLabel(t, clientData);
     let group = groups.get(key);
     if (!group) {
+      const sourced = drainsByKindByRecipient.get(key);
       group = {
         key,
         recipientKind: t.recipientKind,
@@ -367,28 +371,23 @@ function buildDeathSection(
         recipientLabel: resolved.name,
         total: 0,
         byMechanism: [],
-        drainsByKind: {
-          federal_estate_tax: 0,
-          state_estate_tax: 0,
-          admin_expenses: 0,
-          debts_paid: 0,
-        },
+        drainsByKind: sourced
+          ? { ...sourced }
+          : {
+              federal_estate_tax: 0,
+              state_estate_tax: 0,
+              admin_expenses: 0,
+              debts_paid: 0,
+            },
         netTotal: 0,
       };
       groups.set(key, group);
     }
 
-    const drainShare = drainShareByTransferIdx.get(idx) ?? { tax: 0, debts: 0 };
-    const totalDrainShare = drainShare.tax + drainShare.debts;
-    // Re-gross post-drain amounts so asset rows display the gross. For pre-drain
-    // (first-death chain) transfers, t.amount is already gross and we leave it.
-    const displayAmount = isPostDrain(t) ? t.amount + totalDrainShare : t.amount;
+    const regross = pourOutRegrossByIdx.get(idx) ?? 0;
+    const displayAmount = needsRegross(t) ? t.amount + regross : t.amount;
 
     group.total += displayAmount;
-    group.drainsByKind.federal_estate_tax += drainShare.tax * ratios.federal;
-    group.drainsByKind.state_estate_tax += drainShare.tax * ratios.state;
-    group.drainsByKind.admin_expenses += drainShare.tax * ratios.admin;
-    group.drainsByKind.debts_paid += drainShare.debts;
 
     let mech = group.byMechanism.find((m) => m.mechanism === t.via);
     if (!mech) {
@@ -431,6 +430,7 @@ function buildDeathSection(
   });
 
   // Reductions
+  const tax = payload.estateTax;
   const debtsPaid = (tax.creditorPayoffDebits ?? []).reduce((s, d) => s + d.amount, 0);
   const reductions: ReductionsLine[] = [];
   if (tax.federalEstateTax > 0) {
@@ -468,11 +468,8 @@ function buildDeathSection(
   let assetCount = 0;
   payload.transfers.forEach((t, idx) => {
     if (t.amount > 0 && t.sourceAccountId != null) {
-      const drainShare = drainShareByTransferIdx.get(idx);
-      const grossAmount = isPostDrain(t)
-        ? t.amount + (drainShare ? drainShare.tax + drainShare.debts : 0)
-        : t.amount;
-      assetEstateValue += grossAmount;
+      const regross = needsRegross(t) ? pourOutRegrossByIdx.get(idx) ?? 0 : 0;
+      assetEstateValue += t.amount + regross;
       assetCount += 1;
     }
     if (t.sourceLiabilityId != null) {

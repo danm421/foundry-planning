@@ -924,6 +924,7 @@ describe("drain attribution and re-grossing", () => {
     federal?: number;
     debts?: { accountId: string; amount: number }[];
     estate?: { accountId: string; amount: number }[];
+    drainAttributions?: import("@/engine/types").DrainAttribution[];
   }): EstateTaxResult {
     const t = emptyEstateTaxResult("client", 2030);
     (t as { deathOrder: 1 | 2 }).deathOrder = opts.deathOrder;
@@ -933,15 +934,15 @@ describe("drain attribution and re-grossing", () => {
       opts.estate ?? [];
     (t as { creditorPayoffDebits: { accountId: string; amount: number }[] }).creditorPayoffDebits =
       opts.debts ?? [];
+    (t as { drainAttributions: import("@/engine/types").DrainAttribution[] }).drainAttributions =
+      opts.drainAttributions ?? [];
     return t;
   }
 
-  it("re-grosses Schwab at second death so two children inherit $375k each (regression for engine drain timing)", () => {
-    // Mirrors the Susan/Cooper sample on second death: Susan owns the inherited
-    // Schwab ($750k). Engine drains $241k state estate tax + $10k debts from
-    // Schwab BEFORE chain runs, residual $499k splits 50/50 → engine emits
-    // $249,500 to each child. Report layer must re-gross to $375k each, attribute
-    // $125,500 of reductions to each child, and net to $249,500.
+  it("emits gross transfers + drainAttributions at second death (Schwab → two children $375k each)", () => {
+    // Phase B: engine emits gross transfers ($375k each) AND drainAttributions
+    // assigning each child their share of the $241k state tax + $10k debts.
+    // Report consumes both directly.
     const transfers = [
       transfer({
         deathOrder: 2,
@@ -951,7 +952,7 @@ describe("drain attribution and re-grossing", () => {
         recipientKind: "family_member",
         recipientId: "fm-child-1",
         recipientLabel: "Alex",
-        amount: 249_500,
+        amount: 375_000,
       }),
       transfer({
         deathOrder: 2,
@@ -961,7 +962,7 @@ describe("drain attribution and re-grossing", () => {
         recipientKind: "family_member",
         recipientId: "fm-child-2",
         recipientLabel: "Riley",
-        amount: 249_500,
+        amount: 375_000,
       }),
     ];
 
@@ -970,6 +971,12 @@ describe("drain attribution and re-grossing", () => {
       state: 241_000,
       estate: [{ accountId: "acc-schwab", amount: 241_000 }],
       debts: [{ accountId: "acc-schwab", amount: 10_000 }],
+      drainAttributions: [
+        { deathOrder: 2, recipientKind: "family_member", recipientId: "fm-child-1", drainKind: "state_estate_tax", amount: 120_500 },
+        { deathOrder: 2, recipientKind: "family_member", recipientId: "fm-child-2", drainKind: "state_estate_tax", amount: 120_500 },
+        { deathOrder: 2, recipientKind: "family_member", recipientId: "fm-child-1", drainKind: "debts_paid", amount: 5_000 },
+        { deathOrder: 2, recipientKind: "family_member", recipientId: "fm-child-2", drainKind: "debts_paid", amount: 5_000 },
+      ],
     });
 
     const ht: HypotheticalEstateTax = {
@@ -1036,6 +1043,9 @@ describe("drain attribution and re-grossing", () => {
       deathOrder: 1,
       federal: 100_000,
       estate: [{ accountId: "acc-brokerage", amount: 100_000 }],
+      drainAttributions: [
+        { deathOrder: 1, recipientKind: "family_member", recipientId: "fm-child-1", drainKind: "federal_estate_tax", amount: 100_000 },
+      ],
     });
 
     const ht: HypotheticalEstateTax = {
@@ -1068,11 +1078,10 @@ describe("drain attribution and re-grossing", () => {
     expect(alex.netTotal).toBeCloseTo(400_000, 0);
   });
 
-  it("apportions drain proportionally when one drained account routes to multiple recipients", () => {
-    // Schwab $750k routes 60/40 via will at second death; $250k drained.
-    // Post-drain residual = $500k → child A gets $300k, child B gets $200k
-    // (engine output). Re-gross: A → $300k + (250k * 300/500) = $300k + $150k
-    // = $450k gross. B → $200k + $100k = $300k gross.
+  it("apportions drain proportionally when one account routes to multiple recipients (Phase B engine attribution)", () => {
+    // Schwab $750k routes 60/40 via will at second death (gross transfers).
+    // Engine's drainAttributions allocate the $250k state tax pro-rata:
+    // Alex 60% = $150k, Riley 40% = $100k.
     const transfers = [
       transfer({
         deathOrder: 2,
@@ -1082,7 +1091,7 @@ describe("drain attribution and re-grossing", () => {
         recipientKind: "family_member",
         recipientId: "fm-child-1",
         recipientLabel: "Alex",
-        amount: 300_000,
+        amount: 450_000,
       }),
       transfer({
         deathOrder: 2,
@@ -1092,7 +1101,7 @@ describe("drain attribution and re-grossing", () => {
         recipientKind: "family_member",
         recipientId: "fm-child-2",
         recipientLabel: "Riley",
-        amount: 200_000,
+        amount: 300_000,
       }),
     ];
 
@@ -1100,6 +1109,10 @@ describe("drain attribution and re-grossing", () => {
       deathOrder: 2,
       state: 250_000,
       estate: [{ accountId: "acc-schwab", amount: 250_000 }],
+      drainAttributions: [
+        { deathOrder: 2, recipientKind: "family_member", recipientId: "fm-child-1", drainKind: "state_estate_tax", amount: 150_000 },
+        { deathOrder: 2, recipientKind: "family_member", recipientId: "fm-child-2", drainKind: "state_estate_tax", amount: 100_000 },
+      ],
     });
 
     const ht: HypotheticalEstateTax = {
@@ -1142,7 +1155,7 @@ describe("drain attribution and re-grossing", () => {
         recipientKind: "family_member",
         recipientId: "fm-child-1",
         recipientLabel: "Alex",
-        amount: 249_500,
+        amount: 375_000,
       }),
       transfer({
         deathOrder: 2,
@@ -1152,7 +1165,7 @@ describe("drain attribution and re-grossing", () => {
         recipientKind: "family_member",
         recipientId: "fm-child-2",
         recipientLabel: "Riley",
-        amount: 249_500,
+        amount: 375_000,
       }),
     ];
 
@@ -1161,6 +1174,12 @@ describe("drain attribution and re-grossing", () => {
       state: 241_000,
       estate: [{ accountId: "acc-schwab", amount: 241_000 }],
       debts: [{ accountId: "acc-schwab", amount: 10_000 }],
+      drainAttributions: [
+        { deathOrder: 2, recipientKind: "family_member", recipientId: "fm-child-1", drainKind: "state_estate_tax", amount: 120_500 },
+        { deathOrder: 2, recipientKind: "family_member", recipientId: "fm-child-2", drainKind: "state_estate_tax", amount: 120_500 },
+        { deathOrder: 2, recipientKind: "family_member", recipientId: "fm-child-1", drainKind: "debts_paid", amount: 5_000 },
+        { deathOrder: 2, recipientKind: "family_member", recipientId: "fm-child-2", drainKind: "debts_paid", amount: 5_000 },
+      ],
     });
 
     const ht: HypotheticalEstateTax = {
