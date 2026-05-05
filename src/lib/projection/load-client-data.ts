@@ -34,10 +34,18 @@ import {
   transferSchedules,
   willBequestRecipients,
   willBequests,
+  willResiduaryRecipients,
   wills,
   withdrawalStrategies,
 } from "@/db/schema";
-import type { BeneficiaryRef, ClientData, GiftEvent, Will, WillBequest } from "@/engine/types";
+import type {
+  BeneficiaryRef,
+  ClientData,
+  GiftEvent,
+  Will,
+  WillBequest,
+  WillResiduaryRecipient,
+} from "@/engine/types";
 import { fanOutGiftSeries } from "@/engine/series-fanout";
 import type { AccountOwner } from "@/engine/ownership";
 import { dbRowToTaxYearParameters } from "@/lib/tax/dbMapper";
@@ -422,6 +430,17 @@ export const loadClientData = cache(
           )
       : [];
 
+    const willResiduaryRows = willIds.length
+      ? await db
+          .select()
+          .from(willResiduaryRecipients)
+          .where(inArray(willResiduaryRecipients.willId, willIds))
+          .orderBy(
+            asc(willResiduaryRecipients.willId),
+            asc(willResiduaryRecipients.sortOrder),
+          )
+      : [];
+
     const recipientsByBequest = new Map<string, typeof willRecipientRows>();
     for (const r of willRecipientRows) {
       const list = recipientsByBequest.get(r.bequestId) ?? [];
@@ -451,11 +470,29 @@ export const loadClientData = cache(
       bequestsByWill.set(b.willId, list);
     }
 
-    const engineWills: Will[] = willRows.map((w) => ({
-      id: w.id,
-      grantor: w.grantor,
-      bequests: bequestsByWill.get(w.id) ?? [],
-    }));
+    const residuaryByWill = new Map<string, WillResiduaryRecipient[]>();
+    for (const r of willResiduaryRows) {
+      const list = residuaryByWill.get(r.willId) ?? [];
+      list.push({
+        recipientKind: r.recipientKind,
+        recipientId: r.recipientId,
+        percentage: parseFloat(r.percentage),
+        sortOrder: r.sortOrder,
+      });
+      residuaryByWill.set(r.willId, list);
+    }
+
+    const engineWills: Will[] = willRows.map((w) => {
+      const residuary = residuaryByWill.get(w.id);
+      return {
+        id: w.id,
+        grantor: w.grantor,
+        bequests: bequestsByWill.get(w.id) ?? [],
+        ...(residuary && residuary.length > 0
+          ? { residuaryRecipients: residuary }
+          : {}),
+      };
+    });
 
     // ── Life-insurance policies ────────────────────────────────────────────
     const lifeInsuranceAccountIds = accountRows
