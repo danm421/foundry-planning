@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import type { ClientData } from "@/engine/types";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
@@ -29,11 +29,15 @@ export function OutOfEstateColumn({
   const [heirDialogOpen, setHeirDialogOpen] = useState(false);
   const [charityDialogOpen, setCharityDialogOpen] = useState(false);
 
-  const recipientBreaches = deriveRecipientBreaches({
-    ledger: giftLedger,
-    gifts: tree.gifts ?? [],
-    giftEvents: tree.giftEvents ?? [],
-  });
+  const recipientBreaches = useMemo(
+    () =>
+      deriveRecipientBreaches({
+        ledger: giftLedger,
+        gifts: tree.gifts ?? [],
+        giftEvents: tree.giftEvents ?? [],
+      }),
+    [giftLedger, tree.gifts, tree.giftEvents],
+  );
 
   const trusts = deriveTrustCardData(tree, asOfYear, recipientBreaches);
   const heirs = deriveHeirCardData(tree, asOfYear, recipientBreaches);

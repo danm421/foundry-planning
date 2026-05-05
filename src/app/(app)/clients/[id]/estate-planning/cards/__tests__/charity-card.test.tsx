@@ -77,4 +77,14 @@ describe("CharityCard", () => {
     render(<CharityCard data={emptyCharity} defaultExpanded />);
     expect(screen.getByText(/No bequests or lifetime gifts yet/i)).toBeInTheDocument();
   });
+
+  it("renders breach glyph when data.breach is true", () => {
+    render(<CharityCard data={{ ...withBequest, breach: true }} />);
+    expect(screen.getByLabelText(/exceeds lifetime exemption/i)).toBeInTheDocument();
+  });
+
+  it("does not render breach glyph when data.breach is false", () => {
+    render(<CharityCard data={{ ...withBequest, breach: false }} />);
+    expect(screen.queryByLabelText(/exceeds lifetime exemption/i)).not.toBeInTheDocument();
+  });
 });

@@ -23,15 +23,15 @@ export interface GiftSubFormProps {
   yearMin: number;
   /** Maximum year selectable. */
   yearMax: number;
-  /** Active scenario's projection ledger — for breach warning (Task 4). */
+  /** Active scenario's projection ledger — for breach warning. */
   giftLedger?: GiftLedgerYear[];
-  /** Tax-bracket inflation rate from plan settings — for BEA(year) (Task 4). */
+  /** Tax-bracket inflation rate from plan settings — for BEA(year). */
   taxInflationRate?: number;
   /** Resolved grantor for this drop, mirroring drop-popup's `grantor` prop. */
   grantor?: "client" | "spouse";
-  /** First name of `grantor`, surfaced in warning copy (Task 4). */
+  /** First name of `grantor`, surfaced in warning copy. */
   ownerFirstName?: string;
-  /** Annual exclusion lookup (Task 4). */
+  /** Annual exclusion lookup. */
   getAnnualExclusion?: (year: number) => number;
   /** True if recipient is a charity — caller knows from `target.isCharity`. */
   recipientIsCharity?: boolean;

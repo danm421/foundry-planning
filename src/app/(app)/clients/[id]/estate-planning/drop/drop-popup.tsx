@@ -50,13 +50,13 @@ export interface DropPopupProps {
    * whose-will radios. Required so the parent must thread it explicitly.
    */
   spouseAvailable: boolean;
-  /** Active scenario's projection ledger — forwarded to GiftSubForm for breach warning (Task 4). */
+  /** Active scenario's projection ledger — forwarded to GiftSubForm for breach warning. */
   giftLedger: GiftLedgerYear[];
-  /** Tax-bracket inflation rate from plan settings — forwarded to GiftSubForm for BEA(year) (Task 4). */
+  /** Tax-bracket inflation rate from plan settings — forwarded to GiftSubForm for BEA(year). */
   taxInflationRate: number;
-  /** Resolved grantor for this drop — forwarded to GiftSubForm for warning copy (Task 4). */
+  /** Resolved grantor for this drop — forwarded to GiftSubForm for warning copy. */
   grantor: "client" | "spouse";
-  /** Annual exclusion lookup — forwarded to GiftSubForm (Task 4). */
+  /** Annual exclusion lookup — forwarded to GiftSubForm. */
   getAnnualExclusion: (year: number) => number;
   onSave: (action: DropAction) => Promise<void>;
   onCancel: () => void;

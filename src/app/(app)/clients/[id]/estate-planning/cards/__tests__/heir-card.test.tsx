@@ -104,4 +104,14 @@ describe("HeirCard", () => {
     render(<HeirCard data={bequestOnly} defaultExpanded />);
     expect(screen.queryByText(/always/i)).not.toBeInTheDocument();
   });
+
+  it("renders breach glyph when data.breach is true", () => {
+    render(<HeirCard data={{ ...bequestOnly, breach: true }} />);
+    expect(screen.getByLabelText(/exceeds lifetime exemption/i)).toBeInTheDocument();
+  });
+
+  it("does not render breach glyph when data.breach is false", () => {
+    render(<HeirCard data={{ ...bequestOnly, breach: false }} />);
+    expect(screen.queryByLabelText(/exceeds lifetime exemption/i)).not.toBeInTheDocument();
+  });
 });

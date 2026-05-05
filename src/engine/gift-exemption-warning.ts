@@ -5,7 +5,8 @@ export interface ProposedGift {
   /** "joint" splits 50/50 to client + spouse before BEA check. */
   grantor: "client" | "spouse" | "joint";
   year: number;
-  /** Post-AE, post-charity-deduction taxable amount. */
+  /** Post-AE for cash gifts; full FMV for asset transfers (engine convention —
+   *  AE is not applied to in-kind transfers). 0 for charitable recipients. */
   taxableContribution: number;
 }
 
