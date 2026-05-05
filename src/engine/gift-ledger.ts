@@ -52,8 +52,18 @@ function emptyState(): GrantorYearState {
 export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
   const result: GiftLedgerYear[] = [];
 
-  let prevClient = emptyState();
-  let prevSpouse = input.hasSpouse ? emptyState() : undefined;
+  let prevClient: GrantorYearState = {
+    ...emptyState(),
+    cumulativeTaxableGifts: input.priorTaxableGifts.client,
+    creditUsed: applyUnifiedRateSchedule(input.priorTaxableGifts.client),
+  };
+  let prevSpouse: GrantorYearState | undefined = input.hasSpouse
+    ? {
+        ...emptyState(),
+        cumulativeTaxableGifts: input.priorTaxableGifts.spouse,
+        creditUsed: applyUnifiedRateSchedule(input.priorTaxableGifts.spouse),
+      }
+    : undefined;
 
   for (let year = input.planStartYear; year <= input.planEndYear; year++) {
     const client = stepGrantor("client", year, prevClient, input);
@@ -94,6 +104,5 @@ function stepGrantor(
   };
 }
 
-// Suppress unused-import warning until later tasks consume these.
-void applyUnifiedRateSchedule;
+// Suppress unused-import warning until later tasks consume `beaForYear`.
 void beaForYear;

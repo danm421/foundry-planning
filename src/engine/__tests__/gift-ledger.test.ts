@@ -35,4 +35,19 @@ describe("computeGiftLedger", () => {
       expect(row.perGrantor.spouse?.cumulativeTaxableGifts).toBe(0);
     }
   });
+
+  it("seeds year 1 cumulative from priorTaxableGifts and carries forward when no in-plan gifts", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      priorTaxableGifts: { client: 1_120_000, spouse: 0 },
+    });
+    expect(ledger[0].perGrantor.client.cumulativeTaxableGifts).toBe(1_120_000);
+    // applyUnifiedRateSchedule(1_120_000) = 345_800 + 0.40 * 120_000 = 393_800
+    expect(ledger[0].perGrantor.client.creditUsed).toBeCloseTo(393_800, 2);
+    expect(ledger[0].perGrantor.client.giftTaxThisYear).toBe(0);
+    // Carries forward unchanged
+    expect(ledger[4].perGrantor.client.cumulativeTaxableGifts).toBe(1_120_000);
+    expect(ledger[4].perGrantor.client.creditUsed).toBeCloseTo(393_800, 2);
+    expect(ledger[0].perGrantor.spouse?.cumulativeTaxableGifts).toBe(0);
+  });
 });
