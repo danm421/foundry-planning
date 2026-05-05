@@ -58,6 +58,25 @@ const nextConfig: NextConfig = {
       { source: "/api/:path*", headers: apiNoCache },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: "/clients/:id/estate-tax-report",
+        destination: "/clients/:id/estate-planning/estate-tax",
+        permanent: true,
+      },
+      {
+        source: "/clients/:id/estate-transfer-report",
+        destination: "/clients/:id/estate-planning/estate-transfer",
+        permanent: true,
+      },
+      {
+        source: "/clients/:id/gift-tax-report",
+        destination: "/clients/:id/estate-planning/gift-tax",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default withSentryConfig(nextConfig, {
