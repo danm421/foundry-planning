@@ -180,7 +180,7 @@ describe("resolveCascades — accounts → rothConversions", () => {
           id: "rc-1",
           destinationAccountId: "a-removed",
           sourceAccountIds: ["a-trad-keep"],
-        } as ClientData["rothConversions"][number],
+        } as NonNullable<ClientData["rothConversions"]>[number],
       ],
     });
     const removed = [{ kind: "account" as TargetKind, id: "a-removed", causedByChangeId: "ch1" }];
@@ -198,7 +198,7 @@ describe("resolveCascades — accounts → rothConversions", () => {
           id: "rc-1",
           destinationAccountId: "a-roth",
           sourceAccountIds: ["a-only-source"],
-        } as ClientData["rothConversions"][number],
+        } as NonNullable<ClientData["rothConversions"]>[number],
       ],
     });
     const removed = [{ kind: "account" as TargetKind, id: "a-only-source", causedByChangeId: "ch1" }];
@@ -215,7 +215,7 @@ describe("resolveCascades — accounts → rothConversions", () => {
           id: "rc-1",
           destinationAccountId: "a-roth",
           sourceAccountIds: ["a-removed", "a-keep"],
-        } as ClientData["rothConversions"][number],
+        } as NonNullable<ClientData["rothConversions"]>[number],
       ],
     });
     const removed = [{ kind: "account" as TargetKind, id: "a-removed", causedByChangeId: "ch1" }];

@@ -511,7 +511,7 @@ describe("applyScenarioChanges — roth_conversion", () => {
         startYear: 2030,
         endYear: 2034,
         indexingRate: 0,
-      } as ClientData["rothConversions"][number],
+      } as NonNullable<ClientData["rothConversions"]>[number],
     ];
     const change: ScenarioChange = {
       id: "ch1",
@@ -530,7 +530,7 @@ describe("applyScenarioChanges — roth_conversion", () => {
   it("removes a roth_conversion from the effective tree", () => {
     const base = minimalClientData();
     base.rothConversions = [
-      { id: "rc-1" } as ClientData["rothConversions"][number],
+      { id: "rc-1" } as NonNullable<ClientData["rothConversions"]>[number],
     ];
     const change: ScenarioChange = {
       id: "ch1",

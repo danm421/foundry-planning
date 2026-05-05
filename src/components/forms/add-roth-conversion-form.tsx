@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { CurrencyInput } from "@/components/currency-input";
 import { PercentInput } from "@/components/percent-input";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
@@ -70,7 +70,7 @@ export default function AddRothConversionForm({
   onClose,
   onSaved,
 }: Props) {
-  const router = useRouter();
+  const writer = useScenarioWriter(clientId);
 
   const rothAccounts = useMemo(
     () => accounts.filter((a) => a.category === "retirement" && ROTH_SUBTYPES.has(a.subType)),
@@ -182,17 +182,30 @@ export default function AddRothConversionForm({
           showIndexing && startIndexingMode === "at_start" ? startYear : null,
       };
 
-      const url = `/api/clients/${clientId}/roth-conversions`;
-      const method = initialData ? "PUT" : "POST";
-      const payload = initialData
+      const baseUrl = `/api/clients/${clientId}/roth-conversions`;
+      const baseMethod = initialData ? "PUT" : "POST";
+      const basePayload = initialData
         ? { rothConversionId: initialData.id, ...body }
         : body;
 
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = initialData
+        ? await writer.submit(
+            {
+              op: "edit",
+              targetKind: "roth_conversion",
+              targetId: initialData.id,
+              desiredFields: body,
+            },
+            { url: baseUrl, method: baseMethod, body: basePayload },
+          )
+        : await writer.submit(
+            {
+              op: "add",
+              targetKind: "roth_conversion",
+              entity: { id: crypto.randomUUID(), ...body },
+            },
+            { url: baseUrl, method: baseMethod, body: basePayload },
+          );
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -200,7 +213,6 @@ export default function AddRothConversionForm({
         return;
       }
 
-      router.refresh();
       onSaved();
     } finally {
       setSubmitting(false);
@@ -354,8 +366,9 @@ export default function AddRothConversionForm({
         {/* Fixed amount */}
         {showFixedAmount && (
           <div>
-            <label className="block text-xs font-medium text-gray-300">Fixed Amount ($/yr)</label>
+            <label htmlFor="rc-fixedAmount" className="block text-xs font-medium text-gray-300">Fixed Amount ($/yr)</label>
             <CurrencyInput
+              id="rc-fixedAmount"
               value={fixedAmount}
               onChange={(raw) => setFixedAmount(raw)}
               required
