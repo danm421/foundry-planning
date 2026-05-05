@@ -15,6 +15,10 @@ import type { FamilyMember } from "@/engine/types";
 import React from "react";
 
 export const dynamic = "force-dynamic";
+// Defense-in-depth on top of the 25 s render-timeout race below: cap the
+// whole route well below Vercel's default (300 s) so a pathological
+// projection-data fetch can't pin a function instance for minutes.
+export const maxDuration = 60;
 
 const VIEW_LABELS: Record<OwnershipView, string> = {
   consolidated: "Consolidated",
