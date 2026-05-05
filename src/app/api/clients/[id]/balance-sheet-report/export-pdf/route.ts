@@ -15,6 +15,10 @@ import type { FamilyMember } from "@/engine/types";
 import React from "react";
 
 export const dynamic = "force-dynamic";
+// Defense-in-depth on top of the 25 s render-timeout race below: cap the
+// whole route well below Vercel's default (300 s) so a pathological
+// projection-data fetch can't pin a function instance for minutes.
+export const maxDuration = 60;
 
 const VIEW_LABELS: Record<OwnershipView, string> = {
   consolidated: "Consolidated",
@@ -63,8 +67,11 @@ export async function POST(
 
     // Pull projection data the same way the page does by hitting the API.
     // Using an internal fetch avoids duplicating the projection-data query.
+    // 30s abort leaves headroom for the 25s render race below within the
+    // 60s maxDuration cap.
     const apiRes = await fetch(`${url.origin}/api/clients/${id}/projection-data`, {
       headers: { cookie: request.headers.get("cookie") ?? "" },
+      signal: AbortSignal.timeout(30_000),
     });
     if (!apiRes.ok) {
       return NextResponse.json({ error: "Failed to load projection data" }, { status: 500 });

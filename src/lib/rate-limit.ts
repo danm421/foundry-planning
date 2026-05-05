@@ -1,5 +1,6 @@
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
+import { NextResponse } from "next/server";
 
 /**
  * Upstash-backed rate limiters for expensive, abusable endpoints.
@@ -110,6 +111,27 @@ const getImportViewLimiter = buildLimiter(60, "1 m", "rl:import:view");
 const getImportMatchLimiter = buildLimiter(10, "1 m", "rl:import:match");
 const getImportCommitLimiter = buildLimiter(20, "1 m", "rl:import:commit");
 
+// Projection / Monte Carlo. Both endpoints run the engine end-to-end on
+// every request (loadEffectiveTree + runProjection / runMonteCarlo). 30/min
+// is generous for an advisor flipping between tabs but tight enough that
+// a stuck client refresh loop can't saturate one container's CPU.
+const getProjectionLimiter = buildLimiter(30, "1 m", "rl:projection");
+
+/**
+ * Check whether `key` (firm id) may invoke a projection or Monte Carlo
+ * endpoint. Budget: 30 req/min/firm.
+ *
+ * Returns `{ allowed: false, reason: ... }` for any failure mode —
+ * see the file-level comment for the full discriminant.
+ */
+export async function checkProjectionRateLimit(
+  key: string,
+): Promise<RateLimitResult> {
+  const limiter = getProjectionLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 export type ImportRateLimitOp = "upload" | "extract" | "view" | "match" | "commit";
 
 /**
@@ -164,6 +186,30 @@ export async function checkCheckoutStatusRateLimit(
   const limiter = getCheckoutStatusLimiter();
   if (!limiter) return { allowed: false, reason: "unconfigured" };
   return safeLimit(limiter, key);
+}
+
+/**
+ * Build the standard error response for a denied rate-limit check.
+ * Maps `exceeded` → 429, anything else → 503, and emits Retry-After
+ * derived from the limiter's `reset` (when present).
+ *
+ * Pass the route-specific user-facing message; the discriminant
+ * mapping and header math are identical across every route.
+ */
+export function rateLimitErrorResponse(
+  rl: RateLimitDenied,
+  message: string,
+): NextResponse {
+  const headers: Record<string, string> = {};
+  if (rl.reset) {
+    headers["Retry-After"] = String(
+      Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000)),
+    );
+  }
+  return NextResponse.json(
+    { error: message },
+    { status: rl.reason === "exceeded" ? 429 : 503, headers },
+  );
 }
 
 /**

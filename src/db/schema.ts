@@ -316,7 +316,9 @@ export const clients = pgTable("clients", {
   spouseAddress: text("spouse_address"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("clients_firm_idx").on(t.firmId),
+]);
 
 export const scenarios = pgTable("scenarios", {
   id: uuid("id").defaultRandom().primaryKey(),
