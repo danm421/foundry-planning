@@ -337,16 +337,23 @@ function buildDeathSection(
   // from the same source account, in proportion to their amount share.
   const pourOutRegrossByIdx = new Map<number, number>();
   if (payload.estateTax.deathOrder === 1) {
-    const pourOutPositive = payload.transfers
-      .map((t, idx) => ({ t, idx }))
-      .filter(({ t }) => needsRegross(t) && t.amount > 0 && t.sourceAccountId != null);
+    type IdxAndTransfer = { t: DeathTransfer; idx: number };
+    const pourOutBySource = new Map<string, { matches: IdxAndTransfer[]; totalRouted: number }>();
+    payload.transfers.forEach((t, idx) => {
+      if (!needsRegross(t) || t.amount <= 0 || t.sourceAccountId == null) return;
+      let entry = pourOutBySource.get(t.sourceAccountId);
+      if (!entry) {
+        entry = { matches: [], totalRouted: 0 };
+        pourOutBySource.set(t.sourceAccountId, entry);
+      }
+      entry.matches.push({ t, idx });
+      entry.totalRouted += t.amount;
+    });
     const apportion = (accountId: string, amount: number): void => {
-      const matches = pourOutPositive.filter(({ t }) => t.sourceAccountId === accountId);
-      if (matches.length === 0) return;
-      const totalRouted = matches.reduce((s, m) => s + m.t.amount, 0);
-      if (totalRouted <= 0) return;
-      for (const { t, idx } of matches) {
-        const share = amount * (t.amount / totalRouted);
+      const entry = pourOutBySource.get(accountId);
+      if (!entry || entry.totalRouted <= 0) return;
+      for (const { t, idx } of entry.matches) {
+        const share = amount * (t.amount / entry.totalRouted);
         pourOutRegrossByIdx.set(idx, (pourOutRegrossByIdx.get(idx) ?? 0) + share);
       }
     };

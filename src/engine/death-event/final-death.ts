@@ -24,7 +24,10 @@ import { applyGrantorSuccession } from "./grantor-succession";
 import { drainLiquidAssets } from "./creditor-payoff";
 import { prepareLifeInsurancePayouts } from "./life-insurance-payout";
 import { applyLiabilityBequests } from "./liability-bequests";
-import { computeDrainAttributions } from "./drain-attribution";
+import {
+  assertDrainAttributionsReconcile,
+  attributeDrainsToLedger,
+} from "./drain-attribution";
 import { beaForYear } from "@/lib/tax/estate";
 import { computeAdjustedTaxableGifts } from "@/lib/estate/adjusted-taxable-gifts";
 
@@ -519,18 +522,13 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   // Phase 9b — drain attribution. Per-recipient × drain-kind allocation of the
   // (now gross) ledger using the residuary-aware rule. Sums per kind reconcile
   // to baseEstateTax fields + creditorDrain.drainedTotal.
-  const deceasedWillForResiduary: Will | null =
-    input.will && input.will.grantor === input.deceased ? input.will : null;
-  const drainAttributions = computeDrainAttributions({
+  const drainAttributions = attributeDrainsToLedger({
     deathOrder: 2,
     transfers: ledger,
-    drainTotals: {
-      federal_estate_tax: baseEstateTax.federalEstateTax,
-      state_estate_tax: baseEstateTax.stateEstateTax,
-      admin_expenses: baseEstateTax.estateAdminExpenses,
-      debts_paid: creditorDrain.drainedTotal,
-    },
-    residuaryRecipients: deceasedWillForResiduary?.residuaryRecipients ?? [],
+    estateTax: baseEstateTax,
+    creditorDrainTotal: creditorDrain.drainedTotal,
+    will: input.will,
+    deceased: input.deceased,
   });
   const estateTax: EstateTaxResult = { ...baseEstateTax, drainAttributions };
 
@@ -559,7 +557,7 @@ function assertFinalDeathInvariants(
   workingLiabs: Liability[],
   originalLiabilities: Liability[],
 ): void {
-  assertDrainAttributionsReconcile(estateTax);
+  assertDrainAttributionsReconcile(estateTax, "final-death:");
   // grossEstate can be negative when the decedent owns no individual assets
   // but proportional household-debt attribution lands on them (4d-2 hypothetical
   // ordering exposes this; real-death flows never hit it). taxableEstate is
@@ -605,37 +603,6 @@ function assertFinalDeathInvariants(
     const ent = controllingEntity(row) != null;
     if (fam === ent) {
       throw new Error(`[4e] bequest-derived liability ${row.id} must have exactly one ownership kind (family_member or entity)`);
-    }
-  }
-}
-
-function assertDrainAttributionsReconcile(estateTax: EstateTaxResult): void {
-  const debtsTotal = estateTax.creditorPayoffDebits.reduce(
-    (s, d) => s + d.amount,
-    0,
-  );
-  const expected: Record<string, number> = {
-    federal_estate_tax: estateTax.federalEstateTax,
-    state_estate_tax: estateTax.stateEstateTax,
-    admin_expenses: estateTax.estateAdminExpenses,
-    debts_paid: debtsTotal,
-  };
-  for (const kind of [
-    "federal_estate_tax",
-    "state_estate_tax",
-    "admin_expenses",
-    "debts_paid",
-  ] as const) {
-    const sum = estateTax.drainAttributions
-      .filter((a) => a.drainKind === kind)
-      .reduce((s, a) => s + a.amount, 0);
-    const exp = expected[kind];
-    // Tolerate small floating-point + edge cases where no eligible recipients
-    // exist (e.g., spouse-only at first-death + estate-tax kinds — exempt).
-    if (exp > 0 && Math.abs(sum - exp) > 0.5 && sum > 0) {
-      throw new Error(
-        `drain attribution sum mismatch for ${kind}: got ${sum.toFixed(2)}, expected ${exp.toFixed(2)}`,
-      );
     }
   }
 }
