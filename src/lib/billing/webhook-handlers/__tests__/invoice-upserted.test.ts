@@ -66,12 +66,89 @@ describe("handleInvoiceUpserted", () => {
       status_transitions: { paid_at: null },
       metadata: { firm_id: "org_1" },
     });
+    mockSubSelect.mockResolvedValue([{ firmId: "org_1", status: "trialing" }]);
     await handleInvoiceUpserted({
       id: "evt_inv",
       type: "invoice.created",
       data: { object: { id: "in_1" } },
     } as never);
     expect(mockInvoiceUpsert).toHaveBeenCalled();
+  });
+
+  it("resolves firm_id from subscriptions table when invoice metadata has no firm_id", async () => {
+    mockInvoicesRetrieve.mockResolvedValue({
+      id: "in_3",
+      customer: "cus_3",
+      parent: {
+        type: "subscription_details",
+        subscription_details: { subscription: "sub_3" },
+      },
+      status: "open",
+      amount_due: 19900,
+      amount_paid: 0,
+      currency: "usd",
+      period_start: 1700000000,
+      period_end: 1702592000,
+      hosted_invoice_url: null,
+      invoice_pdf: null,
+      status_transitions: { paid_at: null },
+      metadata: {},
+    });
+    mockSubSelect.mockResolvedValue([{ firmId: "org_3" }]);
+
+    await handleInvoiceUpserted({
+      id: "evt_inv_3",
+      type: "invoice.created",
+      data: { object: { id: "in_3" } },
+    } as never);
+
+    expect(mockSubSelect).toHaveBeenCalledTimes(1);
+    expect(mockInvoiceUpsert).toHaveBeenCalled();
+  });
+
+  it("no-ops when firm_id can't be resolved (race: subscription not yet in DB)", async () => {
+    mockInvoicesRetrieve.mockResolvedValue({
+      id: "in_4",
+      customer: "cus_4",
+      parent: {
+        type: "subscription_details",
+        subscription_details: { subscription: "sub_4" },
+      },
+      status: "open",
+      metadata: {},
+      status_transitions: { paid_at: null },
+    });
+    mockSubSelect.mockResolvedValue([]); // sub not yet in DB
+
+    await handleInvoiceUpserted({
+      id: "evt_inv_4",
+      type: "invoice.created",
+      data: { object: { id: "in_4" } },
+    } as never);
+
+    expect(mockSubSelect).toHaveBeenCalledTimes(1);
+    expect(mockInvoiceUpsert).not.toHaveBeenCalled();
+    expect(mockSubUpdate).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when invoice has no customer", async () => {
+    mockInvoicesRetrieve.mockResolvedValue({
+      id: "in_5",
+      customer: null,
+      parent: null,
+      status: "draft",
+      metadata: {},
+      status_transitions: { paid_at: null },
+    });
+
+    await handleInvoiceUpserted({
+      id: "evt_inv_5",
+      type: "invoice.created",
+      data: { object: { id: "in_5" } },
+    } as never);
+
+    expect(mockSubSelect).not.toHaveBeenCalled();
+    expect(mockInvoiceUpsert).not.toHaveBeenCalled();
   });
 
   it("on invoice.paid recovery, flips parent sub from past_due to active", async () => {

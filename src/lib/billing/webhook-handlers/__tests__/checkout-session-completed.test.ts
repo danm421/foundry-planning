@@ -144,4 +144,45 @@ describe("handleCheckoutSessionCompleted", () => {
       }),
     );
   });
+
+  it("writes a tos_acceptances row even when Stripe consent isn't collected", async () => {
+    mockSessionsRetrieve.mockResolvedValue({
+      id: "cs_2",
+      customer: "cus_2",
+      subscription: "sub_2",
+      customer_details: { email: "buyer2@example.com" },
+      // consent intentionally omitted — we don't use Stripe's consent_collection
+      custom_fields: [{ key: "firm_name", text: { value: "Beta Advisors" } }],
+      metadata: {},
+    });
+    mockCreateOrg.mockResolvedValue({ id: "org_beta", name: "Beta Advisors" });
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_2",
+      customer: "cus_2",
+      status: "trialing",
+      cancel_at_period_end: false,
+      trial_start: null,
+      trial_end: 1700000000,
+      items: { data: [] },
+      metadata: {},
+    });
+    mockFirmInsert.mockResolvedValue([{ firmId: "org_beta" }]);
+    mockSubsInsert.mockResolvedValue([{ id: "internal-sub-2" }]);
+    mockItemsInsert.mockResolvedValue([]);
+    mockTosInsert.mockResolvedValue([{ id: "tos-row" }]);
+
+    await handleCheckoutSessionCompleted({
+      id: "evt_co_2",
+      type: "checkout.session.completed",
+      data: { object: { id: "cs_2" } },
+    } as never);
+
+    expect(mockTosInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "stripe:cus_2",
+        firmId: "org_beta",
+        acceptanceSource: "stripe_checkout",
+      }),
+    );
+  });
 });

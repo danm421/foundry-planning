@@ -33,6 +33,8 @@ const ALLOWLIST: Record<string, string> = {
   "src/app/api/cron/reconcile-billing/route.ts":
     "system cron — not a user mutation",
   "src/app/api/csp-report/route.ts": "CSP telemetry — public, pre-auth",
+  "src/app/api/checkout/session/route.ts":
+    "checkout initiation — pre-subscription by definition, gated by per-IP rate limit",
   "src/app/api/clients/[id]/accounts/[accountId]/allocations/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/accounts/[accountId]/beneficiaries/route.ts":

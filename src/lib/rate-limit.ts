@@ -135,3 +135,44 @@ export async function checkImportRateLimit(
   if (!limiter) return { allowed: false, reason: "unconfigured" };
   return safeLimit(limiter, `${key}:${op}`);
 }
+
+const getCheckoutSessionLimiter = buildLimiter(10, "1 m", "rl:checkout:session");
+const getCheckoutStatusLimiter = buildLimiter(60, "1 m", "rl:checkout:status");
+
+/**
+ * Public Checkout-session creation. 10/min/IP — generous enough for a
+ * legitimate buyer flipping monthly/annual a few times before committing,
+ * tight enough to make scripted abuse expensive.
+ */
+export async function checkCheckoutSessionRateLimit(
+  key: string,
+): Promise<RateLimitResult> {
+  const limiter = getCheckoutSessionLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
+/**
+ * Public Checkout-status polling. 60/min/IP — must comfortably accommodate
+ * the success page polling 30× over ~45s (≈1.5s interval) plus the buyer
+ * hitting refresh once or twice. One bucket per IP, since session_id is
+ * not yet correlated to a Clerk user.
+ */
+export async function checkCheckoutStatusRateLimit(
+  key: string,
+): Promise<RateLimitResult> {
+  const limiter = getCheckoutStatusLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
+/**
+ * Extract a best-effort caller IP from request headers. Used as the bucket
+ * key for unauthenticated rate-limited endpoints (where there's no Clerk
+ * user/org to scope on yet).
+ */
+export function extractClientIp(req: Request): string {
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0]!.trim();
+  return req.headers.get("x-real-ip") ?? "unknown";
+}

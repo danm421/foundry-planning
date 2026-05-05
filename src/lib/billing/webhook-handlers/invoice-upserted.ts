@@ -32,10 +32,32 @@ export async function handleInvoiceUpserted(event: Stripe.Event): Promise<void> 
   const subId =
     typeof rawSub === "string" ? rawSub : rawSub?.id ?? null;
 
-  const firmId = (inv.metadata as Record<string, string | undefined> | null)
-    ?.firm_id;
-  if (!firmId || !customerId) {
-    throw new Error(`invoice ${inv.id} missing firm_id or customer`);
+  if (!customerId || !subId) {
+    // Subscription invoices always carry a customer + parent sub. Anything
+    // without one isn't ours to record.
+    console.warn(
+      `[webhook] ${event.type} ${inv.id}: missing customer/subscription`,
+    );
+    return;
+  }
+
+  // Stripe doesn't propagate subscription.metadata onto invoices, so the first
+  // invoice for a new sub has no firm_id. We resolve via the subscriptions
+  // table and reuse the row for the past_due recovery check below — one DB
+  // round-trip instead of two on invoice.paid.
+  const subRow = await db
+    .select({ firmId: subscriptions.firmId, status: subscriptions.status })
+    .from(subscriptions)
+    .where(eq(subscriptions.stripeSubscriptionId, subId))
+    .then((r) => r[0]);
+  const firmId = inv.metadata?.firm_id ?? subRow?.firmId ?? null;
+  if (!firmId) {
+    // Race: subscription row isn't in our DB yet. Stripe will redeliver
+    // after checkout.session.completed lands.
+    console.warn(
+      `[webhook] ${event.type} ${inv.id}: can't resolve firm_id (sub=${subId})`,
+    );
+    return;
   }
 
   const paidAtTs = inv.status_transitions?.paid_at ?? null;
@@ -70,13 +92,9 @@ export async function handleInvoiceUpserted(event: Stripe.Event): Promise<void> 
     });
 
   // Recovery path: invoice.paid + parent sub past_due → flip to active.
+  // subRow was already fetched above; reuse it.
   if (event.type === "invoice.paid" && subId) {
-    const subRows = await db
-      .select()
-      .from(subscriptions)
-      .where(eq(subscriptions.stripeSubscriptionId, subId));
-    const parent = subRows[0];
-    if (parent?.status === "past_due") {
+    if (subRow?.status === "past_due") {
       await db
         .update(subscriptions)
         .set({ status: "active", updatedAt: new Date() })
