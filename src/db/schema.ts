@@ -1373,10 +1373,10 @@ export const reports = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => ({
-    byClient: index("reports_client_id_idx").on(t.clientId),
-    byFirm: index("reports_firm_id_idx").on(t.firmId),
-  }),
+  (t) => [
+    index("reports_client_id_idx").on(t.clientId),
+    index("reports_firm_id_idx").on(t.firmId),
+  ],
 );
 
 export type ReportRow = InferSelectModel<typeof reports>;
