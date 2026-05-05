@@ -16,12 +16,12 @@ export default function EstatePlanningSubtabs({
   const withScenario = useScenarioPreservingHref();
 
   const root = `/clients/${clientId}/estate-planning`;
-  const tabs = [
+  const tabs: { label: string; href: string; exact?: true }[] = [
     { label: "Planning", href: root, exact: true },
-    { label: "Estate Tax", href: `${root}/estate-tax`, exact: false },
-    { label: "Estate Transfer", href: `${root}/estate-transfer`, exact: false },
-    { label: "Gift Tax", href: `${root}/gift-tax`, exact: false },
-  ] as const;
+    { label: "Estate Tax", href: `${root}/estate-tax` },
+    { label: "Estate Transfer", href: `${root}/estate-transfer` },
+    { label: "Gift Tax", href: `${root}/gift-tax` },
+  ];
 
   // top-14 (56px) + h-12 (48px) = 104px — pin sub-tabs immediately below
   // the top client-tabs strip.

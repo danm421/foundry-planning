@@ -10,10 +10,11 @@ vi.mock("next/navigation", () => ({
 import { usePathname, useSearchParams } from "next/navigation";
 import EstatePlanningSubtabs from "../subtabs";
 
+const mockSearchParams = (init?: string) =>
+  new URLSearchParams(init) as unknown as ReturnType<typeof useSearchParams>;
+
 beforeEach(() => {
-  vi.mocked(useSearchParams).mockReturnValue(
-    new URLSearchParams() as unknown as ReturnType<typeof useSearchParams>,
-  );
+  vi.mocked(useSearchParams).mockReturnValue(mockSearchParams());
 });
 
 describe("EstatePlanningSubtabs", () => {
@@ -77,9 +78,7 @@ describe("EstatePlanningSubtabs", () => {
 
   it("preserves ?scenario= on every sub-tab href when set", () => {
     vi.mocked(usePathname).mockReturnValue("/clients/c1/estate-planning");
-    vi.mocked(useSearchParams).mockReturnValue(
-      new URLSearchParams("scenario=sc-1") as unknown as ReturnType<typeof useSearchParams>,
-    );
+    vi.mocked(useSearchParams).mockReturnValue(mockSearchParams("scenario=sc-1"));
     const { container } = render(<EstatePlanningSubtabs clientId="c1" />);
     const links = Array.from(container.querySelectorAll("a"));
     for (const a of links) {
