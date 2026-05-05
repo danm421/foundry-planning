@@ -126,7 +126,7 @@ describe("computeGiftLedger", () => {
     expect(ledger[0].taxableGiftsGiven).toBe(0);
   });
 
-  function assetEvent(over: Partial<GiftEvent> = {}): GiftEvent {
+  function assetEvent(over: Record<string, unknown> = {}): GiftEvent {
     return {
       id: "ge1",
       kind: "asset",
@@ -140,7 +140,7 @@ describe("computeGiftLedger", () => {
       recipientExternalBeneficiaryId: undefined,
       seriesId: undefined,
       ...over,
-    } as GiftEvent;
+    } as unknown as GiftEvent;
   }
 
   it("adds asset GiftEvent's gift-year value (no AE on asset transfers)", () => {
@@ -189,7 +189,7 @@ describe("computeGiftLedger", () => {
       recipientEntityId: undefined,
       recipientFamilyMemberId: "fm1",
       recipientExternalBeneficiaryId: undefined,
-    } as GiftEvent;
+    } as unknown as GiftEvent;
     const ledger = computeGiftLedger({ ...baseInput, giftEvents: [cashSeries] });
     expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBeCloseTo(31_000, 2);
   });
@@ -206,7 +206,7 @@ describe("computeGiftLedger", () => {
       recipientEntityId: undefined,
       recipientFamilyMemberId: "fm1",
       recipientExternalBeneficiaryId: undefined,
-    } as GiftEvent;
+    } as unknown as GiftEvent;
     const ledger = computeGiftLedger({ ...baseInput, giftEvents: [oneTime] });
     expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
   });
@@ -220,7 +220,7 @@ describe("computeGiftLedger", () => {
       liabilityId: "liab-1",
       percent: 1,
       recipientEntityId: "trust-1",
-    } as GiftEvent;
+    } as unknown as GiftEvent;
     const ledger = computeGiftLedger({ ...baseInput, giftEvents: [liabEvent] });
     expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
   });
