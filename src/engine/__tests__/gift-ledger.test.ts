@@ -125,4 +125,103 @@ describe("computeGiftLedger", () => {
     expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
     expect(ledger[0].taxableGiftsGiven).toBe(0);
   });
+
+  function assetEvent(over: Partial<GiftEvent> = {}): GiftEvent {
+    return {
+      id: "ge1",
+      kind: "asset",
+      year: 2026,
+      grantor: "client",
+      accountId: "acct-1",
+      percent: 1,
+      amountOverride: undefined,
+      recipientEntityId: "trust-1",
+      recipientFamilyMemberId: undefined,
+      recipientExternalBeneficiaryId: undefined,
+      seriesId: undefined,
+      ...over,
+    } as GiftEvent;
+  }
+
+  it("adds asset GiftEvent's gift-year value (no AE on asset transfers)", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      giftEvents: [assetEvent({ year: 2026, accountId: "acct-1", percent: 0.5 })],
+      accountValueAtYear: (id, year) => (id === "acct-1" && year === 2026 ? 600_000 : 0),
+    });
+    // 0.5 * 600_000 = 300_000, full amount counts (no AE on asset)
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBeCloseTo(300_000, 2);
+  });
+
+  it("uses amountOverride for asset GiftEvent when set", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      giftEvents: [assetEvent({ year: 2026, amountOverride: 250_000, percent: 1 })],
+      // Override should win even though accountValueAtYear would return a different number.
+      accountValueAtYear: () => 999_999,
+    });
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(250_000);
+  });
+
+  it("zeros out charitable asset GiftEvents", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      giftEvents: [assetEvent({
+        year: 2026,
+        amountOverride: 400_000,
+        recipientEntityId: undefined,
+        recipientExternalBeneficiaryId: "ext-charity-1",
+      })],
+      externalBeneficiaryKindById: new Map([["ext-charity-1", "charity"]]),
+    });
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
+  });
+
+  it("processes series-fanned cash GiftEvents (seriesId set) with AE", () => {
+    const cashSeries: GiftEvent = {
+      id: "ge2",
+      kind: "cash",
+      year: 2026,
+      grantor: "client",
+      amount: 50_000,
+      seriesId: "series-1",
+      sourceAccountId: undefined,
+      recipientEntityId: undefined,
+      recipientFamilyMemberId: "fm1",
+      recipientExternalBeneficiaryId: undefined,
+    } as GiftEvent;
+    const ledger = computeGiftLedger({ ...baseInput, giftEvents: [cashSeries] });
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBeCloseTo(31_000, 2);
+  });
+
+  it("ignores one-time cash GiftEvents (no seriesId — handled via legacy gifts[])", () => {
+    const oneTime: GiftEvent = {
+      id: "ge3",
+      kind: "cash",
+      year: 2026,
+      grantor: "client",
+      amount: 50_000,
+      seriesId: undefined,
+      sourceAccountId: undefined,
+      recipientEntityId: undefined,
+      recipientFamilyMemberId: "fm1",
+      recipientExternalBeneficiaryId: undefined,
+    } as GiftEvent;
+    const ledger = computeGiftLedger({ ...baseInput, giftEvents: [oneTime] });
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
+  });
+
+  it("liability GiftEvents contribute 0 (debt assumption is not a gift of value)", () => {
+    const liabEvent: GiftEvent = {
+      id: "ge4",
+      kind: "liability",
+      year: 2026,
+      grantor: "client",
+      liabilityId: "liab-1",
+      percent: 1,
+      recipientEntityId: "trust-1",
+    } as GiftEvent;
+    const ledger = computeGiftLedger({ ...baseInput, giftEvents: [liabEvent] });
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
+  });
 });

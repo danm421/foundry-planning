@@ -116,13 +116,53 @@ function sumLegacyCashGifts(
   return total;
 }
 
+function recipientIsCharity(
+  ev: GiftEvent,
+  externalBeneficiaryKindById: Map<string, "charity" | "individual">,
+): boolean {
+  const id = (ev as { recipientExternalBeneficiaryId?: string }).recipientExternalBeneficiaryId;
+  if (id) {
+    return externalBeneficiaryKindById.get(id) === "charity";
+  }
+  return false;
+}
+
+function sumGiftEvents(
+  grantor: Grantor,
+  year: number,
+  input: GiftLedgerInput,
+): number {
+  const exclusion = input.annualExclusionsByYear[year] ?? 0;
+  let total = 0;
+  for (const ev of input.giftEvents) {
+    if (ev.year !== year) continue;
+    if (ev.grantor !== grantor) continue;
+    if (recipientIsCharity(ev, input.externalBeneficiaryKindById)) continue;
+
+    if (ev.kind === "cash") {
+      // One-time cash gifts come through legacy `gifts` array; only series fan-outs here.
+      if (ev.seriesId == null) continue;
+      total += Math.max(0, ev.amount - exclusion);
+    } else if (ev.kind === "asset") {
+      const value = ev.amountOverride != null
+        ? ev.amountOverride
+        : input.accountValueAtYear(ev.accountId, ev.year) * ev.percent;
+      total += value;
+    }
+    // Liability transfers: 0 contribution.
+  }
+  return total;
+}
+
 function stepGrantor(
   grantor: Grantor,
   year: number,
   prev: GrantorYearState,
   input: GiftLedgerInput,
 ): GrantorYearState {
-  const taxableGiftsThisYear = sumLegacyCashGifts(grantor, year, input);
+  const taxableGiftsThisYear =
+    sumLegacyCashGifts(grantor, year, input) +
+    sumGiftEvents(grantor, year, input);
 
   const cumulativeBefore = prev.cumulativeTaxableGifts;
   const cumulativeAfter = cumulativeBefore + taxableGiftsThisYear;
