@@ -13,6 +13,7 @@ import {
 import { useState, createContext, useContext, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { ClientData, Will } from "@/engine/types";
+import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import { useToast } from "@/components/toast";
 import { DropPopup, type DropAction, type DropPopupProps } from "./drop/drop-popup";
 import {
@@ -89,6 +90,9 @@ interface ProviderProps {
   clientFirstName: string;
   spouseFirstName: string | null;
   tree: ClientData;
+  giftLedger: GiftLedgerYear[];
+  taxInflationRate: number;
+  getAnnualExclusion: (year: number) => number;
 }
 
 /** Strip the DB-side `id` field from a will's bequests so they match WillBequestInput. */
@@ -142,6 +146,9 @@ export function CanvasDndProvider({
   clientFirstName,
   spouseFirstName,
   tree,
+  giftLedger,
+  taxInflationRate,
+  getAnnualExclusion,
 }: ProviderProps) {
   const [active, setActive] = useState<DragPayload | null>(null);
   const [dropPopupState, setDropPopupState] = useState<DropPopupState | null>(null);
@@ -435,6 +442,10 @@ export function CanvasDndProvider({
             yearMin={yearMin}
             yearMax={yearMax}
             spouseAvailable={spouseAvailable}
+            giftLedger={giftLedger}
+            taxInflationRate={taxInflationRate}
+            grantor={dropPopupState.payload.ownerKey}
+            getAnnualExclusion={getAnnualExclusion}
             onSave={dispatchSave}
             onCancel={() => setDropPopupState(null)}
           />

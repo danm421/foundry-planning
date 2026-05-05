@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Recipient } from "./lib/save-handlers";
+import type { GiftLedgerYear } from "@/engine/gift-ledger";
 
 export interface GiftSubFormProps {
   /** Owner's stake in the source account (fraction, 0-1). Informational only. */
@@ -19,6 +20,18 @@ export interface GiftSubFormProps {
   yearMin: number;
   /** Maximum year selectable. */
   yearMax: number;
+  /** Active scenario's projection ledger — for breach warning (Task 4). */
+  giftLedger?: GiftLedgerYear[];
+  /** Tax-bracket inflation rate from plan settings — for BEA(year) (Task 4). */
+  taxInflationRate?: number;
+  /** Resolved grantor for this drop, mirroring drop-popup's `grantor` prop. */
+  grantor?: "client" | "spouse";
+  /** First name of `grantor`, surfaced in warning copy (Task 4). */
+  ownerFirstName?: string;
+  /** Annual exclusion lookup (Task 4). */
+  getAnnualExclusion?: (year: number) => number;
+  /** True if recipient is a charity — caller knows from `target.isCharity`. */
+  recipientIsCharity?: boolean;
 }
 
 export type GiftSubFormSubmit =
