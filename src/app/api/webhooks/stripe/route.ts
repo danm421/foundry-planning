@@ -90,8 +90,10 @@ export async function POST(req: NextRequest) {
       .where(eq(billingEvents.id, rowId));
     return NextResponse.json({ ok: true, result: "ok" }, { status: 200 });
   } catch (err) {
-    const message = err instanceof Error ? err.message.slice(0, 500) : String(err);
-    console.error(`[webhook.stripe] handler failed for ${event.type}:`, message);
+    const message = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+    // Console gets the full err object (with stack + cause chain) so truncated
+    // DB rows don't hide the root cause when debugging webhook failures.
+    console.error(`[webhook.stripe] handler failed for ${event.type}:`, err);
     await db
       .update(billingEvents)
       .set({

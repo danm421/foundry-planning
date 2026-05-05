@@ -31,19 +31,25 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
     metadata: Record<string, string | undefined>;
   };
 
+  // Race tolerance: subscription.created/updated can fire before
+  // checkout.session.completed has stamped sub.metadata.firm_id and committed
+  // the firms row. No-op so Stripe redelivers after the firms row lands;
+  // otherwise the FK on subscriptions.firm_id would throw.
   const firmId = sub.metadata.firm_id;
   if (!firmId) {
-    throw new Error(
-      `subscription ${sub.id} missing metadata.firm_id — set on Checkout session creation`,
-    );
+    console.warn(`[webhook] ${event.type} ${sub.id}: missing metadata.firm_id`);
+    return;
   }
-
   const firmRow = await db
     .select({ aiImportsUsed: firms.aiImportsUsed })
     .from(firms)
     .where(eq(firms.firmId, firmId))
     .then((r) => r[0]);
-  const aiImportsUsed = firmRow?.aiImportsUsed ?? 0;
+  if (!firmRow) {
+    console.warn(`[webhook] ${event.type} ${sub.id}: firm ${firmId} not in DB yet`);
+    return;
+  }
+  const aiImportsUsed = firmRow.aiImportsUsed ?? 0;
 
   const customerId =
     typeof sub.customer === "string" ? sub.customer : sub.customer.id;
@@ -131,31 +137,32 @@ export async function handleSubscriptionUpsert(event: Stripe.Event): Promise<voi
   }
 
   const cc = await clerkClient();
-  await cc.organizations.updateOrganizationMetadata(firmId, {
-    publicMetadata: {
-      stripe_customer_id: customerId,
-      stripe_subscription_id: sub.id,
-      subscription_status: sub.status,
-      cancel_at_period_end: sub.cancel_at_period_end ?? false,
-      current_period_end: periodEnd
-        ? new Date(periodEnd * 1000).toISOString()
-        : null,
-      trial_ends_at: sub.trial_end
-        ? new Date(sub.trial_end * 1000).toISOString()
-        : null,
-      entitlements,
-    },
-  });
-
-  await recordAudit({
-    action:
-      event.type === "customer.subscription.created"
-        ? "billing.subscription_created"
-        : "billing.subscription_updated",
-    resourceType: "subscription",
-    resourceId: sub.id,
-    firmId,
-    actorId: `stripe:webhook:${event.id}`,
-    metadata: { status: sub.status, item_count: sub.items.data.length },
-  });
+  await Promise.all([
+    cc.organizations.updateOrganizationMetadata(firmId, {
+      publicMetadata: {
+        stripe_customer_id: customerId,
+        stripe_subscription_id: sub.id,
+        subscription_status: sub.status,
+        cancel_at_period_end: sub.cancel_at_period_end ?? false,
+        current_period_end: periodEnd
+          ? new Date(periodEnd * 1000).toISOString()
+          : null,
+        trial_ends_at: sub.trial_end
+          ? new Date(sub.trial_end * 1000).toISOString()
+          : null,
+        entitlements,
+      },
+    }),
+    recordAudit({
+      action:
+        event.type === "customer.subscription.created"
+          ? "billing.subscription_created"
+          : "billing.subscription_updated",
+      resourceType: "subscription",
+      resourceId: sub.id,
+      firmId,
+      actorId: `stripe:webhook:${event.id}`,
+      metadata: { status: sub.status, item_count: sub.items.data.length },
+    }),
+  ]);
 }

@@ -134,7 +134,7 @@ describe("handleSubscriptionUpsert", () => {
     );
   });
 
-  it("throws when subscription has no firm_id in metadata", async () => {
+  it("no-ops when subscription has no firm_id in metadata (race: checkout.session.completed not yet run)", async () => {
     mockSubsRetrieve.mockResolvedValue({
       id: "sub_2",
       customer: "cus_2",
@@ -142,12 +142,38 @@ describe("handleSubscriptionUpsert", () => {
       metadata: {},
       items: { data: [] },
     });
-    await expect(
-      handleSubscriptionUpsert({
-        id: "evt_2",
-        type: "customer.subscription.updated",
-        data: { object: { id: "sub_2" } },
-      } as never),
-    ).rejects.toThrow(/firm_id/);
+
+    await handleSubscriptionUpsert({
+      id: "evt_2",
+      type: "customer.subscription.updated",
+      data: { object: { id: "sub_2" } },
+    } as never);
+
+    expect(mockSelectFirms).not.toHaveBeenCalled();
+    expect(mockSubsUpsert).not.toHaveBeenCalled();
+    expect(mockUpdateOrgMeta).not.toHaveBeenCalled();
+    expect(mockRecordAudit).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when firm_id is set on the sub but firms row hasn't been committed yet (FK race)", async () => {
+    mockSubsRetrieve.mockResolvedValue({
+      id: "sub_3",
+      customer: "cus_3",
+      status: "trialing",
+      metadata: { firm_id: "org_3" },
+      items: { data: [] },
+    });
+    mockSelectFirms.mockResolvedValue([]); // firms row not yet committed
+
+    await handleSubscriptionUpsert({
+      id: "evt_3",
+      type: "customer.subscription.created",
+      data: { object: { id: "sub_3" } },
+    } as never);
+
+    expect(mockSelectFirms).toHaveBeenCalledTimes(1);
+    expect(mockSubsUpsert).not.toHaveBeenCalled();
+    expect(mockUpdateOrgMeta).not.toHaveBeenCalled();
+    expect(mockRecordAudit).not.toHaveBeenCalled();
   });
 });
