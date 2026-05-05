@@ -642,6 +642,9 @@ export interface PlanSettings {
   /** Effective tax rate applied to DNI distributed to out-of-household beneficiaries.
    *  Defaults to 0.37 (top federal bracket) when absent. */
   outOfHouseholdRate?: number;
+  /** Pre-plan post-1976 cumulative taxable gifts per grantor.
+   *  Seed for the gift-tax ledger and §2001(b)(1)(B) tentative-tax-base. */
+  priorTaxableGifts?: { client: number; spouse: number };
 }
 
 // ── Output Types ─────────────────────────────────────────────────────────────
