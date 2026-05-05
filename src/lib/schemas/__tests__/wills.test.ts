@@ -239,3 +239,120 @@ describe("will bequest — liability kind", () => {
     expect(() => willBequestSchema.parse(input)).toThrow();
   });
 });
+
+describe("willCreateSchema with residuary", () => {
+  const baseValidWill = {
+    grantor: "client" as const,
+    bequests: [],
+  };
+
+  it("accepts a will with no residuary field", () => {
+    const result = willCreateSchema.safeParse(baseValidWill);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a will with empty residuary array", () => {
+    const result = willCreateSchema.safeParse({
+      ...baseValidWill,
+      residuaryRecipients: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts residuary with one 100% recipient", () => {
+    const result = willCreateSchema.safeParse({
+      ...baseValidWill,
+      residuaryRecipients: [
+        {
+          recipientKind: "family_member",
+          recipientId: u("a"),
+          percentage: 100,
+          sortOrder: 0,
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts residuary that sums to 100 across multiple recipients", () => {
+    const result = willCreateSchema.safeParse({
+      ...baseValidWill,
+      residuaryRecipients: [
+        {
+          recipientKind: "spouse",
+          recipientId: null,
+          percentage: 50,
+          sortOrder: 0,
+        },
+        {
+          recipientKind: "family_member",
+          recipientId: u("a"),
+          percentage: 50,
+          sortOrder: 1,
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects residuary that does not sum to 100", () => {
+    const result = willCreateSchema.safeParse({
+      ...baseValidWill,
+      residuaryRecipients: [
+        {
+          recipientKind: "spouse",
+          recipientId: null,
+          percentage: 60,
+          sortOrder: 0,
+        },
+        {
+          recipientKind: "family_member",
+          recipientId: u("a"),
+          percentage: 30,
+          sortOrder: 1,
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects residuary recipient with spouse kind + non-null id", () => {
+    const result = willCreateSchema.safeParse({
+      ...baseValidWill,
+      residuaryRecipients: [
+        {
+          recipientKind: "spouse",
+          recipientId: u("a"),
+          percentage: 100,
+          sortOrder: 0,
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects residuary with non-spouse kind + null id", () => {
+    const result = willCreateSchema.safeParse({
+      ...baseValidWill,
+      residuaryRecipients: [
+        {
+          recipientKind: "family_member",
+          recipientId: null,
+          percentage: 100,
+          sortOrder: 0,
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("willUpdateSchema with residuary", () => {
+  it("accepts an update with empty residuary", () => {
+    const result = willUpdateSchema.safeParse({
+      bequests: [],
+      residuaryRecipients: [],
+    });
+    expect(result.success).toBe(true);
+  });
+});
