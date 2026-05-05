@@ -224,4 +224,84 @@ describe("computeGiftLedger", () => {
     const ledger = computeGiftLedger({ ...baseInput, giftEvents: [liabEvent] });
     expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
   });
+
+  it("populates giftsGiven (gross) regardless of grantor or charitable status", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      gifts: [
+        gift({ year: 2026, amount: 100_000, grantor: "client" }),
+        gift({
+          id: "g2",
+          year: 2026,
+          amount: 500_000,
+          grantor: "client",
+          recipientFamilyMemberId: undefined,
+          recipientExternalBeneficiaryId: "ext-charity-1",
+        }),
+      ],
+      externalBeneficiaryKindById: new Map([["ext-charity-1", "charity"]]),
+    });
+    // Gross sums everything: 100k + 500k = 600k
+    expect(ledger[0].giftsGiven).toBeCloseTo(600_000, 2);
+    // Taxable nets out: 100k − 19k AE = 81k; charity = 0
+    expect(ledger[0].taxableGiftsGiven).toBeCloseTo(81_000, 2);
+  });
+
+  it("omits perGrantor.spouse for single-filer (hasSpouse: false)", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      hasSpouse: false,
+      priorTaxableGifts: { client: 500_000, spouse: 0 },
+    });
+    expect(ledger[0].perGrantor.spouse).toBeUndefined();
+    expect(ledger[0].perGrantor.client.cumulativeTaxableGifts).toBe(500_000);
+  });
+
+  it("BEA overflow generates current-year gift tax via §2502 marginal calc", () => {
+    // Force overflow: $20M prior taxable gifts in plan-year 2026 with BEA = $15M
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      planStartYear: 2026,
+      planEndYear: 2026,
+      priorTaxableGifts: { client: 20_000_000, spouse: 0 },
+    });
+    // No new gifts → giftTaxThisYear = 0 (overflow happened pre-plan; no current-year delta)
+    expect(ledger[0].perGrantor.client.giftTaxThisYear).toBe(0);
+  });
+
+  it("BEA overflow during plan year generates positive giftTaxThisYear", () => {
+    // 2026 BEA = $15M. Client makes $16M cash gift in 2026 → $1M over BEA.
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      planStartYear: 2026,
+      planEndYear: 2026,
+      priorTaxableGifts: { client: 0, spouse: 0 },
+      gifts: [gift({ year: 2026, amount: 16_000_000, grantor: "client" })],
+    });
+    expect(ledger[0].perGrantor.client.giftTaxThisYear).toBeGreaterThan(0);
+    // Marginal $981k over BEA at 40% top bracket ≈ 392_400
+    expect(ledger[0].perGrantor.client.giftTaxThisYear).toBeCloseTo(392_400, -2);
+    expect(ledger[0].totalGiftTax).toBe(ledger[0].perGrantor.client.giftTaxThisYear);
+  });
+
+  it("accumulates cumulativeGiftTax across plan years", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      planStartYear: 2026,
+      planEndYear: 2028,
+      priorTaxableGifts: { client: 14_000_000, spouse: 0 }, // close to BEA
+      gifts: [
+        gift({ id: "ga", year: 2026, amount: 2_000_000, grantor: "client" }),
+        gift({ id: "gb", year: 2028, amount: 1_000_000, grantor: "client" }),
+      ],
+    });
+    // Year 2026: cumulative crosses BEA → some giftTax
+    expect(ledger[0].perGrantor.client.giftTaxThisYear).toBeGreaterThan(0);
+    // Year 2028: another gift — additional giftTax
+    expect(ledger[2].perGrantor.client.giftTaxThisYear).toBeGreaterThan(0);
+    // Cumulative grows
+    expect(ledger[2].perGrantor.client.cumulativeGiftTax).toBeGreaterThan(
+      ledger[0].perGrantor.client.cumulativeGiftTax,
+    );
+  });
 });

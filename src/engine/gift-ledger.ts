@@ -76,7 +76,7 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
 
     result.push({
       year,
-      giftsGiven: 0,
+      giftsGiven: sumGrossGifts(year, input),
       taxableGiftsGiven,
       perGrantor: { client, ...(spouse ? { spouse } : {}) },
       totalGiftTax,
@@ -111,6 +111,25 @@ function sumLegacyCashGifts(
       total += Math.max(0, g.amount - exclusion);
     } else if (g.grantor === "joint") {
       total += Math.max(0, g.amount / 2 - exclusion);
+    }
+  }
+  return total;
+}
+
+function sumGrossGifts(year: number, input: GiftLedgerInput): number {
+  let total = 0;
+  for (const g of input.gifts) {
+    if (g.year === year) total += g.amount;
+  }
+  for (const ev of input.giftEvents) {
+    if (ev.year !== year) continue;
+    if (ev.kind === "cash") {
+      if (ev.seriesId == null) continue;
+      total += ev.amount;
+    } else if (ev.kind === "asset") {
+      total += ev.amountOverride != null
+        ? ev.amountOverride
+        : input.accountValueAtYear(ev.accountId, ev.year) * ev.percent;
     }
   }
   return total;
