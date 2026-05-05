@@ -24,6 +24,7 @@ import {
 import { applyGrantorSuccession } from "./grantor-succession";
 import { drainLiquidAssets } from "./creditor-payoff";
 import { prepareLifeInsurancePayouts } from "./life-insurance-payout";
+import { computeDrainAttributions } from "./drain-attribution";
 import { beaForYear } from "@/lib/tax/estate";
 import { computeAdjustedTaxableGifts } from "@/lib/estate/adjusted-taxable-gifts";
 
@@ -445,7 +446,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   });
 
   // Phase 11 — final EstateTaxResult with drain debits populated.
-  const estateTax = buildEstateTaxResult({
+  const baseEstateTax = buildEstateTaxResult({
     year: input.year,
     deathOrder: 1,
     deceased: input.deceased,
@@ -460,6 +461,25 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     creditorPayoffDebits: [],
     creditorPayoffResidual: 0,
   });
+
+  // Phase 11b — drain attribution. The chain already ran on pre-drain balances,
+  // so `ledger` carries gross transfers; per-recipient × drain-kind allocation
+  // uses the residuary-aware rule. No creditor drain at first death; debts_paid
+  // is always 0.
+  const deceasedWillForResiduary: Will | null =
+    input.will && input.will.grantor === input.deceased ? input.will : null;
+  const drainAttributions = computeDrainAttributions({
+    deathOrder: 1,
+    transfers: ledger,
+    drainTotals: {
+      federal_estate_tax: baseEstateTax.federalEstateTax,
+      state_estate_tax: baseEstateTax.stateEstateTax,
+      admin_expenses: baseEstateTax.estateAdminExpenses,
+      debts_paid: 0,
+    },
+    residuaryRecipients: deceasedWillForResiduary?.residuaryRecipients ?? [],
+  });
+  const estateTax: EstateTaxResult = { ...baseEstateTax, drainAttributions };
 
   assertFirstDeathInvariants(estateTax, mutatedEntities, input.deceased);
   assertPrecedenceChainInvariants({
@@ -554,6 +574,32 @@ function assertFirstDeathInvariants(
     }
     if (!e.isIrrevocable && e.grantor === deceased) {
       throw new Error(`first-death: revocable entity ${e.id} grantor=deceased was not flipped`);
+    }
+  }
+
+  // Drain attribution sums per kind reconcile to the band-level totals.
+  // Skipped when there are zero non-spouse recipients for an estate-tax kind
+  // (full marital deduction → tax = 0 anyway, so no eligible target either way).
+  const expected: Record<string, number> = {
+    federal_estate_tax: estateTax.federalEstateTax,
+    state_estate_tax: estateTax.stateEstateTax,
+    admin_expenses: estateTax.estateAdminExpenses,
+    debts_paid: 0,
+  };
+  for (const kind of [
+    "federal_estate_tax",
+    "state_estate_tax",
+    "admin_expenses",
+    "debts_paid",
+  ] as const) {
+    const sum = estateTax.drainAttributions
+      .filter((a) => a.drainKind === kind)
+      .reduce((s, a) => s + a.amount, 0);
+    const exp = expected[kind];
+    if (exp > 0 && Math.abs(sum - exp) > 0.5 && sum > 0) {
+      throw new Error(
+        `first-death drain attribution sum mismatch for ${kind}: got ${sum.toFixed(2)}, expected ${exp.toFixed(2)}`,
+      );
     }
   }
 }
