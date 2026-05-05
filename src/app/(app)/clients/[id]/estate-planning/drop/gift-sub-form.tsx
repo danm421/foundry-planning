@@ -117,7 +117,7 @@ export function GiftSubForm(props: GiftSubFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-3 p-3 text-sm text-[var(--color-ink)]"
+      className="flex flex-col gap-3 p-4 pt-3 text-sm text-[var(--color-ink)]"
     >
       <div className="flex items-center gap-2">
         <input

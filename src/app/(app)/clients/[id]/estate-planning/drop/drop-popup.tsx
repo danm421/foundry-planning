@@ -125,10 +125,10 @@ export function DropPopup(props: DropPopupProps) {
         role="dialog"
         aria-label={`Transfer ${source.ownerLabel}'s slice of ${source.accountName}`}
         style={{ left, top, width: POPUP_WIDTH }}
-        className="absolute rounded-md border-2 border-[var(--color-ink-3)] ring-1 ring-black/60 bg-[var(--color-card)] shadow-xl"
+        className="absolute overflow-hidden rounded-lg border border-[var(--color-hair-2)] ring-1 ring-black/60 bg-[var(--color-card)] shadow-2xl"
       >
-        <header className="flex items-baseline justify-between border-b border-[var(--color-hair)] px-3 py-2">
-          <h3 className="text-sm font-medium text-[var(--color-ink)]">
+        <header className="flex items-start justify-between gap-3 border-b border-[var(--color-hair)] px-4 py-3">
+          <h3 className="text-sm font-semibold leading-snug text-[var(--color-ink)]">
             Transfer {source.ownerLabel}&rsquo;s {slicePctRounded}% of{" "}
             {source.accountName}
           </h3>
@@ -136,60 +136,58 @@ export function DropPopup(props: DropPopupProps) {
             type="button"
             onClick={onCancel}
             aria-label="Close"
-            className="text-[var(--color-ink-3)] hover:text-[var(--color-ink)]"
+            className="-mr-1 -mt-0.5 rounded-md p-1 text-[var(--color-ink-3)] hover:bg-[var(--color-card-hover)] hover:text-[var(--color-ink)] focus:outline-none focus:ring-1 focus:ring-accent"
           >
             ✕
           </button>
         </header>
-        <p className="px-3 pt-2 text-xs text-[var(--color-ink-3)]">
-          To: <span className="text-[var(--color-ink)]">{target.label}</span>
-        </p>
 
-        <fieldset
-          role="radiogroup"
-          aria-label="Transfer type"
-          className="flex gap-4 px-3 pt-2"
-        >
-          <label className="flex items-center gap-1 text-xs text-[var(--color-ink)]">
-            <input
-              type="radio"
-              name="drop-popup-type"
-              value="gift"
-              checked={type === "gift"}
-              onChange={() => setType("gift")}
-            />
-            Gift
-          </label>
-          <label className="flex items-center gap-1 text-xs text-[var(--color-ink)]">
-            <input
-              type="radio"
-              name="drop-popup-type"
-              value="bequest"
-              checked={type === "bequest"}
-              onChange={() => setType("bequest")}
-            />
-            Bequest at death
-          </label>
-          {!target.isCharity && (
-            <label className="flex items-center gap-1 text-xs text-[var(--color-ink)]">
-              <input
-                type="radio"
-                name="drop-popup-type"
-                value="retitle"
-                checked={type === "retitle"}
-                onChange={() => setType("retitle")}
-              />
-              Retitle
-            </label>
-          )}
-        </fieldset>
-
-        {target.isCharity && !source.isCash && (
-          <p className="px-3 pt-2 text-[11px] text-[var(--color-ink-3)]">
-            Charitable gift creates an income-tax deduction subject to AGI
-            limits.
+        <div className="flex flex-col gap-3 px-4 pt-3">
+          <p className="text-xs text-[var(--color-ink-3)]">
+            To: <span className="text-[var(--color-ink)]">{target.label}</span>
           </p>
-        )}
+
+          <div
+            role="radiogroup"
+            aria-label="Transfer type"
+            className="flex gap-1"
+          >
+            {(
+              [
+                { value: "gift", label: "Gift" },
+                { value: "bequest", label: "Bequest at death" },
+                ...(!target.isCharity
+                  ? ([{ value: "retitle", label: "Retitle" }] as const)
+                  : ([] as const)),
+              ] as ReadonlyArray<{ value: DropType; label: string }>
+            ).map((opt) => {
+              const active = type === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setType(opt.value)}
+                  className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-1 focus:ring-accent ${
+                    active
+                      ? "border-accent bg-accent/15 text-accent-ink"
+                      : "border-[var(--color-hair-2)] bg-[var(--color-card)] text-[var(--color-ink-3)] hover:bg-[var(--color-card-hover)] hover:text-[var(--color-ink)]"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {target.isCharity && !source.isCash && (
+            <p className="text-[11px] text-[var(--color-ink-3)]">
+              Charitable gift creates an income-tax deduction subject to AGI
+              limits.
+            </p>
+          )}
+        </div>
 
         {type === "gift" && (
           <GiftSubForm

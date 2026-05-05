@@ -29,7 +29,7 @@ export function RetitleSubForm({ onSubmit, onCancel }: RetitleSubFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-3 p-3 text-sm text-[var(--color-ink)]"
+      className="flex flex-col gap-3 p-4 pt-3 text-sm text-[var(--color-ink)]"
     >
       <div className="flex flex-col gap-1">
         <label htmlFor="retitle-percent" className="text-xs text-[var(--color-ink-3)]">

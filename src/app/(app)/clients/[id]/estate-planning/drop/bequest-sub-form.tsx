@@ -47,7 +47,7 @@ export function BequestSubForm(props: BequestSubFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-3 p-3 text-sm text-[var(--color-ink)]"
+      className="flex flex-col gap-3 p-4 pt-3 text-sm text-[var(--color-ink)]"
     >
       {props.spouseAvailable && (
         <fieldset className="flex flex-col gap-1">
