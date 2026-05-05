@@ -6,6 +6,15 @@ export type CheckoutPriceKey = Extract<
   "seatMonthly" | "seatAnnual"
 >;
 
+// Stripe SDK exposes the create-params type as a type alias on the Checkout
+// namespace, which strips its inner namespaces — so `Stripe.Checkout
+// .SessionCreateParams.LineItem` no longer resolves. Derive it via Parameters
+// instead, which routes through the Sessions module's full namespace.
+type SessionCreateParams = NonNullable<
+  Parameters<Stripe["checkout"]["sessions"]["create"]>[0]
+>;
+type SessionLineItem = NonNullable<SessionCreateParams["line_items"]>[number];
+
 /**
  * Build the Stripe Checkout session params for a public buyer flow.
  * Pure function — no Stripe API calls, no DB. The route handler wraps
@@ -19,20 +28,22 @@ export function buildCheckoutSessionParams(args: {
   priceKey: CheckoutPriceKey;
   origin: string;
   withAiImport?: boolean;
-}): Stripe.Checkout.SessionCreateParams {
+}): SessionCreateParams {
   const catalog = getPriceCatalog();
   const priceId = catalog[args.priceKey];
-  const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = [
-    { price: priceId, quantity: 1 },
-  ];
+  const line_items: SessionLineItem[] = [{ price: priceId, quantity: 1 }];
   if (args.withAiImport) {
     line_items.push({ price: catalog.aiImportMonthly, quantity: 1 });
   }
+  // Stripe's consent_collection.terms_of_service is intentionally NOT used.
+  // Our app-side acceptance trail is stronger: /legal/tos page + per-checkout
+  // tos_acceptances row (userId, firmId, version, IP, timestamp). The
+  // checkout-session-completed handler always writes that row when the
+  // checkout completes, so consent is always recorded.
   return {
     mode: "subscription",
     line_items,
     subscription_data: { trial_period_days: 14 },
-    consent_collection: { terms_of_service: "required" },
     custom_fields: [
       {
         key: "firm_name",

@@ -80,12 +80,12 @@ describe("buildCheckoutSessionParams", () => {
     expect(params.subscription_data).toEqual({ trial_period_days: 14 });
   });
 
-  it("requires ToS consent and a firm_name custom field", () => {
+  it("omits consent_collection (app-side acceptance recorded in tos_acceptances) and sets a firm_name custom field", () => {
     const params = buildCheckoutSessionParams({
       priceKey: "seatMonthly",
       origin: "https://app.foundryplanning.com",
     });
-    expect(params.consent_collection?.terms_of_service).toBe("required");
+    expect(params.consent_collection).toBeUndefined();
     expect(params.custom_fields).toEqual([
       {
         key: "firm_name",

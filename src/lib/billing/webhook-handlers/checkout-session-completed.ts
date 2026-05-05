@@ -146,19 +146,20 @@ export async function handleCheckoutSessionCompleted(
       .returning({ id: subscriptionItems.id });
   }
 
-  // 6. ToS acceptance record (Stripe Checkout source).
-  if (session.consent?.terms_of_service === "accepted") {
-    await db
-      .insert(tosAcceptances)
-      .values({
-        userId: `stripe:${customerId}`, // pre-Clerk-user-creation placeholder
-        firmId,
-        tosVersion: TOS_VERSION_DEFAULT,
-        acceptanceSource: "stripe_checkout",
-      })
-      .onConflictDoNothing()
-      .returning({ id: tosAcceptances.id });
-  }
+  // 6. ToS acceptance record. We don't use Stripe's consent_collection
+  // (see note in checkout.ts) — completing Checkout is itself the acceptance,
+  // and we record it unconditionally. The Clerk user.created webhook will
+  // later write a second row with acceptance_source="clerk_signup".
+  await db
+    .insert(tosAcceptances)
+    .values({
+      userId: `stripe:${customerId}`, // pre-Clerk-user-creation placeholder
+      firmId,
+      tosVersion: TOS_VERSION_DEFAULT,
+      acceptanceSource: "stripe_checkout",
+    })
+    .onConflictDoNothing()
+    .returning({ id: tosAcceptances.id });
 
   // 7. Set Clerk metadata.
   await cc.organizations.updateOrganizationMetadata(firmId, {
