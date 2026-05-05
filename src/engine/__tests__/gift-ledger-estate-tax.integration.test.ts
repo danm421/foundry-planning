@@ -36,4 +36,22 @@ describe("Prior taxable gifts flow into estate tax", () => {
       withFinal!.estateTax!.tentativeTaxBase - baselineFinal!.estateTax!.tentativeTaxBase;
     expect(delta).toBeCloseTo(3_000_000, 2);
   });
+
+  it("client's prior gifts do not erode survivor's DSUE-padded exclusion", () => {
+    // Client dies first in 2030 with $5M prior gifts. Survivor (spouse) inherits
+    // DSUE from any unused first-death exclusion. At spouse's final death:
+    //   - applicableExclusion = BEA(year) + dsueReceived
+    //   - adjustedTaxableGifts = spouse's own cumulative taxable gifts (here: $0)
+    // Client's $5M flowed through the FIRST death's tentativeTaxBase already,
+    // and must NOT bleed into the spouse's tax base at final death.
+    const withClientPrior = runProjection(
+      buildMinimalEstateScenario({ priorClient: 5_000_000, priorSpouse: 0 }),
+    );
+    const finalDeath = withClientPrior.find((y) => y.estateTax?.deathOrder === 2);
+    expect(finalDeath).toBeDefined();
+
+    // Spouse's adjustedTaxableGifts at final death must equal her own ($0),
+    // not pick up client's $5M.
+    expect(finalDeath!.estateTax!.adjustedTaxableGifts).toBeLessThan(5_000_000);
+  });
 });
