@@ -21,6 +21,7 @@ import {
 import { computeGrossEstate } from "@/engine/death-event/estate-tax";
 import type {
   ClientData,
+  DrainAttribution,
   EstateTaxResult,
   DeathTransfer,
   HypotheticalEstateTax,
@@ -41,6 +42,17 @@ export interface BeneficiaryCard {
   pctOfHeirs: number;
 }
 
+export interface StageTaxBreakdown {
+  grossEstate: number;
+  maritalDeduction: number;
+  charitableDeduction: number;
+  estateAdminExpenses: number;
+  taxableEstate: number;
+  applicableExclusion: number;
+  federalEstateTax: number;
+  stateEstateTax: number;
+}
+
 export type SpineData =
   | {
       kind: "two-grantor";
@@ -54,16 +66,25 @@ export type SpineData =
         deceasedName: string;
         tax: number;
         toSpouse: number;
-        /** Non-spouse outflows at first death (direct bequests to heirs,
-         * trust funding, charity). Zero for the typical full-marital case. */
+        /** Outflows to trust entities at this death. Excluded from toHeirs. */
+        toTrusts: number;
+        /** Non-spouse, non-trust outflows at first death (direct bequests to
+         * heirs, charity). Zero for the typical full-marital case. */
         toHeirs: number;
+        drainAttributions: DrainAttribution[];
+        transfers: DeathTransfer[];
+        taxBreakdown: StageTaxBreakdown;
       };
       combined: { value: number };
       secondDeath: {
         year: number;
         deceasedName: string;
         tax: number;
+        toTrusts: number;
         toHeirs: number;
+        drainAttributions: DrainAttribution[];
+        transfers: DeathTransfer[];
+        taxBreakdown: StageTaxBreakdown;
       };
       beneficiaries: BeneficiaryCard[];
       totals: { taxesAndExpenses: number; toHeirs: number };
@@ -72,7 +93,15 @@ export type SpineData =
       kind: "single-grantor";
       survivorName: string;
       today: { year: number };
-      death: { year: number; tax: number; toHeirs: number };
+      death: {
+        year: number;
+        tax: number;
+        toTrusts: number;
+        toHeirs: number;
+        drainAttributions: DrainAttribution[];
+        transfers: DeathTransfer[];
+        taxBreakdown: StageTaxBreakdown;
+      };
       beneficiaries: BeneficiaryCard[];
       totals: { taxesAndExpenses: number; toHeirs: number };
     }
@@ -80,12 +109,59 @@ export type SpineData =
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-/** Sum `amount` for all non-spouse, positive-amount transfers in a death year. */
-function sumToHeirs(transfers: DeathTransfer[]): number {
-  return transfers.reduce(
-    (acc, t) => acc + (t.recipientKind !== "spouse" && t.amount > 0 ? t.amount : 0),
-    0,
-  );
+/** Sum `amount` for non-spouse, non-trust-entity transfers (direct bequests
+ *  to heirs/charity/system_default). Trust-entity transfers are split out
+ *  via `sumToTrusts` and shown under their own band. */
+function sumToHeirs(transfers: DeathTransfer[], tree: ClientData): number {
+  const entityIds = new Set((tree.entities ?? []).map((e) => e.id));
+  return transfers.reduce((acc, t) => {
+    if (t.amount <= 0) return acc;
+    if (t.recipientKind === "spouse") return acc;
+    if (t.recipientKind === "entity" && t.recipientId && entityIds.has(t.recipientId)) {
+      return acc;
+    }
+    return acc + t.amount;
+  }, 0);
+}
+
+/** Sum `amount` for transfers routed to trust entities (recipientKind=entity
+ *  with a recipientId in `tree.entities`). */
+function sumToTrusts(transfers: DeathTransfer[], tree: ClientData): number {
+  const entityIds = new Set((tree.entities ?? []).map((e) => e.id));
+  return transfers.reduce((acc, t) => {
+    if (t.amount <= 0) return acc;
+    if (t.recipientKind !== "entity") return acc;
+    if (t.recipientId == null || !entityIds.has(t.recipientId)) return acc;
+    return acc + t.amount;
+  }, 0);
+}
+
+/** Pull the eight numeric fields the TaxCalcWalk expansion renders out of an
+ *  EstateTaxResult. Pure projection; no rounding. */
+function extractTaxBreakdown(e: EstateTaxResult): StageTaxBreakdown {
+  return {
+    grossEstate: e.grossEstate,
+    maritalDeduction: e.maritalDeduction,
+    charitableDeduction: e.charitableDeduction,
+    estateAdminExpenses: e.estateAdminExpenses,
+    taxableEstate: e.taxableEstate,
+    applicableExclusion: e.applicableExclusion,
+    federalEstateTax: e.federalEstateTax,
+    stateEstateTax: e.stateEstateTax,
+  };
+}
+
+function zeroTaxBreakdown(): StageTaxBreakdown {
+  return {
+    grossEstate: 0,
+    maritalDeduction: 0,
+    charitableDeduction: 0,
+    estateAdminExpenses: 0,
+    taxableEstate: 0,
+    applicableExclusion: 0,
+    federalEstateTax: 0,
+    stateEstateTax: 0,
+  };
 }
 
 /**
@@ -368,8 +444,12 @@ export function deriveSpineData(args: {
     let firstTax: number;
     let firstToSpouse: number;
     let firstDeathTransfers: DeathTransfer[];
+    let firstAttributions: DrainAttribution[];
+    let firstBreakdown: StageTaxBreakdown;
     let secondTax: number;
     let secondDeathTransfers: DeathTransfer[];
+    let secondAttributions: DrainAttribution[];
+    let secondBreakdown: StageTaxBreakdown;
     let combinedValue: number;
 
     if (source.kind === "hypothetical") {
@@ -378,8 +458,14 @@ export function deriveSpineData(args: {
       firstTax = source.branch.firstDeath.totalTaxesAndExpenses;
       firstToSpouse = source.branch.firstDeath.maritalDeduction;
       firstDeathTransfers = source.branch.firstDeathTransfers;
+      firstAttributions = source.branch.firstDeath.drainAttributions ?? [];
+      firstBreakdown = extractTaxBreakdown(source.branch.firstDeath);
       secondTax = source.branch.finalDeath?.totalTaxesAndExpenses ?? 0;
       secondDeathTransfers = source.branch.finalDeathTransfers ?? [];
+      secondAttributions = source.branch.finalDeath?.drainAttributions ?? [];
+      secondBreakdown = source.branch.finalDeath
+        ? extractTaxBreakdown(source.branch.finalDeath)
+        : zeroTaxBreakdown();
       combinedValue = source.branch.finalDeath?.grossEstate ?? 0;
     } else if (source.kind === "real") {
       firstStageYear = source.firstYear;
@@ -387,8 +473,16 @@ export function deriveSpineData(args: {
       firstTax = source.firstEvent?.totalTaxesAndExpenses ?? 0;
       firstToSpouse = source.firstEvent?.maritalDeduction ?? 0;
       firstDeathTransfers = source.firstTransfers;
+      firstAttributions = source.firstEvent?.drainAttributions ?? [];
+      firstBreakdown = source.firstEvent
+        ? extractTaxBreakdown(source.firstEvent)
+        : zeroTaxBreakdown();
       secondTax = source.secondEvent?.totalTaxesAndExpenses ?? 0;
       secondDeathTransfers = source.secondTransfers;
+      secondAttributions = source.secondEvent?.drainAttributions ?? [];
+      secondBreakdown = source.secondEvent
+        ? extractTaxBreakdown(source.secondEvent)
+        : zeroTaxBreakdown();
       combinedValue = source.combinedValue;
     } else {
       firstStageYear = firstDeathYear;
@@ -396,13 +490,19 @@ export function deriveSpineData(args: {
       firstTax = 0;
       firstToSpouse = 0;
       firstDeathTransfers = [];
+      firstAttributions = [];
+      firstBreakdown = zeroTaxBreakdown();
       secondTax = 0;
       secondDeathTransfers = [];
+      secondAttributions = [];
+      secondBreakdown = zeroTaxBreakdown();
       combinedValue = 0;
     }
 
-    const firstToHeirs = sumToHeirs(firstDeathTransfers);
-    const secondToHeirs = sumToHeirs(secondDeathTransfers);
+    const firstToHeirs = sumToHeirs(firstDeathTransfers, tree);
+    const firstToTrusts = sumToTrusts(firstDeathTransfers, tree);
+    const secondToHeirs = sumToHeirs(secondDeathTransfers, tree);
+    const secondToTrusts = sumToTrusts(secondDeathTransfers, tree);
 
     // Heir cards aggregate non-spouse transfers across BOTH deaths and trust
     // distributions, grouped by recipient. A child receiving from Cooper at
@@ -432,14 +532,22 @@ export function deriveSpineData(args: {
         deceasedName: firstDeceasedName,
         tax: firstTax,
         toSpouse: firstToSpouse,
+        toTrusts: firstToTrusts,
         toHeirs: firstToHeirs,
+        drainAttributions: firstAttributions,
+        transfers: firstDeathTransfers,
+        taxBreakdown: firstBreakdown,
       },
       combined: { value: combinedValue },
       secondDeath: {
         year: secondStageYear,
         deceasedName: finalDeceasedName,
         tax: secondTax,
+        toTrusts: secondToTrusts,
         toHeirs: secondToHeirs,
+        drainAttributions: secondAttributions,
+        transfers: secondDeathTransfers,
+        taxBreakdown: secondBreakdown,
       },
       beneficiaries,
       totals: { taxesAndExpenses: totalTaxesAndExpenses, toHeirs: totalToHeirs },
@@ -511,11 +619,15 @@ export function deriveSpineData(args: {
     let stageDeathYear: number;
     let stageTax: number;
     let stageTransfers: DeathTransfer[];
+    let stageAttributions: DrainAttribution[];
+    let stageBreakdown: StageTaxBreakdown;
 
     if (ht) {
       stageDeathYear = ht.year;
       stageTax = ht.primaryFirst.firstDeath.totalTaxesAndExpenses;
       stageTransfers = ht.primaryFirst.firstDeathTransfers;
+      stageAttributions = ht.primaryFirst.firstDeath.drainAttributions ?? [];
+      stageBreakdown = extractTaxBreakdown(ht.primaryFirst.firstDeath);
     } else {
       const deathYearRow = withResult.years.find((y) => y.year === deathYear);
       const deathOrder: 1 | 2 = event?.deathOrder ?? (hasSpouse ? 2 : 1);
@@ -524,16 +636,27 @@ export function deriveSpineData(args: {
       stageTransfers = (deathYearRow?.deathTransfers ?? []).filter(
         (t) => t.deathOrder === deathOrder,
       );
+      stageAttributions = event?.drainAttributions ?? [];
+      stageBreakdown = event ? extractTaxBreakdown(event) : zeroTaxBreakdown();
     }
 
-    const toHeirs = sumToHeirs(stageTransfers);
+    const toHeirs = sumToHeirs(stageTransfers, tree);
+    const toTrusts = sumToTrusts(stageTransfers, tree);
     const beneficiaries = buildBeneficiaryCards(stageTransfers, tree, toHeirs);
 
     return {
       kind: "single-grantor",
       survivorName,
       today: { year: anchorYear },
-      death: { year: stageDeathYear, tax: stageTax, toHeirs },
+      death: {
+        year: stageDeathYear,
+        tax: stageTax,
+        toTrusts,
+        toHeirs,
+        drainAttributions: stageAttributions,
+        transfers: stageTransfers,
+        taxBreakdown: stageBreakdown,
+      },
       beneficiaries,
       totals: { taxesAndExpenses: stageTax, toHeirs },
     };

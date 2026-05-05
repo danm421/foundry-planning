@@ -3,7 +3,7 @@ import { deriveSpineData } from "./derive-spine-data";
 import { buildClientData } from "@/engine/__tests__/fixtures";
 import { runProjectionWithEvents } from "@/engine";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, EntitySummary, Will } from "@/engine/types";
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
 
@@ -201,6 +201,52 @@ function historicalFixture(): ClientData {
       },
     ],
   });
+}
+
+/**
+ * Two-grantor fixture with a trust entity + a will bequest routing a specific
+ * account to that trust at first death (condition: if_spouse_survives so it
+ * fires whenever the spouse outlives the first decedent — true in this
+ * fixture). Used to exercise the toTrusts split.
+ */
+function twoGrantorWithTrustFixture(): ClientData {
+  const base = twoGrantorFixture();
+  const trust: EntitySummary = {
+    id: "trust-1",
+    name: "Cooper Family Trust",
+    includeInPortfolio: false,
+    isGrantor: false,
+    beneficiaries: [
+      { id: "br-1", tier: "primary", percentage: 100, familyMemberId: "fm-child-1", sortOrder: 0 },
+    ],
+    trustSubType: "irrevocable",
+  };
+  const accountToTrust = base.accounts[0];
+  const will: Will = {
+    id: "w-client",
+    grantor: "client",
+    bequests: [
+      {
+        id: "beq-1",
+        name: "Specific to trust",
+        kind: "asset",
+        assetMode: "specific",
+        accountId: accountToTrust.id,
+        liabilityId: null,
+        percentage: 100,
+        condition: "if_spouse_survives",
+        sortOrder: 0,
+        recipients: [
+          { recipientKind: "entity", recipientId: "trust-1", percentage: 100, sortOrder: 0 },
+        ],
+      },
+    ],
+  };
+  return {
+    ...base,
+    entities: [trust],
+    wills: [will],
+  };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -405,5 +451,105 @@ describe("deriveSpineData", () => {
 
     expect(typeof data.message).toBe("string");
     expect(data.message.length).toBeGreaterThan(0);
+  });
+});
+
+describe("deriveSpineData — Phase C plumbing", () => {
+  it("attaches drainAttributions arrays at first and second death (two-grantor)", () => {
+    const tree = twoGrantorFixture();
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({ tree, withResult, asOf: "split" });
+    if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
+
+    expect(Array.isArray(data.firstDeath.drainAttributions)).toBe(true);
+    expect(Array.isArray(data.secondDeath.drainAttributions)).toBe(true);
+    // The second-death event from Phase B carries drain attributions; the array
+    // should match the projection's source attribution length.
+    const secondAttribFromProjection =
+      withResult.secondDeathEvent?.drainAttributions ?? [];
+    expect(data.secondDeath.drainAttributions.length).toBe(
+      secondAttribFromProjection.length,
+    );
+  });
+
+  it("attaches transfers arrays at first and second death (two-grantor)", () => {
+    const tree = twoGrantorFixture();
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({ tree, withResult, asOf: "split" });
+    if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
+
+    expect(Array.isArray(data.firstDeath.transfers)).toBe(true);
+    expect(Array.isArray(data.secondDeath.transfers)).toBe(true);
+    expect(data.firstDeath.transfers.length).toBeGreaterThan(0);
+    expect(data.secondDeath.transfers.length).toBeGreaterThan(0);
+  });
+
+  it("attaches taxBreakdown numeric fields at first and second death", () => {
+    const tree = twoGrantorFixture();
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({ tree, withResult, asOf: "split" });
+    if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
+
+    for (const stage of [data.firstDeath.taxBreakdown, data.secondDeath.taxBreakdown]) {
+      expect(typeof stage.grossEstate).toBe("number");
+      expect(typeof stage.maritalDeduction).toBe("number");
+      expect(typeof stage.charitableDeduction).toBe("number");
+      expect(typeof stage.estateAdminExpenses).toBe("number");
+      expect(typeof stage.taxableEstate).toBe("number");
+      expect(typeof stage.applicableExclusion).toBe("number");
+      expect(typeof stage.federalEstateTax).toBe("number");
+      expect(typeof stage.stateEstateTax).toBe("number");
+    }
+  });
+
+  it("toTrusts is 0 when no trust entities are funded", () => {
+    const tree = twoGrantorFixture();
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({ tree, withResult, asOf: "split" });
+    if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
+
+    expect(data.firstDeath.toTrusts).toBe(0);
+    expect(data.secondDeath.toTrusts).toBe(0);
+  });
+
+  it("populates toTrusts and excludes trust transfers from toHeirs at first death", () => {
+    const tree = twoGrantorWithTrustFixture();
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({ tree, withResult, asOf: "split" });
+    if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
+
+    // The will routes a specific account to "trust-1" at first death
+    // (condition: if_spouse_survives → fires here). toTrusts should be > 0
+    // and any entity-routed transfers must not double-count under toHeirs.
+    const trustEntityIds = new Set(["trust-1"]);
+    const trustTransferTotal = data.firstDeath.transfers
+      .filter((t) => t.amount > 0 && t.recipientKind === "entity" && trustEntityIds.has(t.recipientId ?? ""))
+      .reduce((s, t) => s + t.amount, 0);
+
+    expect(trustTransferTotal).toBeGreaterThan(0);
+    expect(data.firstDeath.toTrusts).toBeCloseTo(trustTransferTotal, 0);
+
+    const heirNonSpouseTransferTotal = data.firstDeath.transfers
+      .filter(
+        (t) =>
+          t.amount > 0 &&
+          t.recipientKind !== "spouse" &&
+          !(t.recipientKind === "entity" && trustEntityIds.has(t.recipientId ?? "")),
+      )
+      .reduce((s, t) => s + t.amount, 0);
+    expect(data.firstDeath.toHeirs).toBeCloseTo(heirNonSpouseTransferTotal, 0);
+  });
+
+  it("taxBreakdown reconciles to firstDeath.tax at second death (federal + state + admin)", () => {
+    const tree = twoGrantorFixture();
+    const withResult = runProjectionWithEvents(tree);
+    const data = deriveSpineData({ tree, withResult, asOf: "split" });
+    if (data.kind !== "two-grantor") throw new Error("expected two-grantor");
+
+    const b = data.secondDeath.taxBreakdown;
+    expect(b.federalEstateTax + b.stateEstateTax + b.estateAdminExpenses).toBeCloseTo(
+      data.secondDeath.tax,
+      0,
+    );
   });
 });
