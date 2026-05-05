@@ -20,6 +20,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations, sql, type InferSelectModel, type InferInsertModel } from "drizzle-orm";
 import type { BracketTier } from "@/lib/tax/types";
+import type { ReportPagesPersisted } from "@/lib/reports/types";
 
 const inet = customType<{ data: string; driverData: string }>({
   dataType() {
@@ -1353,10 +1354,6 @@ export const willResiduaryRecipients = pgTable(
     index("will_residuary_recipients_will_sort_idx").on(t.willId, t.sortOrder),
   ],
 );
-
-// Inline placeholder until Task 2 lands the real type; Task 2 will replace
-// this with `import type { ReportPagesPersisted } from "@/lib/reports/types";`
-type ReportPagesPersisted = unknown[];
 
 export const reports = pgTable(
   "reports",
