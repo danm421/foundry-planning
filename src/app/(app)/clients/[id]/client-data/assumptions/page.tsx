@@ -279,6 +279,8 @@ export default async function AssumptionsPage({ params, searchParams }: PageProp
           taxInflationRate: settings.taxInflationRate != null ? String(settings.taxInflationRate) : "",
           ssWageGrowthRate: settings.ssWageGrowthRate != null ? String(settings.ssWageGrowthRate) : "",
           outOfHouseholdDniRate: String(settings.outOfHouseholdDniRate),
+          priorTaxableGiftsClient: String(settings.priorTaxableGiftsClient),
+          priorTaxableGiftsSpouse: String(settings.priorTaxableGiftsSpouse),
         }}
         resolvedInflationRate={resolvedInflationRate}
         hasInflationAssetClass={firmInflationAc != null}
