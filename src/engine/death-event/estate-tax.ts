@@ -1,6 +1,6 @@
 import type {
-  Account, DeathTransfer, EntitySummary, GrossEstateLine, EstateTaxResult,
-  Liability, PlanSettings,
+  Account, DeathTransfer, DrainAttribution, EntitySummary, GrossEstateLine,
+  EstateTaxResult, Liability, PlanSettings,
 } from "../types";
 import { applyUnifiedRateSchedule } from "@/lib/tax/estate";
 import type { ExternalBeneficiarySummary } from "./shared";
@@ -294,6 +294,7 @@ export function buildEstateTaxResult(input: {
   estateTaxDebits: Array<{ accountId: string; amount: number }>;
   creditorPayoffDebits: Array<{ accountId: string; amount: number }>;
   creditorPayoffResidual: number;
+  drainAttributions?: DrainAttribution[];
 }): EstateTaxResult {
   const taxableEstate = Math.max(
     0,
@@ -343,5 +344,6 @@ export function buildEstateTaxResult(input: {
     estateTaxDebits: input.estateTaxDebits,
     creditorPayoffDebits: input.creditorPayoffDebits,
     creditorPayoffResidual: input.creditorPayoffResidual,
+    drainAttributions: input.drainAttributions ?? [],
   };
 }

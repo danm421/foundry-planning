@@ -63,6 +63,7 @@ function makeEstateTaxResult(
     estateTaxDebits: [],
     creditorPayoffDebits: [],
     creditorPayoffResidual: 0,
+    drainAttributions: [],
     ...overrides,
   };
 }
