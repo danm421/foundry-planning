@@ -42,10 +42,20 @@ export interface WillBequest {
   recipients: WillBequestRecipient[];
 }
 
+export interface WillResiduaryRecipient {
+  recipientKind: "family_member" | "external_beneficiary" | "entity" | "spouse";
+  recipientId: string | null;
+  percentage: number;
+  sortOrder: number;
+}
+
 export interface Will {
   id: string;
   grantor: "client" | "spouse";
   bequests: WillBequest[];
+  /** Residuary recipients — where the residue goes after specific bequests.
+   *  Empty/undefined = no residuary clause; engine falls back to pro-rata. */
+  residuaryRecipients?: WillResiduaryRecipient[];
 }
 
 export interface DeathTransfer {
