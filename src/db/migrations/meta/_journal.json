@@ -470,6 +470,13 @@
       "when": 1777990875579,
       "tag": "0066_clients_firm_id_index",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1777996356486,
+      "tag": "0067_plan_settings_prior_taxable_gifts",
+      "breakpoints": true
     }
   ]
 }
