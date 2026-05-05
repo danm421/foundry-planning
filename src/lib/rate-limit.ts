@@ -110,6 +110,27 @@ const getImportViewLimiter = buildLimiter(60, "1 m", "rl:import:view");
 const getImportMatchLimiter = buildLimiter(10, "1 m", "rl:import:match");
 const getImportCommitLimiter = buildLimiter(20, "1 m", "rl:import:commit");
 
+// Projection / Monte Carlo. Both endpoints run the engine end-to-end on
+// every request (loadEffectiveTree + runProjection / runMonteCarlo). 30/min
+// is generous for an advisor flipping between tabs but tight enough that
+// a stuck client refresh loop can't saturate one container's CPU.
+const getProjectionLimiter = buildLimiter(30, "1 m", "rl:projection");
+
+/**
+ * Check whether `key` (firm id) may invoke a projection or Monte Carlo
+ * endpoint. Budget: 30 req/min/firm.
+ *
+ * Returns `{ allowed: false, reason: ... }` for any failure mode —
+ * see the file-level comment for the full discriminant.
+ */
+export async function checkProjectionRateLimit(
+  key: string,
+): Promise<RateLimitResult> {
+  const limiter = getProjectionLimiter();
+  if (!limiter) return { allowed: false, reason: "unconfigured" };
+  return safeLimit(limiter, key);
+}
+
 export type ImportRateLimitOp = "upload" | "extract" | "view" | "match" | "commit";
 
 /**
