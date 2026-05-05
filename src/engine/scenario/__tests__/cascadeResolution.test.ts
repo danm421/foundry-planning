@@ -171,3 +171,57 @@ describe("resolveCascades — entity → WillBequestRecipient", () => {
     expect(t.wills![0].bequests).toHaveLength(0);
   });
 });
+
+describe("resolveCascades — accounts → rothConversions", () => {
+  it("drops a conversion that targets a removed destination account", () => {
+    const t: ClientData = tree({
+      rothConversions: [
+        {
+          id: "rc-1",
+          destinationAccountId: "a-removed",
+          sourceAccountIds: ["a-trad-keep"],
+        } as ClientData["rothConversions"][number],
+      ],
+    });
+    const removed = [{ kind: "account" as TargetKind, id: "a-removed", causedByChangeId: "ch1" }];
+    const warnings = resolveCascades(t, removed);
+    expect(t.rothConversions).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].kind).toBe("roth_conversion_dropped");
+    expect(warnings[0].causedByChangeId).toBe("ch1");
+  });
+
+  it("drops a conversion when its only source account is removed", () => {
+    const t: ClientData = tree({
+      rothConversions: [
+        {
+          id: "rc-1",
+          destinationAccountId: "a-roth",
+          sourceAccountIds: ["a-only-source"],
+        } as ClientData["rothConversions"][number],
+      ],
+    });
+    const removed = [{ kind: "account" as TargetKind, id: "a-only-source", causedByChangeId: "ch1" }];
+    const warnings = resolveCascades(t, removed);
+    expect(t.rothConversions).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].kind).toBe("roth_conversion_dropped");
+  });
+
+  it("trims a removed source from the array but keeps the conversion when others remain", () => {
+    const t: ClientData = tree({
+      rothConversions: [
+        {
+          id: "rc-1",
+          destinationAccountId: "a-roth",
+          sourceAccountIds: ["a-removed", "a-keep"],
+        } as ClientData["rothConversions"][number],
+      ],
+    });
+    const removed = [{ kind: "account" as TargetKind, id: "a-removed", causedByChangeId: "ch1" }];
+    const warnings = resolveCascades(t, removed);
+    expect(t.rothConversions).toHaveLength(1);
+    expect(t.rothConversions![0].sourceAccountIds).toEqual(["a-keep"]);
+    expect(warnings.filter((w) => w.kind === "roth_conversion_dropped")).toEqual([]);
+  });
+});

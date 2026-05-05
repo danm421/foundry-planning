@@ -45,6 +45,45 @@ export function resolveCascades(
     tree.transfers = remaining;
   }
 
+  // Roth conversions — drop if destination is removed, drop if every source is
+  // removed, otherwise filter the removed sources out of the array.
+  if (tree.rothConversions && removedAccountIds.size > 0) {
+    const remaining: typeof tree.rothConversions = [];
+    for (const rc of tree.rothConversions) {
+      if (rc.destinationAccountId && removedAccountIds.has(rc.destinationAccountId)) {
+        warnings.push({
+          kind: "roth_conversion_dropped",
+          message: `Roth conversion ${rc.id} dropped — destination account ${rc.destinationAccountId} was removed`,
+          causedByChangeId: removedAccountToCause.get(rc.destinationAccountId)!,
+          affectedEntityId: rc.id,
+          affectedEntityLabel: `Roth Conversion · ${rc.name ?? rc.id}`,
+        });
+        continue;
+      }
+
+      const trimmedSources = (rc.sourceAccountIds ?? []).filter(
+        (sid) => !removedAccountIds.has(sid),
+      );
+      if (trimmedSources.length === 0) {
+        const causeId = (rc.sourceAccountIds ?? []).find((sid) => removedAccountIds.has(sid));
+        warnings.push({
+          kind: "roth_conversion_dropped",
+          message: `Roth conversion ${rc.id} dropped — every source account was removed`,
+          causedByChangeId: causeId != null
+            ? removedAccountToCause.get(causeId)!
+            : "unknown",
+          affectedEntityId: rc.id,
+          affectedEntityLabel: `Roth Conversion · ${rc.name ?? rc.id}`,
+        });
+        continue;
+      }
+
+      rc.sourceAccountIds = trimmedSources;
+      remaining.push(rc);
+    }
+    tree.rothConversions = remaining;
+  }
+
   // Savings rules — drop if accountId was removed
   if (tree.savingsRules && removedAccountIds.size > 0) {
     const remaining = [];
