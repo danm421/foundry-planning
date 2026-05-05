@@ -22,7 +22,6 @@ function transfer(overrides: Partial<DeathTransfer> & { amount: number }): Death
     recipientKind: "family_member",
     recipientId: "fm-1",
     recipientLabel: "Child A",
-    amount: 0,
     basis: 0,
     resultingAccountId: null,
     resultingLiabilityId: null,
@@ -36,7 +35,6 @@ function attribution(overrides: Partial<DrainAttribution> & { amount: number }):
     recipientKind: "family_member",
     recipientId: "fm-1",
     drainKind: "federal_estate_tax",
-    amount: 0,
     ...overrides,
   };
 }
