@@ -435,3 +435,114 @@ describe("applyScenarioChanges — idempotency", () => {
     expect(r2.warnings).toEqual(r1.warnings);
   });
 });
+
+describe("applyScenarioChanges — roth_conversion", () => {
+  it("appends a new roth_conversion to the effective tree", () => {
+    const base = minimalClientData();
+    const conv = {
+      id: "rc-new",
+      name: "Roth Conv 2030",
+      destinationAccountId: "a-roth",
+      sourceAccountIds: ["a-trad"],
+      conversionType: "fixed_amount",
+      fixedAmount: 25000,
+      fillUpBracket: null,
+      startYear: 2030,
+      endYear: 2034,
+      indexingRate: 0,
+      inflationStartYear: null,
+    };
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "add",
+      targetKind: "roth_conversion",
+      targetId: "rc-new",
+      payload: conv,
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    expect(result.effectiveTree.rothConversions).toHaveLength(1);
+    expect(result.effectiveTree.rothConversions![0].id).toBe("rc-new");
+    expect(result.effectiveTree.rothConversions![0].fixedAmount).toBe(25000);
+  });
+
+  it("coerces decimal-string fields on add (Drizzle decimal round-trip)", () => {
+    const base = minimalClientData();
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "add",
+      targetKind: "roth_conversion",
+      targetId: "rc-new",
+      payload: {
+        id: "rc-new",
+        name: "Roth Conv",
+        destinationAccountId: "a-roth",
+        sourceAccountIds: ["a-trad"],
+        conversionType: "fixed_amount",
+        fixedAmount: "25000",
+        fillUpBracket: null,
+        indexingRate: "0.025",
+        startYear: 2030,
+        endYear: 2034,
+        inflationStartYear: null,
+      },
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+    const { effectiveTree } = applyScenarioChanges(base, [change], {}, []);
+    expect(effectiveTree.rothConversions![0].fixedAmount).toBe(25000);
+    expect(effectiveTree.rothConversions![0].indexingRate).toBe(0.025);
+  });
+
+  it("applies an edit diff to a base roth_conversion", () => {
+    const base = minimalClientData();
+    base.rothConversions = [
+      {
+        id: "rc-1",
+        name: "Roth Conv",
+        destinationAccountId: "a-roth",
+        sourceAccountIds: ["a-trad"],
+        conversionType: "fixed_amount",
+        fixedAmount: 10000,
+        startYear: 2030,
+        endYear: 2034,
+        indexingRate: 0,
+      } as ClientData["rothConversions"][number],
+    ];
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "edit",
+      targetKind: "roth_conversion",
+      targetId: "rc-1",
+      payload: { fixedAmount: { from: 10000, to: 50000 } },
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+    const { effectiveTree } = applyScenarioChanges(base, [change], {}, []);
+    expect(effectiveTree.rothConversions![0].fixedAmount).toBe(50000);
+  });
+
+  it("removes a roth_conversion from the effective tree", () => {
+    const base = minimalClientData();
+    base.rothConversions = [
+      { id: "rc-1" } as ClientData["rothConversions"][number],
+    ];
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "remove",
+      targetKind: "roth_conversion",
+      targetId: "rc-1",
+      payload: null,
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+    const { effectiveTree } = applyScenarioChanges(base, [change], {}, []);
+    expect(effectiveTree.rothConversions).toEqual([]);
+  });
+});

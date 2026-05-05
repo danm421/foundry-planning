@@ -68,6 +68,7 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
     "employerMatchAmount",
   ],
   client_deduction: ["annualAmount", "growthRate"],
+  roth_conversion: ["fixedAmount", "fillUpBracket", "indexingRate"],
 };
 
 function toNumberIfNumericString(v: unknown): unknown {
@@ -107,6 +108,7 @@ export const TARGET_KIND_TO_FIELD: Record<TargetKind, keyof ClientData | null> =
   savings_rule: "savingsRules",
   transfer: "transfers",
   asset_transaction: "assetTransactions",
+  roth_conversion: "rothConversions",
   client_deduction: "deductions",
   withdrawal_strategy: "withdrawalStrategy",
   family_member: "familyMembers",
