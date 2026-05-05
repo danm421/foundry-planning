@@ -174,7 +174,7 @@ function DrilldownPanel({
   groups: RecipientGroup[];
 }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-2xl">
       <div className="text-ink-3">
         Gift Tax Event Ledger | Base Facts in {year}
       </div>
