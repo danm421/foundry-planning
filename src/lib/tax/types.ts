@@ -127,6 +127,11 @@ export interface TaxResult {
   };
   diag: {
     marginalFederalRate: number;
+    /** The full bracket tier the next dollar of ordinary income lands in.
+     *  Lets reports show how much of the bracket is filled vs. remaining
+     *  without re-walking BracketsByStatus and worrying about which filing
+     *  status the engine actually used (flips at first-death). */
+    marginalBracketTier: BracketTier;
     effectiveFederalRate: number;
     bracketsUsed: TaxYearParameters;
     inflationFactor: number;

@@ -4,10 +4,11 @@ import { useState } from "react";
 import type { ProjectionYear } from "@/engine";
 import { TaxDetailIncomeTable } from "./tax-detail-income-table";
 import { TaxDetailFlowTable } from "./tax-detail-flow-table";
+import { TaxBracketTab } from "./tax-bracket-tab";
 import { YearRangeSlider } from "./year-range-slider";
 import DialogShell from "@/components/dialog-shell";
 
-type Tab = "income" | "federal";
+type Tab = "income" | "federal" | "bracket";
 
 interface TaxDetailModalProps {
   years: ProjectionYear[];
@@ -46,6 +47,7 @@ export function TaxDetailModal({
       tabs={[
         { id: "income", label: "Income Breakdown" },
         { id: "federal", label: "Federal Tax Breakdown" },
+        { id: "bracket", label: "Tax Bracket" },
       ]}
       activeTab={activeTab}
       onTabChange={(id) => setActiveTab(id as Tab)}
@@ -65,14 +67,15 @@ export function TaxDetailModal({
         />
       </div>
 
-      {activeTab === "income" ? (
+      {activeTab === "income" && (
         <TaxDetailIncomeTable
           years={years}
           onYearClick={onYearClick}
           clientLifeExpectancy={clientLifeExpectancy}
           spouseLifeExpectancy={spouseLifeExpectancy}
         />
-      ) : (
+      )}
+      {activeTab === "federal" && (
         <TaxDetailFlowTable
           years={years}
           onYearClick={onYearClick}
@@ -80,6 +83,7 @@ export function TaxDetailModal({
           spouseLifeExpectancy={spouseLifeExpectancy}
         />
       )}
+      {activeTab === "bracket" && <TaxBracketTab years={years} />}
     </DialogShell>
   );
 }

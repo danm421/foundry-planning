@@ -39,7 +39,11 @@ export interface RothConversionsResult {
   /** Always 0 — Roth conversions never trigger early-withdrawal penalty per
    *  IRC §72(t)(2)(G), but kept on the result for symmetry with TransfersResult. */
   earlyWithdrawalPenalty: number;
-  byConversion: Record<string, { amount: number; bySource: Record<string, number> }>;
+  /** Per-conversion gross + taxable. `gross` is what moved out of the source
+   *  pool; `taxable` is the portion that lands in ordinary income (lower than
+   *  gross when a Trad-IRA source has after-tax basis — Form 8606 pro-rata).
+   *  `bySource` tracks gross per source. */
+  byConversion: Record<string, { gross: number; taxable: number; bySource: Record<string, number> }>;
 }
 
 // ============================================================================
@@ -94,6 +98,7 @@ export function applyRothConversions(input: RothConversionsInput): RothConversio
     // each before moving to the next. This matches the visible "Accounts to
     // Convert" list and gives advisors deterministic control.
     let remaining = cappedAmount;
+    let taxablePerConversion = 0;
     const bySource: Record<string, number> = {};
 
     // Pre-compute the trad-IRA pool BEFORE this conversion slices it (the
@@ -146,12 +151,14 @@ export function applyRothConversions(input: RothConversionsInput): RothConversio
       workingPoolBasis = refreshed.allTraditionalIraBasis;
 
       result.taxableOrdinaryIncome += taxResult.taxableOrdinaryIncome;
+      taxablePerConversion += taxResult.taxableOrdinaryIncome;
       bySource[src.id] = slice;
       remaining -= slice;
     }
 
     result.byConversion[conv.id] = {
-      amount: cappedAmount - Math.max(0, remaining),
+      gross: cappedAmount - Math.max(0, remaining),
+      taxable: taxablePerConversion,
       bySource,
     };
   }

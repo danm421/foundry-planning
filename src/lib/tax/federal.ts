@@ -29,3 +29,22 @@ export function calcMarginalRate(taxableBase: number, brackets: BracketTier[]): 
   }
   return brackets[brackets.length - 1].rate;
 }
+
+/**
+ * Find the marginal bracket tier the next dollar of income lands in.
+ * Mirrors `calcMarginalRate`'s boundary rule: income exactly at a tier's
+ * upper bound belongs to the upper bracket. Negative or zero base returns
+ * the first tier. Returns `null` only when `brackets` is empty.
+ */
+export function findMarginalTier(
+  taxableBase: number,
+  brackets: BracketTier[],
+): BracketTier | null {
+  if (brackets.length === 0) return null;
+  if (taxableBase < 0) return brackets[0];
+  for (const tier of brackets) {
+    const top = tier.to ?? Infinity;
+    if (taxableBase < top) return tier;
+  }
+  return brackets[brackets.length - 1];
+}

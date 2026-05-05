@@ -806,6 +806,11 @@ export interface ProjectionYear {
       liabilityName?: string;
     }[];
   };
+  /** Per-conversion summary for years where Roth conversions ran. `gross` is
+   *  the amount moved out of source IRAs; `taxable` is the ordinary-income
+   *  portion (lower than gross when the source has after-tax basis — Form
+   *  8606 pro-rata). The Tax Bracket report consumes both columns. */
+  rothConversions?: { id: string; name: string; gross: number; taxable: number }[];
   /** Only populated on death-event years. One entry per (source × recipient).
    *  Same-year double death (4b + 4c in the same year) produces both
    *  deathOrder = 1 and deathOrder = 2 entries on the same row. */

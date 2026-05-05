@@ -177,4 +177,25 @@ describe("applyRothConversions", () => {
     expect(r.taxableOrdinaryIncome).toBe(0);
     expect(s.accountBalances["ira-a"]).toBe(400000);
   });
+
+  it("byConversion: gross and taxable diverge when Trad-IRA pool has after-tax basis", () => {
+    // Form 8606 pro-rata aggregates ALL Trad IRAs. Pool = 600k (ira-a + ira-b).
+    // Set 150k of basis on ira-a → 25% basis fraction across the pool →
+    // only 75% of any conversion is taxable.
+    const conv: RothConversion = {
+      id: "rc8", name: "Pro-rata convert", destinationAccountId: "roth-1",
+      sourceAccountIds: ["ira-a"], conversionType: "fixed_amount",
+      fixedAmount: 100000, startYear: 2026, indexingRate: 0,
+    };
+    const s = freshState();
+    s.basisMap["ira-a"] = 150000; // 150k basis on 600k pool = 25%
+    const r = applyRothConversions({
+      conversions: [conv], ...s, year: 2026, ownerAges: { client: 60 },
+    });
+    const entry = r.byConversion["rc8"];
+    expect(entry.gross).toBeCloseTo(100000, 0);
+    expect(entry.taxable).toBeCloseTo(75000, 0);
+    expect(entry.taxable).toBeLessThan(entry.gross);
+    expect(r.taxableOrdinaryIncome).toBeCloseTo(75000, 0);
+  });
 });

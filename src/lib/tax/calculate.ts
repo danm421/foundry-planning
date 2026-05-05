@@ -1,6 +1,6 @@
 // src/lib/tax/calculate.ts
 import type { CalcInput, TaxResult, FilingStatus } from "./types";
-import { calcFederalTax, calcMarginalRate } from "./federal";
+import { calcFederalTax, calcMarginalRate, findMarginalTier } from "./federal";
 import { calcCapGainsTax } from "./capGains";
 import { calcAmtTentative, calcAmtAdditional } from "./amt";
 import { calcNiit } from "./niit";
@@ -186,6 +186,7 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
     },
     diag: {
       marginalFederalRate: calcMarginalRate(incomeTaxBase, brackets),
+      marginalBracketTier: findMarginalTier(incomeTaxBase, brackets) ?? brackets[0],
       effectiveFederalRate: grossTotalIncome > 0 ? totalFederalTax / grossTotalIncome : 0,
       bracketsUsed: p,
       inflationFactor: input.inflationFactor,

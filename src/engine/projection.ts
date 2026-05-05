@@ -1071,7 +1071,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let rothConversionResult = {
       taxableOrdinaryIncome: 0,
       earlyWithdrawalPenalty: 0,
-      byConversion: {} as Record<string, { amount: number; bySource: Record<string, number> }>,
+      byConversion: {} as Record<string, { gross: number; taxable: number; bySource: Record<string, number> }>,
     };
     if (data.rothConversions && data.rothConversions.length > 0) {
       const convFilingStatus = effectiveFilingStatus(
@@ -1193,8 +1193,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
     for (const [cid, info] of Object.entries(rothConversionResult.byConversion)) {
-      if (info.amount > 0) {
-        taxDetail.bySource[`roth_conversion:${cid}`] = { type: "ordinary_income", amount: info.amount };
+      if (info.taxable > 0) {
+        taxDetail.bySource[`roth_conversion:${cid}`] = { type: "ordinary_income", amount: info.taxable };
       }
     }
     for (const item of saleResult.breakdown) {
@@ -2631,6 +2631,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       accountBasisBoY,
       liabilityBalancesBoY,
       hypotheticalEstateTax,
+      ...(Object.keys(rothConversionResult.byConversion).length > 0
+        ? {
+            rothConversions: Object.entries(rothConversionResult.byConversion).map(
+              ([id, info]) => ({
+                id,
+                name: data.rothConversions?.find((c) => c.id === id)?.name ?? id,
+                gross: info.gross,
+                taxable: info.taxable,
+              }),
+            ),
+          }
+        : {}),
       ...(hasTechniques
         ? {
             techniqueBreakdown: {
