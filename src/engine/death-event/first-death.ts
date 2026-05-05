@@ -24,6 +24,10 @@ import {
 import { applyGrantorSuccession } from "./grantor-succession";
 import { drainLiquidAssets } from "./creditor-payoff";
 import { prepareLifeInsurancePayouts } from "./life-insurance-payout";
+import {
+  assertDrainAttributionsReconcile,
+  attributeDrainsToLedger,
+} from "./drain-attribution";
 import { beaForYear } from "@/lib/tax/estate";
 import { computeAdjustedTaxableGifts } from "@/lib/estate/adjusted-taxable-gifts";
 
@@ -445,7 +449,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   });
 
   // Phase 11 — final EstateTaxResult with drain debits populated.
-  const estateTax = buildEstateTaxResult({
+  const baseEstateTax = buildEstateTaxResult({
     year: input.year,
     deathOrder: 1,
     deceased: input.deceased,
@@ -460,6 +464,18 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     creditorPayoffDebits: [],
     creditorPayoffResidual: 0,
   });
+
+  // Phase 11b — drain attribution. The chain ran on pre-drain balances, so
+  // `ledger` carries gross transfers. No creditor drain at first death.
+  const drainAttributions = attributeDrainsToLedger({
+    deathOrder: 1,
+    transfers: ledger,
+    estateTax: baseEstateTax,
+    creditorDrainTotal: 0,
+    will: input.will,
+    deceased: input.deceased,
+  });
+  const estateTax: EstateTaxResult = { ...baseEstateTax, drainAttributions };
 
   assertFirstDeathInvariants(estateTax, mutatedEntities, input.deceased);
   assertPrecedenceChainInvariants({
@@ -556,4 +572,6 @@ function assertFirstDeathInvariants(
       throw new Error(`first-death: revocable entity ${e.id} grantor=deceased was not flipped`);
     }
   }
+
+  assertDrainAttributionsReconcile(estateTax, "first-death:");
 }

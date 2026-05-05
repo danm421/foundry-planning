@@ -1,6 +1,6 @@
 import type {
-  Account, DeathTransfer, EntitySummary, GrossEstateLine, EstateTaxResult,
-  Liability, PlanSettings,
+  Account, DeathTransfer, EntitySummary, GrossEstateLine,
+  EstateTaxResult, Liability, PlanSettings,
 } from "../types";
 import { applyUnifiedRateSchedule } from "@/lib/tax/estate";
 import type { ExternalBeneficiarySummary } from "./shared";
@@ -343,5 +343,6 @@ export function buildEstateTaxResult(input: {
     estateTaxDebits: input.estateTaxDebits,
     creditorPayoffDebits: input.creditorPayoffDebits,
     creditorPayoffResidual: input.creditorPayoffResidual,
+    drainAttributions: [],
   };
 }
