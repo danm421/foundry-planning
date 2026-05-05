@@ -93,4 +93,14 @@ describe("EstatePlanningSubtabs", () => {
     const nav = container.querySelector("nav");
     expect(nav?.className).toContain("sticky");
   });
+
+  it("does NOT mark Estate Tax active on a sibling route that shares its prefix", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/estate-planning/estate-tax-summary");
+    const { container } = render(<EstatePlanningSubtabs clientId="c1" />);
+    const estateTax = Array.from(container.querySelectorAll("a")).find(
+      (a) => a.textContent?.trim() === "Estate Tax",
+    );
+    expect(estateTax?.getAttribute("aria-selected")).not.toBe("true");
+    expect(estateTax?.className).not.toContain("border-accent");
+  });
 });

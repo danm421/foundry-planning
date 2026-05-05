@@ -34,7 +34,7 @@ export default function EstatePlanningSubtabs({
       {tabs.map((tab) => {
         const active = tab.exact
           ? pathname === tab.href
-          : pathname.startsWith(tab.href);
+          : pathname === tab.href || pathname.startsWith(tab.href + "/");
         const className = active
           ? "relative h-full inline-flex items-center text-[12px] text-accent border-b-2 border-accent"
           : "relative h-full inline-flex items-center text-[12px] text-ink-3 hover:text-ink";
