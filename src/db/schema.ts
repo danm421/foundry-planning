@@ -424,6 +424,12 @@ export const planSettings = pgTable("plan_settings", {
   flatStateEstateRate: decimal("flat_state_estate_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0"),
+  priorTaxableGiftsClient: decimal("prior_taxable_gifts_client", { precision: 15, scale: 2 })
+    .notNull()
+    .default("0"),
+  priorTaxableGiftsSpouse: decimal("prior_taxable_gifts_spouse", { precision: 15, scale: 2 })
+    .notNull()
+    .default("0"),
   taxEngineMode: taxEngineModeEnum("tax_engine_mode").notNull().default("bracket"),
   taxInflationRate: decimal("tax_inflation_rate", { precision: 5, scale: 4 }),
   ssWageGrowthRate: decimal("ss_wage_growth_rate", { precision: 5, scale: 4 }),

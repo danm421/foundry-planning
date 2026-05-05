@@ -13,6 +13,7 @@ import type {
   EstateTaxResult,
   HypotheticalEstateTax,
 } from "./types";
+import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
 import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
 import { computeLiabilities } from "./liabilities";
@@ -2654,6 +2655,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         yearEndAccountBalances,
         annualExclusionsByYear,
         dsueReceived: 0, // first decedent has no prior DSUE
+        priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
       });
 
       // Death-event creates synthetic accounts/liabilities mid-projection with
@@ -2717,6 +2719,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         yearEndAccountBalances,
         annualExclusionsByYear,
         dsueReceived: stashedDSUE,
+        priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
       });
 
       // Same normalization as first-death — keeps fractional reads consistent
@@ -2772,6 +2775,10 @@ export interface ProjectionResult {
    * on each ProjectionYear is EoY and remains the source for future-year
    * snapshots. */
   todayHypotheticalEstateTax: HypotheticalEstateTax;
+  /** Per-year per-grantor gift-tax ledger walking plan years from start to
+   * end. Seeded from `planSettings.priorTaxableGifts`. Asset gift values use
+   * a $0 fallback in Phase 1 (matches `computeAdjustedTaxableGifts`). */
+  giftLedger: GiftLedgerYear[];
 }
 
 /**
@@ -2841,10 +2848,28 @@ export function runProjectionWithEvents(
   const years = runProjection(data, options);
   const firstIdx = years.findIndex((y) => y.estateTax?.deathOrder === 1);
   const secondIdx = years.findIndex((y) => y.estateTax?.deathOrder === 2);
+  const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? []);
+  const giftLedger = computeGiftLedger({
+    planStartYear: data.planSettings.planStartYear,
+    planEndYear: data.planSettings.planEndYear,
+    hasSpouse: data.client.spouseDob != null,
+    priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
+    gifts: data.gifts ?? [],
+    giftEvents: data.giftEvents ?? [],
+    externalBeneficiaryKindById: new Map(
+      (data.externalBeneficiaries ?? [])
+        .filter((e) => e.kind != null)
+        .map((e) => [e.id, e.kind!] as const),
+    ),
+    annualExclusionsByYear,
+    taxInflationRate: data.planSettings.taxInflationRate ?? data.planSettings.inflationRate ?? 0,
+    accountValueAtYear: () => 0,
+  });
   return {
     years,
     firstDeathEvent: firstIdx >= 0 ? years[firstIdx].estateTax! : undefined,
     secondDeathEvent: secondIdx >= 0 ? years[secondIdx].estateTax! : undefined,
     todayHypotheticalEstateTax: computeTodayHypotheticalEstateTax(data),
+    giftLedger,
   };
 }

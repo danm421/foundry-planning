@@ -87,6 +87,7 @@ function runOrdering(
     yearEndAccountBalances: input.yearEndAccountBalances,
     annualExclusionsByYear: input.annualExclusionsByYear,
     dsueReceived: 0,
+    priorTaxableGifts: input.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
   });
 
   if (!input.isMarried) {
@@ -123,6 +124,7 @@ function runOrdering(
     yearEndAccountBalances: input.yearEndAccountBalances,
     annualExclusionsByYear: input.annualExclusionsByYear,
     dsueReceived: firstResult.dsueGenerated,
+    priorTaxableGifts: input.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
   });
 
   return {

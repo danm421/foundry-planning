@@ -368,7 +368,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     // Fallback: death-year balance (preserves current behavior when no per-year history).
     return finalDeathBalances[accountId] ?? 0;
   };
-  const adjustedGifts = computeAdjustedTaxableGifts(
+  const inPlanCumulative = computeAdjustedTaxableGifts(
     input.deceased,
     input.gifts,
     input.entities,
@@ -376,6 +376,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     accountValueAtYear,
     input.giftEvents ?? [],
   );
+  const adjustedGifts = inPlanCumulative + input.priorTaxableGifts[input.deceased];
   const taxInflation =
     input.planSettings.taxInflationRate ?? input.planSettings.inflationRate ?? 0;
   const beaAtDeathYear = beaForYear(input.year, taxInflation);

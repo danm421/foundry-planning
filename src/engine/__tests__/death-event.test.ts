@@ -947,6 +947,7 @@ describe("applyFirstDeath orchestrator", () => {
     gifts: [],
     annualExclusionsByYear: {},
     dsueReceived: 0,
+    priorTaxableGifts: { client: 0, spouse: 0 },
   };
 
   it("joint account titles to survivor; IRA beneficiary-designates; residual sweeps to spouse", () => {
@@ -1614,6 +1615,7 @@ describe("applyFinalDeath orchestrator", () => {
       gifts: [],
       annualExclusionsByYear: {},
       dsueReceived: 0,
+      priorTaxableGifts: { client: 0, spouse: 0 },
       ...rest,
     };
   };

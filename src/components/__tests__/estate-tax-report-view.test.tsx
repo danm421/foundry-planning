@@ -172,6 +172,7 @@ function setProjectionFixture(years: ProjectionYear[]) {
     firstDeathEvent: firstIdx >= 0 ? years[firstIdx].estateTax : undefined,
     secondDeathEvent: secondIdx >= 0 ? years[secondIdx].estateTax : undefined,
     todayHypotheticalEstateTax: todayHypo,
+    giftLedger: [],
   });
 }
 

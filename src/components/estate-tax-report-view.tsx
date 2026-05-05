@@ -546,6 +546,11 @@ function DecedentBreakdown({
             amount={tax.applicableExclusion}
             muted
           />
+          <LineRow
+            label="Remaining lifetime exemption"
+            amount={Math.max(0, tax.applicableExclusion - tax.adjustedTaxableGifts)}
+            muted
+          />
         </StepRow>
 
         {/* 5 — State estate tax (only when relevant) */}

@@ -77,6 +77,8 @@ export async function PUT(
       estateAdminExpenses,
       flatStateEstateRate,
       outOfHouseholdDniRate,
+      priorTaxableGiftsClient,
+      priorTaxableGiftsSpouse,
       inflationRate,
       taxEngineMode,
       taxInflationRate,
@@ -148,6 +150,19 @@ export async function PUT(
       );
     }
 
+    if (typeof priorTaxableGiftsClient === "number" && priorTaxableGiftsClient < 0) {
+      return NextResponse.json(
+        { error: "priorTaxableGiftsClient must be non-negative" },
+        { status: 400 },
+      );
+    }
+    if (typeof priorTaxableGiftsSpouse === "number" && priorTaxableGiftsSpouse < 0) {
+      return NextResponse.json(
+        { error: "priorTaxableGiftsSpouse must be non-negative" },
+        { status: 400 },
+      );
+    }
+
     const [updated] = await db
       .update(planSettings)
       .set({
@@ -156,6 +171,8 @@ export async function PUT(
         estateAdminExpenses: estateAdminExpenses != null ? String(estateAdminExpenses) : undefined,
         flatStateEstateRate: flatStateEstateRate != null ? String(flatStateEstateRate) : undefined,
         outOfHouseholdDniRate: outOfHouseholdDniRate != null ? String(outOfHouseholdDniRate) : undefined,
+        priorTaxableGiftsClient: priorTaxableGiftsClient != null ? String(priorTaxableGiftsClient) : undefined,
+        priorTaxableGiftsSpouse: priorTaxableGiftsSpouse != null ? String(priorTaxableGiftsSpouse) : undefined,
         inflationRate: inflationRate != null ? String(inflationRate) : undefined,
         taxEngineMode: taxEngineMode != null ? taxEngineMode : undefined,
         taxInflationRate: "taxInflationRate" in body

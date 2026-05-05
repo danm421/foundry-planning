@@ -1087,6 +1087,9 @@ export interface DeathEventInput {
   /** Stashed DSUE from a prior first-death event. 0 at first death;
    *  survivor's DSUE balance at final death. */
   dsueReceived: number;
+  /** Pre-plan post-1976 cumulative taxable gifts per grantor.
+   *  Sourced from PlanSettings.priorTaxableGifts. */
+  priorTaxableGifts: { client: number; spouse: number };
 }
 
 export interface DeathEventResult {
