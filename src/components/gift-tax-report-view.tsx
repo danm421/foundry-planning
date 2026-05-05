@@ -12,6 +12,10 @@ import {
   type RecipientGroup,
 } from "@/lib/gifts/build-recipient-drilldown";
 import { GiftCumulativeTable } from "./gift-cumulative-table";
+import {
+  GiftWarningAlert,
+  type GiftWarningBreach,
+} from "./gift-warning-alert";
 
 interface GiftTaxReportViewProps {
   clientId: string;
@@ -136,6 +140,50 @@ export default function GiftTaxReportView({
     return out;
   }, [projection, tree]);
 
+  const banner = useMemo((): GiftWarningBreach[] => {
+    if (!projection) return [];
+    const ledger = projection.giftLedger;
+    if (ledger.length === 0) return [];
+
+    const breaches: GiftWarningBreach[] = [];
+
+    // Client
+    const clientFirstYear = ledger.find(
+      (ly) => ly.perGrantor.client.giftTaxThisYear > 0,
+    )?.year;
+    const clientCumulativeTax =
+      ledger[ledger.length - 1].perGrantor.client.cumulativeGiftTax;
+    if (clientFirstYear !== undefined) {
+      breaches.push({
+        grantorFirstName: ownerNames.clientName,
+        overage: 0,
+        estimatedTax: clientCumulativeTax,
+        firstYear: clientFirstYear,
+      });
+    }
+
+    // Spouse — only if there is a spouse name
+    if (ownerNames.spouseName != null) {
+      const spouseFirstYear = ledger.find(
+        (ly) =>
+          ly.perGrantor.spouse != null &&
+          ly.perGrantor.spouse.giftTaxThisYear > 0,
+      )?.year;
+      const spouseCumulativeTax =
+        ledger[ledger.length - 1].perGrantor.spouse?.cumulativeGiftTax ?? 0;
+      if (spouseFirstYear !== undefined) {
+        breaches.push({
+          grantorFirstName: ownerNames.spouseName,
+          overage: 0,
+          estimatedTax: spouseCumulativeTax,
+          firstYear: spouseFirstYear,
+        });
+      }
+    }
+
+    return breaches;
+  }, [projection, ownerNames]);
+
   function toggleYear(year: number) {
     setExpandedYears((prev) => {
       const next = new Set(prev);
@@ -168,6 +216,7 @@ export default function GiftTaxReportView({
   return (
     <div className="gift-tax-report-printable p-4 space-y-4 print:p-0 print:space-y-2">
       <h1 className="text-lg font-medium print:text-base">Gift Tax Report</h1>
+      <GiftWarningAlert mode="banner" breaches={banner} />
       <GiftCumulativeTable
         ledger={projection.giftLedger}
         ownerNames={ownerNames}

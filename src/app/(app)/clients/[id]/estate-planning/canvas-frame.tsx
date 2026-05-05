@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
+import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import { InEstateColumn } from "./in-estate-column";
 import { OutOfEstateColumn } from "./out-of-estate-column";
 import { DeathSpine } from "./spine/death-spine";
@@ -14,9 +15,11 @@ import { TimePeriodButtons } from "@/components/report-controls/time-period-butt
 export function CanvasFrame({
   tree,
   withResult,
+  giftLedger,
 }: {
   tree: ClientData;
   withResult: ProjectionResult;
+  giftLedger: GiftLedgerYear[];
 }) {
   const todayYear = new Date().getUTCFullYear();
   const planStart = tree.planSettings.planStartYear;
@@ -159,7 +162,7 @@ export function CanvasFrame({
           <DeathSpine data={spineData} />
         </div>
         <div className="border-l border-[var(--color-hair)]">
-          <OutOfEstateColumn tree={outOfEstateTree} asOfYear={outOfEstateYear} />
+          <OutOfEstateColumn tree={outOfEstateTree} asOfYear={outOfEstateYear} giftLedger={giftLedger} />
         </div>
       </div>
     </div>

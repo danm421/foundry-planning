@@ -35,6 +35,7 @@ export interface TrustCardData {
   total: number;
   exemptionConsumed: number;
   exemptionAvailable: number;
+  breach: boolean;
 }
 
 export interface BequestSummaryRow {
@@ -53,6 +54,7 @@ export interface HeirCardData {
   age: number | null;
   bequestsReceived: BequestSummaryRow[];
   ownershipRows: RenderRow[];
+  breach: boolean;
 }
 
 export interface CharityCardData {
@@ -65,6 +67,7 @@ export interface CharityCardData {
     assetClass: "cash" | "appreciated";
     sourceLabel: string;
   }[];
+  breach: boolean;
 }
 
 const fmFullName = (fm: FamilyMember) => `${fm.firstName} ${fm.lastName ?? ""}`.trim();
@@ -147,7 +150,11 @@ export function deriveClientCardData(
   return cards;
 }
 
-export function deriveTrustCardData(tree: ClientData, asOfYear: number): TrustCardData[] {
+export function deriveTrustCardData(
+  tree: ClientData,
+  asOfYear: number,
+  recipientBreaches?: Map<string, boolean>,
+): TrustCardData[] {
   const trusts = (tree.entities ?? []).filter((e) => e.entityType === "trust");
   const inflation = tree.planSettings?.taxInflationRate ?? 0.03;
   const bea = beaForYear(asOfYear, inflation);
@@ -165,6 +172,7 @@ export function deriveTrustCardData(tree: ClientData, asOfYear: number): TrustCa
       total,
       exemptionConsumed: e.exemptionConsumed ?? 0,
       exemptionAvailable: bea,
+      breach: recipientBreaches?.get(`entity:${e.id}`) ?? false,
     };
   });
 }
@@ -220,6 +228,7 @@ export function collectBequestsForRecipient(
 export function deriveHeirCardData(
   tree: ClientData,
   asOfYear: number = new Date().getUTCFullYear(),
+  recipientBreaches?: Map<string, boolean>,
 ): HeirCardData[] {
   const results: HeirCardData[] = [];
   for (const fm of tree.familyMembers ?? []) {
@@ -243,12 +252,16 @@ export function deriveHeirCardData(
       age: ageAsOf(fm.dateOfBirth, asOfYear),
       bequestsReceived: received,
       ownershipRows: rowsForFamilyMember(tree, fm.id),
+      breach: recipientBreaches?.get(`family:${fm.id}`) ?? false,
     });
   }
   return results;
 }
 
-export function deriveCharityCardData(tree: ClientData): CharityCardData[] {
+export function deriveCharityCardData(
+  tree: ClientData,
+  recipientBreaches?: Map<string, boolean>,
+): CharityCardData[] {
   return (tree.externalBeneficiaries ?? []).map((eb) => {
     const received: BequestSummaryRow[] = [];
     for (const will of tree.wills ?? []) {
@@ -276,6 +289,7 @@ export function deriveCharityCardData(tree: ClientData): CharityCardData[] {
       name: eb.name,
       bequestsReceived: received,
       lifetimeGifts,
+      breach: recipientBreaches?.get(`external:${eb.id}`) ?? false,
     };
   });
 }

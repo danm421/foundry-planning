@@ -5,6 +5,7 @@ import { clampToViewport } from "../popovers/clamp-to-viewport";
 import { GiftSubForm, type GiftSubFormSubmit } from "./gift-sub-form";
 import { BequestSubForm } from "./bequest-sub-form";
 import { RetitleSubForm } from "./retitle-sub-form";
+import type { GiftLedgerYear } from "@/engine/gift-ledger";
 
 /**
  * Unified drop-target popup. Wraps the three sub-forms (Gift / Bequest /
@@ -49,6 +50,14 @@ export interface DropPopupProps {
    * whose-will radios. Required so the parent must thread it explicitly.
    */
   spouseAvailable: boolean;
+  /** Active scenario's projection ledger — forwarded to GiftSubForm for breach warning. */
+  giftLedger: GiftLedgerYear[];
+  /** Tax-bracket inflation rate from plan settings — forwarded to GiftSubForm for BEA(year). */
+  taxInflationRate: number;
+  /** Resolved grantor for this drop — forwarded to GiftSubForm for warning copy. */
+  grantor: "client" | "spouse";
+  /** Annual exclusion lookup — forwarded to GiftSubForm. */
+  getAnnualExclusion: (year: number) => number;
   onSave: (action: DropAction) => Promise<void>;
   onCancel: () => void;
 }
@@ -95,6 +104,10 @@ export function DropPopup(props: DropPopupProps) {
     yearMin,
     yearMax,
     spouseAvailable,
+    giftLedger,
+    taxInflationRate,
+    grantor,
+    getAnnualExclusion,
     onSave,
     onCancel,
   } = props;
@@ -198,6 +211,12 @@ export function DropPopup(props: DropPopupProps) {
             isCashAccount={source.isCash}
             yearMin={yearMin}
             yearMax={yearMax}
+            giftLedger={giftLedger}
+            taxInflationRate={taxInflationRate}
+            grantor={grantor}
+            ownerFirstName={source.ownerLabel}
+            recipientIsCharity={target.isCharity}
+            getAnnualExclusion={getAnnualExclusion}
             onSubmit={(p: GiftSubFormSubmit) => {
               if (p.kind === "one-time") {
                 void onSave({

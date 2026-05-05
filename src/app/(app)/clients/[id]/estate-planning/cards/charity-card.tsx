@@ -33,7 +33,18 @@ export function CharityCard({ data, defaultExpanded = false }: Props) {
         className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-[var(--color-card-hover)]"
       >
         <div aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-cat-life)]" />
-        <span className="text-[13px] font-semibold leading-tight text-[var(--color-ink)]">{data.name}</span>
+        <span className="flex items-center">
+          <span className="text-[13px] font-semibold leading-tight text-[var(--color-ink)]">{data.name}</span>
+          {data.breach && (
+            <span
+              aria-label="Plan exceeds lifetime exemption — see Gift Tax Report"
+              title="Plan exceeds lifetime exemption — see Gift Tax Report"
+              className="ml-1 text-amber-400"
+            >
+              ⚠
+            </span>
+          )}
+        </span>
         <div className="ml-auto text-xs text-[var(--color-ink-3)]">
           {count} bequest{count === 1 ? "" : "s"}
         </div>

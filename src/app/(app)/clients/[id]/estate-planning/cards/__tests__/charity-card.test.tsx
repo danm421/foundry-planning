@@ -23,6 +23,7 @@ const withBequest: CharityCardData = {
     { bequestId: "b2", willId: "w1", willGrantor: "client", assetName: "Donor-Advised Fund", condition: "always", percentage: 100 },
   ],
   lifetimeGifts: [],
+  breach: false,
 };
 
 const withGifts: CharityCardData = {
@@ -33,6 +34,7 @@ const withGifts: CharityCardData = {
     { year: 2023, amount: 5_000, assetClass: "cash", sourceLabel: "Cash gift" },
     { year: 2025, amount: 10_000, assetClass: "cash", sourceLabel: "Cash gift" },
   ],
+  breach: false,
 };
 
 const emptyCharity: CharityCardData = {
@@ -40,6 +42,7 @@ const emptyCharity: CharityCardData = {
   name: "Empty Charity",
   bequestsReceived: [],
   lifetimeGifts: [],
+  breach: false,
 };
 
 describe("CharityCard", () => {
@@ -73,5 +76,15 @@ describe("CharityCard", () => {
   it("renders empty-state when no gifts and no bequests", () => {
     render(<CharityCard data={emptyCharity} defaultExpanded />);
     expect(screen.getByText(/No bequests or lifetime gifts yet/i)).toBeInTheDocument();
+  });
+
+  it("renders breach glyph when data.breach is true", () => {
+    render(<CharityCard data={{ ...withBequest, breach: true }} />);
+    expect(screen.getByLabelText(/exceeds lifetime exemption/i)).toBeInTheDocument();
+  });
+
+  it("does not render breach glyph when data.breach is false", () => {
+    render(<CharityCard data={{ ...withBequest, breach: false }} />);
+    expect(screen.queryByLabelText(/exceeds lifetime exemption/i)).not.toBeInTheDocument();
   });
 });

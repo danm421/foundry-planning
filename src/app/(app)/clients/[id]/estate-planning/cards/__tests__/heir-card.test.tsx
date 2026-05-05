@@ -25,6 +25,7 @@ const bequestOnly: HeirCardData = {
     { bequestId: "b1", willId: "w1", willGrantor: "client", assetName: "401k", condition: "always", percentage: 50 },
   ],
   ownershipRows: [],
+  breach: false,
 };
 
 const ownershipOnly: HeirCardData = {
@@ -47,6 +48,7 @@ const ownershipOnly: HeirCardData = {
       coOwners: [],
     },
   ],
+  breach: false,
 };
 
 const empty: HeirCardData = {
@@ -56,6 +58,7 @@ const empty: HeirCardData = {
   age: 25,
   bequestsReceived: [],
   ownershipRows: [],
+  breach: false,
 };
 
 describe("HeirCard", () => {
@@ -100,5 +103,15 @@ describe("HeirCard", () => {
   it("does NOT render the condition tag when condition is 'always' (the default)", () => {
     render(<HeirCard data={bequestOnly} defaultExpanded />);
     expect(screen.queryByText(/always/i)).not.toBeInTheDocument();
+  });
+
+  it("renders breach glyph when data.breach is true", () => {
+    render(<HeirCard data={{ ...bequestOnly, breach: true }} />);
+    expect(screen.getByLabelText(/exceeds lifetime exemption/i)).toBeInTheDocument();
+  });
+
+  it("does not render breach glyph when data.breach is false", () => {
+    render(<HeirCard data={{ ...bequestOnly, breach: false }} />);
+    expect(screen.queryByLabelText(/exceeds lifetime exemption/i)).not.toBeInTheDocument();
   });
 });

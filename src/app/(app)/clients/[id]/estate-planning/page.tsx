@@ -47,14 +47,27 @@ export default async function EstatePlanningPage({ params }: PageProps) {
   // spouseName from ClientInfo is the full spouse name; use it as the display name
   const spouseFirstName = tree.client.spouseName ?? null;
 
+  const taxInflationRate = tree.planSettings?.taxInflationRate ?? 0.025;
+
+  const annualExclusionsByYear = new Map<number, number>();
+  for (const r of (tree.taxYearRows ?? []) as Array<{ year: number; giftAnnualExclusion?: string | null }>) {
+    if (r.giftAnnualExclusion != null) {
+      annualExclusionsByYear.set(r.year, parseFloat(r.giftAnnualExclusion));
+    }
+  }
+  const getAnnualExclusion = (y: number) => annualExclusionsByYear.get(y) ?? 0;
+
   return (
     <CanvasDndProvider
       clientId={clientId}
       clientFirstName={clientFirstName}
       spouseFirstName={spouseFirstName}
       tree={tree}
+      giftLedger={withResult.giftLedger}
+      taxInflationRate={taxInflationRate}
+      getAnnualExclusion={getAnnualExclusion}
     >
-      <CanvasFrame tree={tree} withResult={withResult} />
+      <CanvasFrame tree={tree} withResult={withResult} giftLedger={withResult.giftLedger} />
       <ProjectionPanel
         tree={tree}
         withResult={withResult}
