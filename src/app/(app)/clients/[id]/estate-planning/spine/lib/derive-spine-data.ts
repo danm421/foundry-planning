@@ -22,6 +22,7 @@ import { computeGrossEstate } from "@/engine/death-event/estate-tax";
 import type {
   ClientData,
   DrainAttribution,
+  EntitySummary,
   EstateTaxResult,
   DeathTransfer,
   HypotheticalEstateTax,
@@ -87,6 +88,9 @@ export type SpineData =
         taxBreakdown: StageTaxBreakdown;
       };
       beneficiaries: BeneficiaryCard[];
+      /** Entities (trusts) configured on the household — passed through so
+       * expansion components can resolve trust names and subtypes. */
+      entities: EntitySummary[];
       totals: { taxesAndExpenses: number; toHeirs: number };
     }
   | {
@@ -103,6 +107,7 @@ export type SpineData =
         taxBreakdown: StageTaxBreakdown;
       };
       beneficiaries: BeneficiaryCard[];
+      entities: EntitySummary[];
       totals: { taxesAndExpenses: number; toHeirs: number };
     }
   | { kind: "historical"; message: string };
@@ -550,6 +555,7 @@ export function deriveSpineData(args: {
         taxBreakdown: secondBreakdown,
       },
       beneficiaries,
+      entities: tree.entities ?? [],
       totals: { taxesAndExpenses: totalTaxesAndExpenses, toHeirs: totalToHeirs },
     };
   }
@@ -658,6 +664,7 @@ export function deriveSpineData(args: {
         taxBreakdown: stageBreakdown,
       },
       beneficiaries,
+      entities: tree.entities ?? [],
       totals: { taxesAndExpenses: stageTax, toHeirs },
     };
   }

@@ -62,6 +62,7 @@ const twoGrantorData: SpineData = {
       pctOfHeirs: 0.5,
     },
   ],
+  entities: [],
   totals: { taxesAndExpenses: 570_000, toHeirs: 4_350_000 },
 };
 
@@ -87,6 +88,7 @@ const singleGrantorData: SpineData = {
       pctOfHeirs: 0.5,
     },
   ],
+  entities: [],
   totals: { taxesAndExpenses: 300_000, toHeirs: 2_700_000 },
 };
 
