@@ -56,6 +56,9 @@ export default async function TechniquesPage({ params, searchParams }: PageProps
   const transferRows = [...(effectiveTree.transfers ?? [])].sort((a, b) =>
     a.name.localeCompare(b.name),
   );
+  const rothConversionRows = [...(effectiveTree.rothConversions ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
   const transactionRows = [...(effectiveTree.assetTransactions ?? [])].sort(
     (a, b) => a.year - b.year,
   );
@@ -111,6 +114,22 @@ export default async function TechniquesPage({ params, searchParams }: PageProps
     mortgageTermMonths: tx.mortgageTermMonths ?? null,
   }));
 
+  const rothConversionProps = rothConversionRows.map((c) => ({
+    id: c.id,
+    name: c.name,
+    destinationAccountId: c.destinationAccountId,
+    sourceAccountIds: c.sourceAccountIds,
+    conversionType: c.conversionType,
+    fixedAmount: String(c.fixedAmount),
+    fillUpBracket: c.fillUpBracket == null ? null : String(c.fillUpBracket),
+    startYear: c.startYear,
+    startYearRef: c.startYearRef ?? null,
+    endYear: c.endYear ?? null,
+    endYearRef: c.endYearRef ?? null,
+    indexingRate: String(c.indexingRate),
+    inflationStartYear: c.inflationStartYear ?? null,
+  }));
+
   const accountOptions = accountRows.map((a) => ({
     id: a.id,
     name: a.name,
@@ -131,6 +150,7 @@ export default async function TechniquesPage({ params, searchParams }: PageProps
         clientId={id}
         transfers={transferProps}
         assetTransactions={transactionProps}
+        rothConversions={rothConversionProps}
         accounts={accountOptions}
         liabilities={liabilityOptions}
         milestones={milestones}

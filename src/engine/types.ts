@@ -287,6 +287,8 @@ export interface ClientData {
   deductions?: ClientDeductionRow[];
   /** Transfer techniques — move value between accounts with tax implications. */
   transfers?: Transfer[];
+  /** Roth conversion techniques — multi-source, strategy-driven Trad → Roth conversions. */
+  rothConversions?: RothConversion[];
   /** Asset buy/sell transactions — acquire or dispose of assets in specific years. */
   assetTransactions?: AssetTransaction[];
   /** Gifts made by the client or spouse. */
@@ -591,6 +593,34 @@ export interface Transfer {
 export interface TransferSchedule {
   year: number;
   amount: number;
+}
+
+export type RothConversionType =
+  | "fixed_amount"
+  | "full_account"
+  | "deplete_over_period"
+  | "fill_up_bracket";
+
+export interface RothConversion {
+  id: string;
+  name: string;
+  destinationAccountId: string;
+  sourceAccountIds: string[];
+  conversionType: RothConversionType;
+  fixedAmount: number;
+  /** Top of the ordinary-income bracket to fill (e.g., 0.22). Used only when
+   *  conversionType === "fill_up_bracket". */
+  fillUpBracket?: number;
+  startYear: number;
+  endYear?: number;
+  /** Annual indexing rate applied to fixedAmount. Only meaningful for
+   *  conversionType === "fixed_amount". */
+  indexingRate: number;
+  /** When set, indexing compounds from this year. Defaults to startYear. */
+  inflationStartYear?: number;
+  // View-only metadata.
+  startYearRef?: string | null;
+  endYearRef?: string | null;
 }
 
 export interface AssetTransaction {

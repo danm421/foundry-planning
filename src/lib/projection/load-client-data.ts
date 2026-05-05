@@ -30,6 +30,8 @@ import {
   savingsScheduleOverrides,
   scenarios,
   taxYearParameters,
+  rothConversions,
+  rothConversionSources,
   transfers,
   transferSchedules,
   willBequestRecipients,
@@ -112,6 +114,8 @@ export const loadClientData = cache(
       extraPaymentRows,
       transferRows,
       transferScheduleRows,
+      rothConversionRows,
+      rothConversionSourceRows,
       assetTransactionRows,
       giftRows,
       familyMemberRows,
@@ -132,6 +136,8 @@ export const loadClientData = cache(
       db.select().from(extraPayments),
       db.select().from(transfers).where(and(eq(transfers.clientId, id), eq(transfers.scenarioId, scenario.id))),
       db.select().from(transferSchedules),
+      db.select().from(rothConversions).where(and(eq(rothConversions.clientId, id), eq(rothConversions.scenarioId, scenario.id))),
+      db.select().from(rothConversionSources),
       db.select().from(assetTransactions).where(and(eq(assetTransactions.clientId, id), eq(assetTransactions.scenarioId, scenario.id))),
       db
         .select()
@@ -827,6 +833,31 @@ export const loadClientData = cache(
       };
     });
 
+    const mappedRothConversions = rothConversionRows.map((c) => {
+      const sources = rothConversionSourceRows
+        .filter((s) => s.rothConversionId === c.id)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((s) => s.accountId);
+      const resolvedConvEnd = c.endYear == null
+        ? undefined
+        : resolvedEnd(c.endYearRef ?? null, c.endYear);
+      return {
+        id: c.id,
+        name: c.name,
+        destinationAccountId: c.destinationAccountId,
+        sourceAccountIds: sources,
+        conversionType: c.conversionType,
+        fixedAmount: parseFloat(c.fixedAmount),
+        fillUpBracket: c.fillUpBracket != null ? parseFloat(c.fillUpBracket) : undefined,
+        startYear: resolvedStart(c.startYearRef ?? null, c.startYear),
+        endYear: resolvedConvEnd,
+        indexingRate: parseFloat(c.indexingRate),
+        inflationStartYear: c.inflationStartYear ?? undefined,
+        startYearRef: c.startYearRef ?? null,
+        endYearRef: c.endYearRef ?? null,
+      };
+    });
+
     const mappedAssetTransactions = assetTransactionRows.map((t) => ({
       id: t.id,
       name: t.name,
@@ -968,6 +999,7 @@ export const loadClientData = cache(
       taxYearRows: parsedTaxRows,
       deductions: parsedDeductions,
       transfers: mappedTransfers,
+      rothConversions: mappedRothConversions,
       assetTransactions: mappedAssetTransactions,
       gifts: mappedGifts,
       giftEvents,

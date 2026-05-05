@@ -477,6 +477,13 @@
       "when": 1777996356486,
       "tag": "0067_plan_settings_prior_taxable_gifts",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1777994828745,
+      "tag": "0068_roth_conversions",
+      "breakpoints": true
     }
   ]
 }

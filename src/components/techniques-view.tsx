@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import AddTransferForm from "./forms/add-transfer-form";
 import AddAssetTransactionForm from "./forms/add-asset-transaction-form";
+import AddRothConversionForm, { type RothConversionInitialData } from "./forms/add-roth-conversion-form";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { ClientMilestones } from "@/lib/milestones";
@@ -64,10 +65,27 @@ export interface LiabilityOption {
   balance: string;
 }
 
+export interface RothConversionRow {
+  id: string;
+  name: string;
+  destinationAccountId: string;
+  sourceAccountIds: string[];
+  conversionType: "fixed_amount" | "full_account" | "deplete_over_period" | "fill_up_bracket";
+  fixedAmount: string;
+  fillUpBracket: string | null;
+  startYear: number;
+  startYearRef: string | null;
+  endYear: number | null;
+  endYearRef: string | null;
+  indexingRate: string;
+  inflationStartYear: number | null;
+}
+
 interface TechniquesViewProps {
   clientId: string;
   transfers: TransferRow[];
   assetTransactions: AssetTransactionRow[];
+  rothConversions: RothConversionRow[];
   accounts: AccountOption[];
   liabilities: LiabilityOption[];
   milestones?: ClientMilestones;
@@ -257,6 +275,91 @@ function TransferCard({
       <div className="flex shrink-0 items-center gap-2">
         <ActionButton onClick={(e) => { e.stopPropagation(); onEdit(); }} label={`Edit ${transfer.name}`} variant="edit" />
         <ActionButton onClick={(e) => { e.stopPropagation(); onDelete(); }} label={`Delete ${transfer.name}`} variant="delete" />
+      </div>
+    </div>
+  );
+}
+
+// ── Roth Conversion Card ──────────────────────────────────────────────────────
+
+const CONVERSION_TYPE_LABELS: Record<RothConversionRow["conversionType"], string> = {
+  fixed_amount: "Fixed Amount",
+  full_account: "Full Account",
+  deplete_over_period: "Deplete Over Period",
+  fill_up_bracket: "Fill Up Bracket",
+};
+
+function RothConversionCard({
+  conversion,
+  accounts,
+  onEdit,
+  onDelete,
+}: {
+  conversion: RothConversionRow;
+  accounts: AccountOption[];
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const accountMap = new Map(accounts.map((a) => [a.id, a]));
+  const dest = accountMap.get(conversion.destinationAccountId);
+  const sources = conversion.sourceAccountIds
+    .map((id) => accountMap.get(id))
+    .filter((a): a is AccountOption => a != null);
+
+  const yearRange =
+    conversion.endYear != null
+      ? `${conversion.startYear} – ${conversion.endYear}`
+      : `${conversion.startYear}+`;
+
+  const sourcesText =
+    sources.length === 0
+      ? "No sources"
+      : sources.length <= 2
+      ? sources.map((s) => s.name).join(" + ")
+      : `${sources[0].name} + ${sources.length - 1} more`;
+
+  let detail = "";
+  switch (conversion.conversionType) {
+    case "fixed_amount": {
+      const amt = formatCurrency(conversion.fixedAmount);
+      const rate = parseFloat(conversion.indexingRate);
+      detail = rate > 0 ? `${amt}/yr · indexed ${(rate * 100).toFixed(1)}%` : `${amt}/yr`;
+      break;
+    }
+    case "full_account":
+      detail = "Convert entire source pool in year 1";
+      break;
+    case "deplete_over_period":
+      detail = "Even split across the window";
+      break;
+    case "fill_up_bracket": {
+      const b = conversion.fillUpBracket ? parseFloat(conversion.fillUpBracket) : null;
+      detail = b != null ? `Top out the ${(b * 100).toFixed(0)}% bracket` : "Fill up bracket";
+      break;
+    }
+  }
+
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-gray-800 px-4 py-3 last:border-0">
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-gray-100">{conversion.name}</span>
+          <Badge
+            label={CONVERSION_TYPE_LABELS[conversion.conversionType]}
+            className="bg-amber-900/40 text-amber-300 border border-amber-700/50"
+          />
+          <span className="text-xs text-gray-400">{yearRange}</span>
+        </div>
+        <div className="text-xs text-gray-300">
+          <span className="text-gray-300">{sourcesText}</span>
+          <span className="mx-1.5 text-gray-600">→</span>
+          <span className="text-gray-300">{dest?.name ?? "Unknown Roth"}</span>
+        </div>
+        <div className="text-xs text-gray-400">{detail}</div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <ActionButton onClick={(e) => { e.stopPropagation(); onEdit(); }} label={`Edit ${conversion.name}`} variant="edit" />
+        <ActionButton onClick={(e) => { e.stopPropagation(); onDelete(); }} label={`Delete ${conversion.name}`} variant="delete" />
       </div>
     </div>
   );
@@ -520,6 +623,7 @@ export default function TechniquesView({
   clientId,
   transfers,
   assetTransactions,
+  rothConversions,
   accounts,
   liabilities,
   milestones,
@@ -533,6 +637,8 @@ export default function TechniquesView({
   const [editingTransfer, setEditingTransfer] = useState<TransferRow | null>(null);
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<AssetTransactionRow | null>(null);
+  const [showAddRothConversion, setShowAddRothConversion] = useState(false);
+  const [editingRothConversion, setEditingRothConversion] = useState<RothConversionInitialData | null>(null);
   const [projectionYears, setProjectionYears] = useState<ProjectionYear[] | null>(null);
 
   // Load projection once so transaction cards can display the projected BoY
@@ -599,8 +705,47 @@ export default function TechniquesView({
     router.refresh();
   }
 
+  async function handleDeleteRothConversion(rothConversionId: string) {
+    const res = await fetch(
+      `/api/clients/${clientId}/roth-conversions?rothConversionId=${rothConversionId}`,
+      { method: "DELETE" },
+    );
+    if (res.ok) router.refresh();
+  }
+
   return (
     <div className="space-y-6">
+      {/* ── Roth Conversions ──────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-lg border border-gray-700 bg-gray-900/50">
+        <SectionHeader
+          title="Roth Conversions"
+          count={rothConversions.length}
+          action={
+            <button
+              onClick={() => setShowAddRothConversion(true)}
+              className="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on hover:bg-accent-deep"
+            >
+              + Add Roth Conversion
+            </button>
+          }
+        />
+        {rothConversions.length === 0 ? (
+          <EmptyState message="No Roth conversions yet. Click Add Roth Conversion to get started." />
+        ) : (
+          <div>
+            {rothConversions.map((c) => (
+              <RothConversionCard
+                key={c.id}
+                conversion={c}
+                accounts={accounts}
+                onEdit={() => setEditingRothConversion(c)}
+                onDelete={() => handleDeleteRothConversion(c.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* ── Transfers ─────────────────────────────────────────────────────── */}
       <div className="overflow-hidden rounded-lg border border-gray-700 bg-gray-900/50">
         <SectionHeader
@@ -688,6 +833,20 @@ export default function TechniquesView({
           initialData={editingTransfer ?? undefined}
           onClose={() => { setShowAddTransfer(false); setEditingTransfer(null); }}
           onSaved={() => { setShowAddTransfer(false); setEditingTransfer(null); router.refresh(); }}
+        />
+      )}
+
+      {/* ── Roth Conversion form ──────────────────────────────────────────── */}
+      {(showAddRothConversion || editingRothConversion) && (
+        <AddRothConversionForm
+          clientId={clientId}
+          accounts={accounts}
+          milestones={milestones}
+          clientFirstName={clientFirstName}
+          spouseFirstName={spouseFirstName}
+          initialData={editingRothConversion ?? undefined}
+          onClose={() => { setShowAddRothConversion(false); setEditingRothConversion(null); }}
+          onSaved={() => { setShowAddRothConversion(false); setEditingRothConversion(null); router.refresh(); }}
         />
       )}
 

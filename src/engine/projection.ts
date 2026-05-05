@@ -40,6 +40,7 @@ import { applyContributionLimits, computeMaxContribution, resolveAgeInYear } fro
 import { executeWithdrawals, planSupplementalWithdrawal } from "./withdrawal";
 import { calculateRMD } from "./rmd";
 import { applyTransfers } from "./transfers";
+import { applyRothConversions } from "./roth-conversions";
 import { applyAssetSales, applyAssetPurchases, _resetSyntheticIdCounter } from "./asset-transactions";
 import {
   computeFirstDeathYear,
@@ -1064,6 +1065,50 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // ── Apply Roth Conversions (technique) ──────────────────────────────────
+    // Runs after RMDs so fill-up-bracket math sees the year's required RMD
+    // income, and so Trad → Roth pro-rata is computed on post-RMD balances.
+    let rothConversionResult = {
+      taxableOrdinaryIncome: 0,
+      earlyWithdrawalPenalty: 0,
+      byConversion: {} as Record<string, { amount: number; bySource: Record<string, number> }>,
+    };
+    if (data.rothConversions && data.rothConversions.length > 0) {
+      const convFilingStatus = effectiveFilingStatus(
+        (client.filingStatus ?? "single") as FilingStatus,
+        firstDeathYear,
+        year,
+      );
+      const convResolved = taxResolver ? taxResolver.getYear(year) : null;
+      const convBrackets = convResolved?.params.incomeBrackets[convFilingStatus];
+      const convStdDeduction = convResolved?.params.stdDeduction[convFilingStatus] ?? 0;
+      // Pre-conversion ordinary-income tax base: earned + STCG + ordinary divs +
+      // transfer-induced OI + RMDs. Excludes qual-div / LTCG (they stack above
+      // the OI bracket) and SS taxable portion (approximation — Fill-Up-Bracket
+      // is most useful in pre-SS years).
+      const preConversionOrdinaryIncome =
+        income.salaries + income.business + income.deferred + income.trust +
+        grantorIncome.salaries + grantorIncome.business + grantorIncome.deferred + grantorIncome.trust +
+        realizationOI + realizationSTCG +
+        transferResult.taxableOrdinaryIncome +
+        householdRmdIncome + grantorRmdTaxable;
+
+      rothConversionResult = applyRothConversions({
+        conversions: data.rothConversions,
+        accounts: workingAccounts,
+        accountBalances,
+        basisMap,
+        accountLedgers,
+        year,
+        ownerAges: { client: ages.client, spouse: ages.spouse },
+        spouseFamilyMemberId: spouseFmId,
+        preConversionOrdinaryIncome,
+        filingStatus: convFilingStatus,
+        ordinaryBrackets: convBrackets,
+        taxDeduction: convStdDeduction,
+      });
+    }
+
     // 5. Compute taxable income total and per-category tax detail.
     const taxableIncome =
       income.salaries +
@@ -1083,6 +1128,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       realizationSTCG +
       transferResult.taxableOrdinaryIncome +
       transferResult.capitalGains +
+      rothConversionResult.taxableOrdinaryIncome +
       saleResult.capitalGains;
     // Build per-year tax detail breakdown. Income items use their taxType when
     // set, otherwise fall back to the legacy type-based mapping.
@@ -1130,6 +1176,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // Add transfer and sale income to tax detail
     taxDetail.ordinaryIncome += transferResult.taxableOrdinaryIncome;
+    taxDetail.ordinaryIncome += rothConversionResult.taxableOrdinaryIncome;
     taxDetail.capitalGains +=
       transferResult.capitalGains + saleResult.capitalGains + grantorCarryInCapGains;
     if (grantorCarryInCapGains > 0) {
@@ -1143,6 +1190,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const [tid, info] of Object.entries(transferResult.byTransfer)) {
       if (info.amount > 0) {
         taxDetail.bySource[`transfer:${tid}`] = { type: "ordinary_income", amount: info.amount };
+      }
+    }
+    for (const [cid, info] of Object.entries(rothConversionResult.byConversion)) {
+      if (info.amount > 0) {
+        taxDetail.bySource[`roth_conversion:${cid}`] = { type: "ordinary_income", amount: info.amount };
       }
     }
     for (const item of saleResult.breakdown) {

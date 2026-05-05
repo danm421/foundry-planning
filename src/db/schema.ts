@@ -1743,6 +1743,55 @@ export const transferSchedules = pgTable("transfer_schedules", {
 });
 
 // ============================================================================
+// Roth Conversions (technique)
+// ============================================================================
+
+export const rothConversionTypeEnum = pgEnum("roth_conversion_type", [
+  "fixed_amount",
+  "full_account",
+  "deplete_over_period",
+  "fill_up_bracket",
+]);
+
+export const rothConversions = pgTable("roth_conversions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  scenarioId: uuid("scenario_id").notNull().references(() => scenarios.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  destinationAccountId: uuid("destination_account_id")
+    .notNull()
+    .references(() => accounts.id, { onDelete: "cascade" }),
+  conversionType: rothConversionTypeEnum("conversion_type").notNull().default("fixed_amount"),
+  fixedAmount: decimal("fixed_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  // Top of the ordinary-income bracket to fill (e.g., 0.22 = "fill up to top of 22% bracket").
+  // Only meaningful when conversionType = "fill_up_bracket".
+  fillUpBracket: decimal("fill_up_bracket", { precision: 5, scale: 4 }),
+  startYear: integer("start_year").notNull(),
+  startYearRef: yearRefEnum("start_year_ref"),
+  endYear: integer("end_year"),
+  endYearRef: yearRefEnum("end_year_ref"),
+  // Inflation indexing (only applies to fixed_amount type).
+  indexingRate: decimal("indexing_rate", { precision: 5, scale: 4 }).notNull().default("0"),
+  // When set, indexing compounds from this year instead of from start_year.
+  // null = "Immediately" (compound from start_year).
+  inflationStartYear: integer("inflation_start_year"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const rothConversionSources = pgTable("roth_conversion_sources", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  rothConversionId: uuid("roth_conversion_id")
+    .notNull()
+    .references(() => rothConversions.id, { onDelete: "cascade" }),
+  accountId: uuid("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  // Lower sortOrder is drained first (matters for fixed_amount when the first
+  // source can't satisfy the full conversion).
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============================================================================
 // Asset Transactions
 // ============================================================================
 
