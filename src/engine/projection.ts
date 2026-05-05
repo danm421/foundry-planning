@@ -2655,6 +2655,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         yearEndAccountBalances,
         annualExclusionsByYear,
         dsueReceived: 0, // first decedent has no prior DSUE
+        priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
       });
 
       // Death-event creates synthetic accounts/liabilities mid-projection with

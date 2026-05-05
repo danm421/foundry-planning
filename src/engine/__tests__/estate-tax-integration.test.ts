@@ -86,6 +86,7 @@ function mkFirstDeathInput(over: Partial<DeathEventInput> = {}): DeathEventInput
     gifts: [],
     annualExclusionsByYear: {},
     dsueReceived: 0,
+    priorTaxableGifts: { client: 0, spouse: 0 },
     ...rest,
   };
 }
@@ -124,6 +125,7 @@ function mkFinalDeathInput(over: Partial<DeathEventInput> = {}): DeathEventInput
     gifts: [],
     annualExclusionsByYear: {},
     dsueReceived: 0,
+    priorTaxableGifts: { client: 0, spouse: 0 },
     ...rest,
   };
 }

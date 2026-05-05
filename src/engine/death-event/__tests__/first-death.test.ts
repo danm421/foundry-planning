@@ -85,6 +85,7 @@ const mkInput = (over: Partial<DeathEventInput>): DeathEventInput => {
     gifts: [],
     annualExclusionsByYear: {},
     dsueReceived: 0,
+    priorTaxableGifts: { client: 0, spouse: 0 },
     ...rest,
   };
 };

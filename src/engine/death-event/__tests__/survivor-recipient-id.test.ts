@@ -102,6 +102,7 @@ function mkInput(over: Partial<DeathEventInput> & { accounts: Account[] }): Deat
     gifts: [],
     annualExclusionsByYear: {},
     dsueReceived: 0,
+    priorTaxableGifts: { client: 0, spouse: 0 },
     ...rest,
     accounts,
     accountBalances,

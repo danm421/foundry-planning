@@ -69,6 +69,7 @@ describe("step-up end-to-end: death + future sale → correct cap-gains", () => 
       gifts: [],
       annualExclusionsByYear: {},
       dsueReceived: 0,
+      priorTaxableGifts: { client: 0, spouse: 0 },
     };
     const deathResult = applyFirstDeath(deathInput);
 
