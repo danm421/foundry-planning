@@ -282,6 +282,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   // reduce the marital deduction (§2056(b)(4)(B)).
   const deductions = computeDeductions({
     transferLedger: chainResult.transfers,
+    grossEstateLines: gross.lines,
     externalBeneficiaries: input.externalBeneficiaries,
     planSettings: input.planSettings,
     deathOrder: 1,
@@ -436,6 +437,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   // a federal tax, which is rare and corrected on the next projection year).
   const finalDeductions = computeDeductions({
     transferLedger: ledger,
+    grossEstateLines: gross.lines,
     externalBeneficiaries: input.externalBeneficiaries,
     planSettings: input.planSettings,
     deathOrder: 1,

@@ -24,11 +24,8 @@ export function EstateTransferReductionsCard({
   return (
     <section className="rounded-lg border border-rose-900/40 bg-rose-950/15 px-4 py-3">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="flex items-baseline gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-rose-200">
-          <span>Reductions</span>
-          <span className="font-normal normal-case tracking-normal text-[11px] text-rose-200/70">
-            drained from heirs before they receive their share
-          </span>
+        <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-rose-200">
+          Reductions
         </h3>
         <span className="font-mono text-sm font-semibold tabular-nums text-rose-200">
           {fmt.format(total)}

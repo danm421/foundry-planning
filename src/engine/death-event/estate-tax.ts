@@ -184,6 +184,14 @@ export function computeDeductions(input: {
   externalBeneficiaries: ExternalBeneficiarySummary[];
   planSettings: PlanSettings;
   deathOrder: 1 | 2;
+  /** Pre-chain gross-estate lines for the decedent. Used to cap each spouse-
+   *  routed transfer's marital-deduction contribution at the deceased's
+   *  gross-estate share of the source account: a joint account titled JTWROS
+   *  routes 100% to the survivor on the ledger, but only 50% qualifies for
+   *  the marital deduction at first death. Optional for compute-only callers
+   *  without a gross context (e.g. final-death where no marital deduction
+   *  applies anyway). */
+  grossEstateLines?: GrossEstateLine[];
   /** Post-chain liabilities. When a debt-encumbered asset passes to the
    *  surviving spouse, the linked liability follows it; IRC §2056(b)(4)(B)
    *  reduces the marital deduction by that encumbrance. */
@@ -204,16 +212,38 @@ export function computeDeductions(input: {
     );
   }
 
+  // Map source account id → decedent's gross-estate share for that account.
+  // Used to cap marital deduction at the includible share — IRC §2056 only
+  // allows the marital deduction for property "passing from the decedent",
+  // i.e. property in the gross estate.
+  const grossByAccountId = new Map<string, number>();
+  for (const line of input.grossEstateLines ?? []) {
+    if (line.accountId == null || line.amount <= 0) continue;
+    grossByAccountId.set(
+      line.accountId,
+      (grossByAccountId.get(line.accountId) ?? 0) + line.amount,
+    );
+  }
+  // Track per-source remaining gross share so multiple spouse-routed transfers
+  // from the same source don't collectively over-claim the marital deduction.
+  const remainingGrossByAccountId = new Map(grossByAccountId);
+
   let maritalDeduction = 0;
   let charitableDeduction = 0;
 
   for (const t of input.transferLedger) {
     if (t.amount <= 0) continue;
     if (input.deathOrder === 1 && t.recipientKind === "spouse") {
+      let eligible = t.amount;
+      if (t.sourceAccountId != null && grossByAccountId.has(t.sourceAccountId)) {
+        const remaining = remainingGrossByAccountId.get(t.sourceAccountId) ?? 0;
+        eligible = Math.min(eligible, Math.max(0, remaining));
+        remainingGrossByAccountId.set(t.sourceAccountId, remaining - eligible);
+      }
       const encumbrance = t.resultingAccountId
         ? encumbranceByAssetId.get(t.resultingAccountId) ?? 0
         : 0;
-      maritalDeduction += Math.max(0, t.amount - encumbrance);
+      maritalDeduction += Math.max(0, eligible - encumbrance);
     } else if (t.recipientKind === "external_beneficiary" && t.recipientId) {
       if (externalKindById.get(t.recipientId) === "charity") {
         charitableDeduction += t.amount;

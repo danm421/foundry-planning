@@ -5,7 +5,7 @@ import {
   computeGrossEstate,
 } from "../estate-tax";
 import type {
-  Account, Liability, DeathTransfer, EntitySummary, PlanSettings,
+  Account, Liability, DeathTransfer, EntitySummary, GrossEstateLine, PlanSettings,
 } from "../../types";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "../../ownership";
 
@@ -422,6 +422,41 @@ describe("computeDeductions", () => {
       deathOrder: 1,
     });
     expect(r.maritalDeduction).toBe(0);
+  });
+
+  it("caps marital deduction at decedent's gross-estate share for joint-titled accounts (§2056)", () => {
+    // Joint cash account: $107,346 total. At first death, only 50% ($53,673)
+    // is in the deceased's gross estate; the survivor's pre-existing 50% never
+    // belonged to the decedent and can't qualify for the marital deduction.
+    // The titling chain still routes the FULL $107,346 to the survivor (right
+    // of survivorship), so the ledger entry shows the gross transfer amount.
+    // Without this cap, the marital deduction would over-deduct $53,673 and
+    // push taxable estate below what actually passed to non-spouse heirs.
+    const ledger = [
+      transfer({
+        recipientKind: "spouse",
+        via: "titling",
+        sourceAccountId: "joint-cash",
+        amount: 107_346,
+      }),
+    ];
+    const grossEstateLines: GrossEstateLine[] = [
+      {
+        label: "Joint Cash (50%)",
+        accountId: "joint-cash",
+        liabilityId: null,
+        percentage: 0.5,
+        amount: 53_673,
+      },
+    ];
+    const r = computeDeductions({
+      transferLedger: ledger,
+      grossEstateLines,
+      externalBeneficiaries: [],
+      planSettings: planSettings as PlanSettings,
+      deathOrder: 1,
+    });
+    expect(r.maritalDeduction).toBeCloseTo(53_673, 2);
   });
 
   it("charitable deduction = sum of external_beneficiary transfers whose kind is charity", () => {

@@ -181,14 +181,12 @@ describe("4d integration — first death estate tax", () => {
     // Gross estate reflects the deceased's pre-chain ownership share:
     // 50% of joint ($1M) + 100% of client-cash ($500k) = $1.5M.
     expect(result.estateTax.grossEstate).toBeCloseTo(1_500_000, 0);
-    // Marital deduction sums the transfer-ledger amounts flowing to spouse.
-    // Titling records the full joint-account value ($2M) flipping to
-    // spouse (ROS convention); plus the cash's $500k → total $2.5M.
-    // This nominally exceeds the gross-estate share, but `taxableEstate`
-    // clamps at 0 so federal tax is 0 regardless. Future-work:
-    // titling-ledger-amount-semantics — consider recording only the
-    // deceased's half at first-death titling.
-    expect(result.estateTax.maritalDeduction).toBeCloseTo(2_500_000, 0);
+    // Marital deduction is capped at the deceased's gross-estate share per
+    // source (IRC §2056 — only property "passing from the decedent" qualifies).
+    // Joint brokerage: titling routes the full $2M to spouse but only $1M
+    // (50%) is in gross; cash: $500k routes and $500k is in gross.
+    // Total marital = $1M + $500k = $1.5M = grossEstate, so taxableEstate = 0.
+    expect(result.estateTax.maritalDeduction).toBeCloseTo(1_500_000, 0);
     // DSUE generated = applicable exclusion (BEA + dsueReceived=0) since
     // tentative tax base is 0. BEA(2045) with 2.5% inflation ≈ $23.95M.
     expect(result.estateTax.dsueGenerated).toBeGreaterThan(14_000_000);
