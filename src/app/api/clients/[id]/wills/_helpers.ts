@@ -8,7 +8,10 @@ import {
   liabilityOwners,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import type { WillBequestInput } from "@/lib/schemas/wills";
+import type {
+  WillBequestInput,
+  WillResiduaryRecipientInput,
+} from "@/lib/schemas/wills";
 
 type CrossRefCheck = {
   accountIds: string[];
@@ -20,7 +23,10 @@ type CrossRefCheck = {
 
 export type CrossRefError = { code: string; detail?: string };
 
-export function gatherCrossRefs(bequests: WillBequestInput[]): CrossRefCheck {
+export function gatherCrossRefs(
+  bequests: WillBequestInput[],
+  residuary: WillResiduaryRecipientInput[] = [],
+): CrossRefCheck {
   const check: CrossRefCheck = {
     accountIds: [],
     familyMemberIds: [],
@@ -37,6 +43,12 @@ export function gatherCrossRefs(bequests: WillBequestInput[]): CrossRefCheck {
       else if (r.recipientKind === "external_beneficiary") check.externalIds.push(r.recipientId);
       else if (r.recipientKind === "entity") check.entityIds.push(r.recipientId);
     }
+  }
+  for (const r of residuary) {
+    if (!r.recipientId) continue;
+    if (r.recipientKind === "family_member") check.familyMemberIds.push(r.recipientId);
+    else if (r.recipientKind === "external_beneficiary") check.externalIds.push(r.recipientId);
+    else if (r.recipientKind === "entity") check.entityIds.push(r.recipientId);
   }
   return check;
 }

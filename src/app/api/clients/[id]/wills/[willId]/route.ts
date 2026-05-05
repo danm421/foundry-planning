@@ -5,6 +5,7 @@ import {
   wills,
   willBequests,
   willBequestRecipients,
+  willResiduaryRecipients,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -63,6 +64,12 @@ export async function GET(
           .where(inArray(willBequestRecipients.bequestId, bequestIds))
           .orderBy(asc(willBequestRecipients.sortOrder))
       : [];
+    const residuaryRows = await db
+      .select()
+      .from(willResiduaryRecipients)
+      .where(eq(willResiduaryRecipients.willId, willRow.id))
+      .orderBy(asc(willResiduaryRecipients.sortOrder));
+
     const recipientsByBequest = new Map<string, typeof recipientRows>();
     for (const r of recipientRows) {
       const list = recipientsByBequest.get(r.bequestId) ?? [];
@@ -89,6 +96,13 @@ export async function GET(
           percentage: parseFloat(r.percentage),
           sortOrder: r.sortOrder,
         })),
+      })),
+      residuaryRecipients: residuaryRows.map((r) => ({
+        id: r.id,
+        recipientKind: r.recipientKind,
+        recipientId: r.recipientId,
+        percentage: parseFloat(r.percentage),
+        sortOrder: r.sortOrder,
       })),
     });
   } catch (err) {
@@ -121,9 +135,13 @@ export async function PATCH(
         { status: 400 },
       );
     }
-    const { bequests } = parsed.data;
+    const { bequests, residuaryRecipients } = parsed.data;
 
-    const crossRefError = await verifyCrossRefs(id, gatherCrossRefs(bequests), bequests);
+    const crossRefError = await verifyCrossRefs(
+      id,
+      gatherCrossRefs(bequests, residuaryRecipients),
+      bequests,
+    );
     if (crossRefError) {
       return NextResponse.json(
         { error: crossRefError.code, detail: crossRefError.detail },
@@ -132,9 +150,12 @@ export async function PATCH(
     }
 
     // Transactional full-replace: delete existing bequests (cascades to
-    // recipients), then re-insert.
+    // recipients) and residuary, then re-insert.
     await db.transaction(async (tx) => {
       await tx.delete(willBequests).where(eq(willBequests.willId, willId));
+      await tx
+        .delete(willResiduaryRecipients)
+        .where(eq(willResiduaryRecipients.willId, willId));
       for (const b of bequests) {
         const [bequestRow] = await tx
           .insert(willBequests)
@@ -161,6 +182,17 @@ export async function PATCH(
             })),
           );
         }
+      }
+      if (residuaryRecipients && residuaryRecipients.length > 0) {
+        await tx.insert(willResiduaryRecipients).values(
+          residuaryRecipients.map((r) => ({
+            willId,
+            recipientKind: r.recipientKind,
+            recipientId: r.recipientId,
+            percentage: String(r.percentage),
+            sortOrder: r.sortOrder,
+          })),
+        );
       }
       await tx
         .update(wills)

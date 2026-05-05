@@ -43,6 +43,14 @@ type DbState = {
     percentage: string;
     sortOrder: number;
   }>;
+  willResiduaryRecipients: Array<{
+    id: string;
+    willId: string;
+    recipientKind: string;
+    recipientId: string | null;
+    percentage: string;
+    sortOrder: number;
+  }>;
 };
 
 // All IDs must be valid UUIDs for Zod schema validation to pass
@@ -73,12 +81,14 @@ const dbState: DbState = {
   liabilityOwners: [],
   willBequests: [],
   willBequestRecipients: [],
+  willResiduaryRecipients: [],
 };
 
 function resetState(overrides: Partial<DbState> = {}) {
   dbState.wills = overrides.wills ?? [];
   dbState.willBequests = overrides.willBequests ?? [];
   dbState.willBequestRecipients = overrides.willBequestRecipients ?? [];
+  dbState.willResiduaryRecipients = overrides.willResiduaryRecipients ?? [];
   dbState.liabilities = overrides.liabilities ?? [];
   dbState.liabilityOwners = overrides.liabilityOwners ?? [];
 }
@@ -108,6 +118,8 @@ vi.mock("@/db", async () => {
       return dbState.willBequests;
     if (t === schema.willBequestRecipients || getTableNameSafe(t) === "will_bequest_recipients")
       return dbState.willBequestRecipients;
+    if (t === schema.willResiduaryRecipients || getTableNameSafe(t) === "will_residuary_recipients")
+      return dbState.willResiduaryRecipients;
     return [];
   };
 
@@ -259,14 +271,41 @@ vi.mock("@/db", async () => {
               return { returning: () => Promise.resolve([{ id: "b_new" }]) };
             }
 
+            // willResiduaryRecipients insert
+            if (
+              t === schema.willResiduaryRecipients ||
+              tableName === "will_residuary_recipients"
+            ) {
+              for (const row of arr as Array<Record<string, unknown>>) {
+                const id = `rr_${Date.now()}_${Math.random()}`;
+                dbState.willResiduaryRecipients.push({
+                  id,
+                  willId: (row.willId as string) ?? lastWillId,
+                  recipientKind: row.recipientKind as string,
+                  recipientId: (row.recipientId as string | null) ?? null,
+                  percentage: (row.percentage as string) ?? "0",
+                  sortOrder: (row.sortOrder as number) ?? 0,
+                });
+              }
+              return { returning: () => Promise.resolve([{ id: "rr_new" }]) };
+            }
+
             // anything else (recipients, etc.)
             return { returning: () => Promise.resolve([{ id: "r_new" }]) };
           },
         }),
-        delete: () => ({
+        delete: (t: unknown) => ({
           where: () => {
-            // Clear willBequests (full-replace pattern in PATCH)
-            dbState.willBequests = [];
+            const tableName = getTableNameSafe(t);
+            if (
+              t === schema.willResiduaryRecipients ||
+              tableName === "will_residuary_recipients"
+            ) {
+              dbState.willResiduaryRecipients = [];
+            } else {
+              // Default: clear willBequests (full-replace pattern in PATCH)
+              dbState.willBequests = [];
+            }
             return Promise.resolve();
           },
         }),
@@ -591,5 +630,222 @@ describe("PATCH /api/clients/[id]/wills/[willId] — liability bequest round-tri
       (b) => b.kind === "liability" && b.liabilityId === LIAB_UNLINKED.id,
     );
     expect(bequestInState).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Residuary recipient round-trip — GET / POST / PATCH
+// ---------------------------------------------------------------------------
+
+const RESIDUARY_ROW_FAMILY = {
+  id: "30000000-0000-0000-0000-000000000001",
+  willId: WILL_EXISTING_ID,
+  recipientKind: "family_member",
+  recipientId: FM_A_ID,
+  percentage: "100.00",
+  sortOrder: 0,
+};
+
+const RESIDUARY_ROW_SPOUSE = {
+  id: "30000000-0000-0000-0000-000000000002",
+  willId: WILL_EXISTING_ID,
+  recipientKind: "spouse",
+  recipientId: null,
+  percentage: "100.00",
+  sortOrder: 0,
+};
+
+describe("residuary recipients — GET / POST / PATCH", () => {
+  beforeEach(async () => {
+    const helpers = await import("@/lib/db-helpers");
+    vi.mocked(helpers.getOrgId).mockReset();
+    vi.mocked(helpers.getOrgId).mockResolvedValue(FIRM_A_ID);
+    _liabilityWhereId = null;
+    resetState();
+  });
+
+  it("GET (list) includes residuaryRecipients on each will", async () => {
+    resetState({
+      wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+      willResiduaryRecipients: [RESIDUARY_ROW_SPOUSE],
+    });
+
+    const { GET } = await import("../route");
+    const res = await GET(
+      new Request("http://x") as unknown as Parameters<typeof GET>[0],
+      { params: Promise.resolve({ id: CLIENT_A_ID }) } as unknown as Parameters<typeof GET>[1],
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toHaveLength(1);
+    expect(body[0].residuaryRecipients).toEqual([
+      {
+        id: RESIDUARY_ROW_SPOUSE.id,
+        recipientKind: "spouse",
+        recipientId: null,
+        percentage: 100,
+        sortOrder: 0,
+      },
+    ]);
+  });
+
+  it("GET (single will) includes residuaryRecipients", async () => {
+    resetState({
+      wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+      willResiduaryRecipients: [RESIDUARY_ROW_FAMILY],
+    });
+
+    const { GET } = await import("../[willId]/route");
+    const res = await GET(
+      new Request("http://x") as unknown as Parameters<typeof GET>[0],
+      {
+        params: Promise.resolve({ id: CLIENT_A_ID, willId: WILL_EXISTING_ID }),
+      } as unknown as Parameters<typeof GET>[1],
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.residuaryRecipients).toEqual([
+      {
+        id: RESIDUARY_ROW_FAMILY.id,
+        recipientKind: "family_member",
+        recipientId: FM_A_ID,
+        percentage: 100,
+        sortOrder: 0,
+      },
+    ]);
+  });
+
+  it("POST persists residuaryRecipients (spouse)", async () => {
+    const { POST } = await import("../route");
+    const res = await POST(
+      new Request("http://x", {
+        method: "POST",
+        body: JSON.stringify({
+          grantor: "client",
+          bequests: [],
+          residuaryRecipients: [
+            { recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 },
+          ],
+        }),
+      }) as unknown as Parameters<typeof POST>[0],
+      { params: Promise.resolve({ id: CLIENT_A_ID }) } as unknown as Parameters<typeof POST>[1],
+    );
+    expect(res.status).toBe(201);
+    expect(dbState.willResiduaryRecipients).toHaveLength(1);
+    expect(dbState.willResiduaryRecipients[0].recipientKind).toBe("spouse");
+    expect(dbState.willResiduaryRecipients[0].recipientId).toBeNull();
+  });
+
+  it("POST persists residuaryRecipients (family_member)", async () => {
+    const { POST } = await import("../route");
+    const res = await POST(
+      new Request("http://x", {
+        method: "POST",
+        body: JSON.stringify({
+          grantor: "client",
+          bequests: [],
+          residuaryRecipients: [
+            { recipientKind: "family_member", recipientId: FM_A_ID, percentage: 100, sortOrder: 0 },
+          ],
+        }),
+      }) as unknown as Parameters<typeof POST>[0],
+      { params: Promise.resolve({ id: CLIENT_A_ID }) } as unknown as Parameters<typeof POST>[1],
+    );
+    expect(res.status).toBe(201);
+    expect(dbState.willResiduaryRecipients).toHaveLength(1);
+    expect(dbState.willResiduaryRecipients[0].recipientKind).toBe("family_member");
+    expect(dbState.willResiduaryRecipients[0].recipientId).toBe(FM_A_ID);
+  });
+
+  it("POST routes residuary recipientIds through cross-ref check", async () => {
+    // Empty family-members state so the cross-ref count check returns 0 < 1.
+    const savedFms = dbState.familyMembers;
+    dbState.familyMembers = [];
+    try {
+      const unknownFm = "ffffffff-0000-0000-0000-000000000000";
+      const { POST } = await import("../route");
+      const res = await POST(
+        new Request("http://x", {
+          method: "POST",
+          body: JSON.stringify({
+            grantor: "client",
+            bequests: [],
+            residuaryRecipients: [
+              { recipientKind: "family_member", recipientId: unknownFm, percentage: 100, sortOrder: 0 },
+            ],
+          }),
+        }) as unknown as Parameters<typeof POST>[0],
+        { params: Promise.resolve({ id: CLIENT_A_ID }) } as unknown as Parameters<typeof POST>[1],
+      );
+      expect(res.status).toBe(400);
+    } finally {
+      dbState.familyMembers = savedFms;
+    }
+  });
+
+  it("POST rejects residuary that does not sum to 100", async () => {
+    const { POST } = await import("../route");
+    const res = await POST(
+      new Request("http://x", {
+        method: "POST",
+        body: JSON.stringify({
+          grantor: "client",
+          bequests: [],
+          residuaryRecipients: [
+            { recipientKind: "spouse", recipientId: null, percentage: 60, sortOrder: 0 },
+            { recipientKind: "family_member", recipientId: FM_A_ID, percentage: 30, sortOrder: 1 },
+          ],
+        }),
+      }) as unknown as Parameters<typeof POST>[0],
+      { params: Promise.resolve({ id: CLIENT_A_ID }) } as unknown as Parameters<typeof POST>[1],
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("PATCH replaces residuaryRecipients", async () => {
+    resetState({
+      wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+      willResiduaryRecipients: [RESIDUARY_ROW_SPOUSE],
+    });
+
+    const { PATCH } = await import("../[willId]/route");
+    const res = await PATCH(
+      new Request("http://x", {
+        method: "PATCH",
+        body: JSON.stringify({
+          bequests: [],
+          residuaryRecipients: [
+            { recipientKind: "family_member", recipientId: FM_A_ID, percentage: 100, sortOrder: 0 },
+          ],
+        }),
+      }) as unknown as Parameters<typeof PATCH>[0],
+      {
+        params: Promise.resolve({ id: CLIENT_A_ID, willId: WILL_EXISTING_ID }),
+      } as unknown as Parameters<typeof PATCH>[1],
+    );
+    expect(res.status).toBe(200);
+    expect(dbState.willResiduaryRecipients).toHaveLength(1);
+    expect(dbState.willResiduaryRecipients[0].recipientKind).toBe("family_member");
+    expect(dbState.willResiduaryRecipients[0].recipientId).toBe(FM_A_ID);
+  });
+
+  it("PATCH with empty residuaryRecipients clears existing residuary", async () => {
+    resetState({
+      wills: [{ id: WILL_EXISTING_ID, clientId: CLIENT_A_ID, grantor: "client" }],
+      willResiduaryRecipients: [RESIDUARY_ROW_SPOUSE],
+    });
+
+    const { PATCH } = await import("../[willId]/route");
+    const res = await PATCH(
+      new Request("http://x", {
+        method: "PATCH",
+        body: JSON.stringify({ bequests: [], residuaryRecipients: [] }),
+      }) as unknown as Parameters<typeof PATCH>[0],
+      {
+        params: Promise.resolve({ id: CLIENT_A_ID, willId: WILL_EXISTING_ID }),
+      } as unknown as Parameters<typeof PATCH>[1],
+    );
+    expect(res.status).toBe(200);
+    expect(dbState.willResiduaryRecipients).toHaveLength(0);
   });
 });
