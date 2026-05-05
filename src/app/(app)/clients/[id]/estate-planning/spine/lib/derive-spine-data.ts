@@ -32,15 +32,22 @@ import type { ProjectionResult } from "@/engine";
 import { treeAsOfYear, type BalanceMode } from "../../lib/tree-as-of-year";
 import { resolveRecipientLabel } from "@/lib/estate/recipient-label";
 import type { AsOfValue } from "@/components/report-controls/as-of-dropdown";
+import {
+  deriveBeneficiaryDetail,
+  type BeneficiaryDetail,
+} from "./derive-beneficiary-detail";
 
 // ── Output types ──────────────────────────────────────────────────────────────
 
-export interface BeneficiaryCard {
+export interface BeneficiaryCardData {
   name: string;
   relationship: string | null;
-  value: number;
   isTrustRemainder: boolean;
+  /** Share of `totals.toHeirs` (across both deaths). */
   pctOfHeirs: number;
+  /** Per-recipient drilldown: first/second-death receipts, drain attributions,
+   *  and trust pass-through (pro-rata estimate). Used by BeneficiaryCard. */
+  detail: BeneficiaryDetail;
 }
 
 export interface StageTaxBreakdown {
@@ -87,7 +94,7 @@ export type SpineData =
         transfers: DeathTransfer[];
         taxBreakdown: StageTaxBreakdown;
       };
-      beneficiaries: BeneficiaryCard[];
+      beneficiaries: BeneficiaryCardData[];
       /** Entities (trusts) configured on the household — passed through so
        * expansion components can resolve trust names and subtypes. */
       entities: EntitySummary[];
@@ -106,7 +113,7 @@ export type SpineData =
         transfers: DeathTransfer[];
         taxBreakdown: StageTaxBreakdown;
       };
-      beneficiaries: BeneficiaryCard[];
+      beneficiaries: BeneficiaryCardData[];
       entities: EntitySummary[];
       totals: { taxesAndExpenses: number; toHeirs: number };
     }
@@ -170,63 +177,87 @@ function zeroTaxBreakdown(): StageTaxBreakdown {
 }
 
 /**
- * Group transfers by (recipientKind, recipientId) and produce BeneficiaryCards.
- * Excludes spouse transfers (those are the marital deduction, shown separately).
+ * Group non-spouse transfers across both deaths by (recipientKind, recipientId)
+ * and produce BeneficiaryCardData entries with full per-recipient drilldown
+ * (BeneficiaryDetail). Excludes spouse transfers (those are the marital
+ * deduction, shown separately).
  */
-function buildBeneficiaryCards(
-  transfers: DeathTransfer[],
-  tree: ClientData,
-  totalToHeirs: number,
-): BeneficiaryCard[] {
+function buildBeneficiaryCards(args: {
+  firstTransfers: DeathTransfer[];
+  secondTransfers: DeathTransfer[];
+  firstAttributions: DrainAttribution[];
+  secondAttributions: DrainAttribution[];
+  tree: ClientData;
+  totalToHeirs: number;
+}): BeneficiaryCardData[] {
+  const { firstTransfers, secondTransfers, firstAttributions, secondAttributions, tree, totalToHeirs } = args;
   type Key = string;
   const grouped = new Map<
     Key,
-    { name: string; relationship: string | null; value: number; isTrustRemainder: boolean }
+    {
+      name: string;
+      relationship: string | null;
+      isTrustRemainder: boolean;
+      kind: DeathTransfer["recipientKind"];
+      id: string | null;
+      heirsValue: number;
+    }
   >();
 
-  const famById = new Map(
-    (tree.familyMembers ?? []).map((fm) => [fm.id, fm]),
-  );
+  const famById = new Map((tree.familyMembers ?? []).map((fm) => [fm.id, fm]));
 
-  for (const t of transfers) {
-    if (t.recipientKind === "spouse") continue;
-    if (t.amount <= 0) continue;
-    // Only heirs: family_member, entity, external_beneficiary, system_default
+  function consider(t: DeathTransfer) {
+    if (t.recipientKind === "spouse") return;
+    if (t.amount <= 0) return;
     if (
       t.recipientKind !== "family_member" &&
       t.recipientKind !== "entity" &&
       t.recipientKind !== "external_beneficiary" &&
       t.recipientKind !== "system_default"
-    )
-      continue;
-    // Defensive: skip family_members whose role is "client"/"spouse" — they're
-    // grantors, not heirs. The engine's applyFallback excludes these by role,
-    // but other engine paths could still emit a self-transfer with stale data.
+    ) {
+      return;
+    }
     if (t.recipientKind === "family_member" && t.recipientId) {
       const fm = famById.get(t.recipientId);
-      if (fm && (fm.role === "client" || fm.role === "spouse")) continue;
+      if (fm && (fm.role === "client" || fm.role === "spouse")) return;
     }
 
     const key: Key = `${t.recipientKind}|${t.recipientId ?? ""}`;
     const existing = grouped.get(key);
     if (existing) {
-      existing.value += t.amount;
-    } else {
-      const resolved = resolveRecipientLabel(t, tree);
-      grouped.set(key, {
-        name: resolved.name,
-        relationship: resolved.relationship,
-        value: t.amount,
-        isTrustRemainder: resolved.isTrustRemainder,
-      });
+      existing.heirsValue += t.amount;
+      return;
     }
+    const resolved = resolveRecipientLabel(t, tree);
+    grouped.set(key, {
+      name: resolved.name,
+      relationship: resolved.relationship,
+      isTrustRemainder: resolved.isTrustRemainder,
+      kind: t.recipientKind,
+      id: t.recipientId,
+      heirsValue: t.amount,
+    });
   }
 
-  const cards: BeneficiaryCard[] = [];
-  for (const card of grouped.values()) {
+  for (const t of firstTransfers) consider(t);
+  for (const t of secondTransfers) consider(t);
+
+  const cards: BeneficiaryCardData[] = [];
+  for (const g of grouped.values()) {
+    const detail = deriveBeneficiaryDetail({
+      recipient: { kind: g.kind, id: g.id, name: g.name, relationship: g.relationship },
+      firstTransfers,
+      secondTransfers,
+      firstDrainAttributions: firstAttributions,
+      secondDrainAttributions: secondAttributions,
+      tree,
+    });
     cards.push({
-      ...card,
-      pctOfHeirs: totalToHeirs > 0 ? card.value / totalToHeirs : 0,
+      name: g.name,
+      relationship: g.relationship,
+      isTrustRemainder: g.isTrustRemainder,
+      pctOfHeirs: totalToHeirs > 0 ? g.heirsValue / totalToHeirs : 0,
+      detail,
     });
   }
 
@@ -511,13 +542,17 @@ export function deriveSpineData(args: {
 
     // Heir cards aggregate non-spouse transfers across BOTH deaths and trust
     // distributions, grouped by recipient. A child receiving from Cooper at
-    // first death AND from Susan at second death sees a single combined card.
+    // first death AND from Susan at second death sees a single combined card,
+    // with the BeneficiaryDetail drilldown splitting it back into first-vs-second.
     const totalToHeirs = firstToHeirs + secondToHeirs;
-    const beneficiaries = buildBeneficiaryCards(
-      [...firstDeathTransfers, ...secondDeathTransfers],
+    const beneficiaries = buildBeneficiaryCards({
+      firstTransfers: firstDeathTransfers,
+      secondTransfers: secondDeathTransfers,
+      firstAttributions,
+      secondAttributions,
       tree,
       totalToHeirs,
-    );
+    });
 
     const totalTaxesAndExpenses = firstTax + secondTax;
 
@@ -648,7 +683,17 @@ export function deriveSpineData(args: {
 
     const toHeirs = sumToHeirs(stageTransfers, tree);
     const toTrusts = sumToTrusts(stageTransfers, tree);
-    const beneficiaries = buildBeneficiaryCards(stageTransfers, tree, toHeirs);
+    // For single-grantor we treat the sole death as "second death" inside
+    // BeneficiaryDetail (since `fromSecondDeath` is the canonical place to
+    // surface drain attributions). Pass empty arrays for the other half.
+    const beneficiaries = buildBeneficiaryCards({
+      firstTransfers: [],
+      secondTransfers: stageTransfers,
+      firstAttributions: [],
+      secondAttributions: stageAttributions,
+      tree,
+      totalToHeirs: toHeirs,
+    });
 
     return {
       kind: "single-grantor",

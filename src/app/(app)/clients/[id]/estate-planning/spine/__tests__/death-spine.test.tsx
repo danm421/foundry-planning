@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { DeathSpine } from "../death-spine";
 import type { SpineData, StageTaxBreakdown } from "../lib/derive-spine-data";
+import type { BeneficiaryDetail } from "../lib/derive-beneficiary-detail";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,25 @@ const zeroBreakdown: StageTaxBreakdown = {
   federalEstateTax: 0,
   stateEstateTax: 0,
 };
+
+function detailWithTotal(total: number): BeneficiaryDetail {
+  return {
+    fromFirstDeath: {
+      gross: 0,
+      transfers: [],
+      drains: { federal_estate_tax: 0, state_estate_tax: 0, admin_expenses: 0, debts_paid: 0 },
+      net: 0,
+    },
+    fromSecondDeath: {
+      gross: total,
+      transfers: [],
+      drains: { federal_estate_tax: 0, state_estate_tax: 0, admin_expenses: 0, debts_paid: 0 },
+      net: total,
+    },
+    inTrust: [],
+    total,
+  };
+}
 
 const twoGrantorData: SpineData = {
   kind: "two-grantor",
@@ -50,16 +70,16 @@ const twoGrantorData: SpineData = {
     {
       name: "Daughter Jane",
       relationship: "child",
-      value: 2_175_000,
       isTrustRemainder: false,
       pctOfHeirs: 0.5,
+      detail: detailWithTotal(2_175_000),
     },
     {
       name: "Son Mike",
       relationship: "child",
-      value: 2_175_000,
       isTrustRemainder: false,
       pctOfHeirs: 0.5,
+      detail: detailWithTotal(2_175_000),
     },
   ],
   entities: [],
@@ -83,9 +103,9 @@ const singleGrantorData: SpineData = {
     {
       name: "Daughter Jane",
       relationship: "child",
-      value: 1_350_000,
       isTrustRemainder: false,
       pctOfHeirs: 0.5,
+      detail: detailWithTotal(1_350_000),
     },
   ],
   entities: [],

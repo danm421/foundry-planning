@@ -286,8 +286,8 @@ describe("deriveSpineData", () => {
     // First beneficiary card shape
     const card = data.beneficiaries[0];
     expect(card.name).toBeTruthy();
-    expect(typeof card.value).toBe("number");
-    expect(card.value).toBeGreaterThan(0);
+    expect(typeof card.detail.total).toBe("number");
+    expect(card.detail.total).toBeGreaterThan(0);
     expect(card.pctOfHeirs).toBeGreaterThan(0);
     expect(card.pctOfHeirs).toBeLessThanOrEqual(1);
 
@@ -339,8 +339,8 @@ describe("deriveSpineData", () => {
     // First beneficiary card shape
     const card = data.beneficiaries[0];
     expect(card.name).toBeTruthy();
-    expect(typeof card.value).toBe("number");
-    expect(card.value).toBeGreaterThan(0);
+    expect(typeof card.detail.total).toBe("number");
+    expect(card.detail.total).toBeGreaterThan(0);
     expect(card.pctOfHeirs).toBeGreaterThan(0);
     expect(card.pctOfHeirs).toBeLessThanOrEqual(1);
 
