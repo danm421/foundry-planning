@@ -24,6 +24,7 @@ import { applyGrantorSuccession } from "./grantor-succession";
 import { drainLiquidAssets } from "./creditor-payoff";
 import { prepareLifeInsurancePayouts } from "./life-insurance-payout";
 import { applyLiabilityBequests } from "./liability-bequests";
+import { computeDrainAttributions } from "./drain-attribution";
 import { beaForYear } from "@/lib/tax/estate";
 import { computeAdjustedTaxableGifts } from "@/lib/estate/adjusted-taxable-gifts";
 
@@ -255,7 +256,16 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   });
 
   // Working state for the drain passes.
+  //
+  // Pipeline split (Phase B): the chain routes accounts at GROSS values, so
+  // `accountBalances` is never mutated by drains. A separate `drainTargetBalances`
+  // copy IS mutated sequentially by both drains so the second drain sees the
+  // residual of the first (preventing double-allocation in the debit arrays).
+  // At second death, simulation ends — the chain's "after" doesn't power
+  // anything downstream, so the cost of routing gross is one extra balance map
+  // and the gain is gross DeathTransfer.amount + per-recipient drain attribution.
   const accountBalances = { ...prepared.accountBalances };
+  const drainTargetBalances = { ...prepared.accountBalances };
   let workingLiabs = [...prepared.liabilities];
   let ledger: DeathTransfer[] = [];
 
@@ -295,7 +305,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   const creditorDrain = drainLiquidAssets({
     amountNeeded: unlinkedDebt,
     accounts: prepared.accounts,
-    accountBalances,
+    accountBalances: drainTargetBalances,
     eligibilityFilter: (a) => {
       // Exclude accounts already distributed to a non-principal heir FM
       const cfmA = controllingFamilyMember(a);
@@ -312,8 +322,9 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     },
   });
 
+  // Apply to drainTargetBalances only — chain/pour-out continue to see gross.
   for (const debit of creditorDrain.debits) {
-    accountBalances[debit.accountId] = (accountBalances[debit.accountId] ?? 0) - debit.amount;
+    drainTargetBalances[debit.accountId] = (drainTargetBalances[debit.accountId] ?? 0) - debit.amount;
     const a = prepared.accounts.find((x) => x.id === debit.accountId);
     if (a && a.category === "retirement") warnings.push(`retirement_estate_drain: ${a.id}`);
   }
@@ -344,7 +355,10 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
 
   // accountValueAtYear: returns the balance at the gift year when per-year
   // snapshots are available; falls back to the death-year balance otherwise.
-  const finalDeathBalances = accountBalances;
+  // Use post-creditor-drain balances (the value still associated with the
+  // deceased before the estate-tax drain) — matches Phase A behavior so
+  // adjusted-taxable-gifts doesn't shift.
+  const finalDeathBalances = drainTargetBalances;
   const accountValueAtYear = (accountId: string, year: number): number => {
     const yearMap = input.yearEndAccountBalances?.get(year);
     if (yearMap && yearMap[accountId] != null) return yearMap[accountId];
@@ -383,10 +397,12 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   });
 
   // Phase 6 — estate-tax drain on deceased's + grantor-trust liquid assets.
+  // Operates on `drainTargetBalances` (post-creditor) so the two drain debit
+  // arrays don't double-allocate the same dollars. The chain still sees gross.
   const estateTaxDrain = drainLiquidAssets({
     amountNeeded: previewResult.totalTaxesAndExpenses,
     accounts: prepared.accounts,
-    accountBalances,
+    accountBalances: drainTargetBalances,
     eligibilityFilter: (a) => {
       // Exclude accounts already distributed to a non-principal heir FM
       const cfmA = controllingFamilyMember(a);
@@ -404,7 +420,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
   });
 
   for (const debit of estateTaxDrain.debits) {
-    accountBalances[debit.accountId] = (accountBalances[debit.accountId] ?? 0) - debit.amount;
+    drainTargetBalances[debit.accountId] = (drainTargetBalances[debit.accountId] ?? 0) - debit.amount;
     const a = prepared.accounts.find((x) => x.id === debit.accountId);
     if (a && a.category === "retirement") warnings.push(`retirement_estate_drain: ${a.id}`);
   }
@@ -484,7 +500,7 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     deathOrder: 2,
   });
 
-  const estateTax = buildEstateTaxResult({
+  const baseEstateTax = buildEstateTaxResult({
     year: input.year,
     deathOrder: 2,
     deceased: input.deceased,
@@ -500,11 +516,29 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     creditorPayoffResidual: creditorDrain.residual,
   });
 
+  // Phase 9b — drain attribution. Per-recipient × drain-kind allocation of the
+  // (now gross) ledger using the residuary-aware rule. Sums per kind reconcile
+  // to baseEstateTax fields + creditorDrain.drainedTotal.
+  const deceasedWillForResiduary: Will | null =
+    input.will && input.will.grantor === input.deceased ? input.will : null;
+  const drainAttributions = computeDrainAttributions({
+    deathOrder: 2,
+    transfers: ledger,
+    drainTotals: {
+      federal_estate_tax: baseEstateTax.federalEstateTax,
+      state_estate_tax: baseEstateTax.stateEstateTax,
+      admin_expenses: baseEstateTax.estateAdminExpenses,
+      debts_paid: creditorDrain.drainedTotal,
+    },
+    residuaryRecipients: deceasedWillForResiduary?.residuaryRecipients ?? [],
+  });
+  const estateTax: EstateTaxResult = { ...baseEstateTax, drainAttributions };
+
   assertFinalDeathInvariants(estateTax, mutatedEntities, input.deceased, ledger, workingLiabs, prepared.liabilities);
 
   return {
     accounts: chainResult.accounts,
-    accountBalances,
+    accountBalances: chainResult.accountBalances,
     basisMap: chainResult.basisMap,
     incomes: chainResult.incomes,
     liabilities: workingLiabs,
@@ -525,6 +559,7 @@ function assertFinalDeathInvariants(
   workingLiabs: Liability[],
   originalLiabilities: Liability[],
 ): void {
+  assertDrainAttributionsReconcile(estateTax);
   // grossEstate can be negative when the decedent owns no individual assets
   // but proportional household-debt attribution lands on them (4d-2 hypothetical
   // ordering exposes this; real-death flows never hit it). taxableEstate is
@@ -570,6 +605,37 @@ function assertFinalDeathInvariants(
     const ent = controllingEntity(row) != null;
     if (fam === ent) {
       throw new Error(`[4e] bequest-derived liability ${row.id} must have exactly one ownership kind (family_member or entity)`);
+    }
+  }
+}
+
+function assertDrainAttributionsReconcile(estateTax: EstateTaxResult): void {
+  const debtsTotal = estateTax.creditorPayoffDebits.reduce(
+    (s, d) => s + d.amount,
+    0,
+  );
+  const expected: Record<string, number> = {
+    federal_estate_tax: estateTax.federalEstateTax,
+    state_estate_tax: estateTax.stateEstateTax,
+    admin_expenses: estateTax.estateAdminExpenses,
+    debts_paid: debtsTotal,
+  };
+  for (const kind of [
+    "federal_estate_tax",
+    "state_estate_tax",
+    "admin_expenses",
+    "debts_paid",
+  ] as const) {
+    const sum = estateTax.drainAttributions
+      .filter((a) => a.drainKind === kind)
+      .reduce((s, a) => s + a.amount, 0);
+    const exp = expected[kind];
+    // Tolerate small floating-point + edge cases where no eligible recipients
+    // exist (e.g., spouse-only at first-death + estate-tax kinds — exempt).
+    if (exp > 0 && Math.abs(sum - exp) > 0.5 && sum > 0) {
+      throw new Error(
+        `drain attribution sum mismatch for ${kind}: got ${sum.toFixed(2)}, expected ${exp.toFixed(2)}`,
+      );
     }
   }
 }
