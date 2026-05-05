@@ -706,11 +706,14 @@ export default function TechniquesView({
   }
 
   async function handleDeleteRothConversion(rothConversionId: string) {
-    const res = await fetch(
-      `/api/clients/${clientId}/roth-conversions?rothConversionId=${rothConversionId}`,
-      { method: "DELETE" },
+    await writer.submit(
+      { op: "remove", targetKind: "roth_conversion", targetId: rothConversionId },
+      {
+        url: `/api/clients/${clientId}/roth-conversions?rothConversionId=${rothConversionId}`,
+        method: "DELETE",
+      },
     );
-    if (res.ok) router.refresh();
+    router.refresh();
   }
 
   return (
