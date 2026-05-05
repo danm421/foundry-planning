@@ -103,6 +103,23 @@ export interface DeathTransfer {
   postPayoutGrowthRate?: number;
 }
 
+export type DrainKind =
+  | "federal_estate_tax"
+  | "state_estate_tax"
+  | "admin_expenses"
+  | "debts_paid";
+
+export interface DrainAttribution {
+  /** 1 = first death, 2 = final death. */
+  deathOrder: 1 | 2;
+  /** Mirrors DeathTransfer recipient identification. */
+  recipientKind: DeathTransfer["recipientKind"];
+  recipientId: string | null;
+  drainKind: DrainKind;
+  /** Positive amount; the recipient bears this share of the named drain. */
+  amount: number;
+}
+
 export interface GrossEstateLine {
   /** Display label, e.g. "INV - Client 401k" or "Home (50%)". */
   label: string;
@@ -152,6 +169,12 @@ export interface EstateTaxResult {
   // Totals
   totalEstateTax: number;            // federal + state
   totalTaxesAndExpenses: number;     // totalEstateTax + estateAdminExpenses
+
+  /** Per-recipient × drain-kind allocation of the drains that summed into
+   *  totalTaxesAndExpenses. Σ amount per drainKind across recipients equals
+   *  the drain-kind's band-level total. Residuary-aware: drains paid from
+   *  residuary recipients first, falling back to pro-rata-by-asset. */
+  drainAttributions: DrainAttribution[];
 
   // Portability
   dsueGenerated: number;             // first-death only; ported to survivor
