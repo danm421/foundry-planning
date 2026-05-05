@@ -12,9 +12,6 @@ const TABS = [
   { label: "Cash Flow", href: "cashflow" },
   { label: "Investments", href: "investments" },
   { label: "Timeline", href: "timeline" },
-  { label: "Estate Tax", href: "estate-tax-report" },
-  { label: "Estate Transfer", href: "estate-transfer-report" },
-  { label: "Gift Tax", href: "gift-tax-report" },
   { label: "Estate Planning", href: "estate-planning" },
   { label: "Monte Carlo", href: "monte-carlo" },
 ] as const;

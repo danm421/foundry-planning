@@ -28,7 +28,7 @@ describe("ClientTabs", () => {
       "Cash Flow",
       "Investments",
       "Timeline",
-      "Estate Tax",
+      "Estate Planning",
       "Monte Carlo",
     ];
     let last = -1;
@@ -82,7 +82,7 @@ describe("ClientTabs", () => {
     );
     const { container } = render(<ClientTabs clientId="c1" />);
     const links = Array.from(container.querySelectorAll("a"));
-    expect(links).toHaveLength(11);
+    expect(links).toHaveLength(8);
     for (const a of links) {
       expect(a.getAttribute("href")).toContain("?scenario=sc-1");
     }
