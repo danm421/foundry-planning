@@ -61,6 +61,8 @@ export interface AssumptionsSettings {
   taxInflationRate: string;
   ssWageGrowthRate: string;
   outOfHouseholdDniRate: string;
+  priorTaxableGiftsClient: string;
+  priorTaxableGiftsSpouse: string;
 }
 
 interface ModelPortfolioOption {
@@ -118,6 +120,11 @@ export default function AssumptionsClient({
             estateAdminExpenses={settings.estateAdminExpenses}
             flatStateEstateRate={settings.flatStateEstateRate}
             outOfHouseholdDniRate={settings.outOfHouseholdDniRate}
+            priorTaxableGiftsClient={settings.priorTaxableGiftsClient}
+            priorTaxableGiftsSpouse={settings.priorTaxableGiftsSpouse}
+            hasSpouse={Boolean(spouseFirstName)}
+            clientFirstName={clientFirstName}
+            spouseFirstName={spouseFirstName}
             initialMode={settings.taxEngineMode}
           />
         )}

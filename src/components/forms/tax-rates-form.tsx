@@ -11,6 +11,11 @@ interface TaxRatesFormProps {
   estateAdminExpenses: string;
   flatStateEstateRate: string;
   outOfHouseholdDniRate: string;
+  priorTaxableGiftsClient: string;
+  priorTaxableGiftsSpouse: string;
+  hasSpouse: boolean;
+  clientFirstName?: string;
+  spouseFirstName?: string;
   initialMode?: "flat" | "bracket";
 }
 
@@ -23,6 +28,11 @@ export default function TaxRatesForm({
   estateAdminExpenses,
   flatStateEstateRate,
   outOfHouseholdDniRate,
+  priorTaxableGiftsClient,
+  priorTaxableGiftsSpouse,
+  hasSpouse,
+  clientFirstName,
+  spouseFirstName,
   initialMode = "flat",
 }: TaxRatesFormProps) {
   const router = useRouter();
@@ -46,6 +56,10 @@ export default function TaxRatesForm({
       estateAdminExpenses: String(Number(data.get("estateAdminExpenses") ?? "0")),
       flatStateEstateRate: String(Number(data.get("flatStateEstateRate") ?? "0") / 100),
       outOfHouseholdDniRate: String(Number(data.get("outOfHouseholdDniRate") ?? "0") / 100),
+      priorTaxableGiftsClient: String(Number(data.get("priorTaxableGiftsClient") ?? "0")),
+      priorTaxableGiftsSpouse: hasSpouse
+        ? String(Number(data.get("priorTaxableGiftsSpouse") ?? "0"))
+        : "0",
     };
 
     if (mode === "flat") {
@@ -157,6 +171,47 @@ export default function TaxRatesForm({
           />
           <p className="mt-1 text-xs text-gray-400">Records an estimated recipient-side tax in the plan&apos;s tax summary. Defaults to top federal bracket (37%).</p>
         </div>
+      </div>
+
+      <header className="mt-6">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-300">Prior lifetime gifts</h3>
+        <p className="mt-1 text-xs text-gray-400">
+          Post-1976 cumulative taxable gifts before plan start. Pull from the most recent Form 709&apos;s &ldquo;prior periods&rdquo; line.
+          Joint pre-plan gifts are pre-attributed (e.g. a $200K joint gift = $100K on each spouse).
+        </p>
+      </header>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-300" htmlFor="priorTaxableGiftsClient">
+            {clientFirstName ?? "Client"} ($)
+          </label>
+          <input
+            id="priorTaxableGiftsClient"
+            name="priorTaxableGiftsClient"
+            type="number"
+            min="0"
+            step="1000"
+            defaultValue={priorTaxableGiftsClient}
+            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+        </div>
+        {hasSpouse && (
+          <div>
+            <label className="block text-xs font-medium text-gray-300" htmlFor="priorTaxableGiftsSpouse">
+              {spouseFirstName ?? "Spouse"} ($)
+            </label>
+            <input
+              id="priorTaxableGiftsSpouse"
+              name="priorTaxableGiftsSpouse"
+              type="number"
+              min="0"
+              step="1000"
+              defaultValue={priorTaxableGiftsSpouse}
+              className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end pt-2">
