@@ -107,4 +107,22 @@ describe("computeGiftLedger", () => {
     });
     expect(ledger[0].taxableGiftsGiven).toBe(0);
   });
+
+  it("treats charitable cash gifts as 0 taxable (full charitable deduction)", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      gifts: [
+        gift({
+          year: 2026,
+          amount: 500_000,
+          grantor: "client",
+          recipientFamilyMemberId: undefined,
+          recipientExternalBeneficiaryId: "ext-charity-1",
+        }),
+      ],
+      externalBeneficiaryKindById: new Map([["ext-charity-1", "charity"]]),
+    });
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
+    expect(ledger[0].taxableGiftsGiven).toBe(0);
+  });
 });

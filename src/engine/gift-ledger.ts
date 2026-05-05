@@ -89,6 +89,14 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
   return result;
 }
 
+function isCharitableGift(
+  g: Gift,
+  externalBeneficiaryKindById: Map<string, "charity" | "individual">,
+): boolean {
+  return g.recipientExternalBeneficiaryId != null &&
+    externalBeneficiaryKindById.get(g.recipientExternalBeneficiaryId) === "charity";
+}
+
 function sumLegacyCashGifts(
   grantor: Grantor,
   year: number,
@@ -98,6 +106,7 @@ function sumLegacyCashGifts(
   let total = 0;
   for (const g of input.gifts) {
     if (g.year !== year) continue;
+    if (isCharitableGift(g, input.externalBeneficiaryKindById)) continue;
     if (g.grantor === grantor) {
       total += Math.max(0, g.amount - exclusion);
     } else if (g.grantor === "joint") {
