@@ -29,26 +29,29 @@ export function BeneficiaryCard({
   isTrustRemainder = false,
 }: Props) {
   return (
-    <div className={`rounded border border-hair ${expanded ? "col-span-4" : ""}`}>
+    <div className={`min-w-0 rounded border border-hair ${expanded ? "col-span-4" : ""}`}>
       <button
         type="button"
         aria-expanded={expanded}
         onClick={onToggle}
-        className="flex w-full items-start justify-between gap-2 p-2 text-left hover:bg-card-hover"
+        className="flex w-full flex-col items-start gap-1 p-2 text-left hover:bg-card-hover"
       >
-        <div>
+        <div className="min-w-0 w-full">
           <div
-            className={`text-[13px] font-semibold ${
+            className={`truncate text-[13px] font-semibold ${
               isTrustRemainder ? "text-ink-2" : "text-ink"
             }`}
+            title={isTrustRemainder ? `+ ${name}` : name}
           >
             {isTrustRemainder ? `+ ${name}` : name}
           </div>
-          {relationship && <div className="text-[11px] text-ink-3">{relationship}</div>}
+          {relationship && (
+            <div className="truncate text-[11px] text-ink-3">{relationship}</div>
+          )}
         </div>
         <MoneyText
           value={detail.total}
-          className={`text-[15px] font-mono ${
+          className={`whitespace-nowrap text-[15px] font-mono ${
             isTrustRemainder ? "text-ink-2" : "text-accent-ink"
           }`}
         />
