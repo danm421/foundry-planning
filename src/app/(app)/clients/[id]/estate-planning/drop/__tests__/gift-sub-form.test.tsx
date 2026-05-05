@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import { GiftSubForm } from "@/app/(app)/clients/[id]/estate-planning/drop/gift-sub-form";
+import type { GiftLedgerYear } from "@/engine/gift-ledger";
 
 const baseProps = {
   ownerSlicePct: 0.6,
@@ -172,5 +173,102 @@ describe("GiftSubForm", () => {
     await user.type(percentInput, "150");
     await user.click(screen.getByRole("button", { name: /save/i }));
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+const breachLedger: GiftLedgerYear[] = [{
+  year: 2030,
+  giftsGiven: 0,
+  taxableGiftsGiven: 0,
+  perGrantor: {
+    client: {
+      taxableGiftsThisYear: 0,
+      cumulativeTaxableGifts: 14_000_000,
+      creditUsed: 5_545_800,
+      giftTaxThisYear: 0,
+      cumulativeGiftTax: 0,
+    },
+    spouse: { taxableGiftsThisYear: 0, cumulativeTaxableGifts: 0, creditUsed: 0, giftTaxThisYear: 0, cumulativeGiftTax: 0 },
+  },
+  totalGiftTax: 0,
+}];
+
+describe("GiftSubForm — breach warning", () => {
+  it("does not show warning when proposed gift fits within remaining BEA", () => {
+    render(
+      <GiftSubForm
+        ownerSlicePct={1}
+        ownerSliceValueAtToday={100_000}
+        growthRateForPreview={0}
+        recipientKind="entity"
+        isCashAccount={true}
+        yearMin={2030}
+        yearMax={2050}
+        giftLedger={[]}
+        taxInflationRate={0.025}
+        grantor="client"
+        ownerFirstName="Cooper"
+        getAnnualExclusion={() => 20_000}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText(/Cash amount/i), {
+      target: { value: "50000" },
+    });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("shows inline warning when proposed gift breaches BEA", () => {
+    render(
+      <GiftSubForm
+        ownerSlicePct={1}
+        ownerSliceValueAtToday={100_000}
+        growthRateForPreview={0}
+        recipientKind="entity"
+        isCashAccount={true}
+        yearMin={2030}
+        yearMax={2050}
+        giftLedger={breachLedger}
+        taxInflationRate={0.025}
+        grantor="client"
+        ownerFirstName="Cooper"
+        getAnnualExclusion={() => 20_000}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText(/Cash amount/i), {
+      target: { value: "20000000" },
+    });
+    const status = screen.getByRole("status");
+    expect(status.textContent).toMatch(/Cooper/);
+    expect(status.textContent).toMatch(/exceed/);
+  });
+
+  it("shows no warning for charitable recipients (taxable contribution = 0)", () => {
+    render(
+      <GiftSubForm
+        ownerSlicePct={1}
+        ownerSliceValueAtToday={100_000}
+        growthRateForPreview={0}
+        recipientKind="external_beneficiary"
+        recipientIsCharity={true}
+        isCashAccount={true}
+        yearMin={2030}
+        yearMax={2050}
+        giftLedger={breachLedger}
+        taxInflationRate={0.025}
+        grantor="client"
+        ownerFirstName="Cooper"
+        getAnnualExclusion={() => 20_000}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText(/Cash amount/i), {
+      target: { value: "20000000" },
+    });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });
