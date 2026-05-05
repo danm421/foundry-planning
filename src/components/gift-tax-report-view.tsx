@@ -92,9 +92,10 @@ export default function GiftTaxReportView({
         { firstName: fm.firstName, lastName: fm.lastName ?? "" },
       ]),
     );
-    const entitiesById = new Map(
-      (tree.entities ?? []).map((e) => [e.id, { name: e.name }]),
-    );
+    const entitiesById = new Map<string, { name: string }>();
+    for (const e of tree.entities ?? []) {
+      if (e.name) entitiesById.set(e.id, { name: e.name });
+    }
     const externalBeneficiariesById = new Map(
       (tree.externalBeneficiaries ?? []).map((eb) => [
         eb.id,
@@ -103,7 +104,11 @@ export default function GiftTaxReportView({
     );
 
     const annualExclusionsByYear: Record<number, number> = {};
-    for (const r of tree.taxYearRows ?? []) {
+    const taxYearRows = (tree.taxYearRows ?? []) as Array<{
+      year: number;
+      giftAnnualExclusion?: string | null;
+    }>;
+    for (const r of taxYearRows) {
       if (r.giftAnnualExclusion != null) {
         annualExclusionsByYear[r.year] = parseFloat(r.giftAnnualExclusion);
       }
