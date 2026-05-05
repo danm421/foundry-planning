@@ -395,6 +395,19 @@ export const willBequestRecipientRow = {
   updatedAt: NOW,
 };
 
+export const FIXTURE_WILL_RESIDUARY_ID = "00000000-0000-0000-0000-000000000130";
+
+export const willResiduaryRecipientRow = {
+  id: FIXTURE_WILL_RESIDUARY_ID,
+  willId: FIXTURE_WILL_ID,
+  recipientKind: "spouse" as const,
+  recipientId: null,
+  percentage: "100.00",
+  sortOrder: 0,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
 // ── transfers ─────────────────────────────────────────────────────────────────
 
 export const transferRow = {

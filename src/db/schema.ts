@@ -1327,9 +1327,29 @@ export const willBequestRecipients = pgTable("will_bequest_recipients", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const willResiduaryRecipients = pgTable(
+  "will_residuary_recipients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    willId: uuid("will_id")
+      .notNull()
+      .references(() => wills.id, { onDelete: "cascade" }),
+    recipientKind: willRecipientKindEnum("recipient_kind").notNull(),
+    recipientId: uuid("recipient_id"),
+    percentage: numeric("percentage", { precision: 5, scale: 2 }).notNull(),
+    sortOrder: integer("sort_order").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("will_residuary_recipients_will_sort_idx").on(t.willId, t.sortOrder),
+  ],
+);
+
 export const willsRelations = relations(wills, ({ one, many }) => ({
   client: one(clients, { fields: [wills.clientId], references: [clients.id] }),
   bequests: many(willBequests),
+  residuaryRecipients: many(willResiduaryRecipients),
 }));
 
 export const willBequestsRelations = relations(willBequests, ({ one, many }) => ({
@@ -1351,6 +1371,16 @@ export const willBequestRecipientsRelations = relations(
     bequest: one(willBequests, {
       fields: [willBequestRecipients.bequestId],
       references: [willBequests.id],
+    }),
+  }),
+);
+
+export const willResiduaryRecipientsRelations = relations(
+  willResiduaryRecipients,
+  ({ one }) => ({
+    will: one(wills, {
+      fields: [willResiduaryRecipients.willId],
+      references: [wills.id],
     }),
   }),
 );

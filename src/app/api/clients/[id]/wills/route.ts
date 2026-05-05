@@ -5,6 +5,7 @@ import {
   wills,
   willBequests,
   willBequestRecipients,
+  willResiduaryRecipients,
 } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -59,6 +60,14 @@ export async function GET(
             asc(willBequestRecipients.sortOrder),
           )
       : [];
+    const residuaryRows = await db
+      .select()
+      .from(willResiduaryRecipients)
+      .where(inArray(willResiduaryRecipients.willId, willIds))
+      .orderBy(
+        asc(willResiduaryRecipients.willId),
+        asc(willResiduaryRecipients.sortOrder),
+      );
 
     const recipientsByBequest = new Map<string, typeof recipientRows>();
     for (const r of recipientRows) {
@@ -89,11 +98,24 @@ export async function GET(
       });
       bequestsByWill.set(b.willId, list);
     }
+    const residuaryByWill = new Map<string, typeof residuaryRows>();
+    for (const r of residuaryRows) {
+      const list = residuaryByWill.get(r.willId) ?? [];
+      list.push(r);
+      residuaryByWill.set(r.willId, list);
+    }
     return NextResponse.json(
       willRows.map((w) => ({
         id: w.id,
         grantor: w.grantor,
         bequests: bequestsByWill.get(w.id) ?? [],
+        residuaryRecipients: (residuaryByWill.get(w.id) ?? []).map((r) => ({
+          id: r.id,
+          recipientKind: r.recipientKind,
+          recipientId: r.recipientId,
+          percentage: parseFloat(r.percentage),
+          sortOrder: r.sortOrder,
+        })),
       })),
     );
   } catch (err) {
@@ -137,7 +159,11 @@ export async function POST(
       );
     }
 
-    const crossRefError = await verifyCrossRefs(id, gatherCrossRefs(data.bequests), data.bequests);
+    const crossRefError = await verifyCrossRefs(
+      id,
+      gatherCrossRefs(data.bequests, data.residuaryRecipients),
+      data.bequests,
+    );
     if (crossRefError) {
       return NextResponse.json(
         { error: crossRefError.code, detail: crossRefError.detail },
@@ -176,6 +202,17 @@ export async function POST(
             })),
           );
         }
+      }
+      if (data.residuaryRecipients && data.residuaryRecipients.length > 0) {
+        await tx.insert(willResiduaryRecipients).values(
+          data.residuaryRecipients.map((r) => ({
+            willId: willRow.id,
+            recipientKind: r.recipientKind,
+            recipientId: r.recipientId,
+            percentage: String(r.percentage),
+            sortOrder: r.sortOrder,
+          })),
+        );
       }
       return willRow.id;
     });

@@ -19,8 +19,9 @@ export interface BequestRecipient {
 }
 
 interface BequestRecipientListProps {
-  /** "asset" → all four kinds. "debt" → family + entity only (engine drops the others as warnings). */
-  mode: "asset" | "debt";
+  /** "asset" / "residuary" → all four kinds. "debt" → family + entity only
+   *  (engine drops the others as warnings). */
+  mode: "asset" | "debt" | "residuary";
   rows: BequestRecipient[];
   onChange: (rows: BequestRecipient[]) => void;
   primary: WillsPanelPrimary;
@@ -116,13 +117,14 @@ export default function BequestRecipientList({
   }
 
   function add() {
-    const next: BequestRecipient = mode === "asset"
-      ? { recipientKind: "spouse", recipientId: null, percentage: 0, sortOrder: rows.length }
-      : familyMembers.length > 0
-        ? { recipientKind: "family_member", recipientId: familyMembers[0].id, percentage: 0, sortOrder: rows.length }
-        : entities.length > 0
-          ? { recipientKind: "entity", recipientId: entities[0].id, percentage: 0, sortOrder: rows.length }
-          : { recipientKind: "family_member", recipientId: null, percentage: 0, sortOrder: rows.length };
+    const next: BequestRecipient =
+      mode === "asset" || mode === "residuary"
+        ? { recipientKind: "spouse", recipientId: null, percentage: 0, sortOrder: rows.length }
+        : familyMembers.length > 0
+          ? { recipientKind: "family_member", recipientId: familyMembers[0].id, percentage: 0, sortOrder: rows.length }
+          : entities.length > 0
+            ? { recipientKind: "entity", recipientId: entities[0].id, percentage: 0, sortOrder: rows.length }
+            : { recipientKind: "family_member", recipientId: null, percentage: 0, sortOrder: rows.length };
     const addedKey = newKey();
     setRowKeys([...rowKeys, addedKey]);
     if (rows.length === 0) {
@@ -134,8 +136,9 @@ export default function BequestRecipientList({
     onChange(redistribute(combined, lockedKeys, (r) => combinedKeys[combined.indexOf(r)] ?? addedKey, setRowPercentage));
   }
 
-  const showSpouse = mode === "asset" && primary.spouseName != null;
-  const showExternal = mode === "asset";
+  const showSpouse =
+    (mode === "asset" || mode === "residuary") && primary.spouseName != null;
+  const showExternal = mode === "asset" || mode === "residuary";
 
   return (
     <div>

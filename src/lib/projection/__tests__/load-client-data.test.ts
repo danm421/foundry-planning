@@ -37,6 +37,7 @@ import {
   willRow,
   willBequestRow,
   willBequestRecipientRow,
+  willResiduaryRecipientRow,
   transferRow,
   taxYearParameterRow,
   modelPortfolioRow,
@@ -75,6 +76,7 @@ type DbState = {
   wills: typeof willRow[];
   willBequests: typeof willBequestRow[];
   willBequestRecipients: typeof willBequestRecipientRow[];
+  willResiduaryRecipients: typeof willResiduaryRecipientRow[];
   taxYearParameters: typeof taxYearParameterRow[];
   clientDeductions: unknown[];
   incomeScheduleOverrides: unknown[];
@@ -109,6 +111,7 @@ const dbState: DbState = {
   wills: [],
   willBequests: [],
   willBequestRecipients: [],
+  willResiduaryRecipients: [],
   taxYearParameters: [],
   clientDeductions: [],
   incomeScheduleOverrides: [],
@@ -158,6 +161,7 @@ vi.mock("@/db", async () => {
     if (t === schema.wills || n === "wills") return dbState.wills;
     if (t === schema.willBequests || n === "will_bequests") return dbState.willBequests;
     if (t === schema.willBequestRecipients || n === "will_bequest_recipients") return dbState.willBequestRecipients;
+    if (t === schema.willResiduaryRecipients || n === "will_residuary_recipients") return dbState.willResiduaryRecipients;
     if (t === schema.taxYearParameters || n === "tax_year_parameters") return dbState.taxYearParameters;
     if (t === schema.clientDeductions || n === "client_deductions") return dbState.clientDeductions;
     if (t === schema.incomeScheduleOverrides || n === "income_schedule_overrides") return dbState.incomeScheduleOverrides;
@@ -288,5 +292,31 @@ describe("loadClientData", () => {
 
     // Pin the full shape for Task 12 parity diff
     expect(data).toMatchSnapshot();
+  });
+
+  it("hydrates residuaryRecipients onto each Will", async () => {
+    seedValidFixture();
+    dbState.willResiduaryRecipients = [willResiduaryRecipientRow];
+
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    expect(data.wills).toHaveLength(1);
+    expect(data.wills![0].residuaryRecipients).toEqual([
+      {
+        recipientKind: "spouse",
+        recipientId: null,
+        percentage: 100,
+        sortOrder: 0,
+      },
+    ]);
+  });
+
+  it("returns undefined residuaryRecipients when none exist", async () => {
+    seedValidFixture();
+    // willResiduaryRecipients left empty by seedValidFixture
+    const data = await loadClientData(FIXTURE_CLIENT_ID, FIXTURE_FIRM_ID);
+
+    expect(data.wills).toHaveLength(1);
+    expect(data.wills![0].residuaryRecipients).toBeUndefined();
   });
 });

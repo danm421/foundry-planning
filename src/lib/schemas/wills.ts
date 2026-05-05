@@ -107,16 +107,69 @@ export const willBequestSchema = z.discriminatedUnion("kind", [
   willBequestLiabilitySchema,
 ]);
 
-export const willCreateSchema = z.object({
-  grantor: z.enum(["client", "spouse"]),
-  bequests: z.array(willBequestSchema).default([]),
-});
+export const willResiduaryRecipientSchema = z
+  .object({
+    recipientKind: z.enum([
+      "family_member",
+      "external_beneficiary",
+      "entity",
+      "spouse",
+    ]),
+    recipientId: uuidSchema.nullable(),
+    percentage: z.number().gt(0).lte(100),
+    sortOrder: z.number().int().min(0),
+  })
+  .superRefine((r, ctx) => {
+    const isSpouse = r.recipientKind === "spouse";
+    if (isSpouse && r.recipientId !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "recipientId must be null when recipientKind='spouse'",
+      });
+    }
+    if (!isSpouse && r.recipientId === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "recipientId is required when recipientKind is not 'spouse'",
+      });
+    }
+  });
 
-export const willUpdateSchema = z.object({
-  bequests: z.array(willBequestSchema).default([]),
-});
+const residuarySumRefiner: <
+  T extends { residuaryRecipients?: { percentage: number }[] },
+>(
+  v: T,
+  ctx: z.RefinementCtx,
+) => void = (v, ctx) => {
+  const list = v.residuaryRecipients ?? [];
+  if (list.length === 0) return;
+  const sum = list.reduce((s, r) => s + r.percentage, 0);
+  if (Math.abs(sum - 100) > 0.01) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["residuaryRecipients"],
+      message: `residuary recipient percentages must sum to 100 (got ${sum})`,
+    });
+  }
+};
+
+export const willCreateSchema = z
+  .object({
+    grantor: z.enum(["client", "spouse"]),
+    bequests: z.array(willBequestSchema).default([]),
+    residuaryRecipients: z.array(willResiduaryRecipientSchema).optional(),
+  })
+  .superRefine(residuarySumRefiner);
+
+export const willUpdateSchema = z
+  .object({
+    bequests: z.array(willBequestSchema).default([]),
+    residuaryRecipients: z.array(willResiduaryRecipientSchema).optional(),
+  })
+  .superRefine(residuarySumRefiner);
 
 export type WillBequestRecipientInput = z.infer<typeof willBequestRecipientSchema>;
 export type WillBequestInput = z.infer<typeof willBequestSchema>;
+export type WillResiduaryRecipientInput = z.infer<typeof willResiduaryRecipientSchema>;
 export type WillCreateInput = z.infer<typeof willCreateSchema>;
 export type WillUpdateInput = z.infer<typeof willUpdateSchema>;
