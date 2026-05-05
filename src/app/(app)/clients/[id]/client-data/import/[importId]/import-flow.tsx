@@ -185,7 +185,7 @@ function DraftStage(props: ImportFlowProps) {
                 type="button"
                 onClick={startExtraction}
                 disabled={extracting}
-                className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-on disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {extracting ? "Extracting…" : "Start extraction"}
               </button>

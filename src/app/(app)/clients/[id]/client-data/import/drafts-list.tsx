@@ -51,7 +51,7 @@ export default function DraftsList({
         <h1 className="text-xl font-semibold text-ink">Imports</h1>
         <Link
           href={`/clients/${clientId}/client-data/import/new`}
-          className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90"
+          className="rounded bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent/90"
         >
           New import
         </Link>

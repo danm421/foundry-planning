@@ -101,7 +101,7 @@ function PresetButton({ label, active, onClick }: PresetButtonProps) {
       className={
         "px-3 py-1.5 text-[12px] font-medium rounded-[var(--radius-sm)] border transition-colors " +
         (active
-          ? "bg-accent text-accent-ink border-accent"
+          ? "bg-accent text-accent-on border-accent"
           : "bg-card-2 text-ink-3 border-hair hover:border-hair-2 hover:text-ink")
       }
     >

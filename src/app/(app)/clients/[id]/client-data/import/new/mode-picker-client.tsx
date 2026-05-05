@@ -137,7 +137,7 @@ export default function ModePickerClient({
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="rounded bg-accent px-5 py-2 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50"
+                className="rounded bg-accent px-5 py-2 text-sm font-medium text-accent-on hover:bg-accent/90 disabled:opacity-50"
               >
                 {isSubmitting ? "Creating…" : "Continue"}
               </button>
