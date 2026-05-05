@@ -148,10 +148,10 @@ export function GiftCumulativeTable({
                   {fmt(row.totalGiftTax)}
                 </td>
               </tr>
-              {expanded && groups.length > 0 && (
+              {groups.length > 0 && (
                 <tr
                   data-drilldown-row
-                  className="bg-card-2/30 print:bg-transparent"
+                  className={`${expanded ? "" : "hidden print:table-row"} bg-card-2/30 print:bg-transparent`}
                 >
                   <td colSpan={colCount} className="px-4 py-3">
                     <DrilldownPanel year={row.year} groups={groups} />

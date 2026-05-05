@@ -142,3 +142,21 @@ body {
   display: block !important;
 }
 
+/* ------------------------------------------------------------------ */
+/* Gift Tax Report — print-friendly chrome hiding + drilldown expand   */
+/* ------------------------------------------------------------------ */
+@media print {
+  body:has(.gift-tax-report-printable) aside,
+  body:has(.gift-tax-report-printable) header,
+  body:has(.gift-tax-report-printable) nav[role="tablist"] {
+    display: none !important;
+  }
+  .gift-tax-report-printable .drilldown-recipient {
+    break-inside: avoid;
+  }
+  @page {
+    size: auto;
+    margin: 0.5in;
+  }
+}
+
