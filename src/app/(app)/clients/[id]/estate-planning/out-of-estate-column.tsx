@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import type { ClientData } from "@/engine/types";
+import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import { deriveTrustCardData, deriveHeirCardData, deriveCharityCardData } from "./lib/derive-card-data";
+import { deriveRecipientBreaches } from "@/lib/gifts/derive-recipient-breaches";
 import { TrustCard } from "./cards/trust-card";
 import { HeirCard } from "./cards/heir-card";
 import { CharityCard } from "./cards/charity-card";
@@ -11,7 +13,15 @@ import EntityDialog from "@/components/entity-dialog";
 import FamilyMemberDialog from "@/components/family-member-dialog";
 import ExternalBeneficiaryDialog from "@/components/external-beneficiary-dialog";
 
-export function OutOfEstateColumn({ tree, asOfYear }: { tree: ClientData; asOfYear: number }) {
+export function OutOfEstateColumn({
+  tree,
+  asOfYear,
+  giftLedger,
+}: {
+  tree: ClientData;
+  asOfYear: number;
+  giftLedger: GiftLedgerYear[];
+}) {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const clientId = params.id;
@@ -19,9 +29,15 @@ export function OutOfEstateColumn({ tree, asOfYear }: { tree: ClientData; asOfYe
   const [heirDialogOpen, setHeirDialogOpen] = useState(false);
   const [charityDialogOpen, setCharityDialogOpen] = useState(false);
 
-  const trusts = deriveTrustCardData(tree, asOfYear);
-  const heirs = deriveHeirCardData(tree, asOfYear);
-  const charities = deriveCharityCardData(tree);
+  const recipientBreaches = deriveRecipientBreaches({
+    ledger: giftLedger,
+    gifts: tree.gifts ?? [],
+    giftEvents: tree.giftEvents ?? [],
+  });
+
+  const trusts = deriveTrustCardData(tree, asOfYear, recipientBreaches);
+  const heirs = deriveHeirCardData(tree, asOfYear, recipientBreaches);
+  const charities = deriveCharityCardData(tree, recipientBreaches);
 
   return (
     <div>

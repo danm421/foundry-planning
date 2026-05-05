@@ -25,6 +25,7 @@ const bequestOnly: HeirCardData = {
     { bequestId: "b1", willId: "w1", willGrantor: "client", assetName: "401k", condition: "always", percentage: 50 },
   ],
   ownershipRows: [],
+  breach: false,
 };
 
 const ownershipOnly: HeirCardData = {
@@ -47,6 +48,7 @@ const ownershipOnly: HeirCardData = {
       coOwners: [],
     },
   ],
+  breach: false,
 };
 
 const empty: HeirCardData = {
@@ -56,6 +58,7 @@ const empty: HeirCardData = {
   age: 25,
   bequestsReceived: [],
   ownershipRows: [],
+  breach: false,
 };
 
 describe("HeirCard", () => {

@@ -46,7 +46,18 @@ export function HeirCard({ data, defaultExpanded = false }: Props) {
           {initial}
         </div>
         <div className="flex flex-col">
-          <span className="text-[13px] font-semibold leading-tight text-[var(--color-ink)]">{data.name}</span>
+          <span className="flex items-center">
+            <span className="text-[13px] font-semibold leading-tight text-[var(--color-ink)]">{data.name}</span>
+            {data.breach && (
+              <span
+                aria-label="Plan exceeds lifetime exemption — see Gift Tax Report"
+                title="Plan exceeds lifetime exemption — see Gift Tax Report"
+                className="ml-1 text-amber-400"
+              >
+                ⚠
+              </span>
+            )}
+          </span>
           <span className="text-xs text-[var(--color-ink-3)]">
             {data.relationship}{data.age != null ? ` · Age ${data.age}` : ""}
           </span>

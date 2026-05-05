@@ -67,7 +67,7 @@ export default async function EstatePlanningPage({ params }: PageProps) {
       taxInflationRate={taxInflationRate}
       getAnnualExclusion={getAnnualExclusion}
     >
-      <CanvasFrame tree={tree} withResult={withResult} />
+      <CanvasFrame tree={tree} withResult={withResult} giftLedger={withResult.giftLedger} />
       <ProjectionPanel
         tree={tree}
         withResult={withResult}

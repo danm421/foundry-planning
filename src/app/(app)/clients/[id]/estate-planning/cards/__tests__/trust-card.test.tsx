@@ -13,31 +13,37 @@ vi.mock("@dnd-kit/core", () => ({
   }),
 }));
 
-const data: TrustCardData = {
-  entityId: "e1",
-  name: "Tom's SLAT",
-  subType: "slat",
-  isIrrevocable: true,
-  grantorRole: "client",
-  trusteeName: "Sarah Smith",
-  rows: [
-    {
-      accountId: "a3",
-      accountName: "SLAT Brokerage",
-      category: "taxable",
-      taxTag: "TAX",
-      ownerPercent: 1,
-      sliceValue: 2_400_000,
-      linkedLiabilityBalance: 0,
-      netSliceValue: 2_400_000,
-      hasMultipleOwners: false,
-      coOwners: [],
-    },
-  ],
-  total: 2_400_000,
-  exemptionConsumed: 2_400_000,
-  exemptionAvailable: 15_000_000,
+const baseRow = {
+  accountId: "a3",
+  accountName: "SLAT Brokerage",
+  category: "taxable" as const,
+  taxTag: "TAX" as const,
+  ownerPercent: 1,
+  sliceValue: 2_400_000,
+  linkedLiabilityBalance: 0,
+  netSliceValue: 2_400_000,
+  hasMultipleOwners: false,
+  coOwners: [],
 };
+
+function makeTrustCardData(overrides: Partial<TrustCardData> = {}): TrustCardData {
+  return {
+    entityId: "e1",
+    name: "Tom's SLAT",
+    subType: "slat",
+    isIrrevocable: true,
+    grantorRole: "client",
+    trusteeName: "Sarah Smith",
+    rows: [baseRow],
+    total: 2_400_000,
+    exemptionConsumed: 2_400_000,
+    exemptionAvailable: 15_000_000,
+    breach: false,
+    ...overrides,
+  };
+}
+
+const data: TrustCardData = makeTrustCardData();
 
 describe("TrustCard", () => {
   it("renders collapsed with name, sub-type pill, and asset count", () => {
@@ -76,5 +82,15 @@ describe("TrustCard", () => {
       accountId: data.rows[0].accountId,
       trustEntityId: data.entityId,
     });
+  });
+
+  it("renders breach glyph when data.breach is true", () => {
+    render(<TrustCard data={makeTrustCardData({ breach: true })} />);
+    expect(screen.getByLabelText(/exceeds lifetime exemption/i)).toBeInTheDocument();
+  });
+
+  it("does not render breach glyph when data.breach is false", () => {
+    render(<TrustCard data={makeTrustCardData({ breach: false })} />);
+    expect(screen.queryByLabelText(/exceeds lifetime exemption/i)).not.toBeInTheDocument();
   });
 });

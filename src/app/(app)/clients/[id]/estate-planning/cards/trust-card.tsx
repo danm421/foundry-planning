@@ -40,7 +40,18 @@ export function TrustCard({ data, defaultExpanded = false, onRemoveSlice }: Prop
       >
         <div aria-hidden className="h-2 w-2 shrink-0 bg-[var(--color-accent)]" />
         <div className="flex flex-col">
-          <span className="text-[13px] font-semibold leading-tight text-[var(--color-ink)]">{data.name}</span>
+          <span className="flex items-center">
+            <span className="text-[13px] font-semibold leading-tight text-[var(--color-ink)]">{data.name}</span>
+            {data.breach && (
+              <span
+                aria-label="Plan exceeds lifetime exemption — see Gift Tax Report"
+                title="Plan exceeds lifetime exemption — see Gift Tax Report"
+                className="ml-1 text-amber-400"
+              >
+                ⚠
+              </span>
+            )}
+          </span>
           <span className="mt-0.5 flex items-center gap-1.5">
             <span className={`rounded-sm px-1.5 py-0.5 text-[9.5px] font-medium uppercase tracking-wider ${pill}`}>
               {data.subType}
