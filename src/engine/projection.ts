@@ -2719,6 +2719,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         yearEndAccountBalances,
         annualExclusionsByYear,
         dsueReceived: stashedDSUE,
+        priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
       });
 
       // Same normalization as first-death — keeps fractional reads consistent
