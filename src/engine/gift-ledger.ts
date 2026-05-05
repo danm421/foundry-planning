@@ -89,20 +89,48 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
   return result;
 }
 
-function stepGrantor(
-  _grantor: Grantor,
-  _year: number,
-  prev: GrantorYearState,
-  _input: GiftLedgerInput,
-): GrantorYearState {
-  return {
-    taxableGiftsThisYear: 0,
-    cumulativeTaxableGifts: prev.cumulativeTaxableGifts,
-    creditUsed: prev.creditUsed,
-    giftTaxThisYear: 0,
-    cumulativeGiftTax: prev.cumulativeGiftTax,
-  };
+function sumLegacyCashGifts(
+  grantor: Grantor,
+  year: number,
+  input: GiftLedgerInput,
+): number {
+  const exclusion = input.annualExclusionsByYear[year] ?? 0;
+  let total = 0;
+  for (const g of input.gifts) {
+    if (g.year !== year) continue;
+    if (g.grantor === grantor) {
+      total += Math.max(0, g.amount - exclusion);
+    } else if (g.grantor === "joint") {
+      total += Math.max(0, g.amount / 2 - exclusion);
+    }
+  }
+  return total;
 }
 
-// Suppress unused-import warning until later tasks consume `beaForYear`.
-void beaForYear;
+function stepGrantor(
+  grantor: Grantor,
+  year: number,
+  prev: GrantorYearState,
+  input: GiftLedgerInput,
+): GrantorYearState {
+  const taxableGiftsThisYear = sumLegacyCashGifts(grantor, year, input);
+
+  const cumulativeBefore = prev.cumulativeTaxableGifts;
+  const cumulativeAfter = cumulativeBefore + taxableGiftsThisYear;
+
+  const tentativeTaxOnAfter = applyUnifiedRateSchedule(cumulativeAfter);
+  const tentativeTaxOnBefore = applyUnifiedRateSchedule(cumulativeBefore);
+  const currentYearTentTax = tentativeTaxOnAfter - tentativeTaxOnBefore;
+
+  const beaCredit = applyUnifiedRateSchedule(beaForYear(year, input.taxInflationRate));
+  const remainingCredit = Math.max(0, beaCredit - tentativeTaxOnBefore);
+  const giftTaxThisYear = Math.max(0, currentYearTentTax - remainingCredit);
+
+  return {
+    taxableGiftsThisYear,
+    cumulativeTaxableGifts: cumulativeAfter,
+    creditUsed: tentativeTaxOnAfter,
+    giftTaxThisYear,
+    cumulativeGiftTax: prev.cumulativeGiftTax + giftTaxThisYear,
+  };
+}

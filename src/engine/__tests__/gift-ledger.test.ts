@@ -50,4 +50,61 @@ describe("computeGiftLedger", () => {
     expect(ledger[4].perGrantor.client.creditUsed).toBeCloseTo(393_800, 2);
     expect(ledger[0].perGrantor.spouse?.cumulativeTaxableGifts).toBe(0);
   });
+
+  function gift(over: Partial<Gift> = {}): Gift {
+    return {
+      id: "g1",
+      year: 2026,
+      amount: 100_000,
+      grantor: "client",
+      recipientFamilyMemberId: "fm1",
+      recipientEntityId: undefined,
+      recipientExternalBeneficiaryId: undefined,
+      useCrummeyPowers: false,
+      notes: undefined,
+      ...over,
+    } as Gift;
+  }
+
+  it("applies annual exclusion to a single-grantor cash gift", () => {
+    // 100k − 19k AE = 81k taxable to client only
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      gifts: [gift({ year: 2026, amount: 100_000, grantor: "client" })],
+    });
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBeCloseTo(81_000, 2);
+    expect(ledger[0].perGrantor.client.cumulativeTaxableGifts).toBeCloseTo(81_000, 2);
+    expect(ledger[0].perGrantor.spouse?.taxableGiftsThisYear).toBe(0);
+    expect(ledger[0].taxableGiftsGiven).toBeCloseTo(81_000, 2);
+  });
+
+  it("returns 0 taxable when gift is fully under annual exclusion", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      gifts: [gift({ year: 2026, amount: 15_000, grantor: "client" })],
+    });
+    expect(ledger[0].perGrantor.client.taxableGiftsThisYear).toBe(0);
+    expect(ledger[0].perGrantor.client.cumulativeTaxableGifts).toBe(0);
+  });
+
+  it("splits joint cash gifts 50/50 with each spouse's AE applied separately", () => {
+    // $50k joint → $25k each − $20k AE (using 2028 exclusion) = $5k each
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      gifts: [gift({ year: 2028, amount: 50_000, grantor: "joint" })],
+    });
+    const row2028 = ledger.find((r) => r.year === 2028)!;
+    expect(row2028.perGrantor.client.taxableGiftsThisYear).toBeCloseTo(5_000, 2);
+    expect(row2028.perGrantor.spouse?.taxableGiftsThisYear).toBeCloseTo(5_000, 2);
+    expect(row2028.taxableGiftsGiven).toBeCloseTo(10_000, 2);
+  });
+
+  it("ignores gifts whose grantor doesn't match either spouse (defensive)", () => {
+    const ledger = computeGiftLedger({
+      ...baseInput,
+      // Cast to unblock the test fixture even though the type union doesn't permit this.
+      gifts: [{ ...gift(), grantor: "other" } as unknown as Gift],
+    });
+    expect(ledger[0].taxableGiftsGiven).toBe(0);
+  });
 });
