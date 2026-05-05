@@ -329,4 +329,40 @@ describe("WillsPanel — Debt bequests section", () => {
     expect(visaOption).toBeDefined();
     expect(visaOption!.disabled).toBe(true);
   });
+
+  it("renders the Residuary clause section per grantor", () => {
+    render(<WillsPanel {...baseProps} initialWills={[]} />);
+    expect(screen.getAllByText(/Residuary clause/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/No residuary specified/i).length).toBeGreaterThan(0);
+  });
+
+  it("renders a populated residuary clause from initialWills", () => {
+    render(
+      <WillsPanel
+        {...baseProps}
+        initialWills={[
+          {
+            id: u("w1"),
+            grantor: "client",
+            bequests: [],
+            residuaryRecipients: [
+              {
+                recipientKind: "spouse",
+                recipientId: null,
+                percentage: 100,
+                sortOrder: 0,
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+    // No "no residuary" copy when one is configured
+    const empties = screen.queryAllByText(/No residuary specified/i);
+    // Spouse-grantor (no will) still shows the empty state; client-grantor should NOT
+    expect(empties.length).toBe(1);
+    // Spouse option appears as a recipient row
+    const recipientSelects = screen.getAllByRole("combobox", { name: /Recipient 1/i });
+    expect(recipientSelects.length).toBeGreaterThan(0);
+  });
 });

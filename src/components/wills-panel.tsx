@@ -8,6 +8,7 @@ import {
   fieldLabelClassName,
 } from "@/components/forms/input-styles";
 import BequestRecipientList from "@/components/forms/bequest-recipient-list";
+import WillResiduarySection from "@/components/forms/will-residuary-section";
 
 export type WillGrantor = "client" | "spouse";
 export type WillAssetMode = "specific" | "all_assets";
@@ -55,6 +56,7 @@ export interface WillsPanelWill {
   id: string;
   grantor: WillGrantor;
   bequests: WillsPanelBequest[];
+  residuaryRecipients?: WillsPanelRecipient[];
 }
 
 export interface WillsPanelPrimary {
@@ -322,7 +324,11 @@ export default function WillsPanel(props: WillsPanelProps) {
     return (await res.json()) as WillsPanelWill;
   }
 
-  async function saveWill(g: WillGrantor, nextBequests: WillsPanelBequest[]) {
+  async function saveWillFull(
+    g: WillGrantor,
+    nextBequests: WillsPanelBequest[],
+    nextResiduary: WillsPanelRecipient[],
+  ) {
     setSaving(true);
     setError(null);
     try {
@@ -332,7 +338,11 @@ export default function WillsPanel(props: WillsPanelProps) {
         const res = await fetch(`/api/clients/${props.clientId}/wills`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ grantor: g, bequests: nextBequests }),
+          body: JSON.stringify({
+            grantor: g,
+            bequests: nextBequests,
+            residuaryRecipients: nextResiduary,
+          }),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -346,7 +356,10 @@ export default function WillsPanel(props: WillsPanelProps) {
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ bequests: nextBequests }),
+            body: JSON.stringify({
+              bequests: nextBequests,
+              residuaryRecipients: nextResiduary,
+            }),
           },
         );
         if (!res.ok) {
@@ -361,7 +374,15 @@ export default function WillsPanel(props: WillsPanelProps) {
       } else {
         setWills((prev) => {
           const rest = prev.filter((w) => w.grantor !== g);
-          return [...rest, { id: willId, grantor: g, bequests: nextBequests }];
+          return [
+            ...rest,
+            {
+              id: willId,
+              grantor: g,
+              bequests: nextBequests,
+              residuaryRecipients: nextResiduary,
+            },
+          ];
         });
       }
     } catch (err) {
@@ -369,6 +390,11 @@ export default function WillsPanel(props: WillsPanelProps) {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function saveWill(g: WillGrantor, nextBequests: WillsPanelBequest[]) {
+    const existing = wills.find((w) => w.grantor === g);
+    await saveWillFull(g, nextBequests, existing?.residuaryRecipients ?? []);
   }
 
   async function deleteWill(g: WillGrantor, willId: string) {
@@ -719,6 +745,18 @@ export default function WillsPanel(props: WillsPanelProps) {
                 </ol>
               )}
             </div>
+
+            <WillResiduarySection
+              rows={will?.residuaryRecipients ?? []}
+              onChange={async (next) => {
+                await saveWillFull(g, will?.bequests ?? [], next);
+              }}
+              primary={primary}
+              familyMembers={familyMembers}
+              externalBeneficiaries={externalBeneficiaries}
+              entities={entities}
+              saving={saving}
+            />
           </section>
         );
       })}
