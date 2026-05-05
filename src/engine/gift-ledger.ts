@@ -6,7 +6,6 @@ export interface GrantorYearState {
   taxableGiftsThisYear: number;
   /** Running total including priorTaxableGifts seed. */
   cumulativeTaxableGifts: number;
-  /** applyUnifiedRateSchedule(cumulativeTaxableGifts). */
   creditUsed: number;
   /** §2502 marginal current-year tax. 0 until cumulative > BEA(year). */
   giftTaxThisYear: number;
@@ -89,12 +88,21 @@ export function computeGiftLedger(input: GiftLedgerInput): GiftLedgerYear[] {
   return result;
 }
 
-function isCharitableGift(
-  g: Gift,
+function isCharityRecipient(
+  recipient: { recipientExternalBeneficiaryId?: string } | undefined,
   externalBeneficiaryKindById: Map<string, "charity" | "individual">,
 ): boolean {
-  return g.recipientExternalBeneficiaryId != null &&
-    externalBeneficiaryKindById.get(g.recipientExternalBeneficiaryId) === "charity";
+  const id = recipient?.recipientExternalBeneficiaryId;
+  return id != null && externalBeneficiaryKindById.get(id) === "charity";
+}
+
+function assetGiftValue(
+  ev: Extract<GiftEvent, { kind: "asset" }>,
+  accountValueAtYear: GiftLedgerInput["accountValueAtYear"],
+): number {
+  return ev.amountOverride != null
+    ? ev.amountOverride
+    : accountValueAtYear(ev.accountId, ev.year) * ev.percent;
 }
 
 function sumLegacyCashGifts(
@@ -106,7 +114,7 @@ function sumLegacyCashGifts(
   let total = 0;
   for (const g of input.gifts) {
     if (g.year !== year) continue;
-    if (isCharitableGift(g, input.externalBeneficiaryKindById)) continue;
+    if (isCharityRecipient(g, input.externalBeneficiaryKindById)) continue;
     if (g.grantor === grantor) {
       total += Math.max(0, g.amount - exclusion);
     } else if (g.grantor === "joint") {
@@ -127,23 +135,10 @@ function sumGrossGifts(year: number, input: GiftLedgerInput): number {
       if (ev.seriesId == null) continue;
       total += ev.amount;
     } else if (ev.kind === "asset") {
-      total += ev.amountOverride != null
-        ? ev.amountOverride
-        : input.accountValueAtYear(ev.accountId, ev.year) * ev.percent;
+      total += assetGiftValue(ev, input.accountValueAtYear);
     }
   }
   return total;
-}
-
-function recipientIsCharity(
-  ev: GiftEvent,
-  externalBeneficiaryKindById: Map<string, "charity" | "individual">,
-): boolean {
-  const id = (ev as { recipientExternalBeneficiaryId?: string }).recipientExternalBeneficiaryId;
-  if (id) {
-    return externalBeneficiaryKindById.get(id) === "charity";
-  }
-  return false;
 }
 
 function sumGiftEvents(
@@ -156,19 +151,15 @@ function sumGiftEvents(
   for (const ev of input.giftEvents) {
     if (ev.year !== year) continue;
     if (ev.grantor !== grantor) continue;
-    if (recipientIsCharity(ev, input.externalBeneficiaryKindById)) continue;
+    if (isCharityRecipient(ev as { recipientExternalBeneficiaryId?: string }, input.externalBeneficiaryKindById)) continue;
 
     if (ev.kind === "cash") {
       // One-time cash gifts come through legacy `gifts` array; only series fan-outs here.
       if (ev.seriesId == null) continue;
       total += Math.max(0, ev.amount - exclusion);
     } else if (ev.kind === "asset") {
-      const value = ev.amountOverride != null
-        ? ev.amountOverride
-        : input.accountValueAtYear(ev.accountId, ev.year) * ev.percent;
-      total += value;
+      total += assetGiftValue(ev, input.accountValueAtYear);
     }
-    // Liability transfers: 0 contribution.
   }
   return total;
 }

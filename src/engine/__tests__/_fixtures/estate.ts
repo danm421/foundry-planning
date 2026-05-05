@@ -54,7 +54,6 @@ export function buildMinimalEstateScenario(opts: { priorClient: number; priorSpo
         recipients: [{ recipientKind: "family_member", recipientId: "fm-kid", percentage: 100, sortOrder: 0 }],
       }],
     },
-    // Spouse's will: residual to kid.
     {
       id: "w-spouse", grantor: "spouse",
       bequests: [{

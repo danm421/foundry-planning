@@ -102,7 +102,6 @@ describe("computeGiftLedger", () => {
   it("ignores gifts whose grantor doesn't match either spouse (defensive)", () => {
     const ledger = computeGiftLedger({
       ...baseInput,
-      // Cast to unblock the test fixture even though the type union doesn't permit this.
       gifts: [{ ...gift(), grantor: "other" } as unknown as Gift],
     });
     expect(ledger[0].taxableGiftsGiven).toBe(0);
