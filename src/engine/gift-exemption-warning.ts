@@ -5,17 +5,13 @@ export interface ProposedGift {
   /** "joint" splits 50/50 to client + spouse before BEA check. */
   grantor: "client" | "spouse" | "joint";
   year: number;
-  /** Post-AE, post-charity-deduction taxable amount. Caller is responsible
-   *  for AE math because the editor already knows the recipient + AE. */
+  /** Post-AE, post-charity-deduction taxable amount. */
   taxableContribution: number;
 }
 
 export interface PerGrantorBreach {
-  /** Cumulative taxable gifts after the proposed gift, for this grantor. */
   cumulativeAfter: number;
-  /** BEA at the gift year (in dollars). */
   beaAtYear: number;
-  /** max(0, cumulativeAfter − beaAtYear). 0 means no breach. */
   overage: number;
   /** §2502 marginal tax for this gift only (current-year incremental tax
    *  net of remaining unified credit). */
@@ -56,8 +52,7 @@ export function checkExemptionImpact(input: {
     const tentBefore = applyUnifiedRateSchedule(cumulativeBeforeProposed);
     const tentAfter = applyUnifiedRateSchedule(cumulativeAfter);
     const beaCredit = applyUnifiedRateSchedule(beaAtYear);
-    const creditUsedBefore = grantorState?.creditUsed ?? applyUnifiedRateSchedule(cumulativeBeforeProposed);
-    const remainingCredit = Math.max(0, beaCredit - creditUsedBefore);
+    const remainingCredit = Math.max(0, beaCredit - tentBefore);
     const estimatedTax = Math.max(0, tentAfter - tentBefore - remainingCredit);
 
     perGrantor[g] = {

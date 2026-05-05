@@ -81,13 +81,12 @@ describe("checkExemptionImpact", () => {
     });
     const result = checkExemptionImpact({
       ledger: [baseline],
-      proposed: { grantor: "joint", year: 2030, taxableContribution: 4_000_000 },
+      proposed: { grantor: "joint", year: 2030, taxableContribution: 6_000_000 },
       taxInflationRate: 0.025,
     });
-    expect(result.perGrantor.spouse?.overage ?? 0).toBe(0);
-    if (result.exceeds) {
-      expect(result.perGrantor.client?.overage).toBeGreaterThan(0);
-    }
+    expect(result.exceeds).toBe(true);
+    expect(result.perGrantor.client?.overage).toBeGreaterThan(0);
+    expect(result.perGrantor.spouse?.overage).toBe(0);  // spouse went 0 → $3M, well under BEA
   });
 
   it("returns no perGrantor entry for grantors with no proposed share", () => {
@@ -98,6 +97,16 @@ describe("checkExemptionImpact", () => {
     });
     expect(result.perGrantor.spouse).toBeUndefined();
     expect(result.perGrantor.client).toBeDefined();
+  });
+
+  it("returns no perGrantor entry for client when proposed is spouse-only", () => {
+    const result = checkExemptionImpact({
+      ledger: [ledgerRow()],
+      proposed: { grantor: "spouse", year: 2030, taxableContribution: 50_000 },
+      taxInflationRate: 0.025,
+    });
+    expect(result.perGrantor.client).toBeUndefined();
+    expect(result.perGrantor.spouse).toBeDefined();
   });
 
   it("treats missing year-row in ledger as a zero baseline", () => {
