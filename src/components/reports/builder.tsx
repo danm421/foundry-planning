@@ -5,6 +5,7 @@
 
 "use client";
 import "@/lib/reports/widgets";
+import "@/lib/reports/metrics";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { reducer, type ReportState } from "@/lib/reports/reducer";
@@ -23,9 +24,10 @@ export function Builder(props: {
   clientId: string;
   household: Household;
   householdName: string;
+  widgetData: Record<string, unknown>;
   initial: { title: string; pages: Page[] };
 }) {
-  const { reportId, clientId, household, householdName, initial } = props;
+  const { reportId, clientId, household, householdName, widgetData, initial } = props;
   const [state, dispatch] = useReducer(reducer, initial as ReportState);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
   const clipboardRef = useRef<Widget | null>(null);
@@ -182,7 +184,7 @@ export function Builder(props: {
   }, [clientId, reportId, state.title]);
 
   return (
-    <ReportBuilderContext value={{ household }}>
+    <ReportBuilderContext value={{ household, widgetData }}>
       <DndContext onDragEnd={handleDragEnd}>
         <KeyboardShortcuts
           selectedWidgetId={selectedWidgetId}

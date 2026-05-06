@@ -11,6 +11,7 @@
 import { Document } from "@react-pdf/renderer";
 import { ensureFontsRegistered } from "./fonts";
 import "@/lib/reports/scopes"; // side-effect: register all v1 scopes
+import "@/lib/reports/metrics"; // side-effect: register all v1 metrics
 import "@/lib/reports/widgets/index.pdf";
 import { ReportPage } from "./page-wrapper";
 import { RowRender } from "./row-render";

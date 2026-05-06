@@ -11,16 +11,9 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, reports } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
-import { runProjection } from "@/engine/projection";
 import { renderToStream } from "@react-pdf/renderer";
 import { ReportPdfDocument } from "@/components/reports-pdf/document";
-import {
-  collectScopesFromTree,
-  loadDataForScopes,
-  buildWidgetData,
-} from "@/lib/reports/data-loader";
-import { deriveLegacyOwnership } from "@/components/balance-sheet-report/derive-ownership";
-import type { FamilyMember } from "@/engine/types";
+import { loadReportWidgetData } from "@/lib/reports/load-widget-data";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -75,110 +68,15 @@ export async function POST(
       if (isSafePngDataUri(v)) sanitized[k] = v;
     }
 
-    const apiRes = await fetch(
-      `${new URL(request.url).origin}/api/clients/${id}/projection-data`,
-      { headers: { cookie: request.headers.get("cookie") ?? "" } },
-    );
-    if (!apiRes.ok) {
-      const upstreamBody = await apiRes.text().catch(() => "");
-      console.error("POST export-pdf: projection-data fetch failed", {
-        firmId,
-        clientId,
-        reportId: reportIdLocal,
-        status: apiRes.status,
-        body: upstreamBody.slice(0, 500),
-      });
-      return NextResponse.json(
-        { error: "Failed to load projection data" },
-        { status: 502 },
-      );
-    }
-    const apiData = await apiRes.json();
-    const projection = runProjection(apiData);
-
-    // Bridge engine `owners[]` → legacy `{ owner, ownerEntityId }` shape that
-    // the balance-sheet view-model still consumes (used by balanceSheetTable).
-    // Mirrors the same mapping in `balance-sheet-report/export-pdf/route.ts`.
-    const roleById = new Map<string, FamilyMember["role"]>(
-      ((apiData.familyMembers ?? []) as FamilyMember[]).map((fm) => [
-        fm.id,
-        fm.role,
-      ]),
-    );
-    type WithOwners = {
-      id: string;
-      name: string;
-      owners: Parameters<typeof deriveLegacyOwnership>[0];
-    };
-    const mappedAccounts = (
-      apiData.accounts as (WithOwners & { category: string })[]
-    ).map((a) => {
-      const { owner, ownerEntityId } = deriveLegacyOwnership(
-        a.owners ?? [],
-        roleById,
-      );
-      return {
-        id: a.id,
-        name: a.name,
-        category: a.category,
-        owner: owner ?? "client",
-        ownerEntityId,
-      };
-    });
-    const mappedLiabilities = (
-      apiData.liabilities as (WithOwners & { linkedPropertyId?: string | null })[]
-    ).map((l) => {
-      const { owner, ownerEntityId } = deriveLegacyOwnership(
-        l.owners ?? [],
-        roleById,
-      );
-      return {
-        id: l.id,
-        name: l.name,
-        owner,
-        ownerEntityId,
-        linkedPropertyId: l.linkedPropertyId ?? null,
-      };
-    });
-    // EntitySummary.name and .entityType are optional in the engine type but
-    // required by the view-model. Fall back to safe defaults so the widget
-    // still renders even when the engine emits a sparse summary.
-    const entityInfos = (
-      (apiData.entities ?? []) as Array<{
-        id: string;
-        name?: string;
-        entityType?: string;
-      }>
-    ).map((e) => ({
-      id: e.id,
-      name: e.name ?? "",
-      entityType: e.entityType ?? "other",
-    }));
-
     const pages = report.pages as Parameters<
       typeof ReportPdfDocument
     >[0]["pages"];
-    const scopes = collectScopesFromTree(pages);
-    const scopeData = await loadDataForScopes(scopes, {
-      client: { id },
-      projection,
-    });
-    // Household context drives `resolveYearRange("default")` inside the
-    // data-loader, so PDF renders see the same resolved [from, to] window
-    // the screen render computes. `retirementAge` is non-null on the
-    // schema (`src/db/schema.ts:303`), so no fallback needed.
-    const household = {
+    const widgetData = await loadReportWidgetData({
+      clientId: id,
+      firmId,
+      pages,
+      dateOfBirth: client.dateOfBirth,
       retirementAge: client.retirementAge,
-      currentYear: new Date().getFullYear(),
-    };
-    const widgetData = buildWidgetData(pages, {
-      projection,
-      scopeData,
-      client: { id },
-      accounts: mappedAccounts,
-      liabilities: mappedLiabilities,
-      entities: entityInfos,
-      household,
     });
 
     const householdName =

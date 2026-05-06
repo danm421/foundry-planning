@@ -173,7 +173,7 @@ describe("buildWidgetData", () => {
       accounts: [],
       liabilities: [],
       entities: [],
-      household: { retirementAge: 65, currentYear: 2026 },
+      household: { retirementYear: 2050, currentYear: 2026 },
     });
     expect(out).toEqual({
       "kpi-1": { value: 30_000, prevValue: null },
@@ -194,7 +194,7 @@ describe("buildWidgetData", () => {
         accounts: [],
         liabilities: [],
         entities: [],
-        household: { retirementAge: 65, currentYear: 2026 },
+        household: { retirementYear: 2050, currentYear: 2026 },
       }),
     ).toThrow();
   });
@@ -230,7 +230,7 @@ describe("buildWidgetData", () => {
       accounts: [],
       liabilities: [],
       entities: [],
-      household: { retirementAge: 65, currentYear: 2026 },
+      household: { retirementYear: 2050, currentYear: 2026 },
     });
     const sliced = (out["cf-1"] as { cashflow: { years: { year: number }[] } })
       .cashflow.years;
@@ -256,7 +256,7 @@ describe("buildWidgetData", () => {
       accounts: [],
       liabilities: [],
       entities: [],
-      household: { retirementAge: 65, currentYear: 2026 },
+      household: { retirementYear: 2050, currentYear: 2026 },
     });
     expect(out).toEqual({ "ai-1": scopeData });
   });

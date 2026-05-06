@@ -11,6 +11,8 @@ import { clients, reports } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import { Builder } from "@/components/reports/builder";
 import type { Household } from "@/components/reports/builder-context";
+import { loadReportWidgetData } from "@/lib/reports/load-widget-data";
+import type { Page } from "@/lib/reports/types";
 
 export default async function ReportBuilderPage(
   { params }: { params: Promise<{ id: string; reportId: string }> },
@@ -36,16 +38,30 @@ export default async function ReportBuilderPage(
     );
   if (!report) notFound();
 
-  // Compute household context. retirementAge is sourced from the client's
-  // stored value for now; Task 31 will refine this with plan_settings.
+  // Compute household context. retirementYear is birthYear + retirementAge
+  // (calendar year the primary client retires); Task 31 will refine this with
+  // plan_settings.
+  const birthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
   const household: Household = {
     primaryClientId: id,
-    retirementAge: client.retirementAge ?? 67,
+    retirementYear: birthYear + (client.retirementAge ?? 67),
     currentYear: new Date().getFullYear(),
   };
 
   const householdName =
     [client.firstName, client.lastName].filter(Boolean).join(" ") || "Client";
+
+  // Pre-resolve per-widget data on the server so the on-screen canvas
+  // renders real charts. The export pipeline snapshots those canvases —
+  // without real data here, the snapshots are empty Chart.js axes.
+  const pages = report.pages as Page[];
+  const widgetData = await loadReportWidgetData({
+    clientId: id,
+    firmId,
+    pages,
+    dateOfBirth: client.dateOfBirth,
+    retirementAge: client.retirementAge,
+  });
 
   return (
     <Builder
@@ -53,6 +69,7 @@ export default async function ReportBuilderPage(
       clientId={id}
       household={household}
       householdName={householdName}
+      widgetData={widgetData}
       initial={{
         title: report.title,
         pages: report.pages as never,

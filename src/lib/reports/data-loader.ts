@@ -10,6 +10,7 @@
 //   passes scope data through for chart/table widgets.
 
 import "@/lib/reports/scopes"; // side-effect: register all v1 scopes
+import "@/lib/reports/metrics"; // side-effect: register all v1 metrics
 
 import type { OwnershipView, Page, WidgetKind, YearRange } from "./types";
 import type { ProjectionYear } from "@/engine/types";
@@ -86,11 +87,12 @@ export function buildWidgetData(
     liabilities: LiabilityLike[];
     entities: EntityInfo[];
     /** Household context for resolving widget yearRange `"default"` sentinels.
-     *  `retirementAge` comes from the client record; `currentYear` is the
+     *  `retirementYear` is the calendar year the household retires (computed
+     *  from DOB year + retirementAge at the call site); `currentYear` is the
      *  calendar year the export runs in. Both are needed because
      *  `resolveYearRange` derives the default `from`/`to` from them
      *  (see `lib/reports/year-range-default.ts`). */
-    household: { retirementAge: number; currentYear: number };
+    household: { retirementYear: number; currentYear: number };
   },
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};

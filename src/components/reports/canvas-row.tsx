@@ -17,6 +17,7 @@ import { SLOT_COUNT_BY_LAYOUT } from "@/lib/reports/types";
 import type { Action } from "@/lib/reports/reducer";
 import { getWidget } from "@/lib/reports/widget-registry";
 import { WidgetFrame } from "./widget-frame";
+import { useReportContext } from "./builder-context";
 
 const LAYOUT_OPTIONS: RowSize[] = ["1-up", "2-up", "3-up", "4-up"];
 
@@ -34,6 +35,7 @@ function CanvasSlot({ pageId, rowId, slotIndex, rowLayout, widget, selected, onS
     id: `slot-${pageId}-${rowId}-${slotIndex}`,
     data: { kind: "slot", pageId, rowId, slotIndex },
   });
+  const { widgetData } = useReportContext();
   const ringClass = isOver ? "ring-2 ring-accent ring-offset-2" : "";
   return (
     <div ref={setNodeRef} className={`rounded-sm transition ${ringClass}`}>
@@ -50,7 +52,7 @@ function CanvasSlot({ pageId, rowId, slotIndex, rowLayout, widget, selected, onS
           return (
             <WidgetFrame widget={widget} rowLayout={rowLayout} selected={selected}
                          onSelect={onSelect} dispatch={dispatch} previewMode={previewMode}>
-              <Render props={widget.props as never} data={null} mode="screen" widgetId={widget.id} />
+              <Render props={widget.props as never} data={widgetData[widget.id] ?? null} mode="screen" widgetId={widget.id} />
             </WidgetFrame>
           );
         })()
