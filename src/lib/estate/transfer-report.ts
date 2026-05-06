@@ -82,6 +82,7 @@ export interface RecipientGroup {
     state_estate_tax: number;
     admin_expenses: number;
     debts_paid: number;
+    ird_tax: number;
   };
   /** What the recipient actually receives in cash after their share of the drain.
    *  At second death this matches the engine's raw `t.amount` sum (transfers are
@@ -106,7 +107,7 @@ export interface AssetTransferLine {
 }
 
 export interface ReductionsLine {
-  kind: "federal_estate_tax" | "state_estate_tax" | "admin_expenses" | "debts_paid";
+  kind: "federal_estate_tax" | "state_estate_tax" | "admin_expenses" | "debts_paid" | "ird_tax";
   label: string;
   amount: number;
   detail?: string;
@@ -319,6 +320,7 @@ function buildDeathSection(
         state_estate_tax: 0,
         admin_expenses: 0,
         debts_paid: 0,
+        ird_tax: 0,
       };
       drainsByKindByRecipient.set(key, entry);
     }
@@ -385,6 +387,7 @@ function buildDeathSection(
               state_estate_tax: 0,
               admin_expenses: 0,
               debts_paid: 0,
+              ird_tax: 0,
             },
         netTotal: 0,
       };
@@ -425,7 +428,8 @@ function buildDeathSection(
       group.drainsByKind.federal_estate_tax +
       group.drainsByKind.state_estate_tax +
       group.drainsByKind.admin_expenses +
-      group.drainsByKind.debts_paid;
+      group.drainsByKind.debts_paid +
+      group.drainsByKind.ird_tax;
     group.netTotal = group.total - drainTotal;
   }
 
@@ -439,6 +443,9 @@ function buildDeathSection(
   // Reductions
   const tax = payload.estateTax;
   const debtsPaid = (tax.creditorPayoffDebits ?? []).reduce((s, d) => s + d.amount, 0);
+  const irdTotal = (tax.drainAttributions ?? [])
+    .filter((a) => a.drainKind === "ird_tax")
+    .reduce((s, a) => s + a.amount, 0);
   const reductions: ReductionsLine[] = [];
   if (tax.federalEstateTax > 0) {
     reductions.push({
@@ -463,6 +470,9 @@ function buildDeathSection(
   }
   if (debtsPaid > 0) {
     reductions.push({ kind: "debts_paid", label: "Debts Paid", amount: debtsPaid });
+  }
+  if (irdTotal > 0) {
+    reductions.push({ kind: "ird_tax", label: "IRD Tax", amount: irdTotal });
   }
 
   // Reconciliation compares ledger against itself, not against Form 706

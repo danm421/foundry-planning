@@ -65,6 +65,7 @@ const DRAIN_KINDS: DrainKind[] = [
   "state_estate_tax",
   "admin_expenses",
   "debts_paid",
+  "ird_tax",
 ];
 
 function emptyDrains(): Record<DrainKind, number> {
@@ -73,6 +74,7 @@ function emptyDrains(): Record<DrainKind, number> {
     state_estate_tax: 0,
     admin_expenses: 0,
     debts_paid: 0,
+    ird_tax: 0,
   };
 }
 

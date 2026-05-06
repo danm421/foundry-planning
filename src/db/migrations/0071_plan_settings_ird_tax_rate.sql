@@ -1,0 +1,1 @@
+ALTER TABLE "plan_settings" ADD COLUMN "ird_tax_rate" numeric(5, 4) DEFAULT '0.0000' NOT NULL;

@@ -8,6 +8,7 @@ const DRAIN_LABEL: Record<keyof DeathSlice["drains"], string> = {
   state_estate_tax: "State estate tax share",
   admin_expenses: "Admin expense share",
   debts_paid: "Debt share",
+  ird_tax: "IRD tax share",
 };
 
 interface Props {

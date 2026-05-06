@@ -498,6 +498,13 @@
       "when": 1778103244415,
       "tag": "0070_entities_accessible_to_client",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1778105996644,
+      "tag": "0071_plan_settings_ird_tax_rate",
+      "breakpoints": true
     }
   ]
 }

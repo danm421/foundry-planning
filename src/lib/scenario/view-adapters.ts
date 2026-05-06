@@ -322,6 +322,7 @@ export interface PlanSettingsViewEngineFields {
   ssWageGrowthRate: string | null;
   estateAdminExpenses: string;
   flatStateEstateRate: string;
+  irdTaxRate: string;
   outOfHouseholdRate: string | null;
 }
 
@@ -337,6 +338,7 @@ export function planSettingsEngineToView(s: EnginePlanSettings): PlanSettingsVie
     ssWageGrowthRate: s.ssWageGrowthRate != null ? String(s.ssWageGrowthRate) : null,
     estateAdminExpenses: String(s.estateAdminExpenses ?? 0),
     flatStateEstateRate: String(s.flatStateEstateRate ?? 0),
+    irdTaxRate: String(s.irdTaxRate ?? 0),
     outOfHouseholdRate: s.outOfHouseholdRate != null ? String(s.outOfHouseholdRate) : null,
   };
 }

@@ -425,6 +425,9 @@ export const planSettings = pgTable("plan_settings", {
   flatStateEstateRate: decimal("flat_state_estate_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0"),
+  irdTaxRate: decimal("ird_tax_rate", { precision: 5, scale: 4 })
+    .notNull()
+    .default("0.0000"),
   priorTaxableGiftsClient: decimal("prior_taxable_gifts_client", { precision: 15, scale: 2 })
     .notNull()
     .default("0"),

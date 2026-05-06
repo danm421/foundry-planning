@@ -35,6 +35,7 @@ describe("computeDrainAttributions — pro-rata fallback (no residuary)", () => 
         state_estate_tax: 0,
         admin_expenses: 0,
         debts_paid: 0,
+        ird_tax: 0,
       },
       residuaryRecipients: [],
     });
@@ -66,6 +67,7 @@ describe("computeDrainAttributions — pro-rata fallback (no residuary)", () => 
         state_estate_tax: 10_000,
         admin_expenses: 0,
         debts_paid: 0,
+        ird_tax: 0,
       },
       residuaryRecipients: [],
     });
@@ -92,6 +94,7 @@ describe("computeDrainAttributions — pro-rata fallback (no residuary)", () => 
         state_estate_tax: 0,
         admin_expenses: 0,
         debts_paid: 50_000,
+        ird_tax: 0,
       },
       residuaryRecipients: [],
     });
@@ -128,6 +131,7 @@ describe("computeDrainAttributions — residuary-first", () => {
         state_estate_tax: 0,
         admin_expenses: 0,
         debts_paid: 0,
+        ird_tax: 0,
       },
       residuaryRecipients: residuary,
     });
@@ -167,6 +171,7 @@ describe("computeDrainAttributions — residuary-first", () => {
         state_estate_tax: 0,
         admin_expenses: 0,
         debts_paid: 0,
+        ird_tax: 0,
       },
       residuaryRecipients: residuary,
     });
@@ -214,6 +219,7 @@ describe("computeDrainAttributions — residuary-first", () => {
         state_estate_tax: 0,
         admin_expenses: 0,
         debts_paid: 0,
+        ird_tax: 0,
       },
       residuaryRecipients: residuary,
     });
@@ -237,6 +243,7 @@ describe("computeDrainAttributions — residuary-first", () => {
       state_estate_tax: 50_000,
       admin_expenses: 30_000,
       debts_paid: 20_000,
+      ird_tax: 0,
     };
     const out = computeDrainAttributions({
       deathOrder: 2,
@@ -249,6 +256,7 @@ describe("computeDrainAttributions — residuary-first", () => {
       "state_estate_tax",
       "admin_expenses",
       "debts_paid",
+      "ird_tax",
     ] as const) {
       const sum = out
         .filter((a) => a.drainKind === kind)
@@ -269,6 +277,7 @@ describe("computeDrainAttributions — residuary-first", () => {
         state_estate_tax: 0,
         admin_expenses: 0,
         debts_paid: 0,
+        ird_tax: 0,
       },
       residuaryRecipients: [],
     });

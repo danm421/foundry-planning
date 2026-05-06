@@ -41,6 +41,7 @@ export interface AssumptionsSettings {
   flatStateRate: string;
   estateAdminExpenses: string;
   flatStateEstateRate: string;
+  irdTaxRate: string;
   inflationRate: string;
   inflationRateSource: "asset_class" | "custom";
   planStartYear: number;
@@ -119,6 +120,7 @@ export default function AssumptionsClient({
             flatStateRate={settings.flatStateRate}
             estateAdminExpenses={settings.estateAdminExpenses}
             flatStateEstateRate={settings.flatStateEstateRate}
+            irdTaxRate={settings.irdTaxRate}
             outOfHouseholdDniRate={settings.outOfHouseholdDniRate}
             priorTaxableGiftsClient={settings.priorTaxableGiftsClient}
             priorTaxableGiftsSpouse={settings.priorTaxableGiftsSpouse}

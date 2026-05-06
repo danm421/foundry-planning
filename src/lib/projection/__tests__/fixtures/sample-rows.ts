@@ -83,6 +83,7 @@ export const planSettingsRow = {
   flatStateRate: "0.0500",
   estateAdminExpenses: "0.00",
   flatStateEstateRate: "0.0000",
+  irdTaxRate: "0.0000",
   taxEngineMode: "bracket" as const,
   taxInflationRate: null,
   ssWageGrowthRate: null,

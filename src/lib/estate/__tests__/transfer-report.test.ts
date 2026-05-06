@@ -343,6 +343,58 @@ describe("buildEstateTransferReportData", () => {
     expect(out.firstDeath!.reconciliation.reconciles).toBe(true);
   });
 
+  it("emits an IRD Tax reduction line and per-recipient drain when drainAttributions include ird_tax", () => {
+    const tax = emptyEstateTaxResult("client", 2030);
+    Object.assign(tax, {
+      grossEstate: 1_000_000,
+      drainAttributions: [
+        {
+          deathOrder: 1,
+          recipientKind: "family_member",
+          recipientId: "fm-child-1",
+          drainKind: "ird_tax",
+          amount: 350_000,
+        },
+      ],
+    });
+
+    const transfers = [
+      transfer({
+        amount: 1_000_000,
+        recipientKind: "family_member",
+        recipientId: "fm-child-1",
+        recipientLabel: "Alex",
+      }),
+    ];
+
+    const ht: HypotheticalEstateTax = {
+      year: 2030,
+      primaryFirst: ordering({ firstDeath: tax, firstDeathTransfers: transfers }),
+    };
+
+    const out = buildEstateTransferReportData({
+      projection: projection([{ year: 2030, ht }]),
+      asOf: { kind: "today" },
+      ordering: "primaryFirst",
+      clientData: tree(),
+      ownerNames: { clientName: "Pat", spouseName: "Sam" },
+    });
+
+    const reds = out.firstDeath!.reductions;
+    expect(reds.find((r) => r.kind === "ird_tax")?.amount).toBe(350_000);
+
+    const child = out.firstDeath!.recipients.find((r) => r.recipientId === "fm-child-1");
+    expect(child).toBeDefined();
+    expect(child!.drainsByKind.ird_tax).toBe(350_000);
+    const drainSum =
+      child!.drainsByKind.federal_estate_tax +
+      child!.drainsByKind.state_estate_tax +
+      child!.drainsByKind.admin_expenses +
+      child!.drainsByKind.debts_paid +
+      child!.drainsByKind.ird_tax;
+    expect(child!.netTotal).toBeCloseTo(child!.total - drainSum);
+  });
+
   it("reconciles even when assetEstateValue ≠ Form 706 taxable estate (joint-account scenario, F1 contract)", () => {
     // Pre-fix this case (transfers $500k against the section's tax-anchor
     // value $1M) flagged "unattributed: $500k" — the section reconciliation

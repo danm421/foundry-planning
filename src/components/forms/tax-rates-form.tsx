@@ -10,6 +10,7 @@ interface TaxRatesFormProps {
   flatStateRate: string;
   estateAdminExpenses: string;
   flatStateEstateRate: string;
+  irdTaxRate: string;
   outOfHouseholdDniRate: string;
   priorTaxableGiftsClient: string;
   priorTaxableGiftsSpouse: string;
@@ -27,6 +28,7 @@ export default function TaxRatesForm({
   flatStateRate,
   estateAdminExpenses,
   flatStateEstateRate,
+  irdTaxRate,
   outOfHouseholdDniRate,
   priorTaxableGiftsClient,
   priorTaxableGiftsSpouse,
@@ -55,6 +57,7 @@ export default function TaxRatesForm({
       taxEngineMode: mode,
       estateAdminExpenses: String(Number(data.get("estateAdminExpenses") ?? "0")),
       flatStateEstateRate: String(Number(data.get("flatStateEstateRate") ?? "0") / 100),
+      irdTaxRate: String(Number(data.get("irdTaxRate") ?? "0") / 100),
       outOfHouseholdDniRate: String(Number(data.get("outOfHouseholdDniRate") ?? "0") / 100),
       priorTaxableGiftsClient: String(Number(data.get("priorTaxableGiftsClient") ?? "0")),
       priorTaxableGiftsSpouse: hasSpouse
@@ -152,6 +155,18 @@ export default function TaxRatesForm({
         <div>
           <label className="block text-xs font-medium text-gray-300" htmlFor="flatStateEstateRate">State estate tax rate</label>
           <PercentInput id="flatStateEstateRate" name="flatStateEstateRate" defaultValue={pct(flatStateEstateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-300" htmlFor="irdTaxRate">IRD tax rate</label>
+          <PercentInput
+            id="irdTaxRate"
+            name="irdTaxRate"
+            defaultValue={pct(irdTaxRate)}
+            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+          <p className="mt-1 text-xs text-gray-400">
+            Applied to pre-tax retirement assets (traditional IRA, 401(k), 403(b)) passing to a non-spouse, non-charity beneficiary at death.
+          </p>
         </div>
       </div>
 

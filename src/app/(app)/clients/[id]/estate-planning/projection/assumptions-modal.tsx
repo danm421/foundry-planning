@@ -20,6 +20,7 @@ type EditableNumberKey =
   | "planEndYear"
   | "estateAdminExpenses"
   | "flatStateEstateRate"
+  | "irdTaxRate"
   | "taxInflationRate"
   | "ssWageGrowthRate"
   | "outOfHouseholdRate";
@@ -43,6 +44,7 @@ const FIELDS: FieldDef[] = [
   { key: "planEndYear", label: "Plan end year", format: "year" },
   { key: "estateAdminExpenses", label: "Estate admin expenses", format: "currency", optional: true },
   { key: "flatStateEstateRate", label: "State estate tax rate", format: "pct", optional: true },
+  { key: "irdTaxRate", label: "IRD tax rate", format: "pct", optional: true },
   { key: "taxInflationRate", label: "Tax-bracket inflation rate", format: "pct", optional: true },
   { key: "ssWageGrowthRate", label: "SS wage growth rate", format: "pct", optional: true },
   { key: "outOfHouseholdRate", label: "Out-of-household DNI rate", format: "pct", optional: true },
@@ -61,6 +63,7 @@ function planSettingsToForm(p: PlanSettings): FormState {
     planEndYear: String(p.planEndYear ?? ""),
     estateAdminExpenses: p.estateAdminExpenses != null ? String(p.estateAdminExpenses) : "",
     flatStateEstateRate: p.flatStateEstateRate != null ? String(p.flatStateEstateRate) : "",
+    irdTaxRate: p.irdTaxRate != null ? String(p.irdTaxRate) : "",
     taxInflationRate: p.taxInflationRate != null ? String(p.taxInflationRate) : "",
     ssWageGrowthRate: p.ssWageGrowthRate != null ? String(p.ssWageGrowthRate) : "",
     outOfHouseholdRate: p.outOfHouseholdRate != null ? String(p.outOfHouseholdRate) : "",
