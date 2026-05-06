@@ -1,9 +1,10 @@
 /**
  * TrajectoryChart — hand-rolled SVG comparing two projection trajectories
- * (with-plan vs without-plan) over the lifespan of the household.
+ * (right column "Plan 2" vs left column "Plan 1") over the lifespan of the
+ * household.
  *
  * Design:
- *   - Two filled area paths + stroked outlines (without dimmer/thinner; with
+ *   - Two filled area paths + stroked outlines (left dimmer/thinner; right
  *     brighter/thicker as the "your plan" focus).
  *   - Dashed verticals at firstDeathYear (tax/burnt-orange) and
  *     secondDeathYear (red/crit) — guards against undefined years.
@@ -26,8 +27,8 @@ import { deriveChartSeries } from "./lib/derive-chart-series";
 
 interface Props {
   tree: ClientData;
-  withResult: ProjectionResult;
-  withoutResult: ProjectionResult;
+  leftResult: ProjectionResult;
+  rightResult: ProjectionResult;
   scrubberYear: number;
 }
 
@@ -40,12 +41,12 @@ const PAD_B = 32;
 
 export function TrajectoryChart({
   tree,
-  withResult,
-  withoutResult,
+  leftResult,
+  rightResult,
   scrubberYear,
 }: Props) {
-  const series = deriveChartSeries({ tree, withResult, withoutResult });
-  const xs = series.with.map((p) => p[0]);
+  const series = deriveChartSeries({ tree, rightResult, leftResult });
+  const xs = series.right.map((p) => p[0]);
   const xMin = xs.length > 0 ? Math.min(...xs) : 0;
   const xMax = xs.length > 0 ? Math.max(...xs) : 0;
   const xRange = xMax - xMin;
@@ -102,16 +103,16 @@ export function TrajectoryChart({
         );
       })}
 
-      {/* without-plan area + line */}
-      {series.without.length > 0 && (
+      {/* left-side (Plan 1) area + line — dimmer */}
+      {series.left.length > 0 && (
         <>
           <path
-            d={areaFor(series.without)}
+            d={areaFor(series.left)}
             fill="var(--color-spouse)"
             fillOpacity={0.25}
           />
           <path
-            d={pathFor(series.without)}
+            d={pathFor(series.left)}
             stroke="var(--color-spouse)"
             strokeWidth={1.5}
             fill="none"
@@ -119,16 +120,16 @@ export function TrajectoryChart({
         </>
       )}
 
-      {/* with-plan area + line */}
-      {series.with.length > 0 && (
+      {/* right-side (Plan 2) area + line — brighter */}
+      {series.right.length > 0 && (
         <>
           <path
-            d={areaFor(series.with)}
+            d={areaFor(series.right)}
             fill="var(--color-accent)"
             fillOpacity={0.35}
           />
           <path
-            d={pathFor(series.with)}
+            d={pathFor(series.right)}
             stroke="var(--color-accent)"
             strokeWidth={2.5}
             fill="none"

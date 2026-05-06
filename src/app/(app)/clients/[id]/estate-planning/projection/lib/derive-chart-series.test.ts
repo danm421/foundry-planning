@@ -1,6 +1,6 @@
 /**
  * Tests for deriveChartSeries — pure transform that converts
- * (tree, withResult, withoutResult) into chart series for the trajectory chart
+ * (tree, rightResult, leftResult) into chart series for the trajectory chart
  * consumed by Task 28's TrajectoryChart component.
  *
  * Uses the same Cooper-Sample fixture pattern as
@@ -171,51 +171,48 @@ function cooperSampleScenario(): ClientData {
 
 describe("deriveChartSeries", () => {
   const tree = cooperSampleScenario();
-  const withResult = runProjectionWithEvents(tree);
-  const withoutResult = runProjectionWithEvents(synthesizeNoPlanClientData(tree));
+  const rightResult = runProjectionWithEvents(tree);
+  const leftResult = runProjectionWithEvents(synthesizeNoPlanClientData(tree));
 
-  it("returns withSeries + withoutSeries arrays of [year, value] pairs", () => {
-    const series = deriveChartSeries({ tree, withResult, withoutResult });
-    expect(series.with.length).toBe(withResult.years.length);
-    expect(series.without.length).toBe(withoutResult.years.length);
-    expect(series.with[0]).toMatchObject([
+  it("returns right + left arrays of [year, value] pairs", () => {
+    const series = deriveChartSeries({ tree, rightResult, leftResult });
+    expect(series.right.length).toBe(rightResult.years.length);
+    expect(series.left.length).toBe(leftResult.years.length);
+    expect(series.right[0]).toMatchObject([
       tree.planSettings.planStartYear,
       expect.any(Number),
     ]);
-    expect(series.without[0]).toMatchObject([
+    expect(series.left[0]).toMatchObject([
       tree.planSettings.planStartYear,
       expect.any(Number),
     ]);
   });
 
-  it("returns death-year markers from withResult", () => {
-    const series = deriveChartSeries({ tree, withResult, withoutResult });
-    expect(series.firstDeathYear).toBe(withResult.firstDeathEvent?.year);
-    expect(series.secondDeathYear).toBe(withResult.secondDeathEvent?.year);
+  it("returns death-year markers from rightResult", () => {
+    const series = deriveChartSeries({ tree, rightResult, leftResult });
+    expect(series.firstDeathYear).toBe(rightResult.firstDeathEvent?.year);
+    expect(series.secondDeathYear).toBe(rightResult.secondDeathEvent?.year);
   });
 
   it("yMin is 0 and yMax is positive (5% headroom over max series value)", () => {
-    const series = deriveChartSeries({ tree, withResult, withoutResult });
+    const series = deriveChartSeries({ tree, rightResult, leftResult });
     expect(series.yMin).toBe(0);
     expect(series.yMax).toBeGreaterThan(0);
     const maxVal = Math.max(
-      ...series.with.map((p) => p[1]),
-      ...series.without.map((p) => p[1]),
+      ...series.right.map((p) => p[1]),
+      ...series.left.map((p) => p[1]),
     );
     expect(series.yMax).toBeCloseTo(maxVal * 1.05, 1);
   });
 
-  it("with-plan ending value (post-final-death) is >= without-plan ending value", () => {
+  it("right-side (with-plan) ending value is >= left-side (no-plan) ending value", () => {
     // Sanity check that the strategy actually pays off — at the end of the
     // projection, after both deaths and tax drag is fully baked in, the
-    // with-plan series should leave at least as much wealth on the table as
-    // the no-plan counterfactual. (The Cooper fixture moves $2.4M into a SLAT
-    // and adds $5M of ILIT-held term insurance, both of which sidestep estate
-    // tax, so the inequality should be strict — but we assert >= to stay
-    // robust to fixture tweaks.)
-    const series = deriveChartSeries({ tree, withResult, withoutResult });
-    const lastWith = series.with[series.with.length - 1][1];
-    const lastWithout = series.without[series.without.length - 1][1];
-    expect(lastWith).toBeGreaterThanOrEqual(lastWithout);
+    // right-side (with-plan) series should leave at least as much wealth on
+    // the table as the left-side (no-plan) counterfactual.
+    const series = deriveChartSeries({ tree, rightResult, leftResult });
+    const lastRight = series.right[series.right.length - 1][1];
+    const lastLeft = series.left[series.left.length - 1][1];
+    expect(lastRight).toBeGreaterThanOrEqual(lastLeft);
   });
 });
