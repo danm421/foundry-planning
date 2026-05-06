@@ -1742,40 +1742,14 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           if (m) for (const id of Object.keys(m)) acctIds.add(id);
         }
         const ids = Array.from(acctIds);
+        const bucketAt = (r: ProjectionYear, id: string) => {
+          const m = r.portfolioAssets[bucketKey] as Record<string, number> | undefined;
+          return m?.[id] ?? 0;
+        };
         return [
           ...baseColumns,
           ...ids.map((id) =>
-            col(
-              `portfolio_${subLevel}_src_${id}`,
-              accountNames[id] ?? id,
-              (r) => {
-                const m = r.portfolioAssets[bucketKey] as Record<string, number> | undefined;
-                return m?.[id] ?? 0;
-              },
-              (info) => {
-                const v = info.getValue() as number;
-                const row = info.row.original;
-                return (
-                  <button
-                    onClick={() => {
-                      const ledger = row.accountLedgers[id];
-                      if (ledger) {
-                        setLedgerModal({
-                          accountId: id,
-                          accountName: accountNames[id] ?? id,
-                          year: row.year,
-                          ledger,
-                        });
-                      }
-                    }}
-                    className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
-                    title="View account ledger"
-                  >
-                    {fmtNum(v)}
-                  </button>
-                );
-              }
-            )
+            accountLedgerCell(id, (r) => bucketAt(r, id), `portfolio_${subLevel}_src`),
           ),
           numCol(
             `portfolio_${subLevel}_total`,
@@ -1785,7 +1759,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               if (!m) return 0;
               return Object.values(m).reduce((s, v) => s + v, 0);
             },
-            true
+            true,
           ),
         ];
       }
@@ -1846,14 +1820,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       // Level 1: full asset breakdown — liquid columns subtotaled into "Total
       // Portfolio Assets", then the entity / real estate columns, then the
       // grand total. Mirrors an eMoney-style asset summary view.
-      const portfolioSubtotal = (r: ProjectionYear) =>
-        r.portfolioAssets.taxableTotal +
-        r.portfolioAssets.cashTotal +
-        r.portfolioAssets.retirementTotal +
-        r.portfolioAssets.lifeInsuranceTotal;
-
       const grandTotal = (r: ProjectionYear) =>
-        portfolioSubtotal(r) +
+        liquidPortfolioTotal(r) +
         r.portfolioAssets.trustsAndBusinessesTotal +
         r.portfolioAssets.accessibleTrustAssetsTotal +
         r.portfolioAssets.realEstateTotal;
@@ -1864,7 +1832,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol("portfolio_cash_total", () => <DrillBtn segment="cash" label="Cash" />, (r) => r.portfolioAssets.cashTotal),
         numCol("portfolio_retirement_total", () => <DrillBtn segment="retirement" label="Retirement" />, (r) => r.portfolioAssets.retirementTotal),
         numCol("portfolio_life_insurance_total", () => <DrillBtn segment="lifeInsurance" label="Life Insurance" />, (r) => r.portfolioAssets.lifeInsuranceTotal),
-        numCol("portfolio_subtotal", "Total Portfolio Assets", portfolioSubtotal, true),
+        numCol("portfolio_subtotal", "Total Portfolio Assets", liquidPortfolioTotal, true),
         numCol("portfolio_trusts_businesses_total", () => <DrillBtn segment="trusts_businesses" label="Trusts and Businesses" />, (r) => r.portfolioAssets.trustsAndBusinessesTotal),
         ...(hasAnyAccessible
           ? [numCol("portfolio_accessible_trusts_total", () => <DrillBtn segment="accessible_trusts" label="Accessible Trust Assets" />, (r) => r.portfolioAssets.accessibleTrustAssetsTotal)]
