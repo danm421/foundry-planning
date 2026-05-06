@@ -31,3 +31,6 @@ import "./expense-detail-table";
 import "./tax-bracket-chart";
 import "./action-items-list";
 import "./disclaimer-block";
+import "./portfolio-comparison-line";
+import "./monte-carlo-comparison-bars";
+import "./comparison-donut-pair";

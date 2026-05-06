@@ -56,4 +56,10 @@ import "./action-items-list";                // screen-side
 import "./action-items-list.pdf";            // pdf-side
 import "./disclaimer-block";                 // screen-side
 import "./disclaimer-block.pdf";             // pdf-side
+import "./portfolio-comparison-line";        // screen-side
+import "./portfolio-comparison-line.pdf";    // pdf-side
+import "./monte-carlo-comparison-bars";      // screen-side
+import "./monte-carlo-comparison-bars.pdf";  // pdf-side
+import "./comparison-donut-pair";            // screen-side
+import "./comparison-donut-pair.pdf";        // pdf-side
 // each widget that has a PDF renderer adds a `import "./<name>.pdf";` line here
