@@ -28,4 +28,6 @@ import "./net-worth-line";            // screen-side
 import "./net-worth-line.pdf";        // pdf-side
 import "./balance-sheet-table";       // screen-side
 import "./balance-sheet-table.pdf";   // pdf-side
+import "./allocation-donut";          // screen-side
+import "./allocation-donut.pdf";      // pdf-side
 // each widget that has a PDF renderer adds a `import "./<name>.pdf";` line here

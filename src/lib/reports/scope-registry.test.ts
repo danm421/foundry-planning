@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import type { HypotheticalEstateTax, ProjectionYear } from "@/engine/types";
 
 import { getScope } from "./scope-registry";
+import type { AllocationScopeData } from "./scopes/allocation";
 import type { BalanceScopeData } from "./scopes/balance";
 import type { CashflowScopeData } from "./scopes/cashflow";
 import "./scopes"; // side-effect: register all v1 scopes
@@ -359,6 +360,103 @@ describe("balance scope — serializeForAI", () => {
     expect(text).toContain("$800000");
     // last netWorth: 1_500_000 − 0 = 1_500_000.
     expect(text).toContain("$1500000");
+  });
+});
+
+describe("allocation scope — fetch", () => {
+  it("maps the current year's portfolioAssets totals into byClass with pct", () => {
+    const y = makeYear({
+      year: 2026,
+      portfolioAssets: {
+        cash: { savings: 50_000 },
+        taxable: { brokerage: 200_000 },
+        retirement: { ira: 400_000 },
+        realEstate: { home: 600_000 },
+        business: {},
+        lifeInsurance: { whole: 50_000 },
+        cashTotal: 50_000,
+        taxableTotal: 200_000,
+        retirementTotal: 400_000,
+        realEstateTotal: 600_000,
+        businessTotal: 0,
+        lifeInsuranceTotal: 50_000,
+        // Sum: 1_300_000.
+        total: 1_300_000,
+      },
+    });
+
+    const data = getScope("allocation").fetch({
+      client: clientCtx,
+      projection: [y],
+    }) as AllocationScopeData;
+
+    // Business (zero) is filtered; the other 5 categories survive in order.
+    expect(data.byClass.map((b) => b.className)).toEqual([
+      "Cash",
+      "Taxable",
+      "Retirement",
+      "Real Estate",
+      "Life Insurance",
+    ]);
+    expect(data.byClass.map((b) => b.value)).toEqual([
+      50_000, 200_000, 400_000, 600_000, 50_000,
+    ]);
+    // pct = value / 1_300_000.
+    expect(data.byClass[0].pct).toBeCloseTo(50_000 / 1_300_000, 6);
+    expect(data.byClass[3].pct).toBeCloseTo(600_000 / 1_300_000, 6);
+    // byType is intentionally empty in v1 — engine has no asset-type rollup.
+    expect(data.byType).toEqual([]);
+  });
+
+  it("returns empty arrays when projection is empty", () => {
+    const data = getScope("allocation").fetch({
+      client: clientCtx,
+      projection: [],
+    }) as AllocationScopeData;
+    expect(data).toEqual({ byClass: [], byType: [] });
+  });
+});
+
+describe("allocation scope — serializeForAI", () => {
+  it("returns a no-data sentinel for an empty projection", () => {
+    const data = getScope("allocation").fetch({
+      client: clientCtx,
+      projection: [],
+    });
+    expect(getScope("allocation").serializeForAI(data)).toBe(
+      "Allocation: no data.",
+    );
+  });
+
+  it("mentions each non-zero category with a percentage", () => {
+    const y = makeYear({
+      year: 2026,
+      portfolioAssets: {
+        cash: {},
+        taxable: {},
+        retirement: {},
+        realEstate: {},
+        business: {},
+        lifeInsurance: {},
+        cashTotal: 100_000,
+        taxableTotal: 0,
+        retirementTotal: 300_000,
+        realEstateTotal: 0,
+        businessTotal: 0,
+        lifeInsuranceTotal: 0,
+        total: 400_000,
+      },
+    });
+    const data = getScope("allocation").fetch({
+      client: clientCtx,
+      projection: [y],
+    });
+    const text = getScope("allocation").serializeForAI(data);
+    expect(text).toContain("Cash 25%");
+    expect(text).toContain("Retirement 75%");
+    // Filtered-out zero categories should not appear.
+    expect(text).not.toContain("Taxable");
+    expect(text).not.toContain("Business");
   });
 });
 

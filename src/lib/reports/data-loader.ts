@@ -112,6 +112,8 @@ export function buildWidgetData(
           out[w.id] = { cashflow: ctx.scopeData.cashflow };
         } else if (w.kind === "netWorthLine") {
           out[w.id] = { balance: ctx.scopeData.balance };
+        } else if (w.kind === "allocationDonut") {
+          out[w.id] = { allocation: ctx.scopeData.allocation };
         } else if (w.kind === "balanceSheetTable") {
           // Reuses the existing balance-sheet view-model to produce a fully-
           // shaped `BalanceSheetViewModel`. No scope is registered for this
