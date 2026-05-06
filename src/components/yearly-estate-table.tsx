@@ -17,16 +17,17 @@ interface YearlyEstateTableProps {
   rows: YearlyEstateRow[];
   totals: {
     taxesAndExpenses: number;
+    charitableBequests: number;
     netToHeirs: number;
-    charityAssets: number;
     heirsAssets: number;
     totalToHeirs: number;
-    totalToHeirsAndCharity: number;
+    charity: number;
   };
   ownerNames: { clientName: string; spouseName: string | null };
-  /** Indicate the active hypothetical death-ordering for the table caption. */
   ordering: "primaryFirst" | "spouseFirst";
 }
+
+const SUMMARY_COLS = 9;
 
 export function YearlyEstateTable({
   rows,
@@ -85,11 +86,11 @@ export function YearlyEstateTable({
               <Th align="right" accent>
                 Taxes &amp; Expenses
               </Th>
+              <Th align="right">Charitable Bequests</Th>
               <Th align="right">Net To Heirs</Th>
-              <Th align="right">Charity Assets</Th>
               <Th align="right">Heirs Assets</Th>
               <Th align="right">Total To Heirs</Th>
-              <Th align="right">Total To Heirs &amp; Charity</Th>
+              <Th align="right">Charity</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-indigo-900/20">
@@ -111,27 +112,13 @@ export function YearlyEstateTable({
               <td className="px-3 py-2" colSpan={2}>
                 Lifetime totals
               </td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-400">
-                —
-              </td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums">
-                {fmt.format(totals.taxesAndExpenses)}
-              </td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums">
-                {fmt.format(totals.netToHeirs)}
-              </td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums">
-                {fmt.format(totals.charityAssets)}
-              </td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums">
-                {fmt.format(totals.heirsAssets)}
-              </td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums">
-                {fmt.format(totals.totalToHeirs)}
-              </td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums">
-                {fmt.format(totals.totalToHeirsAndCharity)}
-              </td>
+              <FootCell muted>—</FootCell>
+              <FootCell>{fmt.format(totals.taxesAndExpenses)}</FootCell>
+              <FootCell>{fmt.format(totals.charitableBequests)}</FootCell>
+              <FootCell>{fmt.format(totals.netToHeirs)}</FootCell>
+              <FootCell muted>—</FootCell>
+              <FootCell muted>—</FootCell>
+              <FootCell muted>—</FootCell>
             </tr>
           </tfoot>
         </table>
@@ -183,15 +170,15 @@ function SummaryRow({ row, isOpen, onToggle, ownerNames }: SummaryRowProps) {
             {fmt.format(row.taxesAndExpenses)}
           </button>
         </td>
+        <Td>{fmt.format(row.charitableBequests)}</Td>
         <Td>{fmt.format(row.netToHeirs)}</Td>
-        <Td>{fmt.format(row.charityAssets)}</Td>
         <Td>{fmt.format(row.heirsAssets)}</Td>
         <Td bold>{fmt.format(row.totalToHeirs)}</Td>
-        <Td bold>{fmt.format(row.totalToHeirsAndCharity)}</Td>
+        <Td>{fmt.format(row.charity)}</Td>
       </tr>
       {isOpen && (
         <tr id={`yearly-detail-${row.year}`} className="bg-gray-950/40">
-          <td colSpan={9} className="px-3 py-3">
+          <td colSpan={SUMMARY_COLS} className="px-3 py-3">
             <DeathDetail deaths={row.deaths} ownerNames={ownerNames} />
           </td>
         </tr>
@@ -219,6 +206,7 @@ function DeathDetail({
           <tr className="text-[10px] uppercase tracking-[0.16em] text-indigo-300/70">
             <Th align="left">Decedent</Th>
             <Th align="right">Estate Value</Th>
+            <Th align="right">Charitable Deduction</Th>
             <Th align="right">Taxable Estate</Th>
             <Th align="right">State Estate / Inheritance Tax</Th>
             <Th align="right">Probate &amp; Expenses</Th>
@@ -246,6 +234,7 @@ function DeathDetail({
                   </span>
                 </td>
                 <Td>{fmt.format(d.estateValue)}</Td>
+                <Td>{fmt.format(d.charitableDeduction)}</Td>
                 <Td>{fmt.format(d.taxableEstate)}</Td>
                 <Td>{fmt.format(d.stateEstateTax)}</Td>
                 <Td>{fmt.format(d.probateAndExpenses)}</Td>
@@ -287,6 +276,19 @@ function Td({
   const className =
     "px-3 py-1.5 text-right font-mono tabular-nums " +
     (bold ? "font-semibold text-gray-50" : "text-gray-300");
+  return <td className={className}>{children}</td>;
+}
+
+function FootCell({
+  children,
+  muted,
+}: {
+  children: React.ReactNode;
+  muted?: boolean;
+}) {
+  const className =
+    "px-3 py-2 text-right font-mono tabular-nums " +
+    (muted ? "text-gray-500" : "");
   return <td className={className}>{children}</td>;
 }
 

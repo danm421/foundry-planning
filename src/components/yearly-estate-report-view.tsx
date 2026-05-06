@@ -6,6 +6,7 @@ import {
   runProjectionWithEvents,
   type ProjectionResult,
 } from "@/engine/projection";
+import type { ClientData } from "@/engine/types";
 import {
   buildYearlyEstateReport,
   type Ordering,
@@ -28,6 +29,7 @@ export default function YearlyEstateReportView({
 }: Props) {
   const searchParams = useSearchParams();
   const [projection, setProjection] = useState<ProjectionResult | null>(null);
+  const [clientData, setClientData] = useState<ClientData | null>(null);
   const [ordering, setOrdering] = useState<Ordering>("primaryFirst");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -47,10 +49,11 @@ export default function YearlyEstateReportView({
           };
           throw new Error(body.error ?? `HTTP ${res.status}`);
         }
-        const data = await res.json();
+        const data = (await res.json()) as ClientData;
         const result = runProjectionWithEvents(data);
         if (cancelled) return;
         setProjection(result);
+        setClientData(data);
       } catch (e) {
         if (cancelled) return;
         setLoadError(
@@ -67,9 +70,10 @@ export default function YearlyEstateReportView({
   }, [clientId, searchParams]);
 
   const report = useMemo(() => {
-    if (!projection) return null;
+    if (!projection || !clientData) return null;
     return buildYearlyEstateReport({
       projection,
+      clientData,
       ordering,
       ownerNames,
       ownerDobs: {
@@ -77,7 +81,7 @@ export default function YearlyEstateReportView({
         spouseDob: ownerDobs.spouseDob ?? null,
       },
     });
-  }, [projection, ordering, ownerNames, ownerDobs]);
+  }, [projection, clientData, ordering, ownerNames, ownerDobs]);
 
   if (loadError) {
     return (
