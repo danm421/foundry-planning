@@ -1,34 +1,67 @@
 // src/lib/reports/data-loader.ts
 //
-// Stub for the report data-loader pipeline. Task 13 wires the export
-// route end-to-end with empty/placeholder data so the PDF flow renders
-// without real engine output. Task 14 replaces these three functions
-// with real scope collection, scope-data fetching, and per-widget data
-// shaping. Do not add tests here — Task 14 owns testing.
-//
-// The underscore-prefixed parameters are deliberate stubs for Task 14
-// — disable the unused-vars warning for this file rather than churn
-// the signatures.
-/* eslint-disable @typescript-eslint/no-unused-vars */
+// Three pure functions used by the PDF export pipeline:
+// - `collectScopesFromTree` walks the report tree and aggregates the
+//   scopes each widget declares (plus the dynamic scope list embedded
+//   in `aiAnalysis` widget props).
+// - `loadDataForScopes` fans out to the scope registry and parallel-
+//   fetches each scope's data.
+// - `buildWidgetData` resolves each kpiTile via the metric registry and
+//   passes scope data through for chart/table widgets.
 
-import type { Page } from "./types";
-import type { ScopeKey } from "./scope-registry";
+import type { Page, WidgetKind } from "./types";
 import type { ProjectionYear } from "@/engine/types";
+import { getMetric } from "./metric-registry";
+import { getScope, type ScopeKey } from "./scope-registry";
+import { getWidget } from "./widget-registry";
 
-export function collectScopesFromTree(_pages: Page[]): Set<ScopeKey> {
-  return new Set();
+/**
+ * Reads a widget kind's declared scopes without crashing on unregistered
+ * kinds. In v1 some kinds (e.g. `aiAnalysis`) have no registry entry yet —
+ * traversing through them must not abort the entire export.
+ */
+function safeWidgetScopes(kind: WidgetKind): readonly ScopeKey[] {
+  try {
+    return getWidget(kind).scopes ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export function collectScopesFromTree(pages: Page[]): Set<ScopeKey> {
+  const scopes = new Set<ScopeKey>();
+  for (const p of pages) {
+    for (const r of p.rows) {
+      for (const w of r.slots) {
+        if (!w) continue;
+        for (const s of safeWidgetScopes(w.kind)) scopes.add(s);
+        if (w.kind === "aiAnalysis") {
+          for (const s of (w.props as { scopes: ScopeKey[] }).scopes) {
+            scopes.add(s);
+          }
+        }
+      }
+    }
+  }
+  return scopes;
 }
 
 export async function loadDataForScopes(
-  _scopes: Set<ScopeKey>,
-  _ctx: { client: { id: string }; projection: ProjectionYear[] },
+  scopes: Set<ScopeKey>,
+  ctx: { client: { id: string }; projection: ProjectionYear[] },
 ): Promise<Partial<Record<ScopeKey, unknown>>> {
-  return {};
+  const out: Partial<Record<ScopeKey, unknown>> = {};
+  await Promise.all(
+    [...scopes].map(async (s) => {
+      out[s] = await getScope(s).fetch(ctx);
+    }),
+  );
+  return out;
 }
 
 export function buildWidgetData(
   pages: Page[],
-  _ctx: {
+  ctx: {
     projection: ProjectionYear[];
     scopeData: Partial<Record<ScopeKey, unknown>>;
     client: { id: string };
@@ -40,9 +73,21 @@ export function buildWidgetData(
       for (const w of r.slots) {
         if (!w) continue;
         if (w.kind === "kpiTile") {
-          out[w.id] = { value: null, prevValue: null };
+          const props = w.props as { metricKey: string; showDelta?: boolean };
+          const m = getMetric(props.metricKey);
+          const year = ctx.projection[0]?.year ?? new Date().getFullYear();
+          const prev = ctx.projection[0];
+          out[w.id] = {
+            value: m.fetch({
+              client: ctx.client,
+              projection: ctx.projection,
+              year,
+              prevYear: prev,
+            }),
+            prevValue: null,
+          };
         } else {
-          out[w.id] = null;
+          out[w.id] = ctx.scopeData;
         }
       }
     }
