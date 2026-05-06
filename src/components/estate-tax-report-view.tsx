@@ -310,7 +310,6 @@ function LineRow({
   muted = false,
   showAsDeduction = false,
   hideIfZero = false,
-  carry = false,
 }: {
   label: string;
   amount: number;
@@ -318,7 +317,6 @@ function LineRow({
   muted?: boolean;
   showAsDeduction?: boolean;
   hideIfZero?: boolean;
-  carry?: boolean;
 }) {
   if (hideIfZero && amount === 0) return null;
   const value = showAsDeduction
@@ -335,7 +333,6 @@ function LineRow({
       }
     >
       <span className="truncate">
-        {carry && <span className="mr-1.5 text-gray-500">↳</span>}
         {label}
         {hint && <span className="ml-2 text-xs text-gray-500">{hint}</span>}
       </span>
@@ -353,18 +350,14 @@ function LineRow({
 
 type SubtotalAccent = "neutral" | "primary" | "tax";
 
-function StepRow({
-  step,
+function Section({
   title,
-  caption,
   subtotal,
   subtotalLabel,
   subtotalAccent = "primary",
   children,
 }: {
-  step: number;
   title: string;
-  caption?: string;
   subtotal: number;
   subtotalLabel: string;
   subtotalAccent?: SubtotalAccent;
@@ -377,34 +370,22 @@ function StepRow({
         : "text-emerald-200"
       : "text-gray-50";
   return (
-    <div className="grid grid-cols-[2rem_1fr] gap-x-3 px-5 py-3">
-      <div className="pt-0.5 font-mono text-[11px] font-medium tabular-nums text-gray-500">
-        {String(step).padStart(2, "0")}
-      </div>
-      <div className="min-w-0">
-        <div className="mb-1 flex items-baseline justify-between gap-3">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-200">
-            {title}
-            {caption && (
-              <span className="ml-2 font-normal normal-case tracking-normal text-[11px] text-gray-500">
-                {caption}
-              </span>
-            )}
-          </h3>
-        </div>
-        <div>{children}</div>
-        <div className="mt-1.5 flex items-baseline justify-between gap-4 border-t border-gray-800/80 pt-1.5">
-          <span className={"text-sm font-medium " + accentClass}>
-            {subtotalLabel}
-          </span>
-          <span
-            className={
-              "font-mono text-base font-semibold tabular-nums " + accentClass
-            }
-          >
-            {formatAmount(subtotal)}
-          </span>
-        </div>
+    <div className="px-5 py-3">
+      <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-200">
+        {title}
+      </h3>
+      <div>{children}</div>
+      <div className="mt-1.5 flex items-baseline justify-between gap-4 border-t border-gray-800/80 pt-1.5">
+        <span className={"text-sm font-medium " + accentClass}>
+          {subtotalLabel}
+        </span>
+        <span
+          className={
+            "font-mono text-base font-semibold tabular-nums " + accentClass
+          }
+        >
+          {formatAmount(subtotal)}
+        </span>
       </div>
     </div>
   );
@@ -419,36 +400,37 @@ function DecedentBreakdown({
   tax: EstateTaxResult;
   showDsueGenerated: boolean;
 }) {
-  const headlineTax = tax.totalEstateTax;
-  const headlineColor =
-    headlineTax > 0 ? "text-rose-200" : "text-emerald-200";
-  const showState = tax.stateEstateTaxRate > 0 || tax.stateEstateTax > 0;
-  const stateStep = showState ? 4 : null;
-  const totalStep = showState ? 5 : 4;
   const irdTotal = (tax.drainAttributions ?? [])
     .filter((a) => a.drainKind === "ird_tax")
     .reduce((s, a) => s + a.amount, 0);
 
+  // Headline matches eMoney's "Total Taxes & Expenses": engine's
+  // totalTaxesAndExpenses (estate tax + admin) plus IRD income tax. IRD is
+  // separate in the engine because it's income tax on heirs, not an
+  // estate-administered drain.
+  const totalTaxesAndExpenses = tax.totalTaxesAndExpenses + irdTotal;
+  const headlineColor =
+    totalTaxesAndExpenses > 0 ? "text-rose-200" : "text-emerald-200";
+
+  const showState = tax.stateEstateTaxRate > 0 || tax.stateEstateTax > 0;
+  const showTentativeBase =
+    tax.adjustedTaxableGifts > 0 || tax.lifetimeGiftTaxAdjustment > 0;
+  const unifiedCreditHint = `(${fmt.format(tax.beaAtDeathYear)} Basic Exclusion + ${fmt.format(tax.dsueReceived)} DSUE)`;
+
   return (
     <section className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900/40">
-      {/* Compact single-row header */}
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-800 px-5 py-3">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-gray-500">
-            Form 706
-          </span>
-          <h2 className="text-base font-semibold text-gray-50">{heading}</h2>
-        </div>
+        <h2 className="text-base font-semibold text-gray-50">{heading}</h2>
         <div className="flex items-baseline gap-2">
           <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
-            Total tax
+            Total Taxes &amp; Expenses
           </span>
           <span
             className={
               "font-mono text-xl font-semibold tabular-nums " + headlineColor
             }
           >
-            {fmt.format(headlineTax)}
+            {fmt.format(totalTaxesAndExpenses)}
           </span>
         </div>
       </header>
@@ -461,12 +443,11 @@ function DecedentBreakdown({
       )}
 
       <div className="divide-y divide-gray-800/70">
-        {/* 1 — Gross estate */}
-        <StepRow
-          step={1}
-          title="Gross estate"
+        {/* Gross Estate */}
+        <Section
+          title="Gross Estate"
           subtotal={tax.grossEstate}
-          subtotalLabel="Gross estate"
+          subtotalLabel="Gross Estate"
         >
           {tax.grossEstateLines.map((line, idx) => (
             <LineRow
@@ -476,126 +457,110 @@ function DecedentBreakdown({
               amount={line.amount}
             />
           ))}
-        </StepRow>
+        </Section>
 
-        {/* 2 — Deductions + lifetime gifts → Tentative tax base */}
-        <StepRow
-          step={2}
-          title="Deductions"
-          subtotal={tax.tentativeTaxBase}
-          subtotalLabel="Tentative tax base"
+        {/* Taxable Estate */}
+        <Section
+          title="Taxable Estate"
+          subtotal={tax.taxableEstate}
+          subtotalLabel="Taxable Estate"
         >
+          <LineRow label="Gross Estate" amount={tax.grossEstate} />
           <LineRow
-            label="Gross estate"
-            amount={tax.grossEstate}
-            muted
-            carry
-          />
-          <LineRow
-            label="Estate admin expenses"
+            label="LESS: Probate and Final Expenses"
             amount={tax.estateAdminExpenses}
             showAsDeduction
             hideIfZero
           />
           <LineRow
-            label="Marital deduction"
+            label="LESS: Marital Deduction"
             amount={tax.maritalDeduction}
             showAsDeduction
             hideIfZero
           />
           <LineRow
-            label="Charitable deduction"
+            label="LESS: Charitable Deduction"
             amount={tax.charitableDeduction}
             showAsDeduction
             hideIfZero
           />
-          <LineRow
-            label="Adjusted taxable gifts"
-            amount={tax.adjustedTaxableGifts}
-            hideIfZero
-          />
-          {tax.estateAdminExpenses === 0 &&
-            tax.maritalDeduction === 0 &&
-            tax.charitableDeduction === 0 &&
-            tax.adjustedTaxableGifts === 0 && (
-              <LineRow label="No deductions or lifetime gifts" amount={0} muted />
-            )}
-        </StepRow>
+        </Section>
 
-        {/* 3 — Federal estate tax */}
-        <StepRow
-          step={3}
-          title="Federal estate tax"
-          caption="Unified rate − unified credit"
+        {/* Tentative Tax Base — only when there are lifetime gifts */}
+        {showTentativeBase && (
+          <Section
+            title="Tentative Tax Base"
+            subtotal={tax.tentativeTaxBase}
+            subtotalLabel="Tentative Tax Base"
+          >
+            <LineRow label="Taxable Estate" amount={tax.taxableEstate} />
+            <LineRow
+              label="Adjusted Taxable Gifts During Lifetime"
+              amount={tax.adjustedTaxableGifts}
+            />
+            <LineRow
+              label="Gift Tax Rolled Back"
+              amount={tax.lifetimeGiftTaxAdjustment}
+            />
+          </Section>
+        )}
+
+        {/* Estate Tax */}
+        <Section
+          title="Estate Tax"
           subtotal={tax.federalEstateTax}
-          subtotalLabel="Federal estate tax"
+          subtotalLabel="Estate Tax"
           subtotalAccent="tax"
         >
-          <LineRow label="Tentative tax (rate × base)" amount={tax.tentativeTax} />
+          <LineRow label="Tentative Tax" amount={tax.tentativeTax} />
           <LineRow
-            label="Unified credit"
+            label="LESS: Unified Credit"
+            hint={unifiedCreditHint}
             amount={tax.unifiedCredit}
             showAsDeduction
           />
-          <LineRow label="BEA at death year" amount={tax.beaAtDeathYear} muted />
-          <LineRow
-            label="DSUE received"
-            amount={tax.dsueReceived}
-            muted
-            hideIfZero
-          />
-          <LineRow
-            label="Applicable exclusion"
-            amount={tax.applicableExclusion}
-            muted
-          />
-          <LineRow
-            label="Remaining lifetime exemption"
-            amount={Math.max(0, tax.applicableExclusion - tax.adjustedTaxableGifts)}
-            muted
-          />
-        </StepRow>
+        </Section>
 
-        {/* 5 — State estate tax (only when relevant) */}
-        {showState && stateStep && (
-          <StepRow
-            step={stateStep}
-            title="State estate tax"
-            caption={`Flat rate · ${pct.format(tax.stateEstateTaxRate)}`}
+        {/* State Estate Tax — only when applicable */}
+        {showState && (
+          <Section
+            title="State Estate Tax"
             subtotal={tax.stateEstateTax}
-            subtotalLabel="State estate tax"
+            subtotalLabel="State Estate Tax"
             subtotalAccent="tax"
           >
             <LineRow
-              label={`Taxable estate × ${pct.format(tax.stateEstateTaxRate)}`}
+              label={`Taxable Estate × ${pct.format(tax.stateEstateTaxRate)}`}
               amount={tax.stateEstateTax}
-              muted
             />
-          </StepRow>
+          </Section>
         )}
 
-        {/* Totals */}
-        <StepRow
-          step={totalStep}
-          title="Total taxes & expenses"
-          subtotal={tax.totalTaxesAndExpenses}
-          subtotalLabel="Grand total"
+        {/* Total Taxes & Expenses */}
+        <Section
+          title="Total Taxes & Expenses"
+          subtotal={totalTaxesAndExpenses}
+          subtotalLabel="Total Taxes & Expenses"
           subtotalAccent="tax"
         >
-          <LineRow label="Federal estate tax" amount={tax.federalEstateTax} carry />
+          <LineRow label="Estate Tax" amount={tax.federalEstateTax} />
           <LineRow
-            label="State estate tax"
+            label="State Estate Tax"
             amount={tax.stateEstateTax}
             hideIfZero
-            carry
           />
           <LineRow
-            label="Estate admin expenses"
+            label="Probate and Final Expenses"
             amount={tax.estateAdminExpenses}
             hideIfZero
           />
-          {irdTotal > 0 && <LineRow label="IRD tax" amount={irdTotal} />}
-        </StepRow>
+          {irdTotal > 0 && (
+            <LineRow
+              label="Tax on Income with Respect to Decedent"
+              amount={irdTotal}
+            />
+          )}
+        </Section>
       </div>
 
       {showDsueGenerated && tax.dsueGenerated > 0 && (
