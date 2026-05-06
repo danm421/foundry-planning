@@ -197,11 +197,12 @@ function cooperNoTrusts(): ClientData {
 describe("StrategyCards", () => {
   it("renders nothing when there are no irrevocable trusts (0-trust empty state)", () => {
     const tree = cooperNoTrusts();
-    const withResult = runProjectionWithEvents(tree);
+    const rightResult = runProjectionWithEvents(tree);
     const { container } = render(
       <StrategyCards
         tree={tree}
-        withResult={withResult}
+        rightResult={rightResult}
+        rightIsDoNothing={false}
         procrastinatedResult={null}
       />,
     );
@@ -210,14 +211,15 @@ describe("StrategyCards", () => {
 
   it("renders trust + procrastination + guidance (3 cards) for the 1-trust branch", () => {
     const tree = cooperSingleIlitOnly();
-    const withResult = runProjectionWithEvents(tree);
+    const rightResult = runProjectionWithEvents(tree);
     const procrastinatedResult = runProjectionWithEvents(
       synthesizeDelayedTopGift(tree, 10),
     );
     const { container } = render(
       <StrategyCards
         tree={tree}
-        withResult={withResult}
+        rightResult={rightResult}
+        rightIsDoNothing={false}
         procrastinatedResult={procrastinatedResult}
       />,
     );
@@ -230,14 +232,15 @@ describe("StrategyCards", () => {
 
   it("renders 2 trust cards + procrastination (3 cards, no guidance) for the >=2-trust branch", () => {
     const tree = cooperSampleScenario();
-    const withResult = runProjectionWithEvents(tree);
+    const rightResult = runProjectionWithEvents(tree);
     const procrastinatedResult = runProjectionWithEvents(
       synthesizeDelayedTopGift(tree, 10),
     );
     const { container } = render(
       <StrategyCards
         tree={tree}
-        withResult={withResult}
+        rightResult={rightResult}
+        rightIsDoNothing={false}
         procrastinatedResult={procrastinatedResult}
       />,
     );
@@ -249,14 +252,15 @@ describe("StrategyCards", () => {
 
   it("renders the ILIT narrative phrase for an ILIT trust card", () => {
     const tree = cooperSampleScenario();
-    const withResult = runProjectionWithEvents(tree);
+    const rightResult = runProjectionWithEvents(tree);
     const procrastinatedResult = runProjectionWithEvents(
       synthesizeDelayedTopGift(tree, 10),
     );
     render(
       <StrategyCards
         tree={tree}
-        withResult={withResult}
+        rightResult={rightResult}
+        rightIsDoNothing={false}
         procrastinatedResult={procrastinatedResult}
       />,
     );
@@ -269,7 +273,7 @@ describe("StrategyCards", () => {
 
   it("renders the procrastination card with a negative primary amount", () => {
     const tree = cooperSampleScenario();
-    const withResult = runProjectionWithEvents(tree);
+    const rightResult = runProjectionWithEvents(tree);
     // The Cooper SLAT account is pre-funded at $2.4M at planStartYear AND
     // receives the $2.4M gift in the same year, so shifting the gift year
     // via `synthesizeDelayedTopGift` doesn't change the SLAT terminal
@@ -305,7 +309,8 @@ describe("StrategyCards", () => {
     render(
       <StrategyCards
         tree={tree}
-        withResult={withResult}
+        rightResult={rightResult}
+        rightIsDoNothing={false}
         procrastinatedResult={procrastinatedResult}
       />,
     );
@@ -317,5 +322,19 @@ describe("StrategyCards", () => {
     expect(cardEl).not.toBeNull();
     const amountText = cardEl!.querySelector("span")?.textContent ?? "";
     expect(amountText.startsWith("-")).toBe(true);
+  });
+
+  it("renders nothing when the right side is do-nothing", () => {
+    const tree = cooperSampleScenario();
+    const rightResult = runProjectionWithEvents(tree);
+    const { container } = render(
+      <StrategyCards
+        tree={tree}
+        rightResult={rightResult}
+        rightIsDoNothing
+        procrastinatedResult={null}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
   });
 });

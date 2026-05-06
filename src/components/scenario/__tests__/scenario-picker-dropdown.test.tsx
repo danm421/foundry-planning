@@ -110,3 +110,31 @@ describe("ScenarioPickerDropdown", () => {
     ).toBeNull();
   });
 });
+
+describe("ScenarioPickerDropdown — includeDoNothing", () => {
+  it("renders a Do nothing option when the prop is set", () => {
+    render(
+      <ScenarioPickerDropdown
+        value="base"
+        onChange={() => {}}
+        scenarios={[]}
+        snapshots={[]}
+        includeDoNothing
+      />,
+    );
+    const opt = screen.getByRole("option", { name: /Do nothing/ }) as HTMLOptionElement;
+    expect(opt.value).toBe("do-nothing");
+  });
+
+  it("omits the Do nothing option by default", () => {
+    render(
+      <ScenarioPickerDropdown
+        value="base"
+        onChange={() => {}}
+        scenarios={[]}
+        snapshots={[]}
+      />,
+    );
+    expect(screen.queryByRole("option", { name: /Do nothing/ })).toBeNull();
+  });
+});

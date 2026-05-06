@@ -30,24 +30,31 @@ import { StrategyCard, type StrategyCardData } from "./strategy-card";
 
 interface Props {
   tree: ClientData;
-  withResult: ProjectionResult;
+  rightResult: ProjectionResult;
+  rightIsDoNothing: boolean;
   procrastinatedResult: ProjectionResult | null;
 }
 
-export function StrategyCards({ tree, withResult, procrastinatedResult }: Props) {
-  const ranked = rankTrustsByContribution(tree, withResult.years);
+export function StrategyCards({
+  tree,
+  rightResult,
+  rightIsDoNothing,
+  procrastinatedResult,
+}: Props) {
+  if (rightIsDoNothing) return null;
+  const ranked = rankTrustsByContribution(tree, rightResult.years);
   if (ranked.length === 0) return null;
 
   const finalDeathYear =
-    withResult.secondDeathEvent?.year ??
-    withResult.firstDeathEvent?.year ??
+    rightResult.secondDeathEvent?.year ??
+    rightResult.firstDeathEvent?.year ??
     tree.planSettings.planEndYear;
 
   const trustCards: StrategyCardData[] = ranked.slice(0, 2).map((t) => {
     const card = computeTrustCardData({
       ranked: t,
       tree,
-      withResult: withResult.years,
+      withResult: rightResult.years,
       finalDeathYear,
     });
     return {
@@ -61,7 +68,7 @@ export function StrategyCards({ tree, withResult, procrastinatedResult }: Props)
     ? (() => {
         const card = computeProcrastinationCardData({
           tree,
-          withResult: withResult.years,
+          withResult: rightResult.years,
           delayedResult: procrastinatedResult.years,
           delayYears: 10,
           finalDeathYear,

@@ -171,15 +171,15 @@ function cooperSampleScenario(): ClientData {
 
 describe("TrajectoryChart", () => {
   const tree = cooperSampleScenario();
-  const withResult = runProjectionWithEvents(tree);
-  const withoutResult = runProjectionWithEvents(synthesizeNoPlanClientData(tree));
+  const rightResult = runProjectionWithEvents(tree);
+  const leftResult = runProjectionWithEvents(synthesizeNoPlanClientData(tree));
 
   it("renders both with-plan and without-plan series as <path> elements", () => {
     const { container } = render(
       <TrajectoryChart
         tree={tree}
-        withResult={withResult}
-        withoutResult={withoutResult}
+        leftResult={leftResult}
+        rightResult={rightResult}
         scrubberYear={2030}
       />,
     );
@@ -191,8 +191,8 @@ describe("TrajectoryChart", () => {
     const { container } = render(
       <TrajectoryChart
         tree={tree}
-        withResult={withResult}
-        withoutResult={withoutResult}
+        leftResult={leftResult}
+        rightResult={rightResult}
         scrubberYear={2030}
       />,
     );
@@ -204,8 +204,8 @@ describe("TrajectoryChart", () => {
     const { container, rerender } = render(
       <TrajectoryChart
         tree={tree}
-        withResult={withResult}
-        withoutResult={withoutResult}
+        leftResult={leftResult}
+        rightResult={rightResult}
         scrubberYear={2030}
       />,
     );
@@ -217,8 +217,8 @@ describe("TrajectoryChart", () => {
     rerender(
       <TrajectoryChart
         tree={tree}
-        withResult={withResult}
-        withoutResult={withoutResult}
+        leftResult={leftResult}
+        rightResult={rightResult}
         scrubberYear={2055}
       />,
     );

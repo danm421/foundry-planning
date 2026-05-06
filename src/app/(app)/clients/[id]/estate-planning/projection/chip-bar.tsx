@@ -11,19 +11,11 @@ interface Props {
   onOpenAssumptions: () => void;
 }
 
-/**
- * Field set restricted to engine PlanSettings (see engine/types.ts).
- * Plan pseudocode listed `defaultGrowthTaxable` — that field lives on the DB
- * row but is not on engine PlanSettings, so flatFederalRate stands in as the
- * most-edited tax assumption. `federalEstateExemption` doesn't exist anywhere.
- */
 const CHIPS: Array<{
-  key: "flatFederalRate" | "inflationRate" | "planEndYear" | "flatStateEstateRate";
+  key: "planEndYear" | "flatStateEstateRate";
   label: string;
   format: ChipFormat;
 }> = [
-  { key: "flatFederalRate", label: "Federal tax %", format: "pct" },
-  { key: "inflationRate", label: "Inflation %", format: "pct" },
   { key: "planEndYear", label: "Plan end year", format: "year" },
   { key: "flatStateEstateRate", label: "State estate %", format: "pct" },
 ];

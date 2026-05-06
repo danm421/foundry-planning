@@ -1,10 +1,10 @@
 /**
- * Pure transform from `(tree, withResult, withoutResult)` into chart series for
+ * Pure transform from `(tree, rightResult, leftResult)` into chart series for
  * the trajectory chart consumed by Task 28's TrajectoryChart component.
  *
  * For each projection year, computes total household wealth (in-estate +
  * out-of-estate) less cumulative tax drag (federal/state estate tax + admin
- * expenses) accrued through that year. Returns parallel `with` / `without`
+ * expenses) accrued through that year. Returns parallel `right` / `left`
  * series, optional first/second death-year markers, and a y-axis range.
  *
  * No React, DOM, fetch, or DB — engine-adjacent helper. Lives here (and not
@@ -20,13 +20,13 @@ import {
 } from "@/lib/estate/in-estate-at-year";
 
 export interface ChartSeries {
-  /** [year, householdValue] pairs — with-plan trajectory. */
-  with: [year: number, value: number][];
-  /** [year, householdValue] pairs — no-plan counterfactual trajectory. */
-  without: [year: number, value: number][];
-  /** Year of the first death event in the with-plan projection (if any). */
+  /** [year, householdValue] pairs — Plan 2 / right column trajectory. */
+  right: [year: number, value: number][];
+  /** [year, householdValue] pairs — Plan 1 / left column trajectory. */
+  left: [year: number, value: number][];
+  /** Year of the first death event in the right-side projection (if any). */
   firstDeathYear?: number;
-  /** Year of the second death event in the with-plan projection (if any). */
+  /** Year of the second death event in the right-side projection (if any). */
   secondDeathYear?: number;
   /** Lower y-axis bound. Always 0. */
   yMin: number;
@@ -34,12 +34,24 @@ export interface ChartSeries {
   yMax: number;
 }
 
+/** Closed polygon (in chart-data space) representing a delta-band region. */
+export interface DeltaBandPoly {
+  points: [year: number, value: number][];
+}
+
+export interface DeltaBands {
+  /** Regions where right > left (Plan 2 ahead of Plan 1). */
+  positive: DeltaBandPoly[];
+  /** Regions where right < left (Plan 2 behind Plan 1). */
+  negative: DeltaBandPoly[];
+}
+
 export function deriveChartSeries(args: {
   tree: ClientData;
-  withResult: ProjectionResult;
-  withoutResult: ProjectionResult;
+  rightResult: ProjectionResult;
+  leftResult: ProjectionResult;
 }): ChartSeries {
-  const { tree, withResult, withoutResult } = args;
+  const { tree, rightResult, leftResult } = args;
   const startYear = tree.planSettings.planStartYear;
   const giftEvents = tree.giftEvents ?? [];
 
@@ -66,22 +78,22 @@ export function deriveChartSeries(args: {
       return [py.year, inE + outE - drag];
     });
 
-  const withSeries = buildSeries(withResult);
-  const withoutSeries = buildSeries(withoutResult);
+  const rightSeries = buildSeries(rightResult);
+  const leftSeries = buildSeries(leftResult);
 
   // Defensive: if either series is empty, Math.max(...[]) is -Infinity. Coalesce
   // to 1 so the chart can still render an empty axis.
   const allValues = [
-    ...withSeries.map((p) => p[1]),
-    ...withoutSeries.map((p) => p[1]),
+    ...rightSeries.map((p) => p[1]),
+    ...leftSeries.map((p) => p[1]),
   ];
   const yMax = allValues.length > 0 ? Math.max(...allValues) * 1.05 : 1;
 
   return {
-    with: withSeries,
-    without: withoutSeries,
-    firstDeathYear: withResult.firstDeathEvent?.year,
-    secondDeathYear: withResult.secondDeathEvent?.year,
+    right: rightSeries,
+    left: leftSeries,
+    firstDeathYear: rightResult.firstDeathEvent?.year,
+    secondDeathYear: rightResult.secondDeathEvent?.year,
     yMin: 0,
     yMax,
   };
@@ -122,4 +134,89 @@ function cumulativeTaxDrag(
     sum += py.estateTax?.estateAdminExpenses ?? 0;
   }
   return sum;
+}
+
+/**
+ * Build the delta-band geometry between two parallel year-aligned series.
+ *
+ * For each adjacent pair of years, emit a quad bounded by the right line
+ * (top when right > left) and the left line (bottom). When the sign of
+ * `right − left` flips between two years, linearly interpolate the zero
+ * crossing and split the region into two triangles — one positive, one
+ * negative — so the band edges meet cleanly at the crossing.
+ */
+export function deriveDeltaBands(
+  left: [number, number][],
+  right: [number, number][],
+): DeltaBands {
+  const positive: DeltaBandPoly[] = [];
+  const negative: DeltaBandPoly[] = [];
+
+  const n = Math.min(left.length, right.length);
+  for (let i = 0; i < n - 1; i++) {
+    const [ya, la] = left[i];
+    const [yb, lb] = left[i + 1];
+    const ra = right[i][1];
+    const rb = right[i + 1][1];
+    const da = ra - la;
+    const db = rb - lb;
+
+    if (da >= 0 && db >= 0) {
+      positive.push({
+        points: [
+          [ya, ra],
+          [yb, rb],
+          [yb, lb],
+          [ya, la],
+        ],
+      });
+    } else if (da <= 0 && db <= 0) {
+      negative.push({
+        points: [
+          [ya, la],
+          [yb, lb],
+          [yb, rb],
+          [ya, ra],
+        ],
+      });
+    } else {
+      const denom = da - db;
+      const t = denom === 0 ? 0.5 : da / denom;
+      const yCross = ya + t * (yb - ya);
+      const vCross = ra + t * (rb - ra);
+      if (da > 0) {
+        positive.push({
+          points: [
+            [ya, ra],
+            [yCross, vCross],
+            [ya, la],
+          ],
+        });
+        negative.push({
+          points: [
+            [yCross, vCross],
+            [yb, lb],
+            [yb, rb],
+          ],
+        });
+      } else {
+        negative.push({
+          points: [
+            [ya, la],
+            [yCross, vCross],
+            [ya, ra],
+          ],
+        });
+        positive.push({
+          points: [
+            [yCross, vCross],
+            [yb, rb],
+            [yb, lb],
+          ],
+        });
+      }
+    }
+  }
+
+  return { positive, negative };
 }

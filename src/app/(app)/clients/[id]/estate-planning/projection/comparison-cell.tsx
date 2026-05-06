@@ -1,58 +1,78 @@
-/**
- * ComparisonCell — single column of the 3-column comparison grid (Task 26).
- *
- * Pure presentational. Reads a `ScrubberCell` (label / pillLabel /
- * headlineLabel / bigNumber / subLine / rows) from `deriveScrubberData`
- * (Task 25) and renders it with variant-specific background + headline
- * colors.
- *
- * Token translations from the plan pseudocode (Task 26 § comparison-cell):
- *   bg-bg-0       → bg-card
- *   bg-bg-1       → bg-card-2
- *   text-fg-0     → text-ink
- *   text-fg-3     → text-ink-3
- *   text-accent-hi → text-accent-ink (Task 18 token rename)
- *   bg-fg-3       → bg-ink-3
- *   bg-neg        → bg-crit
- */
+"use client";
 
 import MoneyText from "@/components/money-text";
-import type { ScrubberCell, RowSentiment } from "./lib/derive-scrubber-data";
+import {
+  ScenarioPickerDropdown,
+  type ScenarioOption,
+  type SnapshotOption,
+} from "@/components/scenario/scenario-picker-dropdown";
+import { useCompareState } from "@/hooks/use-compare-state";
+import {
+  formatSignedM,
+  type ComparisonCell,
+  type RowSentiment,
+} from "./lib/derive-scrubber-data";
 
 interface Props {
-  cell: ScrubberCell;
-  variant: "without" | "with" | "impact";
+  cell: ComparisonCell;
+  side: "left" | "right" | "delta";
+  clientId: string;
+  scenarios: ScenarioOption[];
+  snapshots: SnapshotOption[];
+  /** URL value for the picker on this side; ignored when side === "delta". */
+  pickerValue?: string;
 }
 
-const VARIANT_BG: Record<Props["variant"], string> = {
-  without: "bg-card",
-  with: "bg-card-2",
-  impact: "bg-gradient-to-br from-accent/5 to-accent/15",
+const VARIANT_BG: Record<Props["side"], string> = {
+  left: "bg-card",
+  right: "bg-card-2",
+  delta: "bg-gradient-to-br from-accent/5 to-accent/15",
 };
 
-export function ComparisonCell({ cell, variant }: Props) {
-  const bg = VARIANT_BG[variant];
-  const headlineColor =
-    variant === "without" ? "text-ink" : "text-accent-ink";
+export function ComparisonCellView({
+  cell,
+  side,
+  clientId,
+  scenarios,
+  snapshots,
+  pickerValue,
+}: Props) {
+  const { setSide } = useCompareState(clientId);
+  const bg = VARIANT_BG[side];
+  const headlineColor = cell.variant === "delta" ? "text-accent-ink" : "text-ink";
 
   return (
     <div className={`p-4 ${bg}`}>
-      <div className="mb-1 flex items-center gap-2">
-        <span className="text-[10.5px] uppercase tracking-wider text-ink-3">
-          {cell.label}
-        </span>
-        <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10.5px] text-accent">
-          {cell.pillLabel}
-        </span>
+      <div className="mb-2">
+        {cell.variant === "plan" && pickerValue !== undefined ? (
+          <ScenarioPickerDropdown
+            value={pickerValue}
+            onChange={(next) => setSide(side as "left" | "right", next)}
+            scenarios={scenarios}
+            snapshots={snapshots}
+            includeDoNothing
+            ariaLabel={`${side === "left" ? "Plan 1" : "Plan 2"} scenario`}
+          />
+        ) : (
+          <div className="text-[11px] uppercase tracking-wider text-ink-3">
+            {cell.scenarioName}
+          </div>
+        )}
       </div>
       <div className={`mb-1 text-[13px] font-semibold ${headlineColor}`}>
         {cell.headlineLabel}
       </div>
-      <MoneyText
-        value={cell.bigNumber}
-        format="currency"
-        className="text-[30px] font-mono tabular-nums"
-      />
+      {cell.variant === "delta" ? (
+        <div className="text-[30px] font-mono tabular-nums">
+          {formatSignedM(cell.bigNumber)}
+        </div>
+      ) : (
+        <MoneyText
+          value={cell.bigNumber}
+          format="currency"
+          className="text-[30px] font-mono tabular-nums"
+        />
+      )}
       <div className="mb-3 text-[11px] text-ink-3">{cell.subLine}</div>
       <ul className="space-y-1 text-[12px]">
         {cell.rows.map((r, i) => (

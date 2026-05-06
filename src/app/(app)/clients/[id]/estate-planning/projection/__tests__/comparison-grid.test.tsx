@@ -1,19 +1,24 @@
 // @vitest-environment jsdom
 /**
- * Tests for ComparisonGrid — 3-column wrapper that mounts three
- * ComparisonCells (without / with / impact) using `deriveScrubberData`.
+ * Tests for ComparisonGrid — the picker-driven 3-cell wrapper that mounts
+ * three ComparisonCells (left / right / delta) using `deriveComparisonData`.
  *
  * Uses the same Cooper-Sample fixture pattern as
  * `lib/derive-scrubber-data.test.ts` — real engine output via
- * runProjectionWithEvents, no stubs of deriveScrubberData itself.
+ * runProjectionWithEvents, no stubs of the derive transform itself.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { runProjectionWithEvents } from "@/engine";
-import { synthesizeNoPlanClientData } from "@/lib/estate/counterfactual";
 import type { ClientData } from "@/engine/types";
 import { ComparisonGrid } from "../comparison-grid";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  usePathname: () => "/x",
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const FM_CLIENT = "fm-client";
 const FM_SPOUSE = "fm-spouse";
@@ -170,57 +175,55 @@ function cooperSampleScenario(): ClientData {
 }
 
 describe("ComparisonGrid", () => {
-  const tree = cooperSampleScenario();
-  const withResult = runProjectionWithEvents(tree);
-  const withoutResult = runProjectionWithEvents(synthesizeNoPlanClientData(tree));
-  const finalDeathYear =
-    withResult.secondDeathEvent?.year ??
-    withResult.firstDeathEvent?.year ??
-    2058;
+  it("renders two pickers (left/right) and a delta column", () => {
+    const tree = cooperSampleScenario();
+    const result = runProjectionWithEvents(tree);
 
-  it("renders three cells with the correct headlines", () => {
     render(
       <ComparisonGrid
+        clientId="c1"
         tree={tree}
-        withResult={withResult}
-        withoutResult={withoutResult}
-        scrubberYear={finalDeathYear}
+        leftResult={result}
+        leftScenarioId="base"
+        leftScenarioName="Base case"
+        leftIsDoNothing={false}
+        rightResult={result}
+        rightScenarioId="base"
+        rightScenarioName="Base case"
+        rightIsDoNothing={false}
+        scrubberYear={tree.planSettings.planEndYear}
+        scenarios={[]}
+        snapshots={[]}
       />,
     );
-    // "Net to heirs" appears in both the without-headline and with-headline
-    // (and also as a row label in each cell), so getAllByText is required.
-    const netHeadlines = screen.getAllByText("Net to heirs");
-    expect(netHeadlines.length).toBeGreaterThanOrEqual(2);
-    // Plan-impact headline ("Tax saved" appears both as headline AND as a
-    // row label inside the impact cell — getAllByText picks up both).
-    expect(screen.getAllByText("Tax saved").length).toBeGreaterThanOrEqual(1);
-    // Column eyebrow labels confirm all three variants mount.
-    expect(screen.getByText("Without plan")).toBeDefined();
-    expect(screen.getByText("With current plan")).toBeDefined();
-    expect(screen.getByText("Plan impact")).toBeDefined();
+
+    const pickers = screen.getAllByRole("combobox");
+    expect(pickers).toHaveLength(2);
+    expect(screen.getByText(/Net to heirs Δ/)).toBeInTheDocument();
   });
 
-  it("reflects scrubberYear changes via re-render", () => {
-    const { rerender } = render(
-      <ComparisonGrid
-        tree={tree}
-        withResult={withResult}
-        withoutResult={withoutResult}
-        scrubberYear={2026}
-      />,
-    );
-    // Pre-death: the tax row in the without column shows "$0 (pre-death)".
-    expect(screen.getAllByText("$0 (pre-death)").length).toBeGreaterThanOrEqual(1);
+  it("renders pre-death sentinel when scrubber is before final death", () => {
+    const tree = cooperSampleScenario();
+    const result = runProjectionWithEvents(tree);
 
-    rerender(
+    render(
       <ComparisonGrid
+        clientId="c1"
         tree={tree}
-        withResult={withResult}
-        withoutResult={withoutResult}
-        scrubberYear={finalDeathYear}
+        leftResult={result}
+        leftScenarioId="base"
+        leftScenarioName="Base case"
+        leftIsDoNothing={false}
+        rightResult={result}
+        rightScenarioId="base"
+        rightScenarioName="Base case"
+        rightIsDoNothing={false}
+        scrubberYear={tree.planSettings.planStartYear}
+        scenarios={[]}
+        snapshots={[]}
       />,
     );
-    // Post-death: pre-death sentinel is gone (real numbers replace it).
-    expect(screen.queryByText("$0 (pre-death)")).toBeNull();
+
+    expect(screen.getAllByText("$0 (pre-death)").length).toBeGreaterThanOrEqual(1);
   });
 });
