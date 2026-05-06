@@ -1,45 +1,67 @@
-/**
- * ComparisonGrid — 3-column wrapper (without / with / impact) for the
- * estate-planning projection comparison panel (Task 26).
- *
- * Calls `deriveScrubberData` once per render with the current scrubberYear
- * and renders three `<ComparisonCell>` siblings. The `gap-px` + `bg-hair`
- * faux-border trick produces 1px hairlines between cells without explicit
- * separator markup.
- *
- * Note: `ProjectionResult` is imported from `@/engine/projection`, not
- * `@/engine/types` (Task 25's dependency-graph finding).
- */
+"use client";
 
 import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
-import { deriveScrubberData } from "./lib/derive-scrubber-data";
-import { ComparisonCell } from "./comparison-cell";
+import type {
+  ScenarioOption,
+  SnapshotOption,
+} from "@/components/scenario/scenario-picker-dropdown";
+import { deriveComparisonData } from "./lib/derive-scrubber-data";
+import { ComparisonCellView } from "./comparison-cell";
 
 interface Props {
+  clientId: string;
   tree: ClientData;
-  withResult: ProjectionResult;
-  withoutResult: ProjectionResult;
+  leftResult: ProjectionResult;
+  leftScenarioId: string;
+  leftScenarioName: string;
+  leftIsDoNothing: boolean;
+  rightResult: ProjectionResult;
+  rightScenarioId: string;
+  rightScenarioName: string;
+  rightIsDoNothing: boolean;
   scrubberYear: number;
+  scenarios: ScenarioOption[];
+  snapshots: SnapshotOption[];
 }
 
-export function ComparisonGrid({
-  tree,
-  withResult,
-  withoutResult,
-  scrubberYear,
-}: Props) {
-  const data = deriveScrubberData({
-    tree,
-    withResult,
-    withoutResult,
-    scrubberYear,
+export function ComparisonGrid(props: Props) {
+  const data = deriveComparisonData({
+    tree: props.tree,
+    leftResult: props.leftResult,
+    leftScenarioName: props.leftScenarioName,
+    leftIsDoNothing: props.leftIsDoNothing,
+    rightResult: props.rightResult,
+    rightScenarioName: props.rightScenarioName,
+    rightIsDoNothing: props.rightIsDoNothing,
+    scrubberYear: props.scrubberYear,
   });
+
   return (
     <div className="grid grid-cols-3 gap-px overflow-hidden rounded bg-hair">
-      <ComparisonCell cell={data.without} variant="without" />
-      <ComparisonCell cell={data.with} variant="with" />
-      <ComparisonCell cell={data.impact} variant="impact" />
+      <ComparisonCellView
+        cell={data.left}
+        side="left"
+        clientId={props.clientId}
+        scenarios={props.scenarios}
+        snapshots={props.snapshots}
+        pickerValue={props.leftScenarioId}
+      />
+      <ComparisonCellView
+        cell={data.right}
+        side="right"
+        clientId={props.clientId}
+        scenarios={props.scenarios}
+        snapshots={props.snapshots}
+        pickerValue={props.rightScenarioId}
+      />
+      <ComparisonCellView
+        cell={data.delta}
+        side="delta"
+        clientId={props.clientId}
+        scenarios={props.scenarios}
+        snapshots={props.snapshots}
+      />
     </div>
   );
 }
