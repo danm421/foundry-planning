@@ -190,7 +190,7 @@ export default function EstateTaxReportView({
   })();
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pt-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <TimePeriodButtons
           selected={selectedAsOf}
