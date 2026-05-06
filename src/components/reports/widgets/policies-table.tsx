@@ -17,12 +17,7 @@
 // PDF render lives at `components/reports-pdf/widgets/policies-table.tsx`.
 
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
-
-const FMT = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
+import { fmtCurrency } from "./chart-shared";
 
 export function PoliciesTableRender({
   props,
@@ -97,11 +92,11 @@ export function PoliciesTableRender({
               <td className="px-4 py-2 text-report-ink">{row.owner}</td>
               <td className="px-4 py-2 text-right text-report-ink">
                 {row.deathBenefit !== undefined
-                  ? FMT.format(row.deathBenefit)
+                  ? fmtCurrency.format(row.deathBenefit)
                   : "—"}
               </td>
               <td className="px-4 py-2 text-right text-report-ink">
-                {FMT.format(row.annualPremium)}
+                {fmtCurrency.format(row.annualPremium)}
               </td>
             </tr>
           ))}

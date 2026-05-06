@@ -28,6 +28,7 @@ import type { ComparisonScopeData } from "@/lib/reports/scopes/comparison";
 import type { AllocationScopeData } from "@/lib/reports/scopes/allocation";
 import { REPORT_THEME } from "@/lib/reports/theme";
 import { fmtCompactDollar } from "./chart-shared";
+import { ComparisonEmptyState } from "./comparison-empty-state";
 
 ChartJS.register(ArcElement, DoughnutController, Tooltip, Legend);
 
@@ -135,7 +136,7 @@ export function ComparisonDonutPairRender(
 ) {
   const comparison = (p.data as CompPayload)?.comparison;
   if (!comparison) {
-    return <EmptyState title={p.props.title} />;
+    return <ComparisonEmptyState title={p.props.title} />;
   }
   return (
     <DonutPairCard
@@ -211,13 +212,3 @@ function DonutPairCard({
   );
 }
 
-function EmptyState({ title }: { title: string }) {
-  return (
-    <div className="bg-report-card border border-report-hair rounded-md p-6 text-center text-report-ink-3">
-      <div className="text-base font-serif font-medium text-report-ink mb-2">
-        {title}
-      </div>
-      <div className="text-xs">Bind two scenarios to use this widget.</div>
-    </div>
-  );
-}

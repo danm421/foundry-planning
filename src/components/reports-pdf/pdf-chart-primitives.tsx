@@ -456,16 +456,16 @@ export function AreaSeries({
 }): ReactElement | null {
   if (points.length === 0) return null;
   const top = points.map((p) => `${plot.xScale(p.x)},${plot.yScale(p.value)}`);
-  let bottom: string[];
+  const bottom: string[] = [];
   if (lowerPoints && lowerPoints.length > 0) {
-    bottom = [...lowerPoints]
-      .reverse()
-      .map((p) => `${plot.xScale(p.x)},${plot.yScale(p.value)}`);
+    for (let i = lowerPoints.length - 1; i >= 0; i--) {
+      const p = lowerPoints[i];
+      bottom.push(`${plot.xScale(p.x)},${plot.yScale(p.value)}`);
+    }
   } else {
     const baseY = plot.yScale(baseValue);
-    const lastX = plot.xScale(points[points.length - 1].x);
-    const firstX = plot.xScale(points[0].x);
-    bottom = [`${lastX},${baseY}`, `${firstX},${baseY}`];
+    bottom.push(`${plot.xScale(points[points.length - 1].x)},${baseY}`);
+    bottom.push(`${plot.xScale(points[0].x)},${baseY}`);
   }
   const polyPoints = [...top, ...bottom].join(" ");
   return (
@@ -575,12 +575,16 @@ function donutSliceD(
   start: number,
   end: number,
 ): string {
+  const cosStart = Math.cos(start);
+  const sinStart = Math.sin(start);
   // Single full ring — split into two arcs to keep PDF renderer happy.
   if (Math.abs(end - start - Math.PI * 2) < 1e-6) {
-    const halfwayOuter = `${cx + rOuter * Math.cos(start + Math.PI)},${cy + rOuter * Math.sin(start + Math.PI)}`;
-    const halfwayInner = `${cx + rInner * Math.cos(start + Math.PI)},${cy + rInner * Math.sin(start + Math.PI)}`;
-    const startOuter = `${cx + rOuter * Math.cos(start)},${cy + rOuter * Math.sin(start)}`;
-    const startInner = `${cx + rInner * Math.cos(start)},${cy + rInner * Math.sin(start)}`;
+    const cosHalf = -cosStart;
+    const sinHalf = -sinStart;
+    const startOuter = `${cx + rOuter * cosStart},${cy + rOuter * sinStart}`;
+    const startInner = `${cx + rInner * cosStart},${cy + rInner * sinStart}`;
+    const halfwayOuter = `${cx + rOuter * cosHalf},${cy + rOuter * sinHalf}`;
+    const halfwayInner = `${cx + rInner * cosHalf},${cy + rInner * sinHalf}`;
     return [
       `M ${startOuter}`,
       `A ${rOuter} ${rOuter} 0 1 1 ${halfwayOuter}`,
@@ -591,15 +595,17 @@ function donutSliceD(
       "Z",
     ].join(" ");
   }
+  const cosEnd = Math.cos(end);
+  const sinEnd = Math.sin(end);
   const largeArc = end - start > Math.PI ? 1 : 0;
-  const sox = cx + rOuter * Math.cos(start);
-  const soy = cy + rOuter * Math.sin(start);
-  const eox = cx + rOuter * Math.cos(end);
-  const eoy = cy + rOuter * Math.sin(end);
-  const six = cx + rInner * Math.cos(start);
-  const siy = cy + rInner * Math.sin(start);
-  const eix = cx + rInner * Math.cos(end);
-  const eiy = cy + rInner * Math.sin(end);
+  const sox = cx + rOuter * cosStart;
+  const soy = cy + rOuter * sinStart;
+  const eox = cx + rOuter * cosEnd;
+  const eoy = cy + rOuter * sinEnd;
+  const six = cx + rInner * cosStart;
+  const siy = cy + rInner * sinStart;
+  const eix = cx + rInner * cosEnd;
+  const eiy = cy + rInner * sinEnd;
   return [
     `M ${sox} ${soy}`,
     `A ${rOuter} ${rOuter} 0 ${largeArc} 1 ${eox} ${eoy}`,
@@ -635,15 +641,14 @@ export function Legend({
   color?: string;
 }): ReactElement {
   // Approximate label width — PDF doesn't expose font metrics in SVG context.
-  // 4px per char is a reasonable lower bound for our 8pt sans-serif; a little
-  // extra space avoids overlap on long labels at the cost of trailing space.
-  const advances = items.map(
-    (it) => swatchSize + gap + it.label.length * fontSize * 0.55 + itemGap,
-  );
-  const offsets = advances.reduce<number[]>((acc, w, i) => {
-    acc.push(i === 0 ? 0 : acc[i - 1] + advances[i - 1]);
-    return acc;
-  }, []);
+  // 0.55em per char is a reasonable upper bound for our 8pt sans-serif; the
+  // small overshoot avoids overlap on long labels at the cost of trailing space.
+  const offsets: number[] = [];
+  let cursor = 0;
+  for (const it of items) {
+    offsets.push(cursor);
+    cursor += swatchSize + gap + it.label.length * fontSize * 0.55 + itemGap;
+  }
   return (
     <G>
       {items.map((it, i) => {

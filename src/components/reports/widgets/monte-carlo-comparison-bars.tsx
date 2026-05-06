@@ -23,6 +23,7 @@ import {
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 import type { ComparisonScopeData } from "@/lib/reports/scopes/comparison";
 import { REPORT_THEME } from "@/lib/reports/theme";
+import { ComparisonEmptyState } from "./comparison-empty-state";
 
 ChartJS.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
@@ -141,7 +142,7 @@ export function MonteCarloComparisonBarsRender(
   );
 
   if (!comparison) {
-    return <EmptyState title={p.props.title} />;
+    return <ComparisonEmptyState title={p.props.title} />;
   }
 
   return (
@@ -159,13 +160,3 @@ export function MonteCarloComparisonBarsRender(
   );
 }
 
-function EmptyState({ title }: { title: string }) {
-  return (
-    <div className="bg-report-card border border-report-hair rounded-md p-6 text-center text-report-ink-3">
-      <div className="text-base font-serif font-medium text-report-ink mb-2">
-        {title}
-      </div>
-      <div className="text-xs">Bind two scenarios to use this widget.</div>
-    </div>
-  );
-}

@@ -16,12 +16,7 @@ import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 import type { CashflowScopeData } from "@/lib/reports/scopes/cashflow";
 import { resolveYearRange } from "@/lib/reports/year-range-default";
 import { useReportContext } from "../builder-context";
-
-const FMT = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
+import { fmtCurrency } from "./chart-shared";
 
 export function ExpenseDetailTableRender(
   p: WidgetRenderProps<"expenseDetailTable">,
@@ -84,7 +79,7 @@ export function ExpenseDetailTableRender(
                     {r.year}
                   </td>
                   <td className="px-4 py-2 text-right text-report-ink">
-                    {FMT.format(r.expenses)}
+                    {fmtCurrency.format(r.expenses)}
                   </td>
                 </tr>
               ))}
@@ -94,7 +89,7 @@ export function ExpenseDetailTableRender(
               >
                 <td className="px-4 py-2.5 text-left text-report-ink">Total</td>
                 <td className="px-4 py-2.5 text-right text-report-ink">
-                  {FMT.format(total)}
+                  {fmtCurrency.format(total)}
                 </td>
               </tr>
             </>

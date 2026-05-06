@@ -286,7 +286,7 @@ exports[`primitives — element snapshots > DonutSeries with center label 1`] = 
 exports[`primitives — element snapshots > DonutSeries with empty slices renders a hairline ring 1`] = `
 <G>
   <PATH
-    d="M 160,100 A 60 60 0 1 1 40,100.00000000000001 A 60 60 0 1 1 160,100 M 136,100 A 36 36 0 1 0 64,100 A 36 36 0 1 0 136,100 Z"
+    d="M 160,100 A 60 60 0 1 1 40,100 A 60 60 0 1 1 160,100 M 136,100 A 36 36 0 1 0 64,100 A 36 36 0 1 0 136,100 Z"
     fill="#d8d2c4"
   />
 </G>

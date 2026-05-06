@@ -7,6 +7,13 @@
 // duplicate the few tiny formatters rather than cross-import the PDF
 // module (which would drag `@react-pdf/renderer` into the client bundle).
 
+/** Whole-dollar currency formatter for table cells. */
+export const fmtCurrency = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
 /** Compact-dollar formatting for axis ticks and value labels.
  *  >=1e6 → "$1.2M", >=1e3 → "$340K", otherwise "$50". Negatives wrap in
  *  parens (financial convention). Mirrors the PDF formatter so screen

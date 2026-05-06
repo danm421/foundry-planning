@@ -149,10 +149,10 @@ export async function loadComparisonScope(args: {
   ): Promise<SideInput> => {
     const ctx = { client: { id: clientId }, projection };
     const [cashflow, balance, monteCarlo, allocation] = await Promise.all([
-      Promise.resolve(getScope("cashflow").fetch(ctx)),
-      Promise.resolve(getScope("balance").fetch(ctx)),
-      Promise.resolve(getScope("monteCarlo").fetch(ctx)),
-      Promise.resolve(getScope("allocation").fetch(ctx)),
+      getScope("cashflow").fetch(ctx),
+      getScope("balance").fetch(ctx),
+      getScope("monteCarlo").fetch(ctx),
+      getScope("allocation").fetch(ctx),
     ]);
     return {
       projection,

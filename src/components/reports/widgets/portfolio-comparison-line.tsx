@@ -28,6 +28,7 @@ import {
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 import type { ComparisonScopeData } from "@/lib/reports/scopes/comparison";
 import { resolveYearRange } from "@/lib/reports/year-range-default";
+import { ComparisonEmptyState } from "./comparison-empty-state";
 import { REPORT_THEME } from "@/lib/reports/theme";
 import { fmtCompactDollar } from "./chart-shared";
 import { useReportContext } from "../builder-context";
@@ -63,7 +64,7 @@ export function PortfolioComparisonLineRender(
 ) {
   const comparison = (p.data as CompPayload)?.comparison;
   if (!comparison) {
-    return <EmptyState title={p.props.title} />;
+    return <ComparisonEmptyState title={p.props.title} />;
   }
   // Render the chart in a child component so memoization doesn't have to
   // straddle a nullable input. Cleaner for the React Compiler too.
@@ -200,13 +201,3 @@ function ChartCard({
   );
 }
 
-function EmptyState({ title }: { title: string }) {
-  return (
-    <div className="bg-report-card border border-report-hair rounded-md p-6 text-center text-report-ink-3">
-      <div className="text-base font-serif font-medium text-report-ink mb-2">
-        {title}
-      </div>
-      <div className="text-xs">Bind two scenarios to use this widget.</div>
-    </div>
-  );
-}
