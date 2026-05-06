@@ -84,6 +84,14 @@ export function KeyboardShortcuts({
         const newId = crypto.randomUUID();
         const newRowId = crypto.randomUUID();
         dispatch({ type: "ADD_ROW", pageId: targetPage.id, layout: "1-up" });
+        // TODO(reducer ADD_ROW.rowId): the `pages` snapshot inside this
+        // setTimeout is the closed-over render-time array — it does NOT see
+        // the row added by the dispatch above. So `pages[0].rows[length-1].id`
+        // is the SECOND-to-last row in the post-dispatch state, not the new
+        // one. The right fix is to extend ADD_ROW with an optional `rowId`
+        // so the keyboard handler can pre-allocate `newRowId` and pass it
+        // to both ADD_ROW and ADD_WIDGET_TO_SLOT. Same wart sits dormant in
+        // builder.tsx's page-bottom drop branch.
         setTimeout(() => {
           dispatch({
             type: "ADD_WIDGET_TO_SLOT",

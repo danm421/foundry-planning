@@ -55,6 +55,7 @@ export function WidgetFrame({
                   newId: crypto.randomUUID(),
                 });
               }}
+              aria-label="Duplicate widget"
               className="text-ink-3 hover:text-ink"
             >
               ⌘D
@@ -64,6 +65,7 @@ export function WidgetFrame({
                 e.stopPropagation();
                 dispatch({ type: "DELETE_WIDGET", widgetId: widget.id });
               }}
+              aria-label="Delete widget"
               className="text-crit hover:opacity-80"
             >
               ×
