@@ -485,6 +485,11 @@ export const entities = pgTable("entities", {
   entityType: entityTypeEnum("entity_type").notNull().default("trust"),
   // When true, the entity's accounts roll into the household portfolio-assets view.
   includeInPortfolio: boolean("include_in_portfolio").notNull().default(false),
+  // When true and includeInPortfolio is false, the entity's assets surface in the
+  // "Accessible Trust Assets" column on the cash-flow Portfolio Assets drill —
+  // signaling the client has a withdrawal provision (HEMS, trust-protector, etc.).
+  // No-op for revocable trusts (their assets already flow through normal columns).
+  accessibleToClient: boolean("accessible_to_client").notNull().default(false),
   // When true, taxes on the entity's income / RMDs are paid at the household (grantor trust).
   isGrantor: boolean("is_grantor").notNull().default(false),
   // For business-interest entities (LLC/S-Corp/C-Corp/Partnership/Other): flat

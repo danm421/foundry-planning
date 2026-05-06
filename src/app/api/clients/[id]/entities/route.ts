@@ -71,6 +71,7 @@ export async function POST(
         entityType: data.entityType,
         notes: data.notes ?? null,
         includeInPortfolio: data.includeInPortfolio ?? false,
+        accessibleToClient: data.accessibleToClient ?? false,
         isGrantor: data.isGrantor ?? false,
         value: data.value != null ? String(data.value) : "0",
         owner: data.owner ?? null,

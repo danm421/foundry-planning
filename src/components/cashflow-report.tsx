@@ -211,6 +211,8 @@ const DRILL_LABELS: Record<string, string> = {
   realEstate: "Real Estate",
   business_assets: "Business",
   lifeInsurance: "Life Insurance",
+  trusts_businesses: "Trusts and Businesses",
+  accessible_trusts: "Accessible Trust Assets",
   // Net Cash Flow sub-types (raw account category values)
   real_estate: "Real Estate",
   business: "Business",
@@ -484,6 +486,10 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     y.portfolioAssets.cashTotal +
     y.portfolioAssets.retirementTotal +
     y.portfolioAssets.lifeInsuranceTotal;
+
+  const hasAnyAccessible = visibleYears.some(
+    (y) => y.portfolioAssets.accessibleTrustAssetsTotal > 0,
+  );
 
   // Portfolio Assets chart (bars)
   const portfolioChartData = {
@@ -1713,6 +1719,51 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // ── Portfolio drill-down ───────────────────────────────────────────────
 
     if (level === "portfolio") {
+      // Level 2: trusts/businesses, accessible trusts, real estate — these
+      // segments don't map 1:1 to a category, so we read directly from the
+      // engine's per-account bucket maps.
+      if (
+        subLevel === "trusts_businesses" ||
+        subLevel === "accessible_trusts" ||
+        subLevel === "realEstate"
+      ) {
+        const bucketKey: keyof ProjectionYear["portfolioAssets"] =
+          subLevel === "trusts_businesses"
+            ? "trustsAndBusinesses"
+            : subLevel === "accessible_trusts"
+              ? "accessibleTrustAssets"
+              : "realEstate";
+        // Collect every account id that ever appears in this bucket across the
+        // projection so columns are stable year-to-year (an account that's $0
+        // in year 0 but funded later still gets a column).
+        const acctIds = new Set<string>();
+        for (const y of visibleYears) {
+          const m = y.portfolioAssets[bucketKey] as Record<string, number> | undefined;
+          if (m) for (const id of Object.keys(m)) acctIds.add(id);
+        }
+        const ids = Array.from(acctIds);
+        const bucketAt = (r: ProjectionYear, id: string) => {
+          const m = r.portfolioAssets[bucketKey] as Record<string, number> | undefined;
+          return m?.[id] ?? 0;
+        };
+        return [
+          ...baseColumns,
+          ...ids.map((id) =>
+            accountLedgerCell(id, (r) => bucketAt(r, id), `portfolio_${subLevel}_src`),
+          ),
+          numCol(
+            `portfolio_${subLevel}_total`,
+            `${DRILL_LABELS[subLevel] ?? subLevel} Total`,
+            (r) => {
+              const m = r.portfolioAssets[bucketKey] as Record<string, number> | undefined;
+              if (!m) return 0;
+              return Object.values(m).reduce((s, v) => s + v, 0);
+            },
+            true,
+          ),
+        ];
+      }
+
       // Level 2: individual accounts for a specific portfolio category
       if (subLevel && PORTFOLIO_SEGMENT_TO_CATEGORY[subLevel] != null) {
         const acctIds = accountsByCategory[subLevel] ?? [];
@@ -1766,17 +1817,28 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ];
       }
 
-      // Level 1: portfolio categories with drill buttons. Cash-flow framing is
-      // liquid-only — real estate and business assets sit on the balance sheet
-      // report, not here. Total reconciles with the Level 0 Portfolio Assets
-      // column.
+      // Level 1: full asset breakdown — liquid columns subtotaled into "Total
+      // Portfolio Assets", then the entity / real estate columns, then the
+      // grand total. Mirrors an eMoney-style asset summary view.
+      const grandTotal = (r: ProjectionYear) =>
+        liquidPortfolioTotal(r) +
+        r.portfolioAssets.trustsAndBusinessesTotal +
+        r.portfolioAssets.accessibleTrustAssetsTotal +
+        r.portfolioAssets.realEstateTotal;
+
       return [
         ...baseColumns,
         numCol("portfolio_taxable_total", () => <DrillBtn segment="taxable" label="Taxable" />, (r) => r.portfolioAssets.taxableTotal),
         numCol("portfolio_cash_total", () => <DrillBtn segment="cash" label="Cash" />, (r) => r.portfolioAssets.cashTotal),
         numCol("portfolio_retirement_total", () => <DrillBtn segment="retirement" label="Retirement" />, (r) => r.portfolioAssets.retirementTotal),
         numCol("portfolio_life_insurance_total", () => <DrillBtn segment="lifeInsurance" label="Life Insurance" />, (r) => r.portfolioAssets.lifeInsuranceTotal),
-        numCol("portfolio_total", "Total", liquidPortfolioTotal, true),
+        numCol("portfolio_subtotal", "Total Portfolio Assets", liquidPortfolioTotal, true),
+        numCol("portfolio_trusts_businesses_total", () => <DrillBtn segment="trusts_businesses" label="Trusts and Businesses" />, (r) => r.portfolioAssets.trustsAndBusinessesTotal),
+        ...(hasAnyAccessible
+          ? [numCol("portfolio_accessible_trusts_total", () => <DrillBtn segment="accessible_trusts" label="Accessible Trust Assets" />, (r) => r.portfolioAssets.accessibleTrustAssetsTotal)]
+          : []),
+        numCol("portfolio_real_estate_total", () => <DrillBtn segment="realEstate" label="Real Estate" />, (r) => r.portfolioAssets.realEstateTotal),
+        numCol("portfolio_grand_total", "Total Assets", grandTotal, true),
       ];
     }
 

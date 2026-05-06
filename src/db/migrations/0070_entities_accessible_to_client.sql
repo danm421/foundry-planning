@@ -1,0 +1,1 @@
+ALTER TABLE "entities" ADD COLUMN "accessible_to_client" boolean DEFAULT false NOT NULL;

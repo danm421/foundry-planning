@@ -102,6 +102,9 @@ export default function AddTrustForm({
     el.select();
   }, [isCreate]);
   const [includeInPortfolio, setIncludeInPortfolio] = useState(editing?.includeInPortfolio ?? false);
+  const [accessibleToClient, setAccessibleToClient] = useState(
+    (editing as { accessibleToClient?: boolean } | null)?.accessibleToClient ?? false,
+  );
   const [isGrantor, setIsGrantor] = useState(editing?.isGrantor ?? false);
   const [notes, setNotes] = useState(editing?.notes ?? "");
 
@@ -234,6 +237,7 @@ export default function AddTrustForm({
         entityType: "trust",
         notes: notes || null,
         includeInPortfolio,
+        accessibleToClient,
         isGrantor,
         value: "0",
         owner: null,
@@ -422,6 +426,22 @@ export default function AddTrustForm({
               </span>
             </span>
           </label>
+          {!includeInPortfolio && isIrrevocable && (
+            <label className="flex items-start gap-3 rounded-[var(--radius-sm)] border border-hair bg-card-2 p-3 cursor-pointer hover:border-hair-2">
+              <input
+                type="checkbox"
+                checked={accessibleToClient}
+                onChange={(e) => setAccessibleToClient(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-hair bg-card text-accent focus:ring-1 focus:ring-accent/40"
+              />
+              <span className="text-sm text-ink-2">
+                Client has a provision to access these assets
+                <span className="block text-xs text-ink-4">
+                  Surfaces this trust in the &ldquo;Accessible Trust Assets&rdquo; column on the cash-flow drill. Use for HEMS standards, trust-protector access, or distribution committees that let the client withdraw.
+                </span>
+              </span>
+            </label>
+          )}
           <label className="flex items-start gap-3 rounded-[var(--radius-sm)] border border-hair bg-card-2 p-3 cursor-pointer hover:border-hair-2">
             <input
               type="checkbox"

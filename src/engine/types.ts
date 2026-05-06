@@ -317,6 +317,10 @@ export interface EntitySummary {
   name?: string;
   // When true, the entity's accounts are rolled into the household's portfolio assets view.
   includeInPortfolio: boolean;
+  /** When true and includeInPortfolio is false, the entity's portfolio share
+   *  surfaces in the "Accessible Trust Assets" column on the cashflow drill.
+   *  Defaults to false. Meaningful only for non-revocable trusts. */
+  accessibleToClient?: boolean;
   // When true, taxes on the entity's income and RMDs are paid at the household rate.
   isGrantor: boolean;
   beneficiaries?: BeneficiaryRef[];
@@ -768,6 +772,15 @@ export interface ProjectionYear {
     realEstateTotal: number;
     businessTotal: number;
     lifeInsuranceTotal: number;
+    /** Bucket for entity-owned shares where entity is non-IIP and not flagged
+     *  accessibleToClient — plus household-owned business-category accounts.
+     *  Powers the "Trusts and Businesses" column on the cashflow drill. */
+    trustsAndBusinesses: Record<string, number>;
+    trustsAndBusinessesTotal: number;
+    /** Bucket for entity-owned shares where entity is non-IIP and accessibleToClient.
+     *  Powers the "Accessible Trust Assets" column on the cashflow drill. */
+    accessibleTrustAssets: Record<string, number>;
+    accessibleTrustAssetsTotal: number;
     total: number;
   };
 

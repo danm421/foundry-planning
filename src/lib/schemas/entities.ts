@@ -87,6 +87,7 @@ const baseEntityFields = {
   entityType: entityTypeSchema,
   notes: z.string().trim().nullish(),
   includeInPortfolio: z.boolean().optional(),
+  accessibleToClient: z.boolean().optional(),
   isGrantor: z.boolean().optional(),
   value: z.union([z.string(), z.number()]).optional(),
   owner: z.enum(["client", "spouse", "joint"]).nullish(),

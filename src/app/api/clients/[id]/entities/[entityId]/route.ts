@@ -49,6 +49,7 @@ export async function PUT(
       entityType?: typeof existing.entityType;
       notes?: string | null;
       includeInPortfolio?: boolean;
+      accessibleToClient?: boolean;
       isGrantor?: boolean;
       value?: string | number;
       owner?: "client" | "spouse" | "joint" | null;
@@ -68,6 +69,7 @@ export async function PUT(
       entityType: patch.entityType ?? existing.entityType,
       notes: patch.notes !== undefined ? patch.notes : existing.notes,
       includeInPortfolio: patch.includeInPortfolio ?? existing.includeInPortfolio,
+      accessibleToClient: patch.accessibleToClient ?? existing.accessibleToClient,
       isGrantor: patch.isGrantor ?? existing.isGrantor,
       value: patch.value ?? existing.value,
       owner: patch.owner !== undefined ? patch.owner : existing.owner,
@@ -123,6 +125,9 @@ export async function PUT(
         ...(patch.notes !== undefined && { notes: patch.notes }),
         ...(patch.includeInPortfolio !== undefined && {
           includeInPortfolio: Boolean(patch.includeInPortfolio),
+        }),
+        ...(patch.accessibleToClient !== undefined && {
+          accessibleToClient: Boolean(patch.accessibleToClient),
         }),
         ...(patch.isGrantor !== undefined && {
           isGrantor: Boolean(patch.isGrantor),
