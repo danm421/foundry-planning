@@ -211,6 +211,8 @@ const DRILL_LABELS: Record<string, string> = {
   realEstate: "Real Estate",
   business_assets: "Business",
   lifeInsurance: "Life Insurance",
+  trusts_businesses: "Trusts and Businesses",
+  accessible_trusts: "Accessible Trust Assets",
   // Net Cash Flow sub-types (raw account category values)
   real_estate: "Real Estate",
   business: "Business",
@@ -1766,17 +1768,32 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         ];
       }
 
-      // Level 1: portfolio categories with drill buttons. Cash-flow framing is
-      // liquid-only — real estate and business assets sit on the balance sheet
-      // report, not here. Total reconciles with the Level 0 Portfolio Assets
-      // column.
+      // Level 1: full asset breakdown — liquid columns subtotaled into "Total
+      // Portfolio Assets", then the entity / real estate columns, then the
+      // grand total. Mirrors an eMoney-style asset summary view.
+      const portfolioSubtotal = (r: ProjectionYear) =>
+        r.portfolioAssets.taxableTotal +
+        r.portfolioAssets.cashTotal +
+        r.portfolioAssets.retirementTotal +
+        r.portfolioAssets.lifeInsuranceTotal;
+
+      const grandTotal = (r: ProjectionYear) =>
+        portfolioSubtotal(r) +
+        r.portfolioAssets.trustsAndBusinessesTotal +
+        r.portfolioAssets.accessibleTrustAssetsTotal +
+        r.portfolioAssets.realEstateTotal;
+
       return [
         ...baseColumns,
         numCol("portfolio_taxable_total", () => <DrillBtn segment="taxable" label="Taxable" />, (r) => r.portfolioAssets.taxableTotal),
         numCol("portfolio_cash_total", () => <DrillBtn segment="cash" label="Cash" />, (r) => r.portfolioAssets.cashTotal),
         numCol("portfolio_retirement_total", () => <DrillBtn segment="retirement" label="Retirement" />, (r) => r.portfolioAssets.retirementTotal),
         numCol("portfolio_life_insurance_total", () => <DrillBtn segment="lifeInsurance" label="Life Insurance" />, (r) => r.portfolioAssets.lifeInsuranceTotal),
-        numCol("portfolio_total", "Total", liquidPortfolioTotal, true),
+        numCol("portfolio_subtotal", "Total Portfolio Assets", portfolioSubtotal, true),
+        numCol("portfolio_trusts_businesses_total", () => <DrillBtn segment="trusts_businesses" label="Trusts and Businesses" />, (r) => r.portfolioAssets.trustsAndBusinessesTotal),
+        numCol("portfolio_accessible_trusts_total", () => <DrillBtn segment="accessible_trusts" label="Accessible Trust Assets" />, (r) => r.portfolioAssets.accessibleTrustAssetsTotal),
+        numCol("portfolio_real_estate_total", () => <DrillBtn segment="realEstate" label="Real Estate" />, (r) => r.portfolioAssets.realEstateTotal),
+        numCol("portfolio_grand_total", "Total Assets", grandTotal, true),
       ];
     }
 
