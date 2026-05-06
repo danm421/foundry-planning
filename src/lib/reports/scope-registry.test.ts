@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import type { HypotheticalEstateTax, ProjectionYear } from "@/engine/types";
 
 import { getScope } from "./scope-registry";
+import type { BalanceScopeData } from "./scopes/balance";
 import type { CashflowScopeData } from "./scopes/cashflow";
 import "./scopes"; // side-effect: register all v1 scopes
 
@@ -196,6 +197,168 @@ describe("cashflow scope — serializeForAI", () => {
     expect(text).toContain("$142500");
     expect(text).toContain("$50000");
     expect(text).toContain("$15000");
+  });
+});
+
+describe("balance scope — fetch", () => {
+  it("maps a 2-year projection to net worth and liquid net worth", () => {
+    const projection = [
+      makeYear({
+        year: 2026,
+        portfolioAssets: {
+          taxable: { acc1: 200_000 },
+          cash: { acc2: 50_000 },
+          retirement: { acc3: 400_000 },
+          realEstate: { home: 600_000 },
+          business: {},
+          lifeInsurance: {},
+          taxableTotal: 200_000,
+          cashTotal: 50_000,
+          retirementTotal: 400_000,
+          realEstateTotal: 600_000,
+          businessTotal: 0,
+          lifeInsuranceTotal: 0,
+          // Total assets at EoY.
+          total: 1_250_000,
+        },
+        // Two outstanding liabilities at BoY (mortgage + HELOC).
+        liabilityBalancesBoY: { mortgage: 300_000, heloc: 50_000 },
+      }),
+      makeYear({
+        year: 2027,
+        portfolioAssets: {
+          taxable: {},
+          cash: {},
+          retirement: {},
+          realEstate: {},
+          business: {},
+          lifeInsurance: {},
+          taxableTotal: 220_000,
+          cashTotal: 60_000,
+          retirementTotal: 430_000,
+          realEstateTotal: 615_000,
+          businessTotal: 0,
+          lifeInsuranceTotal: 0,
+          total: 1_325_000,
+        },
+        liabilityBalancesBoY: { mortgage: 290_000, heloc: 45_000 },
+      }),
+    ];
+
+    const data = getScope("balance").fetch({
+      client: clientCtx,
+      projection,
+    }) as BalanceScopeData;
+
+    expect(data.years).toHaveLength(2);
+    expect(data.years[0]).toEqual({
+      year: 2026,
+      // 1_250_000 assets − (300k + 50k) liabilities = 900k.
+      netWorth: 900_000,
+      // cash 50k + taxable 200k = 250k. Liabilities are NOT subtracted from
+      // liquid — see balance.ts header for the reasoning.
+      liquidNetWorth: 250_000,
+    });
+    expect(data.years[1]).toEqual({
+      year: 2027,
+      // 1_325_000 − (290k + 45k) = 990k.
+      netWorth: 990_000,
+      // 60k cash + 220k taxable = 280k.
+      liquidNetWorth: 280_000,
+    });
+  });
+
+  it("treats a year with no liabilities as netWorth = portfolioAssets.total", () => {
+    const y = makeYear({
+      year: 2030,
+      portfolioAssets: {
+        taxable: {},
+        cash: {},
+        retirement: {},
+        realEstate: {},
+        business: {},
+        lifeInsurance: {},
+        taxableTotal: 0,
+        cashTotal: 0,
+        retirementTotal: 500_000,
+        realEstateTotal: 0,
+        businessTotal: 0,
+        lifeInsuranceTotal: 0,
+        total: 500_000,
+      },
+      liabilityBalancesBoY: {},
+    });
+    const data = getScope("balance").fetch({
+      client: clientCtx,
+      projection: [y],
+    }) as BalanceScopeData;
+    expect(data.years[0].netWorth).toBe(500_000);
+    expect(data.years[0].liquidNetWorth).toBe(0);
+  });
+});
+
+describe("balance scope — serializeForAI", () => {
+  it("returns a no-data sentinel for an empty projection", () => {
+    const data = getScope("balance").fetch({
+      client: clientCtx,
+      projection: [],
+    });
+    expect(getScope("balance").serializeForAI(data)).toBe("Balance: no data.");
+  });
+
+  it("mentions both first.year, last.year, and both netWorth values", () => {
+    const projection = [
+      makeYear({
+        year: 2026,
+        portfolioAssets: {
+          taxable: {},
+          cash: {},
+          retirement: {},
+          realEstate: {},
+          business: {},
+          lifeInsurance: {},
+          taxableTotal: 0,
+          cashTotal: 0,
+          retirementTotal: 0,
+          realEstateTotal: 0,
+          businessTotal: 0,
+          lifeInsuranceTotal: 0,
+          total: 1_000_000,
+        },
+        liabilityBalancesBoY: { mortgage: 200_000 },
+      }),
+      makeYear({
+        year: 2030,
+        portfolioAssets: {
+          taxable: {},
+          cash: {},
+          retirement: {},
+          realEstate: {},
+          business: {},
+          lifeInsurance: {},
+          taxableTotal: 0,
+          cashTotal: 0,
+          retirementTotal: 0,
+          realEstateTotal: 0,
+          businessTotal: 0,
+          lifeInsuranceTotal: 0,
+          total: 1_500_000,
+        },
+        liabilityBalancesBoY: {},
+      }),
+    ];
+    const data = getScope("balance").fetch({
+      client: clientCtx,
+      projection,
+    });
+    const text = getScope("balance").serializeForAI(data);
+    expect(text.length).toBeGreaterThan(0);
+    expect(text).toContain("2026");
+    expect(text).toContain("2030");
+    // first netWorth: 1_000_000 − 200_000 = 800_000.
+    expect(text).toContain("$800000");
+    // last netWorth: 1_500_000 − 0 = 1_500_000.
+    expect(text).toContain("$1500000");
   });
 });
 

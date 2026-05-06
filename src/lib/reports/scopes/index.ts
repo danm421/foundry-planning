@@ -5,7 +5,7 @@
 // any consumer that imports the barrel picks them up automatically.
 
 import "./cashflow";
+import "./balance";
 // Future scopes (Tasks 22+):
-// import "./balance";
 // import "./allocation";
 // import "./monteCarlo";
