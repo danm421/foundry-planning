@@ -19,7 +19,7 @@ export default function Sidebar({
   return (
     <aside
       data-collapsed={collapsed || undefined}
-      className="flex flex-col border-r border-hair bg-card-2"
+      className="flex h-full w-full flex-col overflow-hidden border-r border-hair bg-card-2 shadow-lg"
     >
       <BrandHeader firmName={firmName} collapsed={collapsed} />
       <SidebarToggle collapsed={collapsed} />

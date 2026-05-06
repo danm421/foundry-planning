@@ -18,13 +18,18 @@ export default async function AppLayout({
   return (
     <div
       className="grid min-h-screen"
-      style={{
-        gridTemplateColumns: collapsed ? "64px 1fr" : "240px 1fr",
-        transition: "grid-template-columns 0.22s ease",
-      }}
+      style={{ gridTemplateColumns: "64px 1fr" }}
     >
-      <Sidebar collapsed={collapsed} clientsCount={clientsCount} />
-      <div className="flex min-h-screen flex-col">
+      <div
+        className="fixed left-0 top-0 z-30 h-screen"
+        style={{
+          width: collapsed ? 64 : 240,
+          transition: "width 0.22s ease",
+        }}
+      >
+        <Sidebar collapsed={collapsed} clientsCount={clientsCount} />
+      </div>
+      <div className="col-start-2 flex min-h-screen flex-col">
         <Topbar />
         <main className="flex-1 bg-paper">{children}</main>
         <Footer />
