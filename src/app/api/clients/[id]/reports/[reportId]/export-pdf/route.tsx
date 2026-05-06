@@ -37,9 +37,14 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; reportId: string }> },
 ) {
+  let firmId: string | undefined;
+  let clientId: string | undefined;
+  let reportIdLocal: string | undefined;
   try {
-    const firmId = await requireOrgId();
+    firmId = await requireOrgId();
     const { id, reportId } = await params;
+    clientId = id;
+    reportIdLocal = reportId;
 
     const [client] = await db
       .select()
@@ -73,9 +78,17 @@ export async function POST(
       { headers: { cookie: request.headers.get("cookie") ?? "" } },
     );
     if (!apiRes.ok) {
+      const upstreamBody = await apiRes.text().catch(() => "");
+      console.error("POST export-pdf: projection-data fetch failed", {
+        firmId,
+        clientId,
+        reportId: reportIdLocal,
+        status: apiRes.status,
+        body: upstreamBody.slice(0, 500),
+      });
       return NextResponse.json(
         { error: "Failed to load projection data" },
-        { status: 500 },
+        { status: 502 },
       );
     }
     const apiData = await apiRes.json();
@@ -111,6 +124,9 @@ export async function POST(
       />
     );
 
+    // TODO: when the timeout wins, renderToStream's promise stays pending and the
+    // stream is unconsumed. @react-pdf/renderer doesn't currently expose cancellation;
+    // revisit when the SDK adds an AbortController-friendly path.
     const stream = await Promise.race<
       Awaited<ReturnType<typeof renderToStream>>
     >([
@@ -131,7 +147,25 @@ export async function POST(
       },
     });
   } catch (err) {
-    console.error("POST export-pdf", err);
+    // Zod errors get 400; everything else gets 500
+    if (err instanceof z.ZodError) {
+      console.warn("POST export-pdf: invalid body", {
+        firmId,
+        clientId,
+        reportId: reportIdLocal,
+        issues: err.issues,
+      });
+      return NextResponse.json(
+        { error: "Invalid request body", issues: err.issues },
+        { status: 400 },
+      );
+    }
+    console.error("POST export-pdf failed", {
+      firmId,
+      clientId,
+      reportId: reportIdLocal,
+      err,
+    });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },
