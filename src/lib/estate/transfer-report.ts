@@ -443,6 +443,9 @@ function buildDeathSection(
   // Reductions
   const tax = payload.estateTax;
   const debtsPaid = (tax.creditorPayoffDebits ?? []).reduce((s, d) => s + d.amount, 0);
+  const irdTotal = (tax.drainAttributions ?? [])
+    .filter((a) => a.drainKind === "ird_tax")
+    .reduce((s, a) => s + a.amount, 0);
   const reductions: ReductionsLine[] = [];
   if (tax.federalEstateTax > 0) {
     reductions.push({
@@ -467,6 +470,9 @@ function buildDeathSection(
   }
   if (debtsPaid > 0) {
     reductions.push({ kind: "debts_paid", label: "Debts Paid", amount: debtsPaid });
+  }
+  if (irdTotal > 0) {
+    reductions.push({ kind: "ird_tax", label: "IRD Tax", amount: irdTotal });
   }
 
   // Reconciliation compares ledger against itself, not against Form 706
