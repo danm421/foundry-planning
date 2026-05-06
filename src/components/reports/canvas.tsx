@@ -27,7 +27,7 @@ export function Canvas({
             {p.rows.map((r) => (
               <div key={r.id} className="grid gap-3" style={{ gridTemplateColumns: `repeat(${r.slots.length}, minmax(0, 1fr))` }}>
                 {r.slots.map((w, i) => w === null ? (
-                  <div key={i} className="border border-dashed border-hair rounded-sm h-24 text-ink-3 text-[11px] flex items-center justify-center">empty slot</div>
+                  <div key={`${r.id}-${i}`} className="border border-dashed border-hair rounded-sm h-24 text-ink-3 text-[11px] flex items-center justify-center">empty slot</div>
                 ) : (
                   <div key={w.id}
                        onClick={(e) => { e.stopPropagation(); onSelectWidget(w.id); }}

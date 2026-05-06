@@ -34,14 +34,14 @@ export function Inspector({
   const w = findWidget(pages, selectedWidgetId);
   if (!w) return null;
   const entry = getWidget(w.kind);
-  const Inspector = entry.Inspector;
+  const WidgetInspector = entry.Inspector;
   return (
     <aside className="w-[320px] border-l border-hair bg-card overflow-y-auto">
       <div className="p-4 border-b border-hair">
         <div className="text-[12px] font-mono uppercase tracking-wider text-ink-3">{entry.kind} · {w.id.slice(0,6)}</div>
         <div className="text-[15px] text-ink mt-0.5">{entry.label}</div>
       </div>
-      <Inspector
+      <WidgetInspector
         props={w.props as never}
         onChange={(next) => dispatch({ type: "UPDATE_WIDGET_PROPS", widgetId: w.id, props: next })}
       />
