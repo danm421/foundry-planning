@@ -26,4 +26,6 @@ import "./income-sources-area";       // screen-side
 import "./income-sources-area.pdf";   // pdf-side
 import "./net-worth-line";            // screen-side
 import "./net-worth-line.pdf";        // pdf-side
+import "./balance-sheet-table";       // screen-side
+import "./balance-sheet-table.pdf";   // pdf-side
 // each widget that has a PDF renderer adds a `import "./<name>.pdf";` line here

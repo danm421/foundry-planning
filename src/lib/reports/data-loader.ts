@@ -11,11 +11,17 @@
 
 import "@/lib/reports/scopes"; // side-effect: register all v1 scopes
 
-import type { Page, WidgetKind } from "./types";
+import type { OwnershipView, Page, WidgetKind } from "./types";
 import type { ProjectionYear } from "@/engine/types";
 import { getMetric } from "./metric-registry";
 import { getScope, type ScopeKey } from "./scope-registry";
 import { getWidget } from "./widget-registry";
+import {
+  buildViewModel,
+  type AccountLike,
+  type EntityInfo,
+  type LiabilityLike,
+} from "@/components/balance-sheet-report/view-model";
 
 /**
  * Reads a widget kind's declared scopes without crashing on unregistered
@@ -67,6 +73,14 @@ export function buildWidgetData(
     projection: ProjectionYear[];
     scopeData: Partial<Record<ScopeKey, unknown>>;
     client: { id: string };
+    /** Already-bridged accounts in the legacy `{ owner, ownerEntityId }`
+     *  shape the balance-sheet view-model consumes. The export route
+     *  derives this from `apiData.accounts[].owners[]` via
+     *  `deriveLegacyOwnership` — keeping the bridge in the route preserves
+     *  data-loader purity (no FamilyMember lookups in here). */
+    accounts: AccountLike[];
+    liabilities: LiabilityLike[];
+    entities: EntityInfo[];
   },
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -98,6 +112,28 @@ export function buildWidgetData(
           out[w.id] = { cashflow: ctx.scopeData.cashflow };
         } else if (w.kind === "netWorthLine") {
           out[w.id] = { balance: ctx.scopeData.balance };
+        } else if (w.kind === "balanceSheetTable") {
+          // Reuses the existing balance-sheet view-model to produce a fully-
+          // shaped `BalanceSheetViewModel`. No scope is registered for this
+          // widget — accounts/liabilities/entities flow through ctx directly.
+          const props = w.props as {
+            asOfYear: number | "current";
+            ownership: OwnershipView;
+            showEntityBreakdown: boolean;
+          };
+          const year =
+            props.asOfYear === "current"
+              ? (ctx.projection[0]?.year ?? new Date().getFullYear())
+              : props.asOfYear;
+          out[w.id] = buildViewModel({
+            accounts: ctx.accounts,
+            liabilities: ctx.liabilities,
+            entities: ctx.entities,
+            projectionYears: ctx.projection,
+            selectedYear: year,
+            view: props.ownership,
+            asOfMode: "eoy",
+          });
         } else {
           // TODO(Task 19+): pass per-widget scope projection rather than the
           // full scopeData dict. Remaining widgets (e.g. aiAnalysis) get the

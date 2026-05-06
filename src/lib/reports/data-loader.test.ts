@@ -170,6 +170,9 @@ describe("buildWidgetData", () => {
       projection: [makeYear()],
       scopeData: {},
       client: clientCtx,
+      accounts: [],
+      liabilities: [],
+      entities: [],
     });
     expect(out).toEqual({
       "kpi-1": { value: 30_000, prevValue: null },
@@ -187,6 +190,9 @@ describe("buildWidgetData", () => {
         projection: [makeYear()],
         scopeData: {},
         client: clientCtx,
+        accounts: [],
+        liabilities: [],
+        entities: [],
       }),
     ).toThrow();
   });
@@ -207,6 +213,9 @@ describe("buildWidgetData", () => {
       projection: [makeYear()],
       scopeData,
       client: clientCtx,
+      accounts: [],
+      liabilities: [],
+      entities: [],
     });
     expect(out).toEqual({ "ai-1": scopeData });
   });

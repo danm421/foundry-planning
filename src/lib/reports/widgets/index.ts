@@ -16,3 +16,4 @@ import "./cashflow-bar-chart";
 import "./cashflow-table";
 import "./income-sources-area";
 import "./net-worth-line";
+import "./balance-sheet-table";
