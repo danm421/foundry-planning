@@ -49,13 +49,12 @@ export default async function EstatePlanningPage({ params }: PageProps) {
 
   const taxInflationRate = tree.planSettings?.taxInflationRate ?? 0.025;
 
-  const annualExclusionsByYear = new Map<number, number>();
+  const annualExclusions: Array<[number, number]> = [];
   for (const r of (tree.taxYearRows ?? []) as Array<{ year: number; giftAnnualExclusion?: string | null }>) {
     if (r.giftAnnualExclusion != null) {
-      annualExclusionsByYear.set(r.year, parseFloat(r.giftAnnualExclusion));
+      annualExclusions.push([r.year, parseFloat(r.giftAnnualExclusion)]);
     }
   }
-  const getAnnualExclusion = (y: number) => annualExclusionsByYear.get(y) ?? 0;
 
   return (
     <CanvasDndProvider
@@ -65,7 +64,7 @@ export default async function EstatePlanningPage({ params }: PageProps) {
       tree={tree}
       giftLedger={withResult.giftLedger}
       taxInflationRate={taxInflationRate}
-      getAnnualExclusion={getAnnualExclusion}
+      annualExclusions={annualExclusions}
     >
       <CanvasFrame tree={tree} withResult={withResult} giftLedger={withResult.giftLedger} />
       <ProjectionPanel

@@ -10,7 +10,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { useState, createContext, useContext, type ReactNode } from "react";
+import { useState, useMemo, createContext, useContext, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { ClientData, Will } from "@/engine/types";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
@@ -92,7 +92,9 @@ interface ProviderProps {
   tree: ClientData;
   giftLedger: GiftLedgerYear[];
   taxInflationRate: number;
-  getAnnualExclusion: (year: number) => number;
+  /** Serializable [year, amount] pairs from the server — rebuilt into a lookup
+   *  function on the client. Functions can't cross the RSC boundary. */
+  annualExclusions: Array<[number, number]>;
 }
 
 /** Strip the DB-side `id` field from a will's bequests so they match WillBequestInput. */
@@ -148,11 +150,16 @@ export function CanvasDndProvider({
   tree,
   giftLedger,
   taxInflationRate,
-  getAnnualExclusion,
+  annualExclusions,
 }: ProviderProps) {
   const [active, setActive] = useState<DragPayload | null>(null);
   const [dropPopupState, setDropPopupState] = useState<DropPopupState | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
+
+  const getAnnualExclusion = useMemo(() => {
+    const map = new Map(annualExclusions);
+    return (year: number) => map.get(year) ?? 0;
+  }, [annualExclusions]);
 
   const router = useRouter();
   const { showToast } = useToast();
