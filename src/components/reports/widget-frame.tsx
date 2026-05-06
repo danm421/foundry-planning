@@ -18,6 +18,7 @@ export function WidgetFrame({
   selected,
   onSelect,
   dispatch,
+  previewMode,
   children,
 }: {
   widget: Widget;
@@ -25,8 +26,10 @@ export function WidgetFrame({
   selected: boolean;
   onSelect: () => void;
   dispatch: React.Dispatch<Action>;
+  previewMode: "edit" | "preview";
   children: ReactNode;
 }) {
+  if (previewMode === "preview") return <>{children}</>;
   const entry = getWidget(widget.kind);
   return (
     <div

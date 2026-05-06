@@ -20,7 +20,7 @@ import { WidgetFrame } from "./widget-frame";
 
 const LAYOUT_OPTIONS: RowSize[] = ["1-up", "2-up", "3-up", "4-up"];
 
-function CanvasSlot({ pageId, rowId, slotIndex, rowLayout, widget, selected, onSelect, dispatch }: {
+function CanvasSlot({ pageId, rowId, slotIndex, rowLayout, widget, selected, onSelect, dispatch, previewMode }: {
   pageId: string; rowId: string; slotIndex: number;
   // rowLayout drives the WidgetFrame chrome bar label and is reserved for
   // Task 17's legality dimming
@@ -28,6 +28,7 @@ function CanvasSlot({ pageId, rowId, slotIndex, rowLayout, widget, selected, onS
   rowLayout: RowSize;
   widget: Widget | null; selected: boolean; onSelect: () => void;
   dispatch: React.Dispatch<Action>;
+  previewMode: "edit" | "preview";
 }) {
   const { isOver, setNodeRef } = useDroppable({
     id: `slot-${pageId}-${rowId}-${slotIndex}`,
@@ -37,14 +38,18 @@ function CanvasSlot({ pageId, rowId, slotIndex, rowLayout, widget, selected, onS
   return (
     <div ref={setNodeRef} className={`rounded-sm transition ${ringClass}`}>
       {widget === null ? (
-        <div className="border border-dashed border-hair rounded-sm h-24 text-ink-3 text-[11px] flex items-center justify-center">empty</div>
+        previewMode === "preview" ? (
+          <div className="h-24" />
+        ) : (
+          <div className="border border-dashed border-hair rounded-sm h-24 text-ink-3 text-[11px] flex items-center justify-center">empty</div>
+        )
       ) : (
         (() => {
           const entry = getWidget(widget.kind);
           const Render = entry.Render;
           return (
             <WidgetFrame widget={widget} rowLayout={rowLayout} selected={selected}
-                         onSelect={onSelect} dispatch={dispatch}>
+                         onSelect={onSelect} dispatch={dispatch} previewMode={previewMode}>
               <Render props={widget.props as never} data={null} mode="screen" widgetId={widget.id} />
             </WidgetFrame>
           );
@@ -65,7 +70,7 @@ export function RowGap({ pageId, index }: { pageId: string; index: number }) {
 }
 
 export function CanvasRow({
-  row, page, rowIndex, dispatch, selectedWidgetId, onSelectWidget,
+  row, page, rowIndex, dispatch, selectedWidgetId, onSelectWidget, previewMode,
 }: {
   row: Row;
   page: Page;
@@ -73,6 +78,7 @@ export function CanvasRow({
   dispatch: React.Dispatch<Action>;
   selectedWidgetId: string | null;
   onSelectWidget: (id: string | null) => void;
+  previewMode: "edit" | "preview";
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `row-${row.id}`,
@@ -137,6 +143,7 @@ export function CanvasRow({
             selected={!!w && w.id === selectedWidgetId}
             onSelect={() => w && onSelectWidget(w.id)}
             dispatch={dispatch}
+            previewMode={previewMode}
           />
         ))}
       </div>
