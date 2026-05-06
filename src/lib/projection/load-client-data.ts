@@ -56,6 +56,13 @@ import { buildClientMilestones, resolveMilestone, type YearRef } from "@/lib/mil
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
 import { synthesizePremiumExpenses } from "@/lib/insurance-policies/premium-expense";
 import { createGrowthSourceResolver } from "./resolve-growth-source";
+import {
+  resolveAccountFromRaw,
+  resolveIncomeFromRaw,
+  resolveExpenseFromRaw,
+  resolveSavingsRuleFromRaw,
+  type ResolutionContext,
+} from "./resolve-entity";
 
 export class ClientNotFoundError extends Error {
   constructor(public clientId: string) {
@@ -510,146 +517,100 @@ export const loadClientData = cache(
 
     // Convert Drizzle decimal strings to numbers for the engine
 
-    const mappedAccounts = accountRows.map((a) => {
-      let growthRate: number;
-      let realization:
-        | {
-            pctOrdinaryIncome: number;
-            pctLtCapitalGains: number;
-            pctQualifiedDividends: number;
-            pctTaxExempt: number;
-            turnoverPct: number;
-          }
-        | undefined;
+    const resolutionCtx: ResolutionContext = {
+      resolver,
+      settings: {
+        defaultGrowthRealEstate: String(settings.defaultGrowthRealEstate),
+        defaultGrowthBusiness: String(settings.defaultGrowthBusiness),
+        defaultGrowthLifeInsurance: String(settings.defaultGrowthLifeInsurance),
+      },
+      resolvedInflationRate,
+      beneficiariesByAccountId: accountBens,
+      policiesByAccount,
+      ownersByAccountId,
+      getCategoryGrowthSource,
+    };
 
-      const gs = a.growthSource ?? "default";
+    const mappedAccounts = accountRows.map((a) =>
+      resolveAccountFromRaw(
+        {
+          id: a.id,
+          name: a.name,
+          category: a.category,
+          subType: a.subType,
+          value: a.value,
+          basis: a.basis,
+          growthSource: a.growthSource,
+          growthRate: a.growthRate,
+          turnoverPct: a.turnoverPct,
+          annualPropertyTax: a.annualPropertyTax,
+          propertyTaxGrowthRate: a.propertyTaxGrowthRate,
+          rmdEnabled: a.rmdEnabled,
+          isDefaultChecking: a.isDefaultChecking,
+          modelPortfolioId: a.modelPortfolioId,
+          overridePctOi: a.overridePctOi,
+          overridePctLtCg: a.overridePctLtCg,
+          overridePctQdiv: a.overridePctQdiv,
+          overridePctTaxExempt: a.overridePctTaxExempt,
+          priorYearEndValue: a.priorYearEndValue,
+          insuredPerson: a.insuredPerson,
+        },
+        resolutionCtx,
+      ),
+    );
 
-      // Determine effective growth source (category default may point to asset_mix)
-      let effectiveSource = gs;
-      if (effectiveSource === "default") {
-        const catSource = getCategoryGrowthSource(a.category);
-        if (catSource === "asset_mix") {
-          effectiveSource = "asset_mix";
-        }
-      }
+    const mappedIncomes = incomeRows.map((i) =>
+      resolveIncomeFromRaw(
+        {
+          id: i.id,
+          type: i.type,
+          name: i.name,
+          annualAmount: i.annualAmount,
+          startYear: resolvedStart(i.startYearRef, i.startYear),
+          endYear: resolvedEnd(i.endYearRef, i.endYear),
+          growthSource: i.growthSource,
+          growthRate: i.growthRate,
+          owner: i.owner,
+          claimingAge: i.claimingAge,
+          linkedEntityId: i.linkedEntityId,
+          ownerEntityId: i.ownerEntityId,
+          cashAccountId: i.cashAccountId,
+          inflationStartYear: i.inflationStartYear,
+          taxType: i.taxType,
+          ssBenefitMode: i.ssBenefitMode,
+          piaMonthly: i.piaMonthly,
+          claimingAgeMonths: i.claimingAgeMonths,
+          claimingAgeMode: i.claimingAgeMode,
+          startYearRef: i.startYearRef,
+          endYearRef: i.endYearRef,
+          scheduleOverrides: incomeOverrideMap.get(i.id),
+        },
+        resolutionCtx,
+      ),
+    );
 
-      if (effectiveSource === "inflation") {
-        growthRate = resolvedInflationRate;
-      } else if (effectiveSource === "model_portfolio" && a.modelPortfolioId) {
-        const p = resolver.resolvePortfolio(a.modelPortfolioId);
-        growthRate = p.geoReturn;
-        realization = {
-          pctOrdinaryIncome: a.overridePctOi != null ? parseFloat(a.overridePctOi) : p.pctOi,
-          pctLtCapitalGains: a.overridePctLtCg != null ? parseFloat(a.overridePctLtCg) : p.pctLtcg,
-          pctQualifiedDividends: a.overridePctQdiv != null ? parseFloat(a.overridePctQdiv) : p.pctQdiv,
-          pctTaxExempt: a.overridePctTaxExempt != null ? parseFloat(a.overridePctTaxExempt) : p.pctTaxEx,
-          turnoverPct: parseFloat(a.turnoverPct ?? "0"),
-        };
-      } else if (effectiveSource === "asset_mix") {
-        const resolved = resolver.resolveAccountMix(a.id);
-        growthRate = resolved.geoReturn;
-        realization = {
-          pctOrdinaryIncome: a.overridePctOi != null ? parseFloat(a.overridePctOi) : resolved.pctOi,
-          pctLtCapitalGains: a.overridePctLtCg != null ? parseFloat(a.overridePctLtCg) : resolved.pctLtcg,
-          pctQualifiedDividends: a.overridePctQdiv != null ? parseFloat(a.overridePctQdiv) : resolved.pctQdiv,
-          pctTaxExempt: a.overridePctTaxExempt != null ? parseFloat(a.overridePctTaxExempt) : resolved.pctTaxEx,
-          turnoverPct: parseFloat(a.turnoverPct ?? "0"),
-        };
-      } else if (effectiveSource === "custom" && a.growthRate != null) {
-        growthRate = parseFloat(a.growthRate);
-      } else {
-        // "default" — resolve from category default in plan_settings
-        const catDefault = resolver.resolveCategoryDefault(a.category);
-        growthRate = catDefault.rate;
-        realization = catDefault.realization;
-      }
-
-      // Cash accounts: always 100% OI regardless of portfolio
-      if (a.category === "cash") {
-        realization = { pctOrdinaryIncome: 1, pctLtCapitalGains: 0, pctQualifiedDividends: 0, pctTaxExempt: 0, turnoverPct: 0 };
-      }
-
-      // Retirement accounts: growth is tax-deferred (pre-tax) or tax-free (Roth).
-      // Withdrawals are taxed as OI by the existing withdrawal logic. No per-year
-      // realization split applies.
-      if (a.category === "retirement") {
-        realization = undefined;
-      }
-
-      // Non-investable categories: no realization, use flat defaults
-      if (["real_estate", "business", "life_insurance"].includes(a.category)) {
-        const flatDefaults: Record<string, string> = {
-          real_estate: String(settings.defaultGrowthRealEstate),
-          business: String(settings.defaultGrowthBusiness),
-          life_insurance: String(settings.defaultGrowthLifeInsurance),
-        };
-        growthRate = a.growthRate != null ? parseFloat(a.growthRate) : parseFloat(flatDefaults[a.category] ?? "0.04");
-        realization = undefined;
-      }
-
-      return {
-        id: a.id,
-        name: a.name,
-        category: a.category,
-        subType: a.subType,
-        value: parseFloat(a.value),
-        basis: parseFloat(a.basis),
-        growthRate,
-        rmdEnabled: a.rmdEnabled,
-        priorYearEndValue: a.priorYearEndValue != null ? parseFloat(a.priorYearEndValue) : undefined,
-        beneficiaries: accountBens.get(a.id) ?? undefined,
-        isDefaultChecking: a.isDefaultChecking,
-        realization,
-        annualPropertyTax: parseFloat(a.annualPropertyTax),
-        propertyTaxGrowthRate: parseFloat(a.propertyTaxGrowthRate),
-        insuredPerson: a.insuredPerson ?? undefined,
-        lifeInsurance: policiesByAccount[a.id],
-        owners: ownersByAccountId.get(a.id) ?? [],
-      };
-    });
-
-    const mappedIncomes = incomeRows.map((i) => ({
-      id: i.id,
-      type: i.type,
-      name: i.name,
-      annualAmount: parseFloat(i.annualAmount),
-      startYear: resolvedStart(i.startYearRef, i.startYear),
-      endYear: resolvedEnd(i.endYearRef, i.endYear),
-      growthRate: i.growthSource === "inflation" ? resolvedInflationRate : parseFloat(i.growthRate),
-      owner: i.owner,
-      claimingAge: i.claimingAge ?? undefined,
-      linkedEntityId: i.linkedEntityId ?? undefined,
-      ownerEntityId: i.ownerEntityId ?? undefined,
-      cashAccountId: i.cashAccountId ?? undefined,
-      inflationStartYear: i.inflationStartYear ?? undefined,
-      taxType: i.taxType ?? undefined,
-      ssBenefitMode: (i.ssBenefitMode as "manual_amount" | "pia_at_fra" | "no_benefit" | null) ?? undefined,
-      piaMonthly: i.piaMonthly != null ? parseFloat(i.piaMonthly) : undefined,
-      claimingAgeMonths: i.claimingAgeMonths ?? 0,
-      claimingAgeMode: (i.claimingAgeMode as "years" | "fra" | "at_retirement" | null) ?? undefined,
-      scheduleOverrides: incomeOverrideMap.get(i.id),
-      startYearRef: i.startYearRef ?? null,
-      endYearRef: i.endYearRef ?? null,
-      growthSource: i.growthSource ?? null,
-    }));
-
-    const mappedExpenses = expenseRows.map((e) => ({
-      id: e.id,
-      type: e.type,
-      name: e.name,
-      annualAmount: parseFloat(e.annualAmount),
-      startYear: resolvedStart(e.startYearRef, e.startYear),
-      endYear: resolvedEnd(e.endYearRef, e.endYear),
-      growthRate: e.growthSource === "inflation" ? resolvedInflationRate : parseFloat(e.growthRate),
-      ownerEntityId: e.ownerEntityId ?? undefined,
-      cashAccountId: e.cashAccountId ?? undefined,
-      inflationStartYear: e.inflationStartYear ?? undefined,
-      deductionType: e.deductionType ?? undefined,
-      scheduleOverrides: expenseOverrideMap.get(e.id),
-      startYearRef: e.startYearRef ?? null,
-      endYearRef: e.endYearRef ?? null,
-      growthSource: e.growthSource ?? null,
-    }));
+    const mappedExpenses = expenseRows.map((e) =>
+      resolveExpenseFromRaw(
+        {
+          id: e.id,
+          type: e.type,
+          name: e.name,
+          annualAmount: e.annualAmount,
+          startYear: resolvedStart(e.startYearRef, e.startYear),
+          endYear: resolvedEnd(e.endYearRef, e.endYear),
+          growthSource: e.growthSource,
+          growthRate: e.growthRate,
+          ownerEntityId: e.ownerEntityId,
+          cashAccountId: e.cashAccountId,
+          inflationStartYear: e.inflationStartYear,
+          deductionType: e.deductionType,
+          startYearRef: e.startYearRef,
+          endYearRef: e.endYearRef,
+          scheduleOverrides: expenseOverrideMap.get(e.id),
+        },
+        resolutionCtx,
+      ),
+    );
 
     // Synthesize life-insurance premium expenses and merge with the mapped list.
     const clientBirthYear = parseInt(client.dateOfBirth.slice(0, 4), 10);
@@ -693,26 +654,30 @@ export const loadClientData = cache(
       owners: ownersByLiabilityId.get(l.id) ?? [],
     }));
 
-    const mappedSavingsRules = savingsRuleRows.map((s) => ({
-      id: s.id,
-      accountId: s.accountId,
-      annualAmount: parseFloat(s.annualAmount),
-      annualPercent: s.annualPercent != null ? parseFloat(s.annualPercent) : null,
-      isDeductible: s.isDeductible,
-      applyContributionLimit: s.applyContributionLimit,
-      contributeMax: s.contributeMax,
-      startYear: resolvedStart(s.startYearRef, s.startYear),
-      endYear: resolvedEnd(s.endYearRef, s.endYear),
-      growthRate: s.growthSource === "inflation" ? resolvedInflationRate : Number(s.growthRate ?? 0),
-      employerMatchPct: s.employerMatchPct != null ? parseFloat(s.employerMatchPct) : undefined,
-      employerMatchCap: s.employerMatchCap != null ? parseFloat(s.employerMatchCap) : undefined,
-      employerMatchAmount:
-        s.employerMatchAmount != null ? parseFloat(s.employerMatchAmount) : undefined,
-      scheduleOverrides: savingsOverrideMap.get(s.id),
-      startYearRef: s.startYearRef ?? null,
-      endYearRef: s.endYearRef ?? null,
-      growthSource: s.growthSource ?? null,
-    }));
+    const mappedSavingsRules = savingsRuleRows.map((s) =>
+      resolveSavingsRuleFromRaw(
+        {
+          id: s.id,
+          accountId: s.accountId,
+          annualAmount: s.annualAmount,
+          annualPercent: s.annualPercent,
+          isDeductible: s.isDeductible,
+          applyContributionLimit: s.applyContributionLimit,
+          contributeMax: s.contributeMax,
+          startYear: resolvedStart(s.startYearRef, s.startYear),
+          endYear: resolvedEnd(s.endYearRef, s.endYear),
+          growthSource: s.growthSource,
+          growthRate: s.growthRate,
+          employerMatchPct: s.employerMatchPct,
+          employerMatchCap: s.employerMatchCap,
+          employerMatchAmount: s.employerMatchAmount,
+          startYearRef: s.startYearRef,
+          endYearRef: s.endYearRef,
+          scheduleOverrides: savingsOverrideMap.get(s.id),
+        },
+        resolutionCtx,
+      ),
+    );
 
     const mappedWithdrawalStrategy = withdrawalRows.map((w) => ({
       accountId: w.accountId,
