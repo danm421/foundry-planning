@@ -34,4 +34,10 @@ import "./monte-carlo-fan";           // screen-side
 import "./monte-carlo-fan.pdf";       // pdf-side
 import "./ai-analysis";               // screen-side
 import "./ai-analysis.pdf";           // pdf-side
+import "./recommended-changes-table";        // screen-side
+import "./recommended-changes-table.pdf";    // pdf-side
+import "./key-indicators-callout";           // screen-side
+import "./key-indicators-callout.pdf";       // pdf-side
+import "./status-callout";                   // screen-side
+import "./status-callout.pdf";               // pdf-side
 // each widget that has a PDF renderer adds a `import "./<name>.pdf";` line here

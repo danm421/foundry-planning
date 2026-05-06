@@ -20,3 +20,6 @@ import "./balance-sheet-table";
 import "./allocation-donut";
 import "./monte-carlo-fan";
 import "./ai-analysis";
+import "./recommended-changes-table";
+import "./key-indicators-callout";
+import "./status-callout";
