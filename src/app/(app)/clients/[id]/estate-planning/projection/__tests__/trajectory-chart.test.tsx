@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
- * Tests for TrajectoryChart — hand-rolled SVG with two series, death-year
- * dashed verticals, and a scrubber line keyed by `data-current-year`.
+ * Tests for TrajectoryChart — hand-rolled SVG stacked bar chart with one bar
+ * per projection year, death-year dashed verticals, and a scrubber line keyed
+ * by `data-current-year`.
  *
  * Uses the Cooper-Sample fixture (matches comparison-grid.test.tsx and
  * derive-chart-series.test.ts) so both `firstDeathYear` and
@@ -175,7 +176,7 @@ describe("TrajectoryChart", () => {
   const leftTree = synthesizeNoPlanClientData(rightTree);
   const leftResult = runProjectionWithEvents(leftTree);
 
-  it("renders both with-plan and without-plan series as <path> elements", () => {
+  it("renders one bar group per projection year with at least one rect", () => {
     const { container } = render(
       <TrajectoryChart
         leftTree={leftTree}
@@ -185,8 +186,15 @@ describe("TrajectoryChart", () => {
         scrubberYear={2030}
       />,
     );
-    // 4 paths total: 2 area-fills + 2 stroke outlines. >= 2 is the contract.
-    expect(container.querySelectorAll("path").length).toBeGreaterThanOrEqual(2);
+    const bars = container.querySelectorAll("g[data-year]");
+    expect(bars.length).toBe(rightResult.years.length);
+    // Each bar must render at least one rect (floor and/or cap).
+    for (const bar of bars) {
+      expect(bar.querySelectorAll("rect").length).toBeGreaterThanOrEqual(1);
+    }
+    // At least one bar should show a green-cap "gain" (Plan 2 is the with-plan
+    // scenario, beats the no-plan counterfactual once estate tax hits).
+    expect(container.querySelectorAll('[data-cap="gain"]').length).toBeGreaterThan(0);
   });
 
   it("renders dashed vertical guides at firstDeathYear and secondDeathYear", () => {

@@ -260,6 +260,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [years, setYears] = useState<ProjectionYear[]>([]);
+  // Base-case projection, fetched in parallel only when viewing a non-base
+  // scenario. Powers the delta caps on the Portfolio chart. `null` when
+  // viewing the base case directly (no overlay) or before the second fetch
+  // resolves (chart falls back to a plain blue bar in the meantime).
+  const [baseYears, setBaseYears] = useState<ProjectionYear[] | null>(null);
   const [accountNames, setAccountNames] = useState<Record<string, string>>({});
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const router = useRouter();
@@ -349,6 +354,25 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         // Run projection client-side
         const projection = runProjection(data);
         setYears(projection);
+
+        // When viewing a non-base scenario, fetch the base case in parallel
+        // and project it client-side so the Portfolio chart can render delta
+        // caps (scenario gain in green, scenario loss in gray) above a shared
+        // floor. Failures here are non-fatal — the chart degrades to the
+        // single-bar look.
+        if (scenarioParam) {
+          fetch(`/api/clients/${clientId}/projection-data`)
+            .then(async (baseRes) => {
+              if (!baseRes.ok) return;
+              const baseData = (await baseRes.json()) as ClientData;
+              setBaseYears(runProjection(baseData));
+            })
+            .catch(() => {
+              /* swallow — chart falls back to the non-delta render */
+            });
+        } else {
+          setBaseYears(null);
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load projection data");
       } finally {
@@ -491,19 +515,69 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     (y) => y.portfolioAssets.accessibleTrustAssetsTotal > 0,
   );
 
-  // Portfolio Assets chart (bars)
-  const portfolioChartData = {
-    labels: chartLabels,
-    datasets: [
-      {
-        label: "Total Portfolio Assets",
-        data: visibleYears.map(liquidPortfolioTotal),
-        backgroundColor: "#2563eb",
-        borderColor: "#2563eb",
-        borderWidth: 1,
-      },
-    ],
-  };
+  // Portfolio Assets chart (bars). When viewing a non-base scenario AND the
+  // base-case projection has loaded, render stacked delta bars matching the
+  // estate trajectory chart: blue floor = min(scenario, base) per year, with
+  // a green cap when the scenario is ahead and a gray cap when it's behind.
+  // Otherwise (base case, or scenario view before base loads), render the
+  // existing single blue bar.
+  const isScenarioView = !!searchParams?.get("scenario");
+  const baseLiquidByYear = useMemo(() => {
+    if (!baseYears) return null;
+    const map = new Map<number, number>();
+    for (const y of baseYears) map.set(y.year, liquidPortfolioTotal(y));
+    return map;
+  }, [baseYears]);
+  const showPortfolioDelta = isScenarioView && baseLiquidByYear !== null;
+
+  const portfolioChartData = showPortfolioDelta
+    ? {
+        labels: chartLabels,
+        datasets: [
+          {
+            label: "Common floor (vs base case)",
+            data: visibleYears.map((y) => {
+              const scenario = liquidPortfolioTotal(y);
+              const base = baseLiquidByYear.get(y.year) ?? scenario;
+              return Math.min(scenario, base);
+            }),
+            backgroundColor: "#2563eb",
+            stack: "portfolio",
+          },
+          {
+            label: "Scenario ahead of base",
+            data: visibleYears.map((y) => {
+              const scenario = liquidPortfolioTotal(y);
+              const base = baseLiquidByYear.get(y.year) ?? scenario;
+              return Math.max(0, scenario - base);
+            }),
+            backgroundColor: "#059669",
+            stack: "portfolio",
+          },
+          {
+            label: "Base case ahead of scenario",
+            data: visibleYears.map((y) => {
+              const scenario = liquidPortfolioTotal(y);
+              const base = baseLiquidByYear.get(y.year) ?? scenario;
+              return Math.max(0, base - scenario);
+            }),
+            backgroundColor: "#9ca3af",
+            stack: "portfolio",
+          },
+        ],
+      }
+    : {
+        labels: chartLabels,
+        datasets: [
+          {
+            label: "Total Portfolio Assets",
+            data: visibleYears.map(liquidPortfolioTotal),
+            backgroundColor: "#2563eb",
+            borderColor: "#2563eb",
+            borderWidth: 1,
+          },
+        ],
+      };
 
   const chartOptionsWithMarkers = {
     ...baseChartOptions,
@@ -516,8 +590,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const portfolioChartOptions = {
     ...chartOptionsWithMarkers,
     scales: {
-      x: { ...baseChartOptions.scales.x, stacked: false },
-      y: { ...baseChartOptions.scales.y, stacked: false },
+      x: { ...baseChartOptions.scales.x, stacked: showPortfolioDelta },
+      y: { ...baseChartOptions.scales.y, stacked: showPortfolioDelta },
     },
   };
 

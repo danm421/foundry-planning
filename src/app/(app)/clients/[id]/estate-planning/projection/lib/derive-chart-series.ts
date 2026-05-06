@@ -40,18 +40,6 @@ export interface ChartSeries {
   yMax: number;
 }
 
-/** Closed polygon (in chart-data space) representing a delta-band region. */
-export interface DeltaBandPoly {
-  points: [year: number, value: number][];
-}
-
-export interface DeltaBands {
-  /** Regions where right > left (Plan 2 ahead of Plan 1). */
-  positive: DeltaBandPoly[];
-  /** Regions where right < left (Plan 2 behind Plan 1). */
-  negative: DeltaBandPoly[];
-}
-
 export function deriveChartSeries(args: {
   leftTree: ClientData;
   leftResult: ProjectionResult;
@@ -146,87 +134,3 @@ function cumulativeTaxDrag(
   return sum;
 }
 
-/**
- * Build the delta-band geometry between two parallel year-aligned series.
- *
- * For each adjacent pair of years, emit a quad bounded by the right line
- * (top when right > left) and the left line (bottom). When the sign of
- * `right − left` flips between two years, linearly interpolate the zero
- * crossing and split the region into two triangles — one positive, one
- * negative — so the band edges meet cleanly at the crossing.
- */
-export function deriveDeltaBands(
-  left: [number, number][],
-  right: [number, number][],
-): DeltaBands {
-  const positive: DeltaBandPoly[] = [];
-  const negative: DeltaBandPoly[] = [];
-
-  const n = Math.min(left.length, right.length);
-  for (let i = 0; i < n - 1; i++) {
-    const [ya, la] = left[i];
-    const [yb, lb] = left[i + 1];
-    const ra = right[i][1];
-    const rb = right[i + 1][1];
-    const da = ra - la;
-    const db = rb - lb;
-
-    if (da >= 0 && db >= 0) {
-      positive.push({
-        points: [
-          [ya, ra],
-          [yb, rb],
-          [yb, lb],
-          [ya, la],
-        ],
-      });
-    } else if (da <= 0 && db <= 0) {
-      negative.push({
-        points: [
-          [ya, la],
-          [yb, lb],
-          [yb, rb],
-          [ya, ra],
-        ],
-      });
-    } else {
-      const denom = da - db;
-      const t = denom === 0 ? 0.5 : da / denom;
-      const yCross = ya + t * (yb - ya);
-      const vCross = ra + t * (rb - ra);
-      if (da > 0) {
-        positive.push({
-          points: [
-            [ya, ra],
-            [yCross, vCross],
-            [ya, la],
-          ],
-        });
-        negative.push({
-          points: [
-            [yCross, vCross],
-            [yb, lb],
-            [yb, rb],
-          ],
-        });
-      } else {
-        negative.push({
-          points: [
-            [ya, la],
-            [yCross, vCross],
-            [ya, ra],
-          ],
-        });
-        positive.push({
-          points: [
-            [yCross, vCross],
-            [yb, rb],
-            [yb, lb],
-          ],
-        });
-      }
-    }
-  }
-
-  return { positive, negative };
-}
