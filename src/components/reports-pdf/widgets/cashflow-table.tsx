@@ -2,8 +2,8 @@
 //
 // PDF render for the cashflowTable widget. Mirrors the screen render with
 // a `<View>`-based grid (no HTML <table> available in @react-pdf/renderer).
-// Year-range resolution is server-side (Task 32); for now the PDF renders
-// the absolute `years` from the cashflow scope.
+// Year-range resolution runs server-side in the data-loader (Task 32) — the
+// `years` array we receive here is already sliced to the resolved range.
 
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PDF_THEME } from "../theme";
@@ -62,8 +62,8 @@ export function CashflowTablePdfRender({
   data,
 }: WidgetRenderProps<"cashflowTable">) {
   const d = (data as { cashflow?: CashflowScopeData })?.cashflow;
-  // Use absolute years from scope; year-range resolution runs server-side
-  // (Task 32). Until then, rendering the full scope is the safest default.
+  // The data-loader pre-filters `years` to the resolved range — render as-is.
+  // Defensive `?? []` guards against a bypassed data-loader (e.g. fixtures).
   const rows = d?.years ?? [];
   const totals = rows.reduce(
     (a, r) => ({

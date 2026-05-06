@@ -163,6 +163,14 @@ export async function POST(
       client: { id },
       projection,
     });
+    // Household context drives `resolveYearRange("default")` inside the
+    // data-loader, so PDF renders see the same resolved [from, to] window
+    // the screen render computes. `retirementAge` is non-null on the
+    // schema (`src/db/schema.ts:303`), so no fallback needed.
+    const household = {
+      retirementAge: client.retirementAge,
+      currentYear: new Date().getFullYear(),
+    };
     const widgetData = buildWidgetData(pages, {
       projection,
       scopeData,
@@ -170,6 +178,7 @@ export async function POST(
       accounts: mappedAccounts,
       liabilities: mappedLiabilities,
       entities: entityInfos,
+      household,
     });
 
     const householdName =

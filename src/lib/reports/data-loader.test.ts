@@ -173,6 +173,7 @@ describe("buildWidgetData", () => {
       accounts: [],
       liabilities: [],
       entities: [],
+      household: { retirementAge: 65, currentYear: 2026 },
     });
     expect(out).toEqual({
       "kpi-1": { value: 30_000, prevValue: null },
@@ -193,8 +194,47 @@ describe("buildWidgetData", () => {
         accounts: [],
         liabilities: [],
         entities: [],
+        household: { retirementAge: 65, currentYear: 2026 },
       }),
     ).toThrow();
+  });
+
+  it("slices cashflow scope years to the resolved yearRange", () => {
+    // Build a 10-year cashflow scope fixture (2024-2033). The widget asks for
+    // 2027-2030 — the data-loader must hand the chart only those 4 rows.
+    const years = Array.from({ length: 10 }, (_, i) => ({
+      year: 2024 + i,
+      incomeWages: 0,
+      incomeSocialSecurity: 0,
+      incomePensions: 0,
+      incomeWithdrawals: 0,
+      incomeOther: 0,
+      expenses: 0,
+      savings: 0,
+      net: 0,
+    }));
+    const page = pageWith({
+      id: "cf-1",
+      kind: "cashflowTable",
+      props: {
+        title: "Cashflow",
+        yearRange: { from: 2027, to: 2030 },
+        ownership: "consolidated",
+        showTotals: false,
+      },
+    });
+    const out = buildWidgetData([page], {
+      projection: [makeYear()],
+      scopeData: { cashflow: { years } },
+      client: clientCtx,
+      accounts: [],
+      liabilities: [],
+      entities: [],
+      household: { retirementAge: 65, currentYear: 2026 },
+    });
+    const sliced = (out["cf-1"] as { cashflow: { years: { year: number }[] } })
+      .cashflow.years;
+    expect(sliced.map((y) => y.year)).toEqual([2027, 2028, 2029, 2030]);
   });
 
   it("passes scopeData through unchanged for non-kpiTile widgets", () => {
@@ -216,6 +256,7 @@ describe("buildWidgetData", () => {
       accounts: [],
       liabilities: [],
       entities: [],
+      household: { retirementAge: 65, currentYear: 2026 },
     });
     expect(out).toEqual({ "ai-1": scopeData });
   });

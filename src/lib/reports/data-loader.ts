@@ -11,11 +11,15 @@
 
 import "@/lib/reports/scopes"; // side-effect: register all v1 scopes
 
-import type { OwnershipView, Page, WidgetKind } from "./types";
+import type { OwnershipView, Page, WidgetKind, YearRange } from "./types";
 import type { ProjectionYear } from "@/engine/types";
 import { getMetric } from "./metric-registry";
 import { getScope, type ScopeKey } from "./scope-registry";
 import { getWidget } from "./widget-registry";
+import { resolveYearRange } from "./year-range-default";
+import type { CashflowScopeData } from "./scopes/cashflow";
+import type { BalanceScopeData } from "./scopes/balance";
+import type { MonteCarloScopeData } from "./scopes/monteCarlo";
 import {
   buildViewModel,
   type AccountLike,
@@ -81,6 +85,12 @@ export function buildWidgetData(
     accounts: AccountLike[];
     liabilities: LiabilityLike[];
     entities: EntityInfo[];
+    /** Household context for resolving widget yearRange `"default"` sentinels.
+     *  `retirementAge` comes from the client record; `currentYear` is the
+     *  calendar year the export runs in. Both are needed because
+     *  `resolveYearRange` derives the default `from`/`to` from them
+     *  (see `lib/reports/year-range-default.ts`). */
+    household: { retirementAge: number; currentYear: number };
   },
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -109,13 +119,48 @@ export function buildWidgetData(
         ) {
           // Chart/table widgets each consume one scope — narrow the dict so
           // the widget render doesn't have to know the full scopeData shape.
-          out[w.id] = { cashflow: ctx.scopeData.cashflow };
+          // Pre-filter `years` to the resolved range so PDF renders (which
+          // don't re-run `resolveYearRange`) get the right slice.
+          const props = w.props as { yearRange: YearRange };
+          const range = resolveYearRange(props.yearRange, ctx.household);
+          const cf = ctx.scopeData.cashflow as CashflowScopeData | undefined;
+          const sliced = cf
+            ? {
+                years: cf.years.filter(
+                  (y) => y.year >= range.from && y.year <= range.to,
+                ),
+              }
+            : undefined;
+          out[w.id] = { cashflow: sliced };
         } else if (w.kind === "netWorthLine") {
-          out[w.id] = { balance: ctx.scopeData.balance };
+          const props = w.props as { yearRange: YearRange };
+          const range = resolveYearRange(props.yearRange, ctx.household);
+          const bal = ctx.scopeData.balance as BalanceScopeData | undefined;
+          const sliced = bal
+            ? {
+                years: bal.years.filter(
+                  (y) => y.year >= range.from && y.year <= range.to,
+                ),
+              }
+            : undefined;
+          out[w.id] = { balance: sliced };
         } else if (w.kind === "allocationDonut") {
           out[w.id] = { allocation: ctx.scopeData.allocation };
         } else if (w.kind === "monteCarloFan") {
-          out[w.id] = { monteCarlo: ctx.scopeData.monteCarlo };
+          // Monte Carlo bands are per-year too; filter by the same range.
+          // `successProbability` is a scalar — pass through unchanged.
+          const props = w.props as { yearRange: YearRange };
+          const range = resolveYearRange(props.yearRange, ctx.household);
+          const mc = ctx.scopeData.monteCarlo as MonteCarloScopeData | undefined;
+          const sliced = mc
+            ? {
+                successProbability: mc.successProbability,
+                bands: mc.bands.filter(
+                  (b) => b.year >= range.from && b.year <= range.to,
+                ),
+              }
+            : undefined;
+          out[w.id] = { monteCarlo: sliced };
         } else if (w.kind === "balanceSheetTable") {
           // Reuses the existing balance-sheet view-model to produce a fully-
           // shaped `BalanceSheetViewModel`. No scope is registered for this
