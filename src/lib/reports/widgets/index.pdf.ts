@@ -40,4 +40,20 @@ import "./key-indicators-callout";           // screen-side
 import "./key-indicators-callout.pdf";       // pdf-side
 import "./status-callout";                   // screen-side
 import "./status-callout.pdf";               // pdf-side
+import "./risk-table";                       // screen-side
+import "./risk-table.pdf";                   // pdf-side
+import "./risk-severity-bar";                // screen-side
+import "./risk-severity-bar.pdf";            // pdf-side
+import "./policies-table";                   // screen-side
+import "./policies-table.pdf";               // pdf-side
+import "./life-phases-table";                // screen-side
+import "./life-phases-table.pdf";            // pdf-side
+import "./expense-detail-table";             // screen-side
+import "./expense-detail-table.pdf";         // pdf-side
+import "./tax-bracket-chart";                // screen-side
+import "./tax-bracket-chart.pdf";            // pdf-side
+import "./action-items-list";                // screen-side
+import "./action-items-list.pdf";            // pdf-side
+import "./disclaimer-block";                 // screen-side
+import "./disclaimer-block.pdf";             // pdf-side
 // each widget that has a PDF renderer adds a `import "./<name>.pdf";` line here
