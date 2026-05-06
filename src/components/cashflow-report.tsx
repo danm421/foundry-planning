@@ -13,7 +13,7 @@ import {
   Legend,
   Filler,
 } from "chart.js";
-import { Bar, Line, Chart } from "react-chartjs-2";
+import { Bar, Chart } from "react-chartjs-2";
 import {
   useReactTable,
   getCoreRowModel,
@@ -485,19 +485,16 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     y.portfolioAssets.retirementTotal +
     y.portfolioAssets.lifeInsuranceTotal;
 
-  // Portfolio Assets chart (area/line)
+  // Portfolio Assets chart (bars)
   const portfolioChartData = {
     labels: chartLabels,
     datasets: [
       {
         label: "Total Portfolio Assets",
         data: visibleYears.map(liquidPortfolioTotal),
-        borderColor: "#3b82f6",
-        backgroundColor: "rgba(59, 130, 246, 0.15)",
-        fill: true,
-        tension: 0.3,
-        pointRadius: 0,
-        pointHoverRadius: 4,
+        backgroundColor: "#2563eb",
+        borderColor: "#2563eb",
+        borderWidth: 1,
       },
     ],
   };
@@ -1869,7 +1866,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         </div>
         <div style={{ height: 300 }}>
           {chartView === "portfolio" ? (
-            <Line data={portfolioChartData} options={portfolioChartOptions} />
+            <Bar data={portfolioChartData} options={portfolioChartOptions} />
           ) : (
             <Chart type="bar" data={cashflowChartData} options={chartOptionsWithMarkers} />
           )}
