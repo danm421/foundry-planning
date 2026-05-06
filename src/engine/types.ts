@@ -107,7 +107,8 @@ export type DrainKind =
   | "federal_estate_tax"
   | "state_estate_tax"
   | "admin_expenses"
-  | "debts_paid";
+  | "debts_paid"
+  | "ird_tax";
 
 export interface DrainAttribution {
   /** 1 = first death, 2 = final death. */
@@ -679,6 +680,9 @@ export interface PlanSettings {
   /** Pre-plan post-1976 cumulative taxable gifts per grantor.
    *  Seed for the gift-tax ledger and §2001(b)(1)(B) tentative-tax-base. */
   priorTaxableGifts?: { client: number; spouse: number };
+  /** Flat IRD tax rate applied to pre-tax retirement assets passing to non-spouse,
+   *  non-charity beneficiaries at any death event. 0 disables. */
+  irdTaxRate?: number;
 }
 
 // ── Output Types ─────────────────────────────────────────────────────────────
