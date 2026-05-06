@@ -678,6 +678,7 @@ export const loadClientDataWithContext = cache(
       flatStateRate: parseFloat(settings.flatStateRate),
       estateAdminExpenses: settings.estateAdminExpenses != null ? parseFloat(settings.estateAdminExpenses) : 0,
       flatStateEstateRate: settings.flatStateEstateRate != null ? parseFloat(settings.flatStateEstateRate) : 0,
+      irdTaxRate: settings.irdTaxRate != null ? parseFloat(settings.irdTaxRate) : 0,
       inflationRate: parseFloat(settings.inflationRate),
       planStartYear: settings.planStartYear,
       planEndYear: settings.planEndYear,

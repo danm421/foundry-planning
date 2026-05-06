@@ -153,6 +153,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
     "flatStateEstateRate": 0,
     "flatStateRate": 0.05,
     "inflationRate": 0.03,
+    "irdTaxRate": 0,
     "outOfHouseholdRate": undefined,
     "planEndYear": 2063,
     "planStartYear": 2026,

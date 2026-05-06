@@ -259,6 +259,7 @@ export default async function AssumptionsPage({ params, searchParams }: PageProp
           flatStateRate: String(settings.flatStateRate),
           estateAdminExpenses: String(settings.estateAdminExpenses),
           flatStateEstateRate: String(settings.flatStateEstateRate),
+          irdTaxRate: String(settings.irdTaxRate),
           inflationRate: String(settings.inflationRate),
           inflationRateSource: settings.inflationRateSource,
           planStartYear: settings.planStartYear,

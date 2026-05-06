@@ -41,6 +41,7 @@ export interface AssumptionsSettings {
   flatStateRate: string;
   estateAdminExpenses: string;
   flatStateEstateRate: string;
+  irdTaxRate: string;
   inflationRate: string;
   inflationRateSource: "asset_class" | "custom";
   planStartYear: number;
