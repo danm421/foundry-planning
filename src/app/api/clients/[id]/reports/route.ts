@@ -17,8 +17,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import { inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, reports } from "@/db/schema";
+import { clients, reports, scenarios } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { authErrorResponse } from "@/lib/authz";
@@ -31,6 +32,17 @@ export const dynamic = "force-dynamic";
 const CreateBody = z.object({
   template: z.enum(["blank", "annualReview", "retirementRoadmap"]),
   title: z.string().min(1).max(200),
+  // Two-scenario binding for plan-comparison reports. Both ids (when present)
+  // must reference scenarios belonging to this client; the route enforces
+  // that before persisting. Phase 6 of the ethos-style-reports plan adds the
+  // template options that actually require this; the field is accepted now
+  // so the data layer is in place ahead of UI.
+  comparisonBinding: z
+    .object({
+      currentScenarioId: z.string().uuid(),
+      proposedScenarioId: z.string().uuid(),
+    })
+    .nullish(),
 });
 
 export async function GET(
@@ -113,6 +125,25 @@ export async function POST(
       templateKey = tmpl.key;
     }
 
+    // Validate the comparison binding's scenarios both belong to this client.
+    // Cheaper than two single-row queries: one IN-list lookup and a count check.
+    if (body.comparisonBinding) {
+      const ids = [
+        body.comparisonBinding.currentScenarioId,
+        body.comparisonBinding.proposedScenarioId,
+      ];
+      const found = await db
+        .select({ id: scenarios.id })
+        .from(scenarios)
+        .where(and(inArray(scenarios.id, ids), eq(scenarios.clientId, id)));
+      if (found.length !== new Set(ids).size) {
+        return NextResponse.json(
+          { error: "Invalid scenario binding" },
+          { status: 400 },
+        );
+      }
+    }
+
     const [row] = await db
       .insert(reports)
       .values({
@@ -121,6 +152,7 @@ export async function POST(
         title: body.title,
         templateKey,
         pages,
+        comparisonBinding: body.comparisonBinding ?? null,
         createdByUserId: userId,
       })
       .returning();

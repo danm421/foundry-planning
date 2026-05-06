@@ -1366,6 +1366,14 @@ export const reports = pgTable(
     title: text("title").notNull(),
     templateKey: text("template_key"), // null for blank
     pages: jsonb("pages").notNull().$type<ReportPagesPersisted>(),
+    // Two-scenario binding for comparison-style reports (Phase 3 of the
+    // ethos-style-reports plan). When non-null, both ids must reference
+    // scenarios belonging to this report's client. Single-scenario reports
+    // leave this null and the data-loader follows the existing path.
+    comparisonBinding: jsonb("comparison_binding").$type<{
+      currentScenarioId: string;
+      proposedScenarioId: string;
+    } | null>(),
     createdByUserId: text("created_by_user_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

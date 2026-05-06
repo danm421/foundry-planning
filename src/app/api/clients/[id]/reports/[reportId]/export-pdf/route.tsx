@@ -61,6 +61,7 @@ export async function POST(
       pages,
       dateOfBirth: client.dateOfBirth,
       retirementAge: client.retirementAge,
+      comparisonBinding: report.comparisonBinding,
     });
 
     const householdName =

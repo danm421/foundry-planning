@@ -148,6 +148,17 @@ export type Page = {
 
 export type ReportPagesPersisted = Page[];
 
+/**
+ * Two-scenario binding for plan-comparison reports. When non-null, the
+ * data-loader resolves both projections and runs them through the
+ * `comparison` scope. Both scenario ids must reference scenarios belonging
+ * to the report's client; the API route validates this on write.
+ */
+export type ComparisonBinding = {
+  currentScenarioId: string;
+  proposedScenarioId: string;
+};
+
 export type Report = {
   id: string;
   firmId: string;
@@ -155,6 +166,7 @@ export type Report = {
   title: string;
   templateKey: string | null;
   pages: Page[];
+  comparisonBinding?: ComparisonBinding | null;
   createdAt: string;
   updatedAt: string;
   createdByUserId: string;

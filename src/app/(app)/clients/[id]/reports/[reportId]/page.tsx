@@ -52,8 +52,9 @@ export default async function ReportBuilderPage(
     [client.firstName, client.lastName].filter(Boolean).join(" ") || "Client";
 
   // Pre-resolve per-widget data on the server so the on-screen canvas
-  // renders real charts. The export pipeline snapshots those canvases —
-  // without real data here, the snapshots are empty Chart.js axes.
+  // renders real charts (the PDF route runs the same loader so screen and
+  // PDF stay in sync). When the report binds two scenarios, also load the
+  // comparison scope so Phase-5 comparison-aware widgets see both sides.
   const pages = report.pages as Page[];
   const widgetData = await loadReportWidgetData({
     clientId: id,
@@ -61,6 +62,7 @@ export default async function ReportBuilderPage(
     pages,
     dateOfBirth: client.dateOfBirth,
     retirementAge: client.retirementAge,
+    comparisonBinding: report.comparisonBinding,
   });
 
   return (

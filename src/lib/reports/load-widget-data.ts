@@ -8,6 +8,12 @@
 // Used by both the export-pdf route (PDF render) and the report builder
 // page (so the on-screen canvas renders real charts instead of empty
 // snapshots).
+//
+// When a report has `comparisonBinding` set (Phase 3 of the
+// ethos-style-reports plan), this also loads both projections via
+// `loadComparisonScope` and attaches the result under the reserved key
+// `__comparison` so Phase-5 comparison-aware widgets can read both sides
+// without each loading their own data.
 
 import { runProjection } from "@/engine/projection";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -18,7 +24,14 @@ import {
   loadDataForScopes,
   buildWidgetData,
 } from "@/lib/reports/data-loader";
-import type { Page } from "@/lib/reports/types";
+import { loadComparisonScope } from "@/lib/reports/scopes/comparison";
+import type { ComparisonBinding, Page } from "@/lib/reports/types";
+
+/** Reserved widget-data key holding the resolved `ComparisonScopeData` when
+ *  the report has a `comparisonBinding`. Comparison-aware widgets read
+ *  from this key directly; everything else ignores it. The key is
+ *  prefixed with `__` so it can never collide with a widget id (UUIDs). */
+export const COMPARISON_DATA_KEY = "__comparison";
 
 export async function loadReportWidgetData(args: {
   clientId: string;
@@ -26,8 +39,9 @@ export async function loadReportWidgetData(args: {
   pages: Page[];
   dateOfBirth: string;
   retirementAge: number;
+  comparisonBinding?: ComparisonBinding | null;
 }): Promise<Record<string, unknown>> {
-  const { clientId, firmId, pages, dateOfBirth, retirementAge } = args;
+  const { clientId, firmId, pages, dateOfBirth, retirementAge, comparisonBinding } = args;
 
   const { effectiveTree } = await loadEffectiveTree(clientId, firmId, "base", {});
   const apiData = effectiveTree as unknown as {
@@ -95,7 +109,7 @@ export async function loadReportWidgetData(args: {
     currentYear: new Date().getFullYear(),
   };
 
-  return buildWidgetData(pages, {
+  const widgetData = buildWidgetData(pages, {
     projection,
     scopeData,
     client: { id: clientId },
@@ -104,4 +118,16 @@ export async function loadReportWidgetData(args: {
     entities,
     household,
   });
+
+  if (comparisonBinding) {
+    const comparison = await loadComparisonScope({
+      clientId,
+      firmId,
+      currentScenarioId: comparisonBinding.currentScenarioId,
+      proposedScenarioId: comparisonBinding.proposedScenarioId,
+    });
+    widgetData[COMPARISON_DATA_KEY] = comparison;
+  }
+
+  return widgetData;
 }

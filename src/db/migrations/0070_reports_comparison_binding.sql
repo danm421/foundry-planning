@@ -1,0 +1,1 @@
+ALTER TABLE "reports" ADD COLUMN "comparison_binding" jsonb;
