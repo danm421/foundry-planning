@@ -32,4 +32,6 @@ import "./allocation-donut";          // screen-side
 import "./allocation-donut.pdf";      // pdf-side
 import "./monte-carlo-fan";           // screen-side
 import "./monte-carlo-fan.pdf";       // pdf-side
+import "./ai-analysis";               // screen-side
+import "./ai-analysis.pdf";           // pdf-side
 // each widget that has a PDF renderer adds a `import "./<name>.pdf";` line here

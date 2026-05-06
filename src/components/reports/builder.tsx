@@ -5,7 +5,7 @@
 
 "use client";
 import "@/lib/reports/widgets";
-import { useCallback, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { reducer, type ReportState } from "@/lib/reports/reducer";
 import { ReportBuilderContext, type Household } from "./builder-context";
@@ -90,6 +90,58 @@ export function Builder(props: {
       }, 0);
       setSelectedWidgetId(newId);
     }
+  }, [state.pages]);
+
+  // Bridge from `aiAnalysis` widget renders → reducer. The widget can't
+  // call `dispatch` directly (it lives behind the registry boundary), so
+  // it dispatches DOM CustomEvents and we forward to UPDATE_WIDGET_PROPS
+  // here. v1-only pattern — refactor to a dispatch context if more
+  // widgets need similar plumbing.
+  useEffect(() => {
+    function findWidget(widgetId: string) {
+      for (const p of state.pages) {
+        for (const r of p.rows) {
+          for (const w of r.slots) {
+            if (w?.id === widgetId) return w;
+          }
+        }
+      }
+      return null;
+    }
+    function onResult(e: Event) {
+      const { widgetId, body } = (
+        e as CustomEvent<{ widgetId: string; body: string }>
+      ).detail;
+      const widget = findWidget(widgetId);
+      if (!widget || widget.kind !== "aiAnalysis") return;
+      dispatch({
+        type: "UPDATE_WIDGET_PROPS",
+        widgetId,
+        props: {
+          ...widget.props,
+          body,
+          generatedAt: new Date().toISOString(),
+        },
+      });
+    }
+    function onEdit(e: Event) {
+      const { widgetId, body } = (
+        e as CustomEvent<{ widgetId: string; body: string }>
+      ).detail;
+      const widget = findWidget(widgetId);
+      if (!widget || widget.kind !== "aiAnalysis") return;
+      dispatch({
+        type: "UPDATE_WIDGET_PROPS",
+        widgetId,
+        props: { ...widget.props, body },
+      });
+    }
+    window.addEventListener("foundry:ai-analysis-result", onResult);
+    window.addEventListener("foundry:ai-analysis-edit", onEdit);
+    return () => {
+      window.removeEventListener("foundry:ai-analysis-result", onResult);
+      window.removeEventListener("foundry:ai-analysis-edit", onEdit);
+    };
   }, [state.pages]);
 
   const handleExport = useCallback(async () => {
