@@ -2,12 +2,16 @@
 //
 // Screen render for the kpiTile widget. Shown on the canvas in builder
 // preview and on the screen-mode of the rendered report. PDF render is
-// the same component path with `mode === "pdf"`.
+// the same component path with `mode === "pdf"` — delegates to the
+// @react-pdf/renderer-flavored render in `components/reports-pdf/`.
 
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 import { getMetric, formatMetric } from "@/lib/reports/metric-registry";
+import { KpiTilePdfRender } from "@/components/reports-pdf/widgets/kpi-tile";
 
-export function KpiTileRender({ props, data, mode }: WidgetRenderProps<"kpiTile">) {
+export function KpiTileRender(p: WidgetRenderProps<"kpiTile">) {
+  if (p.mode === "pdf") return <KpiTilePdfRender {...p} />;
+  const { props, data } = p;
   const metric = getMetric(props.metricKey);
   const d = data as { value: number | null; prevValue?: number | null };
   const value = d?.value ?? null;
@@ -15,7 +19,7 @@ export function KpiTileRender({ props, data, mode }: WidgetRenderProps<"kpiTile"
   const delta = props.showDelta && value !== null && prev != null ? value - prev : null;
   const title = props.titleOverride || metric.label;
   return (
-    <div className={`p-5 ${mode === "pdf" ? "bg-white" : "bg-card-2"} rounded-md border border-hair h-full`}>
+    <div className="p-5 bg-card-2 rounded-md border border-hair h-full">
       <div className="text-[10px] font-mono uppercase tracking-wider text-ink-3 mb-1">
         {metric.category}
       </div>

@@ -14,6 +14,7 @@ import { BlockLibrary } from "./block-library";
 import { Canvas } from "./canvas";
 import { Inspector } from "./inspector";
 import { useAutosave } from "./use-autosave";
+import { canvasToPng } from "@/components/reports-pdf/chart-to-image";
 import type { Page, WidgetKind } from "@/lib/reports/types";
 
 export function Builder(props: {
@@ -68,6 +69,37 @@ export function Builder(props: {
     setSelectedWidgetId(newId);
   }, [state.pages]);
 
+  const handleExport = useCallback(async () => {
+    const chartImages: Record<string, string> = {};
+    document
+      .querySelectorAll<HTMLCanvasElement>("[data-widget-canvas]")
+      .forEach((c) => {
+        const id = c.dataset.widgetId;
+        if (!id) return;
+        const png = canvasToPng(c);
+        if (png) chartImages[id] = png;
+      });
+    const res = await fetch(
+      `/api/clients/${clientId}/reports/${reportId}/export-pdf`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chartImages }),
+      },
+    );
+    if (!res.ok) {
+      alert("Export failed");
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${state.title}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [clientId, reportId, state.title]);
+
   return (
     <ReportBuilderContext value={{ household }}>
       <DndContext onDragEnd={handleDragEnd}>
@@ -78,9 +110,7 @@ export function Builder(props: {
             title={state.title}
             onTitleChange={(t) => dispatch({ type: "SET_TITLE", title: t })}
             status={status}
-            onExport={() => {
-              /* wired in Task 13 */
-            }}
+            onExport={handleExport}
           />
           <div className="flex flex-1 overflow-hidden">
             <BlockLibrary />
