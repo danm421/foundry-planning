@@ -44,11 +44,20 @@ export function Canvas({
       </div>
       <div className="px-8 py-6" onClick={() => onSelectWidget(null)}>
         <div className="max-w-[8.5in] mx-auto space-y-6">
+          {pages.length === 0 && (
+            <div className="border border-dashed border-hair rounded-sm p-12 text-center text-[13px] font-mono text-ink-3">
+              No pages yet. Add a page below to get started.
+            </div>
+          )}
           <PageDivider dispatch={dispatch} />
           {pages.map((p, i) => (
             <Fragment key={p.id}>
               <PageLabelStrip page={p} index={i} dispatch={dispatch} />
-              <div className="bg-card border border-hair rounded-sm p-12 space-y-2">
+              <div className={
+                p.rows.length === 0
+                  ? "bg-card/50 border border-dashed border-hair rounded-sm p-12 space-y-2"
+                  : "bg-card border border-hair rounded-sm p-12 space-y-2"
+              }>
                 {p.rows.length === 0 ? (
                   // Empty pages intentionally render no RowGap droppables — same-page-only
                   // row reorder (handleDragEnd in builder.tsx) means there is nothing

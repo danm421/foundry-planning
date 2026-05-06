@@ -31,10 +31,14 @@ export function useAutosave({
   async function save(payload: ReportState) {
     setStatus("saving");
     try {
+      const body = JSON.stringify({ title: payload.title, pages: payload.pages });
+      if (body.length > 200_000) {
+        console.warn(`[autosave] payload large: ${body.length}b`);
+      }
       const res = await fetch(`/api/clients/${clientId}/reports/${reportId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: payload.title, pages: payload.pages }),
+        body,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       lastSavedRef.current = JSON.stringify(payload);
