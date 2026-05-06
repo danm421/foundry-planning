@@ -16,7 +16,6 @@ import { Canvas } from "./canvas";
 import { Inspector } from "./inspector";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { useAutosave } from "./use-autosave";
-import { canvasToPng } from "@/components/reports-pdf/chart-to-image";
 import type { Page, Widget, WidgetKind } from "@/lib/reports/types";
 
 export function Builder(props: {
@@ -147,28 +146,9 @@ export function Builder(props: {
   }, [state.pages]);
 
   const handleExport = useCallback(async () => {
-    const chartImages: Record<string, string> = {};
-    // Chart widgets tag the wrapper div with `data-widget-canvas` +
-    // `data-widget-id` and render the actual <canvas> inside it. Walk the
-    // wrappers and snapshot the inner canvas so each chart's PNG lands under
-    // its widget id. Wrappers without a canvas (e.g. kpi tiles, if any ever
-    // adopt the marker) are silently skipped via the null guard in canvasToPng.
-    document
-      .querySelectorAll<HTMLElement>("[data-widget-canvas][data-widget-id]")
-      .forEach((wrap) => {
-        const id = wrap.dataset.widgetId;
-        if (!id) return;
-        const canvas = wrap.querySelector("canvas");
-        const png = canvasToPng(canvas);
-        if (png) chartImages[id] = png;
-      });
     const res = await fetch(
       `/api/clients/${clientId}/reports/${reportId}/export-pdf`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ chartImages }),
-      },
+      { method: "POST" },
     );
     if (!res.ok) {
       alert("Export failed");

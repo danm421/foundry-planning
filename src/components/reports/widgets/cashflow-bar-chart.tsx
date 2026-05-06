@@ -1,9 +1,9 @@
 // src/components/reports/widgets/cashflow-bar-chart.tsx
 //
 // Screen render for the cashflowBarChart widget. Stacked Chart.js bar of
-// annual income vs spending, scoped from `cashflow`. The wrapper div is
-// tagged with `data-widget-canvas` so the builder's export handler can
-// snapshot the inner canvas to a PNG for the PDF embed.
+// annual income vs spending, scoped from `cashflow`. The PDF render is a
+// native @react-pdf/renderer SVG chart that consumes the same scope data
+// — no canvas snapshot.
 //
 // PDF render lives at `components/reports-pdf/widgets/cashflow-bar-chart.tsx`
 // and is attached to the registry entry by
@@ -115,11 +115,7 @@ export function CashflowBarChartRender(p: WidgetRenderProps<"cashflowBarChart">)
       {p.props.subtitle && (
         <div className="text-[12px] text-ink-3 mb-2">{p.props.subtitle}</div>
       )}
-      <div
-        data-widget-canvas
-        data-widget-id={p.widgetId}
-        style={{ height: 280 }}
-      >
+      <div style={{ height: 280 }}>
         <Bar data={data} options={options} />
       </div>
     </div>

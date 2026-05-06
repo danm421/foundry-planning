@@ -2,9 +2,8 @@
 //
 // Screen render for the monteCarloFan widget. Chart.js Line with Filler
 // for stacked confidence bands (p5/p25/p50/p75/p95), scoped from
-// `monteCarlo`. The wrapper div is tagged with `data-widget-canvas` so
-// the builder's export handler can snapshot the inner canvas to a PNG
-// for the PDF embed.
+// `monteCarlo`. The PDF render is a native @react-pdf/renderer SVG fan
+// that consumes the same scope data — no canvas snapshot.
 //
 // v1 reality: the `monteCarlo` scope is a documented stub returning
 // `{ successProbability: null, bands: [] }` — the widget renders a "—"
@@ -152,11 +151,7 @@ export function MonteCarloFanRender(p: WidgetRenderProps<"monteCarloFan">) {
       {p.props.showHeadline && (
         <div className="text-[24px] font-serif text-ink mb-3">{headline}</div>
       )}
-      <div
-        data-widget-canvas
-        data-widget-id={p.widgetId}
-        style={{ height: 260 }}
-      >
+      <div style={{ height: 260 }}>
         {bands.length > 0 ? (
           <Line data={data} options={options} />
         ) : (

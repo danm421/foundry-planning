@@ -14,19 +14,9 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { renderToStream } from "@react-pdf/renderer";
 import { ReportPdfDocument } from "@/components/reports-pdf/document";
 import { loadReportWidgetData } from "@/lib/reports/load-widget-data";
-import { z } from "zod";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const Body = z.object({
-  chartImages: z.record(z.string(), z.string()).optional(),
-});
-
-const isSafePngDataUri = (v: unknown): v is string =>
-  typeof v === "string" &&
-  v.startsWith("data:image/png;base64,") &&
-  v.length < 2_000_000;
 
 export async function POST(
   request: NextRequest,
@@ -62,12 +52,6 @@ export async function POST(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const body = Body.parse(await request.json().catch(() => ({})));
-    const sanitized: Record<string, string> = {};
-    for (const [k, v] of Object.entries(body.chartImages ?? {})) {
-      if (isSafePngDataUri(v)) sanitized[k] = v;
-    }
-
     const pages = report.pages as Parameters<
       typeof ReportPdfDocument
     >[0]["pages"];
@@ -91,7 +75,6 @@ export async function POST(
         reportYear={new Date().getFullYear()}
         firmName={firmName}
         widgetData={widgetData}
-        chartImages={sanitized}
       />
     );
 
@@ -118,19 +101,6 @@ export async function POST(
       },
     });
   } catch (err) {
-    // Zod errors get 400; everything else gets 500
-    if (err instanceof z.ZodError) {
-      console.warn("POST export-pdf: invalid body", {
-        firmId,
-        clientId,
-        reportId: reportIdLocal,
-        issues: err.issues,
-      });
-      return NextResponse.json(
-        { error: "Invalid request body", issues: err.issues },
-        { status: 400 },
-      );
-    }
     console.error("POST export-pdf failed", {
       firmId,
       clientId,

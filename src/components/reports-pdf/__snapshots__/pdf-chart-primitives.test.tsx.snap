@@ -1,0 +1,511 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`primitives — element snapshots > AreaSeries with explicit lower band 1`] = `
+<G>
+  <POLYGON
+    fill="#b87f1f"
+    fillOpacity={0.25}
+    points="44,49.19999999999999 128.8,30.599999999999994 128.8,123.6 44,142.2"
+    stroke="none"
+    strokeWidth={0}
+  />
+</G>
+`;
+
+exports[`primitives — element snapshots > AxisX 1`] = `
+<G>
+  <LINE
+    stroke="#d8d2c4"
+    strokeWidth={0.5}
+    x1={44}
+    x2={468}
+    y1={198}
+    y2={198}
+  />
+  <TEXT
+    fill="#8a8a90"
+    style={
+      {
+        "fontSize": 7,
+      }
+    }
+    textAnchor="middle"
+    x={44}
+    y={209}
+  >
+    2025
+  </TEXT>
+  <TEXT
+    fill="#8a8a90"
+    style={
+      {
+        "fontSize": 7,
+      }
+    }
+    textAnchor="middle"
+    x={128.8}
+    y={209}
+  >
+    2026
+  </TEXT>
+  <TEXT
+    fill="#8a8a90"
+    style={
+      {
+        "fontSize": 7,
+      }
+    }
+    textAnchor="middle"
+    x={213.60000000000002}
+    y={209}
+  >
+    2027
+  </TEXT>
+  <TEXT
+    fill="#8a8a90"
+    style={
+      {
+        "fontSize": 7,
+      }
+    }
+    textAnchor="middle"
+    x={298.4}
+    y={209}
+  >
+    2028
+  </TEXT>
+  <TEXT
+    fill="#8a8a90"
+    style={
+      {
+        "fontSize": 7,
+      }
+    }
+    textAnchor="middle"
+    x={383.20000000000005}
+    y={209}
+  >
+    2029
+  </TEXT>
+  <TEXT
+    fill="#8a8a90"
+    style={
+      {
+        "fontSize": 7,
+      }
+    }
+    textAnchor="middle"
+    x={468}
+    y={209}
+  >
+    2030
+  </TEXT>
+</G>
+`;
+
+exports[`primitives — element snapshots > AxisY 1`] = `
+<G>
+  <TEXT
+    fill="#8a8a90"
+    style={
+      {
+        "fontSize": 7,
+      }
+    }
+    textAnchor="end"
+    x={40}
+    y={200.5}
+  >
+    $0
+  </TEXT>
+  <TEXT
+    fill="#8a8a90"
+    style={
+      {
+        "fontSize": 7,
+      }
+    }
+    textAnchor="end"
+    x={40}
+    y={154}
+  >
+    $25K
+  </TEXT>
+  <TEXT
+    fill="#8a8a90"
+    style={
+      {
+        "fontSize": 7,
+      }
+    }
+    textAnchor="end"
+    x={40}
+    y={107.5}
+  >
+    $50K
+  </TEXT>
+  <TEXT
+    fill="#8a8a90"
+    style={
+      {
+        "fontSize": 7,
+      }
+    }
+    textAnchor="end"
+    x={40}
+    y={61}
+  >
+    $75K
+  </TEXT>
+  <TEXT
+    fill="#8a8a90"
+    style={
+      {
+        "fontSize": 7,
+      }
+    }
+    textAnchor="end"
+    x={40}
+    y={14.5}
+  >
+    $100K
+  </TEXT>
+</G>
+`;
+
+exports[`primitives — element snapshots > BarSeries 1`] = `
+<G>
+  <G>
+    <RECT
+      fill="#b87f1f"
+      height={93}
+      width={98.93333333333334}
+      x={-5.466666666666669}
+      y={105}
+    />
+    <TEXT
+      fill="#1a1a1d"
+      style={
+        {
+          "fontSize": 7,
+        }
+      }
+      textAnchor="middle"
+      x={44}
+      y={103}
+    >
+      $50K
+    </TEXT>
+  </G>
+  <G>
+    <RECT
+      fill="#b87f1f"
+      height={130.2}
+      width={98.93333333333334}
+      x={79.33333333333334}
+      y={67.80000000000001}
+    />
+    <TEXT
+      fill="#1a1a1d"
+      style={
+        {
+          "fontSize": 7,
+        }
+      }
+      textAnchor="middle"
+      x={128.8}
+      y={65.80000000000001}
+    >
+      $70K
+    </TEXT>
+  </G>
+  <G>
+    <RECT
+      fill="#b87f1f"
+      height={55.80000000000001}
+      width={98.93333333333334}
+      x={164.13333333333335}
+      y={142.2}
+    />
+    <TEXT
+      fill="#1a1a1d"
+      style={
+        {
+          "fontSize": 7,
+        }
+      }
+      textAnchor="middle"
+      x={213.60000000000002}
+      y={140.2}
+    >
+      $30K
+    </TEXT>
+  </G>
+</G>
+`;
+
+exports[`primitives — element snapshots > DonutSeries with center label 1`] = `
+<G>
+  <PATH
+    d="M 100 40 A 60 60 0 0 1 151.96152422706632 130 L 131.1769145362398 118 A 36 36 0 0 0 100 64 Z"
+    fill="#b87f1f"
+  />
+  <PATH
+    d="M 151.96152422706632 130 A 60 60 0 1 1 99.99999999999999 40 L 100 64 A 36 36 0 1 0 131.1769145362398 118 Z"
+    fill="#2f6b4a"
+  />
+  <TEXT
+    fill="#1a1a1d"
+    style={
+      {
+        "fontSize": 12,
+      }
+    }
+    textAnchor="middle"
+    x={100}
+    y={101}
+  >
+    $300
+  </TEXT>
+  <TEXT
+    fill="#5a5a60"
+    style={
+      {
+        "fontSize": 7,
+      }
+    }
+    textAnchor="middle"
+    x={100}
+    y={113}
+  >
+    Total
+  </TEXT>
+</G>
+`;
+
+exports[`primitives — element snapshots > DonutSeries with empty slices renders a hairline ring 1`] = `
+<G>
+  <PATH
+    d="M 160,100 A 60 60 0 1 1 40,100.00000000000001 A 60 60 0 1 1 160,100 M 136,100 A 36 36 0 1 0 64,100 A 36 36 0 1 0 136,100 Z"
+    fill="#d8d2c4"
+  />
+</G>
+`;
+
+exports[`primitives — element snapshots > GridLines 1`] = `
+<G>
+  <LINE
+    stroke="#d8d2c4"
+    strokeWidth={0.5}
+    x1={44}
+    x2={468}
+    y1={198}
+    y2={198}
+  />
+  <LINE
+    stroke="#d8d2c4"
+    strokeWidth={0.5}
+    x1={44}
+    x2={468}
+    y1={151.5}
+    y2={151.5}
+  />
+  <LINE
+    stroke="#d8d2c4"
+    strokeWidth={0.5}
+    x1={44}
+    x2={468}
+    y1={105}
+    y2={105}
+  />
+  <LINE
+    stroke="#d8d2c4"
+    strokeWidth={0.5}
+    x1={44}
+    x2={468}
+    y1={58.5}
+    y2={58.5}
+  />
+  <LINE
+    stroke="#d8d2c4"
+    strokeWidth={0.5}
+    x1={44}
+    x2={468}
+    y1={12}
+    y2={12}
+  />
+</G>
+`;
+
+exports[`primitives — element snapshots > Legend (horizontal) 1`] = `
+<G>
+  <G>
+    <RECT
+      fill="#b87f1f"
+      height={7}
+      width={7}
+      x={0}
+      y={196.5}
+    />
+    <TEXT
+      fill="#5a5a60"
+      style={
+        {
+          "fontSize": 8,
+        }
+      }
+      x={13}
+      y={203}
+    >
+      Wages
+    </TEXT>
+  </G>
+  <G>
+    <RECT
+      fill="#2f6b4a"
+      height={7}
+      width={7}
+      x={47}
+      y={196.5}
+    />
+    <TEXT
+      fill="#5a5a60"
+      style={
+        {
+          "fontSize": 8,
+        }
+      }
+      x={60}
+      y={203}
+    >
+      Social Security
+    </TEXT>
+  </G>
+</G>
+`;
+
+exports[`primitives — element snapshots > Legend (vertical) 1`] = `
+<G>
+  <G>
+    <RECT
+      fill="#b87f1f"
+      height={7}
+      width={7}
+      x={0}
+      y={0.5}
+    />
+    <TEXT
+      fill="#5a5a60"
+      style={
+        {
+          "fontSize": 8,
+        }
+      }
+      x={13}
+      y={6}
+    >
+      Cash
+    </TEXT>
+  </G>
+  <G>
+    <RECT
+      fill="#2f6b4a"
+      height={7}
+      width={7}
+      x={0}
+      y={14.5}
+    />
+    <TEXT
+      fill="#5a5a60"
+      style={
+        {
+          "fontSize": 8,
+        }
+      }
+      x={13}
+      y={20}
+    >
+      Taxable
+    </TEXT>
+  </G>
+</G>
+`;
+
+exports[`primitives — element snapshots > LineSeries with dasharray 1`] = `
+<POLYLINE
+  fill="none"
+  points="44,198 128.8,151.5 213.60000000000002,86.4"
+  stroke="#b87f1f"
+  strokeDasharray="3 2"
+  strokeWidth={1.5}
+/>
+`;
+
+exports[`primitives — element snapshots > StackedBarSeries with positive + negative directions 1`] = `
+<G>
+  <G>
+    <RECT
+      fill="#b87f1f"
+      height={93}
+      width={148.39999999999998}
+      x={-30.19999999999999}
+      y={105}
+    />
+    <RECT
+      fill="#b87f1f"
+      height={111.6}
+      width={148.39999999999998}
+      x={54.60000000000002}
+      y={86.4}
+    />
+  </G>
+  <G>
+    <RECT
+      fill="#2f6b4a"
+      height={18.599999999999994}
+      width={148.39999999999998}
+      x={-30.19999999999999}
+      y={86.4}
+    />
+    <RECT
+      fill="#2f6b4a"
+      height={22.319999999999993}
+      width={148.39999999999998}
+      x={54.60000000000002}
+      y={64.08000000000001}
+    />
+  </G>
+  <G>
+    <RECT
+      fill="#a13a3a"
+      height={74.39999999999998}
+      width={148.39999999999998}
+      x={-30.19999999999999}
+      y={198}
+    />
+    <RECT
+      fill="#a13a3a"
+      height={83.69999999999999}
+      width={148.39999999999998}
+      x={54.60000000000002}
+      y={198}
+    />
+  </G>
+</G>
+`;
+
+exports[`primitives — element snapshots > ValueLabel 1`] = `
+<TEXT
+  fill="#1a1a1d"
+  style={
+    {
+      "fontSize": 8,
+    }
+  }
+  textAnchor="middle"
+  x={100}
+  y={50}
+>
+  $1.2M
+</TEXT>
+`;

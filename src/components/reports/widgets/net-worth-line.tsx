@@ -1,9 +1,8 @@
 // src/components/reports/widgets/net-worth-line.tsx
 //
 // Screen render for the netWorthLine widget. Chart.js Line of net worth over
-// time, scoped from `balance` (Task 24). The wrapper div is tagged with
-// `data-widget-canvas` so the builder's export handler can snapshot the
-// inner canvas to a PNG for the PDF embed.
+// time, scoped from `balance`. The PDF render is a native @react-pdf/renderer
+// SVG chart that consumes the same scope data — no canvas snapshot.
 //
 // `compareScenarioId` is wired into the inspector but resolves to `null` in
 // v1 — the secondary trajectory will land with the scenario-comparison
@@ -89,11 +88,7 @@ export function NetWorthLineRender(p: WidgetRenderProps<"netWorthLine">) {
       {p.props.subtitle && (
         <div className="text-[12px] text-ink-3 mb-2">{p.props.subtitle}</div>
       )}
-      <div
-        data-widget-canvas
-        data-widget-id={p.widgetId}
-        style={{ height: 280 }}
-      >
+      <div style={{ height: 280 }}>
         <Line data={data} options={options} />
       </div>
     </div>

@@ -1,9 +1,9 @@
 // src/components/reports/widgets/allocation-donut.tsx
 //
 // Screen render for the allocationDonut widget. Chart.js Doughnut of the
-// current-year asset-class breakdown, scoped from `allocation` (Task 27).
-// The wrapper div is tagged with `data-widget-canvas` so the builder's
-// export handler can snapshot the inner canvas to a PNG for the PDF embed.
+// current-year asset-class breakdown, scoped from `allocation`. The PDF
+// render is a native @react-pdf/renderer SVG donut that consumes the same
+// scope data — no canvas snapshot.
 //
 // `props.innerRingAssetType` is wired into the inspector but is a no-op in
 // v1 — the engine doesn't expose asset-type allocation (stocks vs bonds vs
@@ -87,11 +87,7 @@ export function AllocationDonutRender(p: WidgetRenderProps<"allocationDonut">) {
       {p.props.subtitle && (
         <div className="text-[12px] text-ink-3 mb-2">{p.props.subtitle}</div>
       )}
-      <div
-        data-widget-canvas
-        data-widget-id={p.widgetId}
-        style={{ height: 280 }}
-      >
+      <div style={{ height: 280 }}>
         <Doughnut data={data} options={options} />
       </div>
     </div>

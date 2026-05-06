@@ -17,7 +17,6 @@ export type WidgetRenderProps<K extends WidgetKind> = {
   props: WidgetPropsByKind[K];
   data: WidgetData;
   mode: "screen" | "pdf";
-  chartImage?: string;     // data-uri PNG, only present on pdf mode for chart kinds
   widgetId: string;
 };
 

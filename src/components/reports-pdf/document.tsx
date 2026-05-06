@@ -26,7 +26,6 @@ export function ReportPdfDocument({
   reportYear,
   firmName,
   widgetData,
-  chartImages,
 }: {
   pages: ReportPageT[];
   householdName: string;
@@ -34,7 +33,6 @@ export function ReportPdfDocument({
   reportYear: number;
   firmName: string;
   widgetData: Record<string, unknown>;
-  chartImages: Record<string, string>;
 }) {
   const isCover = (p: ReportPageT) =>
     p.rows.length === 1 &&
@@ -59,7 +57,6 @@ export function ReportPdfDocument({
               key={row.id}
               row={row}
               widgetData={widgetData}
-              chartImages={chartImages}
             />
           ))}
         </ReportPage>

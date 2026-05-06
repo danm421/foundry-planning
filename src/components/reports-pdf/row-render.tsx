@@ -11,11 +11,9 @@ import type { Row } from "@/lib/reports/types";
 export function RowRender({
   row,
   widgetData,
-  chartImages,
 }: {
   row: Row;
   widgetData: Record<string, unknown>;
-  chartImages: Record<string, string>;
 }) {
   return (
     <View style={{ flexDirection: "row", gap: 12, marginBottom: 12 }}>
@@ -30,7 +28,6 @@ export function RowRender({
               props={w.props as never}
               data={widgetData[w.id]}
               mode="pdf"
-              chartImage={chartImages[w.id]}
               widgetId={w.id}
             />
           </View>

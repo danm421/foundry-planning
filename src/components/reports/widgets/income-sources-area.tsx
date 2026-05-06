@@ -2,9 +2,9 @@
 //
 // Screen render for the incomeSourcesArea widget. Stacked Chart.js Line
 // (with Filler) of annual income mix, scoped from `cashflow`. Datasets
-// are filtered in/out by `props.series`. The wrapper div is tagged with
-// `data-widget-canvas` so the builder's export handler can snapshot the
-// inner canvas to a PNG for the PDF embed.
+// are filtered in/out by `props.series`. The PDF render is a native
+// @react-pdf/renderer SVG stacked-area chart that consumes the same
+// scope data — no canvas snapshot.
 //
 // PDF render lives at `components/reports-pdf/widgets/income-sources-area.tsx`
 // and is attached to the registry entry by
@@ -111,11 +111,7 @@ export function IncomeSourcesAreaRender(
       {p.props.subtitle && (
         <div className="text-[12px] text-ink-3 mb-2">{p.props.subtitle}</div>
       )}
-      <div
-        data-widget-canvas
-        data-widget-id={p.widgetId}
-        style={{ height: 280 }}
-      >
+      <div style={{ height: 280 }}>
         <Line data={data} options={options} />
       </div>
     </div>
