@@ -303,6 +303,163 @@ describe("applyScenarioChanges — remove", () => {
   });
 });
 
+describe("applyScenarioChanges — wills", () => {
+  // Regression coverage for the wills scenario-aware path. Wills sit in
+  // ClientData.wills; bequests are a nested array on each will, which the
+  // WillsPanel ships as a fat-field overwrite via `op: "edit"`.
+  const grantorWill = (bequests: unknown[] = []) => ({
+    id: "w-client",
+    grantor: "client" as const,
+    bequests,
+  });
+
+  it("adds a brand-new will (with nested bequests) to the effective tree", () => {
+    const base = minimalClientData();
+    base.wills = [];
+
+    const newWill = {
+      id: "w-client",
+      grantor: "client",
+      bequests: [
+        {
+          id: "b1",
+          name: "Brokerage to spouse",
+          kind: "asset",
+          assetMode: "specific",
+          accountId: "a-broker",
+          liabilityId: null,
+          percentage: 100,
+          condition: "always",
+          sortOrder: 0,
+          recipients: [
+            {
+              recipientKind: "spouse",
+              recipientId: null,
+              percentage: 100,
+              sortOrder: 0,
+            },
+          ],
+        },
+      ],
+      residuaryRecipients: [],
+    };
+
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "add",
+      targetKind: "will",
+      targetId: "w-client",
+      payload: newWill,
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    expect(result.effectiveTree.wills).toHaveLength(1);
+    expect(result.effectiveTree.wills?.[0].bequests).toHaveLength(1);
+    expect(result.effectiveTree.wills?.[0].bequests[0].name).toBe(
+      "Brokerage to spouse",
+    );
+  });
+
+  it("edits an existing will's bequests array as a fat-field overwrite", () => {
+    const base = minimalClientData();
+    base.wills = [
+      grantorWill([
+        {
+          id: "b-old",
+          name: "Old bequest",
+          kind: "asset",
+          assetMode: "all_assets",
+          accountId: null,
+          liabilityId: null,
+          percentage: 100,
+          condition: "always",
+          sortOrder: 0,
+          recipients: [],
+        },
+      ]),
+    ] as ClientData["wills"];
+
+    const newBequests = [
+      {
+        id: "b-old",
+        name: "Old bequest",
+        kind: "asset",
+        assetMode: "all_assets",
+        accountId: null,
+        liabilityId: null,
+        percentage: 100,
+        condition: "always",
+        sortOrder: 0,
+        recipients: [],
+      },
+      {
+        id: "b-new",
+        name: "Vacation home to child",
+        kind: "asset",
+        assetMode: "specific",
+        accountId: "a-vacation",
+        liabilityId: null,
+        percentage: 100,
+        condition: "always",
+        sortOrder: 1,
+        recipients: [
+          {
+            recipientKind: "family_member",
+            recipientId: "fm-child",
+            percentage: 100,
+            sortOrder: 0,
+          },
+        ],
+      },
+    ];
+
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "edit",
+      targetKind: "will",
+      targetId: "w-client",
+      payload: {
+        bequests: { from: base.wills?.[0].bequests, to: newBequests },
+      },
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    expect(result.effectiveTree.wills?.[0].bequests).toHaveLength(2);
+    expect(result.effectiveTree.wills?.[0].bequests[1].name).toBe(
+      "Vacation home to child",
+    );
+  });
+
+  it("removes a will from the effective tree", () => {
+    const base = minimalClientData();
+    base.wills = [
+      grantorWill(),
+      { id: "w-spouse", grantor: "spouse", bequests: [] },
+    ] as ClientData["wills"];
+
+    const change: ScenarioChange = {
+      id: "ch1",
+      scenarioId: "s1",
+      opType: "remove",
+      targetKind: "will",
+      targetId: "w-client",
+      payload: null,
+      toggleGroupId: null,
+      orderIndex: 0,
+    };
+
+    const result = applyScenarioChanges(base, [change], {}, []);
+    expect(result.effectiveTree.wills).toHaveLength(1);
+    expect(result.effectiveTree.wills?.[0].id).toBe("w-spouse");
+  });
+});
+
 describe("applyScenarioChanges — toggle filtering", () => {
   const groupParent: ToggleGroup = {
     id: "g-parent", scenarioId: "s1", name: "parent",

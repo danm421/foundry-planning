@@ -1,6 +1,16 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
+
+// WillsPanel calls useScenarioWriter → useScenarioState → useRouter, all of
+// which require an app-router context. Stub the whole module so the panel can
+// mount in jsdom.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => "/clients/c1/client-data/wills",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 import WillsPanel, { type WillsPanelLiabilityBequest } from "../wills-panel";
 
 const u = (s: string) => `00000000-0000-0000-0000-${s.padStart(12, "0")}`;

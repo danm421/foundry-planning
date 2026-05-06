@@ -280,6 +280,66 @@ describe.skipIf(!HAS_DB)("changes-writer", () => {
         value: 50000,
       });
     });
+
+    it("inserts a will add row carrying the full nested bequest tree", async () => {
+      // Wills are unusual: bequests + recipients are nested arrays on the
+      // entity, so the add payload must round-trip the whole tree. Without
+      // this path, scenario-mode WillsPanel saves silently lose new bequests
+      // (the original report bug).
+      const newWillId = randomUUID();
+      const newBequestId = randomUUID();
+      await applyEntityAdd({
+        scenarioId,
+        firmId: COOPER_FIRM_ID,
+        targetKind: "will",
+        entity: {
+          id: newWillId,
+          grantor: "client",
+          bequests: [
+            {
+              id: newBequestId,
+              kind: "asset",
+              name: "Vacation home to spouse",
+              assetMode: "specific",
+              accountId: null,
+              liabilityId: null,
+              percentage: 100,
+              condition: "always",
+              sortOrder: 0,
+              recipients: [
+                {
+                  recipientKind: "spouse",
+                  recipientId: null,
+                  percentage: 100,
+                  sortOrder: 0,
+                },
+              ],
+            },
+          ],
+          residuaryRecipients: [],
+        },
+      });
+
+      const [row] = await db
+        .select()
+        .from(scenarioChanges)
+        .where(
+          and(
+            eq(scenarioChanges.scenarioId, scenarioId),
+            eq(scenarioChanges.targetId, newWillId),
+          ),
+        );
+
+      expect(row).toBeDefined();
+      expect(row.opType).toBe("add");
+      expect(row.targetKind).toBe("will");
+      const payload = row.payload as {
+        bequests: Array<{ id: string; recipients: unknown[] }>;
+      };
+      expect(payload.bequests).toHaveLength(1);
+      expect(payload.bequests[0].id).toBe(newBequestId);
+      expect(payload.bequests[0].recipients).toHaveLength(1);
+    });
   });
 
   describe("applyEntityRemove", () => {

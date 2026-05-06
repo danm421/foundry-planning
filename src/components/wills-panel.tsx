@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
 import DialogShell from "@/components/dialog-shell";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@/components/forms/input-styles";
 import BequestRecipientList from "@/components/forms/bequest-recipient-list";
 import WillResiduarySection from "@/components/forms/will-residuary-section";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 
 export type WillGrantor = "client" | "spouse";
 export type WillAssetMode = "specific" | "all_assets";
@@ -285,7 +286,14 @@ export default function WillsPanel(props: WillsPanelProps) {
     externalBeneficiaries,
     entities,
   } = props;
+  const writer = useScenarioWriter(props.clientId);
   const [wills, setWills] = useState<WillsPanelWill[]>(initialWills);
+  // When the page re-renders after `router.refresh()` (scenario writes do
+  // this), `initialWills` reflects the new effective tree. Sync local state so
+  // the UI doesn't show stale data from before the refresh.
+  useEffect(() => {
+    setWills(initialWills);
+  }, [initialWills]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -324,6 +332,18 @@ export default function WillsPanel(props: WillsPanelProps) {
     return (await res.json()) as WillsPanelWill;
   }
 
+  // Stamp UUIDs onto any new bequests so each scenario edit produces a stable
+  // identity for downstream tooling (changes panel, toggle groups, audit). The
+  // engine doesn't strictly require bequest ids, but the WillsPanel UI keys on
+  // them when re-rendering after a save.
+  function withStableIds(items: WillsPanelBequest[]): WillsPanelBequest[] {
+    return items.map((b, i) => ({
+      ...b,
+      id: b.id ?? crypto.randomUUID(),
+      sortOrder: i,
+    }));
+  }
+
   async function saveWillFull(
     g: WillGrantor,
     nextBequests: WillsPanelBequest[],
@@ -333,6 +353,67 @@ export default function WillsPanel(props: WillsPanelProps) {
     setError(null);
     try {
       const existing = wills.find((w) => w.grantor === g);
+
+      if (writer.scenarioActive) {
+        const stableBequests = withStableIds(nextBequests);
+        if (!existing) {
+          // Brand-new will: route through the scenario writer as an `add` op
+          // carrying the full Will entity (including nested bequests). Base
+          // tables stay untouched — the change lives in scenario_changes.
+          const newWillId = crypto.randomUUID();
+          const res = await writer.submit(
+            {
+              op: "add",
+              targetKind: "will",
+              entity: {
+                id: newWillId,
+                grantor: g,
+                bequests: stableBequests,
+                residuaryRecipients: nextResiduary,
+              },
+            },
+            // Unused in scenario mode — kept satisfied for the writer's API.
+            { url: "", method: "POST" },
+          );
+          if (!res.ok) throw new Error(`scenario add failed: HTTP ${res.status}`);
+          setWills((prev) => [
+            ...prev.filter((w) => w.grantor !== g),
+            {
+              id: newWillId,
+              grantor: g,
+              bequests: stableBequests,
+              residuaryRecipients: nextResiduary,
+            },
+          ]);
+        } else {
+          // Existing will: edit the `bequests`/`residuaryRecipients` fields as
+          // a fat-field overwrite. The engine's diff writer JSON-compares the
+          // arrays against base; identical state collapses to a no-op revert.
+          const res = await writer.submit(
+            {
+              op: "edit",
+              targetKind: "will",
+              targetId: existing.id,
+              desiredFields: {
+                bequests: stableBequests,
+                residuaryRecipients: nextResiduary,
+              },
+            },
+            { url: "", method: "PATCH" },
+          );
+          if (!res.ok) throw new Error(`scenario edit failed: HTTP ${res.status}`);
+          setWills((prev) =>
+            prev.map((w) =>
+              w.grantor === g
+                ? { ...w, bequests: stableBequests, residuaryRecipients: nextResiduary }
+                : w,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Base mode: legacy per-entity routes (unchanged).
       let willId: string;
       if (!existing) {
         const res = await fetch(`/api/clients/${props.clientId}/wills`, {
@@ -401,13 +482,21 @@ export default function WillsPanel(props: WillsPanelProps) {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/clients/${props.clientId}/wills/${willId}`,
-        { method: "DELETE" },
-      );
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `HTTP ${res.status}`);
+      if (writer.scenarioActive) {
+        const res = await writer.submit(
+          { op: "remove", targetKind: "will", targetId: willId },
+          { url: "", method: "DELETE" },
+        );
+        if (!res.ok) throw new Error(`scenario remove failed: HTTP ${res.status}`);
+      } else {
+        const res = await fetch(
+          `/api/clients/${props.clientId}/wills/${willId}`,
+          { method: "DELETE" },
+        );
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? `HTTP ${res.status}`);
+        }
       }
       setWills((prev) => prev.filter((w) => w.grantor !== g));
     } catch (err) {
