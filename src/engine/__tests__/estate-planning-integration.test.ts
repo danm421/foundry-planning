@@ -22,7 +22,7 @@ import {
   rankTrustsByContribution,
   computeTrustCardData,
 } from "@/lib/estate/strategy-attribution";
-import { deriveScrubberData } from "@/app/(app)/clients/[id]/estate-planning/projection/lib/derive-scrubber-data";
+import { deriveComparisonData } from "@/app/(app)/clients/[id]/estate-planning/projection/lib/derive-scrubber-data";
 import { deriveSpineData } from "@/app/(app)/clients/[id]/estate-planning/spine/lib/derive-spine-data";
 import type { ClientData } from "@/engine/types";
 
@@ -190,14 +190,22 @@ describe("estate-planning page integration (Cooper Sample)", () => {
     withResult.firstDeathEvent?.year ??
     2058;
 
-  it("with-plan net to heirs ≥ without-plan net to heirs at final death", () => {
-    const data = deriveScrubberData({
+  function buildComparison(scrubberYear: number) {
+    return deriveComparisonData({
       tree,
-      withResult,
-      withoutResult,
-      scrubberYear: finalDeathYear,
+      leftResult: withoutResult,
+      leftScenarioName: "Do nothing (no plan)",
+      leftIsDoNothing: true,
+      rightResult: withResult,
+      rightScenarioName: "Base case",
+      rightIsDoNothing: false,
+      scrubberYear,
     });
-    expect(data.with.bigNumber).toBeGreaterThanOrEqual(data.without.bigNumber);
+  }
+
+  it("with-plan net to heirs ≥ without-plan net to heirs at final death", () => {
+    const data = buildComparison(finalDeathYear);
+    expect(data.right.bigNumber).toBeGreaterThanOrEqual(data.left.bigNumber);
   });
 
   it("spine-data is 'two-grantor' for Cooper Sample", () => {
@@ -205,30 +213,20 @@ describe("estate-planning page integration (Cooper Sample)", () => {
     expect(spine.kind).toBe("two-grantor");
   });
 
-  it("scrubber data at planStartYear shows pre-death tax sentinels", () => {
-    const data = deriveScrubberData({
-      tree,
-      withResult,
-      withoutResult,
-      scrubberYear: tree.planSettings.planStartYear,
-    });
-    const taxRow = data.without.rows.find(
-      (r) => r.label === "Federal + state tax",
-    );
+  it("comparison data at planStartYear shows pre-death tax sentinels", () => {
+    const data = buildComparison(tree.planSettings.planStartYear);
+    const taxRow = data.left.rows.find((r) => r.label === "Estate tax + admin");
     expect(taxRow?.valueText).toContain("pre-death");
-    const taxSavedRow = data.impact.rows.find((r) => r.label === "Tax saved");
-    expect(taxSavedRow?.valueText).toBe("—");
+    const deltaTaxRow = data.delta.rows.find(
+      (r) => r.label === "Estate tax + admin",
+    );
+    expect(deltaTaxRow?.valueText).toBe("—");
   });
 
-  it("scrubber data at +10y shows a non-zero out-of-estate value", () => {
+  it("comparison data at +10y shows a non-zero out-of-estate value", () => {
     const tenYears = tree.planSettings.planStartYear + 10;
-    const data = deriveScrubberData({
-      tree,
-      withResult,
-      withoutResult,
-      scrubberYear: tenYears,
-    });
-    const outRow = data.with.rows.find((r) => r.label === "Out-of-estate");
+    const data = buildComparison(tenYears);
+    const outRow = data.right.rows.find((r) => r.label === "Out-of-estate");
     expect(outRow?.valueText).toMatch(/\$\d/);
   });
 

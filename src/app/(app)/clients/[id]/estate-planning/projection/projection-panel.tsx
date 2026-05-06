@@ -3,6 +3,10 @@
 import { useState } from "react";
 import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
+import type {
+  ScenarioOption,
+  SnapshotOption,
+} from "@/components/scenario/scenario-picker-dropdown";
 import { ChipBar } from "./chip-bar";
 import { AssumptionsModal } from "./assumptions-modal";
 import { YearScrubber } from "./year-scrubber";
@@ -12,35 +16,24 @@ import { StrategyCards } from "./strategy-cards";
 
 interface Props {
   tree: ClientData;
-  withResult: ProjectionResult;
-  withoutResult: ProjectionResult;
-  procrastinatedResult: ProjectionResult | null;
   clientId: string;
+  leftResult: ProjectionResult;
+  leftScenarioId: string;
+  leftScenarioName: string;
+  leftIsDoNothing: boolean;
+  rightResult: ProjectionResult;
+  rightScenarioId: string;
+  rightScenarioName: string;
+  rightIsDoNothing: boolean;
+  procrastinatedResult: ProjectionResult | null;
+  scenarios: ScenarioOption[];
+  snapshots: SnapshotOption[];
 }
 
-/**
- * Client wrapper composing the projection chip bar, year scrubber, and
- * assumptions modal. Comparison grid / trajectory chart / strategy cards
- * land in Phases 6-8 (Tasks 26 / 28 / 29) — placeholder lines above mark
- * the drop-in spots.
- *
- * Token translations from the plan pseudocode:
- *   rounded-card → rounded
- *   bg-bg-0      → bg-card
- *
- * AssumptionsModal here uses the always-mounted `open: boolean` shape
- * (verified against assumptions-modal.tsx Task 22 implementation).
- */
-export function ProjectionPanel({
-  tree,
-  withResult,
-  withoutResult,
-  procrastinatedResult,
-  clientId,
-}: Props) {
-  const startYear = tree.planSettings.planStartYear;
-  const firstDeathYear = withResult.firstDeathEvent?.year;
-  const secondDeathYear = withResult.secondDeathEvent?.year;
+export function ProjectionPanel(props: Props) {
+  const startYear = props.tree.planSettings.planStartYear;
+  const firstDeathYear = props.rightResult.firstDeathEvent?.year;
+  const secondDeathYear = props.rightResult.secondDeathEvent?.year;
   const finalDeathYear = secondDeathYear ?? firstDeathYear ?? startYear + 30;
 
   const [scrubberYear, setScrubberYear] = useState<number>(finalDeathYear);
@@ -49,8 +42,8 @@ export function ProjectionPanel({
   return (
     <section className="space-y-6 rounded border border-hair bg-card p-6">
       <ChipBar
-        clientId={clientId}
-        planSettings={tree.planSettings}
+        clientId={props.clientId}
+        planSettings={props.tree.planSettings}
         onOpenAssumptions={() => setAssumptionsOpen(true)}
       />
       <YearScrubber
@@ -61,27 +54,37 @@ export function ProjectionPanel({
         onChange={setScrubberYear}
       />
       <ComparisonGrid
-        tree={tree}
-        withResult={withResult}
-        withoutResult={withoutResult}
+        clientId={props.clientId}
+        tree={props.tree}
+        leftResult={props.leftResult}
+        leftScenarioId={props.leftScenarioId}
+        leftScenarioName={props.leftScenarioName}
+        leftIsDoNothing={props.leftIsDoNothing}
+        rightResult={props.rightResult}
+        rightScenarioId={props.rightScenarioId}
+        rightScenarioName={props.rightScenarioName}
+        rightIsDoNothing={props.rightIsDoNothing}
         scrubberYear={scrubberYear}
+        scenarios={props.scenarios}
+        snapshots={props.snapshots}
       />
       <TrajectoryChart
-        tree={tree}
-        withResult={withResult}
-        withoutResult={withoutResult}
+        tree={props.tree}
+        leftResult={props.leftResult}
+        rightResult={props.rightResult}
         scrubberYear={scrubberYear}
       />
       <StrategyCards
-        tree={tree}
-        withResult={withResult}
-        procrastinatedResult={procrastinatedResult}
+        tree={props.tree}
+        rightResult={props.rightResult}
+        rightIsDoNothing={props.rightIsDoNothing}
+        procrastinatedResult={props.procrastinatedResult}
       />
 
       <AssumptionsModal
         open={assumptionsOpen}
-        clientId={clientId}
-        planSettings={tree.planSettings}
+        clientId={props.clientId}
+        planSettings={props.tree.planSettings}
         onClose={() => setAssumptionsOpen(false)}
       />
     </section>
