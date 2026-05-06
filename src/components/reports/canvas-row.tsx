@@ -20,7 +20,11 @@ import { getWidget } from "@/lib/reports/widget-registry";
 const LAYOUT_OPTIONS: RowSize[] = ["1-up", "2-up", "3-up", "4-up"];
 
 function CanvasSlot({ pageId, rowId, slotIndex, widget, selected, onSelect }: {
-  pageId: string; rowId: string; slotIndex: number; rowLayout: RowSize;
+  pageId: string; rowId: string; slotIndex: number;
+  // rowLayout is reserved for Task 17's legality dimming
+  // (`getWidget(draggingKind).allowedRowSizes.includes(rowLayout)`); kept on the
+  // prop type so callers and types stay stable when that work lands.
+  rowLayout: RowSize;
   widget: Widget | null; selected: boolean; onSelect: () => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({

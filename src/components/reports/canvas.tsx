@@ -27,6 +27,9 @@ export function Canvas({
         {pages.map((p) => (
           <div key={p.id} className="bg-card border border-hair rounded-sm p-12 space-y-2">
             {p.rows.length === 0 ? (
+              // Empty pages intentionally render no RowGap droppables — same-page-only
+              // row reorder (handleDragEnd in builder.tsx) means there is nothing
+              // useful to drop here. Add the first row via this button instead.
               <button
                 onClick={(e) => { e.stopPropagation(); dispatch({ type: "ADD_ROW", pageId: p.id, layout: "2-up" }); }}
                 className="text-[12px] font-mono text-ink-3 hover:text-ink"
