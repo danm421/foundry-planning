@@ -398,4 +398,44 @@ describe("projection: iterative gap-fill (audit F5)", () => {
     expect(cash.internalContributions).toBeCloseTo(supplementalTotal, 2);
     expect(cash.internalDistributions).toBeCloseTo(supplementalTotal, 2);
   });
+
+  it("cash drawdown reporting includes the tax portion of the year's drain", () => {
+    // Surplus pre-tax year that's pulled into a drawdown by the tax bill —
+    // mirrors the user-reported case where the Cash Assets withdrawal column
+    // under-reported the year's cash drain by exactly the federal+state tax.
+    //
+    // Setup: $100k checking, $100k salary, $80k expense, no other accounts.
+    // Pre-tax flow:  +100k income – 80k expense = +20k → checking 120k
+    // Tax (27% flat on 100k earned) = $27k → ending 93k
+    // True consumed of BoY 100k = 7k.
+    const data: ClientData = {
+      ...buildScenario({
+        birthYear: 1980,
+        accounts: [checking(100_000)],
+        strategyOrder: [],
+        expense: 80_000,
+      }),
+      incomes: [
+        {
+          id: "inc-salary",
+          type: "salary",
+          name: "Salary",
+          annualAmount: 100_000,
+          startYear: 2026,
+          endYear: 2026,
+          growthRate: 0,
+          owner: "client",
+        },
+      ],
+    };
+    const year = runProjection(data)[0];
+
+    const cashDrawdown = year.withdrawals.byAccount["acct-checking"] ?? 0;
+    // Drawdown must include the tax: 27% of $100k earned = $27k. Combined with
+    // the +$20k pre-tax surplus, the BoY checking lost $7k.
+    expect(year.expenses.taxes).toBeCloseTo(27_000, 0);
+    expect(cashDrawdown).toBeCloseTo(7_000, 0);
+    // Total withdrawals reported = same value (only cash was drawn).
+    expect(year.withdrawals.total).toBeCloseTo(7_000, 0);
+  });
 });

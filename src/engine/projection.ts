@@ -2002,23 +2002,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const entityWithdrawals = { byAccount: {} as Record<string, number>, total: 0 };
     let withdrawalTax = 0;
 
-    // 12a. Cash drawdown reporting — when this year's net flow ate into a
-    // prior-year surplus sitting in household checking, attribute the consumed
-    // portion as a withdrawal from cash. Reporting-only; balance movement was
-    // already captured by the individual entries.
-    if (hasChecking) {
-      const checkingId = defaultChecking!.id;
-      const endingAfterDeltas = accountBalances[checkingId] ?? 0;
-      const consumed = checkingBalanceBeforeDeltas - endingAfterDeltas;
-      const cashDrawdown = Math.max(
-        0,
-        Math.min(Math.max(0, checkingBalanceBeforeDeltas), consumed)
-      );
-      if (cashDrawdown > 0) {
-        withdrawals.byAccount[checkingId] = cashDrawdown;
-        withdrawals.total += cashDrawdown;
-      }
-    }
+    // Cash drawdown reporting is computed AFTER the convergence loop so it
+    // accounts for taxes (which are paid from checking later in this phase).
+    // See the post-convergence block below.
 
     // 12b. Build withdrawal source balances reflecting post-BoY-purchase state
     // so gap-fill doesn't pull from an account that was just drained to fund a
@@ -2226,6 +2212,27 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       const taxAndPenalty = finalTaxes + supplementalEarlyPenalty;
       withdrawalTax = supplementalEarlyPenalty;
+
+      // Cash drawdown reporting (was Phase 12a). When this year's net flow
+      // (income/expenses/savings/mortgage AND tax) consumed prior-year cash
+      // sitting in household checking, attribute the consumed portion as a
+      // withdrawal from cash. Computed here, post-convergence, so taxes are
+      // included in `consumed` — otherwise the Cash Assets withdrawal row
+      // under-reports the household cash drain by exactly the year's tax bill.
+      // Reporting-only; balance movement was already captured by individual
+      // entries above and by the tax debit below.
+      const endingBeforeSupplemental = preSupplementalChecking - taxAndPenalty;
+      const consumedCash = checkingBalanceBeforeDeltas - endingBeforeSupplemental;
+      const cashDrawdown = Math.max(
+        0,
+        Math.min(Math.max(0, checkingBalanceBeforeDeltas), consumedCash),
+      );
+      if (cashDrawdown > 0) {
+        withdrawals.byAccount[checkingId] =
+          (withdrawals.byAccount[checkingId] ?? 0) + cashDrawdown;
+        withdrawals.total += cashDrawdown;
+      }
+
       if (taxAndPenalty !== 0) {
         accountBalances[checkingId] -= taxAndPenalty;
         if (accountLedgers[checkingId]) {
