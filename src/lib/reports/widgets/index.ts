@@ -12,3 +12,4 @@ import "./cover";
 import "./section-head";
 import "./divider";
 import "./advisor-commentary";
+import "./cashflow-bar-chart";

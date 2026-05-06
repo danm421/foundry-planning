@@ -94,12 +94,18 @@ export function Builder(props: {
 
   const handleExport = useCallback(async () => {
     const chartImages: Record<string, string> = {};
+    // Chart widgets tag the wrapper div with `data-widget-canvas` +
+    // `data-widget-id` and render the actual <canvas> inside it. Walk the
+    // wrappers and snapshot the inner canvas so each chart's PNG lands under
+    // its widget id. Wrappers without a canvas (e.g. kpi tiles, if any ever
+    // adopt the marker) are silently skipped via the null guard in canvasToPng.
     document
-      .querySelectorAll<HTMLCanvasElement>("[data-widget-canvas]")
-      .forEach((c) => {
-        const id = c.dataset.widgetId;
+      .querySelectorAll<HTMLElement>("[data-widget-canvas][data-widget-id]")
+      .forEach((wrap) => {
+        const id = wrap.dataset.widgetId;
         if (!id) return;
-        const png = canvasToPng(c);
+        const canvas = wrap.querySelector("canvas");
+        const png = canvasToPng(canvas);
         if (png) chartImages[id] = png;
       });
     const res = await fetch(

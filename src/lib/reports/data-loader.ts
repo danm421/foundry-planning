@@ -88,10 +88,18 @@ export function buildWidgetData(
             }),
             prevValue: null,
           };
+        } else if (
+          w.kind === "cashflowBarChart" ||
+          w.kind === "cashflowTable" ||
+          w.kind === "incomeSourcesArea"
+        ) {
+          // Chart/table widgets each consume one scope — narrow the dict so
+          // the widget render doesn't have to know the full scopeData shape.
+          out[w.id] = { cashflow: ctx.scopeData.cashflow };
         } else {
           // TODO(Task 19+): pass per-widget scope projection rather than the
-          // full scopeData dict. Chart/table widgets each consume one scope;
-          // handing them everything is interim plumbing for v1.
+          // full scopeData dict. Remaining widgets (e.g. aiAnalysis) get the
+          // whole bag for now — interim plumbing for v1.
           out[w.id] = ctx.scopeData;
         }
       }
