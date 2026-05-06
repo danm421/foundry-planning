@@ -772,6 +772,15 @@ export interface ProjectionYear {
     realEstateTotal: number;
     businessTotal: number;
     lifeInsuranceTotal: number;
+    /** Bucket for entity-owned shares where entity is non-IIP and not flagged
+     *  accessibleToClient — plus household-owned business-category accounts.
+     *  Powers the "Trusts and Businesses" column on the cashflow drill. */
+    trustsAndBusinesses: Record<string, number>;
+    trustsAndBusinessesTotal: number;
+    /** Bucket for entity-owned shares where entity is non-IIP and accessibleToClient.
+     *  Powers the "Accessible Trust Assets" column on the cashflow drill. */
+    accessibleTrustAssets: Record<string, number>;
+    accessibleTrustAssetsTotal: number;
     total: number;
   };
 
