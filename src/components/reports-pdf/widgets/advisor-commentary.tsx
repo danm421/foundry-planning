@@ -13,7 +13,7 @@ const s = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: PDF_THEME.hair,
-    backgroundColor: "#ffffff",
+    backgroundColor: PDF_THEME.card2,
     borderRadius: 4,
   },
   headline: {
@@ -26,6 +26,7 @@ const s = StyleSheet.create({
   body: { fontSize: 11, color: PDF_THEME.ink, lineHeight: 1.5 },
 });
 
+// Deliberate light/dark inversion: screen builder uses dark `bg-card-2`; PDF goes to clients on light paper.
 export function AdvisorCommentaryPdfRender({
   props,
 }: WidgetRenderProps<"advisorCommentary">) {

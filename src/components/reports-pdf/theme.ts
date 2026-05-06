@@ -7,6 +7,7 @@
 
 export const PDF_THEME = {
   paper: "#f6f3ec",
+  card2: "#ffffff",
   ink: "#1a1a1d",
   ink2: "#5a5a60",
   ink3: "#8a8a90",
