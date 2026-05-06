@@ -1,0 +1,77 @@
+"use client";
+
+import type { ProjectionYear } from "@/engine";
+import { TaxDetailIncomeTable } from "./tax-detail-income-table";
+import { TaxDetailFlowTable } from "./tax-detail-flow-table";
+import { TaxBracketTab } from "./tax-bracket-tab";
+import { YearRangeSlider } from "./year-range-slider";
+
+export type TaxDetailTabId = "income" | "federal" | "bracket";
+
+export const TAX_DETAIL_TABS: { id: TaxDetailTabId; label: string }[] = [
+  { id: "income", label: "Income Breakdown" },
+  { id: "federal", label: "Federal Tax Breakdown" },
+  { id: "bracket", label: "Tax Bracket" },
+];
+
+interface TaxDetailViewProps {
+  activeTab: TaxDetailTabId;
+  years: ProjectionYear[];
+  onYearClick: (year: ProjectionYear) => void;
+  yearRange: [number, number];
+  onYearRangeChange: (next: [number, number]) => void;
+  planStartYear: number;
+  planEndYear: number;
+  clientRetirementYear: number | null;
+  clientLifeExpectancy?: number;
+  spouseLifeExpectancy?: number | null;
+}
+
+export function TaxDetailView({
+  activeTab,
+  years,
+  onYearClick,
+  yearRange,
+  onYearRangeChange,
+  planStartYear,
+  planEndYear,
+  clientRetirementYear,
+  clientLifeExpectancy,
+  spouseLifeExpectancy,
+}: TaxDetailViewProps) {
+  return (
+    <>
+      <p className="text-[12px] text-ink-3 mb-4">
+        Hover column headers for explanations. Click a year to see that year&apos;s per-source breakdown.
+      </p>
+
+      <div className="mb-4">
+        <YearRangeSlider
+          min={planStartYear}
+          max={planEndYear}
+          value={yearRange}
+          onChange={onYearRangeChange}
+          clientRetirementYear={clientRetirementYear}
+        />
+      </div>
+
+      {activeTab === "income" && (
+        <TaxDetailIncomeTable
+          years={years}
+          onYearClick={onYearClick}
+          clientLifeExpectancy={clientLifeExpectancy}
+          spouseLifeExpectancy={spouseLifeExpectancy}
+        />
+      )}
+      {activeTab === "federal" && (
+        <TaxDetailFlowTable
+          years={years}
+          onYearClick={onYearClick}
+          clientLifeExpectancy={clientLifeExpectancy}
+          spouseLifeExpectancy={spouseLifeExpectancy}
+        />
+      )}
+      {activeTab === "bracket" && <TaxBracketTab years={years} />}
+    </>
+  );
+}

@@ -24,7 +24,7 @@ const fmt = new Intl.NumberFormat("en-US", {
 });
 
 function formatCell(n: number): string {
-  return n === 0 ? "—" : fmt.format(n);
+  return fmt.format(n);
 }
 
 function formatAge(
@@ -172,7 +172,7 @@ export function TaxDetailIncomeTable({
                   return (
                     <td
                       key={col.key}
-                      className={`border-b border-gray-800 bg-gray-900 px-3 py-2 text-right tabular-nums group-hover:bg-gray-800/40 ${v === 0 ? "text-gray-600" : ""} ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
+                      className={`border-b border-gray-800 bg-gray-900 px-3 py-2 text-right tabular-nums group-hover:bg-gray-800/40 ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
                     >
                       {formatCell(v)}
                     </td>

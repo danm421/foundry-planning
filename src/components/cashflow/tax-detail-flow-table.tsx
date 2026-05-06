@@ -31,7 +31,7 @@ const pctFmt = new Intl.NumberFormat("en-US", {
 });
 
 function formatCell(n: number): string {
-  return n === 0 ? "—" : fmt.format(n);
+  return fmt.format(n);
 }
 
 function formatAge(
@@ -186,7 +186,7 @@ const COLUMNS: Column[] = [
     tooltip:
       "Federal marginal rate at this year's Taxable Income. The 'next dollar of income' rate.",
     value: (y) => y.taxResult?.diag.marginalFederalRate ?? 0,
-    formatter: (n) => (n === 0 ? "—" : pctFmt.format(n)),
+    formatter: (n) => pctFmt.format(n),
   },
 ];
 
@@ -388,11 +388,7 @@ function DrillCell({
   return (
     <td
       className={`relative border-b border-gray-800 bg-gray-900 px-3 py-2 text-right tabular-nums group-hover:bg-gray-800/40 ${
-        isBold
-          ? "font-semibold"
-          : value === 0
-            ? "text-gray-600"
-            : ""
+        isBold ? "font-semibold" : ""
       } ${hasDetail ? "cursor-pointer hover:text-accent" : ""} ${extraClassName ?? ""}`}
       onClick={hasDetail ? () => setOpen(!open) : undefined}
     >
@@ -537,11 +533,7 @@ export function TaxDetailFlowTable({
                       <td
                         key={col.key}
                         className={`border-b border-gray-800 bg-gray-900 px-3 py-2 text-right tabular-nums group-hover:bg-gray-800/40 ${
-                          boldKeys.has(col.key)
-                            ? "font-semibold"
-                            : v === 0
-                              ? "text-gray-600"
-                              : ""
+                          boldKeys.has(col.key) ? "font-semibold" : ""
                         } ${stickyRight}`}
                       >
                         {formatter(v)}

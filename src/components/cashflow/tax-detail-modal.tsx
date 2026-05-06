@@ -2,13 +2,12 @@
 
 import { useState } from "react";
 import type { ProjectionYear } from "@/engine";
-import { TaxDetailIncomeTable } from "./tax-detail-income-table";
-import { TaxDetailFlowTable } from "./tax-detail-flow-table";
-import { TaxBracketTab } from "./tax-bracket-tab";
-import { YearRangeSlider } from "./year-range-slider";
+import {
+  TAX_DETAIL_TABS,
+  TaxDetailView,
+  type TaxDetailTabId,
+} from "./tax-detail-view";
 import DialogShell from "@/components/dialog-shell";
-
-type Tab = "income" | "federal" | "bracket";
 
 interface TaxDetailModalProps {
   years: ProjectionYear[];
@@ -36,7 +35,7 @@ export function TaxDetailModal({
   clientLifeExpectancy,
   spouseLifeExpectancy,
 }: TaxDetailModalProps) {
-  const [activeTab, setActiveTab] = useState<Tab>("income");
+  const [activeTab, setActiveTab] = useState<TaxDetailTabId>("income");
 
   return (
     <DialogShell
@@ -44,46 +43,23 @@ export function TaxDetailModal({
       onOpenChange={(open) => { if (!open) onClose(); }}
       title="Tax Detail — All Years"
       size="xl"
-      tabs={[
-        { id: "income", label: "Income Breakdown" },
-        { id: "federal", label: "Federal Tax Breakdown" },
-        { id: "bracket", label: "Tax Bracket" },
-      ]}
+      tabs={TAX_DETAIL_TABS}
       activeTab={activeTab}
-      onTabChange={(id) => setActiveTab(id as Tab)}
+      onTabChange={(id) => setActiveTab(id as TaxDetailTabId)}
       secondaryAction={{ label: "Close", onClick: onClose }}
     >
-      <p className="text-[12px] text-ink-3 mb-4">
-        Hover column headers for explanations. Click a year to see that year&apos;s per-source breakdown.
-      </p>
-
-      <div className="mb-4">
-        <YearRangeSlider
-          min={planStartYear}
-          max={planEndYear}
-          value={yearRange}
-          onChange={onYearRangeChange}
-          clientRetirementYear={clientRetirementYear}
-        />
-      </div>
-
-      {activeTab === "income" && (
-        <TaxDetailIncomeTable
-          years={years}
-          onYearClick={onYearClick}
-          clientLifeExpectancy={clientLifeExpectancy}
-          spouseLifeExpectancy={spouseLifeExpectancy}
-        />
-      )}
-      {activeTab === "federal" && (
-        <TaxDetailFlowTable
-          years={years}
-          onYearClick={onYearClick}
-          clientLifeExpectancy={clientLifeExpectancy}
-          spouseLifeExpectancy={spouseLifeExpectancy}
-        />
-      )}
-      {activeTab === "bracket" && <TaxBracketTab years={years} />}
+      <TaxDetailView
+        activeTab={activeTab}
+        years={years}
+        onYearClick={onYearClick}
+        yearRange={yearRange}
+        onYearRangeChange={onYearRangeChange}
+        planStartYear={planStartYear}
+        planEndYear={planEndYear}
+        clientRetirementYear={clientRetirementYear}
+        clientLifeExpectancy={clientLifeExpectancy}
+        spouseLifeExpectancy={spouseLifeExpectancy}
+      />
     </DialogShell>
   );
 }

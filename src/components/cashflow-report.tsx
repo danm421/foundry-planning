@@ -25,6 +25,7 @@ import {
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear, AccountLedger } from "@/engine";
 import { TaxDetailModal } from "@/components/cashflow/tax-detail-modal";
+import { TaxDrillDownModal } from "@/components/cashflow/tax-drill-down-modal";
 import { YearRangeSlider } from "@/components/cashflow/year-range-slider";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
@@ -280,7 +281,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   } | null>(null);
   const [taxDrillModal, setTaxDrillModal] = useState<TaxDrillModal | null>(null);
   const [showTaxDetailModal, setShowTaxDetailModal] = useState(false);
-  const [taxDrillExpanded, setTaxDrillExpanded] = useState<Set<string>>(new Set());
   const tableRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
@@ -2187,98 +2187,14 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
       )}
 
       {taxDrillModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-          onClick={() => { setTaxDrillModal(null); setTaxDrillExpanded(new Set()); }}
-        >
-          <div
-            className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border-2 border-ink-3 ring-1 ring-black/60 bg-gray-900 p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-100">Tax Detail — {taxDrillModal.year}</h3>
-              <button onClick={() => { setTaxDrillModal(null); setTaxDrillExpanded(new Set()); }} className="text-gray-300 hover:text-gray-200">✕</button>
-            </div>
-
-            <p className="mb-3 text-xs text-gray-400">Click a category to see the sources.</p>
-
-            <div className="space-y-2">
-              {[
-                { label: "Earned Income", key: "earnedIncome" as const, taxType: "earned_income" },
-                { label: "Ordinary Income", key: "ordinaryIncome" as const, taxType: "ordinary_income" },
-                { label: "Dividends", key: "dividends" as const, taxType: "dividends" },
-                { label: "Capital Gains (LT)", key: "capitalGains" as const, taxType: "capital_gains" },
-                { label: "ST Capital Gains", key: "stCapitalGains" as const, taxType: "stcg" },
-                { label: "QBI", key: "qbi" as const, taxType: "qbi" },
-                { label: "Tax-Exempt", key: "taxExempt" as const, taxType: "tax_exempt" },
-              ]
-                .filter((row) => taxDrillModal.detail[row.key] > 0)
-                .map((row) => {
-                  const isExpanded = taxDrillExpanded.has(row.key);
-                  // Build source list for this category. For incomes the source
-                  // id matches an entry in clientData.incomes. For realization
-                  // keys like `${acctId}:oi` we split and use accountNames.
-                  const sources = Object.entries(taxDrillModal.detail.bySource)
-                    .filter(([, v]) => v.type === row.taxType)
-                    .map(([sourceId, v]) => {
-                      if (sourceId.includes(":")) {
-                        const [acctId, kind] = sourceId.split(":");
-                        const suffix =
-                          kind === "oi" ? "OI"
-                          : kind === "qdiv" ? "Qual Div"
-                          : kind === "stcg" ? "ST CG"
-                          : kind === "rmd" ? "RMD"
-                          : kind;
-                        const name = accountNames[acctId] ?? acctId;
-                        return { id: sourceId, label: `${name} — ${suffix}`, amount: v.amount };
-                      }
-                      const inc = clientData?.incomes.find((i) => i.id === sourceId);
-                      return { id: sourceId, label: inc?.name ?? sourceId, amount: v.amount };
-                    })
-                    .sort((a, b) => b.amount - a.amount);
-
-                  return (
-                    <div key={row.key} className="rounded-md bg-gray-800/40 text-sm">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTaxDrillExpanded((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(row.key)) next.delete(row.key);
-                            else next.add(row.key);
-                            return next;
-                          });
-                        }}
-                        className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-gray-800/70"
-                        disabled={sources.length === 0}
-                      >
-                        <span className="flex items-center gap-2">
-                          <span className="text-xs text-gray-400">{sources.length > 0 ? (isExpanded ? "▾" : "▸") : " "}</span>
-                          <span className="font-medium text-gray-200">{row.label}</span>
-                        </span>
-                        <span className="tabular-nums text-gray-300">{fmtNum(taxDrillModal.detail[row.key])}</span>
-                      </button>
-                      {isExpanded && sources.length > 0 && (
-                        <ul className="divide-y divide-gray-800 border-t border-gray-800">
-                          {sources.map((s) => (
-                            <li key={s.id} className="flex items-center justify-between px-3 py-1.5 pl-8 text-xs">
-                              <span className="truncate text-gray-300">{s.label}</span>
-                              <span className="tabular-nums text-gray-300">{fmtNum(s.amount)}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-
-            <div className="mt-4 flex justify-between border-t border-gray-700 pt-3 text-sm font-semibold text-gray-100">
-              <span>Total Taxes</span>
-              <span className="tabular-nums">{fmtNum(taxDrillModal.totalTaxes)}</span>
-            </div>
-          </div>
-        </div>
+        <TaxDrillDownModal
+          year={taxDrillModal.year}
+          detail={taxDrillModal.detail}
+          totalTaxes={taxDrillModal.totalTaxes}
+          accountNames={accountNames}
+          incomes={clientData?.incomes ?? []}
+          onClose={() => setTaxDrillModal(null)}
+        />
       )}
     </div>
   );
