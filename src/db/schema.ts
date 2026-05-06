@@ -18,8 +18,9 @@ import {
   customType,
   foreignKey,
 } from "drizzle-orm/pg-core";
-import { relations, sql } from "drizzle-orm";
+import { relations, sql, type InferSelectModel, type InferInsertModel } from "drizzle-orm";
 import type { BracketTier } from "@/lib/tax/types";
+import type { ReportPagesPersisted } from "@/lib/reports/types";
 
 const inet = customType<{ data: string; driverData: string }>({
   dataType() {
@@ -1353,6 +1354,30 @@ export const willResiduaryRecipients = pgTable(
     index("will_residuary_recipients_will_sort_idx").on(t.willId, t.sortOrder),
   ],
 );
+
+export const reports = pgTable(
+  "reports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    templateKey: text("template_key"), // null for blank
+    pages: jsonb("pages").notNull().$type<ReportPagesPersisted>(),
+    createdByUserId: text("created_by_user_id").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("reports_client_id_idx").on(t.clientId),
+    index("reports_firm_id_idx").on(t.firmId),
+  ],
+);
+
+export type ReportRow = InferSelectModel<typeof reports>;
+export type NewReportRow = InferInsertModel<typeof reports>;
 
 export const willsRelations = relations(wills, ({ one, many }) => ({
   client: one(clients, { fields: [wills.clientId], references: [clients.id] }),

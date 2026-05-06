@@ -17,7 +17,7 @@ beforeEach(() => {
 });
 
 describe("ClientTabs", () => {
-  it("renders all 8 tabs in order", () => {
+  it("renders all 9 tabs in order", () => {
     (usePathname as ReturnType<typeof vi.fn>).mockReturnValue("/clients/c1/overview");
     const { container } = render(<ClientTabs clientId="c1" />);
     const text = container.textContent ?? "";
@@ -29,6 +29,7 @@ describe("ClientTabs", () => {
       "Investments",
       "Timeline",
       "Estate Planning",
+      "Reports",
       "Monte Carlo",
     ];
     let last = -1;
@@ -82,7 +83,7 @@ describe("ClientTabs", () => {
     );
     const { container } = render(<ClientTabs clientId="c1" />);
     const links = Array.from(container.querySelectorAll("a"));
-    expect(links).toHaveLength(8);
+    expect(links).toHaveLength(9);
     for (const a of links) {
       expect(a.getAttribute("href")).toContain("?scenario=sc-1");
     }
