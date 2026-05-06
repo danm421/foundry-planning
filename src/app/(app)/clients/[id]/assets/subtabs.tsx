@@ -25,7 +25,7 @@ export default function AssetsSubtabs({
     <nav
       role="tablist"
       aria-label="Assets sections"
-      className="sticky top-14 z-10 -mt-6 -mb-4 flex h-9 items-center justify-center gap-1 border-b border-hair bg-paper px-[var(--pad-card)]"
+      className="sticky top-14 z-10 -mt-6 mb-2 flex h-9 items-center justify-center gap-1 border-b border-hair bg-paper px-[var(--pad-card)]"
     >
       {tabs.map((tab) => {
         const active = pathname === tab.href || pathname.startsWith(tab.href + "/");
