@@ -5,7 +5,7 @@
 
 "use client";
 import "@/lib/reports/widgets";
-import { useCallback, useReducer, useState } from "react";
+import { useCallback, useReducer, useRef, useState } from "react";
 import { DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { reducer, type ReportState } from "@/lib/reports/reducer";
 import { ReportBuilderContext, type Household } from "./builder-context";
@@ -13,9 +13,10 @@ import { TopBar } from "./top-bar";
 import { BlockLibrary } from "./block-library";
 import { Canvas } from "./canvas";
 import { Inspector } from "./inspector";
+import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { useAutosave } from "./use-autosave";
 import { canvasToPng } from "@/components/reports-pdf/chart-to-image";
-import type { Page, WidgetKind } from "@/lib/reports/types";
+import type { Page, Widget, WidgetKind } from "@/lib/reports/types";
 
 export function Builder(props: {
   reportId: string;
@@ -27,6 +28,7 @@ export function Builder(props: {
   const { reportId, clientId, household, householdName, initial } = props;
   const [state, dispatch] = useReducer(reducer, initial as ReportState);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
+  const clipboardRef = useRef<Widget | null>(null);
   const status = useAutosave({
     clientId,
     reportId,
@@ -124,6 +126,13 @@ export function Builder(props: {
   return (
     <ReportBuilderContext value={{ household }}>
       <DndContext onDragEnd={handleDragEnd}>
+        <KeyboardShortcuts
+          selectedWidgetId={selectedWidgetId}
+          setSelectedWidgetId={setSelectedWidgetId}
+          dispatch={dispatch}
+          pages={state.pages}
+          clipboardRef={clipboardRef}
+        />
         <div className="flex flex-col h-screen bg-paper">
           <TopBar
             clientId={clientId}

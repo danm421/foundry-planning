@@ -16,16 +16,18 @@ import type { Page, Row, RowSize, Widget } from "@/lib/reports/types";
 import { SLOT_COUNT_BY_LAYOUT } from "@/lib/reports/types";
 import type { Action } from "@/lib/reports/reducer";
 import { getWidget } from "@/lib/reports/widget-registry";
+import { WidgetFrame } from "./widget-frame";
 
 const LAYOUT_OPTIONS: RowSize[] = ["1-up", "2-up", "3-up", "4-up"];
 
-function CanvasSlot({ pageId, rowId, slotIndex, widget, selected, onSelect }: {
+function CanvasSlot({ pageId, rowId, slotIndex, rowLayout, widget, selected, onSelect, dispatch }: {
   pageId: string; rowId: string; slotIndex: number;
-  // rowLayout is reserved for Task 17's legality dimming
-  // (`getWidget(draggingKind).allowedRowSizes.includes(rowLayout)`); kept on the
-  // prop type so callers and types stay stable when that work lands.
+  // rowLayout drives the WidgetFrame chrome bar label and is reserved for
+  // Task 17's legality dimming
+  // (`getWidget(draggingKind).allowedRowSizes.includes(rowLayout)`).
   rowLayout: RowSize;
   widget: Widget | null; selected: boolean; onSelect: () => void;
+  dispatch: React.Dispatch<Action>;
 }) {
   const { isOver, setNodeRef } = useDroppable({
     id: `slot-${pageId}-${rowId}-${slotIndex}`,
@@ -37,14 +39,16 @@ function CanvasSlot({ pageId, rowId, slotIndex, widget, selected, onSelect }: {
       {widget === null ? (
         <div className="border border-dashed border-hair rounded-sm h-24 text-ink-3 text-[11px] flex items-center justify-center">empty</div>
       ) : (
-        <div onClick={(e) => { e.stopPropagation(); onSelect(); }}
-             className={selected ? "ring-2 ring-accent rounded-sm" : ""}>
-          {(() => {
-            const entry = getWidget(widget.kind);
-            const Render = entry.Render;
-            return <Render props={widget.props as never} data={null} mode="screen" widgetId={widget.id} />;
-          })()}
-        </div>
+        (() => {
+          const entry = getWidget(widget.kind);
+          const Render = entry.Render;
+          return (
+            <WidgetFrame widget={widget} rowLayout={rowLayout} selected={selected}
+                         onSelect={onSelect} dispatch={dispatch}>
+              <Render props={widget.props as never} data={null} mode="screen" widgetId={widget.id} />
+            </WidgetFrame>
+          );
+        })()
       )}
     </div>
   );
@@ -132,6 +136,7 @@ export function CanvasRow({
             widget={w}
             selected={!!w && w.id === selectedWidgetId}
             onSelect={() => w && onSelectWidget(w.id)}
+            dispatch={dispatch}
           />
         ))}
       </div>
