@@ -45,6 +45,11 @@ export function Builder(props: {
     if (target.kind === "slot") {
       dispatch({ type: "ADD_WIDGET_TO_SLOT", pageId: target.pageId, rowId: target.rowId,
                  slotIndex: target.slotIndex, kind: data.kind, widgetId: newId });
+    // page-bottom — dormant in v1: no droppable currently emits this target.
+    // A future task can wire a `<div ref={setNodeRef}>` at the bottom of each
+    // page in canvas.tsx with data { kind: "page-bottom", pageId }; the handler
+    // here is structurally ready. The setTimeout + last-row lookup is a known
+    // wart pending an `ADD_ROW.rowId` reducer signature.
     } else {
       // page-bottom — append a new 1-up row, then place
       const tempRowId = crypto.randomUUID();

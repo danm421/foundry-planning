@@ -70,7 +70,7 @@ export function Canvas({
                     rowLayout={r.layout}
                     widget={w}
                     selected={w !== null && selectedWidgetId === w.id}
-                    onSelect={() => onSelectWidget(w!.id)}
+                    onSelect={() => { if (w) onSelectWidget(w.id); }}
                     draggingKind={null}
                   />
                 ))}
