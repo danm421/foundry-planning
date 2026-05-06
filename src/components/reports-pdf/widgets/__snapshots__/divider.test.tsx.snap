@@ -1,0 +1,25 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`DividerPdfRender > renders a 1.5pt accent rule when variant=accent 1`] = `
+<VIEW
+  style={
+    {
+      "borderColor": "#b87f1f",
+      "borderTopWidth": 1.5,
+      "marginVertical": 12,
+    }
+  }
+/>
+`;
+
+exports[`DividerPdfRender > renders a 1pt hair rule by default 1`] = `
+<VIEW
+  style={
+    {
+      "borderColor": "#d8d2c4",
+      "borderTopWidth": 1,
+      "marginVertical": 12,
+    }
+  }
+/>
+`;

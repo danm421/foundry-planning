@@ -27,14 +27,17 @@ export type WidgetKind =
 // reducer and registry have one canonical union to discriminate on.
 
 export type CoverProps = { title: string; subtitle?: string; year?: number };
-export type SectionHeadProps = { eyebrow: string; title: string };
-export type DividerProps = Record<string, never>;
+export type SectionHeadProps = { eyebrow: string; title: string; intro?: string };
+export type DividerProps = { variant?: "hair" | "accent" };
 export type AdvisorCommentaryProps = { headline?: string; body: string; notes?: string };
 export type KpiTileProps = {
   metricKey: string;            // resolved via metric-registry
   titleOverride?: string;
   subtitle?: string;
   showDelta?: boolean;
+  /** Top-edge accent rule color. Defaults to "accent" (Foundry gold).
+   *  Resolves through `REPORT_THEME.categoryColors` / `PDF_THEME.category`. */
+  accentColor?: "accent" | "good" | "crit" | "steel";
   notes?: string;
 };
 export type YearRange = { from: number | "default"; to: number | "default" };

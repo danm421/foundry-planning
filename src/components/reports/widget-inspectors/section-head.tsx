@@ -6,6 +6,7 @@
 import type { WidgetInspectorProps } from "@/lib/reports/widget-registry";
 import { InspectorSection } from "../inspector/section";
 import { InspectorTextInput } from "../inspector/text-input";
+import { InspectorTextarea } from "../inspector/textarea";
 
 export function SectionHeadInspector({
   props,
@@ -22,6 +23,12 @@ export function SectionHeadInspector({
         label="Title"
         value={props.title}
         onChange={(v) => onChange({ ...props, title: v })}
+      />
+      <InspectorTextarea
+        label="Intro"
+        value={props.intro ?? ""}
+        rows={3}
+        onChange={(v) => onChange({ ...props, intro: v || undefined })}
       />
     </InspectorSection>
   );

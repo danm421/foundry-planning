@@ -1,0 +1,31 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ReportPage > renders a cover page with no header/footer + dark inkDeep background + zero padding 1`] = `
+<ReportPage
+  firmName="Foundry Planning"
+  householdName="Smith Household"
+  isCover={true}
+  orientation="portrait"
+  pageIndex={0}
+  reportTitle="Annual Review"
+  reportYear={2026}
+  totalPages={12}
+>
+  <React.Fragment />
+</ReportPage>
+`;
+
+exports[`ReportPage > renders a non-cover page with running header + footer + content paddings 1`] = `
+<ReportPage
+  firmName="Foundry Planning"
+  householdName="Smith Household"
+  isCover={false}
+  orientation="portrait"
+  pageIndex={2}
+  reportTitle="Annual Review"
+  reportYear={2026}
+  totalPages={12}
+>
+  <React.Fragment />
+</ReportPage>
+`;

@@ -1,11 +1,30 @@
 // src/components/reports/widget-inspectors/divider.tsx
 //
-// Inspector body for the divider widget. The widget has no configurable
-// props (`DividerProps = Record<string, never>`), so the inspector is a
-// zero-state component that renders nothing. The registry's `Inspector`
-// field is required, so we still need a component — `() => null` is the
-// minimal valid shape.
+// Inspector body for the divider widget. The widget exposes a single
+// `variant` prop (`hair` | `accent`) that toggles between a subtle
+// hairline rule and a 1.5pt accent rule.
 
-export function DividerInspector(): null {
-  return null;
+import type { WidgetInspectorProps } from "@/lib/reports/widget-registry";
+import { InspectorSection } from "../inspector/section";
+import { InspectorPillSingle } from "../inspector/pill-single";
+
+const VARIANT_OPTIONS = [
+  { value: "hair", label: "Hair" },
+  { value: "accent", label: "Accent" },
+] as const;
+
+export function DividerInspector({
+  props,
+  onChange,
+}: WidgetInspectorProps<"divider">) {
+  return (
+    <InspectorSection eyebrow="A · Style">
+      <InspectorPillSingle
+        label="Variant"
+        value={props.variant ?? "hair"}
+        onChange={(v) => onChange({ ...props, variant: v })}
+        options={VARIANT_OPTIONS}
+      />
+    </InspectorSection>
+  );
 }

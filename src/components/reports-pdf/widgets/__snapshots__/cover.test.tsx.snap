@@ -1,0 +1,286 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`CoverPdfRender > renders the full-bleed dark cover with eyebrow, title, prepared-by, and address block 1`] = `
+<VIEW
+  style={
+    {
+      "backgroundColor": "#1f1d1a",
+      "flex": 1,
+      "flexDirection": "column",
+    }
+  }
+>
+  <VIEW
+    style={
+      {
+        "backgroundColor": "#b87f1f",
+        "height": 5,
+      }
+    }
+  />
+  <VIEW
+    style={
+      {
+        "alignItems": "center",
+        "flex": 1,
+        "flexDirection": "column",
+        "justifyContent": "center",
+        "paddingHorizontal": 72,
+      }
+    }
+  >
+    <TEXT
+      style={
+        {
+          "color": "#b87f1f",
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 9,
+          "letterSpacing": 2.5,
+          "marginBottom": 24,
+          "textTransform": "uppercase",
+        }
+      }
+    >
+      Foundry · 
+      2026
+    </TEXT>
+    <TEXT
+      style={
+        {
+          "color": "#f5efe1",
+          "fontFamily": "Fraunces",
+          "fontSize": 36,
+          "fontWeight": 600,
+          "marginBottom": 10,
+          "textAlign": "center",
+        }
+      }
+    >
+      Annual Review
+    </TEXT>
+    <TEXT
+      style={
+        {
+          "color": "#b87f1f",
+          "fontFamily": "Inter",
+          "fontSize": 14,
+          "marginBottom": 32,
+          "textAlign": "center",
+        }
+      }
+    >
+      2026 Plan
+    </TEXT>
+    <TEXT
+      style={
+        {
+          "color": "#f5efe1",
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 9,
+          "letterSpacing": 1.5,
+          "marginTop": 24,
+          "opacity": 0.8,
+          "textTransform": "uppercase",
+        }
+      }
+    >
+      Prepared by Foundry Planning
+    </TEXT>
+    <TEXT
+      style={
+        {
+          "color": "#f5efe1",
+          "fontFamily": "Inter",
+          "fontSize": 10,
+          "marginTop": 6,
+          "opacity": 0.6,
+        }
+      }
+    >
+      May 6, 2026
+    </TEXT>
+  </VIEW>
+  <VIEW
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "column",
+        "paddingBottom": 48,
+        "paddingHorizontal": 72,
+      }
+    }
+  >
+    <TEXT
+      style={
+        {
+          "color": "#f5efe1",
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 9,
+          "letterSpacing": 1.5,
+          "opacity": 0.6,
+          "textTransform": "uppercase",
+        }
+      }
+    >
+      Personal & Confidential
+    </TEXT>
+    <TEXT
+      style={
+        {
+          "color": "#f5efe1",
+          "fontFamily": "Inter",
+          "fontSize": 9,
+          "marginTop": 4,
+          "opacity": 0.4,
+        }
+      }
+    >
+      Foundry Planning · 1 Market Street, San Francisco, CA
+    </TEXT>
+  </VIEW>
+  <VIEW
+    style={
+      {
+        "backgroundColor": "#b87f1f",
+        "height": 5,
+      }
+    }
+  />
+</VIEW>
+`;
+
+exports[`CoverPdfRender > renders without subtitle when omitted 1`] = `
+<VIEW
+  style={
+    {
+      "backgroundColor": "#1f1d1a",
+      "flex": 1,
+      "flexDirection": "column",
+    }
+  }
+>
+  <VIEW
+    style={
+      {
+        "backgroundColor": "#b87f1f",
+        "height": 5,
+      }
+    }
+  />
+  <VIEW
+    style={
+      {
+        "alignItems": "center",
+        "flex": 1,
+        "flexDirection": "column",
+        "justifyContent": "center",
+        "paddingHorizontal": 72,
+      }
+    }
+  >
+    <TEXT
+      style={
+        {
+          "color": "#b87f1f",
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 9,
+          "letterSpacing": 2.5,
+          "marginBottom": 24,
+          "textTransform": "uppercase",
+        }
+      }
+    >
+      Foundry · 
+      2026
+    </TEXT>
+    <TEXT
+      style={
+        {
+          "color": "#f5efe1",
+          "fontFamily": "Fraunces",
+          "fontSize": 36,
+          "fontWeight": 600,
+          "marginBottom": 10,
+          "textAlign": "center",
+        }
+      }
+    >
+      Retirement Roadmap
+    </TEXT>
+    <TEXT
+      style={
+        {
+          "color": "#f5efe1",
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 9,
+          "letterSpacing": 1.5,
+          "marginTop": 24,
+          "opacity": 0.8,
+          "textTransform": "uppercase",
+        }
+      }
+    >
+      Prepared by Foundry Planning
+    </TEXT>
+    <TEXT
+      style={
+        {
+          "color": "#f5efe1",
+          "fontFamily": "Inter",
+          "fontSize": 10,
+          "marginTop": 6,
+          "opacity": 0.6,
+        }
+      }
+    >
+      May 6, 2026
+    </TEXT>
+  </VIEW>
+  <VIEW
+    style={
+      {
+        "alignItems": "center",
+        "flexDirection": "column",
+        "paddingBottom": 48,
+        "paddingHorizontal": 72,
+      }
+    }
+  >
+    <TEXT
+      style={
+        {
+          "color": "#f5efe1",
+          "fontFamily": "JetBrains Mono",
+          "fontSize": 9,
+          "letterSpacing": 1.5,
+          "opacity": 0.6,
+          "textTransform": "uppercase",
+        }
+      }
+    >
+      Personal & Confidential
+    </TEXT>
+    <TEXT
+      style={
+        {
+          "color": "#f5efe1",
+          "fontFamily": "Inter",
+          "fontSize": 9,
+          "marginTop": 4,
+          "opacity": 0.4,
+        }
+      }
+    >
+      Foundry Planning · 1 Market Street, San Francisco, CA
+    </TEXT>
+  </VIEW>
+  <VIEW
+    style={
+      {
+        "backgroundColor": "#b87f1f",
+        "height": 5,
+      }
+    }
+  />
+</VIEW>
+`;

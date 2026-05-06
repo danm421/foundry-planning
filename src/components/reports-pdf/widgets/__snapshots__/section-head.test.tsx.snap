@@ -1,0 +1,106 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`SectionHeadPdfRender > renders eyebrow + title + accent underline (no intro) 1`] = `
+<VIEW
+  style={
+    {
+      "flexDirection": "column",
+    }
+  }
+>
+  <TEXT
+    style={
+      {
+        "color": "#b87f1f",
+        "fontFamily": "JetBrains Mono",
+        "fontSize": 9,
+        "letterSpacing": 1,
+        "marginBottom": 6,
+        "textTransform": "uppercase",
+      }
+    }
+  >
+    01 · Overview
+  </TEXT>
+  <TEXT
+    style={
+      {
+        "color": "#1a1a1d",
+        "fontFamily": "Fraunces",
+        "fontSize": 22,
+      }
+    }
+  >
+    Plan Summary
+  </TEXT>
+  <VIEW
+    style={
+      {
+        "backgroundColor": "#b87f1f",
+        "height": 2,
+        "marginTop": 8,
+        "width": 200,
+      }
+    }
+  />
+</VIEW>
+`;
+
+exports[`SectionHeadPdfRender > renders the optional intro paragraph below the underline when set 1`] = `
+<VIEW
+  style={
+    {
+      "flexDirection": "column",
+    }
+  }
+>
+  <TEXT
+    style={
+      {
+        "color": "#b87f1f",
+        "fontFamily": "JetBrains Mono",
+        "fontSize": 9,
+        "letterSpacing": 1,
+        "marginBottom": 6,
+        "textTransform": "uppercase",
+      }
+    }
+  >
+    02 · Cash Flow
+  </TEXT>
+  <TEXT
+    style={
+      {
+        "color": "#1a1a1d",
+        "fontFamily": "Fraunces",
+        "fontSize": 22,
+      }
+    }
+  >
+    Income & Expenses
+  </TEXT>
+  <VIEW
+    style={
+      {
+        "backgroundColor": "#b87f1f",
+        "height": 2,
+        "marginTop": 8,
+        "width": 200,
+      }
+    }
+  />
+  <TEXT
+    style={
+      {
+        "color": "#5a5a60",
+        "fontFamily": "Inter",
+        "fontSize": 10,
+        "lineHeight": 1.5,
+        "marginTop": 12,
+      }
+    }
+  >
+    A look at the next ten years of household cash flow.
+  </TEXT>
+</VIEW>
+`;
