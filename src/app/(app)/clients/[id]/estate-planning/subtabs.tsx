@@ -23,21 +23,19 @@ export default function EstatePlanningSubtabs({
     { label: "Gift Tax", href: `${root}/gift-tax` },
   ];
 
-  // top-14 (56px) + h-12 (48px) = 104px — pin sub-tabs immediately below
-  // the top client-tabs strip.
   return (
     <nav
       role="tablist"
       aria-label="Estate Planning sections"
-      className="sticky top-[104px] z-10 flex h-10 items-center gap-5 border-b border-hair bg-paper px-[var(--pad-card)]"
+      className="sticky top-14 z-10 flex h-10 items-center justify-center gap-1 border-b border-hair bg-paper px-[var(--pad-card)]"
     >
       {tabs.map((tab) => {
         const active = tab.exact
           ? pathname === tab.href
           : pathname === tab.href || pathname.startsWith(tab.href + "/");
         const className = active
-          ? "relative h-full inline-flex items-center text-[12px] text-accent border-b-2 border-accent"
-          : "relative h-full inline-flex items-center text-[12px] text-ink-3 hover:text-ink";
+          ? "inline-flex items-center rounded-md border border-accent bg-card-2 px-3 py-1 text-[12px] font-medium text-accent"
+          : "inline-flex items-center rounded-md border border-transparent px-3 py-1 text-[12px] text-ink-2 hover:bg-card-2 hover:text-ink";
         return (
           <Link
             key={tab.href}

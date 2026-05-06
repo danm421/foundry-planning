@@ -6,7 +6,6 @@ import { clients, scenarios as scenariosTable } from "@/db/schema";
 import { and, eq, desc, asc } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import ClientHeader from "@/components/client-header";
-import ClientTabs from "@/components/client-tabs";
 import { ScenarioModeWrapper } from "@/components/scenario/scenario-mode-wrapper";
 import { ScenarioChipRow } from "@/components/scenario/scenario-chip-row";
 import { ScenarioModeBanner } from "@/components/scenario/scenario-mode-banner";
@@ -59,7 +58,6 @@ export default async function ClientLayout({ children, params }: Props): Promise
       <ClientHeader client={client} advisorName={advisorName} />
       <ScenarioChipRow clientId={id} scenarios={scenarioRows} />
       <ScenarioModeBanner clientId={id} scenarios={scenarioRows} />
-      <ClientTabs clientId={id} />
       <section className="px-[var(--pad-card)] py-6">{children}</section>
     </ScenarioModeWrapper>
   );
