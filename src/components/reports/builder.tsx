@@ -5,7 +5,8 @@
 
 "use client";
 import "@/lib/reports/widgets";
-import { useReducer, useState } from "react";
+import { useCallback, useReducer, useState } from "react";
+import { DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { reducer, type ReportState } from "@/lib/reports/reducer";
 import { ReportBuilderContext, type Household } from "./builder-context";
 import { TopBar } from "./top-bar";
@@ -13,7 +14,7 @@ import { BlockLibrary } from "./block-library";
 import { Canvas } from "./canvas";
 import { Inspector } from "./inspector";
 import { useAutosave } from "./use-autosave";
-import type { Page } from "@/lib/reports/types";
+import type { Page, WidgetKind } from "@/lib/reports/types";
 
 export function Builder(props: {
   reportId: string;
@@ -32,34 +33,66 @@ export function Builder(props: {
     initial: initial as ReportState,
   });
 
+  const handleDragEnd = useCallback((e: DragEndEvent) => {
+    if (!e.over) return;
+    const data = e.active.data.current as { source: "library"; kind: WidgetKind } | undefined;
+    const target = e.over.data.current as
+      | { kind: "slot"; pageId: string; rowId: string; slotIndex: number }
+      | { kind: "page-bottom"; pageId: string }
+      | undefined;
+    if (!data || data.source !== "library" || !target) return;
+    const newId = crypto.randomUUID();
+    if (target.kind === "slot") {
+      dispatch({ type: "ADD_WIDGET_TO_SLOT", pageId: target.pageId, rowId: target.rowId,
+                 slotIndex: target.slotIndex, kind: data.kind, widgetId: newId });
+    } else {
+      // page-bottom — append a new 1-up row, then place
+      const tempRowId = crypto.randomUUID();
+      dispatch({ type: "ADD_ROW", pageId: target.pageId, layout: "1-up" });
+      // The action handlers don't return ids; for now use a local effect:
+      setTimeout(() => {
+        // safe: state updates synchronously; reducer creates row with the new id we just added
+        const page = state.pages.find((p) => p.id === target.pageId);
+        const lastRow = page?.rows[page.rows.length - 1];
+        if (!lastRow) return;
+        dispatch({ type: "ADD_WIDGET_TO_SLOT", pageId: target.pageId, rowId: lastRow.id,
+                   slotIndex: 0, kind: data.kind, widgetId: newId });
+      }, 0);
+      void tempRowId;
+    }
+    setSelectedWidgetId(newId);
+  }, [state.pages]);
+
   return (
     <ReportBuilderContext value={{ household }}>
-      <div className="flex flex-col h-screen bg-paper">
-        <TopBar
-          clientId={clientId}
-          householdName={householdName}
-          title={state.title}
-          onTitleChange={(t) => dispatch({ type: "SET_TITLE", title: t })}
-          status={status}
-          onExport={() => {
-            /* wired in Task 13 */
-          }}
-        />
-        <div className="flex flex-1 overflow-hidden">
-          <BlockLibrary />
-          <Canvas
-            pages={state.pages}
-            dispatch={dispatch}
-            selectedWidgetId={selectedWidgetId}
-            onSelectWidget={setSelectedWidgetId}
+      <DndContext onDragEnd={handleDragEnd}>
+        <div className="flex flex-col h-screen bg-paper">
+          <TopBar
+            clientId={clientId}
+            householdName={householdName}
+            title={state.title}
+            onTitleChange={(t) => dispatch({ type: "SET_TITLE", title: t })}
+            status={status}
+            onExport={() => {
+              /* wired in Task 13 */
+            }}
           />
-          <Inspector
-            pages={state.pages}
-            selectedWidgetId={selectedWidgetId}
-            dispatch={dispatch}
-          />
+          <div className="flex flex-1 overflow-hidden">
+            <BlockLibrary />
+            <Canvas
+              pages={state.pages}
+              dispatch={dispatch}
+              selectedWidgetId={selectedWidgetId}
+              onSelectWidget={setSelectedWidgetId}
+            />
+            <Inspector
+              pages={state.pages}
+              selectedWidgetId={selectedWidgetId}
+              dispatch={dispatch}
+            />
+          </div>
         </div>
-      </div>
+      </DndContext>
     </ReportBuilderContext>
   );
 }

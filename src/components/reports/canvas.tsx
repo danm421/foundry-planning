@@ -5,11 +5,46 @@
 // per-widget fetchers and feeds real values through. Selection is driven
 // by click handlers that stop propagation so the bare-canvas click can
 // clear the selection.
+//
+// Each slot is a @dnd-kit drop target via the local Slot subcomponent.
+// Legality dimming during drag is wired structurally but currently
+// receives `draggingKind={null}` — Task 17 wires the active drag source.
 
 "use client";
-import type { Page } from "@/lib/reports/types";
+import { useDroppable } from "@dnd-kit/core";
+import type { Page, RowSize, Widget } from "@/lib/reports/types";
 import type { Action } from "@/lib/reports/reducer";
 import { getWidget } from "@/lib/reports/widget-registry";
+
+function Slot({ pageId, rowId, slotIndex, rowLayout, widget, selected, onSelect, draggingKind }: {
+  pageId: string; rowId: string; slotIndex: number; rowLayout: RowSize;
+  widget: Widget | null; selected: boolean; onSelect: () => void;
+  draggingKind: string | null;
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: `slot-${pageId}-${rowId}-${slotIndex}`,
+    data: { kind: "slot", pageId, rowId, slotIndex },
+  });
+  const legal = !draggingKind || getWidget(draggingKind as never).allowedRowSizes.includes(rowLayout);
+  const ringClass = isOver && legal ? "ring-2 ring-accent ring-offset-2" :
+                    !legal ? "opacity-30" : "";
+  return (
+    <div ref={setNodeRef} className={`rounded-sm transition ${ringClass}`}>
+      {widget === null ? (
+        <div className="border border-dashed border-hair rounded-sm h-24 text-ink-3 text-[11px] flex items-center justify-center">empty slot</div>
+      ) : (
+        <div onClick={(e) => { e.stopPropagation(); onSelect(); }}
+             className={selected ? "ring-2 ring-accent rounded-sm" : ""}>
+          {(() => {
+            const entry = getWidget(widget.kind);
+            const Render = entry.Render;
+            return <Render props={widget.props as never} data={null} mode="screen" widgetId={widget.id} />;
+          })()}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function Canvas({
   pages, dispatch, selectedWidgetId, onSelectWidget,
@@ -26,19 +61,18 @@ export function Canvas({
           <div key={p.id} className="bg-card border border-hair rounded-sm p-12 space-y-4">
             {p.rows.map((r) => (
               <div key={r.id} className="grid gap-3" style={{ gridTemplateColumns: `repeat(${r.slots.length}, minmax(0, 1fr))` }}>
-                {r.slots.map((w, i) => w === null ? (
-                  <div key={`${r.id}-${i}`} className="border border-dashed border-hair rounded-sm h-24 text-ink-3 text-[11px] flex items-center justify-center">empty slot</div>
-                ) : (
-                  <div key={w.id}
-                       onClick={(e) => { e.stopPropagation(); onSelectWidget(w.id); }}
-                       className={selectedWidgetId === w.id ? "ring-2 ring-accent rounded-sm" : ""}>
-                    {(() => {
-                      const entry = getWidget(w.kind);
-                      const Render = entry.Render;
-                      // data is null for now — fetch wired in Task 13/14
-                      return <Render props={w.props as never} data={null} mode="screen" widgetId={w.id} />;
-                    })()}
-                  </div>
+                {r.slots.map((w, i) => (
+                  <Slot
+                    key={w?.id ?? `${r.id}-${i}`}
+                    pageId={p.id}
+                    rowId={r.id}
+                    slotIndex={i}
+                    rowLayout={r.layout}
+                    widget={w}
+                    selected={w !== null && selectedWidgetId === w.id}
+                    onSelect={() => onSelectWidget(w!.id)}
+                    draggingKind={null}
+                  />
                 ))}
               </div>
             ))}
