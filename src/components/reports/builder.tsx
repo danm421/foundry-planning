@@ -18,15 +18,29 @@ import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { useAutosave } from "./use-autosave";
 import type { Page, Widget, WidgetKind } from "@/lib/reports/types";
 
+/**
+ * Comparison binding enriched with resolved scenario names. The Builder
+ * uses this purely for UI chrome (the comparison banner above the
+ * canvas) — the data loader on the server has already turned the raw
+ * binding into widget data.
+ */
+export type ComparisonBindingDisplay = {
+  currentScenarioId: string;
+  proposedScenarioId: string;
+  currentScenarioName: string;
+  proposedScenarioName: string;
+};
+
 export function Builder(props: {
   reportId: string;
   clientId: string;
   household: Household;
   householdName: string;
   widgetData: Record<string, unknown>;
+  comparisonBinding?: ComparisonBindingDisplay | null;
   initial: { title: string; pages: Page[] };
 }) {
-  const { reportId, clientId, household, householdName, widgetData, initial } = props;
+  const { reportId, clientId, household, householdName, widgetData, comparisonBinding, initial } = props;
   const [state, dispatch] = useReducer(reducer, initial as ReportState);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
   const clipboardRef = useRef<Widget | null>(null);
@@ -189,6 +203,7 @@ export function Builder(props: {
               dispatch={dispatch}
               selectedWidgetId={selectedWidgetId}
               onSelectWidget={setSelectedWidgetId}
+              comparisonBinding={comparisonBinding ?? null}
             />
             <Inspector
               pages={state.pages}

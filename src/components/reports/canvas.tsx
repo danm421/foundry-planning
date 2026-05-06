@@ -25,19 +25,33 @@ import { CanvasRow, RowGap } from "./canvas-row";
 import { PageDivider } from "./page-divider";
 import { PageLabelStrip } from "./page-label-strip";
 import { PreviewToggle } from "./preview-toggle";
+import type { ComparisonBindingDisplay } from "./builder";
 
 export function Canvas({
-  pages, dispatch, selectedWidgetId, onSelectWidget,
+  pages, dispatch, selectedWidgetId, onSelectWidget, comparisonBinding,
 }: {
   pages: Page[];
   dispatch: React.Dispatch<Action>;
   selectedWidgetId: string | null;
   onSelectWidget: (id: string | null) => void;
+  comparisonBinding?: ComparisonBindingDisplay | null;
 }) {
   const [previewMode, setPreviewMode] = useState<"edit" | "preview">("edit");
 
   return (
     <main className="flex-1 overflow-y-auto bg-paper">
+      {comparisonBinding && (
+        <div className="border-b-2 border-accent bg-accent/5 px-4 py-2 flex items-center gap-3">
+          <span className="text-[11px] font-mono text-ink-2 uppercase tracking-wider">
+            Comparing
+          </span>
+          <span className="text-xs font-mono text-ink-2">
+            {comparisonBinding.currentScenarioName}
+            <span className="px-2 text-accent">→</span>
+            {comparisonBinding.proposedScenarioName}
+          </span>
+        </div>
+      )}
       <div className="sticky top-0 bg-paper border-b border-hair px-4 py-2 flex items-center gap-3 z-10">
         <PreviewToggle value={previewMode} onChange={setPreviewMode} />
         <div className="text-[11px] font-mono text-ink-3 ml-auto">{pages.length} {pages.length === 1 ? "page" : "pages"}</div>

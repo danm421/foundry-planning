@@ -8,10 +8,14 @@
 import type { ReportTemplate } from "./types";
 import { annualReviewTemplate } from "./annual-review";
 import { retirementRoadmapTemplate } from "./retirement-roadmap";
+import { currentFinancialConditionTemplate } from "./current-financial-condition";
+import { currentVsProposedTemplate } from "./current-vs-proposed";
 
 export const TEMPLATES: ReportTemplate[] = [
   annualReviewTemplate,
   retirementRoadmapTemplate,
+  currentFinancialConditionTemplate,
+  currentVsProposedTemplate,
 ];
 
 export type { ReportTemplate };

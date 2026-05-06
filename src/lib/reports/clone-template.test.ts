@@ -3,6 +3,8 @@ import { describe, it, expect } from "vitest";
 import { cloneTemplateWithFreshIds } from "./clone-template";
 import { annualReviewTemplate } from "./templates/annual-review";
 import { retirementRoadmapTemplate } from "./templates/retirement-roadmap";
+import { currentFinancialConditionTemplate } from "./templates/current-financial-condition";
+import { currentVsProposedTemplate } from "./templates/current-vs-proposed";
 import type { Page, Widget } from "./types";
 
 function collectIds(pages: Page[]): {
@@ -126,5 +128,89 @@ describe("cloneTemplateWithFreshIds — retirement roadmap", () => {
       expect(clonedWidgets[i].kind).toBe(originalWidgets[i].kind);
       expect(clonedWidgets[i].props).toEqual(originalWidgets[i].props);
     }
+  });
+});
+
+describe("cloneTemplateWithFreshIds — current financial condition", () => {
+  it("clones to 8 pages", () => {
+    const cloned = cloneTemplateWithFreshIds(currentFinancialConditionTemplate);
+    expect(cloned.pages.length).toBe(8);
+  });
+
+  it("regenerates every id and preserves kinds/props", () => {
+    const cloned = cloneTemplateWithFreshIds(currentFinancialConditionTemplate);
+    const original = collectIds(currentFinancialConditionTemplate.pages);
+    const next = collectIds(cloned.pages);
+
+    const originalSet = new Set([
+      ...original.pageIds,
+      ...original.rowIds,
+      ...original.widgetIds,
+    ]);
+    for (const id of [...next.pageIds, ...next.rowIds, ...next.widgetIds]) {
+      expect(originalSet.has(id)).toBe(false);
+    }
+
+    const originalWidgets = collectWidgets(
+      currentFinancialConditionTemplate.pages,
+    );
+    const clonedWidgets = collectWidgets(cloned.pages);
+    expect(clonedWidgets.length).toBe(originalWidgets.length);
+    for (let i = 0; i < clonedWidgets.length; i++) {
+      expect(clonedWidgets[i].kind).toBe(originalWidgets[i].kind);
+      expect(clonedWidgets[i].props).toEqual(originalWidgets[i].props);
+    }
+  });
+
+  it("does not mutate the original template", () => {
+    const beforeIds = collectIds(currentFinancialConditionTemplate.pages);
+    const beforeJson = JSON.stringify(currentFinancialConditionTemplate);
+
+    cloneTemplateWithFreshIds(currentFinancialConditionTemplate);
+
+    const afterIds = collectIds(currentFinancialConditionTemplate.pages);
+    expect(afterIds).toEqual(beforeIds);
+    expect(JSON.stringify(currentFinancialConditionTemplate)).toBe(beforeJson);
+  });
+});
+
+describe("cloneTemplateWithFreshIds — current vs proposed", () => {
+  it("clones to 8 pages", () => {
+    const cloned = cloneTemplateWithFreshIds(currentVsProposedTemplate);
+    expect(cloned.pages.length).toBe(8);
+  });
+
+  it("regenerates every id and preserves kinds/props", () => {
+    const cloned = cloneTemplateWithFreshIds(currentVsProposedTemplate);
+    const original = collectIds(currentVsProposedTemplate.pages);
+    const next = collectIds(cloned.pages);
+
+    const originalSet = new Set([
+      ...original.pageIds,
+      ...original.rowIds,
+      ...original.widgetIds,
+    ]);
+    for (const id of [...next.pageIds, ...next.rowIds, ...next.widgetIds]) {
+      expect(originalSet.has(id)).toBe(false);
+    }
+
+    const originalWidgets = collectWidgets(currentVsProposedTemplate.pages);
+    const clonedWidgets = collectWidgets(cloned.pages);
+    expect(clonedWidgets.length).toBe(originalWidgets.length);
+    for (let i = 0; i < clonedWidgets.length; i++) {
+      expect(clonedWidgets[i].kind).toBe(originalWidgets[i].kind);
+      expect(clonedWidgets[i].props).toEqual(originalWidgets[i].props);
+    }
+  });
+
+  it("does not mutate the original template", () => {
+    const beforeIds = collectIds(currentVsProposedTemplate.pages);
+    const beforeJson = JSON.stringify(currentVsProposedTemplate);
+
+    cloneTemplateWithFreshIds(currentVsProposedTemplate);
+
+    const afterIds = collectIds(currentVsProposedTemplate.pages);
+    expect(afterIds).toEqual(beforeIds);
+    expect(JSON.stringify(currentVsProposedTemplate)).toBe(beforeJson);
   });
 });

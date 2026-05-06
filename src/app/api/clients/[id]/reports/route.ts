@@ -30,7 +30,13 @@ import type { Page } from "@/lib/reports/types";
 export const dynamic = "force-dynamic";
 
 const CreateBody = z.object({
-  template: z.enum(["blank", "annualReview", "retirementRoadmap"]),
+  template: z.enum([
+    "blank",
+    "annualReview",
+    "retirementRoadmap",
+    "currentFinancialCondition",
+    "currentVsProposed",
+  ]),
   title: z.string().min(1).max(200),
   // Two-scenario binding for plan-comparison reports. Both ids (when present)
   // must reference scenarios belonging to this client; the route enforces

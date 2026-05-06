@@ -5,14 +5,14 @@
 // `Builder` client component.
 
 import { notFound } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, reports } from "@/db/schema";
+import { clients, reports, scenarios } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
-import { Builder } from "@/components/reports/builder";
+import { Builder, type ComparisonBindingDisplay } from "@/components/reports/builder";
 import type { Household } from "@/components/reports/builder-context";
 import { loadReportWidgetData } from "@/lib/reports/load-widget-data";
-import type { Page } from "@/lib/reports/types";
+import type { ComparisonBinding, Page } from "@/lib/reports/types";
 
 export default async function ReportBuilderPage(
   { params }: { params: Promise<{ id: string; reportId: string }> },
@@ -65,6 +65,33 @@ export default async function ReportBuilderPage(
     comparisonBinding: report.comparisonBinding,
   });
 
+  // Resolve scenario display names for the comparison banner. The binding
+  // ids were validated to belong to this client at creation time; we still
+  // re-scope the lookup by clientId here as a defense-in-depth check.
+  const binding = report.comparisonBinding as ComparisonBinding | null;
+  let comparisonBindingDisplay: ComparisonBindingDisplay | null = null;
+  if (binding) {
+    const scenarioRows = await db
+      .select({ id: scenarios.id, name: scenarios.name })
+      .from(scenarios)
+      .where(
+        and(
+          eq(scenarios.clientId, id),
+          inArray(scenarios.id, [
+            binding.currentScenarioId,
+            binding.proposedScenarioId,
+          ]),
+        ),
+      );
+    const byId = new Map(scenarioRows.map((r) => [r.id, r.name]));
+    comparisonBindingDisplay = {
+      currentScenarioId: binding.currentScenarioId,
+      proposedScenarioId: binding.proposedScenarioId,
+      currentScenarioName: byId.get(binding.currentScenarioId) ?? "Current",
+      proposedScenarioName: byId.get(binding.proposedScenarioId) ?? "Proposed",
+    };
+  }
+
   return (
     <Builder
       reportId={report.id}
@@ -72,6 +99,7 @@ export default async function ReportBuilderPage(
       household={household}
       householdName={householdName}
       widgetData={widgetData}
+      comparisonBinding={comparisonBindingDisplay}
       initial={{
         title: report.title,
         pages: report.pages as never,
