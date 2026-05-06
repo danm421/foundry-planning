@@ -11,6 +11,11 @@
 // Markdown rendering is deliberately minimal: paragraphs (split on blank
 // lines) and unordered lists (paragraphs whose lines start with `- `).
 // The PDF render mirrors the same subset.
+//
+// Visual treatment matches `advisorCommentary` exactly (cream/light
+// bordered card, Fraunces subsection-styled title, body in body role,
+// muted italic notes) so the two widgets read as a single narrative
+// widget pattern.
 
 "use client";
 import { useState, type ReactNode } from "react";
@@ -91,12 +96,14 @@ export function AiAnalysisRender({
   }
 
   return (
-    <div className="p-5 bg-card-2 rounded-md border border-hair">
+    <div className="p-4 bg-report-card rounded-md border border-report-hair">
       {props.title && (
-        <div className="text-[14px] text-ink mb-3">{props.title}</div>
+        <div className="text-base font-medium text-report-ink mb-2">
+          {props.title}
+        </div>
       )}
       {error && (
-        <div className="text-[12px] text-crit mb-3" role="alert">
+        <div className="text-xs text-report-crit mb-3" role="alert">
           {error}
         </div>
       )}
@@ -105,7 +112,7 @@ export function AiAnalysisRender({
           type="button"
           onClick={() => generate()}
           disabled={busy}
-          className="h-9 px-4 rounded-md bg-accent text-paper font-medium text-[14px] disabled:opacity-50"
+          className="h-9 px-4 rounded-md bg-report-accent text-report-ink-on-dark font-medium text-sm disabled:opacity-50"
         >
           {busy ? "Generating…" : "Generate"}
         </button>
@@ -122,18 +129,18 @@ export function AiAnalysisRender({
             );
             setEditing(false);
           }}
-          className="w-full bg-card border border-hair rounded-md p-3 text-[13px] font-mono"
+          className="w-full bg-report-card border border-report-hair rounded-md p-3 text-[13px] font-mono text-report-ink"
         />
       ) : (
         <>
-          <div className="text-[14px] text-ink leading-relaxed">
+          <div className="text-sm text-report-ink leading-relaxed">
             {renderMarkdown(props.body)}
           </div>
-          <div className="flex gap-3 mt-4 text-[12px] font-mono">
+          <div className="flex gap-3 mt-3 text-[11px] font-mono">
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="text-ink-3 hover:text-ink"
+              className="text-report-ink-3 hover:text-report-ink"
             >
               Edit
             </button>
@@ -141,12 +148,17 @@ export function AiAnalysisRender({
               type="button"
               onClick={() => generate(true)}
               disabled={busy}
-              className="text-ink-3 hover:text-ink"
+              className="text-report-ink-3 hover:text-report-ink"
             >
               {busy ? "Regenerating…" : "Regenerate"}
             </button>
           </div>
         </>
+      )}
+      {props.notes && !editing && !empty && (
+        <div className="text-xs text-report-ink-3 italic mt-3 whitespace-pre-wrap">
+          {props.notes}
+        </div>
       )}
     </div>
   );

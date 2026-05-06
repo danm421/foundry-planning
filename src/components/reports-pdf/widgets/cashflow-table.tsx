@@ -4,6 +4,12 @@
 // a `<View>`-based grid (no HTML <table> available in @react-pdf/renderer).
 // Year-range resolution runs server-side in the data-loader (Task 32) — the
 // `years` array we receive here is already sliced to the resolved range.
+//
+// Visual treatment matches the Ethos comparison redesign branded table:
+// dark header row (`inkDeep`/`inkOnDark`), zebra rows alternating
+// `card2`/`zebra`, hairline separators, right-aligned numeric cells with
+// year column left-aligned, and a 1.5px `accent` separator above the
+// optional totals row.
 
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PDF_THEME } from "../theme";
@@ -21,19 +27,53 @@ const FMT = new Intl.NumberFormat("en-US", {
 
 const s = StyleSheet.create({
   wrap: {
-    padding: 8,
     borderWidth: 1,
     borderColor: PDF_THEME.hair,
     backgroundColor: PDF_THEME.card2,
-    borderRadius: 3,
+    borderRadius: PDF_THEME.radii.card,
+    overflow: "hidden",
   },
-  title: { fontSize: 12, color: PDF_THEME.ink, marginBottom: 4 },
-  subtitle: { fontSize: 9, color: PDF_THEME.ink3, marginBottom: 6 },
+  header: { paddingHorizontal: 10, paddingTop: 10, paddingBottom: 8 },
+  title: {
+    fontFamily: "Fraunces",
+    fontSize: PDF_THEME.type.titleSubsection.pdfPx,
+    color: PDF_THEME.ink,
+  },
+  subtitle: {
+    fontSize: PDF_THEME.type.caption.pdfPx,
+    color: PDF_THEME.ink3,
+    marginTop: 2,
+  },
+  headRow: {
+    flexDirection: "row",
+    backgroundColor: PDF_THEME.inkDeep,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  headCell: {
+    flex: 1,
+    fontFamily: "JetBrains Mono",
+    fontSize: 8,
+    color: PDF_THEME.inkOnDark,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
   row: {
     flexDirection: "row",
-    borderBottomWidth: 0.5,
-    borderColor: PDF_THEME.hair,
+    paddingHorizontal: 10,
     paddingVertical: 4,
+    borderTopWidth: 1,
+    borderTopColor: PDF_THEME.hair,
+  },
+  rowCard: { backgroundColor: PDF_THEME.card2 },
+  rowZebra: { backgroundColor: PDF_THEME.zebra },
+  totalsRow: {
+    flexDirection: "row",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderTopWidth: 1.5,
+    borderTopColor: PDF_THEME.accent,
+    backgroundColor: PDF_THEME.card2,
   },
   cell: {
     flex: 1,
@@ -43,18 +83,7 @@ const s = StyleSheet.create({
   },
   cellNum: { textAlign: "right" },
   cellYear: { textAlign: "left" },
-  head: {
-    fontFamily: "JetBrains Mono",
-    fontSize: 8,
-    color: PDF_THEME.ink3,
-    textTransform: "uppercase",
-  },
-  totalRow: {
-    flexDirection: "row",
-    borderTopWidth: 1,
-    borderColor: PDF_THEME.ink,
-    paddingVertical: 4,
-  },
+  cellBold: { fontWeight: 500 },
 });
 
 export function CashflowTablePdfRender({
@@ -74,21 +103,25 @@ export function CashflowTablePdfRender({
     { income: 0, expenses: 0, savings: 0 },
   );
   const headerAligns = [s.cellYear, s.cellNum, s.cellNum, s.cellNum, s.cellNum];
+
   return (
     <View style={s.wrap}>
-      <Text style={s.title}>{props.title}</Text>
-      {props.subtitle ? <Text style={s.subtitle}>{props.subtitle}</Text> : null}
-      <View
-        style={[s.row, { borderBottomWidth: 1, borderColor: PDF_THEME.ink }]}
-      >
+      <View style={s.header}>
+        <Text style={s.title}>{props.title}</Text>
+        {props.subtitle ? <Text style={s.subtitle}>{props.subtitle}</Text> : null}
+      </View>
+      <View style={s.headRow}>
         {["Year", "Income", "Expenses", "Savings", "Net"].map((h, i) => (
-          <Text key={h} style={[s.cell, s.head, headerAligns[i]]}>
+          <Text key={h} style={[s.headCell, headerAligns[i]]}>
             {h}
           </Text>
         ))}
       </View>
-      {rows.map((r) => (
-        <View key={r.year} style={s.row}>
+      {rows.map((r, i) => (
+        <View
+          key={r.year}
+          style={[s.row, i % 2 === 0 ? s.rowCard : s.rowZebra]}
+        >
           <Text style={[s.cell, s.cellYear]}>{r.year}</Text>
           <Text style={[s.cell, s.cellNum]}>{FMT.format(totalIncome(r))}</Text>
           <Text style={[s.cell, s.cellNum]}>{FMT.format(r.expenses)}</Text>
@@ -105,13 +138,19 @@ export function CashflowTablePdfRender({
         </View>
       ))}
       {props.showTotals && (
-        <View style={s.totalRow}>
-          <Text style={[s.cell, s.cellYear]}>Total</Text>
-          <Text style={[s.cell, s.cellNum]}>{FMT.format(totals.income)}</Text>
-          <Text style={[s.cell, s.cellNum]}>{FMT.format(totals.expenses)}</Text>
-          <Text style={[s.cell, s.cellNum]}>{FMT.format(totals.savings)}</Text>
+        <View style={s.totalsRow}>
+          <Text style={[s.cell, s.cellYear, s.cellBold]}>Total</Text>
+          <Text style={[s.cell, s.cellNum, s.cellBold]}>
+            {FMT.format(totals.income)}
+          </Text>
+          <Text style={[s.cell, s.cellNum, s.cellBold]}>
+            {FMT.format(totals.expenses)}
+          </Text>
+          <Text style={[s.cell, s.cellNum, s.cellBold]}>
+            {FMT.format(totals.savings)}
+          </Text>
           {/* Net total is "—": engine's per-year `net` doesn't sum cleanly across years. */}
-          <Text style={[s.cell, s.cellNum]}>—</Text>
+          <Text style={[s.cell, s.cellNum, s.cellBold]}>—</Text>
         </View>
       )}
     </View>

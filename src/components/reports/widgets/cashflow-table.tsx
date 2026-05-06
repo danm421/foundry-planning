@@ -4,6 +4,12 @@
 // year-by-year income / expenses / savings / net values, scoped from the
 // shared `cashflow` scope (same loader branch as cashflowBarChart).
 //
+// Visual treatment matches the Ethos comparison redesign branded table:
+// cream/light card, dark header row with mono uppercase labels, zebra
+// rows alternating `report-card`/`report-zebra`, hairline separators,
+// right-aligned numeric cells (year column left-aligned), and a 1.5px
+// accent separator above the optional totals row.
+//
 // PDF render lives at `components/reports-pdf/widgets/cashflow-table.tsx`
 // and is attached to the registry entry by
 // `lib/reports/widgets/cashflow-table.pdf.ts`, which only loads in the
@@ -48,42 +54,93 @@ export function CashflowTableRender(p: WidgetRenderProps<"cashflowTable">) {
   }, [d?.years, range.from, range.to]);
 
   return (
-    <div className="p-4 bg-card-2 rounded-md border border-hair">
-      <div className="text-[14px] text-ink mb-2">{p.props.title}</div>
-      {p.props.subtitle && (
-        <div className="text-[12px] text-ink-3 mb-2">{p.props.subtitle}</div>
-      )}
-      <table className="w-full text-[12px] font-mono">
+    <div className="bg-report-card rounded-md border border-report-hair overflow-hidden">
+      <div className="p-4 pb-3">
+        <div className="text-base font-medium text-report-ink">
+          {p.props.title}
+        </div>
+        {p.props.subtitle && (
+          <div className="text-xs text-report-ink-3 mt-1">
+            {p.props.subtitle}
+          </div>
+        )}
+      </div>
+      <table className="w-full text-[12px] font-mono border-collapse">
         <caption className="sr-only">{p.props.title}</caption>
         <thead>
-          <tr className="text-ink-3 text-left">
-            <th scope="col">Year</th>
-            <th scope="col">Income</th>
-            <th scope="col">Expenses</th>
-            <th scope="col">Savings</th>
-            <th scope="col">Net</th>
+          <tr className="bg-report-ink-deep text-report-ink-on-dark">
+            <th
+              scope="col"
+              className="text-left text-[9px] uppercase tracking-wider font-medium px-3 py-2"
+            >
+              Year
+            </th>
+            <th
+              scope="col"
+              className="text-right text-[9px] uppercase tracking-wider font-medium px-3 py-2"
+            >
+              Income
+            </th>
+            <th
+              scope="col"
+              className="text-right text-[9px] uppercase tracking-wider font-medium px-3 py-2"
+            >
+              Expenses
+            </th>
+            <th
+              scope="col"
+              className="text-right text-[9px] uppercase tracking-wider font-medium px-3 py-2"
+            >
+              Savings
+            </th>
+            <th
+              scope="col"
+              className="text-right text-[9px] uppercase tracking-wider font-medium px-3 py-2"
+            >
+              Net
+            </th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.year} className="border-t border-hair">
-              <td>{r.year}</td>
-              <td>{FMT.format(totalIncome(r))}</td>
-              <td>{FMT.format(r.expenses)}</td>
-              <td>{FMT.format(r.savings)}</td>
-              <td className={r.net >= 0 ? "text-good" : "text-crit"}>
+          {rows.map((r, i) => (
+            <tr
+              key={r.year}
+              className={`${i % 2 === 0 ? "bg-report-card" : "bg-report-zebra"} border-t border-report-hair`}
+            >
+              <td className="px-3 py-2 text-left text-report-ink">{r.year}</td>
+              <td className="px-3 py-2 text-right text-report-ink">
+                {FMT.format(totalIncome(r))}
+              </td>
+              <td className="px-3 py-2 text-right text-report-ink">
+                {FMT.format(r.expenses)}
+              </td>
+              <td className="px-3 py-2 text-right text-report-ink">
+                {FMT.format(r.savings)}
+              </td>
+              <td
+                className={`px-3 py-2 text-right ${r.net >= 0 ? "text-report-good" : "text-report-crit"}`}
+              >
                 {FMT.format(r.net)}
               </td>
             </tr>
           ))}
           {p.props.showTotals && (
-            <tr className="border-t-2 border-ink font-medium">
-              <td>Total</td>
-              <td>{FMT.format(totals.income)}</td>
-              <td>{FMT.format(totals.expenses)}</td>
-              <td>{FMT.format(totals.savings)}</td>
+            <tr
+              className="bg-report-card font-medium"
+              style={{ borderTop: "1.5px solid var(--color-report-accent)" }}
+            >
+              <td className="px-3 py-2.5 text-left text-report-ink">Total</td>
+              <td className="px-3 py-2.5 text-right text-report-ink">
+                {FMT.format(totals.income)}
+              </td>
+              <td className="px-3 py-2.5 text-right text-report-ink">
+                {FMT.format(totals.expenses)}
+              </td>
+              <td className="px-3 py-2.5 text-right text-report-ink">
+                {FMT.format(totals.savings)}
+              </td>
               {/* Net total is "—": engine's per-year `net` doesn't sum cleanly across years. */}
-              <td>—</td>
+              <td className="px-3 py-2.5 text-right text-report-ink">—</td>
             </tr>
           )}
         </tbody>

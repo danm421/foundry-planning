@@ -5,8 +5,10 @@
 // lists (paragraphs whose lines start with `- `). Server-only; no hooks
 // or interactive state since the PDF has no Generate / Edit affordances.
 //
-// Deliberate light/dark inversion matches advisor-commentary: screen
-// builder uses dark `bg-card-2`; PDF goes to clients on light paper.
+// Visual treatment matches `advisorCommentary` exactly (cream/light
+// bordered card, Fraunces subsection-styled title, body in body role,
+// muted italic notes) so the two widgets read as a single narrative
+// widget pattern.
 
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PDF_THEME } from "../theme";
@@ -14,16 +16,34 @@ import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 
 const s = StyleSheet.create({
   wrap: {
-    padding: 12,
+    padding: 16,
     borderWidth: 1,
     borderColor: PDF_THEME.hair,
     backgroundColor: PDF_THEME.card2,
-    borderRadius: 3,
+    borderRadius: PDF_THEME.radii.card,
   },
-  title: { fontSize: 12, color: PDF_THEME.ink, marginBottom: 8 },
-  body: { fontSize: 10, color: PDF_THEME.ink, lineHeight: 1.5 },
+  title: {
+    fontFamily: "Fraunces",
+    fontSize: PDF_THEME.type.titleSubsection.pdfPx,
+    color: PDF_THEME.ink,
+    marginBottom: 8,
+  },
+  body: {
+    fontFamily: "Inter",
+    fontSize: PDF_THEME.type.body.pdfPx,
+    color: PDF_THEME.ink,
+    lineHeight: 1.5,
+  },
   para: { marginBottom: 6 },
   bullet: { marginLeft: 8 },
+  notes: {
+    fontFamily: "Inter",
+    fontSize: PDF_THEME.type.caption.pdfPx,
+    color: PDF_THEME.ink3,
+    fontStyle: "italic",
+    marginTop: 8,
+    lineHeight: 1.4,
+  },
 });
 
 export function AiAnalysisPdfRender({
@@ -55,6 +75,7 @@ export function AiAnalysisPdfRender({
           </Text>
         );
       })}
+      {props.notes ? <Text style={s.notes}>{props.notes}</Text> : null}
     </View>
   );
 }

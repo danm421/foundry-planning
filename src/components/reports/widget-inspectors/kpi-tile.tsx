@@ -29,6 +29,18 @@ export function KpiTileInspector({ props, onChange }: WidgetInspectorProps<"kpiT
         <InspectorToggle label="Show delta vs prior year" value={!!props.showDelta}
           onChange={(v) => onChange({ ...props, showDelta: v })} />
       </InspectorSection>
+      <InspectorSection eyebrow="C · Style">
+        <InspectorSelect<"accent" | "good" | "crit" | "steel">
+          label="Accent color"
+          value={props.accentColor ?? "accent"}
+          onChange={(v) => onChange({ ...props, accentColor: v })}
+          options={[
+            { value: "accent", label: "Accent (gold)" },
+            { value: "good", label: "Good (green)" },
+            { value: "crit", label: "Critical (red)" },
+            { value: "steel", label: "Steel (blue)" },
+          ]} />
+      </InspectorSection>
       <InspectorNotes value={props.notes ?? ""} onChange={(v) => onChange({ ...props, notes: v })} />
     </>
   );
