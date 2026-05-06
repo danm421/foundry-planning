@@ -24,19 +24,26 @@ export function PageLabelStrip({
       <span>{label}</span>
       <span className="flex gap-2">
         <button
-          onClick={() => dispatch({ type: "TOGGLE_PAGE_ORIENTATION", pageId: page.id })}
+          onClick={(e) => {
+            e.stopPropagation();
+            dispatch({ type: "TOGGLE_PAGE_ORIENTATION", pageId: page.id });
+          }}
           className="hover:text-ink"
         >
           ⤾ rotate
         </button>
         <button
-          onClick={() => dispatch({ type: "DUPLICATE_PAGE", pageId: page.id })}
+          onClick={(e) => {
+            e.stopPropagation();
+            dispatch({ type: "DUPLICATE_PAGE", pageId: page.id });
+          }}
           className="hover:text-ink"
         >
           ⎘ dup
         </button>
         <button
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation();
             if (page.rows.length && !window.confirm("Delete this page and its contents?")) return;
             dispatch({ type: "DELETE_PAGE", pageId: page.id });
           }}

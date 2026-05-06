@@ -40,7 +40,7 @@ export function Canvas({
     <main className="flex-1 overflow-y-auto bg-paper">
       <div className="sticky top-0 bg-paper border-b border-hair px-4 py-2 flex items-center gap-3 z-10">
         <PreviewToggle value={previewMode} onChange={setPreviewMode} />
-        <div className="text-[11px] font-mono text-ink-3 ml-auto">{pages.length} pages</div>
+        <div className="text-[11px] font-mono text-ink-3 ml-auto">{pages.length} {pages.length === 1 ? "page" : "pages"}</div>
       </div>
       <div className="px-8 py-6" onClick={() => onSelectWidget(null)}>
         <div className="max-w-[8.5in] mx-auto space-y-6">
