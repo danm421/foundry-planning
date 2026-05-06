@@ -13,6 +13,7 @@
 "use client";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { Page, Row, RowSize, Widget } from "@/lib/reports/types";
+import { SLOT_COUNT_BY_LAYOUT } from "@/lib/reports/types";
 import type { Action } from "@/lib/reports/reducer";
 import { getWidget } from "@/lib/reports/widget-registry";
 
@@ -30,7 +31,7 @@ function CanvasSlot({ pageId, rowId, slotIndex, widget, selected, onSelect }: {
   return (
     <div ref={setNodeRef} className={`rounded-sm transition ${ringClass}`}>
       {widget === null ? (
-        <div className="border border-dashed border-hair rounded-sm h-24 text-ink-3 text-[11px] flex items-center justify-center">empty slot</div>
+        <div className="border border-dashed border-hair rounded-sm h-24 text-ink-3 text-[11px] flex items-center justify-center">empty</div>
       ) : (
         <div onClick={(e) => { e.stopPropagation(); onSelect(); }}
              className={selected ? "ring-2 ring-accent rounded-sm" : ""}>
@@ -84,23 +85,16 @@ export function CanvasRow({
       <div className="absolute -top-7 left-0 right-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
         <button
           {...listeners} {...attributes}
-          className="text-[12px] font-mono text-ink-3 hover:text-ink cursor-grab active:cursor-grabbing px-1"
+          className="text-[10px] font-mono text-ink-3 hover:text-ink cursor-grab active:cursor-grabbing px-1"
           aria-label="Drag to reorder row"
         >⋮⋮</button>
-        <div className="flex items-center gap-1 ml-1">
-          {LAYOUT_OPTIONS.map((opt) => (
-            <button
-              key={opt}
-              onClick={(e) => {
-                e.stopPropagation();
-                dispatch({ type: "UPDATE_ROW_LAYOUT", pageId: page.id, rowId: row.id, layout: opt });
-              }}
-              className={`text-[10px] font-mono px-1.5 h-5 rounded-sm border ${
-                row.layout === opt
-                  ? "bg-accent text-paper border-accent"
-                  : "bg-card-2 text-ink-3 border-hair hover:text-ink"
-              }`}
-            >{opt}</button>
+        <div className="inline-flex bg-card-2 border border-hair rounded-sm p-0.5">
+          {LAYOUT_OPTIONS.map((l) => (
+            <button key={l}
+              onClick={(e) => { e.stopPropagation(); dispatch({ type: "UPDATE_ROW_LAYOUT", pageId: page.id, rowId: row.id, layout: l }); }}
+              className={`h-5 px-2 text-[10px] font-mono ${l === row.layout ? "bg-card text-ink" : "text-ink-3"}`}>
+              {l}
+            </button>
           ))}
         </div>
         <button
@@ -119,11 +113,11 @@ export function CanvasRow({
         >+ below</button>
         <button
           onClick={handleDelete}
-          className="text-[10px] font-mono text-crit hover:opacity-70 ml-auto px-1"
+          className="text-[10px] font-mono text-crit hover:opacity-80 ml-auto px-1"
         >delete row</button>
       </div>
       {/* The row body */}
-      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${row.slots.length}, minmax(0, 1fr))` }}>
+      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${SLOT_COUNT_BY_LAYOUT[row.layout]}, minmax(0, 1fr))` }}>
         {row.slots.map((w, i) => (
           <CanvasSlot
             key={w?.id ?? `${row.id}-${i}`}
