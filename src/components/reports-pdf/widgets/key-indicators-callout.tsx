@@ -43,13 +43,11 @@ const s = StyleSheet.create({
     fontFamily: "Inter",
     fontSize: PDF_THEME.type.caption.pdfPx,
     color: PDF_THEME.ink3,
-    fontStyle: "italic",
   },
   notes: {
     fontFamily: "Inter",
     fontSize: PDF_THEME.type.caption.pdfPx,
     color: PDF_THEME.ink3,
-    fontStyle: "italic",
     marginTop: 8,
     lineHeight: 1.4,
   },

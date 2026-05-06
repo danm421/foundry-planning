@@ -59,7 +59,6 @@ const s = StyleSheet.create({
     fontFamily: "Inter",
     fontSize: PDF_THEME.type.caption.pdfPx,
     color: PDF_THEME.ink3,
-    fontStyle: "italic",
     textAlign: "center",
   },
 });

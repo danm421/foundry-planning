@@ -71,7 +71,6 @@ We recommend rebalancing the taxable account to reduce single-stock concentratio
         "color": "#8a8a90",
         "fontFamily": "Inter",
         "fontSize": 9,
-        "fontStyle": "italic",
         "lineHeight": 1.4,
         "marginTop": 8,
       }
@@ -148,7 +147,6 @@ exports[`aiAnalysis PDF render > renders paragraphs and bullet list 1`] = `
         "color": "#8a8a90",
         "fontFamily": "Inter",
         "fontSize": 9,
-        "fontStyle": "italic",
         "lineHeight": 1.4,
         "marginTop": 8,
       }

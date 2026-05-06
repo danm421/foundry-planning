@@ -49,7 +49,6 @@ const s = StyleSheet.create({
   placeholder: {
     fontSize: PDF_THEME.type.caption.pdfPx,
     color: PDF_THEME.ink3,
-    fontStyle: "italic",
     textAlign: "center",
     paddingVertical: 12,
   },

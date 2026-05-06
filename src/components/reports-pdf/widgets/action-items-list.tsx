@@ -44,7 +44,6 @@ const s = StyleSheet.create({
     fontFamily: "Inter",
     fontSize: PDF_THEME.type.caption.pdfPx,
     color: PDF_THEME.ink3,
-    fontStyle: "italic",
   },
   item: {
     flexDirection: "row",
@@ -68,7 +67,6 @@ const s = StyleSheet.create({
   },
   timeframe: {
     color: PDF_THEME.ink3,
-    fontStyle: "italic",
   },
 });
 

@@ -1,7 +1,7 @@
 // src/components/reports-pdf/widgets/disclaimer-block.tsx
 //
 // PDF render for the disclaimerBlock widget. 1.5pt accent rule across
-// the top, padded muted-italic small-print body below. Mirrors the
+// the top, padded muted small-print body below. Mirrors the
 // screen render's treatment.
 
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
@@ -18,7 +18,6 @@ const s = StyleSheet.create({
     fontFamily: "Inter",
     fontSize: PDF_THEME.type.caption.pdfPx,
     color: PDF_THEME.ink3,
-    fontStyle: "italic",
     lineHeight: 1.4,
   },
 });
