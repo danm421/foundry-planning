@@ -18,3 +18,4 @@ import "./income-sources-area";
 import "./net-worth-line";
 import "./balance-sheet-table";
 import "./allocation-donut";
+import "./monte-carlo-fan";

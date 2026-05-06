@@ -7,6 +7,7 @@ import { getScope } from "./scope-registry";
 import type { AllocationScopeData } from "./scopes/allocation";
 import type { BalanceScopeData } from "./scopes/balance";
 import type { CashflowScopeData } from "./scopes/cashflow";
+import type { MonteCarloScopeData } from "./scopes/monteCarlo";
 import "./scopes"; // side-effect: register all v1 scopes
 
 /**
@@ -457,6 +458,47 @@ describe("allocation scope — serializeForAI", () => {
     // Filtered-out zero categories should not appear.
     expect(text).not.toContain("Taxable");
     expect(text).not.toContain("Business");
+  });
+});
+
+describe("monteCarlo scope — fetch (stub)", () => {
+  // The v1 monteCarlo scope is a documented stub — see scopes/monteCarlo.ts.
+  // These tests pin the stub shape so the dependent widget keeps rendering
+  // its placeholder cleanly until the real engine wiring lands.
+  it("returns null successProbability and empty bands", () => {
+    const data = getScope("monteCarlo").fetch({
+      client: clientCtx,
+      projection: [],
+    }) as MonteCarloScopeData;
+    expect(data).toEqual({ successProbability: null, bands: [] });
+  });
+});
+
+describe("monteCarlo scope — serializeForAI", () => {
+  it("returns the v1 stub sentinel when successProbability is null", () => {
+    const data = getScope("monteCarlo").fetch({
+      client: clientCtx,
+      projection: [],
+    });
+    expect(getScope("monteCarlo").serializeForAI(data)).toBe(
+      "Monte Carlo: not yet wired (v1 stub).",
+    );
+  });
+
+  it("formats a populated payload as a single-sentence summary", () => {
+    // The serializer must keep working once real data arrives — exercise the
+    // populated branch via a hand-constructed payload (the stub fetcher will
+    // never return this in v1, but the wired implementation will).
+    const populated: MonteCarloScopeData = {
+      successProbability: 0.85,
+      bands: [
+        { year: 2026, p5: 100, p25: 200, p50: 300, p75: 400, p95: 500 },
+        { year: 2027, p5: 110, p25: 210, p50: 310, p75: 410, p95: 510 },
+      ],
+    };
+    expect(getScope("monteCarlo").serializeForAI(populated)).toBe(
+      "Monte Carlo success probability 85% over 2 years.",
+    );
   });
 });
 

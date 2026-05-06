@@ -30,4 +30,6 @@ import "./balance-sheet-table";       // screen-side
 import "./balance-sheet-table.pdf";   // pdf-side
 import "./allocation-donut";          // screen-side
 import "./allocation-donut.pdf";      // pdf-side
+import "./monte-carlo-fan";           // screen-side
+import "./monte-carlo-fan.pdf";       // pdf-side
 // each widget that has a PDF renderer adds a `import "./<name>.pdf";` line here

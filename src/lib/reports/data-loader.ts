@@ -114,6 +114,8 @@ export function buildWidgetData(
           out[w.id] = { balance: ctx.scopeData.balance };
         } else if (w.kind === "allocationDonut") {
           out[w.id] = { allocation: ctx.scopeData.allocation };
+        } else if (w.kind === "monteCarloFan") {
+          out[w.id] = { monteCarlo: ctx.scopeData.monteCarlo };
         } else if (w.kind === "balanceSheetTable") {
           // Reuses the existing balance-sheet view-model to produce a fully-
           // shaped `BalanceSheetViewModel`. No scope is registered for this

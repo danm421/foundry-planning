@@ -7,5 +7,4 @@
 import "./cashflow";
 import "./balance";
 import "./allocation";
-// Future scopes (Tasks 22+):
-// import "./monteCarlo";
+import "./monteCarlo";
