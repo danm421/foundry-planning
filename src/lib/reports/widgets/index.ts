@@ -14,3 +14,4 @@ import "./divider";
 import "./advisor-commentary";
 import "./cashflow-bar-chart";
 import "./cashflow-table";
+import "./income-sources-area";
