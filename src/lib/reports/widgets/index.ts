@@ -8,3 +8,4 @@
 // a single import line below.
 
 import "./kpi-tile";
+import "./cover";

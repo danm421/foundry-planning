@@ -1,7 +1,7 @@
 // src/lib/reports/reducer.ts
 import type { Page, Row, RowSize, Widget, WidgetKind } from "./types";
 import { SLOT_COUNT_BY_LAYOUT } from "./types";
-import { makeWidget } from "./widget-registry";
+import { getWidget, makeWidget } from "./widget-registry";
 
 export type Action =
   | { type: "ADD_PAGE"; orientation: "portrait" | "landscape"; afterPageId?: string }
@@ -165,7 +165,21 @@ export function reducer(state: ReportState, action: Action): ReportState {
       };
 
     case "ADD_WIDGET_TO_SLOT":
-    case "REPLACE_WIDGET":
+    case "REPLACE_WIDGET": {
+      // Enforce `ownsPage`: a widget that owns its page (e.g. cover) can
+      // only land on an otherwise-empty page, and only on a 1-up row.
+      // Silently reject if either rule is violated — the UI dims
+      // illegal slots so users shouldn't reach this branch in practice.
+      const entry = getWidget(action.kind);
+      if (entry.ownsPage) {
+        const page = state.pages.find((p) => p.id === action.pageId);
+        const otherFilled = page?.rows.some((r) =>
+          r.id !== action.rowId
+            ? r.slots.some((s) => s !== null)
+            : r.slots.some((s, i) => i !== action.slotIndex && s !== null),
+        );
+        if (otherFilled) return state;
+      }
       return {
         ...state,
         pages: state.pages.map((p) =>
@@ -180,6 +194,7 @@ export function reducer(state: ReportState, action: Action): ReportState {
           },
         ),
       };
+    }
 
     case "UPDATE_WIDGET_PROPS":
       return {

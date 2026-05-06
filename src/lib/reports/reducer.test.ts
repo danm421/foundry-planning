@@ -15,6 +15,18 @@ beforeAll(() => {
     Render: () => null,
     Inspector: () => null,
   });
+  // Register a stub `cover` so we can exercise the ownsPage guard.
+  registerWidget({
+    kind: "cover",
+    category: "Cover",
+    label: "Cover",
+    description: "stub",
+    allowedRowSizes: ["1-up"],
+    ownsPage: true,
+    defaultProps: { title: "Annual Review" },
+    Render: () => null,
+    Inspector: () => null,
+  });
 });
 
 const empty: ReportState = { title: "Test", pages: [] };
@@ -189,5 +201,33 @@ describe("reducer", () => {
   it("SET_TITLE updates title", () => {
     const s = reducer(empty, { type: "SET_TITLE", title: "New title" });
     expect(s.title).toBe("New title");
+  });
+
+  it("rejects cover into a non-empty page", () => {
+    let s: ReportState = empty;
+    s = reducer(s, { type: "ADD_PAGE", orientation: "portrait" });
+    const pageId = s.pages[0].id;
+    // Existing row with a kpiTile already filling the page.
+    s = reducer(s, { type: "ADD_ROW", pageId, layout: "2-up" });
+    const filledRowId = s.pages[0].rows[0].id;
+    s = reducer(s, {
+      type: "ADD_WIDGET_TO_SLOT",
+      pageId, rowId: filledRowId, slotIndex: 0,
+      kind: "kpiTile", widgetId: "existing",
+    });
+    // Empty 1-up row destined for the cover drop attempt.
+    s = reducer(s, { type: "ADD_ROW", pageId, layout: "1-up" });
+    const coverRowId = s.pages[0].rows[1].id;
+
+    const before = s;
+    const after = reducer(s, {
+      type: "ADD_WIDGET_TO_SLOT",
+      pageId, rowId: coverRowId, slotIndex: 0,
+      kind: "cover", widgetId: "cover-1",
+    });
+    // Silent rejection — state should be unchanged.
+    expect(after).toBe(before);
+    expect(after.pages[0].rows[1].slots[0]).toBeNull();
+    expect(after.pages[0].rows[0].slots[0]?.kind).toBe("kpiTile");
   });
 });

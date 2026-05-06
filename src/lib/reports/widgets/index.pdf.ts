@@ -10,4 +10,6 @@
 
 import "./kpi-tile";          // screen-side (defines the entry)
 import "./kpi-tile.pdf";      // pdf-side (attaches RenderPdf to existing entry)
+import "./cover";             // screen-side (defines the entry)
+import "./cover.pdf";         // pdf-side (attaches RenderPdf to existing entry)
 // each widget that has a PDF renderer adds a `import "./<name>.pdf";` line here
