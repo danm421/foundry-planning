@@ -117,7 +117,9 @@ export function buildWidgetData(
         } else if (
           w.kind === "cashflowBarChart" ||
           w.kind === "cashflowTable" ||
-          w.kind === "incomeSourcesArea"
+          w.kind === "incomeSourcesArea" ||
+          w.kind === "expenseDetailTable" ||
+          w.kind === "taxBracketChart"
         ) {
           // Chart/table widgets each consume one scope — narrow the dict so
           // the widget render doesn't have to know the full scopeData shape.
