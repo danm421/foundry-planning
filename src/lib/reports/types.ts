@@ -20,7 +20,23 @@ export type WidgetKind =
   | "allocationDonut"
   | "monteCarloFan"
   | "balanceSheetTable"
-  | "aiAnalysis";
+  | "aiAnalysis"
+  // Phase 5 — comparison-aware widgets (read from `widgetData[__comparison]`).
+  | "recommendedChangesTable"
+  | "keyIndicatorsCallout"
+  | "portfolioComparisonLine"
+  | "monteCarloComparisonBars"
+  | "comparisonDonutPair"
+  // Phase 5 — single-plan support widgets.
+  | "riskTable"
+  | "riskSeverityBar"
+  | "policiesTable"
+  | "lifePhasesTable"
+  | "expenseDetailTable"
+  | "taxBracketChart"
+  | "statusCallout"
+  | "actionItemsList"
+  | "disclaimerBlock";
 
 // Per-widget prop shapes. Each widget task below pins down its own props.
 // We declare them inline here (rather than per-widget files) so the
@@ -117,6 +133,148 @@ export type AiAnalysisProps = {
   notes?: string;
 };
 
+// ---------------------------------------------------------------------------
+// Phase 5 widget prop shapes
+// ---------------------------------------------------------------------------
+
+/** Optional comparison-data viewport. Comparison-aware widgets respect this:
+ *  "current" / "proposed" feed only that side; "both" feeds the full
+ *  ComparisonScopeData. Default is "both" when absent. Single-scenario
+ *  reports ignore this prop entirely. */
+export type ComparisonView = "current" | "proposed" | "both";
+
+/** Severity tier shared by riskTable, riskSeverityBar, statusCallout, and
+ *  actionItemsList. Maps to colored chips/borders/text via REPORT_THEME. */
+export type RiskSeverity = "low" | "medium" | "high";
+
+/** Recommended-changes table rendered from a hand-edited `rows` list.
+ *  Source of truth is the binding scenarios in v1, but the rows are
+ *  manually maintained — eMoney-style narrative table that the advisor
+ *  curates. `variant` swaps between the 1-column "list of changes" form
+ *  (executive summary) and the 3-column current/proposed form (detail). */
+export type RecommendedChangesTableProps = {
+  title?: string;
+  variant: "list" | "currentVsProposed";
+  rows: { change: string; current?: string; proposed?: string }[];
+  notes?: string;
+};
+
+/** Bordered card with a bulleted list of indicators. Used in the comparison
+ *  report's "Where you are today" section. v1 pulls bullets from the manual
+ *  `bullets` prop; auto-derivation from comparison thresholds is logged in
+ *  future-work. */
+export type KeyIndicatorsCalloutProps = {
+  title?: string;
+  bullets: string[];
+  notes?: string;
+};
+
+export type PortfolioComparisonLineProps = {
+  title: string;
+  subtitle?: string;
+  yearRange: YearRange;
+  showGrid: boolean;
+  notes?: string;
+};
+
+export type MonteCarloComparisonBarsProps = {
+  title: string;
+  subtitle?: string;
+  notes?: string;
+};
+
+export type ComparisonDonutPairProps = {
+  title: string;
+  subtitle?: string;
+  asOfYear: number | "current";
+  showLegend: boolean;
+  notes?: string;
+};
+
+/** Editable risk rows. Each row carries its own severity tier; the
+ *  severity bar widget derives its bar lengths from the same data via
+ *  the registry — they share the prop shape so authors edit one list. */
+export type RiskTableProps = {
+  title?: string;
+  rows: { area: string; description: string; severity: RiskSeverity }[];
+  notes?: string;
+};
+
+/** Horizontal bar chart of risks. Shares row data shape with riskTable;
+ *  intentionally the SAME props so the advisor edits one place. The
+ *  inspector groups them under the same "risks" management section. */
+export type RiskSeverityBarProps = {
+  title?: string;
+  rows: { area: string; severity: RiskSeverity }[];
+  notes?: string;
+};
+
+export type PoliciesTableProps = {
+  title?: string;
+  rows: {
+    type: string;          // "Term Life", "Whole Life", "Disability", etc.
+    owner: string;         // free-text — household member or entity name
+    deathBenefit?: number; // dollars; undefined for non-life policies
+    annualPremium: number; // dollars
+  }[];
+  emptyStateMessage?: string;
+  notes?: string;
+};
+
+export type LifePhasesTableProps = {
+  title?: string;
+  rows: {
+    phase: string;       // "Working years", "Early retirement", etc.
+    years: string;       // free-text e.g. "2026–2034"
+    ages: string;        // free-text e.g. "55–63"
+  }[];
+  notes?: string;
+};
+
+export type ExpenseDetailTableProps = {
+  title?: string;
+  yearRange: YearRange;
+  groupByCategory: boolean;
+  notes?: string;
+};
+
+/** Most complex Phase-5 chart. Stacked bars per year showing income
+ *  filling tax brackets (10% / 12% / 22% / 24% / 32% / 35% / 37%), with
+ *  bracket lines overlaid. Reuses the cashflow scope's per-year income
+ *  totals plus a tax-bracket helper from the engine. */
+export type TaxBracketChartProps = {
+  title: string;
+  subtitle?: string;
+  yearRange: YearRange;
+  showRothBands: boolean;       // overlay Roth conversion bands when present
+  notes?: string;
+};
+
+export type StatusCalloutProps = {
+  /** "go" = green border + check; "warn" = amber; "risk" = red exclamation. */
+  status: "go" | "warn" | "risk";
+  headline?: string;
+  body: string;
+  notes?: string;
+};
+
+export type ActionItemsListProps = {
+  title?: string;
+  items: {
+    priority: "high" | "medium" | "low";
+    text: string;
+    timeframe?: string;     // free-text e.g. "Within 30 days"
+  }[];
+  notes?: string;
+};
+
+export type DisclaimerBlockProps = {
+  /** Rich-text body; defaults to a generic boilerplate inserted on widget
+   *  creation. Editable by the advisor through the inspector. */
+  body: string;
+  notes?: string;
+};
+
 export type WidgetPropsByKind = {
   cover: CoverProps;
   sectionHead: SectionHeadProps;
@@ -131,6 +289,22 @@ export type WidgetPropsByKind = {
   monteCarloFan: MonteCarloFanProps;
   balanceSheetTable: BalanceSheetTableProps;
   aiAnalysis: AiAnalysisProps;
+  // Phase 5 — comparison-aware widgets
+  recommendedChangesTable: RecommendedChangesTableProps;
+  keyIndicatorsCallout: KeyIndicatorsCalloutProps;
+  portfolioComparisonLine: PortfolioComparisonLineProps;
+  monteCarloComparisonBars: MonteCarloComparisonBarsProps;
+  comparisonDonutPair: ComparisonDonutPairProps;
+  // Phase 5 — single-plan support widgets
+  riskTable: RiskTableProps;
+  riskSeverityBar: RiskSeverityBarProps;
+  policiesTable: PoliciesTableProps;
+  lifePhasesTable: LifePhasesTableProps;
+  expenseDetailTable: ExpenseDetailTableProps;
+  taxBracketChart: TaxBracketChartProps;
+  statusCallout: StatusCalloutProps;
+  actionItemsList: ActionItemsListProps;
+  disclaimerBlock: DisclaimerBlockProps;
 };
 
 export type Widget = {
