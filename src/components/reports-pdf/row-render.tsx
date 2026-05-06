@@ -23,7 +23,7 @@ export function RowRender({
         const flex = 1;
         if (w === null) return <View key={i} style={{ flex }} />;
         const entry = getWidget(w.kind);
-        const Render = entry.Render;
+        const Render = entry.RenderPdf ?? entry.Render;
         return (
           <View key={w.id} style={{ flex }}>
             <Render

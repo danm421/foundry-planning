@@ -36,6 +36,7 @@ export type WidgetRegistryEntry<K extends WidgetKind = WidgetKind> = {
   defaultProps: WidgetPropsByKind[K];
   scopes?: ScopeKey[];                             // engine scopes this widget reads
   Render: ComponentType<WidgetRenderProps<K>>;
+  RenderPdf?: ComponentType<WidgetRenderProps<K>>;   // optional — PDF-only renderer
   Inspector: ComponentType<WidgetInspectorProps<K>>;
 };
 
@@ -43,6 +44,15 @@ const REGISTRY = new Map<WidgetKind, WidgetRegistryEntry>();
 
 export function registerWidget<K extends WidgetKind>(entry: WidgetRegistryEntry<K>): void {
   REGISTRY.set(entry.kind, entry as unknown as WidgetRegistryEntry);
+}
+
+export function registerWidgetPdf<K extends WidgetKind>(
+  kind: K,
+  render: ComponentType<WidgetRenderProps<K>>,
+): void {
+  const entry = REGISTRY.get(kind);
+  if (!entry) throw new Error(`registerWidgetPdf: kind not registered yet: ${kind}`);
+  (entry as unknown as WidgetRegistryEntry<K>).RenderPdf = render;
 }
 
 export function getWidget(kind: WidgetKind): WidgetRegistryEntry {

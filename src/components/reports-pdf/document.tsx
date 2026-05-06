@@ -10,7 +10,7 @@
 
 import { Document } from "@react-pdf/renderer";
 import { ensureFontsRegistered } from "./fonts";
-import "@/lib/reports/widgets";
+import "@/lib/reports/widgets/index.pdf";
 import { ReportPage } from "./page-wrapper";
 import { RowRender } from "./row-render";
 import type { Page as ReportPageT } from "@/lib/reports/types";
