@@ -9,6 +9,8 @@
 // - `buildWidgetData` resolves each kpiTile via the metric registry and
 //   passes scope data through for chart/table widgets.
 
+import "@/lib/reports/scopes"; // side-effect: register all v1 scopes
+
 import type { Page, WidgetKind } from "./types";
 import type { ProjectionYear } from "@/engine/types";
 import { getMetric } from "./metric-registry";
