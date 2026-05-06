@@ -27,7 +27,7 @@ export default function EstatePlanningSubtabs({
     <nav
       role="tablist"
       aria-label="Estate Planning sections"
-      className="sticky top-14 z-10 flex h-10 items-center justify-center gap-1 border-b border-hair bg-paper px-[var(--pad-card)]"
+      className="sticky top-14 z-10 -mt-6 -mb-4 flex h-9 items-center justify-center gap-1 border-b border-hair bg-paper px-[var(--pad-card)]"
     >
       {tabs.map((tab) => {
         const active = tab.exact

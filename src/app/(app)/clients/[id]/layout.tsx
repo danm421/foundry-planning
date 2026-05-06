@@ -55,8 +55,11 @@ export default async function ClientLayout({ children, params }: Props): Promise
 
   return (
     <ScenarioModeWrapper clientId={id} scenarios={scenarioRows}>
-      <ClientHeader client={client} advisorName={advisorName} />
-      <ScenarioChipRow clientId={id} scenarios={scenarioRows} />
+      <ClientHeader
+        client={client}
+        advisorName={advisorName}
+        rightSlot={<ScenarioChipRow clientId={id} scenarios={scenarioRows} />}
+      />
       <ScenarioModeBanner clientId={id} scenarios={scenarioRows} />
       <section className="px-[var(--pad-card)] py-6">{children}</section>
     </ScenarioModeWrapper>

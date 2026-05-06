@@ -66,7 +66,7 @@ export function ScenarioChipRow({
   }
 
   return (
-    <div className="flex items-center gap-2 px-6 h-14 border-b border-[#1f2024] bg-[#0b0c0f]">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       {scenarios.map((s) => {
         const isActive = s.id === effectiveActive;
         const isDeleting = deletingId === s.id;

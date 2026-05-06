@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 interface ClientLike {
   id: string;
@@ -13,6 +13,7 @@ interface ClientLike {
 interface ClientHeaderProps {
   client: ClientLike;
   advisorName: string;
+  rightSlot?: ReactNode;
 }
 
 const GRADIENTS = [
@@ -56,6 +57,7 @@ function householdTitle(c: ClientLike): string {
 export default function ClientHeader({
   client,
   advisorName,
+  rightSlot,
 }: ClientHeaderProps): ReactElement {
   const gradient = GRADIENTS[hashIndex(client.id, GRADIENTS.length)];
   const clientAge = ageFromDob(client.dateOfBirth);
@@ -71,7 +73,7 @@ export default function ClientHeader({
       >
         {initialsOf(client)}
       </div>
-      <div>
+      <div className="min-w-0">
         <h1 className="text-[22px] font-semibold tracking-tight text-ink">
           {householdTitle(client)}
         </h1>
@@ -81,6 +83,7 @@ export default function ClientHeader({
           <span>Lead advisor: {advisorName}</span>
         </div>
       </div>
+      {rightSlot ? <div className="ml-auto">{rightSlot}</div> : null}
     </div>
   );
 }

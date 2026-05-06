@@ -117,8 +117,8 @@ export function CanvasFrame({
   );
 
   return (
-    <div className="mx-auto max-w-[1440px] px-6 py-8">
-      <header className="mb-6">
+    <div className="mx-auto max-w-[1440px] px-6 py-1">
+      <header className="mb-2">
         <div className="text-[10.5px] uppercase tracking-[0.14em] text-[var(--color-ink-3)]">§01 · Canvas</div>
         <h1 className="mt-1 text-[22px] font-semibold text-[var(--color-ink)]">Estate Planning</h1>
       </header>
