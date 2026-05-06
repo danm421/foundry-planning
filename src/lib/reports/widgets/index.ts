@@ -9,3 +9,6 @@
 
 import "./kpi-tile";
 import "./cover";
+import "./section-head";
+import "./divider";
+import "./advisor-commentary";

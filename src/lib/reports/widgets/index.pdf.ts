@@ -8,8 +8,14 @@
 // The screen builder keeps importing the screen-only `./index.ts`, so
 // the @react-pdf/renderer runtime never reaches the client bundle.
 
-import "./kpi-tile";          // screen-side (defines the entry)
-import "./kpi-tile.pdf";      // pdf-side (attaches RenderPdf to existing entry)
-import "./cover";             // screen-side (defines the entry)
-import "./cover.pdf";         // pdf-side (attaches RenderPdf to existing entry)
+import "./kpi-tile";              // screen-side (defines the entry)
+import "./kpi-tile.pdf";          // pdf-side (attaches RenderPdf to existing entry)
+import "./cover";                 // screen-side (defines the entry)
+import "./cover.pdf";             // pdf-side (attaches RenderPdf to existing entry)
+import "./section-head";          // screen-side
+import "./section-head.pdf";      // pdf-side
+import "./divider";               // screen-side
+import "./divider.pdf";           // pdf-side
+import "./advisor-commentary";    // screen-side
+import "./advisor-commentary.pdf"; // pdf-side
 // each widget that has a PDF renderer adds a `import "./<name>.pdf";` line here
