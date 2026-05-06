@@ -87,6 +87,9 @@ export function buildWidgetData(
             prevValue: null,
           };
         } else {
+          // TODO(Task 19+): pass per-widget scope projection rather than the
+          // full scopeData dict. Chart/table widgets each consume one scope;
+          // handing them everything is interim plumbing for v1.
           out[w.id] = ctx.scopeData;
         }
       }
