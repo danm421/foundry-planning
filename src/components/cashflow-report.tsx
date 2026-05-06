@@ -487,6 +487,10 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     y.portfolioAssets.retirementTotal +
     y.portfolioAssets.lifeInsuranceTotal;
 
+  const hasAnyAccessible = visibleYears.some(
+    (y) => y.portfolioAssets.accessibleTrustAssetsTotal > 0,
+  );
+
   // Portfolio Assets chart (bars)
   const portfolioChartData = {
     labels: chartLabels,
@@ -1862,7 +1866,9 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         numCol("portfolio_life_insurance_total", () => <DrillBtn segment="lifeInsurance" label="Life Insurance" />, (r) => r.portfolioAssets.lifeInsuranceTotal),
         numCol("portfolio_subtotal", "Total Portfolio Assets", portfolioSubtotal, true),
         numCol("portfolio_trusts_businesses_total", () => <DrillBtn segment="trusts_businesses" label="Trusts and Businesses" />, (r) => r.portfolioAssets.trustsAndBusinessesTotal),
-        numCol("portfolio_accessible_trusts_total", () => <DrillBtn segment="accessible_trusts" label="Accessible Trust Assets" />, (r) => r.portfolioAssets.accessibleTrustAssetsTotal),
+        ...(hasAnyAccessible
+          ? [numCol("portfolio_accessible_trusts_total", () => <DrillBtn segment="accessible_trusts" label="Accessible Trust Assets" />, (r) => r.portfolioAssets.accessibleTrustAssetsTotal)]
+          : []),
         numCol("portfolio_real_estate_total", () => <DrillBtn segment="realEstate" label="Real Estate" />, (r) => r.portfolioAssets.realEstateTotal),
         numCol("portfolio_grand_total", "Total Assets", grandTotal, true),
       ];
