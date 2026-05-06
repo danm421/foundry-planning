@@ -5,6 +5,12 @@
 // `monteCarlo`. The PDF render is a native @react-pdf/renderer SVG fan
 // that consumes the same scope data — no canvas snapshot.
 //
+// Visual parity with the PDF render: bands render in `accent` (orange)
+// at varying alpha (outer p5/p95 lighter, inner p25/p75 darker, median
+// p50 a 1.4px solid accent line). The success-probability headline
+// renders in serif (Fraunces) above the chart so it reads as the page's
+// main number.
+//
 // v1 reality: the `monteCarlo` scope is a documented stub returning
 // `{ successProbability: null, bands: [] }` — the widget renders a "—"
 // headline and a "not yet available" placeholder until the engine wiring
@@ -37,6 +43,8 @@ import {
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 import type { MonteCarloScopeData } from "@/lib/reports/scopes/monteCarlo";
 import { resolveYearRange } from "@/lib/reports/year-range-default";
+import { REPORT_THEME } from "@/lib/reports/theme";
+import { fmtCompactDollar } from "./chart-shared";
 import { useReportContext } from "../builder-context";
 
 ChartJS.register(
@@ -49,6 +57,17 @@ ChartJS.register(
   Tooltip,
   Legend,
 );
+
+const C = REPORT_THEME.colors;
+const ACCENT = C.accent;
+const MONO_FONT = '"JetBrains Mono", ui-monospace, monospace';
+
+// Alpha rules mirror the PDF render: outer band (5/95) at ~18%, inner band
+// (25/75) at ~32%, median as the solid darker accent line.
+const BAND_ALPHAS = {
+  outer: 0.18,
+  inner: 0.32,
+} as const;
 
 export function MonteCarloFanRender(p: WidgetRenderProps<"monteCarloFan">) {
   const ctx = useReportContext();
@@ -64,6 +83,8 @@ export function MonteCarloFanRender(p: WidgetRenderProps<"monteCarloFan">) {
   const data = useMemo(() => {
     const labels = bands.map((b) => String(b.year));
     const enabled = new Set<number>(p.props.bands);
+    const outerFill = hexWithAlpha(ACCENT, BAND_ALPHAS.outer);
+    const innerFill = hexWithAlpha(ACCENT, BAND_ALPHAS.inner);
     // Order matters for the fill chains: outer (95) → middle (75) → median
     // (50) → middle (25) → outer (5). "+1" fills toward the next dataset,
     // "-1" toward the previous; this stacks the bands around the median.
@@ -74,54 +95,60 @@ export function MonteCarloFanRender(p: WidgetRenderProps<"monteCarloFan">) {
       backgroundColor: string;
       fill?: boolean | string;
       pointRadius: number;
+      borderWidth: number;
     }[] = [];
     if (enabled.has(95)) {
       datasets.push({
         label: "95th",
         data: bands.map((b) => b.p95),
-        borderColor: "#3461a8",
-        backgroundColor: "#3461a833",
+        borderColor: "transparent",
+        backgroundColor: outerFill,
         fill: "+1",
         pointRadius: 0,
+        borderWidth: 0,
       });
     }
     if (enabled.has(75)) {
       datasets.push({
         label: "75th",
         data: bands.map((b) => b.p75),
-        borderColor: "#3461a8",
-        backgroundColor: "#3461a866",
+        borderColor: "transparent",
+        backgroundColor: innerFill,
         fill: "+1",
         pointRadius: 0,
+        borderWidth: 0,
       });
     }
     if (enabled.has(50)) {
       datasets.push({
         label: "50th",
         data: bands.map((b) => b.p50),
-        borderColor: "#1a1a1d",
+        borderColor: ACCENT,
         backgroundColor: "transparent",
         pointRadius: 0,
+        borderWidth: 1.4,
       });
     }
     if (enabled.has(25)) {
       datasets.push({
         label: "25th",
         data: bands.map((b) => b.p25),
-        borderColor: "#3461a8",
-        backgroundColor: "#3461a866",
+        borderColor: "transparent",
+        backgroundColor: innerFill,
         fill: "-1",
         pointRadius: 0,
+        borderWidth: 0,
       });
     }
     if (enabled.has(5)) {
       datasets.push({
         label: "5th",
         data: bands.map((b) => b.p5),
-        borderColor: "#3461a8",
-        backgroundColor: "#3461a833",
+        borderColor: "transparent",
+        backgroundColor: outerFill,
         fill: "-1",
         pointRadius: 0,
+        borderWidth: 0,
       });
     }
     return { labels, datasets };
@@ -131,8 +158,37 @@ export function MonteCarloFanRender(p: WidgetRenderProps<"monteCarloFan">) {
     () => ({
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { x: {}, y: {} },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          titleFont: { family: MONO_FONT, size: 10 },
+          bodyFont: { family: MONO_FONT, size: 10 },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { color: C.hair },
+          ticks: {
+            color: C.ink3,
+            font: { family: MONO_FONT, size: 9 },
+          },
+        },
+        y: {
+          grid: {
+            display: true,
+            color: C.hair,
+            drawTicks: false,
+          },
+          border: { display: false },
+          ticks: {
+            color: C.ink3,
+            font: { family: MONO_FONT, size: 9 },
+            callback: (v: string | number) =>
+              fmtCompactDollar(typeof v === "string" ? Number(v) : v),
+          },
+        },
+      },
     }),
     [],
   );
@@ -143,23 +199,40 @@ export function MonteCarloFanRender(p: WidgetRenderProps<"monteCarloFan">) {
       : `${(d.successProbability * 100).toFixed(0)}% chance of success`;
 
   return (
-    <div className="p-4 bg-card-2 rounded-md border border-hair">
-      <div className="text-[14px] text-ink mb-2">{p.props.title}</div>
+    <div className="p-4 bg-report-card rounded-md border border-report-hair">
+      <div className="text-base font-serif font-medium text-report-ink mb-1">
+        {p.props.title}
+      </div>
       {p.props.subtitle && (
-        <div className="text-[12px] text-ink-3 mb-2">{p.props.subtitle}</div>
+        <div className="text-xs text-report-ink-3 mb-3">{p.props.subtitle}</div>
       )}
       {p.props.showHeadline && (
-        <div className="text-[24px] font-serif text-ink mb-3">{headline}</div>
+        <div
+          className="text-3xl font-serif text-report-ink mb-3 text-center"
+          style={{ fontFamily: 'Fraunces, "Times New Roman", serif' }}
+        >
+          {headline}
+        </div>
       )}
       <div style={{ height: 260 }}>
         {bands.length > 0 ? (
           <Line data={data} options={options} />
         ) : (
-          <div className="flex items-center justify-center h-full text-[12px] text-ink-3">
+          <div className="flex items-center justify-center h-full text-xs text-report-ink-3">
             Monte Carlo trials not yet available.
           </div>
         )}
       </div>
     </div>
   );
+}
+
+// Tiny helper so we don't pull tinycolor for one alpha conversion. Assumes
+// `#rrggbb`; the chart palette in REPORT_THEME satisfies that.
+function hexWithAlpha(hex: string, alpha: number): string {
+  const a = Math.max(0, Math.min(1, alpha));
+  const aHex = Math.round(a * 255)
+    .toString(16)
+    .padStart(2, "0");
+  return `${hex}${aHex}`;
 }

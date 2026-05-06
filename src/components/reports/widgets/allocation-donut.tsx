@@ -5,6 +5,11 @@
 // render is a native @react-pdf/renderer SVG donut that consumes the same
 // scope data — no canvas snapshot.
 //
+// Visual parity with the PDF render: same palette
+// (`REPORT_THEME.chartPalette`), donut on the left, legend on the right
+// with colored swatch + label + percentage, and a center label showing
+// the total dollar value.
+//
 // `props.innerRingAssetType` is wired into the inspector but is a no-op in
 // v1 — the engine doesn't expose asset-type allocation (stocks vs bonds vs
 // cash equivalents) at the year level. The inspector toggle is labeled
@@ -26,23 +31,42 @@ import {
   DoughnutController,
   Tooltip,
   Legend,
+  type Plugin,
 } from "chart.js";
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 import type { AllocationScopeData } from "@/lib/reports/scopes/allocation";
+import { REPORT_THEME } from "@/lib/reports/theme";
+import { fmtCompactDollar } from "./chart-shared";
 
 ChartJS.register(ArcElement, DoughnutController, Tooltip, Legend);
 
-// Matches the cashflow-bar-chart palette intentionally — both charts are
-// often shown on the same page. Future-work item: extract a shared
-// CHART_PALETTE constant once a third widget needs it.
-const PALETTE = [
-  "#b87f1f",
-  "#2f6b4a",
-  "#3461a8",
-  "#7a4ea3",
-  "#a13a3a",
-  "#5a5a60",
-];
+const PALETTE = REPORT_THEME.chartPalette;
+const C = REPORT_THEME.colors;
+const MONO_FONT = '"JetBrains Mono", ui-monospace, monospace';
+
+// Center-total plugin — draws the dollar total in the donut hole. Mirrors
+// the PDF widget's center-label affordance.
+function makeCenterLabelPlugin(total: number): Plugin<"doughnut"> {
+  return {
+    id: "donutCenterLabel",
+    afterDatasetsDraw(chart) {
+      const meta = chart.getDatasetMeta(0);
+      if (!meta?.data || meta.data.length === 0) return;
+      const arc = meta.data[0] as unknown as { x: number; y: number };
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.fillStyle = C.ink;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `600 16px Inter, system-ui, sans-serif`;
+      ctx.fillText(fmtCompactDollar(total), arc.x, arc.y - 6);
+      ctx.fillStyle = C.ink2;
+      ctx.font = `9px ${MONO_FONT}`;
+      ctx.fillText("TOTAL", arc.x, arc.y + 10);
+      ctx.restore();
+    },
+  };
+}
 
 export function AllocationDonutRender(p: WidgetRenderProps<"allocationDonut">) {
   const d = (p.data as { allocation?: AllocationScopeData })?.allocation;
@@ -51,6 +75,11 @@ export function AllocationDonutRender(p: WidgetRenderProps<"allocationDonut">) {
   // hook would also work, but pulling it to a single ?? expression keeps the
   // dependency a single value rather than `(d?.allocation as ...)`.
   const byClass = useMemo(() => d?.byClass ?? [], [d?.byClass]);
+
+  const total = useMemo(
+    () => byClass.reduce((sum, c) => sum + c.value, 0),
+    [byClass],
+  );
 
   // Memoize the Chart.js inputs — Chart.js does identity comparison and
   // re-animates on every parent re-render. Inspector keystrokes shouldn't
@@ -74,21 +103,63 @@ export function AllocationDonutRender(p: WidgetRenderProps<"allocationDonut">) {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: p.props.showLegend, position: "right" as const },
+        // We render our own legend on the right (with %), not Chart.js's.
+        legend: { display: false },
+        tooltip: {
+          titleFont: { family: MONO_FONT, size: 10 },
+          bodyFont: { family: MONO_FONT, size: 10 },
+          callbacks: {
+            label: (item: { label?: string; parsed: number }) => {
+              const pct = total > 0 ? (item.parsed / total) * 100 : 0;
+              return `${item.label ?? ""}: ${fmtCompactDollar(item.parsed)} (${pct.toFixed(1)}%)`;
+            },
+          },
+        },
       },
-      cutout: "60%",
+      cutout: "62%",
     }),
-    [p.props.showLegend],
+    [total],
   );
 
+  const centerPlugin = useMemo(() => makeCenterLabelPlugin(total), [total]);
+
   return (
-    <div className="p-4 bg-card-2 rounded-md border border-hair">
-      <div className="text-[14px] text-ink mb-2">{p.props.title}</div>
+    <div className="p-4 bg-report-card rounded-md border border-report-hair">
+      <div className="text-base font-serif font-medium text-report-ink mb-1">
+        {p.props.title}
+      </div>
       {p.props.subtitle && (
-        <div className="text-[12px] text-ink-3 mb-2">{p.props.subtitle}</div>
+        <div className="text-xs text-report-ink-3 mb-3">{p.props.subtitle}</div>
       )}
-      <div style={{ height: 280 }}>
-        <Doughnut data={data} options={options} />
+      <div className="flex items-center gap-4" style={{ height: 280 }}>
+        <div className="flex-1 h-full min-w-0">
+          <Doughnut data={data} options={options} plugins={[centerPlugin]} />
+        </div>
+        {p.props.showLegend && (
+          <ul className="flex-shrink-0 flex flex-col gap-2 max-w-[40%] min-w-0 text-xs">
+            {byClass.map((c, i) => {
+              const pct = total > 0 ? (c.value / total) * 100 : 0;
+              return (
+                <li
+                  key={c.className}
+                  className="flex items-center gap-2 text-report-ink-2"
+                >
+                  <span
+                    className="inline-block w-2.5 h-2.5 rounded-[1px] flex-shrink-0"
+                    style={{ backgroundColor: PALETTE[i % PALETTE.length] }}
+                  />
+                  <span className="truncate text-report-ink">{c.className}</span>
+                  <span
+                    className="ml-auto text-report-ink-3 tabular-nums"
+                    style={{ fontFamily: MONO_FONT, fontSize: 10 }}
+                  >
+                    {pct.toFixed(0)}%
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </div>
   );
