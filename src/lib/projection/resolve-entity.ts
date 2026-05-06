@@ -12,20 +12,12 @@ export type GrowthSourceResolver = ReturnType<typeof createGrowthSourceResolver>
 
 export interface ResolutionContext {
   resolver: GrowthSourceResolver;
-  settings: {
-    defaultGrowthRealEstate: string;
-    defaultGrowthBusiness: string;
-    defaultGrowthLifeInsurance: string;
-  };
   resolvedInflationRate: number;
   /** Per-account associated data — populated by `loadClientData` on the base path,
    *  empty for scenario-added entities (deferred for v1). */
   beneficiariesByAccountId?: Map<string, BeneficiaryRef[]>;
   policiesByAccount?: Record<string, Account["lifeInsurance"]>;
   ownersByAccountId?: Map<string, AccountOwner[]>;
-  /** Reads the category-level growth source from plan settings (taxable/cash/retirement).
-   *  Required for routing the `default` growthSource through `asset_mix` when configured. */
-  getCategoryGrowthSource: (category: string) => string;
 }
 
 type Numericish = string | number | null | undefined;
@@ -43,7 +35,7 @@ function nNullable(v: Numericish): number | undefined {
 type RawAccount = {
   id: string;
   name: string;
-  category: string;
+  category: Account["category"];
   subType: string;
   value: string | number;
   basis: string | number;
@@ -70,7 +62,7 @@ export function resolveAccountFromRaw(
   raw: RawAccount,
   ctx: ResolutionContext,
 ): Account {
-  const { resolver, settings, resolvedInflationRate, getCategoryGrowthSource } = ctx;
+  const { resolver, resolvedInflationRate } = ctx;
   const gs = raw.growthSource ?? "default";
 
   let growthRate: number;
@@ -78,7 +70,7 @@ export function resolveAccountFromRaw(
 
   let effectiveSource = gs;
   if (effectiveSource === "default") {
-    const catSource = getCategoryGrowthSource(raw.category);
+    const catSource = resolver.getCategoryGrowthSource(raw.category);
     if (catSource === "asset_mix") effectiveSource = "asset_mix";
   }
 
@@ -139,15 +131,10 @@ export function resolveAccountFromRaw(
     raw.category === "business" ||
     raw.category === "life_insurance"
   ) {
-    const flatDefaults: Record<string, string> = {
-      real_estate: settings.defaultGrowthRealEstate,
-      business: settings.defaultGrowthBusiness,
-      life_insurance: settings.defaultGrowthLifeInsurance,
-    };
     growthRate =
       raw.growthRate != null
         ? n(raw.growthRate)
-        : parseFloat(flatDefaults[raw.category] ?? "0.04");
+        : resolver.resolveCategoryDefault(raw.category).rate;
     realization = undefined;
   }
 

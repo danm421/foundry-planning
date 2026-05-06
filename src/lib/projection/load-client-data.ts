@@ -379,16 +379,6 @@ export const loadClientDataWithContext = cache(
         })),
     });
 
-    // Helper to get the category-level growth source string from plan_settings
-    function getCategoryGrowthSource(category: string): string {
-      const sourceLookup: Record<string, string> = {
-        taxable: settings.growthSourceTaxable,
-        cash: settings.growthSourceCash,
-        retirement: settings.growthSourceRetirement,
-      };
-      return sourceLookup[category] ?? "custom";
-    }
-
     // ── Beneficiary designations ────────────────────────────────────────────
     const designationRows = await db
       .select()
@@ -522,16 +512,10 @@ export const loadClientDataWithContext = cache(
 
     const resolutionCtx: ResolutionContext = {
       resolver,
-      settings: {
-        defaultGrowthRealEstate: String(settings.defaultGrowthRealEstate),
-        defaultGrowthBusiness: String(settings.defaultGrowthBusiness),
-        defaultGrowthLifeInsurance: String(settings.defaultGrowthLifeInsurance),
-      },
       resolvedInflationRate,
       beneficiariesByAccountId: accountBens,
       policiesByAccount,
       ownersByAccountId,
-      getCategoryGrowthSource,
     };
 
     const mappedAccounts = accountRows.map((a) =>

@@ -33,23 +33,10 @@ function makeCtx(overrides: Partial<{ inflationRate: number }> = {}): Resolution
   });
   return {
     resolver,
-    settings: {
-      defaultGrowthRealEstate: "0.04",
-      defaultGrowthBusiness: "0.05",
-      defaultGrowthLifeInsurance: "0.03",
-    },
     resolvedInflationRate: overrides.inflationRate ?? 0.025,
     beneficiariesByAccountId: new Map(),
     policiesByAccount: {},
     ownersByAccountId: new Map(),
-    getCategoryGrowthSource: (category: string) => {
-      const lookup: Record<string, string> = {
-        taxable: "default",
-        cash: "default",
-        retirement: "default",
-      };
-      return lookup[category] ?? "custom";
-    },
   };
 }
 
