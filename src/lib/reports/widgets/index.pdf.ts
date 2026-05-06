@@ -20,4 +20,6 @@ import "./advisor-commentary";    // screen-side
 import "./advisor-commentary.pdf"; // pdf-side
 import "./cashflow-bar-chart";    // screen-side
 import "./cashflow-bar-chart.pdf"; // pdf-side
+import "./cashflow-table";        // screen-side
+import "./cashflow-table.pdf";    // pdf-side
 // each widget that has a PDF renderer adds a `import "./<name>.pdf";` line here

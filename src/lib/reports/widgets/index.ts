@@ -13,3 +13,4 @@ import "./section-head";
 import "./divider";
 import "./advisor-commentary";
 import "./cashflow-bar-chart";
+import "./cashflow-table";
