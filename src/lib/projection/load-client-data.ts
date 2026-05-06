@@ -81,8 +81,11 @@ export class ProjectionInputError extends Error {
   }
 }
 
-export const loadClientData = cache(
-  async (clientId: string, firmId: string): Promise<ClientData> => {
+export const loadClientDataWithContext = cache(
+  async (
+    clientId: string,
+    firmId: string,
+  ): Promise<{ clientData: ClientData; resolutionContext: ResolutionContext }> => {
     // Verify client access
     const [client] = await db
       .select()
@@ -950,7 +953,7 @@ export const loadClientData = cache(
       filingStatus: client.filingStatus,
     };
 
-    return {
+    const clientData: ClientData = {
       client: clientInfo,
       accounts: mappedAccounts,
       incomes: mappedIncomes,
@@ -971,5 +974,15 @@ export const loadClientData = cache(
       wills: engineWills,
       familyMembers: mappedFamilyMembers,
     };
+
+    return { clientData, resolutionContext: resolutionCtx };
   },
 );
+
+export async function loadClientData(
+  clientId: string,
+  firmId: string,
+): Promise<ClientData> {
+  const { clientData } = await loadClientDataWithContext(clientId, firmId);
+  return clientData;
+}
