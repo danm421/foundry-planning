@@ -11,11 +11,12 @@ import { ComparisonCellView } from "./comparison-cell";
 
 interface Props {
   clientId: string;
-  tree: ClientData;
+  leftTree: ClientData;
   leftResult: ProjectionResult;
   leftScenarioId: string;
   leftScenarioName: string;
   leftIsDoNothing: boolean;
+  rightTree: ClientData;
   rightResult: ProjectionResult;
   rightScenarioId: string;
   rightScenarioName: string;
@@ -27,10 +28,11 @@ interface Props {
 
 export function ComparisonGrid(props: Props) {
   const data = deriveComparisonData({
-    tree: props.tree,
+    leftTree: props.leftTree,
     leftResult: props.leftResult,
     leftScenarioName: props.leftScenarioName,
     leftIsDoNothing: props.leftIsDoNothing,
+    rightTree: props.rightTree,
     rightResult: props.rightResult,
     rightScenarioName: props.rightScenarioName,
     rightIsDoNothing: props.rightIsDoNothing,

@@ -1,6 +1,12 @@
 /**
- * Pure transform from `(tree, rightResult, leftResult)` into chart series for
- * the trajectory chart consumed by Task 28's TrajectoryChart component.
+ * Pure transform from `(leftTree, leftResult, rightTree, rightResult)` into
+ * chart series for the trajectory chart consumed by Task 28's TrajectoryChart
+ * component.
+ *
+ * Each side carries its own tree because the two scenarios may differ in
+ * accounts/owners/entities. Sharing one tree leaks right-only entities into
+ * the left series at their initial values, hiding the wealth shift the chart
+ * is meant to visualize.
  *
  * For each projection year, computes total household wealth (in-estate +
  * out-of-estate) less cumulative tax drag (federal/state estate tax + admin
@@ -47,18 +53,21 @@ export interface DeltaBands {
 }
 
 export function deriveChartSeries(args: {
-  tree: ClientData;
-  rightResult: ProjectionResult;
+  leftTree: ClientData;
   leftResult: ProjectionResult;
+  rightTree: ClientData;
+  rightResult: ProjectionResult;
 }): ChartSeries {
-  const { tree, rightResult, leftResult } = args;
-  const startYear = tree.planSettings.planStartYear;
-  const giftEvents = tree.giftEvents ?? [];
+  const { leftTree, rightTree, rightResult, leftResult } = args;
+  // Both sides share planStartYear; derive from rightTree by convention.
+  const startYear = rightTree.planSettings.planStartYear;
 
   const buildSeries = (
+    tree: ClientData,
     result: ProjectionResult,
-  ): [year: number, value: number][] =>
-    result.years.map((py) => {
+  ): [year: number, value: number][] => {
+    const giftEvents = tree.giftEvents ?? [];
+    return result.years.map((py) => {
       const accountBalances = pyAccountBalances(py);
       const inE = computeInEstateAtYear({
         tree,
@@ -77,9 +86,10 @@ export function deriveChartSeries(args: {
       const drag = cumulativeTaxDrag(result, py.year);
       return [py.year, inE + outE - drag];
     });
+  };
 
-  const rightSeries = buildSeries(rightResult);
-  const leftSeries = buildSeries(leftResult);
+  const rightSeries = buildSeries(rightTree, rightResult);
+  const leftSeries = buildSeries(leftTree, leftResult);
 
   // Defensive: if either series is empty, Math.max(...[]) is -Infinity. Coalesce
   // to 1 so the chart can still render an empty axis.

@@ -39,8 +39,9 @@ import {
 } from "./lib/derive-chart-series";
 
 interface Props {
-  tree: ClientData;
+  leftTree: ClientData;
   leftResult: ProjectionResult;
+  rightTree: ClientData;
   rightResult: ProjectionResult;
   scrubberYear: number;
 }
@@ -64,14 +65,15 @@ const tooltipFmt = new Intl.NumberFormat("en-US", {
 });
 
 export function TrajectoryChart({
-  tree,
+  leftTree,
   leftResult,
+  rightTree,
   rightResult,
   scrubberYear,
 }: Props) {
   const series = useMemo(
-    () => deriveChartSeries({ tree, rightResult, leftResult }),
-    [tree, rightResult, leftResult],
+    () => deriveChartSeries({ leftTree, rightTree, rightResult, leftResult }),
+    [leftTree, rightTree, rightResult, leftResult],
   );
   const bands = useMemo(
     () => deriveDeltaBands(series.left, series.right),

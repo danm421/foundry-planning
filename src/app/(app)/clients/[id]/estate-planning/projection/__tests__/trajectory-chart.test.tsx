@@ -170,15 +170,17 @@ function cooperSampleScenario(): ClientData {
 }
 
 describe("TrajectoryChart", () => {
-  const tree = cooperSampleScenario();
-  const rightResult = runProjectionWithEvents(tree);
-  const leftResult = runProjectionWithEvents(synthesizeNoPlanClientData(tree));
+  const rightTree = cooperSampleScenario();
+  const rightResult = runProjectionWithEvents(rightTree);
+  const leftTree = synthesizeNoPlanClientData(rightTree);
+  const leftResult = runProjectionWithEvents(leftTree);
 
   it("renders both with-plan and without-plan series as <path> elements", () => {
     const { container } = render(
       <TrajectoryChart
-        tree={tree}
+        leftTree={leftTree}
         leftResult={leftResult}
+        rightTree={rightTree}
         rightResult={rightResult}
         scrubberYear={2030}
       />,
@@ -190,8 +192,9 @@ describe("TrajectoryChart", () => {
   it("renders dashed vertical guides at firstDeathYear and secondDeathYear", () => {
     const { container } = render(
       <TrajectoryChart
-        tree={tree}
+        leftTree={leftTree}
         leftResult={leftResult}
+        rightTree={rightTree}
         rightResult={rightResult}
         scrubberYear={2030}
       />,
@@ -203,8 +206,9 @@ describe("TrajectoryChart", () => {
   it("moves the current-year line when scrubberYear changes", () => {
     const { container, rerender } = render(
       <TrajectoryChart
-        tree={tree}
+        leftTree={leftTree}
         leftResult={leftResult}
+        rightTree={rightTree}
         rightResult={rightResult}
         scrubberYear={2030}
       />,
@@ -216,8 +220,9 @@ describe("TrajectoryChart", () => {
 
     rerender(
       <TrajectoryChart
-        tree={tree}
+        leftTree={leftTree}
         leftResult={leftResult}
+        rightTree={rightTree}
         rightResult={rightResult}
         scrubberYear={2055}
       />,

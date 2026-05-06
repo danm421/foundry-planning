@@ -112,11 +112,12 @@ export default async function EstatePlanningPage({ params, searchParams }: PageP
       />
       <ProjectionPanel
         clientId={clientId}
-        tree={tree}
+        leftTree={leftLoad.tree}
         leftResult={leftLoad.result}
         leftScenarioId={refToUrlValue(left)}
         leftScenarioName={leftLoad.scenarioName}
         leftIsDoNothing={leftLoad.isDoNothing}
+        rightTree={tree}
         rightResult={rightLoad.result}
         rightScenarioId={refToUrlValue(right)}
         rightScenarioName={rightLoad.scenarioName}

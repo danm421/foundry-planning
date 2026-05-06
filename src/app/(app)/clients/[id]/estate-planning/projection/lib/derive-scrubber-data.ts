@@ -1,6 +1,12 @@
 /**
- * Pure transform from `(tree, leftResult, rightResult, scrubberYear)` into
- * a 3-cell comparison-grid data structure (`left` / `right` / `delta`).
+ * Pure transform from `(leftTree, leftResult, rightTree, rightResult,
+ * scrubberYear)` into a 3-cell comparison-grid data structure
+ * (`left` / `right` / `delta`).
+ *
+ * Each side carries its own tree because the two scenarios may differ in
+ * accounts/owners/entities. Using a single tree leaks right-only entities into
+ * the left totals (and vice versa) at their initial values, masking the wealth
+ * shift the comparison is meant to surface.
  *
  * Uniform 4-row schema across all three cells:
  *   1. In-estate
@@ -64,16 +70,19 @@ const ROW_LABELS: readonly ComparisonRowLabel[] = [
 ] as const;
 
 export function deriveComparisonData(args: {
-  tree: ClientData;
+  leftTree: ClientData;
   leftResult: ProjectionResult;
   leftScenarioName: string;
   leftIsDoNothing: boolean;
+  rightTree: ClientData;
   rightResult: ProjectionResult;
   rightScenarioName: string;
   rightIsDoNothing: boolean;
   scrubberYear: number;
 }): ComparisonData {
-  const startYear = args.tree.planSettings.planStartYear;
+  // Both sides share a planStartYear because scenarios layer on the same base
+  // plan settings — derive it from rightTree (Plan 2) by convention.
+  const startYear = args.rightTree.planSettings.planStartYear;
 
   // Final death year drives pre-death gating. Use the right-side projection so
   // both columns share the same gating window even when left is the do-nothing
@@ -85,7 +94,7 @@ export function deriveComparisonData(args: {
   const isPreDeath = args.scrubberYear < finalDeathYear;
 
   const leftRows = buildPlanRows({
-    tree: args.tree,
+    tree: args.leftTree,
     result: args.leftResult,
     scrubberYear: args.scrubberYear,
     startYear,
@@ -93,7 +102,7 @@ export function deriveComparisonData(args: {
     isPreDeath,
   });
   const rightRows = buildPlanRows({
-    tree: args.tree,
+    tree: args.rightTree,
     result: args.rightResult,
     scrubberYear: args.scrubberYear,
     startYear,

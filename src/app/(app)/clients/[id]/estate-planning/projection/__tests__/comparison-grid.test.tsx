@@ -182,11 +182,12 @@ describe("ComparisonGrid", () => {
     render(
       <ComparisonGrid
         clientId="c1"
-        tree={tree}
+        leftTree={tree}
         leftResult={result}
         leftScenarioId="base"
         leftScenarioName="Base case"
         leftIsDoNothing={false}
+        rightTree={tree}
         rightResult={result}
         rightScenarioId="base"
         rightScenarioName="Base case"
@@ -209,11 +210,12 @@ describe("ComparisonGrid", () => {
     render(
       <ComparisonGrid
         clientId="c1"
-        tree={tree}
+        leftTree={tree}
         leftResult={result}
         leftScenarioId="base"
         leftScenarioName="Base case"
         leftIsDoNothing={false}
+        rightTree={tree}
         rightResult={result}
         rightScenarioId="base"
         rightScenarioName="Base case"

@@ -170,9 +170,9 @@ function cooperSampleScenario(): ClientData {
 }
 
 describe("deriveComparisonData", () => {
-  const tree = cooperSampleScenario();
-  const rightResult = runProjectionWithEvents(tree);
-  const leftTree = synthesizeNoPlanClientData(tree);
+  const rightTree = cooperSampleScenario();
+  const rightResult = runProjectionWithEvents(rightTree);
+  const leftTree = synthesizeNoPlanClientData(rightTree);
   const leftResult = runProjectionWithEvents(leftTree);
 
   const ROW_LABELS = [
@@ -184,10 +184,11 @@ describe("deriveComparisonData", () => {
 
   function build(scrubberYear: number) {
     return deriveComparisonData({
-      tree,
+      leftTree,
       leftResult,
       leftScenarioName: "Do nothing (no plan)",
       leftIsDoNothing: true,
+      rightTree,
       rightResult,
       rightScenarioName: "Base Plan",
       rightIsDoNothing: false,
@@ -196,14 +197,14 @@ describe("deriveComparisonData", () => {
   }
 
   it("returns left/right/delta cells with the uniform 4-row schema", () => {
-    const data = build(tree.planSettings.planEndYear);
+    const data = build(rightTree.planSettings.planEndYear);
     expect(data.left.rows.map((r) => r.label)).toEqual([...ROW_LABELS]);
     expect(data.right.rows.map((r) => r.label)).toEqual([...ROW_LABELS]);
     expect(data.delta.rows.map((r) => r.label)).toEqual([...ROW_LABELS]);
   });
 
   it("delta cell rows are signed (right − left) at post-death years", () => {
-    const data = build(tree.planSettings.planEndYear);
+    const data = build(rightTree.planSettings.planEndYear);
     const valueAt = (
       rows: typeof data.left.rows,
       label: (typeof ROW_LABELS)[number],
@@ -216,7 +217,7 @@ describe("deriveComparisonData", () => {
   });
 
   it("renders pre-death sentinels in tax+admin row when scrubber is before final death", () => {
-    const data = build(tree.planSettings.planStartYear);
+    const data = build(rightTree.planSettings.planStartYear);
     expect(
       data.right.rows.find((r) => r.label === "Estate tax + admin")!.valueText,
     ).toBe("$0 (pre-death)");
@@ -226,7 +227,7 @@ describe("deriveComparisonData", () => {
   });
 
   it("hero metric is Net to heirs for plan cells, Net to heirs Δ for delta", () => {
-    const data = build(tree.planSettings.planEndYear);
+    const data = build(rightTree.planSettings.planEndYear);
     expect(data.left.headlineLabel).toBe("Net to heirs");
     expect(data.right.headlineLabel).toBe("Net to heirs");
     expect(data.delta.headlineLabel).toBe("Net to heirs Δ");
@@ -234,5 +235,57 @@ describe("deriveComparisonData", () => {
       data.right.bigNumber - data.left.bigNumber,
       2,
     );
+  });
+
+  it("an account that exists only in rightTree contributes only to the right cell", () => {
+    // Regression test for the single-tree bug: previously deriveComparisonData
+    // received only one tree (the right one) and used it to compute both cells,
+    // so a right-only account leaked into the left cell at its initial value.
+    // After the fix, leftTree is the source of truth for the left cell — an
+    // account that only exists on the right must NOT show up in left totals.
+    const baseTree = cooperSampleScenario();
+    const baseResult = runProjectionWithEvents(baseTree);
+
+    const NEW_ACCOUNT_VALUE = 600_000;
+    const rightOnlyTree: ClientData = {
+      ...baseTree,
+      accounts: [
+        ...baseTree.accounts,
+        {
+          id: "scenario-only",
+          name: "Scenario-only brokerage",
+          category: "taxable",
+          subType: "individual",
+          value: NEW_ACCOUNT_VALUE,
+          basis: NEW_ACCOUNT_VALUE,
+          growthRate: 0.06,
+          rmdEnabled: false,
+          owners: [
+            { kind: "family_member", familyMemberId: FM_CLIENT, percent: 1 },
+          ],
+        },
+      ],
+    } as ClientData;
+    const rightOnlyResult = runProjectionWithEvents(rightOnlyTree);
+
+    const data = deriveComparisonData({
+      leftTree: baseTree,
+      leftResult: baseResult,
+      leftScenarioName: "Base case",
+      leftIsDoNothing: false,
+      rightTree: rightOnlyTree,
+      rightResult: rightOnlyResult,
+      rightScenarioName: "With scenario account",
+      rightIsDoNothing: false,
+      scrubberYear: baseTree.planSettings.planStartYear,
+    });
+
+    const leftIn = data.left.rows.find((r) => r.label === "In-estate")!.signedValue;
+    const rightIn = data.right.rows.find((r) => r.label === "In-estate")!.signedValue;
+
+    // In year 0, the new $600K account hasn't grown yet — so the right cell
+    // should sit ~$600K above the left cell. Pre-fix, both cells included the
+    // account at its initial value and the delta collapsed to ~$0.
+    expect(rightIn - leftIn).toBeGreaterThan(NEW_ACCOUNT_VALUE * 0.95);
   });
 });

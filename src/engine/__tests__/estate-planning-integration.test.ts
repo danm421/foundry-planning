@@ -183,7 +183,8 @@ function cooperSampleScenario(): ClientData {
 describe("estate-planning page integration (Cooper Sample)", () => {
   const tree = cooperSampleScenario();
   const withResult = runProjectionWithEvents(tree);
-  const withoutResult = runProjectionWithEvents(synthesizeNoPlanClientData(tree));
+  const withoutTree = synthesizeNoPlanClientData(tree);
+  const withoutResult = runProjectionWithEvents(withoutTree);
   // Cooper fixture: client dies 2056 (1968 + 88), spouse dies 2058 (1970 + 88).
   const finalDeathYear =
     withResult.secondDeathEvent?.year ??
@@ -192,10 +193,11 @@ describe("estate-planning page integration (Cooper Sample)", () => {
 
   function buildComparison(scrubberYear: number) {
     return deriveComparisonData({
-      tree,
+      leftTree: withoutTree,
       leftResult: withoutResult,
       leftScenarioName: "Do nothing (no plan)",
       leftIsDoNothing: true,
+      rightTree: tree,
       rightResult: withResult,
       rightScenarioName: "Base case",
       rightIsDoNothing: false,

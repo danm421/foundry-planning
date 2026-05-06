@@ -15,12 +15,13 @@ import { TrajectoryChart } from "./trajectory-chart";
 import { StrategyCards } from "./strategy-cards";
 
 interface Props {
-  tree: ClientData;
   clientId: string;
+  leftTree: ClientData;
   leftResult: ProjectionResult;
   leftScenarioId: string;
   leftScenarioName: string;
   leftIsDoNothing: boolean;
+  rightTree: ClientData;
   rightResult: ProjectionResult;
   rightScenarioId: string;
   rightScenarioName: string;
@@ -31,7 +32,7 @@ interface Props {
 }
 
 export function ProjectionPanel(props: Props) {
-  const startYear = props.tree.planSettings.planStartYear;
+  const startYear = props.rightTree.planSettings.planStartYear;
   const firstDeathYear = props.rightResult.firstDeathEvent?.year;
   const secondDeathYear = props.rightResult.secondDeathEvent?.year;
   const finalDeathYear = secondDeathYear ?? firstDeathYear ?? startYear + 30;
@@ -43,7 +44,7 @@ export function ProjectionPanel(props: Props) {
     <section className="space-y-6 rounded border border-hair bg-card p-6">
       <ChipBar
         clientId={props.clientId}
-        planSettings={props.tree.planSettings}
+        planSettings={props.rightTree.planSettings}
         onOpenAssumptions={() => setAssumptionsOpen(true)}
       />
       <YearScrubber
@@ -55,11 +56,12 @@ export function ProjectionPanel(props: Props) {
       />
       <ComparisonGrid
         clientId={props.clientId}
-        tree={props.tree}
+        leftTree={props.leftTree}
         leftResult={props.leftResult}
         leftScenarioId={props.leftScenarioId}
         leftScenarioName={props.leftScenarioName}
         leftIsDoNothing={props.leftIsDoNothing}
+        rightTree={props.rightTree}
         rightResult={props.rightResult}
         rightScenarioId={props.rightScenarioId}
         rightScenarioName={props.rightScenarioName}
@@ -69,13 +71,14 @@ export function ProjectionPanel(props: Props) {
         snapshots={props.snapshots}
       />
       <TrajectoryChart
-        tree={props.tree}
+        leftTree={props.leftTree}
         leftResult={props.leftResult}
+        rightTree={props.rightTree}
         rightResult={props.rightResult}
         scrubberYear={scrubberYear}
       />
       <StrategyCards
-        tree={props.tree}
+        tree={props.rightTree}
         rightResult={props.rightResult}
         rightIsDoNothing={props.rightIsDoNothing}
         procrastinatedResult={props.procrastinatedResult}
@@ -84,7 +87,7 @@ export function ProjectionPanel(props: Props) {
       <AssumptionsModal
         open={assumptionsOpen}
         clientId={props.clientId}
-        planSettings={props.tree.planSettings}
+        planSettings={props.rightTree.planSettings}
         onClose={() => setAssumptionsOpen(false)}
       />
     </section>
