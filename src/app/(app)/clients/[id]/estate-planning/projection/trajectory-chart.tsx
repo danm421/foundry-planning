@@ -4,13 +4,20 @@
  * household.
  *
  * Design:
- *   - Two filled area paths + stroked outlines (left dimmer/thinner; right
- *     brighter/thicker as the "your plan" focus).
+ *   - Two clean stroked lines: left = dashed/dim (Plan 1), right = solid/
+ *     bright (Plan 2). No area fills under the curves — they obscured the
+ *     delta.
+ *   - A delta band fills the region *between* the two lines:
+ *       green  (--color-good) where right > left  → Plan 2 ahead
+ *       gray   (--color-ink-4) where left > right → Plan 2 behind
+ *     Sign-changing segments are split at the linearly-interpolated zero
+ *     crossing so the band edges meet cleanly.
  *   - Dashed verticals at firstDeathYear (tax/burnt-orange) and
  *     secondDeathYear (red/crit) — guards against undefined years.
  *   - Vertical scrubber line keyed by `data-current-year` for tests.
  *   - Y-axis grid with 5 horizontal rules and `${M}M` labels.
  *   - X-axis tick labels every 10 years.
+ *   - Inline legend chips below the chart explaining the band semantics.
  *
  * Color tokens use plain `var(--color-X)` — modern browsers resolve CSS
  * custom properties in SVG presentation attributes. Tokens come from
@@ -23,7 +30,11 @@
 
 import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
-import { deriveChartSeries } from "./lib/derive-chart-series";
+import {
+  deriveChartSeries,
+  deriveDeltaBands,
+  type DeltaBandPoly,
+} from "./lib/derive-chart-series";
 
 interface Props {
   tree: ClientData;
@@ -46,15 +57,14 @@ export function TrajectoryChart({
   scrubberYear,
 }: Props) {
   const series = deriveChartSeries({ tree, rightResult, leftResult });
+  const bands = deriveDeltaBands(series.left, series.right);
   const xs = series.right.map((p) => p[0]);
   const xMin = xs.length > 0 ? Math.min(...xs) : 0;
   const xMax = xs.length > 0 ? Math.max(...xs) : 0;
   const xRange = xMax - xMin;
 
   const xScale = (x: number) =>
-    xRange === 0
-      ? PAD_L
-      : PAD_L + ((x - xMin) / xRange) * (W - PAD_L - PAD_R);
+    xRange === 0 ? PAD_L : PAD_L + ((x - xMin) / xRange) * (W - PAD_L - PAD_R);
   const yScale = (y: number) =>
     series.yMax === 0
       ? H - PAD_B
@@ -64,18 +74,37 @@ export function TrajectoryChart({
       .map((p, i) => `${i === 0 ? "M" : "L"} ${xScale(p[0])} ${yScale(p[1])}`)
       .join(" ");
 
-  const areaFor = (s: [number, number][]) =>
-    s.length === 0
-      ? ""
-      : `${pathFor(s)} L ${xScale(xMax)} ${yScale(0)} L ${xScale(xMin)} ${yScale(0)} Z`;
+  const polysToPath = (polys: DeltaBandPoly[]): string =>
+    polys
+      .map(({ points }) => {
+        if (points.length === 0) return "";
+        const cmds = points
+          .map(
+            ([y, v], i) =>
+              `${i === 0 ? "M" : "L"} ${xScale(y)} ${yScale(v)}`,
+          )
+          .join(" ");
+        return `${cmds} Z`;
+      })
+      .filter(Boolean)
+      .join(" ");
+
+  const positivePath = polysToPath(bands.positive);
+  const negativePath = polysToPath(bands.negative);
 
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      role="img"
-      aria-label="Estate trajectory comparison"
-      className="h-auto w-full"
-    >
+    <div className="space-y-2">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        role="img"
+        aria-label="Estate trajectory comparison: Plan 2 vs Plan 1"
+        className="h-auto w-full"
+      >
+      <title>
+        Plan 2 vs Plan 1 over time. Green band shows years where Plan 2 leaves
+        more wealth on the table; gray band shows years where Plan 1 is ahead.
+      </title>
+
       {/* y-axis grid + labels */}
       {[0, 0.25, 0.5, 0.75, 1].map((f, i) => {
         const y = yScale(series.yMax * f);
@@ -103,38 +132,47 @@ export function TrajectoryChart({
         );
       })}
 
-      {/* left-side (Plan 1) area + line — dimmer */}
-      {series.left.length > 0 && (
-        <>
-          <path
-            d={areaFor(series.left)}
-            fill="var(--color-spouse)"
-            fillOpacity={0.25}
-          />
-          <path
-            d={pathFor(series.left)}
-            stroke="var(--color-spouse)"
-            strokeWidth={1.5}
-            fill="none"
-          />
-        </>
+      {/* delta band — Plan 2 behind (gray) — drawn first so green sits on top */}
+      {negativePath && (
+        <path
+          d={negativePath}
+          fill="var(--color-ink-4)"
+          fillOpacity={0.45}
+          stroke="none"
+          aria-hidden="true"
+        />
       )}
 
-      {/* right-side (Plan 2) area + line — brighter */}
+      {/* delta band — Plan 2 ahead (green) */}
+      {positivePath && (
+        <path
+          d={positivePath}
+          fill="var(--color-good)"
+          fillOpacity={0.32}
+          stroke="none"
+          aria-hidden="true"
+        />
+      )}
+
+      {/* left-side (Plan 1) line — dimmer + dashed */}
+      {series.left.length > 0 && (
+        <path
+          d={pathFor(series.left)}
+          stroke="var(--color-ink-3)"
+          strokeWidth={1.5}
+          strokeDasharray="4 4"
+          fill="none"
+        />
+      )}
+
+      {/* right-side (Plan 2) line — solid bright */}
       {series.right.length > 0 && (
-        <>
-          <path
-            d={areaFor(series.right)}
-            fill="var(--color-accent)"
-            fillOpacity={0.35}
-          />
-          <path
-            d={pathFor(series.right)}
-            stroke="var(--color-accent)"
-            strokeWidth={2.5}
-            fill="none"
-          />
-        </>
+        <path
+          d={pathFor(series.right)}
+          stroke="var(--color-accent)"
+          strokeWidth={2.5}
+          fill="none"
+        />
       )}
 
       {/* death-year guides */}
@@ -186,7 +224,39 @@ export function TrajectoryChart({
           {y}
         </text>
       ))}
-    </svg>
+      </svg>
+
+      <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 px-[60px] text-[11px] text-ink-3">
+        <li className="flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="inline-block h-0.5 w-5 rounded-full bg-accent"
+          />
+          Plan 2
+        </li>
+        <li className="flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="inline-block h-px w-5 border-t border-dashed border-ink-3"
+          />
+          Plan 1
+        </li>
+        <li className="flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="inline-block h-2 w-3 rounded-sm bg-[var(--color-good)]/40"
+          />
+          Plan 2 ahead
+        </li>
+        <li className="flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="inline-block h-2 w-3 rounded-sm bg-[var(--color-ink-4)]/50"
+          />
+          Plan 1 ahead
+        </li>
+      </ul>
+    </div>
   );
 }
 

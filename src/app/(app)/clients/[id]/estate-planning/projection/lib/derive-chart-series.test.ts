@@ -13,7 +13,7 @@ import { describe, it, expect } from "vitest";
 import { runProjectionWithEvents } from "@/engine";
 import { synthesizeNoPlanClientData } from "@/lib/estate/counterfactual";
 import type { ClientData } from "@/engine/types";
-import { deriveChartSeries } from "./derive-chart-series";
+import { deriveChartSeries, deriveDeltaBands } from "./derive-chart-series";
 
 const FM_CLIENT = "fm-client";
 const FM_SPOUSE = "fm-spouse";
@@ -214,5 +214,62 @@ describe("deriveChartSeries", () => {
     const lastRight = series.right[series.right.length - 1][1];
     const lastLeft = series.left[series.left.length - 1][1];
     expect(lastRight).toBeGreaterThanOrEqual(lastLeft);
+  });
+});
+
+describe("deriveDeltaBands", () => {
+  it("emits a single positive quad when right ≥ left across the segment", () => {
+    const left: [number, number][] = [
+      [2026, 100],
+      [2027, 110],
+    ];
+    const right: [number, number][] = [
+      [2026, 120],
+      [2027, 130],
+    ];
+    const bands = deriveDeltaBands(left, right);
+    expect(bands.positive).toHaveLength(1);
+    expect(bands.negative).toHaveLength(0);
+    expect(bands.positive[0].points).toHaveLength(4);
+  });
+
+  it("emits a single negative quad when left > right across the segment", () => {
+    const left: [number, number][] = [
+      [2026, 200],
+      [2027, 210],
+    ];
+    const right: [number, number][] = [
+      [2026, 100],
+      [2027, 110],
+    ];
+    const bands = deriveDeltaBands(left, right);
+    expect(bands.positive).toHaveLength(0);
+    expect(bands.negative).toHaveLength(1);
+  });
+
+  it("splits a sign-flipping segment at the linearly-interpolated zero crossing", () => {
+    // left = right at the zero crossing. left[2026] = 100, left[2027] = 100.
+    // right[2026] = 80 (negative delta), right[2027] = 120 (positive delta).
+    // Crossing at t = 0.5 → year 2026.5, value 100.
+    const left: [number, number][] = [
+      [2026, 100],
+      [2027, 100],
+    ];
+    const right: [number, number][] = [
+      [2026, 80],
+      [2027, 120],
+    ];
+    const bands = deriveDeltaBands(left, right);
+    expect(bands.positive).toHaveLength(1);
+    expect(bands.negative).toHaveLength(1);
+    // Crossing point appears in both polygons.
+    const crossingPos = bands.positive[0].points.find(
+      ([y, v]) => Math.abs(y - 2026.5) < 0.01 && Math.abs(v - 100) < 0.01,
+    );
+    const crossingNeg = bands.negative[0].points.find(
+      ([y, v]) => Math.abs(y - 2026.5) < 0.01 && Math.abs(v - 100) < 0.01,
+    );
+    expect(crossingPos).toBeDefined();
+    expect(crossingNeg).toBeDefined();
   });
 });
