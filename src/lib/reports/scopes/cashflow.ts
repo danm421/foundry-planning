@@ -23,6 +23,19 @@ export type CashflowScopeData = {
   }[];
 };
 
+/** Sum of all income components for a single cashflow row. Withdrawals
+ *  are intentionally included — they fund retirement spending and the
+ *  bar chart treats them as part of total income. */
+export function totalIncome(y: CashflowScopeData["years"][number]): number {
+  return (
+    y.incomeWages +
+    y.incomeSocialSecurity +
+    y.incomePensions +
+    y.incomeWithdrawals +
+    y.incomeOther
+  );
+}
+
 function project(p: ProjectionYear): CashflowScopeData["years"][number] {
   return {
     year: p.year,
@@ -64,12 +77,6 @@ registerScope({
       (a, b) => (b.expenses > a.expenses ? b : a),
       first,
     );
-    const totalIncome = (y: CashflowScopeData["years"][number]): number =>
-      y.incomeWages +
-      y.incomeSocialSecurity +
-      y.incomePensions +
-      y.incomeWithdrawals +
-      y.incomeOther;
     return [
       `Cashflow ${first.year}–${last.year}.`,
       `Year ${first.year}: income $${totalIncome(first).toFixed(0)}, expenses $${first.expenses.toFixed(0)}, savings $${first.savings.toFixed(0)}.`,

@@ -8,7 +8,10 @@
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PDF_THEME } from "../theme";
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
-import type { CashflowScopeData } from "@/lib/reports/scopes/cashflow";
+import {
+  totalIncome,
+  type CashflowScopeData,
+} from "@/lib/reports/scopes/cashflow";
 
 const FMT = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -38,6 +41,8 @@ const s = StyleSheet.create({
     fontSize: 9,
     color: PDF_THEME.ink,
   },
+  cellNum: { textAlign: "right" },
+  cellYear: { textAlign: "left" },
   head: {
     fontFamily: "JetBrains Mono",
     fontSize: 8,
@@ -62,18 +67,13 @@ export function CashflowTablePdfRender({
   const rows = d?.years ?? [];
   const totals = rows.reduce(
     (a, r) => ({
-      income:
-        a.income +
-        r.incomeWages +
-        r.incomeSocialSecurity +
-        r.incomePensions +
-        r.incomeWithdrawals +
-        r.incomeOther,
+      income: a.income + totalIncome(r),
       expenses: a.expenses + r.expenses,
       savings: a.savings + r.savings,
     }),
     { income: 0, expenses: 0, savings: 0 },
   );
+  const headerAligns = [s.cellYear, s.cellNum, s.cellNum, s.cellNum, s.cellNum];
   return (
     <View style={s.wrap}>
       <Text style={s.title}>{props.title}</Text>
@@ -81,43 +81,37 @@ export function CashflowTablePdfRender({
       <View
         style={[s.row, { borderBottomWidth: 1, borderColor: PDF_THEME.ink }]}
       >
-        {["Year", "Income", "Expenses", "Savings", "Net"].map((h) => (
-          <Text key={h} style={[s.cell, s.head]}>
+        {["Year", "Income", "Expenses", "Savings", "Net"].map((h, i) => (
+          <Text key={h} style={[s.cell, s.head, headerAligns[i]]}>
             {h}
           </Text>
         ))}
       </View>
-      {rows.map((r) => {
-        const income =
-          r.incomeWages +
-          r.incomeSocialSecurity +
-          r.incomePensions +
-          r.incomeWithdrawals +
-          r.incomeOther;
-        return (
-          <View key={r.year} style={s.row}>
-            <Text style={s.cell}>{r.year}</Text>
-            <Text style={s.cell}>{FMT.format(income)}</Text>
-            <Text style={s.cell}>{FMT.format(r.expenses)}</Text>
-            <Text style={s.cell}>{FMT.format(r.savings)}</Text>
-            <Text
-              style={[
-                s.cell,
-                { color: r.net >= 0 ? PDF_THEME.good : PDF_THEME.crit },
-              ]}
-            >
-              {FMT.format(r.net)}
-            </Text>
-          </View>
-        );
-      })}
+      {rows.map((r) => (
+        <View key={r.year} style={s.row}>
+          <Text style={[s.cell, s.cellYear]}>{r.year}</Text>
+          <Text style={[s.cell, s.cellNum]}>{FMT.format(totalIncome(r))}</Text>
+          <Text style={[s.cell, s.cellNum]}>{FMT.format(r.expenses)}</Text>
+          <Text style={[s.cell, s.cellNum]}>{FMT.format(r.savings)}</Text>
+          <Text
+            style={[
+              s.cell,
+              s.cellNum,
+              { color: r.net >= 0 ? PDF_THEME.good : PDF_THEME.crit },
+            ]}
+          >
+            {FMT.format(r.net)}
+          </Text>
+        </View>
+      ))}
       {props.showTotals && (
         <View style={s.totalRow}>
-          <Text style={s.cell}>Total</Text>
-          <Text style={s.cell}>{FMT.format(totals.income)}</Text>
-          <Text style={s.cell}>{FMT.format(totals.expenses)}</Text>
-          <Text style={s.cell}>{FMT.format(totals.savings)}</Text>
-          <Text style={s.cell}>—</Text>
+          <Text style={[s.cell, s.cellYear]}>Total</Text>
+          <Text style={[s.cell, s.cellNum]}>{FMT.format(totals.income)}</Text>
+          <Text style={[s.cell, s.cellNum]}>{FMT.format(totals.expenses)}</Text>
+          <Text style={[s.cell, s.cellNum]}>{FMT.format(totals.savings)}</Text>
+          {/* Net total is "—": engine's per-year `net` doesn't sum cleanly across years. */}
+          <Text style={[s.cell, s.cellNum]}>—</Text>
         </View>
       )}
     </View>

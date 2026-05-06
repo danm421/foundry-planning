@@ -12,7 +12,10 @@
 
 import { useMemo } from "react";
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
-import type { CashflowScopeData } from "@/lib/reports/scopes/cashflow";
+import {
+  totalIncome,
+  type CashflowScopeData,
+} from "@/lib/reports/scopes/cashflow";
 import { resolveYearRange } from "@/lib/reports/year-range-default";
 import { useReportContext } from "../builder-context";
 
@@ -35,13 +38,7 @@ export function CashflowTableRender(p: WidgetRenderProps<"cashflowTable">) {
     );
     const t = filtered.reduce(
       (a, r) => ({
-        income:
-          a.income +
-          r.incomeWages +
-          r.incomeSocialSecurity +
-          r.incomePensions +
-          r.incomeWithdrawals +
-          r.incomeOther,
+        income: a.income + totalIncome(r),
         expenses: a.expenses + r.expenses,
         savings: a.savings + r.savings,
       }),
@@ -68,31 +65,24 @@ export function CashflowTableRender(p: WidgetRenderProps<"cashflowTable">) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
-            const income =
-              r.incomeWages +
-              r.incomeSocialSecurity +
-              r.incomePensions +
-              r.incomeWithdrawals +
-              r.incomeOther;
-            return (
-              <tr key={r.year} className="border-t border-hair">
-                <td>{r.year}</td>
-                <td>{FMT.format(income)}</td>
-                <td>{FMT.format(r.expenses)}</td>
-                <td>{FMT.format(r.savings)}</td>
-                <td className={r.net >= 0 ? "text-good" : "text-crit"}>
-                  {FMT.format(r.net)}
-                </td>
-              </tr>
-            );
-          })}
+          {rows.map((r) => (
+            <tr key={r.year} className="border-t border-hair">
+              <td>{r.year}</td>
+              <td>{FMT.format(totalIncome(r))}</td>
+              <td>{FMT.format(r.expenses)}</td>
+              <td>{FMT.format(r.savings)}</td>
+              <td className={r.net >= 0 ? "text-good" : "text-crit"}>
+                {FMT.format(r.net)}
+              </td>
+            </tr>
+          ))}
           {p.props.showTotals && (
             <tr className="border-t-2 border-ink font-medium">
               <td>Total</td>
               <td>{FMT.format(totals.income)}</td>
               <td>{FMT.format(totals.expenses)}</td>
               <td>{FMT.format(totals.savings)}</td>
+              {/* Net total is "—": engine's per-year `net` doesn't sum cleanly across years. */}
               <td>—</td>
             </tr>
           )}
