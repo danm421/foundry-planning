@@ -2004,6 +2004,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   <p className="text-sm font-semibold tabular-nums text-gray-200">
                     {fmtNum(ledgerModal.ledger.beginningValue)}
                   </p>
+                  {(ledgerModal.ledger.basisBoY ?? 0) > 0 && (
+                    <p className="mt-0.5 text-xs tabular-nums text-gray-400">
+                      Basis {fmtNum(ledgerModal.ledger.basisBoY!)}
+                    </p>
+                  )}
                 </div>
                 <div className="text-gray-600">→</div>
                 <div className="text-right">
@@ -2011,6 +2016,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                   <p className="text-sm font-semibold tabular-nums text-gray-100">
                     {fmtNum(ledgerModal.ledger.endingValue)}
                   </p>
+                  {(ledgerModal.ledger.basisEoY ?? 0) > 0 && (
+                    <p className="mt-0.5 text-xs tabular-nums text-gray-400">
+                      Basis {fmtNum(ledgerModal.ledger.basisEoY!)}
+                    </p>
+                  )}
                 </div>
               </div>
 

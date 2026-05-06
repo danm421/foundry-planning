@@ -852,6 +852,14 @@ export interface AccountLedger {
   rmdAmount: number;
   fees: number;
   endingValue: number;
+  /** Cost basis at the start of the year (post-prior-year mutations,
+   * pre-current-year activity). Used by the cash-flow drill-down so an
+   * advisor can see embedded gain/loss alongside market value. */
+  basisBoY?: number;
+  /** Cost basis at the end of the year, after sales, growth realization,
+   * contributions, and Roth conversions. Excludes any death-event basis
+   * step-up — those land on the next year's BoY. */
+  basisEoY?: number;
   /**
    * Itemized entries for everything that happened in this account this year,
    * in the order it was applied. Amounts are signed: positive = inflow, negative = outflow.

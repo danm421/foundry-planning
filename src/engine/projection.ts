@@ -576,6 +576,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         fees: 0,
         endingValue: beginningValue,
         entries: [],
+        basisBoY: basisMap[acct.id] ?? acct.basis,
       };
     }
 
@@ -841,6 +842,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           fees: 0,
           endingValue: currentBalance,
           entries: [],
+          basisBoY: basisMap[acct.id] ?? acct.basis,
         };
       }
 
@@ -2616,6 +2618,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       yearEndAccountBalances,
       annualExclusionsByYear,
     });
+
+    // Stamp end-of-year basis onto each ledger now that all sales, growth
+    // realization, contributions, and Roth conversions have settled. Death-
+    // event mutations to basisMap happen *after* this push and land on the
+    // next year's BoY, which is the right semantics for the drill-down view.
+    for (const acctId of Object.keys(accountLedgers)) {
+      accountLedgers[acctId].basisEoY = basisMap[acctId] ?? 0;
+    }
 
     years.push({
       year,

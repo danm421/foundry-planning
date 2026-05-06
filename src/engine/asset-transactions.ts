@@ -335,6 +335,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
           sourceId: purchase.id,
         },
       ],
+      basisBoY: assetBasis,
     };
 
     // Create synthetic liability for mortgage if provided
