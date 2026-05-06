@@ -96,6 +96,8 @@ export function buildWidgetData(
           // Chart/table widgets each consume one scope — narrow the dict so
           // the widget render doesn't have to know the full scopeData shape.
           out[w.id] = { cashflow: ctx.scopeData.cashflow };
+        } else if (w.kind === "netWorthLine") {
+          out[w.id] = { balance: ctx.scopeData.balance };
         } else {
           // TODO(Task 19+): pass per-widget scope projection rather than the
           // full scopeData dict. Remaining widgets (e.g. aiAnalysis) get the
