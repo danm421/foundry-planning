@@ -23,7 +23,7 @@ import {
   fmtYearTick,
   niceYTicks,
   niceYearTicks,
-  usePlot,
+  makePlot,
 } from "./pdf-chart-primitives";
 
 describe("formatters", () => {
@@ -71,9 +71,9 @@ describe("ticks", () => {
   });
 });
 
-describe("usePlot", () => {
+describe("makePlot", () => {
   it("scales linearly from data domain to inner pixel rectangle", () => {
-    const plot = usePlot({
+    const plot = makePlot({
       width: 100,
       height: 100,
       xDomain: [0, 10],
@@ -91,7 +91,7 @@ describe("usePlot", () => {
 });
 
 describe("primitives — element snapshots", () => {
-  const plot = usePlot({
+  const plot = makePlot({
     width: 480,
     height: 220,
     xDomain: [2025, 2030],

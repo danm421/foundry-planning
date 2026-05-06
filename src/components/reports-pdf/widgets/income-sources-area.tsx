@@ -16,7 +16,7 @@ import {
   Legend,
   Svg,
   fmtCompactDollar,
-  usePlot,
+  makePlot,
 } from "../pdf-chart-primitives";
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 import type { CashflowScopeData } from "@/lib/reports/scopes/cashflow";
@@ -78,22 +78,22 @@ export function IncomeSourcesAreaPdfRender({
   // series up through and including itself. The lower edge for series N
   // is the top edge of series N-1 (or the zero baseline for series 0).
   const xs = years.map((y) => y.year);
-  let posMax = 0;
-  const tops = active.map((sd, idx) => {
-    return years.map((y, i) => {
+  const tops = active.map((sd, idx) =>
+    years.map((y, i) => {
       let cum = 0;
       for (let j = 0; j <= idx; j++) cum += active[j].read(y);
-      if (idx === active.length - 1 && cum > posMax) posMax = cum;
       return { x: y.year, value: cum, _i: i };
-    });
-  });
+    }),
+  );
+  const topSeries = tops[tops.length - 1] ?? [];
+  const posMax = topSeries.reduce((m, p) => (p.value > m ? p.value : m), 0);
   const yMax = posMax * 1.05 || 1;
 
   const xDomain: [number, number] = [xs[0], xs[xs.length - 1]];
 
   const legendHeight = 18;
   const plotHeight = height - legendHeight;
-  const plot = usePlot({
+  const plot = makePlot({
     width,
     height: plotHeight,
     xDomain,

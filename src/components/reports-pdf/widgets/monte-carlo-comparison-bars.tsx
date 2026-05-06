@@ -15,7 +15,7 @@ import {
   Svg,
   ValueLabel,
   fmtPercent,
-  usePlot,
+  makePlot,
 } from "../pdf-chart-primitives";
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 import type { ComparisonScopeData } from "@/lib/reports/scopes/comparison";
@@ -81,7 +81,7 @@ export function MonteCarloComparisonBarsPdfRender({
   const xDomain: [number, number] = [0.5, 2.5];
   const yDomain: [number, number] = [0, 100];
 
-  const plot = usePlot({
+  const plot = makePlot({
     width,
     height,
     xDomain,

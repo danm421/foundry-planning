@@ -20,7 +20,7 @@ import {
   LineSeries,
   Svg,
   fmtCompactDollar,
-  usePlot,
+  makePlot,
 } from "../pdf-chart-primitives";
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 import type { MonteCarloScopeData } from "@/lib/reports/scopes/monteCarlo";
@@ -85,7 +85,7 @@ export function MonteCarloFanPdfRender({
 
   const headlineHeight = props.showHeadline ? 24 : 0;
   const chartHeight = height - headlineHeight;
-  const plot = usePlot({ width, height: chartHeight, xDomain, yDomain });
+  const plot = makePlot({ width, height: chartHeight, xDomain, yDomain });
 
   const enabled = new Set(props.bands);
   const accent = PDF_THEME.chart[2]; // steel band tone

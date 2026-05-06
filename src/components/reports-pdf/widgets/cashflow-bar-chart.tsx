@@ -20,7 +20,7 @@ import {
   StackedBarSeries,
   Svg,
   fmtCompactDollar,
-  usePlot,
+  makePlot,
 } from "../pdf-chart-primitives";
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 import type { CashflowScopeData } from "@/lib/reports/scopes/cashflow";
@@ -99,7 +99,7 @@ export function CashflowBarChartPdfRender({
   // Reserve room at bottom for the legend.
   const legendHeight = props.showLegend ? 18 : 0;
   const plotHeight = height - legendHeight;
-  const plot = usePlot({
+  const plot = makePlot({
     width,
     height: plotHeight,
     xDomain,

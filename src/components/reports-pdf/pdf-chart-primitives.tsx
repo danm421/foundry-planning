@@ -6,7 +6,7 @@
 // SVG primitives (`Svg`, `G`, `Rect`, `Line`, `Path`, `Polyline`, `Polygon`,
 // `Circle`, `Text`).
 //
-// `usePlot` returns axis-mapping functions; primitives consume the resulting
+// `makePlot` returns axis-mapping functions; primitives consume the resulting
 // `Plot` object. No React state, no contexts — just plain composable
 // helpers.
 //
@@ -93,7 +93,7 @@ export type UsePlotArgs = {
 
 /** Pure helper — not a React hook (the `use` prefix matches the spec but
  *  there's no state, just math). Returns a `Plot` with linear scales. */
-export function usePlot({
+export function makePlot({
   width,
   height,
   xDomain,
@@ -349,8 +349,6 @@ export function StackedBarSeries({
 }): ReactElement {
   const band = plot.bandWidth(xs.length);
   const w = barWidth ?? band * 0.7;
-  const baseY = plot.yScale(0);
-  // Track running offsets per X for each direction.
   const posStack = xs.map(() => 0);
   const negStack = xs.map(() => 0);
   return (
@@ -383,9 +381,6 @@ export function StackedBarSeries({
                 const start = negStack[xi];
                 const next = start + Math.abs(v);
                 negStack[xi] = next;
-                // Negative direction grows downward from baseY.
-                const yTop = baseY + ((start - 0) / (plot.yDomain[1] - plot.yDomain[0])) * plot.inner.height + 0;
-                // Simpler: use yScale on negative values relative to base.
                 const yPosTop = plot.yScale(-start);
                 const yPosBot = plot.yScale(-next);
                 return (
@@ -639,20 +634,22 @@ export function Legend({
   itemGap?: number;
   color?: string;
 }): ReactElement {
-  let cursor = 0;
+  // Approximate label width — PDF doesn't expose font metrics in SVG context.
+  // 4px per char is a reasonable lower bound for our 8pt sans-serif; a little
+  // extra space avoids overlap on long labels at the cost of trailing space.
+  const advances = items.map(
+    (it) => swatchSize + gap + it.label.length * fontSize * 0.55 + itemGap,
+  );
+  const offsets = advances.reduce<number[]>((acc, w, i) => {
+    acc.push(i === 0 ? 0 : acc[i - 1] + advances[i - 1]);
+    return acc;
+  }, []);
   return (
     <G>
       {items.map((it, i) => {
         if (orientation === "horizontal") {
-          const ix = x + cursor;
+          const ix = x + offsets[i];
           const iy = y;
-          // Approximate label width — PDF doesn't expose font metrics in
-          // SVG context. 4px per char is a reasonable lower bound for our
-          // 8pt sans-serif; a little extra space avoids overlap on long
-          // labels at the cost of a bit of trailing whitespace.
-          const labelWidth = it.label.length * fontSize * 0.55;
-          const advance = swatchSize + gap + labelWidth + itemGap;
-          cursor += advance;
           return (
             <G key={i}>
               <Rect

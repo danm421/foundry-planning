@@ -20,7 +20,7 @@ import {
   Svg,
   ValueLabel,
   fmtCompactDollar,
-  usePlot,
+  makePlot,
 } from "../pdf-chart-primitives";
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 import type { BalanceScopeData } from "@/lib/reports/scopes/balance";
@@ -71,7 +71,7 @@ export function NetWorthLinePdfRender({
   const xDomain: [number, number] = [xs[0], xs[xs.length - 1]];
   const yDomain: [number, number] = [minV, maxV + yPad];
 
-  const plot = usePlot({ width, height, xDomain, yDomain });
+  const plot = makePlot({ width, height, xDomain, yDomain });
 
   const accent = PDF_THEME.chart[2]; // steel — net-worth has historically read as steel/blue
 

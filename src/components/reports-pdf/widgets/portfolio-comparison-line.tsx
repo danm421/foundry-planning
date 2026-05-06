@@ -20,7 +20,7 @@ import {
   Svg,
   ValueLabel,
   fmtCompactDollar,
-  usePlot,
+  makePlot,
 } from "../pdf-chart-primitives";
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 import type { ComparisonScopeData } from "@/lib/reports/scopes/comparison";
@@ -103,7 +103,7 @@ export function PortfolioComparisonLinePdfRender({
   // Reserve room at the bottom for the legend.
   const legendHeight = 18;
   const plotHeight = height - legendHeight;
-  const plot = usePlot({
+  const plot = makePlot({
     width,
     height: plotHeight,
     xDomain,

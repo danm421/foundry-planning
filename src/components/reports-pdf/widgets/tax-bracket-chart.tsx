@@ -23,7 +23,7 @@ import {
   StackedBarSeries,
   Svg,
   fmtCompactDollar,
-  usePlot,
+  makePlot,
 } from "../pdf-chart-primitives";
 import type { WidgetRenderProps } from "@/lib/reports/widget-registry";
 import {
@@ -84,14 +84,14 @@ export function TaxBracketChartPdfRender({
 
   // Reserve room at the bottom for the legend (two-row safe — 7 entries
   // can wrap on narrow widths). Domain endpoints fall back to 0/1 when
-  // there are no years so `usePlot` (a pure helper, not a real hook
+  // there are no years so `makePlot` (a pure helper, not a real hook
   // despite the name) can be called unconditionally — keeps the
   // react-hooks/rules-of-hooks linter happy.
   const legendHeight = 28;
   const plotHeight = height - legendHeight;
   const xDomain: [number, number] =
     xs.length > 0 ? [xs[0] - 0.5, xs[xs.length - 1] + 0.5] : [0, 1];
-  const plot = usePlot({
+  const plot = makePlot({
     width,
     height: plotHeight,
     xDomain,
