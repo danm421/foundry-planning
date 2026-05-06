@@ -127,6 +127,30 @@ export async function loadReportWidgetData(args: {
       proposedScenarioId: comparisonBinding.proposedScenarioId,
     });
     widgetData[COMPARISON_DATA_KEY] = comparison;
+
+    // Stamp the resolved comparison payload into each comparison-aware
+    // widget's slot so both screen and PDF renders receive it through the
+    // standard `data` prop (PDF widgets have no React context to read
+    // `widgetData[__comparison]` from). Screen widgets can still pull from
+    // context if they prefer, but the per-widget stamp keeps both surfaces
+    // symmetric.
+    const COMPARISON_AWARE_KINDS: ReadonlySet<string> = new Set([
+      "portfolioComparisonLine",
+      "monteCarloComparisonBars",
+      "comparisonDonutPair",
+      "recommendedChangesTable",
+      "keyIndicatorsCallout",
+    ]);
+    for (const p of pages) {
+      for (const r of p.rows) {
+        for (const w of r.slots) {
+          if (!w) continue;
+          if (COMPARISON_AWARE_KINDS.has(w.kind)) {
+            widgetData[w.id] = { comparison };
+          }
+        }
+      }
+    }
   }
 
   return widgetData;
