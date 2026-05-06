@@ -1826,19 +1826,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   return (
     <div>
-      {/* Scenario selector */}
-      <div className="mb-4 flex items-center gap-3">
-        <label className="text-sm font-medium text-gray-300">Scenario:</label>
-        <select
-          className="rounded-md border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 shadow-sm focus:border-accent focus:outline-none"
-          value="base"
-          disabled
-        >
-          <option value="base">Base Case</option>
-        </select>
-        <span className="text-xs text-gray-400">(Multi-scenario support coming soon)</span>
-      </div>
-
       {/* Year-range slider */}
       <div className="mb-4">
         <YearRangeSlider
