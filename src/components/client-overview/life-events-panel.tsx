@@ -55,7 +55,7 @@ export default function LifeEventsPanel({ clientId, events }: Props): ReactEleme
             return (
               <Link
                 key={`${e.year}-${i}`}
-                href={`/clients/${clientId}/timeline#y${e.year}`}
+                href={`/clients/${clientId}/cashflow/timeline#y${e.year}`}
                 className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
                 style={{ left: `${leftPct}%` }}
                 title={`${e.year} · ${e.label}`}

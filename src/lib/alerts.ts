@@ -32,7 +32,7 @@ export function computeAlerts(client: ClientLike, projection: ProjectionLike): A
       severity: mc < MC_CRIT_THRESHOLD ? "critical" : "warning",
       title: `Monte Carlo success ${Math.round(mc * 100)}%`,
       detail: `Below ${Math.round(MC_WARN_THRESHOLD * 100)}% confidence threshold.`,
-      href: `/clients/${client.id}/monte-carlo`,
+      href: `/clients/${client.id}/cashflow/monte-carlo`,
     });
   }
 
@@ -57,7 +57,7 @@ export function computeAlerts(client: ClientLike, projection: ProjectionLike): A
       severity: "critical",
       title: "Plan goes negative",
       detail: "At least one projected year shows net worth ≤ $0.",
-      href: `/clients/${client.id}/timeline`,
+      href: `/clients/${client.id}/cashflow/timeline`,
     });
   }
 

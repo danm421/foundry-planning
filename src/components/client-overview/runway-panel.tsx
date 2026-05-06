@@ -73,7 +73,7 @@ export default function RunwayPanel({
         <span>
           Monte Carlo · {netWorthSeries.length ? "10,000 trials" : "awaiting run"}
         </span>
-        <Link href={`/clients/${clientId}/monte-carlo`} className="text-accent hover:text-accent-ink">
+        <Link href={`/clients/${clientId}/cashflow/monte-carlo`} className="text-accent hover:text-accent-ink">
           Open Monte Carlo →
         </Link>
       </CardFooter>

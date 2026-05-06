@@ -91,7 +91,7 @@ export default function AllocationPanel({ clientId, rollup }: Props): ReactEleme
       </CardBody>
       <CardFooter>
         <span>Rolled up from {rollup.length} groups</span>
-        <Link href={`/clients/${clientId}/investments`} className="text-accent hover:text-accent-ink">
+        <Link href={`/clients/${clientId}/assets/investments`} className="text-accent hover:text-accent-ink">
           Open Investments →
         </Link>
       </CardFooter>
