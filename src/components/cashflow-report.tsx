@@ -1715,6 +1715,77 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // ── Portfolio drill-down ───────────────────────────────────────────────
 
     if (level === "portfolio") {
+      // Level 2: trusts/businesses, accessible trusts, real estate — these
+      // segments don't map 1:1 to a category, so we read directly from the
+      // engine's per-account bucket maps.
+      if (
+        subLevel === "trusts_businesses" ||
+        subLevel === "accessible_trusts" ||
+        subLevel === "realEstate"
+      ) {
+        const bucketKey: keyof ProjectionYear["portfolioAssets"] =
+          subLevel === "trusts_businesses"
+            ? "trustsAndBusinesses"
+            : subLevel === "accessible_trusts"
+              ? "accessibleTrustAssets"
+              : "realEstate";
+        // Collect every account id that ever appears in this bucket across the
+        // projection so columns are stable year-to-year (an account that's $0
+        // in year 0 but funded later still gets a column).
+        const acctIds = new Set<string>();
+        for (const y of visibleYears) {
+          const m = y.portfolioAssets[bucketKey] as Record<string, number> | undefined;
+          if (m) for (const id of Object.keys(m)) acctIds.add(id);
+        }
+        const ids = Array.from(acctIds);
+        return [
+          ...baseColumns,
+          ...ids.map((id) =>
+            col(
+              `portfolio_${subLevel}_src_${id}`,
+              accountNames[id] ?? id,
+              (r) => {
+                const m = r.portfolioAssets[bucketKey] as Record<string, number> | undefined;
+                return m?.[id] ?? 0;
+              },
+              (info) => {
+                const v = info.getValue() as number;
+                const row = info.row.original;
+                return (
+                  <button
+                    onClick={() => {
+                      const ledger = row.accountLedgers[id];
+                      if (ledger) {
+                        setLedgerModal({
+                          accountId: id,
+                          accountName: accountNames[id] ?? id,
+                          year: row.year,
+                          ledger,
+                        });
+                      }
+                    }}
+                    className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
+                    title="View account ledger"
+                  >
+                    {fmtNum(v)}
+                  </button>
+                );
+              }
+            )
+          ),
+          numCol(
+            `portfolio_${subLevel}_total`,
+            `${DRILL_LABELS[subLevel] ?? subLevel} Total`,
+            (r) => {
+              const m = r.portfolioAssets[bucketKey] as Record<string, number> | undefined;
+              if (!m) return 0;
+              return Object.values(m).reduce((s, v) => s + v, 0);
+            },
+            true
+          ),
+        ];
+      }
+
       // Level 2: individual accounts for a specific portfolio category
       if (subLevel && PORTFOLIO_SEGMENT_TO_CATEGORY[subLevel] != null) {
         const acctIds = accountsByCategory[subLevel] ?? [];
