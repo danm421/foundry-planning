@@ -425,6 +425,9 @@ function DecedentBreakdown({
   const showState = tax.stateEstateTaxRate > 0 || tax.stateEstateTax > 0;
   const stateStep = showState ? 4 : null;
   const totalStep = showState ? 5 : 4;
+  const irdTotal = (tax.drainAttributions ?? [])
+    .filter((a) => a.drainKind === "ird_tax")
+    .reduce((s, a) => s + a.amount, 0);
 
   return (
     <section className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900/40">
@@ -591,6 +594,7 @@ function DecedentBreakdown({
             amount={tax.estateAdminExpenses}
             hideIfZero
           />
+          {irdTotal > 0 && <LineRow label="IRD tax" amount={irdTotal} />}
         </StepRow>
       </div>
 

@@ -120,6 +120,7 @@ export default function AssumptionsClient({
             flatStateRate={settings.flatStateRate}
             estateAdminExpenses={settings.estateAdminExpenses}
             flatStateEstateRate={settings.flatStateEstateRate}
+            irdTaxRate={settings.irdTaxRate}
             outOfHouseholdDniRate={settings.outOfHouseholdDniRate}
             priorTaxableGiftsClient={settings.priorTaxableGiftsClient}
             priorTaxableGiftsSpouse={settings.priorTaxableGiftsSpouse}

@@ -12,6 +12,7 @@ const DRAIN_KINDS: ReadonlyArray<keyof RecipientGroup["drainsByKind"]> = [
   "state_estate_tax",
   "admin_expenses",
   "debts_paid",
+  "ird_tax",
 ];
 
 export function EstateTransferRecipientCard({
