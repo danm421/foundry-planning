@@ -60,6 +60,33 @@
   /* Fonts — wired to next/font vars set on <html> by layout.tsx */
   --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
+
+  /* ------------------------------------------------------------------ */
+  /* Reports — light/cream palette for the report builder canvas + PDF.  */
+  /* These are namespaced (`report-*`) so they don't collide with the    */
+  /* dark app shell tokens above. Source of truth:                       */
+  /*   src/lib/reports/theme.ts  (TS object consumed by PDF widgets)     */
+  /* When the TS file changes, mirror values here so screen widgets and  */
+  /* PDF widgets stay aligned. Tailwind v4 auto-generates utilities      */
+  /* (`bg-report-paper`, `text-report-ink`, `border-report-hair`, etc.). */
+  /* ------------------------------------------------------------------ */
+  --color-report-paper:        #f6f3ec;
+  --color-report-card:         #ffffff;
+  --color-report-zebra:        #fbf8f0;
+  --color-report-ink:          #1a1a1d;
+  --color-report-ink-2:        #5a5a60;
+  --color-report-ink-3:        #8a8a90;
+  --color-report-ink-deep:     #1f1d1a;
+  --color-report-ink-on-dark:  #f5efe1;
+  --color-report-hair:         #d8d2c4;
+  --color-report-accent:       #b87f1f;
+  --color-report-good:         #2f6b4a;
+  --color-report-crit:         #a13a3a;
+  --color-report-steel:        #3b6ea3;
+  --color-report-plum:         #7a4ea3;
+  --color-report-accent-tint:  #f4e6c8;
+  --color-report-good-tint:    #dfeae0;
+  --color-report-crit-tint:    #f0d9d3;
 }
 
 /* ------------------------------------------------------------------ */
