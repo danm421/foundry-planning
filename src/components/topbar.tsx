@@ -6,14 +6,45 @@ import type { ReactElement } from "react";
 import Breadcrumb from "./breadcrumb";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 
-const TABS = [
+type SubTab = { label: string; path: string };
+
+const TABS: ReadonlyArray<{
+  label: string;
+  href: string;
+  subTabs?: ReadonlyArray<SubTab>;
+}> = [
   { label: "Overview", href: "overview" },
   { label: "Details", href: "client-data" },
-  { label: "Assets", href: "assets" },
-  { label: "Cash Flow", href: "cashflow" },
-  { label: "Estate Planning", href: "estate-planning" },
+  {
+    label: "Assets",
+    href: "assets",
+    subTabs: [
+      { label: "Balance Sheet", path: "/balance-sheet-report" },
+      { label: "Investments", path: "/investments" },
+    ],
+  },
+  {
+    label: "Cash Flow",
+    href: "cashflow",
+    subTabs: [
+      { label: "Cash Flow", path: "" },
+      { label: "Income Tax", path: "/income-tax" },
+      { label: "Monte Carlo", path: "/monte-carlo" },
+      { label: "Timeline", path: "/timeline" },
+    ],
+  },
+  {
+    label: "Estate Planning",
+    href: "estate-planning",
+    subTabs: [
+      { label: "Planning", path: "" },
+      { label: "Estate Tax", path: "/estate-tax" },
+      { label: "Estate Transfer", path: "/estate-transfer" },
+      { label: "Gift Tax", path: "/gift-tax" },
+    ],
+  },
   { label: "Reports", href: "reports" },
-] as const;
+];
 
 interface TopbarProps {
   clientHouseholdTitle?: string;
@@ -38,16 +69,53 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
             const className = active
               ? "inline-flex items-center rounded-md border border-accent bg-card-2 px-3 py-1.5 text-[13px] font-medium text-accent"
               : "inline-flex items-center rounded-md border border-transparent px-3 py-1.5 text-[13px] text-ink-2 hover:bg-card-2 hover:text-ink";
-            return (
+            const tabLink = (
               <Link
-                key={tab.href}
                 href={withScenario(href)}
                 role="tab"
                 aria-selected={active || undefined}
+                aria-haspopup={tab.subTabs ? "menu" : undefined}
                 className={className}
               >
                 {tab.label}
               </Link>
+            );
+
+            if (!tab.subTabs) {
+              return <div key={tab.href}>{tabLink}</div>;
+            }
+
+            return (
+              <div key={tab.href} className="group/tab relative">
+                {tabLink}
+                <div
+                  role="menu"
+                  aria-label={`${tab.label} sections`}
+                  className="invisible absolute left-1/2 top-full z-30 -translate-x-1/2 pt-1 opacity-0 transition-opacity duration-100 group-hover/tab:visible group-hover/tab:opacity-100 group-focus-within/tab:visible group-focus-within/tab:opacity-100"
+                >
+                  <div className="min-w-[160px] rounded-md border border-hair bg-paper py-1 shadow-lg">
+                    {tab.subTabs.map((sub) => {
+                      const subHref = `${href}${sub.path}`;
+                      const subActive = sub.path
+                        ? pathname === subHref || pathname.startsWith(subHref + "/")
+                        : pathname === href;
+                      const subClassName = subActive
+                        ? "block px-3 py-1.5 text-[12px] font-medium text-accent bg-card-2"
+                        : "block px-3 py-1.5 text-[12px] text-ink-2 hover:bg-card-2 hover:text-ink";
+                      return (
+                        <Link
+                          key={subHref}
+                          href={withScenario(subHref)}
+                          role="menuitem"
+                          className={`${subClassName} whitespace-nowrap`}
+                        >
+                          {sub.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             );
           })}
         </nav>

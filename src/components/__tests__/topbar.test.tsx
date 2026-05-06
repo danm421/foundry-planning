@@ -74,9 +74,29 @@ describe("Topbar", () => {
     );
     const { container } = render(<Topbar />);
     const links = Array.from(container.querySelectorAll("a"));
-    expect(links).toHaveLength(6);
+    expect(links.length).toBeGreaterThanOrEqual(6);
     for (const a of links) {
       expect(a.getAttribute("href")).toContain("?scenario=sc-1");
     }
+  });
+
+  it("renders sub-tab links in a hover menu for tabs that have sub-reports", () => {
+    vi.mocked(usePathname).mockReturnValue("/clients/c1/overview");
+    const { container } = render(<Topbar />);
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) =>
+      a.getAttribute("href") ?? "",
+    );
+    expect(hrefs).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("/clients/c1/cashflow/income-tax"),
+        expect.stringContaining("/clients/c1/cashflow/monte-carlo"),
+        expect.stringContaining("/clients/c1/cashflow/timeline"),
+        expect.stringContaining("/clients/c1/assets/balance-sheet-report"),
+        expect.stringContaining("/clients/c1/assets/investments"),
+        expect.stringContaining("/clients/c1/estate-planning/estate-tax"),
+      ]),
+    );
+    const menus = container.querySelectorAll("[role='menu']");
+    expect(menus.length).toBe(3);
   });
 });
