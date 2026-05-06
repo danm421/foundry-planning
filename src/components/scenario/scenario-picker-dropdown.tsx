@@ -26,12 +26,14 @@ export function ScenarioPickerDropdown({
   scenarios,
   snapshots,
   ariaLabel,
+  includeDoNothing = false,
 }: {
   value: string;
   onChange: (next: string) => void;
   scenarios: ScenarioOption[];
   snapshots: SnapshotOption[];
   ariaLabel?: string;
+  includeDoNothing?: boolean;
 }) {
   const liveScenarios = scenarios.filter((s) => !s.isBaseCase);
   const manualSnaps = snapshots.filter((s) => s.sourceKind === "manual");
@@ -69,6 +71,11 @@ export function ScenarioPickerDropdown({
               {s.name}
             </option>
           ))}
+        </optgroup>
+      )}
+      {includeDoNothing && (
+        <optgroup label="Counterfactual">
+          <option value="do-nothing">Do nothing (no plan)</option>
         </optgroup>
       )}
     </select>
