@@ -480,7 +480,7 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   const irdAttributions = computeIrdAttributions({
     deathOrder: 1,
     transfers: ledger,
-    accounts: chainResult.accounts,
+    accounts: input.accounts,
     externalBeneficiaries: input.externalBeneficiaries,
     irdTaxRate: input.planSettings.irdTaxRate ?? 0,
   });
