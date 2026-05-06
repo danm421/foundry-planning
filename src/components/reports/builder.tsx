@@ -4,6 +4,7 @@
 // currently-selected widget id, and renders the 3-pane layout.
 
 "use client";
+import "@/lib/reports/widgets";
 import { useReducer, useState } from "react";
 import { reducer, type ReportState } from "@/lib/reports/reducer";
 import { ReportBuilderContext, type Household } from "./builder-context";
