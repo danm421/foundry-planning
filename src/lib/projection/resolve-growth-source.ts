@@ -212,11 +212,22 @@ export function createGrowthSourceResolver(ctx: {
     return resolveCategoryDefault(category);
   }
 
+  function getCategoryGrowthSource(category: string): string {
+    const s = ctx.planSettings;
+    const lookup: Record<string, string | undefined> = {
+      taxable: s.growthSourceTaxable,
+      cash: s.growthSourceCash,
+      retirement: s.growthSourceRetirement,
+    };
+    return lookup[category] ?? "custom";
+  }
+
   return {
     resolveAccount,
     resolvePortfolio,
     resolveAccountMix,
     resolveCategoryDefault,
     resolveInflation,
+    getCategoryGrowthSource,
   };
 }

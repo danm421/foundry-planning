@@ -3,16 +3,53 @@ import { cache } from "react";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients, scenarioSnapshots, scenarios } from "@/db/schema";
-import { loadClientData } from "@/lib/projection/load-client-data";
+import { loadClientDataWithContext } from "@/lib/projection/load-client-data";
+import {
+  resolveAccountFromRaw,
+  resolveIncomeFromRaw,
+  resolveExpenseFromRaw,
+  resolveSavingsRuleFromRaw,
+  type ResolutionContext,
+} from "@/lib/projection/resolve-entity";
 import type { ClientData } from "@/engine/types";
 import {
   applyScenarioChanges,
 } from "@/engine/scenario/applyChanges";
 import type {
   CascadeWarning,
+  ScenarioChange,
   ToggleState,
 } from "@/engine/scenario/types";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
+
+/**
+ * Walks an `add` change's raw payload through the matching resolver so the
+ * engine receives a fully-resolved entity (numeric growthRate, realization,
+ * category-specific overrides) instead of the raw form payload that the
+ * scenario writer persists. Mirrors `loadClientData`'s base path.
+ *
+ * Other targetKinds (entity, will, etc.) and edit/remove ops fall through
+ * unchanged — `applyScenarioChanges` handles their coercion.
+ */
+export function resolveAddPayload(
+  change: ScenarioChange,
+  ctx: ResolutionContext,
+): ScenarioChange {
+  if (change.opType !== "add") return change;
+  const raw = change.payload as Record<string, unknown>;
+  switch (change.targetKind) {
+    case "account":
+      return { ...change, payload: resolveAccountFromRaw(raw as never, ctx) };
+    case "income":
+      return { ...change, payload: resolveIncomeFromRaw(raw as never, ctx) };
+    case "expense":
+      return { ...change, payload: resolveExpenseFromRaw(raw as never, ctx) };
+    case "savings_rule":
+      return { ...change, payload: resolveSavingsRuleFromRaw(raw as never, ctx) };
+    default:
+      return change;
+  }
+}
 
 export interface LoadEffectiveTreeResult {
   effectiveTree: ClientData;
@@ -26,7 +63,8 @@ export const loadEffectiveTree = cache(
     scenarioId: string | "base",
     toggleState: ToggleState,
   ): Promise<LoadEffectiveTreeResult> => {
-    const baseTree = await loadClientData(clientId, firmId);
+    const { clientData: baseTree, resolutionContext } =
+      await loadClientDataWithContext(clientId, firmId);
 
     let resolvedScenario;
     if (scenarioId === "base") {
@@ -56,7 +94,9 @@ export const loadEffectiveTree = cache(
       loadScenarioToggleGroups(resolvedScenario.id),
     ]);
 
-    return applyScenarioChanges(baseTree, changes, toggleState, groups);
+    const resolvedChanges = changes.map((c) => resolveAddPayload(c, resolutionContext));
+
+    return applyScenarioChanges(baseTree, resolvedChanges, toggleState, groups);
   },
 );
 
