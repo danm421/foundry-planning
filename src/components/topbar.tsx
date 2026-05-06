@@ -9,13 +9,10 @@ import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href"
 const TABS = [
   { label: "Overview", href: "overview" },
   { label: "Details", href: "client-data" },
-  { label: "Balance Sheet", href: "balance-sheet-report" },
+  { label: "Assets", href: "assets" },
   { label: "Cash Flow", href: "cashflow" },
-  { label: "Investments", href: "investments" },
-  { label: "Timeline", href: "timeline" },
   { label: "Estate Planning", href: "estate-planning" },
   { label: "Reports", href: "reports" },
-  { label: "Monte Carlo", href: "monte-carlo" },
 ] as const;
 
 interface TopbarProps {
@@ -57,7 +54,20 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
       ) : (
         <div />
       )}
-      <div className="justify-self-end" />
+      <div className="justify-self-end">
+        <button
+          type="button"
+          disabled
+          aria-disabled="true"
+          title="Coming soon"
+          className="inline-flex cursor-not-allowed items-center gap-2 rounded-md border border-hair bg-card-2 px-3 py-1.5 text-[13px] text-ink-3"
+        >
+          Client Portal
+          <span className="rounded-sm bg-ink-3/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-3">
+            Soon
+          </span>
+        </button>
+      </div>
     </header>
   );
 }

@@ -13,7 +13,7 @@ export async function MonteCarloKpiSlot({
   const result = await getMonteCarloResult(clientId, firmId, scenarioId);
   return (
     <KpiCard
-      href={`/clients/${clientId}/monte-carlo`}
+      href={`/clients/${clientId}/cashflow/monte-carlo`}
       num="03"
       categoryLabel="Resilience"
       category="life"

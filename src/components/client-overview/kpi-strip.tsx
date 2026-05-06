@@ -21,7 +21,7 @@ export default function KpiStrip(p: Props): ReactElement {
   return (
     <div className="grid grid-cols-1 gap-[var(--gap-grid)] sm:grid-cols-2 md:grid-cols-4">
       <KpiCard
-        href={`/clients/${p.clientId}/balance-sheet-report`}
+        href={`/clients/${p.clientId}/assets/balance-sheet-report`}
         num="01"
         categoryLabel="Net worth"
         category="portfolio"
@@ -32,7 +32,7 @@ export default function KpiStrip(p: Props): ReactElement {
         delta={null}
       />
       <KpiCard
-        href={`/clients/${p.clientId}/investments`}
+        href={`/clients/${p.clientId}/assets/investments`}
         num="02"
         categoryLabel="Liquidity"
         category="portfolio"
@@ -44,7 +44,7 @@ export default function KpiStrip(p: Props): ReactElement {
       />
       {p.mcSlot}
       <KpiCard
-        href={`/clients/${p.clientId}/timeline`}
+        href={`/clients/${p.clientId}/cashflow/timeline`}
         num="04"
         categoryLabel="Horizon"
         category="tax"
