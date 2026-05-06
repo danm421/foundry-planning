@@ -43,6 +43,31 @@ function parseSide(
 }
 
 /**
+ * Estate-planning panel ref. Either a regular scenario ref (live or snapshot)
+ * or the synthetic "do nothing" counterfactual (`synthesizeNoPlanClientData`).
+ */
+export type EstateCompareRef = ScenarioRef | { kind: "do-nothing" };
+
+export const ESTATE_COMPARE_DO_NOTHING = "do-nothing";
+
+/**
+ * Wraps `parseCompareSearchParams` with a `do-nothing` sentinel that maps to
+ * the legacy synthesized "no plan" counterfactual. Estate-planning-only —
+ * other panels keep using `parseCompareSearchParams` directly.
+ */
+export function parseEstateCompareSearchParams(
+  sp: Record<string, string | undefined>,
+): { left: EstateCompareRef; right: EstateCompareRef } {
+  const refined = parseCompareSearchParams(sp);
+  return {
+    left:
+      sp.left === ESTATE_COMPARE_DO_NOTHING ? { kind: "do-nothing" } : refined.left,
+    right:
+      sp.right === ESTATE_COMPARE_DO_NOTHING ? { kind: "do-nothing" } : refined.right,
+  };
+}
+
+/**
  * Resolve a single side string ("base" | "<scenarioId>" | "snap:<snapId>")
  * into a `ScenarioRef`. Mirrors the URL parser above but takes an explicit
  * `toggleState` map (the snapshot POST body sends a `Record<string, boolean>`,
