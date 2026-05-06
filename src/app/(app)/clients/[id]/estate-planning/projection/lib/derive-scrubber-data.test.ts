@@ -1,7 +1,8 @@
 /**
- * Tests for deriveScrubberData — pure transform that converts
- * (tree, withResult, withoutResult, scrubberYear) into a 3-column
- * comparison-cell data structure consumed by ComparisonGrid (Task 26).
+ * Tests for deriveComparisonData — pure transform that converts
+ * (tree, leftResult, rightResult, scrubberYear) into a 3-cell
+ * comparison-grid data structure (left / right / delta) consumed by
+ * ComparisonGrid.
  *
  * Uses the same Cooper-Sample fixture pattern as
  * src/lib/estate/__tests__/plan-3a-integration.test.ts — real engine output
@@ -12,7 +13,7 @@ import { describe, it, expect } from "vitest";
 import { runProjectionWithEvents } from "@/engine";
 import { synthesizeNoPlanClientData } from "@/lib/estate/counterfactual";
 import type { ClientData } from "@/engine/types";
-import { deriveScrubberData } from "./derive-scrubber-data";
+import { deriveComparisonData } from "./derive-scrubber-data";
 
 const FM_CLIENT = "fm-client";
 const FM_SPOUSE = "fm-spouse";
@@ -168,115 +169,70 @@ function cooperSampleScenario(): ClientData {
   } as unknown as ClientData;
 }
 
-describe("deriveScrubberData", () => {
+describe("deriveComparisonData", () => {
   const tree = cooperSampleScenario();
-  const withResult = runProjectionWithEvents(tree);
-  const withoutResult = runProjectionWithEvents(synthesizeNoPlanClientData(tree));
-  // Cooper fixture: client dies 2056 (1968 + 88), spouse dies 2058 (1970 + 88).
-  // First death year = 2056, second/final death year = 2058.
-  const finalDeathYear =
-    withResult.secondDeathEvent?.year ??
-    withResult.firstDeathEvent?.year ??
-    2058;
+  const rightResult = runProjectionWithEvents(tree);
+  const leftTree = synthesizeNoPlanClientData(tree);
+  const leftResult = runProjectionWithEvents(leftTree);
 
-  it("returns three columns of cells", () => {
-    const data = deriveScrubberData({
+  const ROW_LABELS = [
+    "In-estate",
+    "Out-of-estate",
+    "Estate tax + admin",
+    "Net to heirs",
+  ] as const;
+
+  function build(scrubberYear: number) {
+    return deriveComparisonData({
       tree,
-      withResult,
-      withoutResult,
-      scrubberYear: 2030,
+      leftResult,
+      leftScenarioName: "Do nothing (no plan)",
+      leftIsDoNothing: true,
+      rightResult,
+      rightScenarioName: "Base Plan",
+      rightIsDoNothing: false,
+      scrubberYear,
     });
-    expect(data.without).toBeDefined();
-    expect(data.with).toBeDefined();
-    expect(data.impact).toBeDefined();
-    // Each cell has the standard shape.
-    expect(data.without.rows).toHaveLength(4);
-    expect(data.with.rows).toHaveLength(4);
-    expect(data.impact.rows).toHaveLength(4);
+  }
+
+  it("returns left/right/delta cells with the uniform 4-row schema", () => {
+    const data = build(tree.planSettings.planEndYear);
+    expect(data.left.rows.map((r) => r.label)).toEqual([...ROW_LABELS]);
+    expect(data.right.rows.map((r) => r.label)).toEqual([...ROW_LABELS]);
+    expect(data.delta.rows.map((r) => r.label)).toEqual([...ROW_LABELS]);
   });
 
-  it("pre-death tax rows show '$0 (pre-death)' valueText in without column", () => {
-    const data = deriveScrubberData({
-      tree,
-      withResult,
-      withoutResult,
-      scrubberYear: 2026,
-    });
-    const taxRow = data.without.rows.find(
-      (r) => r.label === "Federal + state tax",
-    );
-    expect(taxRow).toBeDefined();
-    expect(taxRow!.valueText).toBe("$0 (pre-death)");
-  });
+  it("delta cell rows are signed (right − left) at post-death years", () => {
+    const data = build(tree.planSettings.planEndYear);
+    const valueAt = (
+      rows: typeof data.left.rows,
+      label: (typeof ROW_LABELS)[number],
+    ) => rows.find((r) => r.label === label)!.signedValue;
 
-  it("post-death tax rows compute real numbers (impact ≈ without − with)", () => {
-    // Use final death year so both withoutResult and withResult have estateTax populated.
-    const data = deriveScrubberData({
-      tree,
-      withResult,
-      withoutResult,
-      scrubberYear: finalDeathYear,
-    });
-    const startYear = tree.planSettings.planStartYear;
-    const idx = finalDeathYear - startYear;
-    const withoutTotalTax =
-      withoutResult.years[idx]?.estateTax?.totalEstateTax ?? 0;
-    const withTotalTax = withResult.years[idx]?.estateTax?.totalEstateTax ?? 0;
-
-    // Sanity — counterfactual should produce > 0 estate tax.
-    expect(withoutTotalTax).toBeGreaterThan(0);
-
-    const taxSavedRow = data.impact.rows.find((r) => r.label === "Tax saved");
-    expect(taxSavedRow).toBeDefined();
-    expect(data.impact.bigNumber).toBeCloseTo(
-      withoutTotalTax - withTotalTax,
-      0,
-    );
-  });
-
-  it("Plan Impact tax-saved valueText is '—' pre-death", () => {
-    const data = deriveScrubberData({
-      tree,
-      withResult,
-      withoutResult,
-      scrubberYear: 2026,
-    });
-    const taxSavedRow = data.impact.rows.find((r) => r.label === "Tax saved");
-    expect(taxSavedRow).toBeDefined();
-    expect(taxSavedRow!.valueText).toBe("—");
-  });
-
-  it("effective rate saved produces a finite, reasonable string", () => {
-    const data = deriveScrubberData({
-      tree,
-      withResult,
-      withoutResult,
-      scrubberYear: finalDeathYear,
-    });
-    const effRow = data.impact.rows.find(
-      (r) => r.label === "Effective rate saved",
-    );
-    expect(effRow).toBeDefined();
-    // Either a "—" sentinel (degenerate gross) or a "Xpts" string with a finite number.
-    const text = effRow!.valueText;
-    if (text !== "—") {
-      const match = text.match(/^(-?\d+\.\d+)pts$/);
-      expect(match).not.toBeNull();
-      const value = Number(match![1]);
-      expect(Number.isFinite(value)).toBe(true);
-      // Plan should reduce effective rate (with vs without) → savings ≥ 0 in pp.
-      // Allow tiny negative drift from rounding; assert sane bounds.
-      expect(value).toBeGreaterThanOrEqual(-1);
-      expect(value).toBeLessThan(100);
+    for (const label of ROW_LABELS) {
+      const expected = valueAt(data.right.rows, label) - valueAt(data.left.rows, label);
+      expect(valueAt(data.delta.rows, label)).toBeCloseTo(expected, 2);
     }
+  });
 
-    // taxFreeGrowthCaptured row is non-NaN and ≥ 0.
-    const growthRow = data.impact.rows.find(
-      (r) => r.label === "Tax-free growth captured",
+  it("renders pre-death sentinels in tax+admin row when scrubber is before final death", () => {
+    const data = build(tree.planSettings.planStartYear);
+    expect(
+      data.right.rows.find((r) => r.label === "Estate tax + admin")!.valueText,
+    ).toBe("$0 (pre-death)");
+    expect(
+      data.delta.rows.find((r) => r.label === "Estate tax + admin")!.valueText,
+    ).toBe("—");
+  });
+
+  it("hero metric is Net to heirs for plan cells, Net to heirs Δ for delta", () => {
+    const data = build(tree.planSettings.planEndYear);
+    expect(data.left.headlineLabel).toBe("Net to heirs");
+    expect(data.right.headlineLabel).toBe("Net to heirs");
+    expect(data.delta.headlineLabel).toBe("Net to heirs Δ");
+    expect(data.delta.bigNumber).toBeCloseTo(
+      data.right.bigNumber - data.left.bigNumber,
+      2,
     );
-    expect(growthRow).toBeDefined();
-    // Strip $ and unit suffix to verify finite.
-    const growthText = growthRow!.valueText;
-    expect(growthText.startsWith("$")).toBe(true);
   });
 });

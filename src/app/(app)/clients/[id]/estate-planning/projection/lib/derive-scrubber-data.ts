@@ -1,17 +1,19 @@
 /**
- * Pure transform from `(tree, withResult, withoutResult, scrubberYear)` into
- * a 3-column comparison-grid data structure (`without` / `with` / `impact`)
- * consumed by `ComparisonGrid` (Task 26).
+ * Pure transform from `(tree, leftResult, rightResult, scrubberYear)` into
+ * a 3-cell comparison-grid data structure (`left` / `right` / `delta`).
  *
- * No React, DOM, fetch, or DB — engine-adjacent helper. Lives here (and not
- * in `src/engine/`) because it formats text for the report UI; the engine
- * itself stays framework-free per AGENTS.md.
+ * Uniform 4-row schema across all three cells:
+ *   1. In-estate
+ *   2. Out-of-estate
+ *   3. Estate tax + admin
+ *   4. Net to heirs
+ *
+ * The delta cell is right − left, signed. Pre-death (`scrubberYear <
+ * finalDeathYear`) renders `$0 (pre-death)` in the tax row of plan cells and
+ * `—` in the corresponding delta row. No React, DOM, fetch, or DB.
  */
 
-import type {
-  ClientData,
-  ProjectionYear,
-} from "@/engine/types";
+import type { ClientData, ProjectionYear } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
 import {
   computeInEstateAtYear,
@@ -20,197 +22,199 @@ import {
 
 export type RowSentiment = "neutral" | "pos" | "neg";
 
+export type ComparisonRowLabel =
+  | "In-estate"
+  | "Out-of-estate"
+  | "Estate tax + admin"
+  | "Net to heirs";
+
 export interface CellRow {
-  label: string;
+  label: ComparisonRowLabel;
+  /** Signed numeric value used for delta math. NaN if pre-death sentinel. */
+  signedValue: number;
+  /** Human-formatted text for display. */
   valueText: string;
   sentiment: RowSentiment;
 }
 
-export interface ScrubberCell {
-  /** Column header eyebrow text (e.g. "Without plan"). */
-  label: string;
-  /** Pill-style sublabel (e.g. "[ILIT + SLAT]"). */
-  pillLabel: string;
-  /** Headline number row label (e.g. "Net to heirs"). */
-  headlineLabel: string;
-  /** The big rendered number — UI formats however it likes. */
+export interface ComparisonCell {
+  variant: "plan" | "delta";
+  /** Scenario name for display (the column header dropdown's current selection). */
+  scenarioName: string;
+  /** True for the synthetic Do-nothing counterfactual. */
+  isDoNothing: boolean;
+  headlineLabel: "Net to heirs" | "Net to heirs Δ";
+  /** Big number; signed for the delta cell. */
   bigNumber: number;
-  /** Sub-line under the headline (e.g. "at 2055"). */
   subLine: string;
-  /** Four breakdown rows for the cell body. */
   rows: CellRow[];
 }
 
-export interface ScrubberData {
-  without: ScrubberCell;
-  with: ScrubberCell;
-  impact: ScrubberCell;
+export interface ComparisonData {
+  left: ComparisonCell;
+  right: ComparisonCell;
+  delta: ComparisonCell;
 }
 
-export function deriveScrubberData(args: {
+const ROW_LABELS: readonly ComparisonRowLabel[] = [
+  "In-estate",
+  "Out-of-estate",
+  "Estate tax + admin",
+  "Net to heirs",
+] as const;
+
+export function deriveComparisonData(args: {
   tree: ClientData;
-  withResult: ProjectionResult;
-  withoutResult: ProjectionResult;
+  leftResult: ProjectionResult;
+  leftScenarioName: string;
+  leftIsDoNothing: boolean;
+  rightResult: ProjectionResult;
+  rightScenarioName: string;
+  rightIsDoNothing: boolean;
   scrubberYear: number;
-}): ScrubberData {
-  const { tree, withResult, withoutResult, scrubberYear } = args;
-  const startYear = tree.planSettings.planStartYear;
+}): ComparisonData {
+  const startYear = args.tree.planSettings.planStartYear;
 
-  const withoutInEstate = sumInOutAtYear(
-    tree,
-    withoutResult,
-    scrubberYear,
-    startYear,
-    "in",
-  );
-  const withoutOutOfEstate = sumInOutAtYear(
-    tree,
-    withoutResult,
-    scrubberYear,
-    startYear,
-    "out",
-  );
-  const withoutGross = withoutInEstate + withoutOutOfEstate;
-
-  const withInEstate = sumInOutAtYear(
-    tree,
-    withResult,
-    scrubberYear,
-    startYear,
-    "in",
-  );
-  const withOutOfEstate = sumInOutAtYear(
-    tree,
-    withResult,
-    scrubberYear,
-    startYear,
-    "out",
-  );
-  const withGross = withInEstate + withOutOfEstate;
-
-  // Final death year drives "pre-death" gating. Estate-tax events fire only at
-  // death years, so before then the totalEstateTax/admin rows display "$0
-  // (pre-death)" sentinels. Use the second death event for married households,
-  // first death for single filers.
+  // Final death year drives pre-death gating. Use the right-side projection so
+  // both columns share the same gating window even when left is the do-nothing
+  // counterfactual.
   const finalDeathYear =
-    withResult.secondDeathEvent?.year ??
-    withResult.firstDeathEvent?.year ??
+    args.rightResult.secondDeathEvent?.year ??
+    args.rightResult.firstDeathEvent?.year ??
     Number.POSITIVE_INFINITY;
-  const isPreDeath = scrubberYear < finalDeathYear;
+  const isPreDeath = args.scrubberYear < finalDeathYear;
 
-  const withoutDeathYearTax = isPreDeath
-    ? undefined
-    : withoutResult.years[finalDeathYear - startYear]?.estateTax;
-  const withDeathYearTax = isPreDeath
-    ? undefined
-    : withResult.years[finalDeathYear - startYear]?.estateTax;
+  const leftRows = buildPlanRows({
+    tree: args.tree,
+    result: args.leftResult,
+    scrubberYear: args.scrubberYear,
+    startYear,
+    finalDeathYear,
+    isPreDeath,
+  });
+  const rightRows = buildPlanRows({
+    tree: args.tree,
+    result: args.rightResult,
+    scrubberYear: args.scrubberYear,
+    startYear,
+    finalDeathYear,
+    isPreDeath,
+  });
+  const deltaRows: CellRow[] = ROW_LABELS.map((label) => {
+    const lr = leftRows.find((r) => r.label === label)!;
+    const rr = rightRows.find((r) => r.label === label)!;
+    if (Number.isNaN(lr.signedValue) || Number.isNaN(rr.signedValue)) {
+      return {
+        label,
+        signedValue: NaN,
+        valueText: "—",
+        sentiment: "neutral",
+      };
+    }
+    const value = rr.signedValue - lr.signedValue;
+    return {
+      label,
+      signedValue: value,
+      valueText: formatSignedM(value),
+      sentiment: deltaSentiment(value),
+    };
+  });
 
-  const withoutTax = withoutDeathYearTax?.totalEstateTax ?? 0;
-  const withoutAdmin = withoutDeathYearTax?.estateAdminExpenses ?? 0;
-  const withTax = withDeathYearTax?.totalEstateTax ?? 0;
-  const withAdmin = withDeathYearTax?.estateAdminExpenses ?? 0;
-
-  const withoutNetToHeirs = withoutGross - withoutTax - withoutAdmin;
-  const withNetToHeirs = withGross - withTax - withAdmin;
-
-  const taxSaved = withoutTax - withTax;
+  const leftNet = leftRows.find((r) => r.label === "Net to heirs")!.signedValue;
+  const rightNet = rightRows.find((r) => r.label === "Net to heirs")!.signedValue;
 
   return {
-    without: {
-      label: "Without plan",
-      pillLabel: "[do nothing]",
+    left: {
+      variant: "plan",
+      scenarioName: args.leftScenarioName,
+      isDoNothing: args.leftIsDoNothing,
       headlineLabel: "Net to heirs",
-      bigNumber: withoutNetToHeirs,
-      subLine: `at ${scrubberYear}`,
-      rows: [
-        {
-          label: "Gross estate",
-          valueText: formatM(withoutGross),
-          sentiment: "neutral",
-        },
-        {
-          label: "Federal + state tax",
-          valueText: isPreDeath ? "$0 (pre-death)" : `−${formatM(withoutTax)}`,
-          sentiment: "neg",
-        },
-        {
-          label: "Admin & probate",
-          valueText: isPreDeath ? "$0 (pre-death)" : `−${formatM(withoutAdmin)}`,
-          sentiment: "neg",
-        },
-        {
-          label: "Net to heirs",
-          valueText: formatM(withoutNetToHeirs),
-          sentiment: "neutral",
-        },
-      ],
+      bigNumber: leftNet,
+      subLine: `at ${args.scrubberYear}`,
+      rows: leftRows,
     },
-    with: {
-      label: "With current plan",
-      pillLabel: "[ILIT + SLAT]",
+    right: {
+      variant: "plan",
+      scenarioName: args.rightScenarioName,
+      isDoNothing: args.rightIsDoNothing,
       headlineLabel: "Net to heirs",
-      bigNumber: withNetToHeirs,
-      subLine: `at ${scrubberYear}`,
-      rows: [
-        {
-          label: "In-estate (taxed)",
-          valueText: formatM(withInEstate),
-          sentiment: "neutral",
-        },
-        {
-          label: "Out-of-estate",
-          valueText: formatM(withOutOfEstate),
-          sentiment: "pos",
-        },
-        {
-          label: "Tax on in-estate",
-          valueText: isPreDeath ? "$0 (pre-death)" : `−${formatM(withTax)}`,
-          sentiment: "neg",
-        },
-        {
-          label: "Net to heirs",
-          valueText: formatM(withNetToHeirs),
-          sentiment: "neutral",
-        },
-      ],
+      bigNumber: rightNet,
+      subLine: `at ${args.scrubberYear}`,
+      rows: rightRows,
     },
-    impact: {
-      label: "Plan impact",
-      pillLabel: "[delta]",
-      headlineLabel: "Tax saved",
-      bigNumber: isPreDeath ? 0 : taxSaved,
-      subLine: isPreDeath ? "—" : `at ${scrubberYear}`,
-      rows: [
-        {
-          label: "Tax saved",
-          valueText: isPreDeath ? "—" : formatM(taxSaved),
-          sentiment: "pos",
-        },
-        {
-          label: "Tax-free growth captured",
-          valueText: formatM(
-            taxFreeGrowthCaptured(tree, withResult, scrubberYear, startYear),
-          ),
-          sentiment: "pos",
-        },
-        {
-          label: "Gift exemption used",
-          valueText: pctOfFedExemption(withResult, finalDeathYear, startYear),
-          sentiment: "neutral",
-        },
-        {
-          label: "Effective rate saved",
-          valueText: isPreDeath
-            ? "—"
-            : effectiveRateSavedPct(withoutTax, withoutGross, withTax, withGross),
-          sentiment: "pos",
-        },
-      ],
+    delta: {
+      variant: "delta",
+      scenarioName: "Δ Difference",
+      isDoNothing: false,
+      headlineLabel: "Net to heirs Δ",
+      bigNumber: rightNet - leftNet,
+      subLine: isPreDeath ? "—" : `at ${args.scrubberYear}`,
+      rows: deltaRows,
     },
   };
 }
 
 // ---- helpers --------------------------------------------------------------
+
+function buildPlanRows(args: {
+  tree: ClientData;
+  result: ProjectionResult;
+  scrubberYear: number;
+  startYear: number;
+  finalDeathYear: number;
+  isPreDeath: boolean;
+}): CellRow[] {
+  const inE = sumInOutAtYear(
+    args.tree,
+    args.result,
+    args.scrubberYear,
+    args.startYear,
+    "in",
+  );
+  const outE = sumInOutAtYear(
+    args.tree,
+    args.result,
+    args.scrubberYear,
+    args.startYear,
+    "out",
+  );
+
+  const py = Number.isFinite(args.finalDeathYear)
+    ? args.result.years[args.finalDeathYear - args.startYear]
+    : undefined;
+  const tax = py?.estateTax?.totalEstateTax ?? 0;
+  const admin = py?.estateTax?.estateAdminExpenses ?? 0;
+  const taxPlusAdmin = tax + admin;
+  const net = inE + outE - taxPlusAdmin;
+
+  return [
+    {
+      label: "In-estate",
+      signedValue: inE,
+      valueText: formatM(inE),
+      sentiment: "neutral",
+    },
+    {
+      label: "Out-of-estate",
+      signedValue: outE,
+      valueText: formatM(outE),
+      sentiment: "pos",
+    },
+    {
+      label: "Estate tax + admin",
+      signedValue: args.isPreDeath ? NaN : -taxPlusAdmin,
+      valueText: args.isPreDeath ? "$0 (pre-death)" : `−${formatM(taxPlusAdmin)}`,
+      sentiment: "neg",
+    },
+    {
+      label: "Net to heirs",
+      // Pre-death: report inE + outE (no tax yet) as the meaningful net.
+      signedValue: args.isPreDeath ? inE + outE : net,
+      valueText: formatM(args.isPreDeath ? inE + outE : net),
+      sentiment: "neutral",
+    },
+  ];
+}
 
 function sumInOutAtYear(
   tree: ClientData,
@@ -233,15 +237,6 @@ function sumInOutAtYear(
   });
 }
 
-/**
- * Build the year-N account-balance map from `accountLedgers.endingValue`.
- *
- * Per the Task 17 audit, `endingValue` is the canonical "year-N balance" for
- * downstream estate-math consumers. `portfolioAssets` is split into six
- * category sub-maps and so isn't a clean Record<accountId, balance>; using
- * `accountLedgers` keeps this transform aligned with the rest of the estate
- * pipeline.
- */
 function buildAccountBalances(py: ProjectionYear): Map<string, number> {
   const balances = new Map<string, number>();
   for (const [accountId, ledger] of Object.entries(py.accountLedgers ?? {})) {
@@ -250,77 +245,10 @@ function buildAccountBalances(py: ProjectionYear): Map<string, number> {
   return balances;
 }
 
-/**
- * Coarse approximation per spec: out-of-estate(year) − Σ gift amounts (cash
- * and asset, by amount or amountOverride) made up to and including
- * `scrubberYear`. Floors at 0 so we never display a negative "growth captured."
- * Acknowledged simplification — see plan §Task 25 future-work for a
- * gift-cost-basis-aware variant.
- */
-function taxFreeGrowthCaptured(
-  tree: ClientData,
-  withResult: ProjectionResult,
-  year: number,
-  startYear: number,
-): number {
-  const py = withResult.years[year - startYear];
-  if (!py) return 0;
-  const balances = buildAccountBalances(py);
-  const outOfEstate = computeOutOfEstateAtYear({
-    tree,
-    giftEvents: tree.giftEvents ?? [],
-    year,
-    projectionStartYear: startYear,
-    accountBalances: balances,
-  });
-  const giftsThroughYear = (tree.giftEvents ?? [])
-    .filter((g) => g.year <= year)
-    .reduce((sum, g) => {
-      if (g.kind === "cash") return sum + (g.amount ?? 0);
-      if (g.kind === "asset") return sum + (g.amountOverride ?? 0);
-      return sum;
-    }, 0);
-  return Math.max(0, outOfEstate - giftsThroughYear);
-}
-
-/**
- * Federal-exemption usage as % of applicable exclusion at final death.
- *
- * Derived from the with-plan final-death `EstateTaxResult`:
- *   adjustedTaxableGifts / applicableExclusion × 100
- *
- * `applicableExclusion = beaAtDeathYear + dsueReceived` (BEA inflated to
- * death year + DSUE ported from first death). `adjustedTaxableGifts` is the
- * cumulative lifetime gifts above annual exclusions tracked by the engine.
- *
- * Returns "—" when:
- *   - no final-death event in the projection window
- *   - applicableExclusion is 0 (degenerate / pre-2026 sunset edge case)
- */
-function pctOfFedExemption(
-  withResult: ProjectionResult,
-  finalDeathYear: number,
-  startYear: number,
-): string {
-  if (!Number.isFinite(finalDeathYear)) return "—";
-  const py = withResult.years[finalDeathYear - startYear];
-  const estateTax = py?.estateTax;
-  if (!estateTax) return "—";
-  if (estateTax.applicableExclusion <= 0) return "—";
-  const pct =
-    (estateTax.adjustedTaxableGifts / estateTax.applicableExclusion) * 100;
-  return `${pct.toFixed(1)}%`;
-}
-
-function effectiveRateSavedPct(
-  withoutTax: number,
-  withoutGross: number,
-  withTax: number,
-  withGross: number,
-): string {
-  if (withoutGross === 0 || withGross === 0) return "—";
-  const pct = (withoutTax / withoutGross - withTax / withGross) * 100;
-  return `${pct.toFixed(1)}pts`;
+function deltaSentiment(v: number): RowSentiment {
+  if (v > 0) return "pos";
+  if (v < 0) return "neg";
+  return "neutral";
 }
 
 function formatM(n: number): string {
@@ -328,4 +256,14 @@ function formatM(n: number): string {
   if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
   if (abs >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
   return `$${Math.round(n).toLocaleString()}`;
+}
+
+export function formatSignedM(n: number): string {
+  if (n === 0) return "$0";
+  const abs = Math.abs(n);
+  let body: string;
+  if (abs >= 1_000_000) body = `$${(abs / 1_000_000).toFixed(2)}M`;
+  else if (abs >= 1_000) body = `$${(abs / 1_000).toFixed(0)}K`;
+  else body = `$${Math.round(abs).toLocaleString()}`;
+  return n > 0 ? `+${body}` : `−${body}`;
 }
