@@ -36,24 +36,46 @@ export function Builder(props: {
 
   const handleDragEnd = useCallback((e: DragEndEvent) => {
     if (!e.over) return;
-    const data = e.active.data.current as { source: "library"; kind: WidgetKind } | undefined;
+    const data = e.active.data.current as
+      | { source: "library"; kind: WidgetKind }
+      | { source: "row"; pageId: string; rowId: string; rowIndex: number }
+      | undefined;
     const target = e.over.data.current as
       | { kind: "slot"; pageId: string; rowId: string; slotIndex: number }
       | { kind: "page-bottom"; pageId: string }
+      | { kind: "row-drop"; pageId: string; index: number }
       | undefined;
-    if (!data || data.source !== "library" || !target) return;
+    if (!data || !target) return;
+
+    // Row → row-gap: same-page reorder (cross-page deferred to Cut/Paste).
+    if (data.source === "row" && target.kind === "row-drop") {
+      if (data.pageId !== target.pageId) return;
+      // No-op when dropping into the same gap or directly adjacent.
+      if (target.index === data.rowIndex || target.index === data.rowIndex + 1) return;
+      // REORDER_ROWS expects `to` as the post-removal target index. dnd-kit
+      // gives us a pre-removal "drop into gap N" index; if the source is
+      // above the target gap, the index shifts down by 1 after the splice.
+      const to = target.index > data.rowIndex ? target.index - 1 : target.index;
+      dispatch({ type: "REORDER_ROWS", pageId: data.pageId, from: data.rowIndex, to });
+      return;
+    }
+
+    // Library → slot/page-bottom: place a new widget.
+    if (data.source !== "library") return;
     const newId = crypto.randomUUID();
     if (target.kind === "slot") {
       dispatch({ type: "ADD_WIDGET_TO_SLOT", pageId: target.pageId, rowId: target.rowId,
                  slotIndex: target.slotIndex, kind: data.kind, widgetId: newId });
+      setSelectedWidgetId(newId);
+      return;
+    }
     // page-bottom — dormant in v1: no droppable currently emits this target.
     // A future task can wire a `<div ref={setNodeRef}>` at the bottom of each
     // page in canvas.tsx with data { kind: "page-bottom", pageId }; the handler
     // here is structurally ready. The setTimeout + last-row lookup is a known
     // wart pending an `ADD_ROW.rowId` reducer signature.
-    } else {
+    if (target.kind === "page-bottom") {
       // page-bottom — append a new 1-up row, then place
-      const tempRowId = crypto.randomUUID();
       dispatch({ type: "ADD_ROW", pageId: target.pageId, layout: "1-up" });
       // The action handlers don't return ids; for now use a local effect:
       setTimeout(() => {
@@ -64,9 +86,8 @@ export function Builder(props: {
         dispatch({ type: "ADD_WIDGET_TO_SLOT", pageId: target.pageId, rowId: lastRow.id,
                    slotIndex: 0, kind: data.kind, widgetId: newId });
       }, 0);
-      void tempRowId;
+      setSelectedWidgetId(newId);
     }
-    setSelectedWidgetId(newId);
   }, [state.pages]);
 
   const handleExport = useCallback(async () => {
