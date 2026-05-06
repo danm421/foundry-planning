@@ -1,7 +1,6 @@
 import type { ReactElement } from "react";
 import BrandHeader from "./brand-header";
 import SidebarNav from "./sidebar-nav";
-import SidebarToggle from "./sidebar-toggle";
 import UserMenu from "./user-menu";
 import ClientSearch from "./client-search";
 
@@ -22,7 +21,6 @@ export default function Sidebar({
       className="flex h-full w-full flex-col overflow-hidden border-r border-hair bg-card-2 shadow-lg"
     >
       <BrandHeader firmName={firmName} collapsed={collapsed} />
-      <SidebarToggle collapsed={collapsed} />
       {collapsed ? null : <ClientSearch />}
       <SidebarNav clientsCount={clientsCount} collapsed={collapsed} />
       <div className="mt-auto border-t border-hair">

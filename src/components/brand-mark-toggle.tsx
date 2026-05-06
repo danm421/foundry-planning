@@ -3,13 +3,15 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import type { ReactElement } from "react";
-import { PanelLeftIcon } from "./icons";
+import { FoundryMark } from "./icons";
 
-interface SidebarToggleProps {
+interface BrandMarkToggleProps {
   collapsed: boolean;
 }
 
-export default function SidebarToggle({ collapsed }: SidebarToggleProps): ReactElement {
+export default function BrandMarkToggle({
+  collapsed,
+}: BrandMarkToggleProps): ReactElement {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -21,15 +23,16 @@ export default function SidebarToggle({ collapsed }: SidebarToggleProps): ReactE
     });
   }
 
+  const size = collapsed ? 44 : 56;
   return (
     <button
       type="button"
       onClick={handleClick}
-      className={`flex w-full items-center ${collapsed ? "justify-center" : "justify-end"} border-b border-hair px-[var(--pad-card)] py-3 text-ink-3 hover:bg-card-hover hover:text-ink`}
       aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
       aria-expanded={!collapsed}
+      className="flex shrink-0 items-center justify-center rounded-md text-ink hover:bg-card-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
-      <PanelLeftIcon />
+      <FoundryMark width={size} height={size} />
     </button>
   );
 }

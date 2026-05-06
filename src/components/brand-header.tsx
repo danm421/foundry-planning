@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { FoundryMark } from "./icons";
+import BrandMarkToggle from "./brand-mark-toggle";
 
 interface BrandHeaderProps {
   firmName?: string;
@@ -16,7 +16,7 @@ export default function BrandHeader({
         collapsed ? "justify-center px-2" : "px-[var(--pad-card)]"
       }`}
     >
-      <FoundryMark width={collapsed ? 36 : 44} height={collapsed ? 36 : 44} />
+      <BrandMarkToggle collapsed={collapsed} />
       <div
         data-testid="brand-text"
         className={collapsed ? "hidden" : "flex flex-col gap-1.5"}
