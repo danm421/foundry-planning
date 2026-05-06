@@ -8,6 +8,7 @@ import { FanChart } from "./monte-carlo/fan-chart";
 import { FindingsCard } from "./monte-carlo/findings-card";
 import { RecommendationsCard } from "./monte-carlo/recommendations-card";
 import { TerminalHistogram } from "./monte-carlo/terminal-histogram";
+import { LongevityChart } from "./monte-carlo/longevity-chart";
 import { YearlyBreakdown } from "./monte-carlo/yearly-breakdown";
 import {
   createReturnEngine,
@@ -56,6 +57,7 @@ export default function MonteCarloReport({ clientId }: Props) {
   const [runError, setRunError] = useState<string | null>(null);
   const [currentSeed, setCurrentSeed] = useState<number | null>(null);
   const [lastResult, setLastResult] = useState<MonteCarloResult | null>(null);
+  const [mainChart, setMainChart] = useState<"fan" | "histogram" | "longevity">("fan");
 
   // Load data in parallel. This is the same pattern as the CashFlow report;
   // MC just needs an additional payload (correlations, mixes, seed).
@@ -255,12 +257,39 @@ export default function MonteCarloReport({ clientId }: Props) {
             </div>
           )}
 
-          {summary ? (
-            <FanChart
-              summary={summary}
-              deterministic={deterministic}
-              ageMarkers={ageMarkers}
-            />
+          {summary && lastResult ? (
+            <>
+              {mainChart === "fan" && (
+                <FanChart
+                  summary={summary}
+                  deterministic={deterministic}
+                  ageMarkers={ageMarkers}
+                  variant="main"
+                />
+              )}
+              {mainChart === "histogram" && (
+                <TerminalHistogram
+                  endingValues={endingValues}
+                  trialsRun={summary.trialsRun}
+                  requiredMinimumAssetLevel={mcPayload.requiredMinimumAssetLevel}
+                  startingLiquidBalance={mcPayload.startingLiquidBalance}
+                  variant="main"
+                />
+              )}
+              {mainChart === "longevity" && (
+                <LongevityChart
+                  byYearLiquidAssetsPerTrial={lastResult.byYearLiquidAssetsPerTrial}
+                  requiredMinimumAssetLevel={mcPayload.requiredMinimumAssetLevel}
+                  planStartYear={clientData.planSettings.planStartYear}
+                  clientBirthYear={
+                    clientData.client.dateOfBirth
+                      ? parseInt(clientData.client.dateOfBirth.slice(0, 4), 10) || undefined
+                      : undefined
+                  }
+                  variant="main"
+                />
+              )}
+            </>
           ) : (
             <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[440px] animate-pulse" />
           )}
@@ -290,16 +319,49 @@ export default function MonteCarloReport({ clientId }: Props) {
           ) : null}
         </div>
         <aside className="flex flex-col gap-4">
-          {summary ? (
+          {summary && lastResult ? (
             <>
               <FindingsCard summary={summary} />
-              <TerminalHistogram endingValues={endingValues} trialsRun={summary.trialsRun} />
+              {mainChart !== "fan" && (
+                <FanChart
+                  summary={summary}
+                  deterministic={deterministic}
+                  ageMarkers={ageMarkers}
+                  variant="compact"
+                  onPromote={() => setMainChart("fan")}
+                />
+              )}
+              {mainChart !== "histogram" && (
+                <TerminalHistogram
+                  endingValues={endingValues}
+                  trialsRun={summary.trialsRun}
+                  requiredMinimumAssetLevel={mcPayload.requiredMinimumAssetLevel}
+                  startingLiquidBalance={mcPayload.startingLiquidBalance}
+                  variant="compact"
+                  onPromote={() => setMainChart("histogram")}
+                />
+              )}
+              {mainChart !== "longevity" && (
+                <LongevityChart
+                  byYearLiquidAssetsPerTrial={lastResult.byYearLiquidAssetsPerTrial}
+                  requiredMinimumAssetLevel={mcPayload.requiredMinimumAssetLevel}
+                  planStartYear={clientData.planSettings.planStartYear}
+                  clientBirthYear={
+                    clientData.client.dateOfBirth
+                      ? parseInt(clientData.client.dateOfBirth.slice(0, 4), 10) || undefined
+                      : undefined
+                  }
+                  variant="compact"
+                  onPromote={() => setMainChart("longevity")}
+                />
+              )}
               <RecommendationsCard />
             </>
           ) : (
             <>
               <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[120px] animate-pulse" />
               <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[260px] animate-pulse" />
+              <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[280px] animate-pulse" />
               <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 h-[140px] animate-pulse" />
             </>
           )}

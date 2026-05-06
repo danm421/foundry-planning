@@ -16,6 +16,7 @@ import { Line } from "react-chartjs-2";
 import type { MonteCarloSummary } from "@/engine";
 import { buildFanChartSeries } from "./lib/fan-chart-series";
 import { formatShortCurrency } from "./lib/format";
+import { PromoteButton } from "./promote-button";
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Legend, Filler);
 
@@ -114,9 +115,18 @@ interface FanChartProps {
   summary: MonteCarloSummary;
   deterministic: number[] | undefined;
   ageMarkers: AgeMarker[];
+  variant?: "main" | "compact";
+  onPromote?: () => void;
 }
 
-export function FanChart({ summary, deterministic, ageMarkers }: FanChartProps) {
+export function FanChart({
+  summary,
+  deterministic,
+  ageMarkers,
+  variant = "main",
+  onPromote,
+}: FanChartProps) {
+  const isCompact = variant === "compact";
   const { ages, datasets } = useMemo(
     () => buildFanChartSeries(summary.byYear, deterministic),
     [summary.byYear, deterministic],
@@ -203,24 +213,35 @@ export function FanChart({ summary, deterministic, ageMarkers }: FanChartProps) 
 
   return (
     <div className="rounded-lg bg-slate-900/60 ring-1 ring-slate-800 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base font-semibold text-slate-100">Retirement Success Probability</h2>
-        <div className="flex items-center gap-3 text-xs text-slate-300">
-          <span className="flex items-center gap-1.5">
-            <span className="h-[2px] w-4 bg-emerald-400" /> Above average (80th)
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-[2px] w-4 bg-emerald-300" /> Median
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-[2px] w-4 bg-rose-400" /> Below average (20th)
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-[2px] w-4 bg-slate-400" style={{ borderTop: "2px dashed" }} /> Cash-flow projection
-          </span>
-        </div>
+      <div className="flex items-center justify-between mb-3 gap-3">
+        <h2
+          className={
+            isCompact
+              ? "text-sm font-semibold text-slate-100"
+              : "text-base font-semibold text-slate-100"
+          }
+        >
+          Retirement Success Probability
+        </h2>
+        {!isCompact && (
+          <div className="flex items-center gap-3 text-xs text-slate-300">
+            <span className="flex items-center gap-1.5">
+              <span className="h-[2px] w-4 bg-emerald-400" /> Above average (80th)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-[2px] w-4 bg-emerald-300" /> Median
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-[2px] w-4 bg-rose-400" /> Below average (20th)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-[2px] w-4 bg-slate-400" style={{ borderTop: "2px dashed" }} /> Cash-flow projection
+            </span>
+          </div>
+        )}
+        {isCompact && onPromote && <PromoteButton onPromote={onPromote} />}
       </div>
-      <div className="relative h-[400px]">
+      <div className={isCompact ? "relative h-[220px]" : "relative h-[400px]"}>
         <Line data={data} options={options} />
       </div>
     </div>
