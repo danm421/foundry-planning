@@ -178,6 +178,7 @@ export function attributeDrainsToLedger(args: {
       state_estate_tax: args.estateTax.stateEstateTax,
       admin_expenses: args.estateTax.estateAdminExpenses,
       debts_paid: args.creditorDrainTotal,
+      ird_tax: 0,
     },
     residuaryRecipients: deceasedWill?.residuaryRecipients ?? [],
   });
@@ -202,12 +203,14 @@ export function assertDrainAttributionsReconcile(
     state_estate_tax: estateTax.stateEstateTax,
     admin_expenses: estateTax.estateAdminExpenses,
     debts_paid: debtsTotal,
+    ird_tax: 0,
   };
   const sums: Record<DrainKind, number> = {
     federal_estate_tax: 0,
     state_estate_tax: 0,
     admin_expenses: 0,
     debts_paid: 0,
+    ird_tax: 0,
   };
   for (const a of estateTax.drainAttributions) {
     sums[a.drainKind] += a.amount;

@@ -23,13 +23,13 @@ function detailWithTotal(total: number): BeneficiaryDetail {
     fromFirstDeath: {
       gross: 0,
       transfers: [],
-      drains: { federal_estate_tax: 0, state_estate_tax: 0, admin_expenses: 0, debts_paid: 0 },
+      drains: { federal_estate_tax: 0, state_estate_tax: 0, admin_expenses: 0, debts_paid: 0, ird_tax: 0 },
       net: 0,
     },
     fromSecondDeath: {
       gross: total,
       transfers: [],
-      drains: { federal_estate_tax: 0, state_estate_tax: 0, admin_expenses: 0, debts_paid: 0 },
+      drains: { federal_estate_tax: 0, state_estate_tax: 0, admin_expenses: 0, debts_paid: 0, ird_tax: 0 },
       net: total,
     },
     inTrust: [],
