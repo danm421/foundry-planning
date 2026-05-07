@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, entities, entityOwners, familyMembers, scenarios, accounts, accountOwners } from "@/db/schema";
+import {
+  clients,
+  entities,
+  entityOwners,
+  scenarios,
+  accounts,
+  accountOwners,
+  trustSplitInterestDetails,
+  gifts,
+  familyMembers,
+} from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { entityCreateSchema } from "@/lib/schemas/entities";
 import type { TrustSubType } from "@/lib/entities/trust";
+import { computeClutInceptionInterests } from "@/lib/entities/compute-clut-inception";
 
 /** Derive the legacy `owner` enum from the multi-owner allocation. Used to
  *  keep the deprecated column populated for back-compat readers (balance-sheet
@@ -225,6 +236,146 @@ export async function POST(
           }))
         );
       }
+    }
+
+    if (data.trustSubType === "clut" && data.splitInterest) {
+      const si = data.splitInterest;
+
+      if (data.grantor !== "client" && data.grantor !== "spouse") {
+        return NextResponse.json(
+          { error: "grantor ('client' or 'spouse') is required for CLUTs" },
+          { status: 400 },
+        );
+      }
+
+      const measuringLife1 = si.measuringLife1Id
+        ? (await db
+            .select()
+            .from(familyMembers)
+            .where(
+              and(
+                eq(familyMembers.id, si.measuringLife1Id),
+                eq(familyMembers.clientId, id),
+              ),
+            )
+            .limit(1))[0]
+        : null;
+      const measuringLife2 = si.measuringLife2Id
+        ? (await db
+            .select()
+            .from(familyMembers)
+            .where(
+              and(
+                eq(familyMembers.id, si.measuringLife2Id),
+                eq(familyMembers.clientId, id),
+              ),
+            )
+            .limit(1))[0]
+        : null;
+
+      if (si.measuringLife1Id && !measuringLife1) {
+        return NextResponse.json(
+          { error: "measuringLife1Id does not belong to this client" },
+          { status: 400 },
+        );
+      }
+      if (si.measuringLife2Id && !measuringLife2) {
+        return NextResponse.json(
+          { error: "measuringLife2Id does not belong to this client" },
+          { status: 400 },
+        );
+      }
+
+      const ageAtFromDob = (
+        dob: string | null,
+        year: number,
+      ): number | undefined => {
+        if (!dob) return undefined;
+        return year - parseInt(dob.slice(0, 4), 10);
+      };
+
+      const age1 = measuringLife1
+        ? ageAtFromDob(measuringLife1.dateOfBirth, si.inceptionYear)
+        : undefined;
+      const age2 = measuringLife2
+        ? ageAtFromDob(measuringLife2.dateOfBirth, si.inceptionYear)
+        : undefined;
+
+      if (
+        (si.termType === "single_life" ||
+          si.termType === "joint_life" ||
+          si.termType === "shorter_of_years_or_life") &&
+        age1 == null
+      ) {
+        return NextResponse.json(
+          { error: "measuring life 1 is missing date_of_birth" },
+          { status: 400 },
+        );
+      }
+      if (si.termType === "joint_life" && age2 == null) {
+        return NextResponse.json(
+          { error: "measuring life 2 is missing date_of_birth" },
+          { status: 400 },
+        );
+      }
+
+      const interests = computeClutInceptionInterests({
+        inceptionValue: si.inceptionValue,
+        payoutType: si.payoutType,
+        payoutPercent: si.payoutPercent,
+        payoutAmount: si.payoutAmount,
+        irc7520Rate: si.irc7520Rate,
+        termType: si.termType,
+        termYears: si.termYears,
+        measuringLifeAge1: age1,
+        measuringLifeAge2: age2,
+      });
+
+      await db.insert(trustSplitInterestDetails).values({
+        entityId: entity.id,
+        clientId: id,
+        inceptionYear: si.inceptionYear,
+        inceptionValue: si.inceptionValue.toString(),
+        payoutType: si.payoutType,
+        payoutPercent: si.payoutPercent != null ? si.payoutPercent.toString() : null,
+        payoutAmount: si.payoutAmount != null ? si.payoutAmount.toString() : null,
+        irc7520Rate: si.irc7520Rate.toString(),
+        termType: si.termType,
+        termYears: si.termYears ?? null,
+        measuringLife1Id: si.measuringLife1Id ?? null,
+        measuringLife2Id: si.measuringLife2Id ?? null,
+        charityId: si.charityId,
+        originalIncomeInterest: interests.originalIncomeInterest.toString(),
+        originalRemainderInterest: interests.originalRemainderInterest.toString(),
+      });
+
+      await db.insert(gifts).values({
+        clientId: id,
+        year: si.inceptionYear,
+        amount: interests.originalRemainderInterest.toString(),
+        grantor: data.grantor,
+        recipientEntityId: entity.id,
+        eventKind: "clut_remainder_interest",
+        notes: `Auto-emitted at CLUT '${data.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`,
+      });
+
+      await recordAudit({
+        action: "trust_split_interest.create",
+        resourceType: "trust_split_interest_details",
+        resourceId: entity.id,
+        clientId: id,
+        firmId,
+        metadata: {
+          inceptionYear: si.inceptionYear,
+          inceptionValue: si.inceptionValue,
+          payoutPercent: si.payoutPercent,
+          termType: si.termType,
+          termYears: si.termYears,
+          remainderFactor: interests.remainderFactor,
+          originalIncomeInterest: interests.originalIncomeInterest,
+          originalRemainderInterest: interests.originalRemainderInterest,
+        },
+      });
     }
 
     await recordAudit({

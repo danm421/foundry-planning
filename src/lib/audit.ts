@@ -68,6 +68,8 @@ export type AuditAction =
   | "entity.create"
   | "entity.update"
   | "entity.delete"
+  | "trust_split_interest.create"
+  | "trust_split_interest.update"
   | "family_member.create"
   | "family_member.update"
   | "family_member.delete"

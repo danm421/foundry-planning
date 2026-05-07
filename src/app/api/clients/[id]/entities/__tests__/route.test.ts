@@ -1,8 +1,17 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
-import { clients, entities, familyMembers, scenarios, accounts } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import {
+  clients,
+  entities,
+  familyMembers,
+  scenarios,
+  accounts,
+  externalBeneficiaries,
+  trustSplitInterestDetails,
+  gifts,
+} from "@/db/schema";
+import { eq, and, sql } from "drizzle-orm";
 
 vi.mock("@clerk/nextjs/server", () => ({
   auth: vi.fn(async () => ({ userId: "user_test_entities", orgId: "firm_test_entities" })),
@@ -12,6 +21,8 @@ const FIRM_A = "firm_test_entities";
 
 let clientId: string;
 let scenarioId: string;
+let charityId: string;
+let measuringLifeId: string;
 
 beforeAll(async () => {
   const [client] = await db
@@ -39,6 +50,30 @@ beforeAll(async () => {
       relationship: "child",
     });
 
+  // Fixtures for the CLUT creation test.
+  const [measuringLife] = await db
+    .insert(familyMembers)
+    .values({
+      clientId,
+      firstName: "Measuring",
+      lastName: "Life",
+      relationship: "child",
+      dateOfBirth: "1965-01-01",
+    })
+    .returning();
+  measuringLifeId = measuringLife.id;
+
+  const [charity] = await db
+    .insert(externalBeneficiaries)
+    .values({
+      clientId,
+      name: "Acme Foundation",
+      kind: "charity",
+      charityType: "public",
+    })
+    .returning();
+  charityId = charity.id;
+
   // The POST handler inserts a default checking account per scenario.
   // Create a scenario fixture so that path exercises correctly.
   const [scenario] = await db
@@ -63,9 +98,16 @@ afterAll(async () => {
   await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_retirement_check`);
   await db.execute(sql`ALTER TABLE account_owners DISABLE TRIGGER account_owners_default_checking_check`);
   try {
+    await db.delete(gifts).where(eq(gifts.clientId, clientId));
+    await db
+      .delete(trustSplitInterestDetails)
+      .where(eq(trustSplitInterestDetails.clientId, clientId));
     await db.delete(accounts).where(eq(accounts.clientId, clientId));
     await db.delete(entities).where(eq(entities.clientId, clientId));
     await db.delete(scenarios).where(eq(scenarios.clientId, clientId));
+    await db
+      .delete(externalBeneficiaries)
+      .where(eq(externalBeneficiaries.clientId, clientId));
     await db.delete(familyMembers).where(eq(familyMembers.clientId, clientId));
     await db.delete(clients).where(eq(clients.id, clientId));
   } finally {
@@ -346,5 +388,104 @@ describe("GET /api/clients/[id]/entities", () => {
     expect("distributionMode" in first).toBe(true);
     expect("distributionAmount" in first).toBe(true);
     expect("distributionPercent" in first).toBe(true);
+  });
+});
+
+// ── CLUT creation tests ───────────────────────────────────────────────────────
+
+describe("POST /api/clients/[id]/entities — CLUT creation", () => {
+  it("creates a term-certain CLUT with split-interest details and auto-emits the remainder gift", async () => {
+    void measuringLifeId; // measuring life referenced by single_life test below
+
+    const res = await POST(
+      makePostReq({
+        name: "Smith Family CLUT",
+        entityType: "trust",
+        trustSubType: "clut",
+        isIrrevocable: true,
+        grantor: "client",
+        splitInterest: {
+          inceptionYear: 2026,
+          inceptionValue: 1_000_000,
+          payoutType: "unitrust",
+          payoutPercent: 0.06,
+          irc7520Rate: 0.022,
+          termType: "years",
+          termYears: 10,
+          charityId,
+        },
+      }),
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(201);
+    const created = await res.json();
+    expect(created.trustSubType).toBe("clut");
+
+    const [details] = await db
+      .select()
+      .from(trustSplitInterestDetails)
+      .where(eq(trustSplitInterestDetails.entityId, created.id));
+    expect(details).toBeDefined();
+    expect(Number(details.originalRemainderInterest)).toBeCloseTo(538_615, 0);
+    expect(Number(details.originalIncomeInterest)).toBeCloseTo(461_385, 0);
+    expect(details.charityId).toBe(charityId);
+    expect(details.termType).toBe("years");
+    expect(details.termYears).toBe(10);
+
+    const [remainderGift] = await db
+      .select()
+      .from(gifts)
+      .where(
+        and(
+          eq(gifts.recipientEntityId, created.id),
+          eq(gifts.eventKind, "clut_remainder_interest"),
+        ),
+      );
+    expect(remainderGift).toBeDefined();
+    expect(Number(remainderGift.amount)).toBeCloseTo(538_615, 0);
+    expect(remainderGift.year).toBe(2026);
+    expect(remainderGift.grantor).toBe("client");
+  });
+
+  it("rejects a CLUT without splitInterest payload", async () => {
+    const res = await POST(
+      makePostReq({
+        name: "Bare CLUT",
+        entityType: "trust",
+        trustSubType: "clut",
+        isIrrevocable: true,
+        grantor: "client",
+      }),
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(
+      body.issues.some((i: { path: string[] }) => i.path.includes("splitInterest")),
+    ).toBe(true);
+  });
+
+  it("rejects splitInterest on a non-CLUT trust", async () => {
+    const res = await POST(
+      makePostReq({
+        name: "SLAT misuse",
+        entityType: "trust",
+        trustSubType: "slat",
+        isIrrevocable: true,
+        grantor: "client",
+        splitInterest: {
+          inceptionYear: 2026,
+          inceptionValue: 100_000,
+          payoutType: "unitrust",
+          payoutPercent: 0.05,
+          irc7520Rate: 0.04,
+          termType: "years",
+          termYears: 5,
+          charityId,
+        },
+      }),
+      { params: Promise.resolve({ id: clientId }) },
+    );
+    expect(res.status).toBe(400);
   });
 });
