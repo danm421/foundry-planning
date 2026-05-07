@@ -55,6 +55,10 @@ export async function PUT(
           safeUpdate.pctQualifiedDividends !== undefined
             ? String(safeUpdate.pctQualifiedDividends)
             : undefined,
+        pctTaxExempt:
+          safeUpdate.pctTaxExempt !== undefined
+            ? String(safeUpdate.pctTaxExempt)
+            : undefined,
         updatedAt: new Date(),
       })
       .where(and(eq(assetClasses.id, id), eq(assetClasses.firmId, firmId)))
