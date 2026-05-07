@@ -82,6 +82,7 @@ type DbState = {
   incomeScheduleOverrides: unknown[];
   expenseScheduleOverrides: unknown[];
   savingsScheduleOverrides: unknown[];
+  trustSplitInterestDetails: unknown[];
 };
 
 const dbState: DbState = {
@@ -117,6 +118,7 @@ const dbState: DbState = {
   incomeScheduleOverrides: [],
   expenseScheduleOverrides: [],
   savingsScheduleOverrides: [],
+  trustSplitInterestDetails: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -167,6 +169,7 @@ vi.mock("@/db", async () => {
     if (t === schema.incomeScheduleOverrides || n === "income_schedule_overrides") return dbState.incomeScheduleOverrides;
     if (t === schema.expenseScheduleOverrides || n === "expense_schedule_overrides") return dbState.expenseScheduleOverrides;
     if (t === schema.savingsScheduleOverrides || n === "savings_schedule_overrides") return dbState.savingsScheduleOverrides;
+    if (t === schema.trustSplitInterestDetails || n === "trust_split_interest_details") return dbState.trustSplitInterestDetails;
     return [];
   };
 

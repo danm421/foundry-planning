@@ -13,6 +13,7 @@ import {
   clients,
   entities,
   entityOwners,
+  trustSplitInterestDetails,
   expenses,
   expenseScheduleOverrides,
   externalBeneficiaries,
@@ -753,6 +754,36 @@ export const loadClientDataWithContext = cache(
       ownersByEntity.set(row.entityId, list);
     }
 
+    // ── Split-interest details (CLUT/CLAT) keyed by entity ──────────────────
+    type TrustSplitInterestSnapshot =
+      NonNullable<import("@/engine/types").EntitySummary["splitInterest"]>;
+    const splitInterestRows = entityRows.length > 0
+      ? await db
+          .select()
+          .from(trustSplitInterestDetails)
+          .where(eq(trustSplitInterestDetails.clientId, id))
+      : [];
+    const splitInterestByEntityId = new Map<string, TrustSplitInterestSnapshot>(
+      splitInterestRows.map((r) => [
+        r.entityId,
+        {
+          inceptionYear: r.inceptionYear,
+          inceptionValue: Number(r.inceptionValue),
+          payoutType: r.payoutType,
+          payoutPercent: r.payoutPercent != null ? Number(r.payoutPercent) : null,
+          payoutAmount: r.payoutAmount != null ? Number(r.payoutAmount) : null,
+          irc7520Rate: Number(r.irc7520Rate),
+          termType: r.termType,
+          termYears: r.termYears,
+          measuringLife1Id: r.measuringLife1Id,
+          measuringLife2Id: r.measuringLife2Id,
+          charityId: r.charityId,
+          originalIncomeInterest: Number(r.originalIncomeInterest),
+          originalRemainderInterest: Number(r.originalRemainderInterest),
+        },
+      ]),
+    );
+
     const mappedEntities = entityRows.map((e) => ({
       id: e.id,
       name: e.name,
@@ -774,6 +805,7 @@ export const loadClientDataWithContext = cache(
       value: e.value != null ? parseFloat(e.value) : undefined,
       basis: e.basis != null ? parseFloat(e.basis) : undefined,
       owners: ownersByEntity.get(e.id),
+      splitInterest: splitInterestByEntityId.get(e.id),
     }));
 
     const mappedExternalBeneficiaries = externalBeneficiaryRows.map((r) => ({
@@ -886,6 +918,7 @@ export const loadClientDataWithContext = cache(
         grantor: g.grantor as "client" | "spouse",
         recipientEntityId: g.recipientEntityId!,
         useCrummeyPowers: g.useCrummeyPowers ?? false,
+        eventKind: g.eventKind,
       }));
 
     const assetFromGifts: GiftEvent[] = giftRows
@@ -898,6 +931,7 @@ export const loadClientDataWithContext = cache(
         grantor: g.grantor as "client" | "spouse",
         recipientEntityId: g.recipientEntityId!,
         amountOverride: g.amount != null ? Number(g.amount) : undefined,
+        eventKind: g.eventKind,
       }));
 
     const liabilityFromGifts: GiftEvent[] = giftRows
@@ -910,6 +944,7 @@ export const loadClientDataWithContext = cache(
         grantor: g.grantor as "client" | "spouse",
         recipientEntityId: g.recipientEntityId!,
         parentGiftId: g.parentGiftId!,
+        eventKind: g.eventKind,
       }));
 
     const seriesEvents: GiftEvent[] = giftSeriesRows.flatMap((s) =>

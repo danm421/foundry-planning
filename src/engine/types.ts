@@ -242,6 +242,8 @@ export interface FamilyMember {
   dateOfBirth: string | null;
 }
 
+export type GiftEventKind = "outright" | "clut_remainder_interest";
+
 export type GiftEvent =
   | {
       kind: "cash";
@@ -252,6 +254,7 @@ export type GiftEvent =
       sourceAccountId?: string;
       useCrummeyPowers: boolean;
       seriesId?: string; // present on fanned-out series occurrences
+      eventKind?: GiftEventKind;
     }
   | {
       kind: "asset";
@@ -261,6 +264,7 @@ export type GiftEvent =
       grantor: "client" | "spouse";
       recipientEntityId: string;
       amountOverride?: number; // if advisor provided a manual amount
+      eventKind?: GiftEventKind;
     }
   | {
       kind: "liability";
@@ -270,6 +274,7 @@ export type GiftEvent =
       grantor: "client" | "spouse";
       recipientEntityId: string;
       parentGiftId: string;
+      eventKind?: GiftEventKind;
     };
 
 export interface ClientData {
@@ -360,6 +365,26 @@ export interface EntitySummary {
    *  data is missing rows; in that case in-estate treatment defaults to fully
    *  family-owned. */
   owners?: Array<{ familyMemberId: string; percent: number }>;
+  /** Frozen split-interest snapshot for CLUT/CLAT trusts. Populated only when
+   *  trustSubType = 'clut'. Captures inception-time inputs and computed
+   *  income/remainder interests so engine passes don't recompute mid-projection. */
+  splitInterest?: TrustSplitInterestSnapshot;
+}
+
+export interface TrustSplitInterestSnapshot {
+  inceptionYear: number;
+  inceptionValue: number;
+  payoutType: "unitrust" | "annuity";
+  payoutPercent: number | null;
+  payoutAmount: number | null;
+  irc7520Rate: number;
+  termType: "years" | "single_life" | "joint_life" | "shorter_of_years_or_life";
+  termYears: number | null;
+  measuringLife1Id: string | null;
+  measuringLife2Id: string | null;
+  charityId: string;
+  originalIncomeInterest: number;
+  originalRemainderInterest: number;
 }
 
 export interface ClientInfo {
