@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import type {
   YearlyEstateRow,
   YearlyEstateDeathRow,
@@ -27,7 +27,16 @@ interface YearlyEstateTableProps {
   ordering: "primaryFirst" | "spouseFirst";
 }
 
-const SUMMARY_COLS = 9;
+interface NumericCol {
+  key: keyof YearlyEstateRow;
+  label: string;
+  accent?: boolean;
+  bold?: boolean;
+  /** clickable cell that toggles the per-decedent drill-down */
+  clickable?: boolean;
+  /** lifetime total — undefined when the column has no meaningful sum */
+  total?: number;
+}
 
 export function YearlyEstateTable({
   rows,
@@ -46,6 +55,33 @@ export function YearlyEstateTable({
     });
   };
 
+  const visibleCols = useMemo<NumericCol[]>(() => {
+    const cols: NumericCol[] = [
+      { key: "grossEstate", label: "Gross Estate" },
+      {
+        key: "taxesAndExpenses",
+        label: "Taxes & Expenses",
+        accent: true,
+        clickable: true,
+        total: totals.taxesAndExpenses,
+      },
+      {
+        key: "charitableBequests",
+        label: "Charitable Bequests",
+        total: totals.charitableBequests,
+      },
+      { key: "netToHeirs", label: "Net To Heirs", total: totals.netToHeirs },
+      { key: "heirsAssets", label: "Heirs Assets" },
+      { key: "totalToHeirs", label: "Total To Heirs", bold: true },
+      { key: "charity", label: "Charity" },
+    ];
+    return cols.filter((c) => {
+      const allRowsZero = rows.every((r) => (r[c.key] as number) === 0);
+      const totalZero = c.total === undefined || c.total === 0;
+      return !(allRowsZero && totalZero);
+    });
+  }, [rows, totals]);
+
   if (rows.length === 0) {
     return (
       <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
@@ -58,6 +94,8 @@ export function YearlyEstateTable({
     ordering === "primaryFirst"
       ? `${ownerNames.clientName} dies first`
       : `${ownerNames.spouseName ?? "Spouse"} dies first`;
+
+  const summaryColCount = 2 + visibleCols.length;
 
   return (
     <section className="overflow-hidden rounded-xl border border-indigo-900/50 bg-indigo-950/15">
@@ -82,15 +120,11 @@ export function YearlyEstateTable({
             <tr className="text-[10px] uppercase tracking-[0.16em] text-indigo-300/70">
               <Th align="left">Year</Th>
               <Th align="left">Age</Th>
-              <Th align="right">Gross Estate</Th>
-              <Th align="right" accent>
-                Taxes &amp; Expenses
-              </Th>
-              <Th align="right">Charitable Bequests</Th>
-              <Th align="right">Net To Heirs</Th>
-              <Th align="right">Heirs Assets</Th>
-              <Th align="right">Total To Heirs</Th>
-              <Th align="right">Charity</Th>
+              {visibleCols.map((c) => (
+                <Th key={c.key} align="right" accent={c.accent} wrap>
+                  {c.label}
+                </Th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-indigo-900/20">
@@ -103,6 +137,8 @@ export function YearlyEstateTable({
                   isOpen={isOpen}
                   onToggle={() => toggleYear(r.year)}
                   ownerNames={ownerNames}
+                  cols={visibleCols}
+                  detailColSpan={summaryColCount}
                 />
               );
             })}
@@ -112,13 +148,15 @@ export function YearlyEstateTable({
               <td className="px-3 py-2" colSpan={2}>
                 Lifetime totals
               </td>
-              <FootCell muted>—</FootCell>
-              <FootCell>{fmt.format(totals.taxesAndExpenses)}</FootCell>
-              <FootCell>{fmt.format(totals.charitableBequests)}</FootCell>
-              <FootCell>{fmt.format(totals.netToHeirs)}</FootCell>
-              <FootCell muted>—</FootCell>
-              <FootCell muted>—</FootCell>
-              <FootCell muted>—</FootCell>
+              {visibleCols.map((c) =>
+                c.total !== undefined ? (
+                  <FootCell key={c.key}>{fmt.format(c.total)}</FootCell>
+                ) : (
+                  <FootCell key={c.key} muted>
+                    —
+                  </FootCell>
+                ),
+              )}
             </tr>
           </tfoot>
         </table>
@@ -132,9 +170,18 @@ interface SummaryRowProps {
   isOpen: boolean;
   onToggle: () => void;
   ownerNames: { clientName: string; spouseName: string | null };
+  cols: NumericCol[];
+  detailColSpan: number;
 }
 
-function SummaryRow({ row, isOpen, onToggle, ownerNames }: SummaryRowProps) {
+function SummaryRow({
+  row,
+  isOpen,
+  onToggle,
+  ownerNames,
+  cols,
+  detailColSpan,
+}: SummaryRowProps) {
   const ageLabel =
     row.ageClient != null && row.ageSpouse != null
       ? `${row.ageClient}/${row.ageSpouse}`
@@ -151,34 +198,40 @@ function SummaryRow({ row, isOpen, onToggle, ownerNames }: SummaryRowProps) {
       >
         <td className="px-3 py-1.5">{row.year}</td>
         <td className="px-3 py-1.5 text-gray-400">{ageLabel}</td>
-        <Td>{fmt.format(row.grossEstate)}</Td>
-        <td className="px-3 py-1.5 text-right">
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-expanded={isOpen}
-            aria-controls={`yearly-detail-${row.year}`}
-            className={
-              "inline-flex items-center gap-1.5 rounded font-mono tabular-nums " +
-              "underline decoration-indigo-500/60 decoration-dotted underline-offset-4 " +
-              "hover:text-indigo-200 hover:decoration-indigo-300 " +
-              "focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-400 " +
-              (isOpen ? "text-indigo-200" : "text-indigo-300")
-            }
-          >
-            <Caret open={isOpen} />
-            {fmt.format(row.taxesAndExpenses)}
-          </button>
-        </td>
-        <Td>{fmt.format(row.charitableBequests)}</Td>
-        <Td>{fmt.format(row.netToHeirs)}</Td>
-        <Td>{fmt.format(row.heirsAssets)}</Td>
-        <Td bold>{fmt.format(row.totalToHeirs)}</Td>
-        <Td>{fmt.format(row.charity)}</Td>
+        {cols.map((c) => {
+          const value = row[c.key] as number;
+          if (c.clickable) {
+            return (
+              <td key={c.key} className="px-3 py-1.5 text-right">
+                <button
+                  type="button"
+                  onClick={onToggle}
+                  aria-expanded={isOpen}
+                  aria-controls={`yearly-detail-${row.year}`}
+                  className={
+                    "inline-flex items-center gap-1.5 rounded font-mono tabular-nums " +
+                    "underline decoration-indigo-500/60 decoration-dotted underline-offset-4 " +
+                    "hover:text-indigo-200 hover:decoration-indigo-300 " +
+                    "focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-400 " +
+                    (isOpen ? "text-indigo-200" : "text-indigo-300")
+                  }
+                >
+                  <Caret open={isOpen} />
+                  {fmt.format(value)}
+                </button>
+              </td>
+            );
+          }
+          return (
+            <Td key={c.key} bold={c.bold}>
+              {fmt.format(value)}
+            </Td>
+          );
+        })}
       </tr>
       {isOpen && (
         <tr id={`yearly-detail-${row.year}`} className="bg-gray-950/40">
-          <td colSpan={SUMMARY_COLS} className="px-3 py-3">
+          <td colSpan={detailColSpan} className="px-3 py-3">
             <DeathDetail deaths={row.deaths} ownerNames={ownerNames} />
           </td>
         </tr>
@@ -254,16 +307,28 @@ function Th({
   children,
   align,
   accent,
+  wrap,
 }: {
   children: React.ReactNode;
   align: "left" | "right";
   accent?: boolean;
+  wrap?: boolean;
 }) {
   const className =
-    "px-3 py-2 font-medium " +
+    "px-3 py-2 align-bottom font-medium " +
     (align === "right" ? "text-right" : "text-left") +
     (accent ? " text-indigo-300" : "");
-  return <th className={className}>{children}</th>;
+  if (!wrap) {
+    return <th className={className}>{children}</th>;
+  }
+  const innerClassName =
+    "inline-block max-w-[6.5rem] whitespace-normal break-words leading-tight " +
+    (align === "right" ? "text-right" : "text-left");
+  return (
+    <th className={className}>
+      <span className={innerClassName}>{children}</span>
+    </th>
+  );
 }
 
 function Td({
