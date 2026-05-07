@@ -15,6 +15,13 @@ export interface Gift {
   recipientFamilyMemberId?: string;
   recipientExternalBeneficiaryId?: string;
   useCrummeyPowers: boolean;
+  /**
+   * Optional event kind for non-outright gifts. Set to
+   * 'clut_remainder_interest' on the gift auto-emitted at CLUT inception
+   * (the present-value remainder portion that consumes lifetime exemption).
+   * Default behavior (outright cash/asset gift) leaves this undefined.
+   */
+  eventKind?: GiftEventKind;
 }
 
 export interface WillBequestRecipient {

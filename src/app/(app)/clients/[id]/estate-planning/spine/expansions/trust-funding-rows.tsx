@@ -11,6 +11,7 @@ const SUBTYPE_PILL: Record<TrustSubType, string> = {
   grat: "bg-cat-life/15 text-cat-life",
   qprt: "bg-cat-life/15 text-cat-life",
   clat: "bg-cat-life/15 text-cat-life",
+  clut: "bg-cat-life/15 text-cat-life",
   qtip: "bg-accent/15 text-accent-ink",
   bypass: "bg-accent/15 text-accent-ink",
 };

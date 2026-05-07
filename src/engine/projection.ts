@@ -1553,7 +1553,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       clutCharitableOutflowDetail.push({
         kind: "clut_unitrust",
         trustId: trust.id,
-        trustName: trust.name,
+        trustName: trust.name ?? trust.id,
         charityId: si.charityId,
         amount: unitrustAmount,
       });
