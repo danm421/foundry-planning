@@ -907,6 +907,21 @@ export interface ProjectionYear {
     charityId: string;
     amount: number;
   }>;
+  /** End-of-term trust termination distributions. One entry per CLUT whose
+   * lead term ended in the prior year (distributions fire the year after
+   * the last unitrust payment). Populated only in the termination year. */
+  trustTerminations?: Array<{
+    trustId: string;
+    trustName: string;
+    totalDistributed: number;
+    toBeneficiaries: Array<{
+      designationId: string;
+      recipientLabel: string;
+      familyMemberId?: string;
+      externalBeneficiaryId?: string;
+      amount: number;
+    }>;
+  }>;
 }
 
 export interface AccountLedger {

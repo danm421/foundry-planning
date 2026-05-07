@@ -56,7 +56,12 @@ import { calcSeca } from "../lib/tax/fica";
 import { resolveCashValueForYear } from "./life-insurance-schedule";
 import { computeTermEndYear } from "./life-insurance-expiry";
 import { applyTrustAnnualPass, type NonGrantorTrustInput } from "./trust-tax/index";
-import { computeAnnualUnitrustPayment } from "./trust-split-interest";
+import {
+  computeAnnualUnitrustPayment,
+  distributeAtTermination,
+  isTrustTerminationYear,
+  type TrustTerminationResult,
+} from "./trust-split-interest";
 import type { AccountYearRealization, AssetTransactionGain } from "./trust-tax/collect-trust-income";
 import type { TrustLiquidityPool, TrustIncomeBuckets, TrustWarning, DistributionPolicy } from "./trust-tax/types";
 import { computeDistribution } from "./trust-tax/compute-distribution";
@@ -1505,6 +1510,71 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       });
     }
 
+    // ── CLUT trust-termination pass ───────────────────────────────────────
+    // The year after a CLUT's lead term ends, remaining trust assets are
+    // distributed to the trust's primary remainder beneficiaries. Cash leaves
+    // the trust via creditCash; a TrustTerminationResult is recorded on the
+    // year row for downstream report consumers (Task 13+ surfaces them).
+    // Asset routing to specific beneficiary accounts is intentionally not
+    // implemented here — the cash exits the projection scope at termination,
+    // mirroring how non-household charity outflows are handled. Future tasks
+    // may refine to per-beneficiary deposit if the user adds beneficiary-owned
+    // accounts to the data model.
+    const yearTrustTerminations: TrustTerminationResult[] = [];
+    for (const trust of currentEntities) {
+      if (trust.trustSubType !== "clut" || !trust.splitInterest) continue;
+      // Death-year extraction for life-based termination is deferred to
+      // Tasks 11-12 when the death-event integration lands; until then,
+      // term-certain ('years') CLUTs are the only ones that terminate here.
+      if (!isTrustTerminationYear(trust, year, {})) continue;
+
+      let totalAvailable = 0;
+      for (const acct of workingAccounts) {
+        const trustShare = ownedByEntityAtYear(
+          acct,
+          data.giftEvents,
+          trust.id,
+          year,
+          planSettings.planStartYear,
+        );
+        if (trustShare <= 0) continue;
+        const balance = accountBalances[acct.id] ?? 0;
+        totalAvailable += balance * trustShare;
+      }
+      if (totalAvailable <= 0) continue;
+
+      const result = distributeAtTermination(
+        {
+          trust,
+          currentYear: year,
+          designations: trust.beneficiaries ?? [],
+        },
+        totalAvailable,
+      );
+      yearTrustTerminations.push(result);
+
+      // Drain the trust's accounts pro-rata (cash exits the projection scope
+      // at the termination event — see comment above).
+      for (const acct of workingAccounts) {
+        const trustShare = ownedByEntityAtYear(
+          acct,
+          data.giftEvents,
+          trust.id,
+          year,
+          planSettings.planStartYear,
+        );
+        if (trustShare <= 0) continue;
+        const balance = accountBalances[acct.id] ?? 0;
+        const drain = balance * trustShare;
+        if (drain <= 0) continue;
+        creditCash(acct.id, -drain, {
+          category: "expense",
+          label: `CLUT termination distribution`,
+          sourceId: trust.id,
+        });
+      }
+    }
+
     // 5. Taxes on household + grantor-trust income/RMDs. Routes to bracket or flat
     // engine depending on planSettings.taxEngineMode and whether tax year data is loaded.
     const resolved = taxResolver ? taxResolver.getYear(year) : null;
@@ -2814,6 +2884,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       charitableOutflows: clutCharitableOutflowsTotal,
       ...(clutCharitableOutflowDetail.length > 0
         ? { charitableOutflowDetail: clutCharitableOutflowDetail }
+        : {}),
+      ...(yearTrustTerminations.length > 0
+        ? { trustTerminations: yearTrustTerminations }
         : {}),
       deductionBreakdown: deductionBreakdownResult,
       withdrawals,

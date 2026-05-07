@@ -1,8 +1,15 @@
-import type { ClientData, FamilyMember, Gift } from "@/engine/types";
+import type {
+  BeneficiaryRef,
+  ClientData,
+  FamilyMember,
+  Gift,
+} from "@/engine/types";
 
 const PUBLIC_CHARITY_ID = "00000000-0000-0000-0000-000000000aaa";
 const PRIVATE_CHARITY_ID = "00000000-0000-0000-0000-000000000bbb";
 const CLIENT_FM_ID = "00000000-0000-0000-0000-000000000001";
+const CHILD_1_FM_ID = "00000000-0000-0000-0000-000000000002";
+const CHILD_2_FM_ID = "00000000-0000-0000-0000-000000000003";
 const CLUT_ENTITY_ID = "00000000-0000-0000-0000-000000000ccc";
 const CLUT_CHECKING_ID = "00000000-0000-0000-0000-000000000ddd";
 const HOUSEHOLD_CHECKING_ID = "00000000-0000-0000-0000-000000000eee";
@@ -23,6 +30,16 @@ export interface ClutLifecycleOpts {
   irc7520Rate?: number;
   /** Years to project past term-end (default 2). */
   trailingYears?: number;
+  /**
+   * Primary remainder beneficiaries for the CLUT (tier="primary"). Each child
+   * is created as a family_member; percentages must sum to 100. Defaults to
+   * undefined (no designations — Task 10 termination will record an empty
+   * distribution).
+   */
+  remainderBeneficiaries?: Array<{
+    childIndex: 1 | 2;
+    percentage: number;
+  }>;
 }
 
 /**
@@ -60,6 +77,39 @@ export function buildClutLifecycleFixture(opts: ClutLifecycleOpts): ClientData {
       dateOfBirth: "1970-01-01",
     } as FamilyMember,
   ];
+
+  const remainderRefs = opts.remainderBeneficiaries ?? [];
+  if (remainderRefs.length > 0) {
+    familyMembers.push(
+      {
+        id: CHILD_1_FM_ID,
+        firstName: "Child",
+        lastName: "One",
+        relationship: "child",
+        role: "child",
+        dateOfBirth: "2000-01-01",
+      } as FamilyMember,
+      {
+        id: CHILD_2_FM_ID,
+        firstName: "Child",
+        lastName: "Two",
+        relationship: "child",
+        role: "child",
+        dateOfBirth: "2002-01-01",
+      } as FamilyMember,
+    );
+  }
+  const beneficiaries: BeneficiaryRef[] | undefined =
+    remainderRefs.length > 0
+      ? remainderRefs.map((r, i) => ({
+          id: `bref-${i + 1}`,
+          tier: "primary" as const,
+          percentage: r.percentage,
+          familyMemberId:
+            r.childIndex === 1 ? CHILD_1_FM_ID : CHILD_2_FM_ID,
+          sortOrder: i,
+        }))
+      : undefined;
 
   const remainderGift: Gift = {
     id: REMAINDER_GIFT_ID,
@@ -146,6 +196,7 @@ export function buildClutLifecycleFixture(opts: ClutLifecycleOpts): ClientData {
         isGrantor: true,
         includeInPortfolio: false,
         grantor: "client",
+        ...(beneficiaries ? { beneficiaries } : {}),
         splitInterest: {
           inceptionYear: opts.inceptionYear,
           inceptionValue: opts.inceptionValue,
@@ -191,6 +242,8 @@ export const CLUT_FIXTURE_IDS = {
   PUBLIC_CHARITY_ID,
   PRIVATE_CHARITY_ID,
   CLIENT_FM_ID,
+  CHILD_1_FM_ID,
+  CHILD_2_FM_ID,
   CLUT_ENTITY_ID,
   CLUT_CHECKING_ID,
   HOUSEHOLD_CHECKING_ID,
