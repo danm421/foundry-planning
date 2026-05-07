@@ -347,6 +347,19 @@ export interface EntitySummary {
     percentage: number;
   }>;
   trustEnds?: "client_death" | "spouse_death" | "survivorship" | null;
+  /** Business-entity flat valuation (LLC / S-Corp / C-Corp / partnership /
+   *  other). Surfaces on the balance sheet and counts toward the in-estate
+   *  total proportional to family-member ownership. Zero / undefined for
+   *  trusts and foundations, which hold value via accounts. */
+  value?: number;
+  /** Cost basis for the business-entity flat valuation. Used at death-event
+   *  for step-up analysis. */
+  basis?: number;
+  /** Per-family-member ownership of a business entity (sourced from
+   *  entity_owners). Trusts leave this undefined. Sum may be < 1 when legacy
+   *  data is missing rows; in that case in-estate treatment defaults to fully
+   *  family-owned. */
+  owners?: Array<{ familyMemberId: string; percent: number }>;
 }
 
 export interface ClientInfo {

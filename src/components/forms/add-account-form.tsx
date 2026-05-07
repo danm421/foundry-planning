@@ -85,6 +85,11 @@ export interface EntityOption {
   /** Extra fields consumed by the balance sheet OOE section; forms ignore them. */
   entityType?: string;
   value?: string;
+  /** Per-family-member ownership shares for business entities (sourced from
+   *  entity_owners). The balance sheet uses these to split a business entity's
+   *  flat value between in-estate (family-owned share) and out-of-estate
+   *  (residual). Trusts and foundations leave this undefined. */
+  owners?: Array<{ familyMemberId: string; percent: number }>;
 }
 
 export interface CategoryDefaults {

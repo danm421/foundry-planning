@@ -123,3 +123,130 @@ describe("computeOutOfEstateAtYear", () => {
     expect(result).toBe(0);
   });
 });
+
+describe("non-trust (business) entities", () => {
+  const LLC_FAMILY = "llc-family";
+  const LLC_LEGACY = "llc-legacy";
+
+  function businessFixture(): {
+    tree: ClientData;
+    giftEvents: GiftEvent[];
+    balances: Map<string, number>;
+  } {
+    const tree = {
+      accounts: [
+        {
+          id: "acc-llc-broker",
+          name: "LLC brokerage",
+          category: "taxable",
+          value: 500_000,
+          owners: [{ kind: "entity", entityId: LLC_FAMILY, percent: 1 }],
+        },
+      ],
+      entities: [
+        {
+          id: LLC_FAMILY,
+          name: "Family LLC",
+          entityType: "llc",
+          value: 2_000_000,
+          owners: [
+            { familyMemberId: FM_CLIENT, percent: 0.5 },
+            { familyMemberId: FM_SPOUSE, percent: 0.5 },
+          ],
+        },
+        {
+          id: LLC_LEGACY,
+          name: "Legacy LLC (no owner rows)",
+          entityType: "llc",
+          value: 1_000_000,
+          owners: undefined,
+        },
+      ],
+    } as unknown as ClientData;
+    const balances = new Map([["acc-llc-broker", 500_000]]);
+    return { tree, giftEvents: [], balances };
+  }
+
+  it("treats family-owned LLC account slices as in-estate proportional to the entity's family share", () => {
+    const { tree, giftEvents, balances } = businessFixture();
+    // Drop the legacy LLC for this case so we only test the explicit family-owned path.
+    tree.entities = tree.entities!.filter((e) => e.id === LLC_FAMILY);
+    const inE = computeInEstateAtYear({
+      tree, giftEvents, year: 2026, projectionStartYear: 2026, accountBalances: balances,
+    });
+    const outE = computeOutOfEstateAtYear({
+      tree, giftEvents, year: 2026, projectionStartYear: 2026, accountBalances: balances,
+    });
+    // Account: 100% × 500K × familyShare(1.0) = 500K in-estate; flat: 2M × 1.0 = 2M
+    expect(inE).toBe(2_500_000);
+    expect(outE).toBe(0);
+  });
+
+  it("includes the entity's flat value in the in-estate total proportional to family share", () => {
+    const { tree, giftEvents, balances } = businessFixture();
+    // Cut family share to 70% (rest is unowned — sum < 1)
+    tree.entities = tree.entities!.filter((e) => e.id === LLC_FAMILY);
+    tree.entities[0].owners = [
+      { familyMemberId: FM_CLIENT, percent: 0.4 },
+      { familyMemberId: FM_SPOUSE, percent: 0.3 },
+    ];
+    const inE = computeInEstateAtYear({
+      tree, giftEvents, year: 2026, projectionStartYear: 2026, accountBalances: balances,
+    });
+    const outE = computeOutOfEstateAtYear({
+      tree, giftEvents, year: 2026, projectionStartYear: 2026, accountBalances: balances,
+    });
+    // Account slice: 500K × 0.7 = 350K; flat: 2M × 0.7 = 1.4M → in-estate 1.75M
+    // Remainder (account 150K + flat 600K) → out-of-estate 750K
+    expect(inE).toBeCloseTo(1_750_000, 4);
+    expect(outE).toBeCloseTo(750_000, 4);
+  });
+
+  it("defaults missing owner rows to fully family-owned (legacy back-compat)", () => {
+    const { tree, giftEvents, balances } = businessFixture();
+    // Strip the family-owned LLC; only the legacy one with no owners[] remains.
+    tree.entities = tree.entities!.filter((e) => e.id === LLC_LEGACY);
+    tree.accounts = [];
+    const inE = computeInEstateAtYear({
+      tree, giftEvents, year: 2026, projectionStartYear: 2026, accountBalances: balances,
+    });
+    const outE = computeOutOfEstateAtYear({
+      tree, giftEvents, year: 2026, projectionStartYear: 2026, accountBalances: balances,
+    });
+    // No owners[] → treat as fully in-estate (1M flat).
+    expect(inE).toBe(1_000_000);
+    expect(outE).toBe(0);
+  });
+
+  it("ignores trusts and foundations in the flat-value sum", () => {
+    const tree = {
+      accounts: [],
+      entities: [
+        {
+          id: "trust-a",
+          name: "Revocable Trust",
+          entityType: "trust",
+          isIrrevocable: false,
+          // value column on a trust shouldn't count — trusts hold value via accounts.
+          value: 500_000,
+          owners: undefined,
+        },
+        {
+          id: "found-a",
+          name: "Foundation",
+          entityType: "foundation",
+          value: 1_000_000,
+          owners: undefined,
+        },
+      ],
+    } as unknown as ClientData;
+    const inE = computeInEstateAtYear({
+      tree, giftEvents: [], year: 2026, projectionStartYear: 2026, accountBalances: new Map(),
+    });
+    const outE = computeOutOfEstateAtYear({
+      tree, giftEvents: [], year: 2026, projectionStartYear: 2026, accountBalances: new Map(),
+    });
+    expect(inE).toBe(0);
+    expect(outE).toBe(0);
+  });
+});

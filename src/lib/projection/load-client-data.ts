@@ -12,6 +12,7 @@ import {
   clientDeductions,
   clients,
   entities,
+  entityOwners,
   expenses,
   expenseScheduleOverrides,
   externalBeneficiaries,
@@ -738,6 +739,20 @@ export const loadClientDataWithContext = cache(
       );
     }
 
+    // ── Per-family-member ownership of business entities ─────────────────────
+    const entityOwnerRows = entityRows.length > 0
+      ? await db
+          .select()
+          .from(entityOwners)
+          .where(inArray(entityOwners.entityId, entityRows.map((e) => e.id)))
+      : [];
+    const ownersByEntity = new Map<string, Array<{ familyMemberId: string; percent: number }>>();
+    for (const row of entityOwnerRows) {
+      const list = ownersByEntity.get(row.entityId) ?? [];
+      list.push({ familyMemberId: row.familyMemberId, percent: parseFloat(row.percent) });
+      ownersByEntity.set(row.entityId, list);
+    }
+
     const mappedEntities = entityRows.map((e) => ({
       id: e.id,
       name: e.name,
@@ -756,6 +771,9 @@ export const loadClientDataWithContext = cache(
       distributionPercent: e.distributionPercent != null ? parseFloat(e.distributionPercent) : undefined,
       incomeBeneficiaries: incomeByEntity.get(e.id) ?? [],
       trustEnds: e.trustEnds ?? null,
+      value: e.value != null ? parseFloat(e.value) : undefined,
+      basis: e.basis != null ? parseFloat(e.basis) : undefined,
+      owners: ownersByEntity.get(e.id),
     }));
 
     const mappedExternalBeneficiaries = externalBeneficiaryRows.map((r) => ({

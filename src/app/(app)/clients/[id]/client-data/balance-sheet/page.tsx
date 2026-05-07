@@ -6,6 +6,7 @@ import {
   accounts,
   liabilities,
   entities,
+  entityOwners,
   familyMembers,
   planSettings,
   modelPortfolios,
@@ -13,7 +14,7 @@ import {
   assetClasses,
   clientCmaOverrides,
 } from "@/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import BalanceSheetView, { AccountRow, LiabilityRow } from "@/components/balance-sheet-view";
 import { buildClientMilestones } from "@/lib/milestones";
@@ -219,11 +220,30 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
     };
   });
 
+  const entityIds = entityRows.map((e) => e.id);
+  const entityOwnerRows = entityIds.length > 0
+    ? await db
+        .select({
+          entityId: entityOwners.entityId,
+          familyMemberId: entityOwners.familyMemberId,
+          percent: entityOwners.percent,
+        })
+        .from(entityOwners)
+        .where(inArray(entityOwners.entityId, entityIds))
+    : [];
+  const ownersByEntity = new Map<string, { familyMemberId: string; percent: number }[]>();
+  for (const row of entityOwnerRows) {
+    const list = ownersByEntity.get(row.entityId) ?? [];
+    list.push({ familyMemberId: row.familyMemberId, percent: parseFloat(row.percent) });
+    ownersByEntity.set(row.entityId, list);
+  }
+
   const entityOptions = entityRows.map((e) => ({
     id: e.id,
     name: e.name,
     entityType: e.entityType as string,
     value: String(e.value ?? "0"),
+    owners: ownersByEntity.get(e.id),
   }));
 
   // Build category default source info so the account form knows which portfolio

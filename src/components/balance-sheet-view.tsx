@@ -285,8 +285,28 @@ export default function BalanceSheetView({
   // death, so it's not an asset on the balance sheet. They're managed in the Insurance tab.
   const isVisibleInNetWorth = (a: AccountRow) =>
     !(a.category === "life_insurance" && Number(a.value) === 0);
-  const inEstate = accounts.filter((a) => !a.ownerEntityId && isVisibleInNetWorth(a));
-  const outOfEstate = accounts.filter((a) => a.ownerEntityId && isVisibleInNetWorth(a));
+
+  const BUSINESS_ENTITY_TYPES = new Set(["llc", "s_corp", "c_corp", "partnership", "other"]);
+  // A business entity counts as in-estate when its `entity_owners` rows sum to
+  // 100% (or when the rows are absent — legacy data predates the join table).
+  // Mirrors `familyOwnedFraction` in lib/estate/in-estate-at-year.ts; kept
+  // binary here to avoid splitting individual rows in the UI.
+  const isFamilyOwnedBusiness = (entityId: string | null | undefined): boolean => {
+    if (!entityId) return false;
+    const e = entityMap[entityId];
+    if (!e || !e.entityType || !BUSINESS_ENTITY_TYPES.has(e.entityType)) return false;
+    if (e.owners == null) return true;
+    const sum = e.owners.reduce((s, o) => s + (o.percent ?? 0), 0);
+    return sum >= 0.9999;
+  };
+
+  // An account belongs in-estate when it has no entity owner, or when the
+  // owning entity is a family-owned business interest.
+  const accountInEstate = (a: AccountRow): boolean =>
+    !a.ownerEntityId || isFamilyOwnedBusiness(a.ownerEntityId);
+
+  const inEstate = accounts.filter((a) => accountInEstate(a) && isVisibleInNetWorth(a));
+  const outOfEstate = accounts.filter((a) => !accountInEstate(a) && isVisibleInNetWorth(a));
 
   const inEstateByCategory: Record<AccountCategory, AccountRow[]> = {
     taxable: [],
@@ -306,18 +326,32 @@ export default function BalanceSheetView({
     outByEntity.set(key, arr);
   }
 
-  const BUSINESS_ENTITY_TYPES = new Set(["llc", "s_corp", "c_corp", "partnership", "other"]);
-  const businessEntityRows = entities.filter(
+  // Business-entity flat valuations split into in-estate (family-owned) and
+  // out-of-estate (everything else: partial-family-owned legacy rows, future
+  // trust-on-business ownership). In-estate rows render under the Business
+  // category in the Assets column; OOE rows keep their dedicated section.
+  const businessEntitiesWithValue = entities.filter(
     (e) => e.entityType && BUSINESS_ENTITY_TYPES.has(e.entityType) && Number(e.value ?? "0") > 0,
   );
-  const businessEntityTotal = businessEntityRows.reduce(
+  const inEstateBusinessEntityRows = businessEntitiesWithValue.filter((e) =>
+    isFamilyOwnedBusiness(e.id),
+  );
+  const outOfEstateBusinessEntityRows = businessEntitiesWithValue.filter(
+    (e) => !isFamilyOwnedBusiness(e.id),
+  );
+  const inEstateBusinessEntityTotal = inEstateBusinessEntityRows.reduce(
+    (s, e) => s + Number(e.value ?? "0"),
+    0,
+  );
+  const outOfEstateBusinessEntityTotal = outOfEstateBusinessEntityRows.reduce(
     (s, e) => s + Number(e.value ?? "0"),
     0,
   );
 
-  const totalInEstate = inEstate.reduce((s, a) => s + Number(a.value), 0);
+  const totalInEstate =
+    inEstate.reduce((s, a) => s + Number(a.value), 0) + inEstateBusinessEntityTotal;
   const totalOutOfEstate =
-    outOfEstate.reduce((s, a) => s + Number(a.value), 0) + businessEntityTotal;
+    outOfEstate.reduce((s, a) => s + Number(a.value), 0) + outOfEstateBusinessEntityTotal;
   const totalAssets = totalInEstate + totalOutOfEstate;
   const totalLiabilities = liabilities.reduce((s, l) => s + currentYearBalance(l), 0);
   const netWorth = totalInEstate - totalLiabilities;
@@ -405,13 +439,19 @@ export default function BalanceSheetView({
             </div>
           }
         >
-          {inEstate.length === 0 ? (
+          {inEstate.length === 0 && inEstateBusinessEntityRows.length === 0 ? (
             <EmptyRow message="No assets yet. Click Add Asset to get started." />
           ) : (
             CATEGORY_ORDER.map((cat) => {
               const items = inEstateByCategory[cat];
-              if (items.length === 0) return null;
-              const subtotal = items.reduce((s, a) => s + Number(a.value), 0);
+              const flatBusinessRows = cat === "business" ? inEstateBusinessEntityRows : [];
+              if (items.length === 0 && flatBusinessRows.length === 0) return null;
+              const accountSubtotal = items.reduce((s, a) => s + Number(a.value), 0);
+              const flatSubtotal = flatBusinessRows.reduce(
+                (s, e) => s + Number(e.value ?? "0"),
+                0,
+              );
+              const subtotal = accountSubtotal + flatSubtotal;
               return (
                 <CategoryGroup key={cat} label={CATEGORY_LABELS[cat]} total={fmt(subtotal)}>
                   {items.map((a) => (
@@ -425,6 +465,21 @@ export default function BalanceSheetView({
                       subLabel={`${ownerDisplay(a)} · ${growthDisplay(a)}`}
                       value={fmt(a.value)}
                     />
+                  ))}
+                  {flatBusinessRows.map((e) => (
+                    <a
+                      key={`flat-${e.id}`}
+                      href={withScenario(`/clients/${clientId}/client-data/family`)}
+                      className="flex items-center justify-between px-4 py-2 hover:bg-gray-800/60"
+                    >
+                      <div>
+                        <div className="text-sm font-medium text-gray-100">{e.name}</div>
+                        <div className="text-xs text-gray-400">
+                          {ENTITY_TYPE_LABELS[e.entityType ?? "other"] ?? "Entity"} · edit in Family
+                        </div>
+                      </div>
+                      <span className="text-sm font-medium text-gray-100">{fmt(Number(e.value ?? "0"))}</span>
+                    </a>
                   ))}
                 </CategoryGroup>
               );
@@ -477,13 +532,13 @@ export default function BalanceSheetView({
       </div>
 
       {/* Out of Estate */}
-      {(outOfEstate.length > 0 || businessEntityRows.length > 0) && (
+      {(outOfEstate.length > 0 || outOfEstateBusinessEntityRows.length > 0) && (
         <div className="rounded-lg border border-amber-900/40 bg-amber-950/10 p-4">
           <div className="mb-3 flex items-baseline justify-between">
             <div>
               <h3 className="text-sm font-semibold uppercase tracking-wider text-amber-300">Out of Estate</h3>
               <p className="text-xs text-amber-200/60">
-                Assets owned by trusts, LLCs, or other entities. Not included in the household net-worth calculation above.
+                Assets held outside the household — irrevocable trusts and entities not owned by household members. Not included in the household net-worth calculation above.
               </p>
             </div>
             <span className="text-sm font-medium text-amber-200">{fmt(totalOutOfEstate)}</span>
@@ -522,16 +577,16 @@ export default function BalanceSheetView({
               );
             })}
 
-            {businessEntityRows.length > 0 && (
+            {outOfEstateBusinessEntityRows.length > 0 && (
               <div className="overflow-hidden rounded-md border border-amber-900/40 bg-gray-900/60">
                 <div className="flex items-center justify-between border-b border-amber-900/40 bg-amber-900/15 px-3 py-2">
                   <span className="text-xs font-semibold uppercase tracking-wider text-amber-200">
                     Business interests
                   </span>
-                  <span className="text-xs font-medium text-amber-200/80">{fmt(businessEntityTotal)}</span>
+                  <span className="text-xs font-medium text-amber-200/80">{fmt(outOfEstateBusinessEntityTotal)}</span>
                 </div>
                 <div className="divide-y divide-gray-800">
-                  {businessEntityRows.map((e) => (
+                  {outOfEstateBusinessEntityRows.map((e) => (
                     <a
                       key={e.id}
                       href={withScenario(`/clients/${clientId}/client-data/family`)}

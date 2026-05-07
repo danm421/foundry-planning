@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { accounts, clients } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { accounts, clients, entities, entityOwners } from "@/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { listOpenItems } from "./list-open-items";
 import { listAuditRows } from "./list-audit-rows";
 import { getAssetAllocationByType } from "./get-asset-allocation-by-type";
@@ -39,7 +39,7 @@ export async function getOverviewData(
 
   if (!client) throw new ClientNotFoundError(clientId);
 
-  const [allocation, openItemsAll, openItemsPreview, auditRows, accountRows] =
+  const [allocation, openItemsAll, openItemsPreview, auditRows, accountRows, entityRows] =
     await Promise.all([
       getAssetAllocationByType(clientId, firmId),
       listOpenItems(clientId, firmId, { open: false, limit: 500 }),
@@ -53,9 +53,51 @@ export async function getOverviewData(
         })
         .from(accounts)
         .where(eq(accounts.clientId, clientId)),
+      db
+        .select({
+          id: entities.id,
+          entityType: entities.entityType,
+          value: entities.value,
+        })
+        .from(entities)
+        .where(eq(entities.clientId, clientId)),
     ]);
 
-  const netWorth = accountRows.reduce((sum, a) => sum + Number(a.value ?? 0), 0);
+  // Family-owned share of each business-entity flat valuation. Mirrors the
+  // balance-sheet rule: missing entity_owners rows → fully family-owned
+  // (legacy back-compat); rows summing to ~1 → 100%; partial → proportional.
+  const BUSINESS_ENTITY_TYPES = new Set(["llc", "s_corp", "c_corp", "partnership", "other"]);
+  const businessEntityIds = entityRows
+    .filter((e) => e.entityType && BUSINESS_ENTITY_TYPES.has(e.entityType))
+    .map((e) => e.id);
+  const ownerRows = businessEntityIds.length > 0
+    ? await db
+        .select({
+          entityId: entityOwners.entityId,
+          percent: entityOwners.percent,
+        })
+        .from(entityOwners)
+        .where(inArray(entityOwners.entityId, businessEntityIds))
+    : [];
+  const ownerSumByEntity = new Map<string, number>();
+  for (const row of ownerRows) {
+    ownerSumByEntity.set(
+      row.entityId,
+      (ownerSumByEntity.get(row.entityId) ?? 0) + parseFloat(row.percent),
+    );
+  }
+  const businessFlatInEstate = entityRows.reduce((sum, e) => {
+    if (!e.entityType || !BUSINESS_ENTITY_TYPES.has(e.entityType)) return sum;
+    const v = Number(e.value ?? 0);
+    if (v <= 0) return sum;
+    const familyShare = ownerRows.some((o) => o.entityId === e.id)
+      ? Math.max(0, Math.min(1, ownerSumByEntity.get(e.id) ?? 0))
+      : 1;
+    return sum + v * familyShare;
+  }, 0);
+
+  const netWorth =
+    accountRows.reduce((sum, a) => sum + Number(a.value ?? 0), 0) + businessFlatInEstate;
   const liquidPortfolio = accountRows
     .filter((a) => !LIQUID_CATEGORY_EXCLUDE.has(String(a.category)))
     .reduce((sum, a) => sum + Number(a.value ?? 0), 0);
