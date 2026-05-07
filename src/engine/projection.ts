@@ -56,6 +56,7 @@ import { calcSeca } from "../lib/tax/fica";
 import { resolveCashValueForYear } from "./life-insurance-schedule";
 import { computeTermEndYear } from "./life-insurance-expiry";
 import { applyTrustAnnualPass, type NonGrantorTrustInput } from "./trust-tax/index";
+import { computeAnnualUnitrustPayment } from "./trust-split-interest";
 import type { AccountYearRealization, AssetTransactionGain } from "./trust-tax/collect-trust-income";
 import type { TrustLiquidityPool, TrustIncomeBuckets, TrustWarning, DistributionPolicy } from "./trust-tax/types";
 import { computeDistribution } from "./trust-tax/compute-distribution";
@@ -1437,6 +1438,73 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // ── CLUT annual unitrust payment pass ─────────────────────────────────
+    // Each year of a CLUT's term, the trust pays a fixed % of its BoY FMV
+    // to the designated charity. Cash-first via creditCash; if trust checking
+    // goes negative, step 12c gap-fill liquidates trust assets and attributes
+    // any realized gains to the grantor via the deferred-gain mechanism.
+    // Tasks 11-12 add post-grantor-death tax routing (§170(f)(2)(B) recapture
+    // and §642(c) deduction); this block handles only the cash-flow.
+    let clutCharitableOutflowsTotal = 0;
+    const clutCharitableOutflowDetail: Array<{
+      kind: "clut_unitrust";
+      trustId: string;
+      trustName: string;
+      charityId: string;
+      amount: number;
+    }> = [];
+    for (const trust of currentEntities) {
+      if (trust.trustSubType !== "clut" || !trust.splitInterest) continue;
+      const si = trust.splitInterest;
+      const yearsSinceInception = year - si.inceptionYear;
+      if (yearsSinceInception < 0) continue;
+      if (
+        si.termType === "years" &&
+        yearsSinceInception >= (si.termYears ?? 0)
+      ) {
+        continue;
+      }
+      // Life-based termination is handled in Task 10's trust-termination pass.
+      const checkingId = entityCheckingByEntityId[trust.id];
+      if (!checkingId) continue;
+
+      let startOfYearFmv = 0;
+      for (const acct of workingAccounts) {
+        const trustShare = ownedByEntityAtYear(
+          acct,
+          data.giftEvents,
+          trust.id,
+          year,
+          planSettings.planStartYear,
+        );
+        if (trustShare <= 0) continue;
+        const ledger = accountLedgers[acct.id];
+        if (!ledger) continue;
+        startOfYearFmv += ledger.beginningValue * trustShare;
+      }
+      if (startOfYearFmv <= 0) continue;
+
+      const { unitrustAmount } = computeAnnualUnitrustPayment({
+        payoutPercent: Number(si.payoutPercent ?? 0),
+        startOfYearFmv,
+      });
+      if (unitrustAmount <= 0) continue;
+
+      creditCash(checkingId, -unitrustAmount, {
+        category: "gift",
+        label: `CLUT unitrust payment to charity`,
+        sourceId: trust.id,
+      });
+      clutCharitableOutflowsTotal += unitrustAmount;
+      clutCharitableOutflowDetail.push({
+        kind: "clut_unitrust",
+        trustId: trust.id,
+        trustName: trust.name,
+        charityId: si.charityId,
+        amount: unitrustAmount,
+      });
+    }
+
     // 5. Taxes on household + grantor-trust income/RMDs. Routes to bracket or flat
     // engine depending on planSettings.taxEngineMode and whether tax year data is loaded.
     const resolved = taxResolver ? taxResolver.getYear(year) : null;
@@ -2743,6 +2811,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       taxDetail: finalTaxDetail,
       taxResult: finalTaxResult,
       charityCarryforward,
+      charitableOutflows: clutCharitableOutflowsTotal,
+      ...(clutCharitableOutflowDetail.length > 0
+        ? { charitableOutflowDetail: clutCharitableOutflowDetail }
+        : {}),
       deductionBreakdown: deductionBreakdownResult,
       withdrawals,
       entityWithdrawals,

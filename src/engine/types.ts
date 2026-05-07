@@ -895,6 +895,18 @@ export interface ProjectionYear {
   trustWarnings?: TrustWarning[];
   /** IRC §170(b) charitable-deduction carryforward state at end of this year. */
   charityCarryforward?: CharityCarryforward;
+  /** Sum of split-interest-trust outflows to charity this year (CLUT annual
+   * unitrust payments). 0 in years with no trust-driven charitable flow. */
+  charitableOutflows: number;
+  /** Per-trust-per-charity breakdown of charitableOutflows. Populated only
+   * when charitableOutflows > 0. */
+  charitableOutflowDetail?: Array<{
+    kind: "clut_unitrust";
+    trustId: string;
+    trustName: string;
+    charityId: string;
+    amount: number;
+  }>;
 }
 
 export interface AccountLedger {
