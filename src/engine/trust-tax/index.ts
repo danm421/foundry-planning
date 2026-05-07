@@ -19,6 +19,14 @@ export interface NonGrantorTrustInput {
   distributionPolicy: DistributionPolicy;
   incomeBeneficiaries: EntitySummary["incomeBeneficiaries"];
   trustCashStart: number;
+  /**
+   * §642(c) charitable deduction this year for non-grantor split-interest
+   * trusts (CLUT/CLAT post-grantor-death). Forwarded into computeTrustTax
+   * which applies it sequentially against retained ordinary → dividends →
+   * cap gains. Caller is responsible for only setting this when the trust
+   * actually qualifies (non-grantor + split-interest + payment to charity).
+   */
+  charitableDeduction?: number;
 }
 
 export interface ApplyTrustAnnualPassInputs {
@@ -93,6 +101,7 @@ export function applyTrustAnnualPass(
       niitRate: inp.niitRate,
       niitThreshold: inp.niitThreshold,
       flatStateRate: inp.flatStateRate,
+      charitableDeduction: trust.charitableDeduction,
     });
     taxByEntity.set(trust.entityId, tax);
   }

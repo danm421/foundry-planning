@@ -1326,9 +1326,50 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         ? trustIncomeBrackets[3].from
         : (tp?.niitThreshold?.single ?? 0);
 
+      // §642(c) — for non-grantor split-interest trusts (post-grantor-death
+      // CLUTs) we need to feed this year's unitrust payment into the trust-
+      // tax pass as a charitable deduction. The unitrust amount is a function
+      // of BoY FMV so we can pre-compute it here before the actual emission
+      // happens later in the year loop's CLUT annual payment block.
+      const nonGrantorTrustsWithDeductions = nonGrantorTrusts.map((t) => {
+        const ent = entityMap[t.entityId];
+        if (!ent || ent.trustSubType !== "clut" || !ent.splitInterest) return t;
+        const si = ent.splitInterest;
+        const yearsSinceInception = year - si.inceptionYear;
+        if (yearsSinceInception < 0) return t;
+        if (
+          si.termType === "years" &&
+          yearsSinceInception >= (si.termYears ?? 0)
+        ) {
+          return t;
+        }
+        let startOfYearFmv = 0;
+        for (const acct of workingAccounts) {
+          const trustShare = ownedByEntityAtYear(
+            acct,
+            data.giftEvents,
+            ent.id,
+            year,
+            planSettings.planStartYear,
+          );
+          if (trustShare <= 0) continue;
+          const ledger = accountLedgers[acct.id];
+          if (!ledger) continue;
+          startOfYearFmv += ledger.beginningValue * trustShare;
+        }
+        if (startOfYearFmv <= 0) return t;
+        const { unitrustAmount } = computeAnnualUnitrustPayment({
+          payoutPercent: Number(si.payoutPercent ?? 0),
+          startOfYearFmv,
+        });
+        return unitrustAmount > 0
+          ? { ...t, charitableDeduction: unitrustAmount }
+          : t;
+      });
+
       trustPassResult = applyTrustAnnualPass({
         year,
-        nonGrantorTrusts,
+        nonGrantorTrusts: nonGrantorTrustsWithDeductions,
         yearRealizations,
         assetTransactionGains,
         trustLiquidity,

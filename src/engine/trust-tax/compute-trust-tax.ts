@@ -12,6 +12,15 @@ export interface ComputeTrustTaxInputs {
   niitRate: number;
   niitThreshold: number;
   flatStateRate: number;
+  /**
+   * §642(c) charitable deduction for non-grantor split-interest trusts (CLUT/
+   * CLAT post-grantor-death). Applied sequentially against retained ordinary,
+   * then dividends, then recognized cap gains. Floored at zero — §642(c) does
+   * not generate a loss. Caller is responsible for only passing this for
+   * trusts that actually qualify (non-grantor split-interest with a current-
+   * year payment to charity).
+   */
+  charitableDeduction?: number;
 }
 
 /**
@@ -23,18 +32,36 @@ export interface ComputeTrustTaxInputs {
  * Tax-exempt interest (even when retained) is NOT taxed — not in base here.
  */
 export function computeTrustTax(inp: ComputeTrustTaxInputs): TrustTaxBreakdown {
-  const totalRetainedOrdinary = inp.retainedOrdinary + inp.retainedDividends;
+  let { retainedOrdinary, retainedDividends, recognizedCapGains } = inp;
+  let remainingDeduction = Math.max(0, inp.charitableDeduction ?? 0);
+  if (remainingDeduction > 0) {
+    const ordOff = Math.min(retainedOrdinary, remainingDeduction);
+    retainedOrdinary -= ordOff;
+    remainingDeduction -= ordOff;
+  }
+  if (remainingDeduction > 0) {
+    const divOff = Math.min(retainedDividends, remainingDeduction);
+    retainedDividends -= divOff;
+    remainingDeduction -= divOff;
+  }
+  if (remainingDeduction > 0) {
+    const cgOff = Math.min(recognizedCapGains, remainingDeduction);
+    recognizedCapGains -= cgOff;
+    remainingDeduction -= cgOff;
+  }
+
+  const totalRetainedOrdinary = retainedOrdinary + retainedDividends;
   const federalOrdinaryTax = calcFederalTax(totalRetainedOrdinary, inp.trustIncomeBrackets);
-  const federalCapGainsTax = calcFederalTax(inp.recognizedCapGains, inp.trustCapGainsBrackets);
-  const niitBase = Math.max(0, totalRetainedOrdinary + inp.recognizedCapGains - inp.niitThreshold);
+  const federalCapGainsTax = calcFederalTax(recognizedCapGains, inp.trustCapGainsBrackets);
+  const niitBase = Math.max(0, totalRetainedOrdinary + recognizedCapGains - inp.niitThreshold);
   const niit = niitBase * inp.niitRate;
-  const stateTax = (totalRetainedOrdinary + inp.recognizedCapGains) * inp.flatStateRate;
+  const stateTax = (totalRetainedOrdinary + recognizedCapGains) * inp.flatStateRate;
 
   return {
     entityId: inp.entityId,
-    retainedOrdinary: inp.retainedOrdinary,
-    retainedDividends: inp.retainedDividends,
-    recognizedCapGains: inp.recognizedCapGains,
+    retainedOrdinary,
+    retainedDividends,
+    recognizedCapGains,
     federalOrdinaryTax,
     federalCapGainsTax,
     niit,
