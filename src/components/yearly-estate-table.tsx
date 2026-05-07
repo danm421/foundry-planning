@@ -259,7 +259,7 @@ function DeathDetail({
           <tr className="text-[10px] uppercase tracking-[0.16em] text-indigo-300/70">
             <Th align="left">Decedent</Th>
             <Th align="right">Estate Value</Th>
-            <Th align="right">Charitable Deduction</Th>
+            <Th align="right">Charitable Gifts</Th>
             <Th align="right">Taxable Estate</Th>
             <Th align="right">State Estate / Inheritance Tax</Th>
             <Th align="right">Probate &amp; Expenses</Th>
