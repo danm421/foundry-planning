@@ -27,12 +27,16 @@ export interface SupplementalWithdrawalPlan {
 export interface CategorizeDrawInput {
   account: Account;
   amount: number;
+  /** Live pre-draw balance. The Account.value field is an immutable snapshot
+   *  taken at projection start and drifts from the truth as the plan runs —
+   *  callers must pass the current balance from their ledger. */
+  balance: number;
   basisMap: Record<string, number>;
   ownerAge: number;
 }
 
 export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
-  const { account, amount, basisMap, ownerAge } = input;
+  const { account, amount, balance, basisMap, ownerAge } = input;
   const accountId = account.id;
   const empty: SupplementalDraw = { accountId, amount, ordinaryIncome: 0, capitalGains: 0, earlyWithdrawalPenalty: 0 };
 
@@ -41,12 +45,11 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
   // Cash: 0% tax, no penalty
   if (account.category === "cash") return empty;
 
-  // Taxable brokerage: pro-rata gain = (1 - basis/value) * amount
+  // Taxable brokerage: pro-rata gain = (1 - basis/balance) * amount
   if (account.category === "taxable") {
     const basis = basisMap[accountId] ?? 0;
-    const value = account.value;
-    if (value <= 0) return { ...empty, capitalGains: amount };
-    const gainRatio = Math.max(0, Math.min(1, 1 - basis / value));
+    if (balance <= 0) return { ...empty, capitalGains: amount };
+    const gainRatio = Math.max(0, Math.min(1, 1 - basis / balance));
     const capGain = amount * gainRatio;
     return { ...empty, capitalGains: capGain };
   }
@@ -120,7 +123,7 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
 
     const drawAmount = Math.min(remaining, available);
     const ownerAge = isSpouseAccount(account) && ages.spouse != null ? ages.spouse : ages.client;
-    const draw = categorizeDraw({ account, amount: drawAmount, basisMap, ownerAge });
+    const draw = categorizeDraw({ account, amount: drawAmount, balance: available, basisMap, ownerAge });
 
     draws.push(draw);
     byAccount[entry.accountId] = drawAmount;

@@ -107,4 +107,29 @@ describe("planSupplementalWithdrawal", () => {
     expect(plan.total).toBe(3_000);
     expect(plan.recognizedIncome.ordinaryIncome).toBe(3_000);
   });
+
+  it("taxable: gain ratio uses live householdBalances, not the stale Account.value snapshot", () => {
+    // Account was originally created with value=100k. Several years of LTCG
+    // appreciation later, the live balance is 200k while basis stayed at 50k.
+    // Correct gain ratio = 1 − 50/200 = 75%, NOT 1 − 50/100 = 50%.
+    const accounts = [
+      acct("a-tax", { category: "taxable", subType: "brokerage", value: 100_000, basis: 50_000 }),
+    ];
+    const strategy: WithdrawalPriority[] = [
+      { accountId: "a-tax", priorityOrder: 1, startYear: 2020, endYear: 2099 },
+    ];
+    const plan = planSupplementalWithdrawal({
+      shortfall: 40_000,
+      strategy,
+      householdBalances: { "a-tax": 200_000 }, // live balance after years of growth
+      basisMap: { "a-tax": 50_000 },
+      accounts,
+      ages: { client: 65, spouse: null },
+      isSpouseAccount: () => false,
+      year: 2030,
+    });
+    expect(plan.total).toBe(40_000);
+    // 40_000 × (1 − 50/200) = 40_000 × 0.75 = 30_000
+    expect(plan.recognizedIncome.capitalGains).toBeCloseTo(30_000, 6);
+  });
 });

@@ -2181,6 +2181,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       // through cash, not a real cash outflow.
       for (const draw of supplementalPlan.draws) {
         if (draw.amount <= 0) continue;
+        const preBalance = accountBalances[draw.accountId] ?? 0;
         accountBalances[draw.accountId] -= draw.amount;
         withdrawals.byAccount[draw.accountId] =
           (withdrawals.byAccount[draw.accountId] ?? 0) + draw.amount;
@@ -2193,6 +2194,19 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             label: "Withdrawal to cover household shortfall",
             amount: -draw.amount,
           });
+        }
+
+        // Pro-rata basis reduction for taxable accounts. Mirrors the entity
+        // gap-fill block below so subsequent years see basis tracking the
+        // shrinking balance — without this, basis stays inflated and the
+        // gain ratio collapses on every later draw from the same account.
+        const drawAccount = accountById.get(draw.accountId);
+        if (drawAccount?.category === "taxable" && preBalance > 0) {
+          const fraction = Math.min(1, draw.amount / preBalance);
+          basisMap[draw.accountId] = Math.max(
+            0,
+            (basisMap[draw.accountId] ?? 0) * (1 - fraction),
+          );
         }
       }
 
