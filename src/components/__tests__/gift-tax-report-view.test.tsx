@@ -33,8 +33,17 @@ function setProjectionResult(giftLedger: GiftLedgerYear[]) {
 // Minimal opaque tree fixture — engine will throw on it. The view should
 // catch the error, hide the loading state, and render the error path.
 // Engine-correctness is covered by gift-ledger unit tests in src/engine.
+// ClientInfo fields below the bare minimum needed by buildLifeEventsByYear
+// (called in a useMemo before the projection runs).
 const treeFixture = {
-  client: { firstName: "Cooper", filingStatus: "married_joint" },
+  client: {
+    firstName: "Cooper",
+    lastName: "Test",
+    dateOfBirth: "1973-01-01",
+    retirementAge: 65,
+    planEndAge: 95,
+    filingStatus: "married_joint",
+  },
 } as unknown as Record<string, unknown>;
 
 describe("GiftTaxReportView", () => {

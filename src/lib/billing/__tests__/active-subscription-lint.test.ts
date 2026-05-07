@@ -173,6 +173,8 @@ const ALLOWLIST: Record<string, string> = {
   "src/app/api/cma/asset-classes/[id]/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/cma/asset-classes/route.ts": "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/cma/migrate-to-standard/route.ts":
+    "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/cma/model-portfolios/[id]/allocations/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/cma/model-portfolios/[id]/route.ts":

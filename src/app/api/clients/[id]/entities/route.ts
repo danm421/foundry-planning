@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, entities, entityOwners, scenarios, accounts, accountOwners } from "@/db/schema";
+import { clients, entities, entityOwners, familyMembers, scenarios, accounts, accountOwners } from "@/db/schema";
 import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
@@ -111,10 +111,10 @@ export async function POST(
 
     // Load household family members so we can validate ownership refs and
     // derive the legacy owner enum for back-compat readers.
-    const householdMembers = await db.query.familyMembers.findMany({
-      where: (fm, { eq }) => eq(fm.clientId, id),
-      columns: { id: true, role: true },
-    });
+    const householdMembers = await db
+      .select({ id: familyMembers.id, role: familyMembers.role })
+      .from(familyMembers)
+      .where(eq(familyMembers.clientId, id));
     if (data.owners && data.owners.length > 0) {
       const memberIds = new Set(householdMembers.map((m) => m.id));
       for (const o of data.owners) {
@@ -189,10 +189,12 @@ export async function POST(
     // Create a default checking account for this entity in every one of the client's
     // scenarios so the projection engine can route the entity's incomes/expenses/RMDs
     // through a dedicated cash bucket.
+    // Only base-case scenarios receive the default checking account — the
+    // accounts_scenario_base_only trigger rejects writes to non-base scenarios.
     const scenarioRows = await db
       .select({ id: scenarios.id })
       .from(scenarios)
-      .where(eq(scenarios.clientId, id));
+      .where(and(eq(scenarios.clientId, id), eq(scenarios.isBaseCase, true)));
 
     if (scenarioRows.length > 0) {
       // Insert one entity-checking account per scenario, then wire ownership via

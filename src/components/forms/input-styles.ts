@@ -36,4 +36,4 @@ export const textareaBaseClassName = textareaCore;
 export const textareaClassName = "w-full " + textareaCore;
 
 export const fieldLabelClassName =
-  "block mb-1.5 text-[12px] font-medium text-ink-3";
+  "block mb-1.5 text-[13px] font-medium text-ink-2";

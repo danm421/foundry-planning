@@ -359,13 +359,13 @@ export function OwnershipEditor({
       {/* Preset bar */}
       <div className="flex flex-wrap gap-1.5 mb-3">
         <PresetButton
-          label="Client"
+          label={clientFm?.firstName ?? "Client"}
           active={derivedMode === "client" && !forceCustom}
           onClick={handlePresetClient}
         />
         {showSpousePresets && (
           <PresetButton
-            label="Spouse"
+            label={spouseFm?.firstName ?? "Spouse"}
             active={derivedMode === "spouse" && !forceCustom}
             onClick={handlePresetSpouse}
           />
