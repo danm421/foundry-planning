@@ -36,6 +36,7 @@ import {
   type QuickNavView,
 } from "@/components/cashflow/quick-nav-utils";
 import { QuickNavDropdown } from "@/components/cashflow/quick-nav-dropdown";
+import { buildLifeEventsByYear } from "@/lib/life-event-markers";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
 
@@ -420,44 +421,26 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   const chartLabels = visibleYears.map((y) => String(y.year));
 
-  // Life events — retirement and life-expectancy end — for each client, mapped
-  // onto the chart's year axis. Also used to badge the table rows so advisors can
-  // jump to an event year quickly.
+  // Life events — retirement and life-expectancy end — for each client. The
+  // shared helper is the source of truth; chart timeline markers are derived
+  // from it, clamped to the visible window.
+  const eventsByYear = useMemo(
+    () => (clientData ? buildLifeEventsByYear(clientData.client) : {}),
+    [clientData],
+  );
+
   const firstYear = visibleYears[0]?.year ?? 0;
-  const yearIndex = (year: number) => year - firstYear;
-  const inRange = (year: number) =>
-    visibleYears.length > 0 && year >= firstYear && year <= visibleYears[visibleYears.length - 1].year;
-
+  const lastYear = visibleYears[visibleYears.length - 1]?.year ?? 0;
   const timelineMarkers: TimelineMarker[] = [];
-  const eventsByYear: Record<number, { label: string; color: string }[]> = {};
-  const pushEvent = (year: number, label: string, color: string) => {
-    if (!inRange(year)) return;
-    timelineMarkers.push({ yearIndex: yearIndex(year), label, color });
-    (eventsByYear[year] ??= []).push({ label, color });
-  };
-
-  if (clientData) {
-    const c = clientData.client;
-    const clientFirst = c.firstName;
-    const clientBirthYear = parseInt(c.dateOfBirth.slice(0, 4), 10);
-    const clientColor = "#60a5fa";
-    pushEvent(clientBirthYear + c.retirementAge, `${clientFirst} retires`, clientColor);
-    const clientLE = c.lifeExpectancy ?? 95;
-    pushEvent(clientBirthYear + clientLE, `${clientFirst} passes`, clientColor);
-
-    if (c.spouseDob) {
-      const spouseFirst = c.spouseName ?? "Spouse";
-      const spouseBirthYear = parseInt(c.spouseDob.slice(0, 4), 10);
-      const spouseColor = "#f472b6";
-      if (c.spouseRetirementAge != null) {
-        pushEvent(
-          spouseBirthYear + c.spouseRetirementAge,
-          `${spouseFirst} retires`,
-          spouseColor
-        );
-      }
-      const spouseLE = c.spouseLifeExpectancy ?? 95;
-      pushEvent(spouseBirthYear + spouseLE, `${spouseFirst} passes`, spouseColor);
+  for (const [yearStr, events] of Object.entries(eventsByYear)) {
+    const year = Number(yearStr);
+    if (visibleYears.length === 0 || year < firstYear || year > lastYear) continue;
+    for (const ev of events) {
+      timelineMarkers.push({
+        yearIndex: year - firstYear,
+        label: ev.label,
+        color: ev.color,
+      });
     }
   }
 
