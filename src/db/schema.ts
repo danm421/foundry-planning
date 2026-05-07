@@ -180,8 +180,26 @@ export const trustSubTypeEnum = pgEnum("trust_sub_type", [
   "grat",
   "qprt",
   "clat",
+  "clut",
   "qtip",
   "bypass",
+]);
+
+export const trustTermTypeEnum = pgEnum("trust_term_type", [
+  "years",
+  "single_life",
+  "joint_life",
+  "shorter_of_years_or_life",
+]);
+
+export const trustPayoutTypeEnum = pgEnum("trust_payout_type", [
+  "unitrust",
+  "annuity",
+]);
+
+export const giftEventKindEnum = pgEnum("gift_event_kind", [
+  "outright",
+  "clut_remainder_interest",
 ]);
 
 export const yearRefEnum = pgEnum("year_ref", [
@@ -556,6 +574,68 @@ export const entityOwners = pgTable(
   }),
 );
 
+export const trustSplitInterestDetails = pgTable(
+  "trust_split_interest_details",
+  {
+    entityId: uuid("entity_id")
+      .primaryKey()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    inceptionYear: integer("inception_year").notNull(),
+    inceptionValue: decimal("inception_value", { precision: 15, scale: 2 }).notNull(),
+    payoutType: trustPayoutTypeEnum("payout_type").notNull(),
+    payoutPercent: decimal("payout_percent", { precision: 7, scale: 4 }),
+    payoutAmount: decimal("payout_amount", { precision: 15, scale: 2 }),
+    irc7520Rate: decimal("irc_7520_rate", { precision: 6, scale: 4 }).notNull(),
+    termType: trustTermTypeEnum("term_type").notNull(),
+    termYears: integer("term_years"),
+    measuringLife1Id: uuid("measuring_life_1_id").references(() => familyMembers.id, {
+      onDelete: "restrict",
+    }),
+    measuringLife2Id: uuid("measuring_life_2_id").references(() => familyMembers.id, {
+      onDelete: "restrict",
+    }),
+    charityId: uuid("charity_id")
+      .notNull()
+      .references(() => externalBeneficiaries.id, { onDelete: "restrict" }),
+    originalIncomeInterest: decimal("original_income_interest", {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    originalRemainderInterest: decimal("original_remainder_interest", {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("trust_split_interest_client_idx").on(t.clientId),
+    check(
+      "split_interest_unitrust_payout",
+      sql`(${t.payoutType} != 'unitrust') OR (${t.payoutPercent} IS NOT NULL AND ${t.payoutAmount} IS NULL)`,
+    ),
+    check(
+      "split_interest_annuity_payout",
+      sql`(${t.payoutType} != 'annuity') OR (${t.payoutAmount} IS NOT NULL AND ${t.payoutPercent} IS NULL)`,
+    ),
+    check(
+      "split_interest_term_years_required",
+      sql`(${t.termType} NOT IN ('years', 'shorter_of_years_or_life')) OR (${t.termYears} IS NOT NULL)`,
+    ),
+    check(
+      "split_interest_measuring_life_required",
+      sql`(${t.termType} NOT IN ('single_life', 'joint_life', 'shorter_of_years_or_life')) OR (${t.measuringLife1Id} IS NOT NULL)`,
+    ),
+    check(
+      "split_interest_joint_life_requires_two",
+      sql`(${t.termType} != 'joint_life') OR (${t.measuringLife2Id} IS NOT NULL)`,
+    ),
+  ],
+);
+
 export const familyMembers = pgTable("family_members", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
@@ -664,6 +744,7 @@ export const gifts = pgTable(
     percent: decimal("percent", { precision: 6, scale: 4 }),
     parentGiftId: uuid("parent_gift_id"),
     useCrummeyPowers: boolean("use_crummey_powers").notNull().default(false),
+    eventKind: giftEventKindEnum("event_kind").notNull().default("outright"),
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
