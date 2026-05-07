@@ -5,6 +5,7 @@ import type {
   YearlyEstateRow,
   YearlyEstateDeathRow,
 } from "@/lib/estate/yearly-estate-report";
+import type { LifeEventsByYear } from "@/lib/life-event-markers";
 
 const fmt = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -25,6 +26,7 @@ interface YearlyEstateTableProps {
   };
   ownerNames: { clientName: string; spouseName: string | null };
   ordering: "primaryFirst" | "spouseFirst";
+  eventsByYear?: LifeEventsByYear;
 }
 
 interface NumericCol {
@@ -43,6 +45,7 @@ export function YearlyEstateTable({
   totals,
   ownerNames,
   ordering,
+  eventsByYear,
 }: YearlyEstateTableProps) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
@@ -139,6 +142,7 @@ export function YearlyEstateTable({
                   ownerNames={ownerNames}
                   cols={visibleCols}
                   detailColSpan={summaryColCount}
+                  events={eventsByYear?.[r.year]}
                 />
               );
             })}
@@ -172,6 +176,7 @@ interface SummaryRowProps {
   ownerNames: { clientName: string; spouseName: string | null };
   cols: NumericCol[];
   detailColSpan: number;
+  events?: LifeEventsByYear[number];
 }
 
 function SummaryRow({
@@ -181,6 +186,7 @@ function SummaryRow({
   ownerNames,
   cols,
   detailColSpan,
+  events,
 }: SummaryRowProps) {
   const ageLabel =
     row.ageClient != null && row.ageSpouse != null
@@ -196,7 +202,20 @@ function SummaryRow({
             : "text-gray-200 hover:bg-indigo-900/10"
         }
       >
-        <td className="px-3 py-1.5">{row.year}</td>
+        <td className="px-3 py-1.5">
+          <span className="inline-flex items-center gap-1.5">
+            <span>{row.year}</span>
+            {events?.map((ev, i) => (
+              <span
+                key={i}
+                title={ev.label}
+                aria-label={ev.label}
+                style={{ backgroundColor: ev.color }}
+                className="inline-block h-1.5 w-1.5 rounded-full"
+              />
+            ))}
+          </span>
+        </td>
         <td className="px-3 py-1.5 text-gray-400">{ageLabel}</td>
         {cols.map((c) => {
           const value = row[c.key] as number;

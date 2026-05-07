@@ -16,6 +16,7 @@ import {
   GiftWarningAlert,
   type GiftWarningBreach,
 } from "./gift-warning-alert";
+import { buildLifeEventsByYear } from "@/lib/life-event-markers";
 
 interface GiftTaxReportViewProps {
   clientId: string;
@@ -184,6 +185,11 @@ export default function GiftTaxReportView({
     return breaches;
   }, [projection, ownerNames]);
 
+  const eventsByYear = useMemo(
+    () => (tree ? buildLifeEventsByYear(tree.client) : undefined),
+    [tree],
+  );
+
   function toggleYear(year: number) {
     setExpandedYears((prev) => {
       const next = new Set(prev);
@@ -224,6 +230,7 @@ export default function GiftTaxReportView({
         expandedYears={expandedYears}
         onToggleYear={toggleYear}
         drilldownByYear={drilldownByYear}
+        eventsByYear={eventsByYear}
       />
     </div>
   );

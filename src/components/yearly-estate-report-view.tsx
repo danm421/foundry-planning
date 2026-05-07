@@ -13,6 +13,7 @@ import {
 } from "@/lib/estate/yearly-estate-report";
 import { YearlyEstateTable } from "./yearly-estate-table";
 import type { OwnerDobs } from "./report-controls/age-helpers";
+import { buildLifeEventsByYear } from "@/lib/life-event-markers";
 
 interface Props {
   clientId: string;
@@ -83,6 +84,11 @@ export default function YearlyEstateReportView({
     });
   }, [projection, clientData, ordering, ownerNames, ownerDobs]);
 
+  const eventsByYear = useMemo(
+    () => (clientData ? buildLifeEventsByYear(clientData.client) : undefined),
+    [clientData],
+  );
+
   if (loadError) {
     return (
       <div className="rounded border border-red-700 bg-red-900/20 p-4 text-red-200">
@@ -137,6 +143,7 @@ export default function YearlyEstateReportView({
         totals={report.totals}
         ownerNames={ownerNames}
         ordering={report.ordering}
+        eventsByYear={eventsByYear}
       />
     </div>
   );

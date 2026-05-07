@@ -3,6 +3,7 @@
 import { Fragment } from "react";
 import type { GiftLedgerYear } from "@/engine/gift-ledger";
 import type { RecipientGroup } from "@/lib/gifts/build-recipient-drilldown";
+import type { LifeEventsByYear } from "@/lib/life-event-markers";
 
 interface OwnerAges {
   client: number;
@@ -16,6 +17,7 @@ interface GiftCumulativeTableProps {
   expandedYears: Set<number>;
   onToggleYear: (year: number) => void;
   drilldownByYear: Map<number, RecipientGroup[]>;
+  eventsByYear?: LifeEventsByYear;
 }
 
 const fmt = (n: number): string =>
@@ -34,6 +36,7 @@ export function GiftCumulativeTable({
   expandedYears,
   onToggleYear,
   drilldownByYear,
+  eventsByYear,
 }: GiftCumulativeTableProps) {
   const hasSpouse = ownerNames.spouseName !== null;
   const colCount = hasSpouse ? 13 : 9;
@@ -98,7 +101,20 @@ export function GiftCumulativeTable({
                 }`}
                 onClick={() => onToggleYear(row.year)}
               >
-                <td className="py-1.5 px-2">{row.year}</td>
+                <td className="py-1.5 px-2">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span>{row.year}</span>
+                    {eventsByYear?.[row.year]?.map((ev, i) => (
+                      <span
+                        key={i}
+                        title={ev.label}
+                        aria-label={ev.label}
+                        style={{ backgroundColor: ev.color }}
+                        className="inline-block h-1.5 w-1.5 rounded-full"
+                      />
+                    ))}
+                  </span>
+                </td>
                 <td className="py-1.5 px-2">{ageStr}</td>
                 <td className="py-1.5 px-2 text-right">{fmt(row.giftsGiven)}</td>
                 <td className="py-1.5 px-2 text-right">
