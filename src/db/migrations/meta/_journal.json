@@ -512,6 +512,13 @@
       "when": 1778163816839,
       "tag": "0072_goofy_sue_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1778169505360,
+      "tag": "0073_moaning_mentallo",
+      "breakpoints": true
     }
   ]
 }

@@ -898,11 +898,11 @@ export default function AddAccountForm({
                     className={selectClassName}
                   >
                     <option value="default">
-                      Use category default{catDefaultSource?.portfolioName ? ` — ${catDefaultSource.portfolioName}` : ""}{defaultPctForCategory !== null ? ` (${defaultPctForCategory}%)` : ""}
+                      {defaultPctForCategory !== null ? `${defaultPctForCategory}% — ` : ""}{catDefaultSource?.portfolioName ?? "Category default"} (default)
                     </option>
                     {modelPortfolios?.map((mp) => (
                       <option key={mp.id} value={`mp:${mp.id}`}>
-                        {mp.name} ({(mp.blendedReturn * 100).toFixed(2)}%)
+                        {(mp.blendedReturn * 100).toFixed(2)}% — {mp.name}
                       </option>
                     ))}
                     {ASSET_MIX_CATEGORIES.includes(category) && (
@@ -910,7 +910,7 @@ export default function AddAccountForm({
                     )}
                     {(category === "cash" || category === "taxable" || category === "retirement") && (
                       <option value="inflation">
-                        Inflation rate ({(resolvedInflationRate * 100).toFixed(2)}%)
+                        {(resolvedInflationRate * 100).toFixed(2)}% — Inflation rate
                       </option>
                     )}
                     <option value="custom">Custom %</option>

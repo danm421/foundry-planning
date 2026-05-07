@@ -28,6 +28,9 @@ type PlanSettingsShape = {
   growthSourceTaxable: string;
   growthSourceCash: string;
   growthSourceRetirement: string;
+  growthSourceRealEstate: string;
+  growthSourceBusiness: string;
+  growthSourceLifeInsurance: string;
   modelPortfolioIdTaxable: string | null;
   modelPortfolioIdCash: string | null;
   modelPortfolioIdRetirement: string | null;
@@ -170,15 +173,25 @@ export function createGrowthSourceResolver(ctx: {
         portfolioId: s.modelPortfolioIdRetirement,
         customRate: String(s.defaultGrowthRetirement),
       },
+      real_estate: {
+        source: s.growthSourceRealEstate,
+        portfolioId: null,
+        customRate: String(s.defaultGrowthRealEstate),
+      },
+      business: {
+        source: s.growthSourceBusiness,
+        portfolioId: null,
+        customRate: String(s.defaultGrowthBusiness),
+      },
+      life_insurance: {
+        source: s.growthSourceLifeInsurance,
+        portfolioId: null,
+        customRate: String(s.defaultGrowthLifeInsurance),
+      },
     };
     const entry = sourceLookup[category];
     if (!entry) {
-      const flatDefaults: Record<string, string> = {
-        real_estate: String(s.defaultGrowthRealEstate),
-        business: String(s.defaultGrowthBusiness),
-        life_insurance: String(s.defaultGrowthLifeInsurance),
-      };
-      return { rate: parseFloat(flatDefaults[category] ?? "0.05") };
+      return { rate: 0.05 };
     }
 
     if (entry.source === "model_portfolio" && entry.portfolioId) {
@@ -218,6 +231,9 @@ export function createGrowthSourceResolver(ctx: {
       taxable: s.growthSourceTaxable,
       cash: s.growthSourceCash,
       retirement: s.growthSourceRetirement,
+      real_estate: s.growthSourceRealEstate,
+      business: s.growthSourceBusiness,
+      life_insurance: s.growthSourceLifeInsurance,
     };
     return lookup[category] ?? "custom";
   }

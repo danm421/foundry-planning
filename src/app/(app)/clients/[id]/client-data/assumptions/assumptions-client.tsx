@@ -55,6 +55,9 @@ export interface AssumptionsSettings {
   growthSourceTaxable?: string;
   growthSourceCash?: string;
   growthSourceRetirement?: string;
+  growthSourceRealEstate?: string;
+  growthSourceBusiness?: string;
+  growthSourceLifeInsurance?: string;
   modelPortfolioIdTaxable?: string | null;
   modelPortfolioIdCash?: string | null;
   modelPortfolioIdRetirement?: string | null;
@@ -146,6 +149,9 @@ export default function AssumptionsClient({
             growthSourceTaxable={settings.growthSourceTaxable}
             growthSourceCash={settings.growthSourceCash}
             growthSourceRetirement={settings.growthSourceRetirement}
+            growthSourceRealEstate={settings.growthSourceRealEstate}
+            growthSourceBusiness={settings.growthSourceBusiness}
+            growthSourceLifeInsurance={settings.growthSourceLifeInsurance}
             modelPortfolioIdTaxable={settings.modelPortfolioIdTaxable}
             modelPortfolioIdCash={settings.modelPortfolioIdCash}
             modelPortfolioIdRetirement={settings.modelPortfolioIdRetirement}

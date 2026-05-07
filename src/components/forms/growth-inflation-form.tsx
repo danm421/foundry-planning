@@ -26,6 +26,9 @@ interface GrowthInflationFormProps {
   growthSourceTaxable?: string;
   growthSourceCash?: string;
   growthSourceRetirement?: string;
+  growthSourceRealEstate?: string;
+  growthSourceBusiness?: string;
+  growthSourceLifeInsurance?: string;
   modelPortfolioIdTaxable?: string | null;
   modelPortfolioIdCash?: string | null;
   modelPortfolioIdRetirement?: string | null;
@@ -35,11 +38,17 @@ interface GrowthInflationFormProps {
   ssWageGrowthRate?: string;
 }
 
-// Non-investable categories — always flat rate
-const FLAT_RATE_FIELDS: { key: string; label: string; description: string }[] = [
-  { key: "defaultGrowthRealEstate", label: "Real Estate", description: "Residences and property" },
-  { key: "defaultGrowthBusiness", label: "Business", description: "Ownership interests and entities" },
-  { key: "defaultGrowthLifeInsurance", label: "Life Insurance", description: "Cash-value life policies" },
+// Non-investable categories — choose between Inflation and Custom %
+const FLAT_RATE_FIELDS: {
+  key: string;
+  label: string;
+  description: string;
+  category: "real_estate" | "business" | "life_insurance";
+  sourceKey: "growthSourceRealEstate" | "growthSourceBusiness" | "growthSourceLifeInsurance";
+}[] = [
+  { key: "defaultGrowthRealEstate", label: "Real Estate", description: "Residences and property", category: "real_estate", sourceKey: "growthSourceRealEstate" },
+  { key: "defaultGrowthBusiness", label: "Business", description: "Ownership interests and entities", category: "business", sourceKey: "growthSourceBusiness" },
+  { key: "defaultGrowthLifeInsurance", label: "Life Insurance", description: "Cash-value life policies", category: "life_insurance", sourceKey: "growthSourceLifeInsurance" },
 ];
 
 // Investable categories — support portfolio dropdown
@@ -104,6 +113,13 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
     },
   });
 
+  // State for each non-investable category's growth source (inflation or custom)
+  const [flatSources, setFlatSources] = useState<Record<string, "inflation" | "custom">>({
+    real_estate: (rates.growthSourceRealEstate ?? "inflation") === "custom" ? "custom" : "inflation",
+    business: (rates.growthSourceBusiness ?? "inflation") === "custom" ? "custom" : "inflation",
+    life_insurance: (rates.growthSourceLifeInsurance ?? "inflation") === "custom" ? "custom" : "inflation",
+  });
+
   function setSource(category: string, value: string) {
     if (value.startsWith("mp:")) {
       setSources((prev) => ({ ...prev, [category]: { source: "model_portfolio", portfolioId: value.slice(3) } }));
@@ -131,6 +147,9 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
       defaultGrowthRealEstate: toDec("defaultGrowthRealEstate"),
       defaultGrowthBusiness: toDec("defaultGrowthBusiness"),
       defaultGrowthLifeInsurance: toDec("defaultGrowthLifeInsurance"),
+      growthSourceRealEstate: flatSources.real_estate,
+      growthSourceBusiness: flatSources.business,
+      growthSourceLifeInsurance: flatSources.life_insurance,
     };
 
     // For each investable category, send growth source + portfolio id + custom rate
@@ -277,23 +296,42 @@ export default function GrowthInflationForm({ clientId, modelPortfolios, taxInfl
             );
           })}
 
-          {/* Non-investable categories — flat rate only */}
-          {FLAT_RATE_FIELDS.map((field) => (
-            <div key={field.key} className="flex items-center justify-between gap-6 px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-gray-100">{field.label}</p>
-                <p className="text-xs text-gray-400">{field.description}</p>
+          {/* Non-investable categories — Inflation or Custom % */}
+          {FLAT_RATE_FIELDS.map((field) => {
+            const flatSource = flatSources[field.category];
+            return (
+              <div key={field.key} className="flex items-center justify-between gap-6 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-100">{field.label}</p>
+                  <p className="text-xs text-gray-400">{field.description}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={flatSource}
+                    onChange={(e) =>
+                      setFlatSources((prev) => ({ ...prev, [field.category]: e.target.value as "inflation" | "custom" }))
+                    }
+                    className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
+                  >
+                    <option value="inflation">Inflation ({(resolvedInflationRate * 100).toFixed(2)}%)</option>
+                    <option value="custom">Custom %</option>
+                  </select>
+                  {flatSource === "custom" ? (
+                    <div className="w-28 flex-shrink-0">
+                      <PercentInput
+                        id={field.key}
+                        name={field.key}
+                        defaultValue={pct((rates as Record<string, string>)[field.key])}
+                        className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                      />
+                    </div>
+                  ) : (
+                    <input type="hidden" name={field.key} value={pct((rates as Record<string, string>)[field.key])} />
+                  )}
+                </div>
               </div>
-              <div className="w-28 flex-shrink-0">
-                <PercentInput
-                  id={field.key}
-                  name={field.key}
-                  defaultValue={pct((rates as Record<string, string>)[field.key])}
-                  className="block w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 

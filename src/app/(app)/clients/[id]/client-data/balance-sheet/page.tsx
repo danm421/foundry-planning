@@ -246,14 +246,17 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
     }
   }
 
+  const flatRate = (rawRate: string, source: string | undefined): string =>
+    source === "inflation" ? String(resolvedInflationRate) : String(rawRate);
+
   const categoryDefaults = settings
     ? {
         taxable: String(settings.defaultGrowthTaxable),
         cash: String(settings.defaultGrowthCash),
         retirement: String(settings.defaultGrowthRetirement),
-        real_estate: String(settings.defaultGrowthRealEstate),
-        business: String(settings.defaultGrowthBusiness),
-        life_insurance: String(settings.defaultGrowthLifeInsurance),
+        real_estate: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
+        business: flatRate(settings.defaultGrowthBusiness, settings.growthSourceBusiness),
+        life_insurance: flatRate(settings.defaultGrowthLifeInsurance, settings.growthSourceLifeInsurance),
       }
     : {
         taxable: "0.07",
