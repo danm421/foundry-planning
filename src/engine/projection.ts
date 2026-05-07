@@ -1750,6 +1750,25 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       });
     }
 
+    // Plan 4d-2 — CLUT inception charitable deduction. The grantor takes the
+    // present value of the lead interest as a "for the use of" charitable
+    // contribution in the funding year (IRC §170(f)(2)(B)). AGI cap is 30%
+    // (public charity) or 20% (private foundation), routed through the
+    // appreciated buckets which encode those caps.
+    for (const e of data.entities ?? []) {
+      if (e.trustSubType !== "clut" || !e.splitInterest) continue;
+      if (e.splitInterest.inceptionYear !== year) continue;
+      const charity = (data.externalBeneficiaries ?? []).find(
+        (eb) => eb.id === e.splitInterest!.charityId,
+      );
+      if (!charity || charity.kind !== "charity") continue;
+      const isPrivate = charity.charityType === "private";
+      charityGiftsThisYear.push({
+        amount: e.splitInterest.originalIncomeInterest,
+        bucket: isPrivate ? "appreciatedPrivate" : "appreciatedPublic",
+      });
+    }
+
     // Split realization OI out of the generic ordinaryIncome bucket so NIIT
     // (IRC §1411) can see investment interest while still excluding RMDs,
     // IRA distributions, and SE earnings which ride in ordinaryIncome.
