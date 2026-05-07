@@ -103,10 +103,62 @@ export function TrustCard({ data, defaultExpanded = false, onRemoveSlice }: Prop
               <span className="tabular-nums">${data.exemptionAvailable.toLocaleString("en-US")}</span>
             </div>
           )}
+          {data.splitInterest && <SplitInterestPanel splitInterest={data.splitInterest} />}
         </div>
       )}
     </div>
   );
+}
+
+function SplitInterestPanel({
+  splitInterest: si,
+}: {
+  splitInterest: NonNullable<TrustCardData["splitInterest"]>;
+}) {
+  const payoutLabel =
+    si.payoutPercent != null
+      ? `${(si.payoutPercent * 100).toFixed(2)}% ${si.payoutType}`
+      : si.payoutType;
+  return (
+    <section className="mt-3 border-t border-[var(--color-hair)] pt-3">
+      <h4 className="mb-2 text-[9.5px] uppercase tracking-[0.14em] text-[var(--color-ink-3)]">
+        Split-interest details
+      </h4>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        <dt className="text-[var(--color-ink-3)]">Payout</dt>
+        <dd className="text-[var(--color-ink-2)]">{payoutLabel}</dd>
+        <dt className="text-[var(--color-ink-3)]">IRC §7520 rate (locked)</dt>
+        <dd className="text-[var(--color-ink-2)]">{(si.irc7520Rate * 100).toFixed(2)}%</dd>
+        <dt className="text-[var(--color-ink-3)]">Term</dt>
+        <dd className="text-[var(--color-ink-2)]">{describeTerm(si)}</dd>
+        <dt className="text-[var(--color-ink-3)]">Charity</dt>
+        <dd className="text-[var(--color-ink-2)]">{si.charityName ?? "—"}</dd>
+        <dt className="text-[var(--color-ink-3)]">Income interest (deduction)</dt>
+        <dd className="font-mono tabular-nums text-[var(--color-ink-2)]">
+          ${Math.round(si.originalIncomeInterest).toLocaleString("en-US")}
+        </dd>
+        <dt className="text-[var(--color-ink-3)]">Remainder interest (gift)</dt>
+        <dd className="font-mono tabular-nums text-[var(--color-ink-2)]">
+          ${Math.round(si.originalRemainderInterest).toLocaleString("en-US")}
+        </dd>
+      </dl>
+    </section>
+  );
+}
+
+function describeTerm(si: NonNullable<TrustCardData["splitInterest"]>): string {
+  switch (si.termType) {
+    case "years":
+      return `${si.termYears ?? "?"} years (ends ${si.inceptionYear + (si.termYears ?? 0) - 1})`;
+    case "single_life":
+      return "Single life";
+    case "joint_life":
+      return "Joint life (longer of)";
+    case "shorter_of_years_or_life":
+      return `Shorter of ${si.termYears ?? "?"} years or life`;
+    default:
+      return "—";
+  }
 }
 
 function HeldAssetRow({

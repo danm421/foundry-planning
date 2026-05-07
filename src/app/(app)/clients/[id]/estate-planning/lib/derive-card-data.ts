@@ -36,6 +36,24 @@ export interface TrustCardData {
   exemptionConsumed: number;
   exemptionAvailable: number;
   breach: boolean;
+  /**
+   * Split-interest snapshot for CLUT/CLAT trusts. Populated only when
+   * trustSubType = 'clut'. Drives the "Split-interest details" card panel.
+   * `charityName` is resolved from externalBeneficiaries here so the card
+   * doesn't have to do another lookup at render time.
+   */
+  splitInterest?: {
+    inceptionYear: number;
+    inceptionValue: number;
+    payoutType: "unitrust" | "annuity";
+    payoutPercent: number | null;
+    irc7520Rate: number;
+    termType: "years" | "single_life" | "joint_life" | "shorter_of_years_or_life";
+    termYears: number | null;
+    charityName: string | null;
+    originalIncomeInterest: number;
+    originalRemainderInterest: number;
+  };
 }
 
 export interface BequestSummaryRow {
@@ -161,6 +179,25 @@ export function deriveTrustCardData(
   return trusts.map((e) => {
     const rows = rowsForEntity(tree, e.id);
     const total = rows.reduce((a, r) => a + r.sliceValue, 0);
+    const si = e.splitInterest;
+    const splitInterest = si
+      ? {
+          inceptionYear: si.inceptionYear,
+          inceptionValue: Number(si.inceptionValue),
+          payoutType: si.payoutType,
+          payoutPercent:
+            si.payoutPercent != null ? Number(si.payoutPercent) : null,
+          irc7520Rate: Number(si.irc7520Rate),
+          termType: si.termType,
+          termYears: si.termYears ?? null,
+          charityName:
+            (tree.externalBeneficiaries ?? []).find(
+              (eb) => eb.id === si.charityId,
+            )?.name ?? null,
+          originalIncomeInterest: Number(si.originalIncomeInterest),
+          originalRemainderInterest: Number(si.originalRemainderInterest),
+        }
+      : undefined;
     return {
       entityId: e.id,
       name: e.name ?? "(unnamed trust)",
@@ -173,6 +210,7 @@ export function deriveTrustCardData(
       exemptionConsumed: e.exemptionConsumed ?? 0,
       exemptionAvailable: bea,
       breach: recipientBreaches?.get(`entity:${e.id}`) ?? false,
+      ...(splitInterest ? { splitInterest } : {}),
     };
   });
 }

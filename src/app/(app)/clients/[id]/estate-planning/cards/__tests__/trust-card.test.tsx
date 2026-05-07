@@ -93,4 +93,35 @@ describe("TrustCard", () => {
     render(<TrustCard data={makeTrustCardData({ breach: false })} />);
     expect(screen.queryByLabelText(/exceeds lifetime exemption/i)).not.toBeInTheDocument();
   });
+
+  it("renders split-interest details panel when splitInterest is populated", () => {
+    const trust = makeTrustCardData({
+      subType: "clut",
+      splitInterest: {
+        inceptionYear: 2026,
+        inceptionValue: 1_000_000,
+        payoutType: "unitrust",
+        payoutPercent: 0.06,
+        irc7520Rate: 0.022,
+        termType: "years",
+        termYears: 10,
+        charityName: "Acme Foundation",
+        originalIncomeInterest: 461_385,
+        originalRemainderInterest: 538_615,
+      },
+    });
+    render(<TrustCard data={trust} defaultExpanded />);
+    expect(screen.getByText(/split-interest details/i)).toBeInTheDocument();
+    expect(screen.getByText("6.00% unitrust")).toBeInTheDocument();
+    expect(screen.getByText("2.20%")).toBeInTheDocument();
+    expect(screen.getByText(/10 years/)).toBeInTheDocument();
+    expect(screen.getByText("Acme Foundation")).toBeInTheDocument();
+    expect(screen.getByText("$461,385")).toBeInTheDocument();
+    expect(screen.getByText("$538,615")).toBeInTheDocument();
+  });
+
+  it("omits split-interest panel when splitInterest is undefined", () => {
+    render(<TrustCard data={data} defaultExpanded />);
+    expect(screen.queryByText(/split-interest details/i)).not.toBeInTheDocument();
+  });
 });
