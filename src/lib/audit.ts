@@ -94,6 +94,7 @@ export type AuditAction =
   | "cma.model_portfolio.delete"
   | "cma.model_portfolio.allocation.update"
   | "cma.seed"
+  | "cma.migrate-to-standard"
   // Open items (client-scoped to-do / data-gathering tracker)
   | "open_item.create"
   | "open_item.update"

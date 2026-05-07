@@ -7,6 +7,7 @@ import {
   type AssetTypeId,
 } from "@/lib/investments/asset-types";
 import { TrashIcon } from "@/components/icons";
+import CmaMigrationDialog from "@/components/cma-migration-dialog";
 
 interface AssetClass {
   id: string;
@@ -102,6 +103,7 @@ export default function CmaClient() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [seedError, setSeedError] = useState<string | null>(null);
+  const [migrationOpen, setMigrationOpen] = useState(false);
   // Guard against React strict-mode double-mount re-firing the seed request.
   const fetchInFlight = useRef(false);
 
@@ -237,6 +239,22 @@ export default function CmaClient() {
         </div>
       )}
       {error && <p className="mb-4 rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
+
+      <div className="mb-4 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setMigrationOpen(true)}
+          className="rounded-md border border-hair bg-card px-3 py-1.5 text-sm font-medium text-ink hover:bg-card-hover"
+        >
+          Update to standard CMAs
+        </button>
+      </div>
+
+      <CmaMigrationDialog
+        open={migrationOpen}
+        onOpenChange={setMigrationOpen}
+        onMigrated={() => fetchData()}
+      />
 
       {/* Tab toggle */}
       <div className="mb-6 flex gap-1 rounded-lg bg-gray-800/50 p-1">
