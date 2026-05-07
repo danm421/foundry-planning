@@ -21,71 +21,74 @@ export interface SeedModelPortfolio {
   allocations: { assetClassName: string; weight: number }[];
 }
 
+// Geometric return + volatility are sourced from a standard 14-asset CMA set.
+// Arithmetic mean is derived as `geometric + σ²/2` (the standard log-normal
+// convergence) — kept as a stored field because the engine reads it directly.
 export const DEFAULT_ASSET_CLASSES: SeedAssetClass[] = [
-  { name: "US Large Cap", geometricReturn: 0.07, arithmeticMean: 0.085, volatility: 0.15, pctOrdinaryIncome: 0, pctLtCapitalGains: 0.85, pctQualifiedDividends: 0.15, pctTaxExempt: 0, assetType: "equities" },
-  { name: "US Mid Cap", geometricReturn: 0.075, arithmeticMean: 0.095, volatility: 0.18, pctOrdinaryIncome: 0, pctLtCapitalGains: 0.85, pctQualifiedDividends: 0.15, pctTaxExempt: 0, assetType: "equities" },
-  { name: "US Small Cap", geometricReturn: 0.08, arithmeticMean: 0.105, volatility: 0.20, pctOrdinaryIncome: 0, pctLtCapitalGains: 0.90, pctQualifiedDividends: 0.10, pctTaxExempt: 0, assetType: "equities" },
-  { name: "Int'l Developed", geometricReturn: 0.065, arithmeticMean: 0.08, volatility: 0.16, pctOrdinaryIncome: 0, pctLtCapitalGains: 0.80, pctQualifiedDividends: 0.20, pctTaxExempt: 0, assetType: "equities" },
-  { name: "Emerging Markets", geometricReturn: 0.075, arithmeticMean: 0.10, volatility: 0.22, pctOrdinaryIncome: 0, pctLtCapitalGains: 0.85, pctQualifiedDividends: 0.15, pctTaxExempt: 0, assetType: "equities" },
-  { name: "US Aggregate Bond", geometricReturn: 0.035, arithmeticMean: 0.0375, volatility: 0.05, pctOrdinaryIncome: 0.80, pctLtCapitalGains: 0.10, pctQualifiedDividends: 0, pctTaxExempt: 0.10, assetType: "taxable_bonds" },
-  { name: "US Corporate Bond", geometricReturn: 0.04, arithmeticMean: 0.045, volatility: 0.07, pctOrdinaryIncome: 0.90, pctLtCapitalGains: 0.10, pctQualifiedDividends: 0, pctTaxExempt: 0, assetType: "taxable_bonds" },
-  { name: "US Municipal Bond", geometricReturn: 0.0275, arithmeticMean: 0.03, volatility: 0.05, pctOrdinaryIncome: 0, pctLtCapitalGains: 0, pctQualifiedDividends: 0, pctTaxExempt: 1.0, assetType: "tax_exempt_bonds" },
-  { name: "TIPS", geometricReturn: 0.025, arithmeticMean: 0.0275, volatility: 0.055, pctOrdinaryIncome: 0.80, pctLtCapitalGains: 0.20, pctQualifiedDividends: 0, pctTaxExempt: 0, assetType: "taxable_bonds" },
-  { name: "REITs", geometricReturn: 0.06, arithmeticMean: 0.08, volatility: 0.18, pctOrdinaryIncome: 0.60, pctLtCapitalGains: 0.15, pctQualifiedDividends: 0.25, pctTaxExempt: 0, assetType: "equities" },
-  { name: "Commodities", geometricReturn: 0.03, arithmeticMean: 0.05, volatility: 0.18, pctOrdinaryIncome: 0, pctLtCapitalGains: 1.0, pctQualifiedDividends: 0, pctTaxExempt: 0, assetType: "other" },
-  { name: "Precious Metals", geometricReturn: 0.035, arithmeticMean: 0.055, volatility: 0.19, pctOrdinaryIncome: 0, pctLtCapitalGains: 1.0, pctQualifiedDividends: 0, pctTaxExempt: 0, assetType: "other" },
-  { name: "Cash / Money Market", geometricReturn: 0.02, arithmeticMean: 0.02, volatility: 0.005, pctOrdinaryIncome: 1.0, pctLtCapitalGains: 0, pctQualifiedDividends: 0, pctTaxExempt: 0, assetType: "cash" },
-  { name: "High Yield Bond", geometricReturn: 0.05, arithmeticMean: 0.06, volatility: 0.10, pctOrdinaryIncome: 0.85, pctLtCapitalGains: 0.15, pctQualifiedDividends: 0, pctTaxExempt: 0, assetType: "taxable_bonds" },
+  { name: "US Large Cap",                geometricReturn: 0.1145, arithmeticMean: 0.1265, volatility: 0.1552, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.85, pctQualifiedDividends: 0.15, pctTaxExempt: 0,   assetType: "equities" },
+  { name: "US Mid Cap",                  geometricReturn: 0.1048, arithmeticMean: 0.1205, volatility: 0.1772, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.85, pctQualifiedDividends: 0.15, pctTaxExempt: 0,   assetType: "equities" },
+  { name: "US Small Cap",                geometricReturn: 0.1074, arithmeticMean: 0.1269, volatility: 0.1976, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.90, pctQualifiedDividends: 0.10, pctTaxExempt: 0,   assetType: "equities" },
+  { name: "Global ex-US Stock Market",   geometricReturn: 0.0649, arithmeticMean: 0.0804, volatility: 0.1763, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.80, pctQualifiedDividends: 0.20, pctTaxExempt: 0,   assetType: "equities" },
+  { name: "Emerging Markets",            geometricReturn: 0.0681, arithmeticMean: 0.0887, volatility: 0.2031, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0.85, pctQualifiedDividends: 0.15, pctTaxExempt: 0,   assetType: "equities" },
+  { name: "Short Term Treasury",         geometricReturn: 0.0205, arithmeticMean: 0.0207, volatility: 0.0181, pctOrdinaryIncome: 1.0,  pctLtCapitalGains: 0,    pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
+  { name: "10-year Treasury",            geometricReturn: 0.0323, arithmeticMean: 0.0349, volatility: 0.0725, pctOrdinaryIncome: 1.0,  pctLtCapitalGains: 0,    pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
+  { name: "TIPS",                        geometricReturn: 0.0356, arithmeticMean: 0.0372, volatility: 0.0572, pctOrdinaryIncome: 0.80, pctLtCapitalGains: 0.20, pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
+  { name: "High Yield Corporate Bonds",  geometricReturn: 0.0581, arithmeticMean: 0.0614, volatility: 0.0814, pctOrdinaryIncome: 0.85, pctLtCapitalGains: 0.15, pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
+  { name: "Intermediate-Term Tax-Exempt",geometricReturn: 0.0333, arithmeticMean: 0.0342, volatility: 0.0431, pctOrdinaryIncome: 0,    pctLtCapitalGains: 0,    pctQualifiedDividends: 0,    pctTaxExempt: 1.0, assetType: "tax_exempt_bonds" },
+  { name: "Long Term Treasury",          geometricReturn: 0.0388, arithmeticMean: 0.0466, volatility: 0.1252, pctOrdinaryIncome: 1.0,  pctLtCapitalGains: 0,    pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "taxable_bonds" },
+  { name: "REIT",                        geometricReturn: 0.0773, arithmeticMean: 0.1021, volatility: 0.2228, pctOrdinaryIncome: 0.60, pctLtCapitalGains: 0.15, pctQualifiedDividends: 0.25, pctTaxExempt: 0,   assetType: "equities" },
+  { name: "Gold",                        geometricReturn: 0.1135, arithmeticMean: 0.1283, volatility: 0.1720, pctOrdinaryIncome: 0,    pctLtCapitalGains: 1.0,  pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "other" },
+  { name: "Commodities",                 geometricReturn: 0.0195, arithmeticMean: 0.0459, volatility: 0.2298, pctOrdinaryIncome: 0,    pctLtCapitalGains: 1.0,  pctQualifiedDividends: 0,    pctTaxExempt: 0,   assetType: "other" },
   { name: "Inflation", slug: "inflation", geometricReturn: 0.025, arithmeticMean: 0.0255, volatility: 0.005, pctOrdinaryIncome: 1.0, pctLtCapitalGains: 0, pctQualifiedDividends: 0, pctTaxExempt: 0, assetType: "other" },
 ];
 
 export const DEFAULT_MODEL_PORTFOLIOS: SeedModelPortfolio[] = [
   {
     name: "Conservative (30/70)",
-    description: "30% equity / 70% fixed income and cash",
+    description: "30% equity / 70% fixed income and alternatives",
     allocations: [
       { assetClassName: "US Large Cap", weight: 0.15 },
-      { assetClassName: "Int'l Developed", weight: 0.05 },
-      { assetClassName: "US Aggregate Bond", weight: 0.10 },
-      { assetClassName: "US Corporate Bond", weight: 0.20 },
+      { assetClassName: "US Mid Cap", weight: 0.05 },
+      { assetClassName: "Global ex-US Stock Market", weight: 0.05 },
+      { assetClassName: "REIT", weight: 0.05 },
+      { assetClassName: "Short Term Treasury", weight: 0.15 },
+      { assetClassName: "10-year Treasury", weight: 0.15 },
       { assetClassName: "TIPS", weight: 0.10 },
-      { assetClassName: "US Municipal Bond", weight: 0.10 },
-      { assetClassName: "Cash / Money Market", weight: 0.15 },
-      { assetClassName: "High Yield Bond", weight: 0.05 },
-      { assetClassName: "REITs", weight: 0.05 },
-      { assetClassName: "Precious Metals", weight: 0.05 },
+      { assetClassName: "Intermediate-Term Tax-Exempt", weight: 0.10 },
+      { assetClassName: "High Yield Corporate Bonds", weight: 0.15 },
+      { assetClassName: "Gold", weight: 0.05 },
     ],
   },
   {
     name: "Balanced (60/40)",
-    description: "60% equity / 40% fixed income and cash",
+    description: "60% equity / 40% fixed income and alternatives",
     allocations: [
       { assetClassName: "US Large Cap", weight: 0.30 },
       { assetClassName: "US Mid Cap", weight: 0.10 },
-      { assetClassName: "Int'l Developed", weight: 0.10 },
+      { assetClassName: "Global ex-US Stock Market", weight: 0.10 },
       { assetClassName: "Emerging Markets", weight: 0.05 },
-      { assetClassName: "US Aggregate Bond", weight: 0.15 },
-      { assetClassName: "US Corporate Bond", weight: 0.10 },
+      { assetClassName: "REIT", weight: 0.05 },
+      { assetClassName: "Short Term Treasury", weight: 0.05 },
+      { assetClassName: "10-year Treasury", weight: 0.10 },
       { assetClassName: "TIPS", weight: 0.05 },
-      { assetClassName: "Cash / Money Market", weight: 0.05 },
-      { assetClassName: "REITs", weight: 0.05 },
-      { assetClassName: "Precious Metals", weight: 0.05 },
+      { assetClassName: "Intermediate-Term Tax-Exempt", weight: 0.10 },
+      { assetClassName: "High Yield Corporate Bonds", weight: 0.10 },
     ],
   },
   {
     name: "Growth (80/20)",
-    description: "80% equity / 20% fixed income and cash",
+    description: "80% equity / 20% fixed income and alternatives",
     allocations: [
       { assetClassName: "US Large Cap", weight: 0.35 },
       { assetClassName: "US Mid Cap", weight: 0.15 },
       { assetClassName: "US Small Cap", weight: 0.10 },
-      { assetClassName: "Int'l Developed", weight: 0.10 },
+      { assetClassName: "Global ex-US Stock Market", weight: 0.10 },
       { assetClassName: "Emerging Markets", weight: 0.05 },
-      { assetClassName: "US Aggregate Bond", weight: 0.05 },
-      { assetClassName: "US Corporate Bond", weight: 0.05 },
-      { assetClassName: "Cash / Money Market", weight: 0.05 },
-      { assetClassName: "REITs", weight: 0.05 },
-      { assetClassName: "Precious Metals", weight: 0.05 },
+      { assetClassName: "REIT", weight: 0.05 },
+      { assetClassName: "Short Term Treasury", weight: 0.05 },
+      { assetClassName: "10-year Treasury", weight: 0.05 },
+      { assetClassName: "High Yield Corporate Bonds", weight: 0.05 },
+      { assetClassName: "Gold", weight: 0.05 },
     ],
   },
   {
@@ -95,9 +98,9 @@ export const DEFAULT_MODEL_PORTFOLIOS: SeedModelPortfolio[] = [
       { assetClassName: "US Large Cap", weight: 0.40 },
       { assetClassName: "US Mid Cap", weight: 0.15 },
       { assetClassName: "US Small Cap", weight: 0.15 },
-      { assetClassName: "Int'l Developed", weight: 0.15 },
+      { assetClassName: "Global ex-US Stock Market", weight: 0.15 },
       { assetClassName: "Emerging Markets", weight: 0.10 },
-      { assetClassName: "REITs", weight: 0.05 },
+      { assetClassName: "REIT", weight: 0.05 },
     ],
   },
 ];
@@ -109,120 +112,131 @@ export interface SeedCorrelation {
   correlation: number;
 }
 
-// Plausible industry-average pairwise correlations for the 14 default asset
-// classes. Pairs omitted here default to 0 (independent) when the matrix is
-// reconstructed in memory — per the eMoney whitepaper (p.5), a missing pair
-// is treated as independent. These are reasonable starting values; advisors
-// with better inputs should edit the `asset_class_correlations` table directly
-// (a UI is deferred — see docs/FUTURE_WORK.md).
+// Pairwise correlations sourced from a standard 14-asset CMA correlation
+// matrix. The full upper triangle is enumerated below (91 pairs). Pairs
+// omitted default to 0 (independent) when the matrix is reconstructed in
+// memory — per the eMoney whitepaper (p.5), a missing pair is treated as
+// independent. Inflation is intentionally absent from the matrix; it is
+// modeled separately by the engine.
 //
 // Canonical storage is (classA, classB) with classA < classB alphabetically,
 // but the matrix-builder tolerates either ordering, so this list is written
-// in the order that reads most naturally.
-// Default correlations are sourced from a real-data 13-asset-class correlation
-// matrix derived from monthly returns Jan 2007 – Mar 2026. Mapping from matrix
-// classes to seed classes:
-//   US Aggregate Bond  → "Total US Bond Market" (broad IG aggregate)
-//   US Municipal Bond  → "Short-Term Tax-Exempt" (closest available — note that
-//                        duration is shorter than a generic muni; correlations
-//                        with rates-sensitive assets like TIPS are accordingly
-//                        lower than they would be for long-duration munis).
-// Cash / Money Market has no row in the matrix and stays at the implicit 0
-// (independent) for every pair — industry-standard treatment for cash.
+// in matrix (upper-triangle) order for readability.
 export const DEFAULT_CORRELATIONS: SeedCorrelation[] = [
-  // ── Intra-equity (US) ─────────────────────────────────────────────────
-  { classA: "US Large Cap", classB: "US Mid Cap", correlation: 0.95 },
-  { classA: "US Large Cap", classB: "US Small Cap", correlation: 0.92 },
-  { classA: "US Mid Cap",   classB: "US Small Cap", correlation: 0.97 },
+  // ── US Large Cap row ─────────────────────────────────────────────────
+  { classA: "US Large Cap", classB: "US Mid Cap",                   correlation:  0.95 },
+  { classA: "US Large Cap", classB: "US Small Cap",                 correlation:  0.92 },
+  { classA: "US Large Cap", classB: "Global ex-US Stock Market",    correlation:  0.86 },
+  { classA: "US Large Cap", classB: "Emerging Markets",             correlation:  0.74 },
+  { classA: "US Large Cap", classB: "Short Term Treasury",          correlation: -0.04 },
+  { classA: "US Large Cap", classB: "10-year Treasury",             correlation: -0.10 },
+  { classA: "US Large Cap", classB: "TIPS",                         correlation:  0.32 },
+  { classA: "US Large Cap", classB: "High Yield Corporate Bonds",   correlation:  0.73 },
+  { classA: "US Large Cap", classB: "Intermediate-Term Tax-Exempt", correlation:  0.26 },
+  { classA: "US Large Cap", classB: "Long Term Treasury",           correlation: -0.06 },
+  { classA: "US Large Cap", classB: "REIT",                         correlation:  0.75 },
+  { classA: "US Large Cap", classB: "Gold",                         correlation:  0.08 },
+  { classA: "US Large Cap", classB: "Commodities",                  correlation:  0.44 },
 
-  // ── US vs International / EM ──────────────────────────────────────────
-  { classA: "US Large Cap",  classB: "Int'l Developed",    correlation: 0.87 },
-  { classA: "US Mid Cap",    classB: "Int'l Developed",    correlation: 0.87 },
-  { classA: "US Small Cap",  classB: "Int'l Developed",    correlation: 0.83 },
-  { classA: "US Large Cap",  classB: "Emerging Markets",   correlation: 0.74 },
-  { classA: "US Mid Cap",    classB: "Emerging Markets",   correlation: 0.76 },
-  { classA: "US Small Cap",  classB: "Emerging Markets",   correlation: 0.72 },
-  { classA: "Int'l Developed", classB: "Emerging Markets", correlation: 0.85 },
+  // ── US Mid Cap row ────────────────────────────────────────────────────
+  { classA: "US Mid Cap", classB: "US Small Cap",                 correlation:  0.97 },
+  { classA: "US Mid Cap", classB: "Global ex-US Stock Market",    correlation:  0.87 },
+  { classA: "US Mid Cap", classB: "Emerging Markets",             correlation:  0.76 },
+  { classA: "US Mid Cap", classB: "Short Term Treasury",          correlation: -0.07 },
+  { classA: "US Mid Cap", classB: "10-year Treasury",             correlation: -0.11 },
+  { classA: "US Mid Cap", classB: "TIPS",                         correlation:  0.34 },
+  { classA: "US Mid Cap", classB: "High Yield Corporate Bonds",   correlation:  0.78 },
+  { classA: "US Mid Cap", classB: "Intermediate-Term Tax-Exempt", correlation:  0.29 },
+  { classA: "US Mid Cap", classB: "Long Term Treasury",           correlation: -0.06 },
+  { classA: "US Mid Cap", classB: "REIT",                         correlation:  0.79 },
+  { classA: "US Mid Cap", classB: "Gold",                         correlation:  0.11 },
+  { classA: "US Mid Cap", classB: "Commodities",                  correlation:  0.46 },
 
-  // ── REITs (equity-like, with real-estate flavor) ──────────────────────
-  { classA: "US Large Cap",  classB: "REITs", correlation: 0.74 },
-  { classA: "US Mid Cap",    classB: "REITs", correlation: 0.79 },
-  { classA: "US Small Cap",  classB: "REITs", correlation: 0.78 },
-  { classA: "Int'l Developed", classB: "REITs", correlation: 0.72 },
-  { classA: "Emerging Markets", classB: "REITs", correlation: 0.60 },
+  // ── US Small Cap row ──────────────────────────────────────────────────
+  { classA: "US Small Cap", classB: "Global ex-US Stock Market",    correlation:  0.83 },
+  { classA: "US Small Cap", classB: "Emerging Markets",             correlation:  0.72 },
+  { classA: "US Small Cap", classB: "Short Term Treasury",          correlation: -0.08 },
+  { classA: "US Small Cap", classB: "10-year Treasury",             correlation: -0.15 },
+  { classA: "US Small Cap", classB: "TIPS",                         correlation:  0.27 },
+  { classA: "US Small Cap", classB: "High Yield Corporate Bonds",   correlation:  0.74 },
+  { classA: "US Small Cap", classB: "Intermediate-Term Tax-Exempt", correlation:  0.24 },
+  { classA: "US Small Cap", classB: "Long Term Treasury",           correlation: -0.10 },
+  { classA: "US Small Cap", classB: "REIT",                         correlation:  0.78 },
+  { classA: "US Small Cap", classB: "Gold",                         correlation:  0.06 },
+  { classA: "US Small Cap", classB: "Commodities",                  correlation:  0.45 },
 
-  // ── Intra-bond (investment grade) ─────────────────────────────────────
-  { classA: "US Aggregate Bond", classB: "US Corporate Bond", correlation: 0.84 },
-  { classA: "US Aggregate Bond", classB: "US Municipal Bond", correlation: 0.67 },
-  { classA: "US Aggregate Bond", classB: "TIPS",              correlation: 0.77 },
-  { classA: "US Corporate Bond", classB: "US Municipal Bond", correlation: 0.62 },
-  { classA: "US Corporate Bond", classB: "TIPS",              correlation: 0.68 },
-  { classA: "US Municipal Bond", classB: "TIPS",              correlation: 0.48 },
+  // ── Global ex-US Stock Market row ─────────────────────────────────────
+  { classA: "Global ex-US Stock Market", classB: "Emerging Markets",             correlation:  0.92 },
+  { classA: "Global ex-US Stock Market", classB: "Short Term Treasury",          correlation:  0.05 },
+  { classA: "Global ex-US Stock Market", classB: "10-year Treasury",             correlation: -0.04 },
+  { classA: "Global ex-US Stock Market", classB: "TIPS",                         correlation:  0.39 },
+  { classA: "Global ex-US Stock Market", classB: "High Yield Corporate Bonds",   correlation:  0.76 },
+  { classA: "Global ex-US Stock Market", classB: "Intermediate-Term Tax-Exempt", correlation:  0.30 },
+  { classA: "Global ex-US Stock Market", classB: "Long Term Treasury",           correlation: -0.02 },
+  { classA: "Global ex-US Stock Market", classB: "REIT",                         correlation:  0.71 },
+  { classA: "Global ex-US Stock Market", classB: "Gold",                         correlation:  0.25 },
+  { classA: "Global ex-US Stock Market", classB: "Commodities",                  correlation:  0.52 },
 
-  // ── High Yield (bond/equity hybrid) ───────────────────────────────────
-  { classA: "High Yield Bond", classB: "US Large Cap",   correlation: 0.73 },
-  { classA: "High Yield Bond", classB: "US Mid Cap",     correlation: 0.78 },
-  { classA: "High Yield Bond", classB: "US Small Cap",   correlation: 0.74 },
-  { classA: "High Yield Bond", classB: "Int'l Developed",correlation: 0.75 },
-  { classA: "High Yield Bond", classB: "Emerging Markets", correlation: 0.70 },
-  { classA: "High Yield Bond", classB: "REITs",          correlation: 0.73 },
-  { classA: "High Yield Bond", classB: "US Aggregate Bond", correlation: 0.41 },
-  { classA: "High Yield Bond", classB: "US Corporate Bond", correlation: 0.64 },
-  { classA: "High Yield Bond", classB: "US Municipal Bond", correlation: 0.36 },
-  { classA: "High Yield Bond", classB: "TIPS",           correlation: 0.53 },
+  // ── Emerging Markets row ──────────────────────────────────────────────
+  { classA: "Emerging Markets", classB: "Short Term Treasury",          correlation:  0.02 },
+  { classA: "Emerging Markets", classB: "10-year Treasury",             correlation: -0.07 },
+  { classA: "Emerging Markets", classB: "TIPS",                         correlation:  0.38 },
+  { classA: "Emerging Markets", classB: "High Yield Corporate Bonds",   correlation:  0.70 },
+  { classA: "Emerging Markets", classB: "Intermediate-Term Tax-Exempt", correlation:  0.26 },
+  { classA: "Emerging Markets", classB: "Long Term Treasury",           correlation: -0.04 },
+  { classA: "Emerging Markets", classB: "REIT",                         correlation:  0.61 },
+  { classA: "Emerging Markets", classB: "Gold",                         correlation:  0.30 },
+  { classA: "Emerging Markets", classB: "Commodities",                  correlation:  0.51 },
 
-  // ── IG bonds vs equities + REITs ─────────────────────────────────────
-  { classA: "US Aggregate Bond", classB: "US Large Cap",     correlation: 0.23 },
-  { classA: "US Aggregate Bond", classB: "US Mid Cap",       correlation: 0.24 },
-  { classA: "US Aggregate Bond", classB: "US Small Cap",     correlation: 0.19 },
-  { classA: "US Aggregate Bond", classB: "Int'l Developed",  correlation: 0.31 },
-  { classA: "US Aggregate Bond", classB: "Emerging Markets", correlation: 0.26 },
-  { classA: "US Aggregate Bond", classB: "REITs",            correlation: 0.38 },
-  { classA: "US Corporate Bond", classB: "US Large Cap",     correlation: 0.45 },
-  { classA: "US Corporate Bond", classB: "US Mid Cap",       correlation: 0.47 },
-  { classA: "US Corporate Bond", classB: "US Small Cap",     correlation: 0.42 },
-  { classA: "US Corporate Bond", classB: "Int'l Developed",  correlation: 0.53 },
-  { classA: "US Corporate Bond", classB: "Emerging Markets", correlation: 0.45 },
-  { classA: "US Corporate Bond", classB: "REITs",            correlation: 0.54 },
-  { classA: "US Municipal Bond", classB: "US Large Cap",     correlation: 0.22 },
-  { classA: "US Municipal Bond", classB: "US Mid Cap",       correlation: 0.23 },
-  { classA: "US Municipal Bond", classB: "US Small Cap",     correlation: 0.20 },
-  { classA: "US Municipal Bond", classB: "Int'l Developed",  correlation: 0.26 },
-  { classA: "US Municipal Bond", classB: "Emerging Markets", correlation: 0.22 },
-  { classA: "US Municipal Bond", classB: "REITs",            correlation: 0.23 },
-  { classA: "TIPS", classB: "US Large Cap",     correlation: 0.32 },
-  { classA: "TIPS", classB: "US Mid Cap",       correlation: 0.33 },
-  { classA: "TIPS", classB: "US Small Cap",     correlation: 0.27 },
-  { classA: "TIPS", classB: "Int'l Developed",  correlation: 0.38 },
-  { classA: "TIPS", classB: "Emerging Markets", correlation: 0.38 },
-  { classA: "TIPS", classB: "REITs",            correlation: 0.42 },
+  // ── Short Term Treasury row ───────────────────────────────────────────
+  { classA: "Short Term Treasury", classB: "10-year Treasury",             correlation:  0.78 },
+  { classA: "Short Term Treasury", classB: "TIPS",                         correlation:  0.63 },
+  { classA: "Short Term Treasury", classB: "High Yield Corporate Bonds",   correlation:  0.09 },
+  { classA: "Short Term Treasury", classB: "Intermediate-Term Tax-Exempt", correlation:  0.47 },
+  { classA: "Short Term Treasury", classB: "Long Term Treasury",           correlation:  0.65 },
+  { classA: "Short Term Treasury", classB: "REIT",                         correlation:  0.09 },
+  { classA: "Short Term Treasury", classB: "Gold",                         correlation:  0.38 },
+  { classA: "Short Term Treasury", classB: "Commodities",                  correlation: -0.20 },
 
-  // ── Commodities ──────────────────────────────────────────────────────
-  { classA: "Commodities", classB: "US Large Cap",        correlation: 0.43 },
-  { classA: "Commodities", classB: "US Mid Cap",          correlation: 0.45 },
-  { classA: "Commodities", classB: "US Small Cap",        correlation: 0.45 },
-  { classA: "Commodities", classB: "Int'l Developed",     correlation: 0.49 },
-  { classA: "Commodities", classB: "Emerging Markets",    correlation: 0.51 },
-  { classA: "Commodities", classB: "REITs",               correlation: 0.26 },
-  { classA: "Commodities", classB: "US Aggregate Bond",   correlation: -0.14 },
-  { classA: "Commodities", classB: "US Corporate Bond",   correlation: 0.03 },
-  { classA: "Commodities", classB: "US Municipal Bond",   correlation: -0.05 },
-  { classA: "Commodities", classB: "TIPS",                correlation: 0.15 },
-  { classA: "Commodities", classB: "High Yield Bond",     correlation: 0.41 },
-  { classA: "Commodities", classB: "Precious Metals",     correlation: 0.33 },
+  // ── 10-year Treasury row ──────────────────────────────────────────────
+  { classA: "10-year Treasury", classB: "TIPS",                         correlation:  0.66 },
+  { classA: "10-year Treasury", classB: "High Yield Corporate Bonds",   correlation:  0.03 },
+  { classA: "10-year Treasury", classB: "Intermediate-Term Tax-Exempt", correlation:  0.53 },
+  { classA: "10-year Treasury", classB: "Long Term Treasury",           correlation:  0.94 },
+  { classA: "10-year Treasury", classB: "REIT",                         correlation:  0.10 },
+  { classA: "10-year Treasury", classB: "Gold",                         correlation:  0.35 },
+  { classA: "10-year Treasury", classB: "Commodities",                  correlation: -0.33 },
 
-  // ── Precious Metals ──────────────────────────────────────────────────
-  { classA: "Precious Metals", classB: "US Large Cap",        correlation: 0.45 },
-  { classA: "Precious Metals", classB: "US Mid Cap",          correlation: 0.49 },
-  { classA: "Precious Metals", classB: "US Small Cap",        correlation: 0.43 },
-  { classA: "Precious Metals", classB: "Int'l Developed",     correlation: 0.58 },
-  { classA: "Precious Metals", classB: "Emerging Markets",    correlation: 0.63 },
-  { classA: "Precious Metals", classB: "REITs",               correlation: 0.42 },
-  { classA: "Precious Metals", classB: "US Aggregate Bond",   correlation: 0.34 },
-  { classA: "Precious Metals", classB: "US Corporate Bond",   correlation: 0.42 },
-  { classA: "Precious Metals", classB: "US Municipal Bond",   correlation: 0.25 },
-  { classA: "Precious Metals", classB: "TIPS",                correlation: 0.45 },
-  { classA: "Precious Metals", classB: "High Yield Bond",     correlation: 0.50 },
+  // ── TIPS row ──────────────────────────────────────────────────────────
+  { classA: "TIPS", classB: "High Yield Corporate Bonds",   correlation:  0.53 },
+  { classA: "TIPS", classB: "Intermediate-Term Tax-Exempt", correlation:  0.54 },
+  { classA: "TIPS", classB: "Long Term Treasury",           correlation:  0.63 },
+  { classA: "TIPS", classB: "REIT",                         correlation:  0.42 },
+  { classA: "TIPS", classB: "Gold",                         correlation:  0.48 },
+  { classA: "TIPS", classB: "Commodities",                  correlation:  0.15 },
 
-  // Cash / Money Market is uncorrelated with everything by user direction (= 0).
+  // ── High Yield Corporate Bonds row ────────────────────────────────────
+  { classA: "High Yield Corporate Bonds", classB: "Intermediate-Term Tax-Exempt", correlation:  0.46 },
+  { classA: "High Yield Corporate Bonds", classB: "Long Term Treasury",           correlation:  0.06 },
+  { classA: "High Yield Corporate Bonds", classB: "REIT",                         correlation:  0.72 },
+  { classA: "High Yield Corporate Bonds", classB: "Gold",                         correlation:  0.22 },
+  { classA: "High Yield Corporate Bonds", classB: "Commodities",                  correlation:  0.41 },
+
+  // ── Intermediate-Term Tax-Exempt row ──────────────────────────────────
+  { classA: "Intermediate-Term Tax-Exempt", classB: "Long Term Treasury", correlation:  0.55 },
+  { classA: "Intermediate-Term Tax-Exempt", classB: "REIT",               correlation:  0.36 },
+  { classA: "Intermediate-Term Tax-Exempt", classB: "Gold",               correlation:  0.25 },
+  { classA: "Intermediate-Term Tax-Exempt", classB: "Commodities",        correlation: -0.08 },
+
+  // ── Long Term Treasury row ────────────────────────────────────────────
+  { classA: "Long Term Treasury", classB: "REIT",        correlation:  0.17 },
+  { classA: "Long Term Treasury", classB: "Gold",        correlation:  0.30 },
+  { classA: "Long Term Treasury", classB: "Commodities", correlation: -0.34 },
+
+  // ── REIT row ──────────────────────────────────────────────────────────
+  { classA: "REIT", classB: "Gold",        correlation:  0.13 },
+  { classA: "REIT", classB: "Commodities", correlation:  0.26 },
+
+  // ── Gold row ──────────────────────────────────────────────────────────
+  { classA: "Gold", classB: "Commodities", correlation:  0.16 },
 ];

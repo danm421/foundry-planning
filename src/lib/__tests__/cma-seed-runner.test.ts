@@ -38,7 +38,7 @@ afterEach(async () => {
 });
 
 describe("seedCmaForFirm", () => {
-  it("seeds 15 asset classes, 4 portfolios, 36 allocations, 78 correlations on empty firm", async () => {
+  it("seeds 15 asset classes, 4 portfolios, 36 allocations, 91 correlations on empty firm", async () => {
     const firmId = makeFirmId();
 
     const result = await seedCmaForFirm(firmId);
@@ -47,11 +47,11 @@ describe("seedCmaForFirm", () => {
     // equal the defaults on an empty firm.
     expect(result.assetClasses).toBe(15);
     expect(result.portfolios).toBe(4);
-    expect(result.correlations).toBe(78);
+    expect(result.correlations).toBe(91);
     expect(result.inserted.assetClasses).toBe(15);
     expect(result.inserted.portfolios).toBe(4);
     expect(result.inserted.allocations).toBe(36);
-    expect(result.inserted.correlations).toBe(78);
+    expect(result.inserted.correlations).toBe(91);
 
     const rows = await db
       .select()
@@ -126,6 +126,6 @@ describe("seedCmaForFirm", () => {
     // Totals are still the full defaults.
     expect(second.assetClasses).toBe(15);
     expect(second.portfolios).toBe(4);
-    expect(second.correlations).toBe(78);
+    expect(second.correlations).toBe(91);
   });
 });
