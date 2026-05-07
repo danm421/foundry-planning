@@ -20,6 +20,7 @@ const baseFields = {
   percent: z.number().gt(0).lte(1).optional().nullable(),
   parentGiftId: uuidSchema.optional().nullable(),
   useCrummeyPowers: z.boolean().optional().default(false),
+  eventKind: z.enum(["outright", "clut_remainder_interest"]).optional().default("outright"),
   notes: z.string().trim().nullish(),
 };
 

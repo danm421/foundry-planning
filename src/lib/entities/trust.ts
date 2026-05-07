@@ -7,6 +7,7 @@ export const TRUST_SUB_TYPES = [
   "grat",
   "qprt",
   "clat",
+  "clut",
   "qtip",
   "bypass",
 ] as const;

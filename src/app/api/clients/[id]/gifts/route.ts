@@ -73,6 +73,16 @@ export async function POST(
     }
     const data = parsed.data;
 
+    if (data.eventKind && data.eventKind !== "outright") {
+      return NextResponse.json(
+        {
+          error:
+            "eventKind must be 'outright' on user-created gifts; engine-emitted kinds are reserved.",
+        },
+        { status: 400 },
+      );
+    }
+
     if (data.recipientEntityId) {
       const [entity] = await db
         .select({

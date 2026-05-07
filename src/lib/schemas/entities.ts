@@ -4,6 +4,7 @@ import {
   deriveIsIrrevocable,
   type TrustSubType,
 } from "@/lib/entities/trust";
+import { trustSplitInterestSchema } from "./trust-split-interest";
 
 const entityTypeSchema = z.enum([
   "trust",
@@ -107,6 +108,7 @@ const baseEntityFields = {
   distributionMode: z.enum(["fixed", "pct_liquid", "pct_income"]).nullish(),
   distributionAmount: z.number().nonnegative().nullish(),
   distributionPercent: z.number().min(0).max(1).nullish(),
+  splitInterest: trustSplitInterestSchema.optional(),
 };
 
 export const entityCreateSchema = z
@@ -157,7 +159,29 @@ export const entityCreateSchema = z
           message: "distributionPercent is only allowed when entityType = 'trust'",
         });
       }
+      if (data.splitInterest !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["splitInterest"],
+          message: "splitInterest is only allowed when entityType = 'trust'",
+        });
+      }
       return;
+    }
+
+    if (data.trustSubType === "clut" && !data.splitInterest) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["splitInterest"],
+        message: "splitInterest payload is required when trustSubType = 'clut'",
+      });
+    }
+    if (data.trustSubType !== "clut" && data.splitInterest) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["splitInterest"],
+        message: "splitInterest is only allowed when trustSubType = 'clut'",
+      });
     }
 
     if (data.trustSubType === undefined) {
@@ -217,7 +241,20 @@ export const entityUpdateSchema = z
       distributionMode?: "fixed" | "pct_liquid" | "pct_income" | null;
       distributionAmount?: number | null;
       distributionPercent?: number | null;
+      splitInterest?: unknown;
     };
+
+    if (
+      d.splitInterest !== undefined &&
+      d.trustSubType !== undefined &&
+      d.trustSubType !== "clut"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["splitInterest"],
+        message: "splitInterest is only allowed when trustSubType = 'clut'",
+      });
+    }
 
     if (
       d.trustSubType !== undefined &&

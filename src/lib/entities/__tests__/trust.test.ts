@@ -7,7 +7,7 @@ import {
 } from "../trust";
 
 describe("TRUST_SUB_TYPES", () => {
-  it("lists the ten expected values in order", () => {
+  it("lists the eleven expected values in order", () => {
     expect(TRUST_SUB_TYPES).toEqual([
       "revocable",
       "irrevocable",
@@ -17,6 +17,7 @@ describe("TRUST_SUB_TYPES", () => {
       "grat",
       "qprt",
       "clat",
+      "clut",
       "qtip",
       "bypass",
     ]);
