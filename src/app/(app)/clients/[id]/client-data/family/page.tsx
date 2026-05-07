@@ -4,11 +4,12 @@ import {
   clients,
   familyMembers,
   entities,
+  entityOwners,
   externalBeneficiaries,
   beneficiaryDesignations,
   gifts,
 } from "@/db/schema";
-import { eq, and, asc, notInArray } from "drizzle-orm";
+import { eq, and, asc, inArray, notInArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import FamilyView, {
   FamilyMember,
@@ -41,7 +42,7 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
 
   if (!client) notFound();
 
-  const [memberRows, entityRows, externalRows, designationRows, giftRows, { effectiveTree }] =
+  const [memberRows, allMemberRows, entityRows, externalRows, designationRows, giftRows, { effectiveTree }] =
     await Promise.all([
       db
         .select()
@@ -53,6 +54,10 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
           ),
         )
         .orderBy(asc(familyMembers.relationship), asc(familyMembers.firstName)),
+      db
+        .select()
+        .from(familyMembers)
+        .where(eq(familyMembers.clientId, id)),
       db.select().from(entities).where(eq(entities.clientId, id)).orderBy(asc(entities.name)),
       db
         .select()
@@ -75,6 +80,17 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
   const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
   const effectiveClient = effectiveTree.client;
 
+  const entityIds = entityRows.map((e) => e.id);
+  const ownerRows = entityIds.length > 0
+    ? await db.select().from(entityOwners).where(inArray(entityOwners.entityId, entityIds))
+    : [];
+  const ownersByEntity = new Map<string, { kind: "family_member"; familyMemberId: string; percent: number }[]>();
+  for (const o of ownerRows) {
+    const arr = ownersByEntity.get(o.entityId) ?? [];
+    arr.push({ kind: "family_member", familyMemberId: o.familyMemberId, percent: parseFloat(o.percent) });
+    ownersByEntity.set(o.entityId, arr);
+  }
+
   const members: FamilyMember[] = memberRows.map((m) => ({
     id: m.id,
     firstName: m.firstName,
@@ -92,6 +108,8 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
     includeInPortfolio: e.includeInPortfolio,
     isGrantor: e.isGrantor,
     value: String(e.value ?? "0"),
+    basis: String(e.basis ?? "0"),
+    owners: ownersByEntity.get(e.id) ?? [],
     owner: (e.owner as "client" | "spouse" | "joint" | null) ?? null,
     grantor: (e.grantor as "client" | "spouse" | null) ?? null,
     beneficiaries: (e.beneficiaries as NamePctRow[] | null) ?? null,
@@ -146,7 +164,7 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
     annualAmount: e.annualAmount,
     cashAccountId: e.cashAccountId,
   }));
-  const assetFamilyMembers = memberRows.map((m) => ({
+  const assetFamilyMembers = allMemberRows.map((m) => ({
     id: m.id,
     role: (m.role as "client" | "spouse" | "child" | "other"),
     firstName: m.firstName,

@@ -500,7 +500,11 @@ export const entities = pgTable("entities", {
   // valuation that surfaces on the balance sheet's Out of Estate section.
   // Null/zero for trust/foundation rows that hold value through child accounts.
   value: decimal("value", { precision: 15, scale: 2 }).notNull().default("0"),
-  // Ownership for business entities (client/spouse/joint). Null for trusts.
+  // Cost basis for business-interest entities. Used at death-event for step-up
+  // analysis. Zero for trusts.
+  basis: decimal("basis", { precision: 15, scale: 2 }).notNull().default("0"),
+  // DEPRECATED: superseded by entity_owners join table for business entities.
+  // Kept nullable on the row for back-compat with reads that haven't migrated yet.
   owner: ownerEnum("owner"),
   // Trust-only: single grantor ('client' or 'spouse'). Null for third-party trusts.
   grantor: entityGrantorEnum("grantor"),
@@ -528,6 +532,29 @@ export const entities = pgTable("entities", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// Per-family-member ownership of a business entity. Mirrors account_owners.
+// Trusts do not write rows here — their grantor/beneficiary structure is
+// captured separately via the grantor column and beneficiary_designations.
+export const entityOwners = pgTable(
+  "entity_owners",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    entityId: uuid("entity_id")
+      .notNull()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    familyMemberId: uuid("family_member_id")
+      .notNull()
+      .references(() => familyMembers.id, { onDelete: "cascade" }),
+    percent: decimal("percent", { precision: 6, scale: 4 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqOwner: unique("entity_owners_uniq")
+      .on(t.entityId, t.familyMemberId),
+  }),
+);
 
 export const familyMembers = pgTable("family_members", {
   id: uuid("id").defaultRandom().primaryKey(),

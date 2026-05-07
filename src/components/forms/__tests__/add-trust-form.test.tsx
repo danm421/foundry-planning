@@ -63,6 +63,8 @@ const EDITING: Entity = {
   isGrantor: false,
   notes: null,
   value: "0",
+  basis: "0",
+  owners: [],
   owner: null,
   beneficiaries: null,
   distributionMode: null,

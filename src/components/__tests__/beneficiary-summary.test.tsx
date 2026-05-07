@@ -111,6 +111,8 @@ const trustEntity: Entity = {
   includeInPortfolio: false,
   isGrantor: true,
   value: "0",
+  basis: "0",
+  owners: [],
   owner: null,
   grantor: "client",
   beneficiaries: null,

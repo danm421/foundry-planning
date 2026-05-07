@@ -1,11 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, entities, accounts, accountOwners } from "@/db/schema";
+import { clients, entities, entityOwners, accounts, accountOwners, familyMembers } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { entityCreateSchema, entityUpdateSchema } from "@/lib/schemas/entities";
 import type { TrustSubType } from "@/lib/entities/trust";
+
+function deriveLegacyOwner(
+  ownersInput: { familyMemberId: string; percent: number }[] | undefined,
+  members: { id: string; role: "client" | "spouse" | "child" | "other" }[],
+): "client" | "spouse" | "joint" | null {
+  if (!ownersInput || ownersInput.length === 0) return null;
+  const clientId = members.find((m) => m.role === "client")?.id;
+  const spouseId = members.find((m) => m.role === "spouse")?.id;
+  const total = ownersInput.reduce((s, o) => s + o.percent, 0);
+  if (Math.abs(total - 1) > 0.0001) return null;
+  if (ownersInput.length === 1) {
+    const o = ownersInput[0];
+    if (o.familyMemberId === clientId) return "client";
+    if (o.familyMemberId === spouseId) return "spouse";
+  }
+  if (ownersInput.length === 2 && clientId && spouseId) {
+    const c = ownersInput.find((o) => o.familyMemberId === clientId);
+    const s = ownersInput.find((o) => o.familyMemberId === spouseId);
+    if (c && s && Math.abs(c.percent - 0.5) < 0.0001 && Math.abs(s.percent - 0.5) < 0.0001) {
+      return "joint";
+    }
+  }
+  return null;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +76,9 @@ export async function PUT(
       accessibleToClient?: boolean;
       isGrantor?: boolean;
       value?: string | number;
+      basis?: string | number;
       owner?: "client" | "spouse" | "joint" | null;
+      owners?: { familyMemberId: string; percent: number }[];
       grantor?: "client" | "spouse" | null;
       beneficiaries?: Array<{ name: string; pct: number }> | null;
       trustSubType?: string;
@@ -64,6 +90,36 @@ export async function PUT(
       distributionPercent?: number | null;
     };
 
+    const householdMembers = await db
+      .select({ id: familyMembers.id, role: familyMembers.role })
+      .from(familyMembers)
+      .where(eq(familyMembers.clientId, id));
+
+    if (patch.owners) {
+      const memberIds = new Set(householdMembers.map((m) => m.id));
+      for (const o of patch.owners) {
+        if (!memberIds.has(o.familyMemberId)) {
+          return NextResponse.json(
+            { error: `owners.familyMemberId ${o.familyMemberId} does not belong to this client` },
+            { status: 400 },
+          );
+        }
+      }
+      if (patch.owners.length > 0) {
+        const total = patch.owners.reduce((s, o) => s + o.percent, 0);
+        if (Math.abs(total - 1) > 0.0001) {
+          return NextResponse.json({ error: "owners percent must sum to 1.0" }, { status: 400 });
+        }
+      }
+    }
+
+    const effectiveType = patch.entityType ?? existing.entityType;
+    const isBusinessType = !["trust", "foundation"].includes(effectiveType);
+    const ownerEnumFromOwners =
+      patch.owners !== undefined && isBusinessType
+        ? deriveLegacyOwner(patch.owners, householdMembers)
+        : undefined;
+
     const merged = {
       name: patch.name ?? existing.name,
       entityType: patch.entityType ?? existing.entityType,
@@ -72,7 +128,13 @@ export async function PUT(
       accessibleToClient: patch.accessibleToClient ?? existing.accessibleToClient,
       isGrantor: patch.isGrantor ?? existing.isGrantor,
       value: patch.value ?? existing.value,
-      owner: patch.owner !== undefined ? patch.owner : existing.owner,
+      basis: patch.basis ?? existing.basis,
+      owner:
+        ownerEnumFromOwners !== undefined
+          ? ownerEnumFromOwners
+          : patch.owner !== undefined
+            ? patch.owner
+            : existing.owner,
       grantor: patch.grantor !== undefined ? patch.grantor : existing.grantor,
       beneficiaries:
         patch.beneficiaries !== undefined ? patch.beneficiaries : existing.beneficiaries,
@@ -133,7 +195,12 @@ export async function PUT(
           isGrantor: Boolean(patch.isGrantor),
         }),
         ...(patch.value !== undefined && { value: String(patch.value) }),
-        ...(patch.owner !== undefined && { owner: patch.owner ?? null }),
+        ...(patch.basis !== undefined && { basis: String(patch.basis) }),
+        ...(ownerEnumFromOwners !== undefined
+          ? { owner: ownerEnumFromOwners }
+          : patch.owner !== undefined
+            ? { owner: patch.owner ?? null }
+            : {}),
         ...(patch.grantor !== undefined && { grantor: patch.grantor ?? null }),
         ...(patch.beneficiaries !== undefined && {
           beneficiaries: patch.beneficiaries ?? null,
@@ -179,6 +246,30 @@ export async function PUT(
       return NextResponse.json({ error: "Entity not found" }, { status: 404 });
     }
 
+    // If owners were provided, replace the entity_owners set wholesale.
+    // Skip for trust/foundation types — those don't use entity_owners.
+    if (patch.owners !== undefined && isBusinessType) {
+      await db.delete(entityOwners).where(eq(entityOwners.entityId, entityId));
+      if (patch.owners.length > 0) {
+        await db.insert(entityOwners).values(
+          patch.owners.map((o) => ({
+            entityId,
+            familyMemberId: o.familyMemberId,
+            percent: String(o.percent),
+          })),
+        );
+      }
+    }
+
+    // Type switched away from a business kind → clear any owner rows.
+    if (
+      patch.entityType !== undefined &&
+      !isBusinessType &&
+      ["llc", "s_corp", "c_corp", "partnership", "other"].includes(existing.entityType)
+    ) {
+      await db.delete(entityOwners).where(eq(entityOwners.entityId, entityId));
+    }
+
     await recordAudit({
       action: "entity.update",
       resourceType: "entity",
@@ -188,7 +279,16 @@ export async function PUT(
       metadata: { name: updated.name, entityType: updated.entityType },
     });
 
-    return NextResponse.json(updated);
+    const ownerRows = await db
+      .select()
+      .from(entityOwners)
+      .where(eq(entityOwners.entityId, entityId));
+    const responseOwners = ownerRows.map((o) => ({
+      kind: "family_member" as const,
+      familyMemberId: o.familyMemberId,
+      percent: parseFloat(o.percent),
+    }));
+    return NextResponse.json({ ...updated, owners: responseOwners });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

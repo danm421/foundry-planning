@@ -1,11 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, entities, scenarios, accounts, accountOwners } from "@/db/schema";
-import { eq, and, asc } from "drizzle-orm";
+import { clients, entities, entityOwners, scenarios, accounts, accountOwners } from "@/db/schema";
+import { eq, and, asc, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { entityCreateSchema } from "@/lib/schemas/entities";
 import type { TrustSubType } from "@/lib/entities/trust";
+
+/** Derive the legacy `owner` enum from the multi-owner allocation. Used to
+ *  keep the deprecated column populated for back-compat readers (balance-sheet
+ *  filter, family-view). Returns null when the owners array doesn't fit a
+ *  client/spouse/joint shape. */
+function deriveLegacyOwner(
+  ownersInput: { familyMemberId: string; percent: number }[] | undefined,
+  members: { id: string; role: "client" | "spouse" | "child" | "other" }[],
+): "client" | "spouse" | "joint" | null {
+  if (!ownersInput || ownersInput.length === 0) return null;
+  const clientId = members.find((m) => m.role === "client")?.id;
+  const spouseId = members.find((m) => m.role === "spouse")?.id;
+  const total = ownersInput.reduce((s, o) => s + o.percent, 0);
+  if (Math.abs(total - 1) > 0.0001) return null;
+  if (ownersInput.length === 1) {
+    const o = ownersInput[0];
+    if (o.familyMemberId === clientId) return "client";
+    if (o.familyMemberId === spouseId) return "spouse";
+  }
+  if (ownersInput.length === 2 && clientId && spouseId) {
+    const c = ownersInput.find((o) => o.familyMemberId === clientId);
+    const s = ownersInput.find((o) => o.familyMemberId === spouseId);
+    if (c && s && Math.abs(c.percent - 0.5) < 0.0001 && Math.abs(s.percent - 0.5) < 0.0001) {
+      return "joint";
+    }
+  }
+  return null;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +60,25 @@ export async function GET(
       .from(entities)
       .where(eq(entities.clientId, id))
       .orderBy(asc(entities.name));
-    return NextResponse.json(rows);
+
+    const entityIds = rows.map((r) => r.id);
+    const ownerRows = entityIds.length > 0
+      ? await db
+          .select()
+          .from(entityOwners)
+          .where(inArray(entityOwners.entityId, entityIds))
+      : [];
+    const ownersByEntity = new Map<string, { kind: "family_member"; familyMemberId: string; percent: number }[]>();
+    for (const o of ownerRows) {
+      const arr = ownersByEntity.get(o.entityId) ?? [];
+      arr.push({ kind: "family_member", familyMemberId: o.familyMemberId, percent: parseFloat(o.percent) });
+      ownersByEntity.set(o.entityId, arr);
+    }
+    const enriched = rows.map((r) => ({
+      ...r,
+      owners: ownersByEntity.get(r.id) ?? [],
+    }));
+    return NextResponse.json(enriched);
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -63,6 +109,32 @@ export async function POST(
     }
     const data = parsed.data;
 
+    // Load household family members so we can validate ownership refs and
+    // derive the legacy owner enum for back-compat readers.
+    const householdMembers = await db.query.familyMembers.findMany({
+      where: (fm, { eq }) => eq(fm.clientId, id),
+      columns: { id: true, role: true },
+    });
+    if (data.owners && data.owners.length > 0) {
+      const memberIds = new Set(householdMembers.map((m) => m.id));
+      for (const o of data.owners) {
+        if (!memberIds.has(o.familyMemberId)) {
+          return NextResponse.json(
+            { error: `owners.familyMemberId ${o.familyMemberId} does not belong to this client` },
+            { status: 400 },
+          );
+        }
+      }
+      const total = data.owners.reduce((s, o) => s + o.percent, 0);
+      if (Math.abs(total - 1) > 0.0001) {
+        return NextResponse.json({ error: "owners percent must sum to 1.0" }, { status: 400 });
+      }
+    }
+    const legacyOwner =
+      data.entityType === "trust" || data.entityType === "foundation"
+        ? null
+        : (deriveLegacyOwner(data.owners, householdMembers) ?? data.owner ?? null);
+
     const [entity] = await db
       .insert(entities)
       .values({
@@ -74,7 +146,8 @@ export async function POST(
         accessibleToClient: data.accessibleToClient ?? false,
         isGrantor: data.isGrantor ?? false,
         value: data.value != null ? String(data.value) : "0",
-        owner: data.owner ?? null,
+        basis: data.basis != null ? String(data.basis) : "0",
+        owner: legacyOwner,
         grantor: data.grantor ?? null,
         beneficiaries: data.beneficiaries ?? null,
         trustSubType:
@@ -99,6 +172,19 @@ export async function POST(
             : null,
       })
       .returning();
+
+    // Insert entity_owners rows for business-type entities. Trusts skip this —
+    // their grantor/beneficiary structure is captured in dedicated columns.
+    const isBusinessType = !["trust", "foundation"].includes(data.entityType);
+    if (isBusinessType && data.owners && data.owners.length > 0) {
+      await db.insert(entityOwners).values(
+        data.owners.map((o) => ({
+          entityId: entity.id,
+          familyMemberId: o.familyMemberId,
+          percent: String(o.percent),
+        })),
+      );
+    }
 
     // Create a default checking account for this entity in every one of the client's
     // scenarios so the projection engine can route the entity's incomes/expenses/RMDs
@@ -148,7 +234,14 @@ export async function POST(
       metadata: { name: entity.name, entityType: entity.entityType },
     });
 
-    return NextResponse.json(entity, { status: 201 });
+    const responseOwners = isBusinessType && data.owners
+      ? data.owners.map((o) => ({
+          kind: "family_member" as const,
+          familyMemberId: o.familyMemberId,
+          percent: o.percent,
+        }))
+      : [];
+    return NextResponse.json({ ...entity, owners: responseOwners }, { status: 201 });
   } catch (err) {
     if (err instanceof Error && err.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

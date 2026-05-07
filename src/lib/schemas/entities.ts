@@ -81,6 +81,11 @@ function validateDistributionInvariants(
   }
 }
 
+const entityOwnerInputSchema = z.object({
+  familyMemberId: z.string().uuid(),
+  percent: z.number().min(0).max(1),
+});
+
 const baseEntityFields = {
   grantor: z.enum(["client", "spouse"]).nullish(),
   name: z.string().trim().min(1, "Name is required"),
@@ -90,7 +95,10 @@ const baseEntityFields = {
   accessibleToClient: z.boolean().optional(),
   isGrantor: z.boolean().optional(),
   value: z.union([z.string(), z.number()]).optional(),
+  basis: z.union([z.string(), z.number()]).optional(),
   owner: z.enum(["client", "spouse", "joint"]).nullish(),
+  /** Multi-owner allocation for business entities. Sum of percents must equal 1.0. */
+  owners: z.array(entityOwnerInputSchema).optional(),
   beneficiaries: z.array(namePctRowSchema).nullish(),
   trustSubType: trustSubTypeSchema.optional(),
   isIrrevocable: z.boolean().optional(),

@@ -1,10 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { Entity } from "../family-view";
 import type { EntityFormCommonProps } from "./types";
-import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName } from "../forms/input-styles";
+import { selectClassName, fieldLabelClassName, inputClassName, textareaClassName } from "../forms/input-styles";
+import { CurrencyInput } from "../currency-input";
+import { OwnershipEditor } from "../forms/ownership-editor";
+import type { AccountOwner } from "@/engine/ownership";
 import AssetsTab, {
   type AssetsTabAccount,
   type AssetsTabLiability,
@@ -35,6 +38,12 @@ interface BusinessFormProps extends EntityFormCommonProps {
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
 }
 
+function defaultOwners(members: AssetsTabFamilyMember[]): AccountOwner[] {
+  const client = members.find((m) => m.role === "client");
+  if (client) return [{ kind: "family_member", familyMemberId: client.id, percent: 1 }];
+  return [];
+}
+
 export default function BusinessForm({
   clientId,
   editing,
@@ -56,13 +65,20 @@ export default function BusinessForm({
   useEffect(() => {
     onSubmitStateChange?.({ canSubmit: !loading, loading });
   }, [loading, onSubmitStateChange]);
+
+  const familyMembers = useMemo(() => assetFamilyMembers ?? [], [assetFamilyMembers]);
+
   const [entityType, setEntityType] = useState<BusinessEntityType>(
     (editing?.entityType as BusinessEntityType | undefined) ?? "llc",
   );
+  const [name, setName] = useState<string>(editing?.name ?? "");
   const [includeInPortfolio, setIncludeInPortfolio] = useState<boolean>(editing?.includeInPortfolio ?? false);
   const [isGrantor, setIsGrantor] = useState<boolean>(editing?.isGrantor ?? false);
-  const [value, setValue] = useState<string>(editing?.value ?? "0");
-  const [owner, setOwner] = useState<"client" | "spouse" | "joint" | "">(editing?.owner ?? "");
+  const [value, setValue] = useState<string>(editing?.value ?? "");
+  const [basis, setBasis] = useState<string>(editing?.basis ?? "");
+  const [owners, setOwners] = useState<AccountOwner[]>(
+    editing?.owners && editing.owners.length > 0 ? editing.owners : defaultOwners(familyMembers),
+  );
   const [notes, setNotes] = useState<string>(editing?.notes ?? "");
   const isEdit = Boolean(editing);
 
@@ -70,7 +86,7 @@ export default function BusinessForm({
     if (!editing) return;
     const ctx = {
       entityId: editing.id,
-      familyMembers: (assetFamilyMembers ?? []).map((m) => ({ id: m.id, role: m.role })),
+      familyMembers: familyMembers.map((m) => ({ id: m.id, role: m.role })),
     };
 
     const assetType = op.assetType;
@@ -84,7 +100,7 @@ export default function BusinessForm({
     if (!currentItem && op.type !== "add") return;
     const currentOwners = currentItem?.owners ?? [];
 
-    let newOwners: import("@/engine/ownership").AccountOwner[];
+    let newOwners: AccountOwner[];
     try {
       newOwners = applyAssetTabOp(currentOwners, op, ctx);
     } catch (e) {
@@ -119,21 +135,39 @@ export default function BusinessForm({
     } catch {
       setError("Failed to update asset ownership");
     }
-  }, [editing, accounts, liabilities, assetFamilyMembers, clientId, writer]);
+  }, [editing, accounts, liabilities, familyMembers, clientId, writer]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const data = new FormData(e.currentTarget);
     setLoading(true);
     setError(null);
+
+    // Validate ownership sum.
+    const ownerSum = owners.reduce((s, o) => s + o.percent, 0);
+    if (owners.length > 0 && Math.abs(ownerSum - 1) > 0.0001) {
+      setError("Owner percentages must sum to 100%.");
+      setLoading(false);
+      return;
+    }
+
+    // The DB schema for entity_owners only supports family_member rows today.
+    // Reject entity-on-entity ownership at the form layer with a clear message.
+    const familyOnly = owners.filter((o) => o.kind === "family_member") as Extract<AccountOwner, { kind: "family_member" }>[];
+    if (familyOnly.length !== owners.length) {
+      setError("Business owners must be household members.");
+      setLoading(false);
+      return;
+    }
+
     const body = {
-      name: data.get("name") as string,
+      name: name.trim(),
       entityType,
       notes: notes || null,
       includeInPortfolio,
       isGrantor,
       value: value || "0",
-      owner: owner || null,
+      basis: basis || "0",
+      owners: familyOnly.map((o) => ({ familyMemberId: o.familyMemberId, percent: o.percent })),
       grantor: null,
       beneficiaries: null,
       trustSubType: undefined,
@@ -141,6 +175,7 @@ export default function BusinessForm({
       trustee: undefined,
       exemptionConsumed: undefined,
     };
+
     try {
       const newEntityId =
         typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -181,6 +216,7 @@ export default function BusinessForm({
         ? ({
             id: isEdit ? editing!.id : newEntityId,
             ...body,
+            owners: familyOnly,
           } as unknown as Entity)
         : ((await res.json()) as Entity);
       onSaved(saved, isEdit ? "edit" : "create");
@@ -207,13 +243,14 @@ export default function BusinessForm({
               name="name"
               type="text"
               required
-              defaultValue={editing?.name ?? ""}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Smith Holdings LLC"
               className={inputClassName}
             />
           </div>
 
-          <div>
+          <div className="col-span-2">
             <label className={fieldLabelClassName} htmlFor="ent-type">Type</label>
             <select
               id="ent-type"
@@ -227,20 +264,24 @@ export default function BusinessForm({
               ))}
             </select>
           </div>
-        </div>
 
-        <div className="grid grid-cols-2 gap-4 mt-4">
+          <div className="col-span-2">
+            <OwnershipEditor
+              familyMembers={familyMembers}
+              entities={(otherEntities ?? []).filter((e) => e.id !== editing?.id)}
+              value={owners}
+              onChange={setOwners}
+            />
+          </div>
+
           <div>
             <label className={fieldLabelClassName} htmlFor="ent-value">
-              Value ($)
+              Current Value ($)
             </label>
-            <input
+            <CurrencyInput
               id="ent-value"
-              type="number"
-              step="0.01"
-              min="0"
               value={value}
-              onChange={(e) => setValue(e.target.value)}
+              onChange={(raw) => setValue(raw)}
               className={inputClassName}
             />
             <p className="mt-1 text-xs text-gray-400">
@@ -249,20 +290,15 @@ export default function BusinessForm({
           </div>
 
           <div>
-            <label className={fieldLabelClassName} htmlFor="ent-owner">
-              Owner
+            <label className={fieldLabelClassName} htmlFor="ent-basis">
+              Cost Basis ($)
             </label>
-            <select
-              id="ent-owner"
-              value={owner}
-              onChange={(e) => setOwner(e.target.value as typeof owner)}
-              className={selectClassName}
-            >
-              <option value="">—</option>
-              <option value="client">Client</option>
-              <option value="spouse">Spouse</option>
-              <option value="joint">Joint</option>
-            </select>
+            <CurrencyInput
+              id="ent-basis"
+              value={basis}
+              onChange={(raw) => setBasis(raw)}
+              className={inputClassName}
+            />
           </div>
         </div>
 
@@ -309,7 +345,7 @@ export default function BusinessForm({
             liabilities={liabilities ?? []}
             incomes={incomes ?? []}
             expenses={expenses ?? []}
-            familyMembers={assetFamilyMembers ?? []}
+            familyMembers={familyMembers}
             entities={otherEntities ?? []}
             entityLabel="business"
             onChange={handleAssetTabOp}

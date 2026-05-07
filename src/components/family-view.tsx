@@ -14,6 +14,7 @@ import type { EntityKind } from "./entity-dialog/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import { type TrustSubType } from "@/lib/entities/trust";
 import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember } from "./forms/assets-tab";
+import type { AccountOwner } from "@/engine/ownership";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,9 @@ export interface Entity {
   includeInPortfolio: boolean;
   isGrantor: boolean;
   value: string;
+  basis: string;
+  /** Multi-owner allocation for business entities. Empty for trusts. */
+  owners: AccountOwner[];
   owner: "client" | "spouse" | "joint" | null;
   grantor: "client" | "spouse" | null;
   beneficiaries: NamePctRow[] | null;
