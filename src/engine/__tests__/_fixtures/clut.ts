@@ -40,6 +40,10 @@ export interface ClutLifecycleOpts {
     childIndex: 1 | 2;
     percentage: number;
   }>;
+  /** When set, the grantor's lifeExpectancy is configured so the engine
+   * triggers a death event in this year. Used by Task 11+ tests to exercise
+   * the §170(f)(2)(B) recapture and grantor flip pipeline. */
+  grantorDeathYear?: number;
 }
 
 /**
@@ -121,14 +125,24 @@ export function buildClutLifecycleFixture(opts: ClutLifecycleOpts): ClientData {
     eventKind: "clut_remainder_interest",
   } as Gift;
 
+  // Grantor DOB: 1970-01-01 → age 56 in 2026. If grantorDeathYear is set,
+  // we configure lifeExpectancy so the death-event fires in that year.
+  const grantorDob = "1970-01-01";
+  const grantorBirthYear = 1970;
+  const lifeExpectancy =
+    opts.grantorDeathYear != null
+      ? opts.grantorDeathYear - grantorBirthYear
+      : undefined;
+
   return {
     client: {
       firstName: "Charitable",
       lastName: "Grantor",
-      dateOfBirth: "1970-01-01",
+      dateOfBirth: grantorDob,
       filingStatus: "single",
       retirementAge: 67,
       planEndAge: 90,
+      ...(lifeExpectancy != null ? { lifeExpectancy } : {}),
     },
     accounts: [
       {

@@ -58,6 +58,7 @@ import { computeTermEndYear } from "./life-insurance-expiry";
 import { applyTrustAnnualPass, type NonGrantorTrustInput } from "./trust-tax/index";
 import {
   computeAnnualUnitrustPayment,
+  computeClutRecapture,
   distributeAtTermination,
   isTrustTerminationYear,
   type TrustTerminationResult,
@@ -516,6 +517,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     accountId: string;
     gain: number;
   }> = [];
+
+  // Cross-year record of actual unitrust payments made by each CLUT, ordered
+  // year-by-year from inception. Drained by the §170(f)(2)(B) recapture pass
+  // when a grantor of a CLUT dies mid-term — the PV of these payments at the
+  // original §7520 rate is subtracted from the original income-interest
+  // deduction to compute recapture as ordinary income on the final 1040.
+  const clutPaymentsByTrustId: Map<string, number[]> = new Map();
 
   for (
     let year = planSettings.planStartYear;
@@ -1508,6 +1516,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         charityId: si.charityId,
         amount: unitrustAmount,
       });
+
+      // Record the payment for cross-year recapture math. The death-year
+      // payment IS counted in the PV per §170(f)(2)(B), so this push happens
+      // before the recapture pass below for this same year.
+      const existing = clutPaymentsByTrustId.get(trust.id) ?? [];
+      existing.push(unitrustAmount);
+      clutPaymentsByTrustId.set(trust.id, existing);
     }
 
     // ── CLUT trust-termination pass ───────────────────────────────────────
@@ -1572,6 +1587,47 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           label: `CLUT termination distribution`,
           sourceId: trust.id,
         });
+      }
+    }
+
+    // ── §170(f)(2)(B) recapture pass ──────────────────────────────────────
+    // When a grantor of a CLUT dies before the lead term ends, the unused
+    // portion of the original income-interest deduction is recaptured as
+    // ordinary income on the grantor's final 1040. Recapture =
+    //   originalIncomeInterest − PV(actual payments) at the original §7520 rate.
+    // Floored at 0; only fires for term-certain ('years' or
+    // 'shorter_of_years_or_life') CLUTs — for pure life CLUTs the death IS
+    // the term-end and there's no recapture.
+    const decedentRoleThisYear: "client" | "spouse" | null =
+      year === firstDeathYear
+        ? firstDeathDeceased
+        : year === finalDeathYear
+          ? finalDeceased
+          : null;
+    if (decedentRoleThisYear != null) {
+      for (const trust of currentEntities) {
+        if (trust.trustSubType !== "clut" || !trust.splitInterest) continue;
+        if (trust.grantor !== decedentRoleThisYear) continue;
+        const si = trust.splitInterest;
+        const isYearsLeg =
+          si.termType === "years" ||
+          si.termType === "shorter_of_years_or_life";
+        if (!isYearsLeg) continue;
+        const yearsElapsed = year - si.inceptionYear + 1;
+        if (yearsElapsed >= (si.termYears ?? 0)) continue;
+        const payments = clutPaymentsByTrustId.get(trust.id) ?? [];
+        const { recaptureAmount } = computeClutRecapture({
+          originalIncomeInterest: Number(si.originalIncomeInterest),
+          irc7520Rate: Number(si.irc7520Rate),
+          paymentsByYearOffset: payments,
+        });
+        if (recaptureAmount > 0) {
+          taxDetail.ordinaryIncome += recaptureAmount;
+          taxDetail.bySource[`clut_recapture:${trust.id}`] = {
+            type: "ordinary_income",
+            amount: recaptureAmount,
+          };
+        }
       }
     }
 
