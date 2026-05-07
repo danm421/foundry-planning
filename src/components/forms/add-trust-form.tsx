@@ -17,6 +17,8 @@ import TransferAssetForm, { type AccountOption as AssetAccountOption } from "./t
 import TransferCashForm from "./transfer-cash-form";
 import TransferSeriesForm from "./transfer-series-form";
 import DialogShell from "../dialog-shell";
+import ClutDetailsSection from "./clut-details-section";
+import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
 
 interface AddTrustFormProps {
   clientId: string;
@@ -61,6 +63,7 @@ const TRUST_TYPE_LABELS: Record<TrustSubType, string> = {
   grat: "GRAT",
   qprt: "QPRT",
   clat: "CLAT",
+  clut: "CLUT (Charitable Lead Unitrust)",
   qtip: "QTIP",
   bypass: "Bypass / Credit Shelter",
 };
@@ -122,6 +125,18 @@ export default function AddTrustForm({
 
   const isIrrevocable = trustSubType !== "" && deriveIsIrrevocable(trustSubType);
   const showDistributionAndIncome = isIrrevocable;
+
+  // CLUT split-interest state. Initialized lazily so re-renders don't reset.
+  const [splitInterest, setSplitInterest] = useState<TrustSplitInterestInput>(() => ({
+    inceptionYear: new Date().getFullYear(),
+    inceptionValue: 0,
+    payoutType: "unitrust",
+    payoutPercent: 0.06,
+    irc7520Rate: 0.05,
+    termType: "years",
+    termYears: 10,
+    charityId: "",
+  }));
 
   // ── Transfers tab state ────────────────────────────────────────────────────
   const [openModal, setOpenModal] = useState<"asset" | "cash" | "series" | null>(null);
@@ -249,6 +264,7 @@ export default function AddTrustForm({
         distributionMode: showDistributionAndIncome ? distributionMode : null,
         distributionAmount: showDistributionAndIncome && distributionMode === "fixed" && distributionAmount.trim() !== "" ? Number(distributionAmount) : null,
         distributionPercent: showDistributionAndIncome && (distributionMode === "pct_liquid" || distributionMode === "pct_income") && distributionPercent.trim() !== "" ? Number(distributionPercent) / 100 : null,
+        ...(trustSubType === "clut" && { splitInterest }),
       };
       const isEdit = Boolean(editing);
       const url = isEdit ? `/api/clients/${clientId}/entities/${editing!.id}` : `/api/clients/${clientId}/entities`;
@@ -406,6 +422,23 @@ export default function AddTrustForm({
                 <PercentInput id="dist-percent" value={distributionPercent} onChange={setDistributionPercent} />
               </div>
             )}
+          </div>
+        )}
+
+        {trustSubType === "clut" && (
+          <div className="mt-4">
+            <ClutDetailsSection
+              value={splitInterest}
+              onChange={setSplitInterest}
+              familyMembers={members.map((m) => ({
+                id: m.id,
+                firstName: m.firstName,
+                dateOfBirth: m.dateOfBirth ?? null,
+              }))}
+              charities={externals
+                .filter((e) => e.kind === "charity")
+                .map((e) => ({ id: e.id, name: e.name }))}
+            />
           </div>
         )}
 
