@@ -25,6 +25,8 @@ export default function ClutDetailsSection({
   familyMembers,
   charities,
 }: ClutDetailsSectionProps) {
+  const origin = value.origin ?? "new";
+  const isNew = origin === "new";
   const showTermYears =
     value.termType === "years" || value.termType === "shorter_of_years_or_life";
   const showLife1 = value.termType !== "years";
@@ -79,10 +81,47 @@ export default function ClutDetailsSection({
     <fieldset className="rounded-md border border-hair p-4 space-y-3">
       <legend className="px-2 text-sm font-semibold text-ink">CLUT Details</legend>
 
+      {/* Origin: new (funded in plan) vs existing (funded historically) */}
+      <div className="space-y-1">
+        <span className={fieldLabelClassName}>Trust origin</span>
+        <div role="radiogroup" aria-label="Trust origin" className="flex gap-2">
+          {(
+            [
+              ["new", "New (funded in plan)"],
+              ["existing", "Existing (already funded)"],
+            ] as const
+          ).map(([val, label]) => {
+            const active = origin === val;
+            return (
+              <button
+                key={val}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => set("origin", val)}
+                className={
+                  "rounded-md border px-3 py-1 text-xs font-medium transition-colors " +
+                  (active
+                    ? "border-accent bg-accent/15 text-accent"
+                    : "border-hair bg-card text-ink-3 hover:border-hair-2 hover:text-ink-2")
+                }
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-ink-3">
+          {isNew
+            ? "We'll compute the income and remainder interest from the inputs below and emit the remainder-interest gift on save."
+            : "Enter the income and remainder interest values from the historical return. No fresh deduction or gift is emitted; we just project unitrust payments + termination forward."}
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={fieldLabelClassName} htmlFor="clut-inception-year">
-            Inception year
+            {isNew ? "Inception year" : "Original funding year"}
           </label>
           <input
             id="clut-inception-year"
@@ -95,7 +134,7 @@ export default function ClutDetailsSection({
 
         <div>
           <label className={fieldLabelClassName} htmlFor="clut-fmv">
-            FMV at funding
+            {isNew ? "Funding-year FMV" : "FMV at original funding"}
           </label>
           <input
             id="clut-fmv"
@@ -267,25 +306,81 @@ export default function ClutDetailsSection({
         </div>
       </div>
 
-      <div className="rounded-md bg-card-2 p-3 text-sm space-y-1">
-        <div className="font-medium text-ink">Computed at inception</div>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-          <span className="text-ink-2">Income interest (charitable deduction)</span>
-          <span data-testid="clut-income-interest" className="text-right font-mono">
-            {preview ? `$${preview.originalIncomeInterest.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
-          </span>
-          <span className="text-ink-2">Remainder interest (taxable gift)</span>
-          <span data-testid="clut-remainder-interest" className="text-right font-mono">
-            {preview ? `$${preview.originalRemainderInterest.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
-          </span>
-          {termEndYear !== null && (
-            <>
-              <span className="text-ink-2">Term ends</span>
-              <span className="text-right">{termEndYear}</span>
-            </>
-          )}
+      {isNew ? (
+        <div className="rounded-md bg-card-2 p-3 text-sm space-y-1">
+          <div className="font-medium text-ink">Computed at inception</div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+            <span className="text-ink-2">Income interest (charitable deduction)</span>
+            <span data-testid="clut-income-interest" className="text-right font-mono">
+              {preview ? `$${preview.originalIncomeInterest.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
+            </span>
+            <span className="text-ink-2">Remainder interest (taxable gift)</span>
+            <span data-testid="clut-remainder-interest" className="text-right font-mono">
+              {preview ? `$${preview.originalRemainderInterest.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
+            </span>
+            {termEndYear !== null && (
+              <>
+                <span className="text-ink-2">Term ends</span>
+                <span className="text-right">{termEndYear}</span>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="rounded-md bg-card-2 p-3 space-y-3">
+          <div className="text-sm font-medium text-ink">Historical values from the return</div>
+          <p className="text-xs text-ink-3">
+            Enter the values that were recorded when the CLUT was funded — they
+            were calculated from the §7520 rate and mortality table in effect at
+            that time.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={fieldLabelClassName} htmlFor="clut-original-income">
+                Income interest (deduction taken)
+              </label>
+              <input
+                id="clut-original-income"
+                type="number"
+                min={0}
+                step={1}
+                className={inputClassName}
+                value={value.originalIncomeInterest ?? ""}
+                onChange={(e) =>
+                  set(
+                    "originalIncomeInterest",
+                    e.target.value === "" ? undefined : Number(e.target.value),
+                  )
+                }
+              />
+            </div>
+            <div>
+              <label className={fieldLabelClassName} htmlFor="clut-original-remainder">
+                Remainder interest (gift filed)
+              </label>
+              <input
+                id="clut-original-remainder"
+                type="number"
+                min={0}
+                step={1}
+                className={inputClassName}
+                value={value.originalRemainderInterest ?? ""}
+                onChange={(e) =>
+                  set(
+                    "originalRemainderInterest",
+                    e.target.value === "" ? undefined : Number(e.target.value),
+                  )
+                }
+              />
+            </div>
+            {termEndYear !== null && (
+              <div className="col-span-2 text-xs text-ink-3">
+                Term ends {termEndYear} (based on original funding year + term).
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </fieldset>
   );
 }

@@ -319,17 +319,29 @@ export async function POST(
         );
       }
 
-      const interests = computeClutInceptionInterests({
-        inceptionValue: si.inceptionValue,
-        payoutType: si.payoutType,
-        payoutPercent: si.payoutPercent,
-        payoutAmount: si.payoutAmount,
-        irc7520Rate: si.irc7520Rate,
-        termType: si.termType,
-        termYears: si.termYears,
-        measuringLifeAge1: age1,
-        measuringLifeAge2: age2,
-      });
+      // For 'new' CLUTs we compute income/remainder from the actuarial inputs.
+      // For 'existing' CLUTs the caller supplies the historical values that
+      // were recorded on the prior return — we trust them and skip the
+      // recompute (the §7520 rate and mortality table at original funding may
+      // not match what we'd compute today).
+      const isExistingClut = si.origin === "existing";
+      const interests = isExistingClut
+        ? {
+            originalIncomeInterest: si.originalIncomeInterest!,
+            originalRemainderInterest: si.originalRemainderInterest!,
+            remainderFactor: undefined,
+          }
+        : computeClutInceptionInterests({
+            inceptionValue: si.inceptionValue,
+            payoutType: si.payoutType,
+            payoutPercent: si.payoutPercent,
+            payoutAmount: si.payoutAmount,
+            irc7520Rate: si.irc7520Rate,
+            termType: si.termType,
+            termYears: si.termYears,
+            measuringLifeAge1: age1,
+            measuringLifeAge2: age2,
+          });
 
       await db.insert(trustSplitInterestDetails).values({
         entityId: entity.id,
@@ -349,15 +361,20 @@ export async function POST(
         originalRemainderInterest: interests.originalRemainderInterest.toString(),
       });
 
-      await db.insert(gifts).values({
-        clientId: id,
-        year: si.inceptionYear,
-        amount: interests.originalRemainderInterest.toString(),
-        grantor: data.grantor,
-        recipientEntityId: entity.id,
-        eventKind: "clut_remainder_interest",
-        notes: `Auto-emitted at CLUT '${data.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`,
-      });
+      // Auto-emit the remainder-interest gift only for new CLUTs. Existing
+      // CLUTs already filed this gift on the original §709 — we don't want
+      // to double-count it on the lifetime-exemption ledger.
+      if (!isExistingClut) {
+        await db.insert(gifts).values({
+          clientId: id,
+          year: si.inceptionYear,
+          amount: interests.originalRemainderInterest.toString(),
+          grantor: data.grantor,
+          recipientEntityId: entity.id,
+          eventKind: "clut_remainder_interest",
+          notes: `Auto-emitted at CLUT '${data.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`,
+        });
+      }
 
       await recordAudit({
         action: "trust_split_interest.create",
@@ -366,6 +383,7 @@ export async function POST(
         clientId: id,
         firmId,
         metadata: {
+          origin: si.origin ?? "new",
           inceptionYear: si.inceptionYear,
           inceptionValue: si.inceptionValue,
           payoutPercent: si.payoutPercent,

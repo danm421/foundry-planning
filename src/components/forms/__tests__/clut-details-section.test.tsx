@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import ClutDetailsSection from "../clut-details-section";
 
 const baseProps = {
   value: {
+    origin: "new" as const,
     inceptionYear: 2026,
     inceptionValue: 1_000_000,
     payoutType: "unitrust" as const,
@@ -25,7 +26,7 @@ describe("<ClutDetailsSection>", () => {
   it("renders the unitrust input fields", () => {
     render(<ClutDetailsSection {...baseProps} />);
     expect(screen.getByLabelText(/inception year/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/fmv at funding/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/funding-year fmv/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/payout percentage/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/7520 rate/i)).toBeInTheDocument();
   });
@@ -34,6 +35,48 @@ describe("<ClutDetailsSection>", () => {
     render(<ClutDetailsSection {...baseProps} />);
     expect(screen.getByTestId("clut-income-interest").textContent).toMatch(/461,385/);
     expect(screen.getByTestId("clut-remainder-interest").textContent).toMatch(/538,615/);
+  });
+
+  it("renders origin radios with 'new' selected by default", () => {
+    render(<ClutDetailsSection {...baseProps} />);
+    const newBtn = screen.getByRole("radio", { name: /new \(funded in plan\)/i });
+    const existingBtn = screen.getByRole("radio", {
+      name: /existing \(already funded\)/i,
+    });
+    expect(newBtn).toHaveAttribute("aria-checked", "true");
+    expect(existingBtn).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("hides the computed preview and shows manual income/remainder inputs when origin = 'existing'", () => {
+    render(
+      <ClutDetailsSection
+        {...baseProps}
+        value={{
+          ...baseProps.value,
+          origin: "existing",
+          originalIncomeInterest: 461_385,
+          originalRemainderInterest: 538_615,
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("clut-income-interest")).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/income interest \(deduction taken\)/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/remainder interest \(gift filed\)/i),
+    ).toBeInTheDocument();
+  });
+
+  it("calls onChange with origin='existing' when the existing radio is clicked", () => {
+    const onChange = vi.fn();
+    render(<ClutDetailsSection {...baseProps} onChange={onChange} />);
+    fireEvent.click(
+      screen.getByRole("radio", { name: /existing \(already funded\)/i }),
+    );
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ origin: "existing" }),
+    );
   });
 
   it("hides termYears when termType = 'single_life'", () => {

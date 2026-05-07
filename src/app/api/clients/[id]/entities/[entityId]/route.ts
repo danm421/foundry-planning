@@ -357,21 +357,31 @@ export async function PUT(
         return year - parseInt(dob.slice(0, 4), 10);
       };
 
-      const interests = computeClutInceptionInterests({
-        inceptionValue: si.inceptionValue,
-        payoutType: si.payoutType,
-        payoutPercent: si.payoutPercent,
-        payoutAmount: si.payoutAmount,
-        irc7520Rate: si.irc7520Rate,
-        termType: si.termType,
-        termYears: si.termYears,
-        measuringLifeAge1: measuringLife1
-          ? ageAtFromDob(measuringLife1.dateOfBirth, si.inceptionYear)
-          : undefined,
-        measuringLifeAge2: measuringLife2
-          ? ageAtFromDob(measuringLife2.dateOfBirth, si.inceptionYear)
-          : undefined,
-      });
+      // For 'new' CLUTs we compute income/remainder from inputs; for
+      // 'existing' the caller supplies historical values from the prior
+      // return and we trust them (origin-aware branch).
+      const isExistingClut = si.origin === "existing";
+      const interests = isExistingClut
+        ? {
+            originalIncomeInterest: si.originalIncomeInterest!,
+            originalRemainderInterest: si.originalRemainderInterest!,
+            remainderFactor: undefined,
+          }
+        : computeClutInceptionInterests({
+            inceptionValue: si.inceptionValue,
+            payoutType: si.payoutType,
+            payoutPercent: si.payoutPercent,
+            payoutAmount: si.payoutAmount,
+            irc7520Rate: si.irc7520Rate,
+            termType: si.termType,
+            termYears: si.termYears,
+            measuringLifeAge1: measuringLife1
+              ? ageAtFromDob(measuringLife1.dateOfBirth, si.inceptionYear)
+              : undefined,
+            measuringLifeAge2: measuringLife2
+              ? ageAtFromDob(measuringLife2.dateOfBirth, si.inceptionYear)
+              : undefined,
+          });
 
       const valuesToWrite = {
         entityId,
@@ -401,35 +411,51 @@ export async function PUT(
         await db.insert(trustSplitInterestDetails).values(valuesToWrite);
       }
 
-      const remainderAmount = interests.originalRemainderInterest.toString();
-      const noteText = `Auto-emitted at CLUT '${updated.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`;
-      const updatedGift = await db
-        .update(gifts)
-        .set({
-          year: si.inceptionYear,
-          amount: remainderAmount,
-          grantor,
-          notes: noteText,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(gifts.recipientEntityId, entityId),
-            eq(gifts.eventKind, "clut_remainder_interest"),
-          ),
-        )
-        .returning({ id: gifts.id });
+      // Auto-emit the remainder-interest gift only for new CLUTs. Existing
+      // CLUTs already filed this gift on the original §709. If a previous
+      // 'new'-mode save left an auto-emitted gift on this entity and the
+      // user later flipped origin to 'existing', delete that ledger row to
+      // avoid double-counting against the lifetime exemption.
+      if (isExistingClut) {
+        await db
+          .delete(gifts)
+          .where(
+            and(
+              eq(gifts.recipientEntityId, entityId),
+              eq(gifts.eventKind, "clut_remainder_interest"),
+            ),
+          );
+      } else {
+        const remainderAmount = interests.originalRemainderInterest.toString();
+        const noteText = `Auto-emitted at CLUT '${updated.name}' inception. Remainder interest gift = ${interests.originalRemainderInterest}; income interest (charitable deduction) = ${interests.originalIncomeInterest}.`;
+        const updatedGift = await db
+          .update(gifts)
+          .set({
+            year: si.inceptionYear,
+            amount: remainderAmount,
+            grantor,
+            notes: noteText,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(gifts.recipientEntityId, entityId),
+              eq(gifts.eventKind, "clut_remainder_interest"),
+            ),
+          )
+          .returning({ id: gifts.id });
 
-      if (updatedGift.length === 0) {
-        await db.insert(gifts).values({
-          clientId: id,
-          year: si.inceptionYear,
-          amount: remainderAmount,
-          grantor,
-          recipientEntityId: entityId,
-          eventKind: "clut_remainder_interest",
-          notes: noteText,
-        });
+        if (updatedGift.length === 0) {
+          await db.insert(gifts).values({
+            clientId: id,
+            year: si.inceptionYear,
+            amount: remainderAmount,
+            grantor,
+            recipientEntityId: entityId,
+            eventKind: "clut_remainder_interest",
+            notes: noteText,
+          });
+        }
       }
 
       await recordAudit({

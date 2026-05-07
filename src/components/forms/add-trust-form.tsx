@@ -124,10 +124,16 @@ export default function AddTrustForm({
   const [remainderRows, setRemainderRows] = useState<BeneficiaryRow[]>(() => designationsToRows(initialDesignations ?? [], "remainder"));
 
   const isIrrevocable = trustSubType !== "" && deriveIsIrrevocable(trustSubType);
-  const showDistributionAndIncome = isIrrevocable;
+  // For CLUTs, distribution to the income beneficiary (charity) is computed
+  // from payoutPercent × FMV, and the charity is captured in CLUT Details —
+  // so the generic Distribution Policy + Income Beneficiaries panels are
+  // suppressed entirely.
+  const isClut = trustSubType === "clut";
+  const showDistributionAndIncome = isIrrevocable && !isClut;
 
   // CLUT split-interest state. Initialized lazily so re-renders don't reset.
   const [splitInterest, setSplitInterest] = useState<TrustSplitInterestInput>(() => ({
+    origin: "new",
     inceptionYear: new Date().getFullYear(),
     inceptionValue: 0,
     payoutType: "unitrust",

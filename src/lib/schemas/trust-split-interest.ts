@@ -9,10 +9,22 @@ export const TRUST_TERM_TYPES = [
 
 export const TRUST_PAYOUT_TYPES = ["unitrust", "annuity"] as const;
 
+export const TRUST_SPLIT_INTEREST_ORIGINS = ["new", "existing"] as const;
+
 const uuid = z.string().uuid();
 
 export const trustSplitInterestSchema = z
   .object({
+    /**
+     * Whether this CLUT is being funded in this plan ('new') or was funded
+     * historically before plan start ('existing'). Defaults to 'new'.
+     *  - new: API computes income/remainder from inputs and auto-emits the
+     *    remainder-interest gift on save.
+     *  - existing: caller supplies originalIncomeInterest +
+     *    originalRemainderInterest (the values recorded on the historical
+     *    return); API skips both the recompute and the gift auto-emit.
+     */
+    origin: z.enum(TRUST_SPLIT_INTEREST_ORIGINS).optional(),
     inceptionYear: z.number().int().min(1900).max(2200),
     inceptionValue: z.number().nonnegative(),
     payoutType: z.enum(TRUST_PAYOUT_TYPES),
@@ -24,6 +36,10 @@ export const trustSplitInterestSchema = z
     measuringLife1Id: uuid.optional(),
     measuringLife2Id: uuid.optional(),
     charityId: uuid,
+    /** Required when origin = 'existing'. Ignored otherwise. */
+    originalIncomeInterest: z.number().nonnegative().optional(),
+    /** Required when origin = 'existing'. Ignored otherwise. */
+    originalRemainderInterest: z.number().nonnegative().optional(),
   })
   .superRefine((d, ctx) => {
     if (d.payoutType === "unitrust") {
@@ -100,6 +116,25 @@ export const trustSplitInterestSchema = z
         path: ["measuringLife2Id"],
         message: "measuringLife2Id is only allowed for termType = 'joint_life'",
       });
+    }
+
+    if (d.origin === "existing") {
+      if (d.originalIncomeInterest == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["originalIncomeInterest"],
+          message:
+            "originalIncomeInterest is required when origin = 'existing' (enter the value recorded on the historical return)",
+        });
+      }
+      if (d.originalRemainderInterest == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["originalRemainderInterest"],
+          message:
+            "originalRemainderInterest is required when origin = 'existing' (enter the value recorded on the historical return)",
+        });
+      }
     }
   });
 

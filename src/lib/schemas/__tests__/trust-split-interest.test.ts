@@ -58,4 +58,42 @@ describe("trustSplitInterestSchema", () => {
     expect(() => trustSplitInterestSchema.parse({ ...base, payoutPercent: 1.5 })).toThrow();
     expect(() => trustSplitInterestSchema.parse({ ...base, payoutPercent: -0.01 })).toThrow();
   });
+
+  it("accepts origin = 'new' with no originalIncomeInterest / originalRemainderInterest", () => {
+    expect(() =>
+      trustSplitInterestSchema.parse({ ...base, origin: "new" }),
+    ).not.toThrow();
+  });
+
+  it("accepts origin defaulting to undefined (treated as 'new' downstream)", () => {
+    expect(() => trustSplitInterestSchema.parse(base)).not.toThrow();
+  });
+
+  it("rejects origin = 'existing' without originalIncomeInterest", () => {
+    const bad = {
+      ...base,
+      origin: "existing" as const,
+      originalRemainderInterest: 538_615,
+    };
+    expect(() => trustSplitInterestSchema.parse(bad)).toThrow();
+  });
+
+  it("rejects origin = 'existing' without originalRemainderInterest", () => {
+    const bad = {
+      ...base,
+      origin: "existing" as const,
+      originalIncomeInterest: 461_385,
+    };
+    expect(() => trustSplitInterestSchema.parse(bad)).toThrow();
+  });
+
+  it("accepts origin = 'existing' with both historical values supplied", () => {
+    const good = {
+      ...base,
+      origin: "existing" as const,
+      originalIncomeInterest: 461_385,
+      originalRemainderInterest: 538_615,
+    };
+    expect(() => trustSplitInterestSchema.parse(good)).not.toThrow();
+  });
 });
