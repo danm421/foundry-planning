@@ -72,11 +72,11 @@ describe("AddAccountForm — owner defaults", () => {
     );
 
     // The "Client" preset button should be aria-pressed="true" (derives mode=client)
-    const clientBtn = screen.getByRole("button", { name: "Client" });
+    const clientBtn = screen.getByRole("button", { name: "Alice" });
     expect(clientBtn).toHaveAttribute("aria-pressed", "true");
 
     // No Spouse or Joint preset should be active
-    const spouseBtn = screen.getByRole("button", { name: "Spouse" });
+    const spouseBtn = screen.getByRole("button", { name: "Bob" });
     expect(spouseBtn).toHaveAttribute("aria-pressed", "false");
   });
 });

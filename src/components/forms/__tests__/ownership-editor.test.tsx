@@ -15,7 +15,7 @@ describe("OwnershipEditor", () => {
     const onChange = vi.fn();
     render(<OwnershipEditor familyMembers={familyMembers} entities={entities}
       value={[]} onChange={onChange} />);
-    fireEvent.click(screen.getByText("Client"));
+    fireEvent.click(screen.getByText("Alice"));
     expect(onChange).toHaveBeenCalledWith([
       { kind: "family_member", familyMemberId: "fm-c", percent: 1 },
     ]);
@@ -119,8 +119,8 @@ describe("OwnershipEditor", () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getByText("Client").closest("button")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("Spouse").closest("button")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("Alice").closest("button")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Bob").closest("button")).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("Joint 50/50").closest("button")).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("Custom").closest("button")).toHaveAttribute("aria-pressed", "false");
   });
@@ -138,6 +138,6 @@ describe("OwnershipEditor", () => {
       />,
     );
     expect(screen.getByText("Joint 50/50").closest("button")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("Client").closest("button")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("Alice").closest("button")).toHaveAttribute("aria-pressed", "false");
   });
 });

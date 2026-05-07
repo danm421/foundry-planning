@@ -60,10 +60,10 @@ describe("AddLiabilityForm — owner defaults", () => {
     );
 
     // The "Client" preset button should be aria-pressed="true"
-    const clientBtn = screen.getByRole("button", { name: "Client" });
+    const clientBtn = screen.getByRole("button", { name: "Alice" });
     expect(clientBtn).toHaveAttribute("aria-pressed", "true");
 
-    const spouseBtn = screen.getByRole("button", { name: "Spouse" });
+    const spouseBtn = screen.getByRole("button", { name: "Bob" });
     expect(spouseBtn).toHaveAttribute("aria-pressed", "false");
   });
 });
