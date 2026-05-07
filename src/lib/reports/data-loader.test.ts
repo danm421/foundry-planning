@@ -176,7 +176,7 @@ describe("buildWidgetData", () => {
       client: clientCtx,
       accounts: [],
       liabilities: [],
-      entities: [],
+      entities: [], familyMembers: [],
       household: { retirementYear: 2050, currentYear: 2026 },
     });
     expect(out).toEqual({
@@ -197,7 +197,7 @@ describe("buildWidgetData", () => {
         client: clientCtx,
         accounts: [],
         liabilities: [],
-        entities: [],
+        entities: [], familyMembers: [],
         household: { retirementYear: 2050, currentYear: 2026 },
       }),
     ).toThrow();
@@ -233,7 +233,7 @@ describe("buildWidgetData", () => {
       client: clientCtx,
       accounts: [],
       liabilities: [],
-      entities: [],
+      entities: [], familyMembers: [],
       household: { retirementYear: 2050, currentYear: 2026 },
     });
     const sliced = (out["cf-1"] as { cashflow: { years: { year: number }[] } })
@@ -259,7 +259,7 @@ describe("buildWidgetData", () => {
       client: clientCtx,
       accounts: [],
       liabilities: [],
-      entities: [],
+      entities: [], familyMembers: [],
       household: { retirementYear: 2050, currentYear: 2026 },
     });
     expect(out).toEqual({ "ai-1": scopeData });

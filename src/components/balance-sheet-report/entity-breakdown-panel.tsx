@@ -80,10 +80,22 @@ export default function EntityBreakdownPanel({ viewModel }: EntityBreakdownPanel
               </div>
               {group.assetRows.map((row) => (
                 <div
-                  key={row.accountId}
+                  key={row.rowKey}
                   className="flex items-center justify-between border-b border-gray-800/60 py-1 last:border-b-0"
                 >
-                  <span className="text-sm text-gray-300">{row.accountName}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-300">{row.accountName}</span>
+                    {row.ownerPercent < 0.9999 && (
+                      <span className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-400">
+                        {Math.round(row.ownerPercent * 100)}% share
+                      </span>
+                    )}
+                    {row.isFlatBusinessValue && (
+                      <span className="rounded border border-blue-800 bg-blue-950/40 px-1 text-xs font-medium uppercase text-blue-300">
+                        BIZ
+                      </span>
+                    )}
+                  </div>
                   <span className="text-sm text-gray-200">{formatCurrency(row.value)}</span>
                 </div>
               ))}
@@ -102,7 +114,7 @@ export default function EntityBreakdownPanel({ viewModel }: EntityBreakdownPanel
               </div>
               {group.liabilityRows.map((row) => (
                 <div
-                  key={row.liabilityId}
+                  key={row.rowKey}
                   className="flex items-center justify-between border-b border-gray-800/60 py-1 last:border-b-0"
                 >
                   <span className="text-sm text-gray-300">{row.liabilityName}</span>

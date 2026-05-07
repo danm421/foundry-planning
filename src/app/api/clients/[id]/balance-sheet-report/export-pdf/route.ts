@@ -10,8 +10,8 @@ import type { DocumentProps } from "@react-pdf/renderer";
 import { BalanceSheetPdfDocument } from "@/components/balance-sheet-report-pdf/balance-sheet-pdf-document";
 import { buildViewModel } from "@/components/balance-sheet-report/view-model";
 import type { OwnershipView } from "@/components/balance-sheet-report/ownership-filter";
-import { deriveLegacyOwnership } from "@/components/balance-sheet-report/derive-ownership";
 import type { FamilyMember } from "@/engine/types";
+import type { AccountOwner } from "@/engine/ownership";
 import React from "react";
 
 export const dynamic = "force-dynamic";
@@ -79,41 +79,56 @@ export async function POST(
     const apiData = await apiRes.json();
     const projectionYears = runProjection(apiData);
 
+    // The projection-data API already emits entities with `value`, `owners`,
+    // and `isIrrevocable`; merge them with the canonical name + type.
     const entityRows = await db.select().from(entitiesTable).where(eq(entitiesTable.clientId, id));
-    const entityInfos = entityRows.map((e) => ({
-      id: e.id,
-      name: e.name,
-      entityType: e.entityType,
-    }));
+    const apiEntities = (apiData.entities ?? []) as Array<{
+      id: string;
+      isIrrevocable?: boolean;
+      value?: number;
+      owners?: Array<{ familyMemberId: string; percent: number }>;
+    }>;
+    const entityInfos = entityRows.map((e) => {
+      const fromApi = apiEntities.find((x) => x.id === e.id);
+      return {
+        id: e.id,
+        name: e.name,
+        entityType: e.entityType,
+        isIrrevocable: fromApi?.isIrrevocable,
+        value: fromApi?.value,
+        owners: fromApi?.owners,
+      };
+    });
 
-    const roleById = new Map<string, FamilyMember["role"]>(
-      ((apiData.familyMembers ?? []) as FamilyMember[]).map((fm) => [fm.id, fm.role]),
-    );
-    const mappedAccounts = apiData.accounts.map((a: { id: string; name: string; category: string; owners: Parameters<typeof deriveLegacyOwnership>[0] }) => {
-      const { owner, ownerEntityId } = deriveLegacyOwnership(a.owners ?? [], roleById);
-      return {
-        id: a.id,
-        name: a.name,
-        category: a.category,
-        owner: owner ?? "client",
-        ownerEntityId,
-      } as const;
-    });
-    const mappedLiabilities = apiData.liabilities.map((l: { id: string; name: string; owners: Parameters<typeof deriveLegacyOwnership>[0]; linkedPropertyId?: string | null }) => {
-      const { owner, ownerEntityId } = deriveLegacyOwnership(l.owners ?? [], roleById);
-      return {
-        id: l.id,
-        name: l.name,
-        owner,
-        ownerEntityId,
-        linkedPropertyId: l.linkedPropertyId ?? null,
-      } as const;
-    });
+    const familyMembers = (apiData.familyMembers ?? []) as FamilyMember[];
+    const mappedAccounts = (apiData.accounts as Array<{
+      id: string;
+      name: string;
+      category: string;
+      owners: AccountOwner[];
+    }>).map((a) => ({
+      id: a.id,
+      name: a.name,
+      category: a.category,
+      owners: a.owners ?? [],
+    }));
+    const mappedLiabilities = (apiData.liabilities as Array<{
+      id: string;
+      name: string;
+      owners: AccountOwner[];
+      linkedPropertyId?: string | null;
+    }>).map((l) => ({
+      id: l.id,
+      name: l.name,
+      owners: l.owners ?? [],
+      linkedPropertyId: l.linkedPropertyId ?? null,
+    }));
 
     const viewModel = buildViewModel({
       accounts: mappedAccounts,
       liabilities: mappedLiabilities,
       entities: entityInfos,
+      familyMembers,
       projectionYears,
       selectedYear: year,
       view: viewParam,

@@ -13,7 +13,7 @@ import "@/lib/reports/scopes"; // side-effect: register all v1 scopes
 import "@/lib/reports/metrics"; // side-effect: register all v1 metrics
 
 import type { OwnershipView, Page, WidgetKind, YearRange } from "./types";
-import type { ProjectionYear } from "@/engine/types";
+import type { FamilyMember as FamilyMemberLike, ProjectionYear } from "@/engine/types";
 import { getMetric } from "./metric-registry";
 import { getScope, type ScopeKey } from "./scope-registry";
 import { getWidget } from "./widget-registry";
@@ -78,14 +78,14 @@ export function buildWidgetData(
     projection: ProjectionYear[];
     scopeData: Partial<Record<ScopeKey, unknown>>;
     client: { id: string };
-    /** Already-bridged accounts in the legacy `{ owner, ownerEntityId }`
-     *  shape the balance-sheet view-model consumes. The export route
-     *  derives this from `apiData.accounts[].owners[]` via
-     *  `deriveLegacyOwnership` — keeping the bridge in the route preserves
-     *  data-loader purity (no FamilyMember lookups in here). */
+    /** Account / liability rows with raw `owners[]` arrays — the view-model
+     *  expands them into per-owner slices. Entities carry their flat value,
+     *  isIrrevocable flag, and entity_owners shares so business-interest
+     *  classification works without DB lookups in here. */
     accounts: AccountLike[];
     liabilities: LiabilityLike[];
     entities: EntityInfo[];
+    familyMembers: FamilyMemberLike[];
     /** Household context for resolving widget yearRange `"default"` sentinels.
      *  `retirementYear` is the calendar year the household retires (computed
      *  from DOB year + retirementAge at the call site); `currentYear` is the
@@ -180,6 +180,7 @@ export function buildWidgetData(
             accounts: ctx.accounts,
             liabilities: ctx.liabilities,
             entities: ctx.entities,
+            familyMembers: ctx.familyMembers,
             projectionYears: ctx.projection,
             selectedYear: year,
             view: props.ownership,

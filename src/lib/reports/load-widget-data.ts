@@ -11,8 +11,8 @@
 
 import { runProjection } from "@/engine/projection";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
-import { deriveLegacyOwnership } from "@/components/balance-sheet-report/derive-ownership";
 import type { FamilyMember } from "@/engine/types";
+import type { AccountOwner } from "@/engine/ownership";
 import {
   collectScopesFromTree,
   loadDataForScopes,
@@ -35,52 +35,46 @@ export async function loadReportWidgetData(args: {
       id: string;
       name: string;
       category: string;
-      owners: Parameters<typeof deriveLegacyOwnership>[0];
+      owners: AccountOwner[];
     }>;
     liabilities: Array<{
       id: string;
       name: string;
-      owners: Parameters<typeof deriveLegacyOwnership>[0];
+      owners: AccountOwner[];
       linkedPropertyId?: string | null;
     }>;
-    entities?: Array<{ id: string; name?: string; entityType?: string }>;
+    entities?: Array<{
+      id: string;
+      name?: string;
+      entityType?: string;
+      isIrrevocable?: boolean;
+      value?: number;
+      owners?: Array<{ familyMemberId: string; percent: number }>;
+    }>;
     familyMembers?: FamilyMember[];
   };
   const projection = runProjection(effectiveTree);
 
-  const roleById = new Map<string, FamilyMember["role"]>(
-    (apiData.familyMembers ?? []).map((fm) => [fm.id, fm.role]),
-  );
-  const accounts = apiData.accounts.map((a) => {
-    const { owner, ownerEntityId } = deriveLegacyOwnership(
-      a.owners ?? [],
-      roleById,
-    );
-    return {
-      id: a.id,
-      name: a.name,
-      category: a.category,
-      owner: owner ?? "client",
-      ownerEntityId,
-    };
-  });
-  const liabilities = apiData.liabilities.map((l) => {
-    const { owner, ownerEntityId } = deriveLegacyOwnership(
-      l.owners ?? [],
-      roleById,
-    );
-    return {
-      id: l.id,
-      name: l.name,
-      owner,
-      ownerEntityId,
-      linkedPropertyId: l.linkedPropertyId ?? null,
-    };
-  });
+  const familyMembers = apiData.familyMembers ?? [];
+  const accounts = apiData.accounts.map((a) => ({
+    id: a.id,
+    name: a.name,
+    category: a.category,
+    owners: a.owners ?? [],
+  }));
+  const liabilities = apiData.liabilities.map((l) => ({
+    id: l.id,
+    name: l.name,
+    owners: l.owners ?? [],
+    linkedPropertyId: l.linkedPropertyId ?? null,
+  }));
   const entities = (apiData.entities ?? []).map((e) => ({
     id: e.id,
     name: e.name ?? "",
     entityType: e.entityType ?? "other",
+    isIrrevocable: e.isIrrevocable,
+    value: e.value,
+    owners: e.owners,
   }));
 
   const scopes = collectScopesFromTree(pages);
@@ -102,6 +96,7 @@ export async function loadReportWidgetData(args: {
     accounts,
     liabilities,
     entities,
+    familyMembers,
     household,
   });
 }

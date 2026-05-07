@@ -1,23 +1,30 @@
 // src/components/balance-sheet-report/view-model.ts
-import { filterAccounts, filterLiabilities, type OwnershipView } from "./ownership-filter";
+//
+// Slice-based view-model. Each account is expanded into one row per
+// owner slice (family member or entity) so the report can display
+// proportional ownership and route slices to in-estate, out-of-estate,
+// or per-entity buckets without the lossy binary `owner | ownerEntityId`
+// shape the old version used.
+
+import type { AccountOwner } from "@/engine/ownership";
+import type { FamilyMember } from "@/engine/types";
+import type { OwnershipView } from "./ownership-filter";
 import { yoyPct, sliceBarAnchors, type YoyResult } from "./yoy";
 import { CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_HEX, type AssetCategoryKey } from "./tokens";
 
-// ── Input shapes (loose — accept what /api/projection-data returns) ──────────
+// ── Input shapes ─────────────────────────────────────────────────────────────
 
 export interface AccountLike {
   id: string;
   name: string;
   category: string; // "cash" | "taxable" | "retirement" | "real_estate" | "business" | "life_insurance"
-  owner: "client" | "spouse" | "joint";
-  ownerEntityId?: string | null;
+  owners: AccountOwner[];
 }
 
 export interface LiabilityLike {
   id: string;
   name: string;
-  owner?: "client" | "spouse" | "joint" | null;
-  ownerEntityId?: string | null;
+  owners: AccountOwner[];
   linkedPropertyId?: string | null;
 }
 
@@ -33,10 +40,10 @@ export interface ProjectionYearLike {
     total: number;
   };
   liabilityBalancesBoY: Record<string, number>;
-  /** Per-account EOY balance for every account (including out-of-estate
-   * entity-owned accounts that are excluded from portfolioAssets). The balance
-   * sheet sources row values from here so irrevocable trust accounts surface
-   * in the consolidated and entities-only views. */
+  /** Per-account EOY balance for every account (including entity-owned).
+   *  The balance sheet sources row values from here so trust-owned and
+   *  business-owned accounts surface in the report regardless of their
+   *  treatment in the engine's portfolio-assets totals. */
   accountLedgers: Record<string, { endingValue: number; beginningValue: number }>;
 }
 
@@ -45,6 +52,17 @@ export interface EntityInfo {
   name: string;
   /** "trust" | "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other" */
   entityType: string;
+  /** Trusts only. Undefined → treat as revocable (in-estate). */
+  isIrrevocable?: boolean;
+  /** Business-entity flat valuation (LLC / S-Corp / C-Corp / partnership /
+   *  other). Counts toward the in-estate Business category proportional to
+   *  family ownership. Zero / undefined for trusts and foundations. */
+  value?: number;
+  /** Per-family-member ownership of a business entity (sourced from
+   *  entity_owners). Trusts leave this undefined. Sum may be < 1 for legacy
+   *  rows; in that case the family-owned share is treated as fully family
+   *  for back-compat. */
+  owners?: Array<{ familyMemberId: string; percent: number }>;
 }
 
 export type AsOfMode = "today" | "eoy";
@@ -53,6 +71,8 @@ export interface BuildViewModelInput {
   accounts: AccountLike[];
   liabilities: LiabilityLike[];
   entities: EntityInfo[];
+  /** Used to resolve family-member slices to their household role. */
+  familyMembers: FamilyMember[];
   projectionYears: ProjectionYearLike[];
   selectedYear: number;
   view: OwnershipView;
@@ -65,13 +85,29 @@ export interface BuildViewModelInput {
 // ── Output shape ─────────────────────────────────────────────────────────────
 
 export interface AssetRow {
+  /** Composite key: `${accountId}` for whole-account rows, or
+   *  `${accountId}#${ownerKey}` for proportional slices. Unique within the
+   *  view-model output so React lists are stable. */
+  rowKey: string;
+  /** Underlying account (or entity for flat-value rows). */
   accountId: string;
   accountName: string;
-  owner: "client" | "spouse" | "joint";
+  /** Household role of this slice when family-owned, or null for entity
+   *  slices and flat business-value rows. */
+  owner: "client" | "spouse" | "joint" | null;
+  /** Set when this slice belongs to an entity. */
   ownerEntityId: string | null;
+  /** Fraction of the underlying account this slice represents. < 1 means
+   *  the account has multiple owners and this is just one slice. */
+  ownerPercent: number;
+  /** Human-readable owner label baked in by the view-model so the panel
+   *  doesn't have to reconstruct it. Examples: "Client", "Smith LLC". */
+  ownerLabel: string;
   value: number;
-  /** True when this is a real-estate row with a linked mortgage. */
   hasLinkedMortgage: boolean;
+  /** True when this row represents a business-entity flat valuation rather
+   *  than a real account. Renders distinctly. */
+  isFlatBusinessValue: boolean;
 }
 
 export interface AssetCategoryGroup {
@@ -83,10 +119,13 @@ export interface AssetCategoryGroup {
 }
 
 export interface LiabilityRow {
+  rowKey: string;
   liabilityId: string;
   liabilityName: string;
   owner: "client" | "spouse" | "joint" | null;
   ownerEntityId: string | null;
+  ownerPercent: number;
+  ownerLabel: string;
   balance: number;
 }
 
@@ -103,8 +142,9 @@ export interface BarChartPoint {
   liabilities: number;
 }
 
-/** One group per entity, populated only in the "entities" view. Each entity
- * gets a card listing its assets and liabilities with per-entity subtotals. */
+/** One card per entity in the "entities" view. Each entity surfaces every
+ *  slice it owns (across all categories) plus its flat business valuation
+ *  if applicable. */
 export interface EntityGroup {
   entityId: string;
   entityName: string;
@@ -119,18 +159,15 @@ export interface EntityGroup {
 export interface BalanceSheetViewModel {
   selectedYear: number;
   assetCategories: AssetCategoryGroup[];
-  /** Entity-owned assets displayed separately in consolidated view. Empty in
-   * other views. Does NOT contribute to totalAssets / netWorth / donut /
-   * realEstateEquity — out-of-estate is its own standalone section. */
+  /** Entity-owned slices that fall outside the household estate (irrevocable
+   *  trusts, foundations, non-family-owned shares of business entities).
+   *  Populated only in the consolidated view. Does NOT contribute to
+   *  totalAssets / netWorth / donut / realEstateEquity. */
   outOfEstateRows: AssetRow[];
-  /** Entity-owned liabilities alongside out-of-estate assets. Same exclusion
-   * semantics as outOfEstateRows. Empty outside consolidated view. */
   outOfEstateLiabilityRows: LiabilityRow[];
-  /** Sum of outOfEstateRows − outOfEstateLiabilityRows. 0 when empty. */
   outOfEstateNetWorth: number;
   liabilityRows: LiabilityRow[];
-  /** Present only when view === "entities". Flat `assetCategories` and
-   * `liabilityRows` remain populated for fallback and for totals/charts. */
+  /** Present only when view === "entities". */
   entityGroups?: EntityGroup[];
   totalAssets: number;
   totalLiabilities: number;
@@ -145,7 +182,9 @@ export interface BalanceSheetViewModel {
   };
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Constants & helpers ──────────────────────────────────────────────────────
+
+const BUSINESS_ENTITY_TYPES = new Set(["llc", "s_corp", "c_corp", "partnership", "other"]);
 
 const DB_TO_KEY: Record<string, AssetCategoryKey> = {
   cash: "cash",
@@ -165,10 +204,6 @@ function findPriorYear(
   return projectionYears[idx - 1];
 }
 
-/** Pulls the per-account balance from accountLedgers: beginning-of-year in
- * "today" mode (matches the advisor-entered current balance) or end-of-year
- * in "eoy" mode (matches the projected balance at the end of the selected
- * year). Includes out-of-estate entity-owned accounts either way. */
 function accountValueForYear(
   yearData: ProjectionYearLike,
   accountId: string,
@@ -179,54 +214,109 @@ function accountValueForYear(
   return mode === "today" ? ledger.beginningValue : ledger.endingValue;
 }
 
-/** In consolidated view, entity-owned rows (ownerEntityId != null) are shown
- * separately and excluded from household totals. Other views already scope by
- * owner. */
-function inEstateOnly<T extends { ownerEntityId?: string | null }>(
-  rows: T[],
-  view: OwnershipView,
-): T[] {
-  return view === "consolidated"
-    ? rows.filter((r) => r.ownerEntityId == null)
-    : rows;
+function isBusinessEntity(e: EntityInfo | undefined): boolean {
+  return !!e && BUSINESS_ENTITY_TYPES.has(e.entityType);
 }
 
-function filteredAssetTotalForYear(
-  yearData: ProjectionYearLike,
-  accounts: AccountLike[],
-  view: OwnershipView,
-  mode: AsOfMode,
-): number {
-  const filtered = inEstateOnly(filterAccounts(accounts, view), view);
-  return filtered.reduce(
-    (sum, a) => sum + accountValueForYear(yearData, a.id, mode),
-    0,
-  );
+/** Fraction of a non-trust entity owned by household family members.
+ *  Missing `owners` is treated as fully family-owned (legacy back-compat
+ *  for data imported before the entity_owners join table). */
+function familyOwnedFraction(entity: EntityInfo): number {
+  if (entity.owners == null) return 1;
+  const sum = entity.owners.reduce((s, o) => s + (o.percent ?? 0), 0);
+  return Math.max(0, Math.min(1, sum));
 }
 
-function filteredLiabilityTotalForYear(
-  yearData: ProjectionYearLike,
-  liabilities: LiabilityLike[],
-  view: OwnershipView,
-): number {
-  const filtered = inEstateOnly(filterLiabilities(liabilities, view), view);
-  const filteredIds = new Set(filtered.map((l) => l.id));
-  let total = 0;
-  for (const [id, balance] of Object.entries(yearData.liabilityBalancesBoY)) {
-    if (filteredIds.has(id)) total += balance;
+/** Slice classifications:
+ *  - "in_estate": counts toward in-estate totals, attributed to the slice's owner.
+ *  - "out_of_estate": rendered in the OOE section.
+ *  - "drop": foundations and other unrecognized owners. Currently unused
+ *    because foundations route to OOE; here for future use.
+ */
+type SliceClassification = "in_estate" | "out_of_estate";
+
+function classifySlice(
+  owner: AccountOwner,
+  entitiesById: Map<string, EntityInfo>,
+): SliceClassification {
+  if (owner.kind === "family_member") return "in_estate";
+  const entity = entitiesById.get(owner.entityId);
+  if (!entity) return "out_of_estate";
+  if (entity.entityType === "trust") {
+    return entity.isIrrevocable ? "out_of_estate" : "in_estate";
   }
-  return total;
+  if (isBusinessEntity(entity)) {
+    // Business entities always render under their entity card; the
+    // in-estate/OOE split is captured separately via familyOwnedFraction
+    // when totaling in the consolidated view.
+    return "in_estate";
+  }
+  // Foundations and unknown entity types: out-of-estate.
+  return "out_of_estate";
 }
 
-// ── Main builder ─────────────────────────────────────────────────────────────
+interface SliceCommon {
+  rowKey: string;
+  accountId: string;
+  accountName: string;
+  category: AssetCategoryKey;
+  ownerPercent: number;
+  ownerLabel: string;
+  /** sliceValue = account_value × percent. */
+  value: number;
+  hasLinkedMortgage: boolean;
+}
+
+interface FamilySlice extends SliceCommon {
+  kind: "family";
+  role: "client" | "spouse" | "joint";
+  familyMemberId: string;
+}
+
+interface EntitySlice extends SliceCommon {
+  kind: "entity";
+  entityId: string;
+  /** True when this entity is treated as in-estate (revocable trust, or
+   *  family-owned non-trust entity). For non-trust business entities, the
+   *  in-estate weight is `familyOwnedFraction(entity)` — an entity may be
+   *  "in-estate" overall but partially OOE if family share < 1. */
+  inEstate: boolean;
+  /** Family-owned share of the entity (1 for trusts; partial for business
+   *  entities with non-100% family ownership). Used to split the slice
+   *  value between the in-estate Business total and the OOE total. */
+  familyShare: number;
+}
+
+type Slice = FamilySlice | EntitySlice;
+
+function familyRoleLabel(
+  role: "client" | "spouse" | "child" | "other",
+): "client" | "spouse" | "joint" {
+  // The polished report only distinguishes client/spouse/joint at the
+  // ownership-chip level. Children and other family members fall through
+  // to "joint" so they still appear in the consolidated view; future
+  // work can introduce a dedicated chip if advisors need it.
+  if (role === "client") return "client";
+  if (role === "spouse") return "spouse";
+  return "joint";
+}
+
+function ownerLabelForFamily(
+  role: "client" | "spouse" | "joint",
+  firstName: string | undefined,
+): string {
+  if (firstName) return firstName;
+  if (role === "client") return "Client";
+  if (role === "spouse") return "Spouse";
+  return "Joint";
+}
+
+// ── Builder ──────────────────────────────────────────────────────────────────
 
 export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewModel {
-  const { accounts, liabilities, entities, projectionYears, selectedYear, view } = input;
+  const { accounts, liabilities, entities, familyMembers, projectionYears, selectedYear, view } = input;
   const asOfMode: AsOfMode = input.asOfMode ?? "eoy";
 
-  // "Today" mode snapshots the first projection year's beginning-of-year
-  // balances — i.e., the balances the advisor entered. No prior year to
-  // compute YoY against in that mode.
   const yearData =
     asOfMode === "today"
       ? projectionYears[0]
@@ -236,11 +326,11 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   const priorYear =
     asOfMode === "today" ? null : findPriorYear(projectionYears, selectedYear);
 
-  // Account lookup by id (projection engine keys portfolioAssets by acct.id).
-  const accountById = new Map(accounts.map((a) => [a.id, a]));
+  const entitiesById = new Map(entities.map((e) => [e.id, e]));
+  const familyMemberById = new Map(familyMembers.map((fm) => [fm.id, fm]));
 
-  // Liabilities linked to real-estate accounts → used for mortgage indicators
-  // and real-estate equity.
+  // Mortgages keyed by linked-property accountId — used for the M chip on
+  // real-estate rows and for the in-estate equity calculation.
   const mortgagesByPropertyId = new Map<string, LiabilityLike[]>();
   for (const liab of liabilities) {
     if (!liab.linkedPropertyId) continue;
@@ -249,113 +339,403 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     mortgagesByPropertyId.set(liab.linkedPropertyId, list);
   }
 
-  // ── Assets: grouped by category, filtered, with entity-owned split for consolidated view ──
+  // ── Expand each account into per-owner slices ───────────────────────────
 
-  const filteredAccountIds = new Set(
-    filterAccounts(accounts, view).map((a) => a.id),
-  );
+  const slices: Slice[] = [];
 
-  const assetCategories: AssetCategoryGroup[] = [];
-  const outOfEstateRows: AssetRow[] = [];
-
-  // Pre-group accounts by category key so each category loop iteration only
-  // scans its own accounts.
-  const accountsByCategory = new Map<AssetCategoryKey, AccountLike[]>();
   for (const acct of accounts) {
-    const catKey = DB_TO_KEY[acct.category];
-    if (!catKey) continue;
-    const list = accountsByCategory.get(catKey) ?? [];
-    list.push(acct);
-    accountsByCategory.set(catKey, list);
-  }
+    const categoryKey = DB_TO_KEY[acct.category];
+    if (!categoryKey) continue;
+    const value = accountValueForYear(yearData, acct.id, asOfMode);
+    if (value <= 0) continue;
+    const hasLinkedMortgage =
+      categoryKey === "realEstate" &&
+      (mortgagesByPropertyId.get(acct.id)?.length ?? 0) > 0;
 
-  for (const categoryKey of CATEGORY_ORDER) {
-    const categoryAccounts = accountsByCategory.get(categoryKey) ?? [];
-    const rows: AssetRow[] = [];
-    const outRows: AssetRow[] = [];
-
-    for (const acct of categoryAccounts) {
-      if (!filteredAccountIds.has(acct.id)) continue;
-      const value = accountValueForYear(yearData, acct.id, asOfMode);
-      if (value <= 0) continue;
-
-      const row: AssetRow = {
+    for (const owner of acct.owners) {
+      const sliceValue = value * owner.percent;
+      if (sliceValue <= 0) continue;
+      const common: SliceCommon = {
+        rowKey:
+          owner.kind === "family_member"
+            ? `${acct.id}#fm:${owner.familyMemberId}`
+            : `${acct.id}#en:${owner.entityId}`,
         accountId: acct.id,
         accountName: acct.name,
-        owner: acct.owner,
-        ownerEntityId: acct.ownerEntityId ?? null,
-        value,
-        hasLinkedMortgage:
-          categoryKey === "realEstate" &&
-          (mortgagesByPropertyId.get(acct.id)?.length ?? 0) > 0,
+        category: categoryKey,
+        ownerPercent: owner.percent,
+        ownerLabel: "", // filled in below
+        value: sliceValue,
+        hasLinkedMortgage,
       };
 
-      if (view === "consolidated" && row.ownerEntityId != null) {
-        outRows.push(row);
+      if (owner.kind === "family_member") {
+        const fm = familyMemberById.get(owner.familyMemberId);
+        const role = familyRoleLabel(fm?.role ?? "other");
+        slices.push({
+          ...common,
+          kind: "family",
+          role,
+          familyMemberId: owner.familyMemberId,
+          ownerLabel: ownerLabelForFamily(role, fm?.firstName),
+        });
       } else {
-        rows.push(row);
+        const entity = entitiesById.get(owner.entityId);
+        if (!entity) continue;
+        const klass = classifySlice(owner, entitiesById);
+        const familyShare = isBusinessEntity(entity) ? familyOwnedFraction(entity) : 1;
+        slices.push({
+          ...common,
+          kind: "entity",
+          entityId: owner.entityId,
+          inEstate: klass === "in_estate",
+          familyShare,
+          ownerLabel: entity.name,
+        });
       }
     }
+  }
 
-    const total = rows.reduce((sum, r) => sum + r.value, 0);
-    const priorTotal = priorYear
-      ? categoryAccounts
-          .filter(
-            (a) =>
-              filteredAccountIds.has(a.id) &&
-              (view !== "consolidated" || a.ownerEntityId == null),
-          )
-          .reduce((sum, a) => sum + accountValueForYear(priorYear, a.id, "eoy"), 0)
-      : null;
+  // ── Filter by view ───────────────────────────────────────────────────────
 
-    // Include the category if it has in-estate rows. Out-of-estate is a
-    // separate section (centerColumn) and does not influence category cards.
-    if (total > 0 || rows.length > 0) {
+  // The legacy ownership-filter operates on legacy `{owner, ownerEntityId}`
+  // shapes; we filter slices directly here based on their kind and role.
+  const filteredSlices = slices.filter((s) => {
+    if (view === "consolidated") return true;
+    if (view === "entities") return s.kind === "entity";
+    // client / spouse / joint
+    if (s.kind !== "family") return false;
+    if (view === "joint") {
+      // Joint view: include slices on accounts where multiple family
+      // members appear. Detected after-the-fact below.
+      return true;
+    }
+    return s.role === view;
+  });
+
+  // For "joint" view, restrict family slices to those on accounts with
+  // multi-family-member ownership.
+  let viewSlices: Slice[];
+  if (view === "joint") {
+    const familyOwnersByAccount = new Map<string, Set<string>>();
+    for (const s of slices) {
+      if (s.kind !== "family") continue;
+      const set = familyOwnersByAccount.get(s.accountId) ?? new Set<string>();
+      set.add(s.familyMemberId);
+      familyOwnersByAccount.set(s.accountId, set);
+    }
+    viewSlices = filteredSlices.filter(
+      (s) => s.kind === "family" && (familyOwnersByAccount.get(s.accountId)?.size ?? 0) >= 2,
+    );
+  } else {
+    viewSlices = filteredSlices;
+  }
+
+  // ── Asset categories (in-estate) ─────────────────────────────────────────
+
+  const inEstateSlicesByCategory = new Map<AssetCategoryKey, AssetRow[]>();
+  const outOfEstateRows: AssetRow[] = [];
+
+  for (const slice of viewSlices) {
+    const sliceRow: AssetRow = sliceToRow(slice);
+    let isInEstateForConsolidated: boolean;
+    if (view === "consolidated") {
+      if (slice.kind === "family") {
+        isInEstateForConsolidated = true;
+      } else {
+        // Entity slice: family-owned share is in-estate; residual is OOE.
+        // For trusts (revocable or irrevocable), familyShare === 1 by
+        // convention; revocable trust → in-estate, irrevocable → OOE.
+        isInEstateForConsolidated = slice.inEstate && slice.familyShare > 0;
+      }
+    } else if (view === "entities") {
+      isInEstateForConsolidated = true; // in entities view, all rows render under entity cards
+    } else {
+      isInEstateForConsolidated = true; // personal views — only family slices reach here
+    }
+
+    if (!isInEstateForConsolidated) {
+      outOfEstateRows.push(sliceRow);
+      continue;
+    }
+
+    // For consolidated view with a partially-family-owned business entity,
+    // split the slice: family-share to in-estate, residual to OOE.
+    if (
+      view === "consolidated" &&
+      slice.kind === "entity" &&
+      slice.inEstate &&
+      slice.familyShare < 1
+    ) {
+      const familyValue = slice.value * slice.familyShare;
+      const residualValue = slice.value - familyValue;
+      const inRow: AssetRow = { ...sliceRow, rowKey: `${sliceRow.rowKey}@in`, value: familyValue };
+      const outRow: AssetRow = { ...sliceRow, rowKey: `${sliceRow.rowKey}@oo`, value: residualValue };
+      const list = inEstateSlicesByCategory.get(slice.category) ?? [];
+      list.push(inRow);
+      inEstateSlicesByCategory.set(slice.category, list);
+      outOfEstateRows.push(outRow);
+      continue;
+    }
+
+    const list = inEstateSlicesByCategory.get(slice.category) ?? [];
+    list.push(sliceRow);
+    inEstateSlicesByCategory.set(slice.category, list);
+  }
+
+  // ── Add flat business-entity values as in-estate Business rows ──────────
+
+  // The flat valuation surfaces:
+  //   • In the consolidated view: under the Business in-estate category
+  //     (proportional to family ownership) and as a residual OOE row.
+  //   • In the entities view: as a row under that entity's card.
+  //   • Personal views (client/spouse/joint): only when the family member
+  //     is one of the entity's owners. We attribute the slice to the
+  //     family member's role for chip display purposes.
+  for (const e of entities) {
+    if (!isBusinessEntity(e)) continue;
+    const flat = e.value ?? 0;
+    if (flat <= 0) continue;
+    const familyShare = familyOwnedFraction(e);
+
+    if (view === "consolidated") {
+      const inEstateValue = flat * familyShare;
+      const outValue = flat - inEstateValue;
+      if (inEstateValue > 0) {
+        const list = inEstateSlicesByCategory.get("business") ?? [];
+        list.push({
+          rowKey: `flat:${e.id}@in`,
+          accountId: e.id,
+          accountName: e.name,
+          owner: null,
+          ownerEntityId: e.id,
+          ownerPercent: familyShare,
+          ownerLabel: e.name,
+          value: inEstateValue,
+          hasLinkedMortgage: false,
+          isFlatBusinessValue: true,
+        });
+        inEstateSlicesByCategory.set("business", list);
+      }
+      if (outValue > 0) {
+        outOfEstateRows.push({
+          rowKey: `flat:${e.id}@oo`,
+          accountId: e.id,
+          accountName: e.name,
+          owner: null,
+          ownerEntityId: e.id,
+          ownerPercent: 1 - familyShare,
+          ownerLabel: e.name,
+          value: outValue,
+          hasLinkedMortgage: false,
+          isFlatBusinessValue: true,
+        });
+      }
+    } else if (view === "entities") {
+      const list = inEstateSlicesByCategory.get("business") ?? [];
+      list.push({
+        rowKey: `flat:${e.id}`,
+        accountId: e.id,
+        accountName: e.name,
+        owner: null,
+        ownerEntityId: e.id,
+        ownerPercent: 1,
+        ownerLabel: e.name,
+        value: flat,
+        hasLinkedMortgage: false,
+        isFlatBusinessValue: true,
+      });
+      inEstateSlicesByCategory.set("business", list);
+    } else {
+      // Personal views — credit each family member with their share of the
+      // flat valuation under the Business category.
+      for (const fmRow of e.owners ?? []) {
+        const fm = familyMemberById.get(fmRow.familyMemberId);
+        if (!fm) continue;
+        const role = familyRoleLabel(fm.role);
+        if (view === "joint") continue; // flat values are credited to a single role; joint has no clean home
+        if (role !== view) continue;
+        const sliceValue = flat * fmRow.percent;
+        if (sliceValue <= 0) continue;
+        const list = inEstateSlicesByCategory.get("business") ?? [];
+        list.push({
+          rowKey: `flat:${e.id}#fm:${fmRow.familyMemberId}`,
+          accountId: e.id,
+          accountName: e.name,
+          owner: role,
+          ownerEntityId: e.id,
+          ownerPercent: fmRow.percent,
+          ownerLabel: ownerLabelForFamily(role, fm.firstName),
+          value: sliceValue,
+          hasLinkedMortgage: false,
+          isFlatBusinessValue: true,
+        });
+        inEstateSlicesByCategory.set("business", list);
+      }
+    }
+  }
+
+  // ── Build asset categories with subtotals + YoY ─────────────────────────
+
+  const assetCategories: AssetCategoryGroup[] = [];
+  for (const categoryKey of CATEGORY_ORDER) {
+    const rows = inEstateSlicesByCategory.get(categoryKey) ?? [];
+    if (rows.length === 0) continue;
+    const total = rows.reduce((s, r) => s + r.value, 0);
+    const priorTotal = priorYear ? sumCategoryForYear(input, priorYear, categoryKey) : null;
+    assetCategories.push({
+      key: categoryKey,
+      label: CATEGORY_LABELS[categoryKey],
+      total,
+      rows,
+      yoy: yoyPct(total, priorTotal),
+    });
+  }
+
+  // ── Liabilities: same slice expansion ───────────────────────────────────
+
+  const liabilitySlices: Array<
+    | { kind: "family"; rowKey: string; row: LiabilityRow }
+    | { kind: "entity"; rowKey: string; row: LiabilityRow; inEstate: boolean; entityId: string; familyShare: number }
+  > = [];
+
+  for (const liab of liabilities) {
+    const balance = yearData.liabilityBalancesBoY[liab.id] ?? 0;
+    if (balance <= 0) continue;
+    for (const owner of liab.owners) {
+      const sliceBalance = balance * owner.percent;
+      if (sliceBalance <= 0) continue;
+      if (owner.kind === "family_member") {
+        const fm = familyMemberById.get(owner.familyMemberId);
+        const role = familyRoleLabel(fm?.role ?? "other");
+        liabilitySlices.push({
+          kind: "family",
+          rowKey: `${liab.id}#fm:${owner.familyMemberId}`,
+          row: {
+            rowKey: `${liab.id}#fm:${owner.familyMemberId}`,
+            liabilityId: liab.id,
+            liabilityName: liab.name,
+            owner: role,
+            ownerEntityId: null,
+            ownerPercent: owner.percent,
+            ownerLabel: ownerLabelForFamily(role, fm?.firstName),
+            balance: sliceBalance,
+          },
+        });
+      } else {
+        const entity = entitiesById.get(owner.entityId);
+        if (!entity) continue;
+        const klass = classifySlice(owner, entitiesById);
+        const familyShare = isBusinessEntity(entity) ? familyOwnedFraction(entity) : 1;
+        liabilitySlices.push({
+          kind: "entity",
+          rowKey: `${liab.id}#en:${owner.entityId}`,
+          inEstate: klass === "in_estate",
+          entityId: owner.entityId,
+          familyShare,
+          row: {
+            rowKey: `${liab.id}#en:${owner.entityId}`,
+            liabilityId: liab.id,
+            liabilityName: liab.name,
+            owner: null,
+            ownerEntityId: owner.entityId,
+            ownerPercent: owner.percent,
+            ownerLabel: entity.name,
+            balance: sliceBalance,
+          },
+        });
+      }
+    }
+  }
+
+  let liabilityRows: LiabilityRow[];
+  let outOfEstateLiabilityRows: LiabilityRow[];
+  if (view === "consolidated") {
+    liabilityRows = [];
+    outOfEstateLiabilityRows = [];
+    for (const ls of liabilitySlices) {
+      if (ls.kind === "family") {
+        liabilityRows.push(ls.row);
+        continue;
+      }
+      // Entity liability: family share → in-estate, residual → OOE.
+      if (!ls.inEstate || ls.familyShare === 0) {
+        outOfEstateLiabilityRows.push(ls.row);
+        continue;
+      }
+      if (ls.familyShare < 1) {
+        const familyVal = ls.row.balance * ls.familyShare;
+        const residual = ls.row.balance - familyVal;
+        liabilityRows.push({ ...ls.row, rowKey: `${ls.row.rowKey}@in`, balance: familyVal });
+        outOfEstateLiabilityRows.push({ ...ls.row, rowKey: `${ls.row.rowKey}@oo`, balance: residual });
+      } else {
+        liabilityRows.push(ls.row);
+      }
+    }
+  } else if (view === "entities") {
+    // Entity-owned liabilities only; family-owned liabilities are out of view.
+    liabilityRows = liabilitySlices.filter((s) => s.kind === "entity").map((s) => s.row);
+    outOfEstateLiabilityRows = [];
+  } else {
+    // Personal views: only family-owned liabilities matching the role.
+    liabilityRows = liabilitySlices
+      .filter((s) => s.kind === "family")
+      .map((s) => s.row)
+      .filter((r) => {
+        if (view === "joint") {
+          return false; // Joint liabilities require multi-owner detection; rare on liabilities — skip for simplicity.
+        }
+        return r.owner === view;
+      });
+    outOfEstateLiabilityRows = [];
+  }
+
+  // ── Joint view: include accounts/liabs with multi-family ownership ──────
+
+  if (view === "joint") {
+    // Collapse family slices on multi-owner accounts into a single combined
+    // row showing the household total for that account.
+    const combined = new Map<string, AssetRow>();
+    for (const cat of assetCategories) {
+      for (const row of cat.rows) {
+        const existing = combined.get(row.accountId);
+        if (existing) {
+          existing.value += row.value;
+        } else {
+          combined.set(row.accountId, { ...row, rowKey: row.accountId, value: row.value, owner: "joint", ownerLabel: "Joint", ownerPercent: 1 });
+        }
+      }
+    }
+    // Rebuild assetCategories with combined rows.
+    const grouped = new Map<AssetCategoryKey, AssetRow[]>();
+    for (const row of combined.values()) {
+      const cat = (CATEGORY_ORDER as AssetCategoryKey[]).find((c) =>
+        assetCategories.find((g) => g.key === c)?.rows.some((r) => r.accountId === row.accountId),
+      );
+      if (!cat) continue;
+      const list = grouped.get(cat) ?? [];
+      list.push(row);
+      grouped.set(cat, list);
+    }
+    assetCategories.length = 0;
+    for (const categoryKey of CATEGORY_ORDER) {
+      const rows = grouped.get(categoryKey) ?? [];
+      if (rows.length === 0) continue;
+      const total = rows.reduce((s, r) => s + r.value, 0);
       assetCategories.push({
         key: categoryKey,
         label: CATEGORY_LABELS[categoryKey],
         total,
         rows,
-        yoy: yoyPct(total, priorTotal),
+        yoy: null,
       });
     }
-
-    outOfEstateRows.push(...outRows);
   }
 
-  // ── Liabilities: flat list, filtered; entity-owned split off in consolidated ──
-
-  const filteredLiabIds = new Set(filterLiabilities(liabilities, view).map((l) => l.id));
-  const allLiabRows: LiabilityRow[] = liabilities
-    .filter((l) => filteredLiabIds.has(l.id))
-    .map((l) => ({
-      liabilityId: l.id,
-      liabilityName: l.name,
-      owner: l.owner ?? null,
-      ownerEntityId: l.ownerEntityId ?? null,
-      balance: yearData.liabilityBalancesBoY[l.id] ?? 0,
-    }))
-    .filter((r) => r.balance > 0);
-
-  const liabilityRows: LiabilityRow[] =
-    view === "consolidated"
-      ? allLiabRows.filter((r) => r.ownerEntityId == null)
-      : allLiabRows;
-  const outOfEstateLiabilityRows: LiabilityRow[] =
-    view === "consolidated"
-      ? allLiabRows.filter((r) => r.ownerEntityId != null)
-      : [];
-
-  // ── Entity groups: populated only in the "entities" view ──
-  //
-  // Each entity gets a card listing its owned assets (across all categories)
-  // and liabilities, with per-entity subtotals. Entities with no rows are
-  // omitted so the panel doesn't render empty cards.
+  // ── Entity groups (entities view) ───────────────────────────────────────
 
   let entityGroups: EntityGroup[] | undefined;
   if (view === "entities") {
-    // Gather all entity-owned asset rows across categories (in "entities"
-    // view these all land in `rows`, not `outRows`).
     const allAssetRows = assetCategories.flatMap((c) => c.rows);
     const assetsByEntity = new Map<string, AssetRow[]>();
     for (const row of allAssetRows) {
@@ -365,26 +745,25 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       assetsByEntity.set(row.ownerEntityId, list);
     }
     const liabsByEntity = new Map<string, LiabilityRow[]>();
-    for (const row of allLiabRows) {
+    for (const row of liabilityRows) {
       if (!row.ownerEntityId) continue;
       const list = liabsByEntity.get(row.ownerEntityId) ?? [];
       list.push(row);
       liabsByEntity.set(row.ownerEntityId, list);
     }
-
     entityGroups = entities
       .map((e) => {
-        const assetRows = assetsByEntity.get(e.id) ?? [];
-        const liabRows = liabsByEntity.get(e.id) ?? [];
-        const assetTotal = assetRows.reduce((s, r) => s + r.value, 0);
-        const liabilityTotal = liabRows.reduce((s, r) => s + r.balance, 0);
+        const aRows = assetsByEntity.get(e.id) ?? [];
+        const lRows = liabsByEntity.get(e.id) ?? [];
+        const assetTotal = aRows.reduce((s, r) => s + r.value, 0);
+        const liabilityTotal = lRows.reduce((s, r) => s + r.balance, 0);
         return {
           entityId: e.id,
           entityName: e.name,
           entityType: e.entityType,
-          assetRows,
+          assetRows: aRows,
           assetTotal,
-          liabilityRows: liabRows,
+          liabilityRows: lRows,
           liabilityTotal,
           netWorth: assetTotal - liabilityTotal,
         };
@@ -392,7 +771,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       .filter((g) => g.assetRows.length > 0 || g.liabilityRows.length > 0);
   }
 
-  // ── Totals (in-estate only; out-of-estate stands apart) ──
+  // ── Totals ──────────────────────────────────────────────────────────────
 
   const totalAssets = assetCategories.reduce((sum, c) => sum + c.total, 0);
   const totalLiabilities = liabilityRows.reduce((sum, r) => sum + r.balance, 0);
@@ -405,21 +784,28 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   );
   const outOfEstateNetWorth = outOfEstateAssetTotal - outOfEstateLiabilityTotal;
 
-  // ── Real estate equity = in-estate real-estate market value − linked mortgages ──
-  // Out-of-estate real estate is reflected in the Out of Estate section, not here.
+  // ── Real estate equity (in-estate real estate − linked mortgages) ───────
 
   const realEstateCategory = assetCategories.find((c) => c.key === "realEstate");
-  const realEstateMarketValue =
-    realEstateCategory?.rows.reduce((sum, r) => sum + r.value, 0) ?? 0;
-
-  const linkedMortgageBalance = (realEstateCategory?.rows ?? [])
-    .flatMap((row) => mortgagesByPropertyId.get(row.accountId) ?? [])
-    .filter((liab) => liab.ownerEntityId == null)
-    .reduce((sum, liab) => sum + (yearData.liabilityBalancesBoY[liab.id] ?? 0), 0);
-
+  const realEstateMarketValue = realEstateCategory?.rows.reduce((sum, r) => sum + r.value, 0) ?? 0;
+  const inEstateRealEstateAccountIds = new Set(
+    (realEstateCategory?.rows ?? []).map((r) => r.accountId),
+  );
+  const linkedMortgageBalance = liabilityRows
+    .filter((r) => {
+      // Find the underlying liability and check if it links to an
+      // in-estate real-estate row. We don't have linkedPropertyId on
+      // LiabilityRow, so re-resolve from the input liabilities array.
+      const liab = liabilities.find((l) => l.id === r.liabilityId);
+      return (
+        liab?.linkedPropertyId != null &&
+        inEstateRealEstateAccountIds.has(liab.linkedPropertyId)
+      );
+    })
+    .reduce((sum, r) => sum + r.balance, 0);
   const realEstateEquity = realEstateMarketValue - linkedMortgageBalance;
 
-  // ── Donut: one slice per non-zero in-estate asset category ──
+  // ── Donut ───────────────────────────────────────────────────────────────
 
   const donut: DonutSlice[] = [];
   for (const cat of assetCategories) {
@@ -432,8 +818,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     });
   }
 
-  // ── Bar chart: current / +10yr / +20yr / last-if-past-+20 ──
-  // Anchor is the current year (first projection year in Today mode, else selectedYear).
+  // ── Bar chart ───────────────────────────────────────────────────────────
 
   const allYears = projectionYears.map((y) => y.year);
   const windowAnchor = asOfMode === "today" ? projectionYears[0].year : selectedYear;
@@ -442,19 +827,15 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     const yData = projectionYears.find((y) => y.year === yr)!;
     return {
       year: yr,
-      assets: filteredAssetTotalForYear(yData, accounts, view, "eoy"),
-      liabilities: filteredLiabilityTotalForYear(yData, liabilities, view),
+      assets: sumInEstateAssetsForYear(input, yData),
+      liabilities: sumInEstateLiabilitiesForYear(input, yData),
     };
   });
 
-  // ── YoY ──
+  // ── YoY ─────────────────────────────────────────────────────────────────
 
-  const priorTotalAssets = priorYear
-    ? filteredAssetTotalForYear(priorYear, accounts, view, "eoy")
-    : null;
-  const priorTotalLiabilities = priorYear
-    ? filteredLiabilityTotalForYear(priorYear, liabilities, view)
-    : null;
+  const priorTotalAssets = priorYear ? sumInEstateAssetsForYear(input, priorYear) : null;
+  const priorTotalLiabilities = priorYear ? sumInEstateLiabilitiesForYear(input, priorYear) : null;
   const priorNetWorth =
     priorTotalAssets != null && priorTotalLiabilities != null
       ? priorTotalAssets - priorTotalLiabilities
@@ -481,3 +862,145 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     },
   };
 }
+
+// ── Slice → AssetRow conversion ──────────────────────────────────────────────
+
+function sliceToRow(slice: Slice): AssetRow {
+  if (slice.kind === "family") {
+    return {
+      rowKey: slice.rowKey,
+      accountId: slice.accountId,
+      accountName: slice.accountName,
+      owner: slice.role,
+      ownerEntityId: null,
+      ownerPercent: slice.ownerPercent,
+      ownerLabel: slice.ownerLabel,
+      value: slice.value,
+      hasLinkedMortgage: slice.hasLinkedMortgage,
+      isFlatBusinessValue: false,
+    };
+  }
+  return {
+    rowKey: slice.rowKey,
+    accountId: slice.accountId,
+    accountName: slice.accountName,
+    owner: null,
+    ownerEntityId: slice.entityId,
+    ownerPercent: slice.ownerPercent,
+    ownerLabel: slice.ownerLabel,
+    value: slice.value,
+    hasLinkedMortgage: slice.hasLinkedMortgage,
+    isFlatBusinessValue: false,
+  };
+}
+
+// ── Bar-chart / YoY helpers (recompute totals against arbitrary years) ──────
+
+interface YearTotals {
+  totalAssets: number;
+  totalLiabilities: number;
+  byCategory: Map<AssetCategoryKey, number>;
+}
+
+/** Pure totals computation — no YoY, no bar chart, no recursion. Mirrors
+ *  the slice-classification logic in the main builder for the consolidated
+ *  view (the only view that drives YoY/bar). */
+function computeYearTotals(
+  input: BuildViewModelInput,
+  yearData: ProjectionYearLike,
+): YearTotals {
+  const { accounts, liabilities, entities, familyMembers } = input;
+  const entitiesById = new Map(entities.map((e) => [e.id, e]));
+  const familyMemberById = new Map(familyMembers.map((fm) => [fm.id, fm]));
+  void familyMemberById; // referenced only for symmetry with main builder
+
+  const byCategory = new Map<AssetCategoryKey, number>();
+  let totalLiabilities = 0;
+
+  for (const acct of accounts) {
+    const categoryKey = DB_TO_KEY[acct.category];
+    if (!categoryKey) continue;
+    const ledger = yearData.accountLedgers[acct.id];
+    if (!ledger) continue;
+    const value = ledger.endingValue;
+    if (value <= 0) continue;
+    for (const owner of acct.owners) {
+      const sliceValue = value * owner.percent;
+      if (sliceValue <= 0) continue;
+      let inEstateValue = 0;
+      if (owner.kind === "family_member") {
+        inEstateValue = sliceValue;
+      } else {
+        const e = entitiesById.get(owner.entityId);
+        if (!e) continue;
+        if (e.entityType === "trust") {
+          if (!e.isIrrevocable) inEstateValue = sliceValue;
+        } else if (isBusinessEntity(e)) {
+          inEstateValue = sliceValue * familyOwnedFraction(e);
+        }
+      }
+      if (inEstateValue > 0) {
+        byCategory.set(categoryKey, (byCategory.get(categoryKey) ?? 0) + inEstateValue);
+      }
+    }
+  }
+
+  for (const e of entities) {
+    if (!isBusinessEntity(e)) continue;
+    const flat = e.value ?? 0;
+    if (flat <= 0) continue;
+    const inEstate = flat * familyOwnedFraction(e);
+    if (inEstate > 0) {
+      byCategory.set("business", (byCategory.get("business") ?? 0) + inEstate);
+    }
+  }
+
+  for (const liab of liabilities) {
+    const balance = yearData.liabilityBalancesBoY[liab.id] ?? 0;
+    if (balance <= 0) continue;
+    for (const owner of liab.owners) {
+      const sliceBalance = balance * owner.percent;
+      if (sliceBalance <= 0) continue;
+      let inEstateBalance = 0;
+      if (owner.kind === "family_member") {
+        inEstateBalance = sliceBalance;
+      } else {
+        const e = entitiesById.get(owner.entityId);
+        if (!e) continue;
+        if (e.entityType === "trust") {
+          if (!e.isIrrevocable) inEstateBalance = sliceBalance;
+        } else if (isBusinessEntity(e)) {
+          inEstateBalance = sliceBalance * familyOwnedFraction(e);
+        }
+      }
+      totalLiabilities += inEstateBalance;
+    }
+  }
+
+  let totalAssets = 0;
+  for (const v of byCategory.values()) totalAssets += v;
+  return { totalAssets, totalLiabilities, byCategory };
+}
+
+function sumInEstateAssetsForYear(
+  input: BuildViewModelInput,
+  yearData: ProjectionYearLike,
+): number {
+  return computeYearTotals(input, yearData).totalAssets;
+}
+
+function sumInEstateLiabilitiesForYear(
+  input: BuildViewModelInput,
+  yearData: ProjectionYearLike,
+): number {
+  return computeYearTotals(input, yearData).totalLiabilities;
+}
+
+function sumCategoryForYear(
+  input: BuildViewModelInput,
+  yearData: ProjectionYearLike,
+  category: AssetCategoryKey,
+): number {
+  return computeYearTotals(input, yearData).byCategory.get(category) ?? 0;
+}
+

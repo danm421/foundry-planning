@@ -2,15 +2,11 @@
 
 import type { BalanceSheetViewModel, AssetRow, AssetCategoryGroup } from "./view-model";
 import { SCREEN_THEME, CATEGORY_HEX } from "./tokens";
-import type { OwnerNames } from "@/lib/owner-labels";
-import { individualOwnerLabel } from "@/lib/owner-labels";
 import type { YoyResult } from "./yoy";
 
 interface AssetsPanelProps {
   viewModel: BalanceSheetViewModel;
-  ownerNames: OwnerNames;
   showOwnerChips: boolean;
-  entityLabelById: Map<string, string>;
 }
 
 function formatCurrency(value: number): string {
@@ -33,23 +29,12 @@ function YoyBadge({ yoy }: { yoy: YoyResult | null }) {
   );
 }
 
-function OwnerChip({
-  owner,
-  ownerEntityId,
-  names,
-  entityLabelById,
-}: {
-  owner: AssetRow["owner"];
-  ownerEntityId: string | null;
-  names: OwnerNames;
-  entityLabelById: Map<string, string>;
-}) {
-  const label = ownerEntityId
-    ? entityLabelById.get(ownerEntityId) ?? "Entity"
-    : individualOwnerLabel(owner, names);
+function OwnerChip({ row }: { row: AssetRow }) {
+  const showPercent = row.ownerPercent < 0.9999;
   return (
     <span className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-300">
-      {label}
+      {row.ownerLabel}
+      {showPercent && ` (${Math.round(row.ownerPercent * 100)}%)`}
     </span>
   );
 }
@@ -57,13 +42,9 @@ function OwnerChip({
 function AccountRow({
   row,
   showOwnerChip,
-  names,
-  entityLabelById,
 }: {
   row: AssetRow;
   showOwnerChip: boolean;
-  names: OwnerNames;
-  entityLabelById: Map<string, string>;
 }) {
   return (
     <div className="flex items-center justify-between border-b border-gray-800/60 py-1.5 last:border-b-0">
@@ -77,14 +58,15 @@ function AccountRow({
             M
           </span>
         )}
-        {showOwnerChip && (
-          <OwnerChip
-            owner={row.owner}
-            ownerEntityId={row.ownerEntityId}
-            names={names}
-            entityLabelById={entityLabelById}
-          />
+        {row.isFlatBusinessValue && (
+          <span
+            className="rounded border border-blue-800 bg-blue-950/40 px-1 text-xs font-medium uppercase text-blue-300"
+            title="Business interest valuation"
+          >
+            BIZ
+          </span>
         )}
+        {showOwnerChip && <OwnerChip row={row} />}
       </div>
       <span className="text-sm text-gray-200">{formatCurrency(row.value)}</span>
     </div>
@@ -94,13 +76,9 @@ function AccountRow({
 function CategoryCard({
   cat,
   showOwnerChips,
-  names,
-  entityLabelById,
 }: {
   cat: AssetCategoryGroup;
   showOwnerChips: boolean;
-  names: OwnerNames;
-  entityLabelById: Map<string, string>;
 }) {
   return (
     <div className={SCREEN_THEME.surface.panel}>
@@ -124,13 +102,7 @@ function CategoryCard({
       </div>
       <div className="px-4 pb-3 pt-1">
         {cat.rows.map((row) => (
-          <AccountRow
-            key={row.accountId}
-            row={row}
-            showOwnerChip={showOwnerChips}
-            names={names}
-            entityLabelById={entityLabelById}
-          />
+          <AccountRow key={row.rowKey} row={row} showOwnerChip={showOwnerChips} />
         ))}
       </div>
     </div>
@@ -139,9 +111,7 @@ function CategoryCard({
 
 export default function AssetsPanel({
   viewModel,
-  ownerNames,
   showOwnerChips,
-  entityLabelById,
 }: AssetsPanelProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -154,13 +124,7 @@ export default function AssetsPanel({
       )}
 
       {viewModel.assetCategories.map((cat) => (
-        <CategoryCard
-          key={cat.key}
-          cat={cat}
-          showOwnerChips={showOwnerChips}
-          names={ownerNames}
-          entityLabelById={entityLabelById}
-        />
+        <CategoryCard key={cat.key} cat={cat} showOwnerChips={showOwnerChips} />
       ))}
     </div>
   );

@@ -2,15 +2,11 @@
 
 import type { BalanceSheetViewModel, LiabilityRow } from "./view-model";
 import { SCREEN_THEME } from "./tokens";
-import type { OwnerNames } from "@/lib/owner-labels";
-import { individualOwnerLabel } from "@/lib/owner-labels";
 import type { YoyResult } from "./yoy";
 
 interface LiabilitiesPanelProps {
   viewModel: BalanceSheetViewModel;
-  ownerNames: OwnerNames;
   showOwnerChips: boolean;
-  entityLabelById: Map<string, string>;
 }
 
 function formatCurrency(value: number): string {
@@ -36,26 +32,19 @@ function YoyBadge({ yoy }: { yoy: YoyResult | null }) {
 function LiabilityRowView({
   row,
   showOwnerChip,
-  names,
-  entityLabelById,
 }: {
   row: LiabilityRow;
   showOwnerChip: boolean;
-  names: OwnerNames;
-  entityLabelById: Map<string, string>;
 }) {
-  const ownerLabel = row.ownerEntityId
-    ? entityLabelById.get(row.ownerEntityId) ?? "Entity"
-    : row.owner
-      ? individualOwnerLabel(row.owner, names)
-      : null;
+  const showPercent = row.ownerPercent < 0.9999;
   return (
     <div className="flex items-center justify-between border-b border-gray-800/60 py-1.5 last:border-b-0">
       <div className="flex items-center gap-2 text-sm text-gray-300">
         <span>{row.liabilityName}</span>
-        {showOwnerChip && ownerLabel && (
+        {showOwnerChip && row.ownerLabel && (
           <span className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-300">
-            {ownerLabel}
+            {row.ownerLabel}
+            {showPercent && ` (${Math.round(row.ownerPercent * 100)}%)`}
           </span>
         )}
       </div>
@@ -66,9 +55,7 @@ function LiabilityRowView({
 
 export default function LiabilitiesPanel({
   viewModel,
-  ownerNames,
   showOwnerChips,
-  entityLabelById,
 }: LiabilitiesPanelProps) {
   const hasRows = viewModel.liabilityRows.length > 0;
   return (
@@ -91,11 +78,9 @@ export default function LiabilitiesPanel({
           {hasRows ? (
             viewModel.liabilityRows.map((row) => (
               <LiabilityRowView
-                key={row.liabilityId}
+                key={row.rowKey}
                 row={row}
                 showOwnerChip={showOwnerChips}
-                names={ownerNames}
-                entityLabelById={entityLabelById}
               />
             ))
           ) : (

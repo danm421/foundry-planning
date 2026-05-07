@@ -183,10 +183,15 @@ export default function CenterColumn({
               </div>
               {viewModel.outOfEstateRows.map((row) => (
                 <div
-                  key={row.accountId}
+                  key={row.rowKey}
                   className="flex items-center justify-between border-b border-gray-800/60 py-1 last:border-b-0"
                 >
-                  <span className="text-sm text-gray-300">{row.accountName}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-300">{row.accountName}</span>
+                    <span className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-400">
+                      {row.ownerLabel}
+                    </span>
+                  </div>
                   <span className="text-sm text-gray-200">{formatCurrency(row.value)}</span>
                 </div>
               ))}
@@ -206,10 +211,17 @@ export default function CenterColumn({
               </div>
               {viewModel.outOfEstateLiabilityRows.map((row) => (
                 <div
-                  key={row.liabilityId}
+                  key={row.rowKey}
                   className="flex items-center justify-between border-b border-gray-800/60 py-1 last:border-b-0"
                 >
-                  <span className="text-sm text-gray-300">{row.liabilityName}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-300">{row.liabilityName}</span>
+                    {row.ownerLabel && (
+                      <span className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-400">
+                        {row.ownerLabel}
+                      </span>
+                    )}
+                  </div>
                   <span className="text-sm text-gray-200">
                     −{formatCurrency(row.balance)}
                   </span>

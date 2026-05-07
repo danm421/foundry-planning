@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { runProjection } from "@/engine/projection";
 import type { FamilyMember, ProjectionYear } from "@/engine/types";
 import type { AccountOwner } from "@/engine/ownership";
-import type { OwnerNames } from "@/lib/owner-labels";
 import type { OwnerDobs } from "./report-controls/age-helpers";
 import HeaderControls from "./balance-sheet-report/header-controls";
 import AssetsPanel from "./balance-sheet-report/assets-panel";
@@ -14,14 +13,12 @@ import CenterColumn from "./balance-sheet-report/center-column";
 import EntityBreakdownPanel from "./balance-sheet-report/entity-breakdown-panel";
 import { buildViewModel } from "./balance-sheet-report/view-model";
 import type { OwnershipView } from "./balance-sheet-report/ownership-filter";
-import { deriveLegacyOwnership } from "./balance-sheet-report/derive-ownership";
 
 interface EntityInfo { id: string; name: string; entityType: string }
 
 interface BalanceSheetReportViewProps {
   clientId: string;
   isMarried: boolean;
-  ownerNames: OwnerNames;
   ownerDobs: OwnerDobs;
   entities: EntityInfo[];
 }
@@ -39,6 +36,14 @@ interface ProjectionApiResponse {
     owners: AccountOwner[];
     linkedPropertyId?: string | null;
   }>;
+  entities?: Array<{
+    id: string;
+    name: string;
+    entityType?: string;
+    isIrrevocable?: boolean;
+    value?: number;
+    owners?: Array<{ familyMemberId: string; percent: number }>;
+  }>;
   familyMembers?: FamilyMember[];
   [key: string]: unknown;
 }
@@ -46,7 +51,6 @@ interface ProjectionApiResponse {
 export default function BalanceSheetReportView({
   clientId,
   isMarried,
-  ownerNames,
   ownerDobs,
   entities,
 }: BalanceSheetReportViewProps) {
@@ -88,45 +92,48 @@ export default function BalanceSheetReportView({
     load();
   }, [clientId, searchParams]);
 
-  // Bridge engine `owners[]` → legacy `{ owner, ownerEntityId }` shape that
-  // the balance-sheet view-model still consumes. See derive-ownership.ts.
-  const { mappedAccounts, mappedLiabilities, hasEntityAccounts } = useMemo(() => {
+  // Pass through `owners[]` directly — the slice-based view-model handles
+  // routing each owner's share to in-estate, OOE, or per-entity buckets.
+  const { mappedAccounts, mappedLiabilities, hasEntityAccounts, fullEntities, mappedFamilyMembers } = useMemo(() => {
     if (!apiData) {
-      return { mappedAccounts: [], mappedLiabilities: [], hasEntityAccounts: false };
+      return { mappedAccounts: [], mappedLiabilities: [], hasEntityAccounts: false, fullEntities: entities, mappedFamilyMembers: [] };
     }
-    const roleById = new Map<string, FamilyMember["role"]>(
-      (apiData.familyMembers ?? []).map((fm) => [fm.id, fm.role]),
-    );
-    const accounts = apiData.accounts.map((a) => {
-      const { owner, ownerEntityId } = deriveLegacyOwnership(a.owners ?? [], roleById);
+    const accounts = apiData.accounts.map((a) => ({
+      id: a.id,
+      name: a.name,
+      category: a.category,
+      owners: a.owners ?? [],
+    }));
+    const liabilities = apiData.liabilities.map((l) => ({
+      id: l.id,
+      name: l.name,
+      owners: l.owners ?? [],
+      linkedPropertyId: l.linkedPropertyId ?? null,
+    }));
+    // Merge entity metadata from the page (id/name/entityType) with the
+    // dynamic fields (value, owners, isIrrevocable) emitted by the API.
+    const apiEntities = apiData.entities ?? [];
+    const merged = entities.map((e) => {
+      const fromApi = apiEntities.find((x) => x.id === e.id);
       return {
-        id: a.id,
-        name: a.name,
-        category: a.category,
-        owner: owner ?? "client",
-        ownerEntityId,
-      };
-    });
-    const liabilities = apiData.liabilities.map((l) => {
-      const { owner, ownerEntityId } = deriveLegacyOwnership(l.owners ?? [], roleById);
-      return {
-        id: l.id,
-        name: l.name,
-        owner,
-        ownerEntityId,
-        linkedPropertyId: l.linkedPropertyId ?? null,
+        id: e.id,
+        name: e.name,
+        entityType: e.entityType,
+        isIrrevocable: fromApi?.isIrrevocable,
+        value: fromApi?.value,
+        owners: fromApi?.owners,
       };
     });
     return {
       mappedAccounts: accounts,
       mappedLiabilities: liabilities,
-      hasEntityAccounts: accounts.some((a) => a.ownerEntityId != null),
+      hasEntityAccounts:
+        accounts.some((a) => a.owners.some((o) => o.kind === "entity")) ||
+        merged.some((e) => (e.value ?? 0) > 0),
+      fullEntities: merged,
+      mappedFamilyMembers: apiData.familyMembers ?? [],
     };
-  }, [apiData]);
-
-  const entityLabelById = useMemo(() => {
-    return new Map(entities.map((e) => [e.id, e.name]));
-  }, [entities]);
+  }, [apiData, entities]);
 
   const viewModel = useMemo(() => {
     if (!apiData || selectedAsOf == null || projectionYears.length === 0) return null;
@@ -136,13 +143,14 @@ export default function BalanceSheetReportView({
     return buildViewModel({
       accounts: mappedAccounts,
       liabilities: mappedLiabilities,
-      entities,
+      entities: fullEntities,
+      familyMembers: mappedFamilyMembers,
       projectionYears,
       selectedYear,
       view,
       asOfMode,
     });
-  }, [apiData, mappedAccounts, mappedLiabilities, entities, projectionYears, selectedAsOf, view]);
+  }, [apiData, mappedAccounts, mappedLiabilities, fullEntities, mappedFamilyMembers, projectionYears, selectedAsOf, view]);
 
   async function handleExportPdf() {
     if (!viewModel || !apiData || selectedAsOf == null) return;
@@ -225,9 +233,7 @@ export default function BalanceSheetReportView({
         <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr_1fr]">
           <AssetsPanel
             viewModel={viewModel}
-            ownerNames={ownerNames}
             showOwnerChips={isMarried || hasEntityAccounts}
-            entityLabelById={entityLabelById}
           />
           <CenterColumn
             viewModel={viewModel}
@@ -236,9 +242,7 @@ export default function BalanceSheetReportView({
           />
           <LiabilitiesPanel
             viewModel={viewModel}
-            ownerNames={ownerNames}
             showOwnerChips={isMarried || hasEntityAccounts}
-            entityLabelById={entityLabelById}
           />
         </div>
       )}

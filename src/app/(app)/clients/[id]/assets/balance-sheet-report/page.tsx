@@ -33,11 +33,6 @@ export default async function BalanceSheetReportPage({ params }: PageProps) {
     client.filingStatus === "married_joint" ||
     client.filingStatus === "married_separate";
 
-  const ownerNames = {
-    clientName: client.firstName ?? "Client",
-    spouseName: client.spouseName ?? null,
-  };
-
   const ownerDobs = {
     clientDob: client.dateOfBirth,
     spouseDob: client.spouseDob ?? null,
@@ -53,7 +48,6 @@ export default async function BalanceSheetReportPage({ params }: PageProps) {
     <BalanceSheetReportView
       clientId={id}
       isMarried={isMarried}
-      ownerNames={ownerNames}
       ownerDobs={ownerDobs}
       entities={entityInfos}
     />
