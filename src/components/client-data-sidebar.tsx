@@ -117,10 +117,10 @@ export default function ClientDataSidebar({ clientId }: ClientDataSidebarProps) 
       <Link
         key={tab.href}
         href={withScenario(href)}
-        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+        className={`flex items-center gap-3 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
           isActive
-            ? "bg-gray-800 text-gray-100"
-            : "text-gray-300 hover:bg-gray-800/50 hover:text-gray-200"
+            ? "border-accent bg-card-2 text-accent"
+            : "border-transparent text-gray-300 hover:bg-card-2 hover:text-gray-200"
         }`}
       >
         <span className={isActive ? "text-accent" : "text-gray-400"}>{tab.icon}</span>
