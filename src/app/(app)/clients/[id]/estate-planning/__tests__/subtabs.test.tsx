@@ -18,7 +18,7 @@ beforeEach(() => {
 });
 
 describe("EstatePlanningSubtabs", () => {
-  it("renders all sub-tabs in order: Planning, Estate Tax, Estate Transfer, Year-by-Year, Gift Tax", () => {
+  it("renders all sub-tabs in order: Planning, Estate Tax, Estate Transfer, Gift Tax", () => {
     vi.mocked(usePathname).mockReturnValue("/clients/c1/estate-planning");
     const { container } = render(<EstatePlanningSubtabs clientId="c1" />);
     const text = container.textContent ?? "";
@@ -26,7 +26,6 @@ describe("EstatePlanningSubtabs", () => {
       "Planning",
       "Estate Tax",
       "Estate Transfer",
-      "Year-by-Year",
       "Gift Tax",
     ];
     let last = -1;
@@ -41,12 +40,11 @@ describe("EstatePlanningSubtabs", () => {
     vi.mocked(usePathname).mockReturnValue("/clients/c1/estate-planning");
     const { container } = render(<EstatePlanningSubtabs clientId="c1" />);
     const links = Array.from(container.querySelectorAll("a"));
-    expect(links).toHaveLength(5);
+    expect(links).toHaveLength(4);
     expect(links[0].getAttribute("href")).toBe("/clients/c1/estate-planning");
     expect(links[1].getAttribute("href")).toBe("/clients/c1/estate-planning/estate-tax");
     expect(links[2].getAttribute("href")).toBe("/clients/c1/estate-planning/estate-transfer");
-    expect(links[3].getAttribute("href")).toBe("/clients/c1/estate-planning/yearly-estate");
-    expect(links[4].getAttribute("href")).toBe("/clients/c1/estate-planning/gift-tax");
+    expect(links[3].getAttribute("href")).toBe("/clients/c1/estate-planning/gift-tax");
   });
 
   it("marks Planning active on the exact /estate-planning path", () => {
@@ -72,7 +70,6 @@ describe("EstatePlanningSubtabs", () => {
   it.each([
     ["Estate Tax", "/clients/c1/estate-planning/estate-tax"],
     ["Estate Transfer", "/clients/c1/estate-planning/estate-transfer"],
-    ["Year-by-Year", "/clients/c1/estate-planning/yearly-estate"],
     ["Gift Tax", "/clients/c1/estate-planning/gift-tax"],
   ])("marks %s active when on its route", (label, path) => {
     vi.mocked(usePathname).mockReturnValue(path);

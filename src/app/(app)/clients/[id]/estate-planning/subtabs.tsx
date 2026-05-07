@@ -20,7 +20,6 @@ export default function EstatePlanningSubtabs({
     { label: "Planning", href: root, exact: true },
     { label: "Estate Tax", href: `${root}/estate-tax` },
     { label: "Estate Transfer", href: `${root}/estate-transfer` },
-    { label: "Year-by-Year", href: `${root}/yearly-estate` },
     { label: "Gift Tax", href: `${root}/gift-tax` },
   ];
 

@@ -3,7 +3,7 @@ import { clients } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
-import EstateTransferReportView from "@/components/estate-transfer-report-view";
+import EstateTransferTabbedView from "@/components/estate-transfer-tabbed-view";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -49,7 +49,7 @@ export default async function EstateTransferReportPage({ params }: PageProps) {
       : clientRetirementYear;
 
   return (
-    <EstateTransferReportView
+    <EstateTransferTabbedView
       clientId={id}
       isMarried={isMarried}
       ownerNames={ownerNames}
