@@ -436,46 +436,49 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   const inEstateSlicesByCategory = new Map<AssetCategoryKey, AssetRow[]>();
   const outOfEstateRows: AssetRow[] = [];
 
+  // Consolidated view aggregates business-entity slices into one row per
+  // entity under the Business category. The row's value rolls up the
+  // entity's flat valuation (in-estate share) plus its share of every
+  // account it holds — so a savings account owned 80% by Cooper / 20% by
+  // Smith LLC shows as Cooper $80k under Cash and as $20k folded into
+  // Smith LLC's Business row, not as a separate Cash row for the LLC.
+  interface BusinessAggregate {
+    entityName: string;
+    inEstate: number;
+    outOfEstate: number;
+  }
+  const businessAggregates = new Map<string, BusinessAggregate>();
+  function aggregateBusiness(entityId: string, entityName: string, inEstate: number, outOfEstate: number) {
+    const cur = businessAggregates.get(entityId) ?? { entityName, inEstate: 0, outOfEstate: 0 };
+    cur.inEstate += inEstate;
+    cur.outOfEstate += outOfEstate;
+    businessAggregates.set(entityId, cur);
+  }
+
   for (const slice of viewSlices) {
     const sliceRow: AssetRow = sliceToRow(slice);
-    let isInEstateForConsolidated: boolean;
-    if (view === "consolidated") {
-      if (slice.kind === "family") {
-        isInEstateForConsolidated = true;
-      } else {
-        // Entity slice: family-owned share is in-estate; residual is OOE.
-        // For trusts (revocable or irrevocable), familyShare === 1 by
-        // convention; revocable trust → in-estate, irrevocable → OOE.
-        isInEstateForConsolidated = slice.inEstate && slice.familyShare > 0;
-      }
-    } else if (view === "entities") {
-      isInEstateForConsolidated = true; // in entities view, all rows render under entity cards
-    } else {
-      isInEstateForConsolidated = true; // personal views — only family slices reach here
-    }
 
-    if (!isInEstateForConsolidated) {
+    // Entity slice that's fully out-of-estate (irrevocable trust, foundation,
+    // unknown entity) → OOE in consolidated view, or kept under entity card
+    // in entities view.
+    const isOutOfEstateSlice =
+      view === "consolidated" && slice.kind === "entity" && (!slice.inEstate || slice.familyShare === 0);
+    if (isOutOfEstateSlice) {
       outOfEstateRows.push(sliceRow);
       continue;
     }
 
-    // For consolidated view with a partially-family-owned business entity,
-    // split the slice: family-share to in-estate, residual to OOE.
-    if (
-      view === "consolidated" &&
-      slice.kind === "entity" &&
-      slice.inEstate &&
-      slice.familyShare < 1
-    ) {
-      const familyValue = slice.value * slice.familyShare;
-      const residualValue = slice.value - familyValue;
-      const inRow: AssetRow = { ...sliceRow, rowKey: `${sliceRow.rowKey}@in`, value: familyValue };
-      const outRow: AssetRow = { ...sliceRow, rowKey: `${sliceRow.rowKey}@oo`, value: residualValue };
-      const list = inEstateSlicesByCategory.get(slice.category) ?? [];
-      list.push(inRow);
-      inEstateSlicesByCategory.set(slice.category, list);
-      outOfEstateRows.push(outRow);
-      continue;
+    // Consolidated view: business-entity slices aggregate into the entity's
+    // Business row. Trust slices (revocable) keep their natural category.
+    if (view === "consolidated" && slice.kind === "entity") {
+      const entity = entitiesById.get(slice.entityId);
+      if (entity && isBusinessEntity(entity)) {
+        const inE = slice.value * slice.familyShare;
+        const out = slice.value - inE;
+        aggregateBusiness(slice.entityId, entity.name, inE, out);
+        continue;
+      }
+      // Revocable trust slice — falls through to category routing below.
     }
 
     const list = inEstateSlicesByCategory.get(slice.category) ?? [];
@@ -483,15 +486,15 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     inEstateSlicesByCategory.set(slice.category, list);
   }
 
-  // ── Add flat business-entity values as in-estate Business rows ──────────
+  // ── Fold flat business-entity valuations into the same buckets ──────────
 
   // The flat valuation surfaces:
-  //   • In the consolidated view: under the Business in-estate category
-  //     (proportional to family ownership) and as a residual OOE row.
-  //   • In the entities view: as a row under that entity's card.
-  //   • Personal views (client/spouse/joint): only when the family member
-  //     is one of the entity's owners. We attribute the slice to the
-  //     family member's role for chip display purposes.
+  //   • Consolidated view: combined with held-account slices into one row per
+  //     entity under the Business category. Out-of-estate residual emits its
+  //     own row in outOfEstateRows.
+  //   • Entities view: one row per entity card with its full flat value.
+  //   • Personal views: credited to each family member by their entity_owners
+  //     share so the Business category appears in their personal totals.
   for (const e of entities) {
     if (!isBusinessEntity(e)) continue;
     const flat = e.value ?? 0;
@@ -499,38 +502,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
     const familyShare = familyOwnedFraction(e);
 
     if (view === "consolidated") {
-      const inEstateValue = flat * familyShare;
-      const outValue = flat - inEstateValue;
-      if (inEstateValue > 0) {
-        const list = inEstateSlicesByCategory.get("business") ?? [];
-        list.push({
-          rowKey: `flat:${e.id}@in`,
-          accountId: e.id,
-          accountName: e.name,
-          owner: null,
-          ownerEntityId: e.id,
-          ownerPercent: familyShare,
-          ownerLabel: e.name,
-          value: inEstateValue,
-          hasLinkedMortgage: false,
-          isFlatBusinessValue: true,
-        });
-        inEstateSlicesByCategory.set("business", list);
-      }
-      if (outValue > 0) {
-        outOfEstateRows.push({
-          rowKey: `flat:${e.id}@oo`,
-          accountId: e.id,
-          accountName: e.name,
-          owner: null,
-          ownerEntityId: e.id,
-          ownerPercent: 1 - familyShare,
-          ownerLabel: e.name,
-          value: outValue,
-          hasLinkedMortgage: false,
-          isFlatBusinessValue: true,
-        });
-      }
+      aggregateBusiness(e.id, e.name, flat * familyShare, flat * (1 - familyShare));
     } else if (view === "entities") {
       const list = inEstateSlicesByCategory.get("business") ?? [];
       list.push({
@@ -571,6 +543,46 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
           isFlatBusinessValue: true,
         });
         inEstateSlicesByCategory.set("business", list);
+      }
+    }
+  }
+
+  // ── Emit one Business row per aggregated business entity (consolidated) ─
+
+  if (view === "consolidated") {
+    for (const [entityId, agg] of businessAggregates) {
+      if (agg.inEstate > 0) {
+        const list = inEstateSlicesByCategory.get("business") ?? [];
+        list.push({
+          rowKey: `biz:${entityId}@in`,
+          accountId: entityId,
+          accountName: agg.entityName,
+          owner: null,
+          ownerEntityId: entityId,
+          ownerPercent: 1,
+          ownerLabel: agg.entityName,
+          value: agg.inEstate,
+          hasLinkedMortgage: false,
+          // Aggregated row represents the business interest as a whole, not
+          // just the standalone flat valuation. The panel uses this flag to
+          // suppress the redundant entity-name chip on the row.
+          isFlatBusinessValue: true,
+        });
+        inEstateSlicesByCategory.set("business", list);
+      }
+      if (agg.outOfEstate > 0) {
+        outOfEstateRows.push({
+          rowKey: `biz:${entityId}@oo`,
+          accountId: entityId,
+          accountName: agg.entityName,
+          owner: null,
+          ownerEntityId: entityId,
+          ownerPercent: 1,
+          ownerLabel: agg.entityName,
+          value: agg.outOfEstate,
+          hasLinkedMortgage: false,
+          isFlatBusinessValue: true,
+        });
       }
     }
   }

@@ -174,8 +174,7 @@ describe("buildViewModel (business entity in estate)", () => {
     });
     const biz = vm.assetCategories.find((c) => c.key === "business");
     expect(biz?.total).toBe(2_000_000);
-    expect(biz?.rows[0].isFlatBusinessValue).toBe(true);
-    expect(biz?.rows[0].ownerLabel).toBe("Smith Family LLC");
+    expect(biz?.rows[0].accountName).toBe("Smith Family LLC");
   });
 
   it("partially family-owned business splits the flat value across in-estate and OOE", () => {
@@ -186,7 +185,7 @@ describe("buildViewModel (business entity in estate)", () => {
     expect(vm.outOfEstateRows.find((r) => r.accountId === "llc-1")?.value).toBe(800_000);
   });
 
-  it("an account owned by a family-owned LLC routes to in-estate under its category", () => {
+  it("rolls an account owned by a family-owned LLC into the LLC's Business row, not its category", () => {
     const llcAccount = {
       id: "a-llc-broker",
       name: "LLC Brokerage",
@@ -209,15 +208,19 @@ describe("buildViewModel (business entity in estate)", () => {
       ],
     };
     const vm = buildViewModel(inputWithLLC);
+    // Taxable category should not contain the LLC's brokerage as a separate row.
     const taxable = vm.assetCategories.find((c) => c.key === "taxable");
-    expect(taxable?.rows.find((r) => r.accountId === "a-llc-broker")?.value).toBe(500_000);
-    expect(taxable?.rows.find((r) => r.accountId === "a-llc-broker")?.ownerLabel).toBe("Smith Family LLC");
+    expect(taxable?.rows.find((r) => r.accountId === "a-llc-broker")).toBeUndefined();
+    // The LLC's Business row aggregates flat ($2M) + held account ($500k) = $2.5M.
+    const biz = vm.assetCategories.find((c) => c.key === "business");
+    const llc = biz?.rows.find((r) => r.accountId === "llc-1");
+    expect(llc?.value).toBe(2_500_000);
     expect(vm.outOfEstateRows.find((r) => r.accountId === "a-llc-broker")).toBeUndefined();
   });
 });
 
 describe("buildViewModel (proportional ownership)", () => {
-  it("an 80/20 client/LLC split produces two slices on one account", () => {
+  it("an 80/20 client/LLC split puts the family slice in its category and rolls the LLC slice into the Business row", () => {
     const splitAccount = {
       id: "a-mix",
       name: "Mixed Account",
@@ -239,14 +242,17 @@ describe("buildViewModel (proportional ownership)", () => {
       ],
       liabilities: [],
     });
+    // Family slice ends up in Taxable as the only personal row.
     const taxable = vm.assetCategories.find((c) => c.key === "taxable")!;
-    expect(taxable.rows).toHaveLength(2);
-    const client = taxable.rows.find((r) => r.owner === "client")!;
-    const entity = taxable.rows.find((r) => r.ownerEntityId === "llc-1")!;
-    expect(client.value).toBe(80_000);
-    expect(client.ownerPercent).toBe(0.8);
-    expect(entity.value).toBe(20_000);
-    expect(entity.ownerPercent).toBe(0.2);
+    expect(taxable.rows).toHaveLength(1);
+    expect(taxable.rows[0].owner).toBe("client");
+    expect(taxable.rows[0].value).toBe(80_000);
+    expect(taxable.rows[0].ownerPercent).toBe(0.8);
+    // LLC's 20% slice rolls into a Business row.
+    const biz = vm.assetCategories.find((c) => c.key === "business")!;
+    expect(biz.rows).toHaveLength(1);
+    expect(biz.rows[0].accountName).toBe("Smith Family LLC");
+    expect(biz.rows[0].value).toBe(20_000);
   });
 });
 

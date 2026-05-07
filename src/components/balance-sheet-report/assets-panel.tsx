@@ -66,7 +66,9 @@ function AccountRow({
             BIZ
           </span>
         )}
-        {showOwnerChip && <OwnerChip row={row} />}
+        {/* Suppress the owner chip on aggregated business-interest rows —
+            the row label IS the entity name, so the chip is redundant. */}
+        {showOwnerChip && !row.isFlatBusinessValue && <OwnerChip row={row} />}
       </div>
       <span className="text-sm text-gray-200">{formatCurrency(row.value)}</span>
     </div>
