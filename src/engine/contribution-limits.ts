@@ -4,7 +4,7 @@ import type { TaxYearParameters } from "../lib/tax/types";
 
 /** 401(k) / 403(b) family of payroll-deduction retirement accounts. The IRS
  *  applies ONE combined employee deferral limit across all of these per person. */
-const DEFERRAL_SUB_TYPES = new Set(["401k", "roth_401k", "403b", "roth_403b"]);
+const DEFERRAL_SUB_TYPES = new Set(["401k", "403b"]);
 
 /** Traditional + Roth IRAs share ONE combined annual limit per person. */
 const IRA_SUB_TYPES = new Set(["traditional_ira", "roth_ira"]);

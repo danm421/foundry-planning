@@ -171,6 +171,7 @@ export interface AccountViewEngineFields {
   subType: string;
   value: string;
   basis: string;
+  rothValue: string;
   growthRate: string | null;
   rmdEnabled: boolean | null;
   ownerEntityId: string | null;
@@ -185,6 +186,7 @@ export function accountEngineToView(account: EngineAccount): AccountViewEngineFi
     subType: account.subType,
     value: String(account.value),
     basis: String(account.basis),
+    rothValue: String(account.rothValue ?? 0),
     growthRate: account.growthRate != null ? String(account.growthRate) : null,
     rmdEnabled: account.rmdEnabled ?? null,
     ownerEntityId: controllingEntity(account) ?? null,

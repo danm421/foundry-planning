@@ -9,9 +9,7 @@ import { supportsContributionCap } from "./contribution-cap-checkbox";
  *  excluded because they aren't payroll-deduction vehicles. */
 export const PERCENT_CONTRIB_SUB_TYPES = new Set([
   "401k",
-  "roth_401k",
   "403b",
-  "roth_403b",
   "other",
 ]);
 

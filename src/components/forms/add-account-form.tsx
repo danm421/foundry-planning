@@ -47,6 +47,8 @@ export interface AccountFormInitial {
   owner: string;
   value: string;
   basis: string;
+  /** For 401k/403b only — Roth-designated portion of `value`. */
+  rothValue?: string;
   // null means "use the default for this category" from plan_settings
   growthRate: string | null;
   rmdEnabled?: boolean | null;
@@ -130,7 +132,7 @@ interface AddAccountFormProps {
 const SUB_TYPE_BY_CATEGORY: Record<AccountCategory, string[]> = {
   taxable: ["brokerage", "trust", "other"],
   cash: ["savings", "checking", "other"],
-  retirement: ["traditional_ira", "roth_ira", "401k", "roth_401k", "403b", "roth_403b", "529", "other"],
+  retirement: ["traditional_ira", "roth_ira", "401k", "403b", "529", "other"],
   real_estate: ["primary_residence", "rental_property", "commercial_property"],
   business: ["sole_proprietorship", "partnership", "s_corp", "c_corp", "llc"],
   life_insurance: ["term", "whole_life", "universal_life", "variable_life"],
@@ -143,9 +145,7 @@ const SUB_TYPE_LABELS: Record<string, string> = {
   traditional_ira: "Traditional IRA",
   roth_ira: "Roth IRA",
   "401k": "401(k)",
-  roth_401k: "Roth 401(k)",
   "403b": "403(b)",
-  roth_403b: "Roth 403(b)",
   "529": "529 Plan",
   trust: "Trust",
   other: "Other",
@@ -172,7 +172,7 @@ const CATEGORY_LABELS: Record<AccountCategory, string> = {
   life_insurance: "Life Insurance",
 };
 
-const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "roth_401k", "403b", "roth_403b", "529"]);
+const RETIREMENT_SUB_TYPES = new Set(["traditional_ira", "roth_ira", "401k", "403b", "529"]);
 const RMD_ELIGIBLE_SUB_TYPES = new Set(["traditional_ira", "401k", "403b"]);
 
 const DEFAULT_NAME_BY_CATEGORY: Record<AccountCategory, string> = {
@@ -292,6 +292,11 @@ export default function AddAccountForm({
     initial?.basis != null ? String(initial.basis) : "",
   );
   const [userEditedBasis, setUserEditedBasis] = useState<boolean>(mode === "edit");
+  // 401k/403b only — Roth-designated portion of value. Defaults to 0
+  // (regular pre-tax 401k) and is independent from the basis field.
+  const [accountRothValue, setAccountRothValue] = useState<string>(
+    initial?.rothValue != null ? String(initial.rothValue) : "",
+  );
   const [activeTab, setActiveTab] = useState<"details" | "savings" | "realization" | "asset_mix" | "rmd" | "beneficiaries">(
     initialTab ?? "details",
   );
@@ -418,7 +423,6 @@ export default function AddAccountForm({
       subType === "401k" ||
       subType === "403b" ||
       subType === "roth_ira" ||
-      subType === "roth_401k" ||
       subType === "529");
 
   // Growth rate as percent for the input (stored as decimal fraction).
@@ -468,13 +472,22 @@ export default function AddAccountForm({
       return v !== "" && v != null ? String(Number(v) / 100) : null;
     };
 
+    const isMixedDeferralForBody =
+      (data.get("category") as string) === "retirement" &&
+      ((data.get("subType") as string) === "401k" ||
+        (data.get("subType") as string) === "403b");
     const accountBody = {
       name: data.get("name") as string,
       category: data.get("category") as string,
       subType: data.get("subType") as string,
       owners,
       value: data.get("value") as string,
-      basis: data.get("basis") as string,
+      // Cost basis is meaningless for 401k/403b; force 0 so any leftover
+      // pre-migration value can't influence engine math.
+      basis: isMixedDeferralForBody ? "0" : (data.get("basis") as string),
+      rothValue: isMixedDeferralForBody
+        ? ((data.get("rothValue") as string) || "0")
+        : "0",
       growthRate,
       rmdEnabled,
       priorYearEndValue: rmdEnabled && priorYearEndValue !== "" ? priorYearEndValue : null,
@@ -786,6 +799,16 @@ export default function AddAccountForm({
                   const newSub = e.target.value;
                   setSubType(newSub);
                   setRmdEnabled(RMD_ELIGIBLE_SUB_TYPES.has(newSub));
+                  // Trad IRA default basis is 0 unless the advisor has
+                  // already typed a value — flips back to mirroring on
+                  // other subtypes.
+                  if (!userEditedBasis) {
+                    if (newSub === "traditional_ira") {
+                      setAccountBasis("0");
+                    } else {
+                      setAccountBasis(accountValue);
+                    }
+                  }
                 }}
                 className={selectClassName}
               >
@@ -817,27 +840,53 @@ export default function AddAccountForm({
                 value={accountValue}
                 onChange={(raw) => {
                   setAccountValue(raw);
-                  if (!userEditedBasis) setAccountBasis(raw);
+                  // Auto-mirror basis from value for plain non-retirement
+                  // accounts. Traditional IRAs almost always have $0 after-
+                  // tax basis (Form 8606 tracks contributions explicitly),
+                  // so they default to 0 — advisor opts in to a non-zero
+                  // basis on accounts with prior nondeductible contributions.
+                  if (!userEditedBasis && subType !== "traditional_ira") {
+                    setAccountBasis(raw);
+                  }
                 }}
                 className={inputClassName}
               />
             </div>
 
-            <div>
-              <label className={fieldLabelClassName} htmlFor="basis">
-                Cost Basis ($)
-              </label>
-              <CurrencyInput
-                id="basis"
-                name="basis"
-                value={accountBasis}
-                onChange={(raw) => {
-                  setAccountBasis(raw);
-                  setUserEditedBasis(true);
-                }}
-                className={inputClassName}
-              />
-            </div>
+            {category === "retirement" && (subType === "401k" || subType === "403b") ? (
+              <div>
+                <label className={fieldLabelClassName} htmlFor="rothValue">
+                  Roth Value ($)
+                </label>
+                <CurrencyInput
+                  id="rothValue"
+                  name="rothValue"
+                  value={accountRothValue}
+                  onChange={(raw) => setAccountRothValue(raw)}
+                  className={inputClassName}
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Portion of the balance designated as Roth. Grows with the
+                  account and is excluded from tax on withdrawal.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label className={fieldLabelClassName} htmlFor="basis">
+                  Cost Basis ($)
+                </label>
+                <CurrencyInput
+                  id="basis"
+                  name="basis"
+                  value={accountBasis}
+                  onChange={(raw) => {
+                    setAccountBasis(raw);
+                    setUserEditedBasis(true);
+                  }}
+                  className={inputClassName}
+                />
+              </div>
+            )}
 
             <div className={`col-span-2 grid gap-4 ${category === "real_estate" ? "grid-cols-3" : "grid-cols-2"}`}>
               {isInvestable ? (

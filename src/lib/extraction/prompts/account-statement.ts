@@ -9,7 +9,7 @@ Return a JSON object with this exact structure:
     {
       "name": "Account name or description (e.g. 'Fidelity Brokerage - Joint', 'Schwab IRA')",
       "category": "one of: taxable, cash, retirement, real_estate, business, life_insurance",
-      "subType": "one of: brokerage, savings, checking, traditional_ira, roth_ira, 401k, roth_401k, 529, trust, other",
+      "subType": "one of: brokerage, savings, checking, traditional_ira, roth_ira, 401k, 403b, 529, trust, other",
       "owner": "one of: client, spouse, joint (infer from account title or registration)",
       "value": 0,
       "basis": 0,

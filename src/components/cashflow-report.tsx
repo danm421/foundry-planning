@@ -267,6 +267,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   // resolves (chart falls back to a plain blue bar in the meantime).
   const [baseYears, setBaseYears] = useState<ProjectionYear[] | null>(null);
   const [accountNames, setAccountNames] = useState<Record<string, string>>({});
+  const [accountSubTypes, setAccountSubTypes] = useState<Record<string, string>>({});
   const [clientData, setClientData] = useState<ClientData | null>(null);
   const router = useRouter();
   const pathname = usePathname();
@@ -346,10 +347,13 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
         // Build account name lookup
         const names: Record<string, string> = {};
+        const subTypes: Record<string, string> = {};
         for (const acc of data.accounts) {
           names[acc.id] = acc.name;
+          subTypes[acc.id] = acc.subType;
         }
         setAccountNames(names);
+        setAccountSubTypes(subTypes);
         setClientData(data);
 
         // Run projection client-side
@@ -2117,31 +2121,55 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-              <div className="flex items-center justify-between rounded-md bg-gray-800/60 px-4 py-3">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Beginning</p>
-                  <p className="text-sm font-semibold tabular-nums text-gray-200">
-                    {fmtNum(ledgerModal.ledger.beginningValue)}
-                  </p>
-                  {(ledgerModal.ledger.basisBoY ?? 0) > 0 && (
-                    <p className="mt-0.5 text-xs tabular-nums text-gray-400">
-                      Basis {fmtNum(ledgerModal.ledger.basisBoY!)}
-                    </p>
-                  )}
-                </div>
-                <div className="text-gray-600">→</div>
-                <div className="text-right">
-                  <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Ending</p>
-                  <p className="text-sm font-semibold tabular-nums text-gray-100">
-                    {fmtNum(ledgerModal.ledger.endingValue)}
-                  </p>
-                  {(ledgerModal.ledger.basisEoY ?? 0) > 0 && (
-                    <p className="mt-0.5 text-xs tabular-nums text-gray-400">
-                      Basis {fmtNum(ledgerModal.ledger.basisEoY!)}
-                    </p>
-                  )}
-                </div>
-              </div>
+              {(() => {
+                const subType = accountSubTypes[ledgerModal.accountId];
+                const isMixedDeferral = subType === "401k" || subType === "403b";
+                const showRothValueBoY =
+                  isMixedDeferral && (ledgerModal.ledger.rothValueBoY ?? 0) > 0;
+                const showRothValueEoY =
+                  isMixedDeferral && (ledgerModal.ledger.rothValueEoY ?? 0) > 0;
+                const showBasisBoY =
+                  !isMixedDeferral && (ledgerModal.ledger.basisBoY ?? 0) > 0;
+                const showBasisEoY =
+                  !isMixedDeferral && (ledgerModal.ledger.basisEoY ?? 0) > 0;
+                return (
+                  <div className="flex items-center justify-between rounded-md bg-gray-800/60 px-4 py-3">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Beginning</p>
+                      <p className="text-sm font-semibold tabular-nums text-gray-200">
+                        {fmtNum(ledgerModal.ledger.beginningValue)}
+                      </p>
+                      {showBasisBoY && (
+                        <p className="mt-0.5 text-xs tabular-nums text-gray-400">
+                          Basis {fmtNum(ledgerModal.ledger.basisBoY!)}
+                        </p>
+                      )}
+                      {showRothValueBoY && (
+                        <p className="mt-0.5 text-xs tabular-nums text-gray-400">
+                          Roth {fmtNum(ledgerModal.ledger.rothValueBoY!)}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-gray-600">→</div>
+                    <div className="text-right">
+                      <p className="text-xs font-medium uppercase tracking-wider text-gray-400">Ending</p>
+                      <p className="text-sm font-semibold tabular-nums text-gray-100">
+                        {fmtNum(ledgerModal.ledger.endingValue)}
+                      </p>
+                      {showBasisEoY && (
+                        <p className="mt-0.5 text-xs tabular-nums text-gray-400">
+                          Basis {fmtNum(ledgerModal.ledger.basisEoY!)}
+                        </p>
+                      )}
+                      {showRothValueEoY && (
+                        <p className="mt-0.5 text-xs tabular-nums text-gray-400">
+                          Roth {fmtNum(ledgerModal.ledger.rothValueEoY!)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">

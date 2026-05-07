@@ -53,9 +53,7 @@ export const accountSubTypeEnum = pgEnum("account_sub_type", [
   "traditional_ira",
   "roth_ira",
   "401k",
-  "roth_401k",
   "403b",
-  "roth_403b",
   "529",
   "trust",
   "other",
@@ -782,6 +780,11 @@ export const accounts = pgTable("accounts", {
   insuredPerson: insuredPersonEnum("insured_person"),
   value: decimal("value", { precision: 15, scale: 2 }).notNull().default("0"),
   basis: decimal("basis", { precision: 15, scale: 2 }).notNull().default("0"),
+  // For 401k / 403b accounts only: the Roth-designated portion of `value`.
+  // Grows at the account's growth rate alongside the rest of the balance and
+  // comes out tax-free on withdrawal / Roth conversion (pro-rata). Defaults
+  // to 0 — a plain pre-tax 401(k). Ignored for non-401k/403b subtypes.
+  rothValue: decimal("roth_value", { precision: 15, scale: 2 }).notNull().default("0"),
   // Null means: inherit the default for this category from plan_settings.
   growthRate: decimal("growth_rate", { precision: 5, scale: 4 }),
   rmdEnabled: boolean("rmd_enabled").notNull().default(false),

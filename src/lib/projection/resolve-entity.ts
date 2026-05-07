@@ -39,6 +39,7 @@ type RawAccount = {
   subType: string;
   value: string | number;
   basis: string | number;
+  rothValue?: string | number | null;
   growthSource: string | null;
   growthRate: string | number | null;
   turnoverPct: string | null;
@@ -145,6 +146,7 @@ export function resolveAccountFromRaw(
     subType: raw.subType,
     value: n(raw.value),
     basis: n(raw.basis),
+    rothValue: raw.rothValue != null ? n(raw.rothValue) : 0,
     growthRate,
     rmdEnabled: raw.rmdEnabled,
     priorYearEndValue: nNullable(raw.priorYearEndValue),

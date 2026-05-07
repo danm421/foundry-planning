@@ -9,7 +9,10 @@ export function taxTreatmentTag(account: {
   const { category, subType } = account;
   switch (category) {
     case "retirement":
-      return subType === "roth_ira" || subType === "roth_401k" ? "FREE" : "DEF";
+      // Mixed 401k/403b accounts (with rothValue) still classify as DEF here
+      // because the tag is per-account; the Roth-designated slice is too
+      // granular to surface in the estate-planning rollup.
+      return subType === "roth_ira" ? "FREE" : "DEF";
     case "taxable":
     case "cash":
       return "TAX";

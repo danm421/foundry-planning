@@ -103,8 +103,8 @@ describe("taxTreatmentTag", () => {
   it("maps retirement + roth_ira subType → FREE", () => {
     expect(taxTreatmentTag({ category: "retirement", subType: "roth_ira" })).toBe("FREE");
   });
-  it("maps retirement + roth_401k subType → FREE", () => {
-    expect(taxTreatmentTag({ category: "retirement", subType: "roth_401k" })).toBe("FREE");
+  it("maps retirement + 401k subType → DEF (mixed pre-tax/Roth)", () => {
+    expect(taxTreatmentTag({ category: "retirement", subType: "401k" })).toBe("DEF");
   });
   it("maps cash → TAX (interest is taxable)", () => {
     expect(taxTreatmentTag({ category: "cash" })).toBe("TAX");

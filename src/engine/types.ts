@@ -399,6 +399,14 @@ export interface Account {
   subType: string;
   value: number;
   basis: number;
+  /**
+   * For 401k/403b accounts only: the Roth-designated portion of `value`.
+   * Grows proportionally with the account and is excluded from ordinary-income
+   * tax on withdrawal / Roth conversion (pro-rata). Optional — undefined or
+   * 0 means a regular pre-tax 401k/403b. Always 0 for non-401k/403b
+   * subtypes (the engine ignores it there).
+   */
+  rothValue?: number;
   growthRate: number;
   rmdEnabled: boolean;
   /**
@@ -877,6 +885,14 @@ export interface AccountLedger {
    * contributions, and Roth conversions. Excludes any death-event basis
    * step-up — those land on the next year's BoY. */
   basisEoY?: number;
+  /** For 401k/403b only: Roth-designated portion of the balance at the
+   * start of the year. The cash-flow ledger renders this in place of
+   * basis for those subtypes. */
+  rothValueBoY?: number;
+  /** For 401k/403b only: Roth-designated portion of the balance at the
+   * end of the year, after growth, contributions, withdrawals, and any
+   * Roth conversions out have settled. */
+  rothValueEoY?: number;
   /**
    * Itemized entries for everything that happened in this account this year,
    * in the order it was applied. Amounts are signed: positive = inflow, negative = outflow.

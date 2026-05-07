@@ -35,7 +35,7 @@ export type AccountSubType =
   | "traditional_ira"
   | "roth_ira"
   | "401k"
-  | "roth_401k"
+  | "403b"
   | "529"
   | "trust"
   | "other"

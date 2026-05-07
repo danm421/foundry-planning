@@ -58,7 +58,7 @@ interface AddAssetTransactionFormProps {
 const SUB_TYPE_BY_CATEGORY: Record<AssetCategory, string[]> = {
   taxable: ["brokerage", "trust", "other"],
   cash: ["savings", "checking", "other"],
-  retirement: ["traditional_ira", "roth_ira", "401k", "roth_401k", "529", "trust", "other"],
+  retirement: ["traditional_ira", "roth_ira", "401k", "403b", "529", "trust", "other"],
   real_estate: ["primary_residence", "rental_property", "commercial_property"],
   business: ["sole_proprietorship", "partnership", "s_corp", "c_corp", "llc"],
   life_insurance: ["term", "whole_life", "universal_life", "variable_life"],
@@ -80,7 +80,7 @@ const SUB_TYPE_LABELS: Record<string, string> = {
   traditional_ira: "Traditional IRA",
   roth_ira: "Roth IRA",
   "401k": "401(k)",
-  roth_401k: "Roth 401(k)",
+  "403b": "403(b)",
   "529": "529 Plan",
   trust: "Trust",
   other: "Other",

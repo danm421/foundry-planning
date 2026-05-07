@@ -105,8 +105,8 @@ function formatCurrency(value: string | number): string {
   }).format(num);
 }
 
-const ROTH_SUB_TYPES = new Set(["roth_ira", "roth_401k"]);
-const TAX_DEFERRED_SUB_TYPES = new Set(["traditional_ira", "401k"]);
+const ROTH_SUB_TYPES = new Set(["roth_ira"]);
+const TAX_DEFERRED_SUB_TYPES = new Set(["traditional_ira", "401k", "403b"]);
 
 type TaxClassification =
   | "roth_conversion"

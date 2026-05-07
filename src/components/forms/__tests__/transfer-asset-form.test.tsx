@@ -64,7 +64,7 @@ describe("TransferAssetForm", () => {
         makeAccount({ id: "acc-ira", name: "Traditional IRA", subType: "traditional_ira" }),
         makeAccount({ id: "acc-roth", name: "Roth IRA", subType: "roth_ira" }),
         makeAccount({ id: "acc-401k", name: "401k Plan", subType: "401k" }),
-        makeAccount({ id: "acc-roth401k", name: "Roth 401k", subType: "roth_401k" }),
+        makeAccount({ id: "acc-403b", name: "403b Plan", subType: "403b" }),
         makeAccount({ id: "acc-taxable", name: "Brokerage", subType: "taxable" }),
       ],
     };
@@ -73,7 +73,7 @@ describe("TransferAssetForm", () => {
     expect(screen.queryByRole("option", { name: /Traditional IRA/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /Roth IRA/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /401k Plan/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: /Roth 401k/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /403b Plan/i })).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: /Brokerage/i })).toBeInTheDocument();
   });
 

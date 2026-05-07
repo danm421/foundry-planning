@@ -8,8 +8,8 @@ import MilestoneYearPicker from "@/components/milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import type { RothConversionType } from "@/engine/types";
 
-const ROTH_SUBTYPES = new Set(["roth_ira", "roth_401k"]);
-const TAX_DEFERRED_SUBTYPES = new Set(["traditional_ira", "401k", "sep_ira", "simple_ira"]);
+const ROTH_SUBTYPES = new Set(["roth_ira"]);
+const TAX_DEFERRED_SUBTYPES = new Set(["traditional_ira", "401k", "403b", "sep_ira", "simple_ira"]);
 
 const INPUT_CLASS =
   "mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent";

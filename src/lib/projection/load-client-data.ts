@@ -527,6 +527,7 @@ export const loadClientDataWithContext = cache(
           subType: a.subType,
           value: a.value,
           basis: a.basis,
+          rothValue: a.rothValue,
           growthSource: a.growthSource,
           growthRate: a.growthRate,
           turnoverPct: a.turnoverPct,

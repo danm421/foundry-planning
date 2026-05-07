@@ -9,9 +9,7 @@ import { PercentInput } from "@/components/percent-input";
  *  add-account-form. */
 export const EMPLOYER_MATCH_SUB_TYPES = new Set([
   "401k",
-  "roth_401k",
   "403b",
-  "roth_403b",
   "other",
 ]);
 

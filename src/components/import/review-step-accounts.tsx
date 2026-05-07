@@ -31,7 +31,7 @@ const SUB_TYPE_OPTIONS: { value: AccountSubType; label: string }[] = [
   { value: "traditional_ira", label: "Traditional IRA" },
   { value: "roth_ira", label: "Roth IRA" },
   { value: "401k", label: "401(k)" },
-  { value: "roth_401k", label: "Roth 401(k)" },
+  { value: "403b", label: "403(b)" },
   { value: "529", label: "529 Plan" },
   { value: "trust", label: "Trust" },
   { value: "other", label: "Other" },

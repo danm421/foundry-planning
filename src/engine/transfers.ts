@@ -11,6 +11,12 @@ export interface TransfersInput {
   accounts: Account[];
   accountBalances: Record<string, number>;
   basisMap: Record<string, number>;
+  /** Mutable. For 401k/403b sources the Roth-designated portion of the
+   *  source decrements pro-rata; if the target is also 401k/403b that share
+   *  carries over. Roth IRA destinations gain after-tax basis on Roth
+   *  conversions (handled in roth-conversions.ts; transfers don't currently
+   *  surface as Roth conversions). */
+  rothValueMap?: Record<string, number>;
   accountLedgers: Record<string, AccountLedger>;
   year: number;
   ownerAges: { client: number; spouse?: number };
@@ -43,7 +49,7 @@ export interface TransfersResult {
  * Transfers occur after annual growth has been applied but before RMDs.
  */
 export function applyTransfers(input: TransfersInput): TransfersResult {
-  const { transfers, accounts, accountBalances, basisMap, accountLedgers, year, ownerAges, spouseFamilyMemberId } = input;
+  const { transfers, accounts, accountBalances, basisMap, rothValueMap, accountLedgers, year, ownerAges, spouseFamilyMemberId } = input;
 
   const result: TransfersResult = {
     taxableOrdinaryIncome: 0,
@@ -87,6 +93,7 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
       amount: actualAmount,
       sourceAccountValue: sourceBalance,
       sourceAccountBasis: basisMap[transfer.sourceAccountId] ?? 0,
+      sourceRothValue: rothValueMap?.[transfer.sourceAccountId] ?? 0,
       allTraditionalIraBasis,
       allTraditionalIraBalance,
       ownerAge,
@@ -99,6 +106,22 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
 
     // ── Update basis map (proportional basis moves with the transfer) ────────
     _updateBasis(transfer.sourceAccountId, transfer.targetAccountId, actualAmount, sourceBalance, basisMap);
+
+    // ── Update rothValue map ─────────────────────────────────────────────────
+    // Pro-rata Roth slice leaves a 401k/403b source. If the target is also
+    // 401k/403b, that share carries over so the Roth ratio survives an
+    // intra-deferral rollover. Cross-type targets just drop the Roth slice
+    // (it's already accounted for in tax treatment).
+    if (rothValueMap) {
+      _updateRothValue(
+        transfer.sourceAccountId,
+        transfer.targetAccountId,
+        targetAccount.subType,
+        actualAmount,
+        sourceBalance,
+        rothValueMap,
+      );
+    }
 
     // ── Update ledgers ───────────────────────────────────────────────────────
     _updateLedgers(transfer, actualAmount, taxResult.label, accountLedgers);
@@ -209,6 +232,28 @@ function _updateBasis(
 
   basisMap[sourceId] = sourceBasis - basisMoved;
   basisMap[targetId] = (basisMap[targetId] ?? 0) + basisMoved;
+}
+
+/**
+ * Pro-rata Roth-value movement when a transfer pulls from a 401k/403b source.
+ * Drops the moved share when the target isn't a 401k/403b account.
+ */
+function _updateRothValue(
+  sourceId: string,
+  targetId: string,
+  targetSubType: string,
+  amount: number,
+  sourceBalanceBefore: number,
+  rothValueMap: Record<string, number>,
+): void {
+  const sourceRoth = rothValueMap[sourceId] ?? 0;
+  if (sourceRoth <= 0 || sourceBalanceBefore <= 0) return;
+  const fractionMoved = amount / sourceBalanceBefore;
+  const rothMoved = sourceRoth * fractionMoved;
+  rothValueMap[sourceId] = Math.max(0, sourceRoth - rothMoved);
+  if (targetSubType === "401k" || targetSubType === "403b") {
+    rothValueMap[targetId] = (rothValueMap[targetId] ?? 0) + rothMoved;
+  }
 }
 
 /**

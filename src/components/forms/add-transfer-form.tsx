@@ -48,8 +48,8 @@ function getTransferTaxLabel(
   targetCategory: string,
   targetSubType: string,
 ): { label: string; color: string } {
-  const taxDeferred = ["traditional_ira", "401k"];
-  const roth = ["roth_ira", "roth_401k"];
+  const taxDeferred = ["traditional_ira", "401k", "403b"];
+  const roth = ["roth_ira"];
 
   if (sourceCategory === "retirement" && targetCategory === "retirement") {
     if (taxDeferred.includes(sourceSubType) && roth.includes(targetSubType)) {

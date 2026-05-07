@@ -84,6 +84,7 @@ export async function POST(
 
     const value = parseFloat(target.value);
     const basis = parseFloat(target.basis);
+    const rothValue = parseFloat(target.rothValue ?? "0");
     // Round client share first, then derive spouse via subtraction so that
     // clientValueRounded + spouseValueRounded always equals the original value
     // to the penny. Symmetric multiplication + independent toFixed() can drift ±$0.01.
@@ -91,6 +92,8 @@ export async function POST(
     const spouseValueRounded = +(value - clientValueRounded).toFixed(2);
     const clientBasisRounded = +(basis * clientShare).toFixed(2);
     const spouseBasisRounded = +(basis - clientBasisRounded).toFixed(2);
+    const clientRothValueRounded = +(rothValue * clientShare).toFixed(2);
+    const spouseRothValueRounded = +(rothValue - clientRothValueRounded).toFixed(2);
 
     const snapshot = await toAccountSnapshot(target);
 
@@ -104,6 +107,7 @@ export async function POST(
           ...targetRest,
           value: clientValueRounded.toFixed(2),
           basis: clientBasisRounded.toFixed(2),
+          rothValue: clientRothValueRounded.toFixed(2),
           name: `${target.name} (${client.firstName ?? "Client"} share)`,
         })
         .returning();
@@ -114,6 +118,7 @@ export async function POST(
           ...targetRest,
           value: spouseValueRounded.toFixed(2),
           basis: spouseBasisRounded.toFixed(2),
+          rothValue: spouseRothValueRounded.toFixed(2),
           name: `${target.name} (Spouse share)`,
         })
         .returning();
@@ -157,12 +162,14 @@ export async function POST(
         id: result.clientAccountId,
         value: clientValueRounded.toFixed(2),
         basis: clientBasisRounded.toFixed(2),
+        rothValue: clientRothValueRounded.toFixed(2),
       }),
       toAccountSnapshot({
         ...target,
         id: result.spouseAccountId,
         value: spouseValueRounded.toFixed(2),
         basis: spouseBasisRounded.toFixed(2),
+        rothValue: spouseRothValueRounded.toFixed(2),
       }),
     ]);
     await Promise.all([

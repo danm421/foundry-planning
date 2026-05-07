@@ -101,8 +101,8 @@ function categoryWithdrawalPriority(acct: Account): number | null {
   if (acct.category === "cash") return 1;
   if (acct.category === "taxable") return 2;
   if (acct.category === "retirement") {
-    if (acct.subType === "roth_ira" || acct.subType === "roth_401k") return 4;
-    // traditional_ira, 401k, 529, deferred, other → tax-deferred bucket
+    if (acct.subType === "roth_ira") return 4;
+    // traditional_ira, 401k, 403b, 529, deferred, other → tax-deferred bucket
     return 3;
   }
   return null;
@@ -395,6 +395,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     basisMap[acct.id] = acct.basis;
   }
 
+  // Roth value tracking for 401k/403b accounts. Mirrors basisMap shape so
+  // every account has an entry (0 for non-401k/403b). Grows alongside the
+  // account each year and decrements pro-rata on withdrawals / Roth
+  // conversions out.
+  const rothValueMap: Record<string, number> = {};
+  for (const acct of data.accounts) {
+    rothValueMap[acct.id] = acct.rothValue ?? 0;
+  }
+
   // Mutable accounts list — techniques can add/remove accounts
   let workingAccounts = [...data.accounts];
 
@@ -577,6 +586,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         endingValue: beginningValue,
         entries: [],
         basisBoY: basisMap[acct.id] ?? acct.basis,
+        rothValueBoY: rothValueMap[acct.id] ?? acct.rothValue ?? 0,
       };
     }
 
@@ -945,6 +955,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (growthDetail) accountLedgers[acct.id].growthDetail = growthDetail;
 
       accountBalances[acct.id] = currentBalance + growth;
+
+      // Roth value tracks balance growth at the same rate so the
+      // rothValue/balance ratio stays constant absent contributions or
+      // withdrawals. Only meaningful for 401k/403b — non-retirement
+      // entries hold 0 and stay 0.
+      const rothBefore = rothValueMap[acct.id] ?? 0;
+      if (rothBefore > 0) {
+        rothValueMap[acct.id] = rothBefore + rothBefore * effectiveGrowthRate;
+      }
     }
 
     // Per-account cash deltas plus per-account entry lists for this year. A "credit"
@@ -977,6 +996,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accounts: workingAccounts,
         accountBalances,
         basisMap,
+        rothValueMap,
         accountLedgers,
         year,
         ownerAges: { client: ages.client, spouse: ages.spouse },
@@ -1100,6 +1120,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accounts: workingAccounts,
         accountBalances,
         basisMap,
+        rothValueMap,
         accountLedgers,
         year,
         ownerAges: { client: ages.client, spouse: ages.spouse },
@@ -2086,6 +2107,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           strategy: effectiveWithdrawalStrategy,
           householdBalances: householdWithdrawBalances,
           basisMap,
+          rothValueMap,
           accounts: workingAccounts,
           ages: { client: ages.client, spouse: ages.spouse ?? null },
           isSpouseAccount,
@@ -2206,6 +2228,21 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           basisMap[draw.accountId] = Math.max(
             0,
             (basisMap[draw.accountId] ?? 0) * (1 - fraction),
+          );
+        }
+
+        // Pro-rata Roth-value reduction for 401k/403b sources. The tax-free
+        // share already came out of OI in categorizeDraw via rothValueMap;
+        // here we shrink the remaining Roth pool so subsequent years and
+        // conversions see the right ratio.
+        if (
+          (drawAccount?.subType === "401k" || drawAccount?.subType === "403b") &&
+          preBalance > 0
+        ) {
+          const fraction = Math.min(1, draw.amount / preBalance);
+          rothValueMap[draw.accountId] = Math.max(
+            0,
+            (rothValueMap[draw.accountId] ?? 0) * (1 - fraction),
           );
         }
       }
@@ -2676,6 +2713,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // next year's BoY, which is the right semantics for the drill-down view.
     for (const acctId of Object.keys(accountLedgers)) {
       accountLedgers[acctId].basisEoY = basisMap[acctId] ?? 0;
+      accountLedgers[acctId].rothValueEoY = rothValueMap[acctId] ?? 0;
     }
 
     years.push({

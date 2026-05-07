@@ -10,7 +10,14 @@ export default defineConfig({
     // those copies, runs in-flight tests, and (since they all share the
     // same dev Neon branch via .env.local) hits FK races that surface as
     // spurious failures on `main`.
-    exclude: [...configDefaults.exclude, "**/.worktrees/**"],
+    exclude: [
+      ...configDefaults.exclude,
+      "**/.worktrees/**",
+      // `.claude/worktrees/<slug>/` mirrors are authored by Claude Code's
+      // worktree tooling and carry their own copy of `src/`. Same race
+      // hazard as the dotted `.worktrees/` siblings — exclude both.
+      "**/.claude/worktrees/**",
+    ],
     // Several test files clean up by toggling user triggers on shared tables
     // (e.g. account_owners_sum_check) via `ALTER TABLE ... DISABLE TRIGGER`,
     // which is database-global. When two such files run in parallel one's

@@ -4,9 +4,7 @@
  *  enforces: payroll-deduction plans and both IRA flavors. */
 export const CONTRIBUTION_LIMIT_SUB_TYPES = new Set([
   "401k",
-  "roth_401k",
   "403b",
-  "roth_403b",
   "traditional_ira",
   "roth_ira",
 ]);

@@ -120,9 +120,7 @@ export const RETIREMENT_SUBTYPES = [
   "traditional_ira",
   "roth_ira",
   "401k",
-  "roth_401k",
   "403b",
-  "roth_403b",
 ] as const;
 
 /**

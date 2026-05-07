@@ -32,11 +32,14 @@ export interface CategorizeDrawInput {
    *  callers must pass the current balance from their ledger. */
   balance: number;
   basisMap: Record<string, number>;
+  /** Live pre-draw Roth-designated portion for 401k/403b sources. Optional;
+   *  callers that don't track rothValue can omit it (treated as 0). */
+  rothValueMap?: Record<string, number>;
   ownerAge: number;
 }
 
 export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
-  const { account, amount, balance, basisMap, ownerAge } = input;
+  const { account, amount, balance, basisMap, rothValueMap, ownerAge } = input;
   const accountId = account.id;
   const empty: SupplementalDraw = { accountId, amount, ordinaryIncome: 0, capitalGains: 0, earlyWithdrawalPenalty: 0 };
 
@@ -59,7 +62,8 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
     // HSA: v1 — assume qualified-medical, treat as tax-free
     if (account.subType === "hsa") return empty;
 
-    const isRoth = account.subType === "roth_ira" || account.subType === "roth_401k";
+    const isRoth = account.subType === "roth_ira";
+    const is401kOr403b = account.subType === "401k" || account.subType === "403b";
     const isPreAge = ownerAge < 59.5;
 
     if (isRoth) {
@@ -71,7 +75,19 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
       return { ...empty, ordinaryIncome, earlyWithdrawalPenalty: penalty };
     }
 
-    // Traditional IRA / 401k / 403b / 457: full draw is ordinary income; 10% penalty pre-59.5
+    if (is401kOr403b) {
+      // Pro-rata Roth slice from rothValue is tax- and penalty-free; the
+      // pre-tax remainder is OI plus the 10% penalty when pre-59.5.
+      const rothValue = rothValueMap?.[accountId] ?? 0;
+      const rothFraction = balance > 0
+        ? Math.max(0, Math.min(1, rothValue / balance))
+        : 0;
+      const taxableOI = amount * (1 - rothFraction);
+      const penalty = isPreAge ? taxableOI * 0.1 : 0;
+      return { ...empty, ordinaryIncome: taxableOI, earlyWithdrawalPenalty: penalty };
+    }
+
+    // Traditional IRA / other tax-deferred: full draw is ordinary income; 10% penalty pre-59.5
     const penalty = isPreAge ? amount * 0.1 : 0;
     return { ...empty, ordinaryIncome: amount, earlyWithdrawalPenalty: penalty };
   }
@@ -86,6 +102,7 @@ export interface PlanSupplementalWithdrawalInput {
   strategy: WithdrawalPriority[];
   householdBalances: Record<string, number>;
   basisMap: Record<string, number>;
+  rothValueMap?: Record<string, number>;
   accounts: Account[];
   ages: { client: number; spouse: number | null };
   isSpouseAccount: (account: Account) => boolean;
@@ -93,7 +110,7 @@ export interface PlanSupplementalWithdrawalInput {
 }
 
 export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInput): SupplementalWithdrawalPlan {
-  const { shortfall, strategy, householdBalances, basisMap, accounts, ages, isSpouseAccount, year } = input;
+  const { shortfall, strategy, householdBalances, basisMap, rothValueMap, accounts, ages, isSpouseAccount, year } = input;
 
   const empty: SupplementalWithdrawalPlan = {
     byAccount: {}, total: 0, draws: [],
@@ -123,7 +140,7 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
 
     const drawAmount = Math.min(remaining, available);
     const ownerAge = isSpouseAccount(account) && ages.spouse != null ? ages.spouse : ages.client;
-    const draw = categorizeDraw({ account, amount: drawAmount, balance: available, basisMap, ownerAge });
+    const draw = categorizeDraw({ account, amount: drawAmount, balance: available, basisMap, rothValueMap, ownerAge });
 
     draws.push(draw);
     byAccount[entry.accountId] = drawAmount;
@@ -188,7 +205,7 @@ export function computeWithdrawalPenalty(input: WithdrawalPenaltyInput): number 
   if (accountCategory !== "retirement") return 0;
   if (ownerAge >= 59.5) return 0;
 
-  if (accountSubType === "roth_ira" || accountSubType === "roth_401k") {
+  if (accountSubType === "roth_ira") {
     const earningsWithdrawn = Math.max(0, amount - rothBasis);
     return earningsWithdrawn * 0.1;
   }

@@ -14,6 +14,11 @@ export interface RothConversionsInput {
   accountBalances: Record<string, number>;
   /** Mutable. Updated proportionally as basis moves with each conversion slice. */
   basisMap: Record<string, number>;
+  /** Mutable. For 401k/403b sources: the Roth-designated portion of the
+   *  source decrements pro-rata on each conversion slice. The Roth slice is
+   *  also added to the destination's basis (already-taxed dollars on a Roth
+   *  IRA destination). */
+  rothValueMap?: Record<string, number>;
   /** Mutable. Withdrawal/contribution entries added per slice. */
   accountLedgers: Record<string, AccountLedger>;
   year: number;
@@ -56,6 +61,7 @@ export function applyRothConversions(input: RothConversionsInput): RothConversio
     accounts,
     accountBalances,
     basisMap,
+    rothValueMap,
     accountLedgers,
     year,
     ownerAges,
@@ -128,6 +134,7 @@ export function applyRothConversions(input: RothConversionsInput): RothConversio
         amount: slice,
         sourceAccountValue: srcBalance,
         sourceAccountBasis: basisMap[src.id] ?? 0,
+        sourceRothValue: rothValueMap?.[src.id] ?? 0,
         allTraditionalIraBasis: workingPoolBasis,
         allTraditionalIraBalance: workingPoolBalance,
         ownerAge,
@@ -140,6 +147,20 @@ export function applyRothConversions(input: RothConversionsInput): RothConversio
 
       // Move proportional basis
       _updateBasis(src.id, destAccount.id, slice, srcBalance, basisMap);
+
+      // Move proportional rothValue out of 401k/403b sources. The Roth slice
+      // transferred — plus the (now-taxed) pre-tax slice — both land as Roth
+      // basis on a Roth IRA destination, so the destination's basis bumps by
+      // the full slice amount.
+      _updateRothValueAndDestBasis(
+        src.id,
+        destAccount.id,
+        destAccount.subType,
+        slice,
+        srcBalance,
+        rothValueMap,
+        basisMap,
+      );
 
       // Update ledgers
       _updateLedgers(conv, src.id, destAccount.id, slice, accountLedgers);
@@ -271,6 +292,35 @@ function _updateBasis(
   const basisMoved = sourceBasis * fractionMoved;
   basisMap[sourceId] = sourceBasis - basisMoved;
   basisMap[targetId] = (basisMap[targetId] ?? 0) + basisMoved;
+}
+
+function _updateRothValueAndDestBasis(
+  sourceId: string,
+  targetId: string,
+  targetSubType: string,
+  amount: number,
+  sourceBalanceBefore: number,
+  rothValueMap: Record<string, number> | undefined,
+  basisMap: Record<string, number>,
+): void {
+  if (!rothValueMap || sourceBalanceBefore <= 0) return;
+  const sourceRoth = rothValueMap[sourceId] ?? 0;
+  const fractionMoved = amount / sourceBalanceBefore;
+  const rothMoved = sourceRoth * fractionMoved;
+  if (sourceRoth > 0) {
+    rothValueMap[sourceId] = Math.max(0, sourceRoth - rothMoved);
+  }
+  // Roth IRA destination: the entire converted amount becomes already-taxed
+  // basis (pre-tax slice was just taxed at conversion; Roth slice was already
+  // after-tax). Roth IRA tracks this via basisMap.
+  if (targetSubType === "roth_ira") {
+    basisMap[targetId] = (basisMap[targetId] ?? 0) + amount;
+    return;
+  }
+  // 401k / 403b destination: just the Roth slice carries over as rothValue.
+  if (targetSubType === "401k" || targetSubType === "403b") {
+    rothValueMap[targetId] = (rothValueMap[targetId] ?? 0) + rothMoved;
+  }
 }
 
 function _updateLedgers(

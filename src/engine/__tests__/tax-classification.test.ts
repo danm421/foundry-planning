@@ -58,14 +58,44 @@ describe("classifyTransferTax", () => {
     expect(result.label).toBe("tax_free_rollover");
   });
 
-  it("tax-free for Roth 401k → Roth IRA rollover", () => {
+  it("fully Roth 401k (rothValue == value) → Roth IRA: no taxable income", () => {
     const result = classifyTransferTax({
       ...baseArgs,
-      sourceSubType: "roth_401k",
+      sourceSubType: "401k",
       targetSubType: "roth_ira",
+      sourceAccountValue: 200000,
+      sourceRothValue: 200000,
     });
     expect(result.taxableOrdinaryIncome).toBe(0);
-    expect(result.label).toBe("tax_free_rollover");
+    expect(result.label).toBe("roth_conversion");
+  });
+
+  it("partial Roth 401k → Roth IRA: pro-rata Roth slice tax-free", () => {
+    const result = classifyTransferTax({
+      ...baseArgs,
+      sourceSubType: "401k",
+      targetSubType: "roth_ira",
+      amount: 50000,
+      sourceAccountValue: 200000,
+      sourceRothValue: 50000, // 25% of balance is Roth
+    });
+    // 25% of slice tax-free → 75% taxable
+    expect(result.taxableOrdinaryIncome).toBe(37500);
+    expect(result.label).toBe("roth_conversion");
+  });
+
+  it("pre-tax 401k → Roth IRA: full conversion taxable, ignores any leftover basis", () => {
+    const result = classifyTransferTax({
+      ...baseArgs,
+      sourceSubType: "401k",
+      targetSubType: "roth_ira",
+      // Stale basis must NOT bleed into the conversion calc — that was the bug.
+      sourceAccountBasis: 30000,
+      sourceAccountValue: 200000,
+      sourceRothValue: 0,
+    });
+    expect(result.taxableOrdinaryIncome).toBe(50000);
+    expect(result.label).toBe("roth_conversion");
   });
 
   it("no tax for taxable → taxable transfer (no appreciation)", () => {

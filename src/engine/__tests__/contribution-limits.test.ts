@@ -183,8 +183,8 @@ describe("applyContributionLimits", () => {
     });
   });
 
-  it("aggregates 401k + 403b + roth variants into one deferral bucket", () => {
-    const accounts = [acct("a1", "401k"), acct("a2", "403b"), acct("a3", "roth_401k")];
+  it("aggregates 401k + 403b into one deferral bucket", () => {
+    const accounts = [acct("a1", "401k"), acct("a2", "403b"), acct("a3", "401k")];
     const rules = [rule("r1", "a1"), rule("r2", "a2"), rule("r3", "a3")];
     const { cappedByRuleId } = applyContributionLimits({
       year: 2025,

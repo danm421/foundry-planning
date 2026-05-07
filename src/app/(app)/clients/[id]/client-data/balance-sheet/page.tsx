@@ -180,6 +180,7 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
       owner: _ownerKeyOf(a),
       value: String(a.value),
       basis: String(a.basis),
+      rothValue: a.rothValue != null ? String(a.rothValue) : null,
       growthRate: a.growthRate == null ? null : String(a.growthRate),
       rmdEnabled: a.rmdEnabled ?? null,
       priorYearEndValue: a.priorYearEndValue != null ? String(a.priorYearEndValue) : null,

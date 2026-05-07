@@ -77,7 +77,6 @@ describe("isRmdEligibleSubType", () => {
 
   it("returns false for roth types and other types", () => {
     expect(isRmdEligibleSubType("roth_ira")).toBe(false);
-    expect(isRmdEligibleSubType("roth_401k")).toBe(false);
     expect(isRmdEligibleSubType("529")).toBe(false);
     expect(isRmdEligibleSubType("brokerage")).toBe(false);
     expect(isRmdEligibleSubType("savings")).toBe(false);

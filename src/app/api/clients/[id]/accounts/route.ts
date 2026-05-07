@@ -86,6 +86,7 @@ export async function POST(
       owner,
       value,
       basis,
+      rothValue,
       growthRate,
       rmdEnabled,
       priorYearEndValue,
@@ -160,6 +161,7 @@ export async function POST(
           subType: subType ?? "other",
           value: value ?? "0",
           basis: basis ?? "0",
+          rothValue: rothValue ?? "0",
           // null = inherit the default growth rate for this category from plan_settings
           growthRate: growthRate ?? null,
           rmdEnabled: rmdEnabled ?? false,
