@@ -137,7 +137,7 @@ export function buildRecipientDrilldown(
         : input.annualExclusion;
     const taxable = charity ? 0 : Math.max(0, g.amount - exclusion);
     addRow(rec, {
-      description: `Gift ${i + 1}`,
+      description: describeGift(g, i, input),
       amount: g.amount,
       giftValue: g.amount,
       exclusion,
@@ -185,4 +185,16 @@ export function buildRecipientDrilldown(
       );
       return { label, rows, subtotal };
     });
+}
+
+function describeGift(
+  g: Gift,
+  index: number,
+  input: BuildRecipientDrilldownInput,
+): string {
+  if (g.eventKind === "clut_remainder_interest" && g.recipientEntityId) {
+    const ent = input.entitiesById.get(g.recipientEntityId);
+    return `CLUT ${ent?.name ?? "remainder"} – remainder interest`;
+  }
+  return `Gift ${index + 1}`;
 }

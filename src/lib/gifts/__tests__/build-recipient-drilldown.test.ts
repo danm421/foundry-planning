@@ -227,4 +227,24 @@ describe("buildRecipientDrilldown", () => {
       "Generic Friend",
     ]);
   });
+
+  it("annotates clut_remainder_interest gifts with CLUT trust name in description", () => {
+    const remainderGift: Gift = {
+      id: "g-clut",
+      year: 2028,
+      amount: 538_615,
+      grantor: "client",
+      recipientEntityId: "ent-1",
+      useCrummeyPowers: false,
+      eventKind: "clut_remainder_interest",
+    };
+    const groups = buildRecipientDrilldown(
+      baseInput({ gifts: [remainderGift] }),
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toBe("Sample Family ILIT");
+    expect(groups[0].rows[0].description).toMatch(
+      /CLUT Sample Family ILIT.*remainder interest/i,
+    );
+  });
 });
