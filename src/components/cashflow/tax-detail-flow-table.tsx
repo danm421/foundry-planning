@@ -57,7 +57,16 @@ interface Column {
   zeroSuppress?: boolean;
 }
 
-type DrillLevel = "top" | "above_line" | "below_line";
+type DrillLevel = "top" | "above_line" | "below_line" | "other";
+
+function trustTaxSum(y: ProjectionYear): number {
+  if (!y.trustTaxByEntity) return 0;
+  let sum = 0;
+  for (const breakdown of y.trustTaxByEntity.values()) {
+    sum += breakdown.total;
+  }
+  return sum;
+}
 
 const COLUMNS: Column[] = [
   {
@@ -111,68 +120,24 @@ const COLUMNS: Column[] = [
     value: (y) => y.taxResult?.flow.regularFederalIncomeTax ?? 0,
   },
   {
-    key: "capitalGainsTax",
-    label: "Cap Gains Tax",
+    key: "otherTaxes",
+    label: "Other",
     tooltip:
-      "0/15/20% tax on LT cap gains + qualified dividends stacked above ordinary.",
-    value: (y) => y.taxResult?.flow.capitalGainsTax ?? 0,
-  },
-  {
-    key: "amtAdditional",
-    label: "AMT Add'l",
-    tooltip:
-      "Additional AMT owed when tentative AMT exceeds regular tax. $0 if regular ≥ AMT.",
-    value: (y) => y.taxResult?.flow.amtAdditional ?? 0,
-  },
-  {
-    key: "niit",
-    label: "NIIT",
-    tooltip:
-      "3.8% Net Investment Income Tax on investment income above the MAGI threshold.",
-    value: (y) => y.taxResult?.flow.niit ?? 0,
-  },
-  {
-    key: "trustTax",
-    label: "Trust Tax",
-    tooltip:
-      "Income tax owed by non-grantor trusts on retained income (1041 compressed brackets, NIIT, and state tax). Sums all non-grantor trusts in the household.",
+      "Cap Gains, AMT, NIIT, Trust, Beneficiary, Addl Medicare, FICA, and State combined. Click to drill down.",
     value: (y) => {
-      if (!y.trustTaxByEntity) return 0;
-      let sum = 0;
-      for (const breakdown of y.trustTaxByEntity.values()) {
-        sum += breakdown.total;
-      }
-      return sum;
+      const flow = y.taxResult?.flow;
+      if (!flow) return trustTaxSum(y) + (y.estimatedBeneficiaryTax ?? 0);
+      return (
+        (flow.capitalGainsTax ?? 0) +
+        (flow.amtAdditional ?? 0) +
+        (flow.niit ?? 0) +
+        trustTaxSum(y) +
+        (y.estimatedBeneficiaryTax ?? 0) +
+        (flow.additionalMedicare ?? 0) +
+        (flow.fica ?? 0) +
+        (flow.stateTax ?? 0)
+      );
     },
-    zeroSuppress: true,
-  },
-  {
-    key: "beneficiaryTax",
-    label: "Beneficiary Tax (est)",
-    tooltip:
-      "Estimated tax owed by out-of-household beneficiaries on DNI distributed to them (rate × DNI). Informational — not paid by the household.",
-    value: (y) => y.estimatedBeneficiaryTax ?? 0,
-    zeroSuppress: true,
-  },
-  {
-    key: "additionalMedicare",
-    label: "Addl Medicare",
-    tooltip:
-      "0.9% additional Medicare on wages above the threshold ($250k MFJ / $200k single).",
-    value: (y) => y.taxResult?.flow.additionalMedicare ?? 0,
-  },
-  {
-    key: "fica",
-    label: "FICA",
-    tooltip: "Social Security (6.2% up to wage base) + Medicare (1.45%).",
-    value: (y) => y.taxResult?.flow.fica ?? 0,
-  },
-  {
-    key: "stateTax",
-    label: "State",
-    tooltip:
-      "Flat state rate × taxable income (MVP simplification — bracket-based state tax deferred).",
-    value: (y) => y.taxResult?.flow.stateTax ?? 0,
   },
   {
     key: "totalTax",
@@ -220,6 +185,89 @@ function aboveLineColumns(years: ProjectionYear[]): Column[] {
   // Zero-suppress: hide columns where all years are $0, except the total
   return cols.filter((col) =>
     col.key === "al_total" || years.some((y) => col.value(y) !== 0)
+  );
+}
+
+function otherColumns(years: ProjectionYear[]): Column[] {
+  const cols: Column[] = [
+    {
+      key: "capitalGainsTax",
+      label: "Cap Gains Tax",
+      tooltip:
+        "0/15/20% tax on LT cap gains + qualified dividends stacked above ordinary.",
+      value: (y) => y.taxResult?.flow.capitalGainsTax ?? 0,
+    },
+    {
+      key: "amtAdditional",
+      label: "AMT Add'l",
+      tooltip:
+        "Additional AMT owed when tentative AMT exceeds regular tax. $0 if regular ≥ AMT.",
+      value: (y) => y.taxResult?.flow.amtAdditional ?? 0,
+    },
+    {
+      key: "niit",
+      label: "NIIT",
+      tooltip:
+        "3.8% Net Investment Income Tax on investment income above the MAGI threshold.",
+      value: (y) => y.taxResult?.flow.niit ?? 0,
+    },
+    {
+      key: "trustTax",
+      label: "Trust Tax",
+      tooltip:
+        "Income tax owed by non-grantor trusts on retained income (1041 compressed brackets, NIIT, and state tax). Sums all non-grantor trusts in the household.",
+      value: (y) => trustTaxSum(y),
+    },
+    {
+      key: "beneficiaryTax",
+      label: "Beneficiary Tax (est)",
+      tooltip:
+        "Estimated tax owed by out-of-household beneficiaries on DNI distributed to them (rate × DNI). Informational — not paid by the household.",
+      value: (y) => y.estimatedBeneficiaryTax ?? 0,
+    },
+    {
+      key: "additionalMedicare",
+      label: "Addl Medicare",
+      tooltip:
+        "0.9% additional Medicare on wages above the threshold ($250k MFJ / $200k single).",
+      value: (y) => y.taxResult?.flow.additionalMedicare ?? 0,
+    },
+    {
+      key: "fica",
+      label: "FICA",
+      tooltip: "Social Security (6.2% up to wage base) + Medicare (1.45%).",
+      value: (y) => y.taxResult?.flow.fica ?? 0,
+    },
+    {
+      key: "stateTax",
+      label: "State",
+      tooltip:
+        "Flat state rate × taxable income (MVP simplification — bracket-based state tax deferred).",
+      value: (y) => y.taxResult?.flow.stateTax ?? 0,
+    },
+    {
+      key: "other_total",
+      label: "Other Total",
+      tooltip: "Sum of the columns to the left.",
+      value: (y) => {
+        const flow = y.taxResult?.flow;
+        if (!flow) return trustTaxSum(y) + (y.estimatedBeneficiaryTax ?? 0);
+        return (
+          (flow.capitalGainsTax ?? 0) +
+          (flow.amtAdditional ?? 0) +
+          (flow.niit ?? 0) +
+          trustTaxSum(y) +
+          (y.estimatedBeneficiaryTax ?? 0) +
+          (flow.additionalMedicare ?? 0) +
+          (flow.fica ?? 0) +
+          (flow.stateTax ?? 0)
+        );
+      },
+    },
+  ];
+  // Zero-suppress: hide columns where all years are $0, except the total
+  return cols.filter(
+    (col) => col.key === "other_total" || years.some((y) => col.value(y) !== 0),
   );
 }
 
@@ -414,12 +462,14 @@ export function TaxDetailFlowTable({
     ? aboveLineColumns(years)
     : drillLevel === "below_line"
       ? belowLineColumns()
-      : COLUMNS.filter(
-          (col) => !col.zeroSuppress || years.some((y) => col.value(y) !== 0)
-        );
+      : drillLevel === "other"
+        ? otherColumns(years)
+        : COLUMNS.filter(
+            (col) => !col.zeroSuppress || years.some((y) => col.value(y) !== 0)
+          );
 
   // Bold column keys (totals/winners)
-  const boldKeys = new Set(["al_total", "bl_tax_deductions"]);
+  const boldKeys = new Set(["al_total", "bl_tax_deductions", "other_total"]);
 
   // Make Above-Line and Below-Line headers clickable at top level
   const renderHeader = (col: Column) => {
@@ -439,6 +489,14 @@ export function TaxDetailFlowTable({
         />
       );
     }
+    if (drillLevel === "top" && col.key === "otherTaxes") {
+      return (
+        <DrillHeader
+          label={col.label}
+          onClick={() => setDrillLevel("other")}
+        />
+      );
+    }
     return col.tooltip ? (
       <TaxDetailTooltip label={col.label} text={col.tooltip} />
     ) : (
@@ -450,7 +508,9 @@ export function TaxDetailFlowTable({
     ? "Above-Line Deductions"
     : drillLevel === "below_line"
       ? "Below-Line Deductions"
-      : null;
+      : drillLevel === "other"
+        ? "Other Taxes"
+        : null;
 
   return (
     <div>
