@@ -37,7 +37,7 @@ function defaultHouseholdRows(
   if (spouseFm) {
     return [...otherRows, { kind: "family_member", familyMemberId: spouseFm.id, percent: freedPct }];
   }
-  throw new Error("Cannot remove trust owner: no family members available to reassign freed %");
+  throw new Error("Cannot remove entity owner: no family members available to reassign freed %");
 }
 
 export type AssetTabOp =
@@ -46,7 +46,7 @@ export type AssetTabOp =
   | { type: "add"; assetType: "account" | "liability"; assetId: string; percent: number };
 
 export interface ApplyOpContext {
-  trustId: string;
+  entityId: string;
   /** Household family members — used to find client/spouse for fallback reassignment. */
   familyMembers: { id: string; role: "client" | "spouse" | "child" | "other" }[];
 }
@@ -73,14 +73,14 @@ export function applyAssetTabOp(
 // ── remove ────────────────────────────────────────────────────────────────────
 
 function opRemove(owners: AccountOwner[], ctx: ApplyOpContext): AccountOwner[] {
-  const { trustId } = ctx;
+  const { entityId } = ctx;
 
-  // Find trust's current share
-  const trustRow = owners.find((o) => o.kind === "entity" && o.entityId === trustId);
-  const freedPct = trustRow ? trustRow.percent : 0;
+  // Find this entity's current share
+  const entityRow = owners.find((o) => o.kind === "entity" && o.entityId === entityId);
+  const freedPct = entityRow ? entityRow.percent : 0;
 
-  // Drop trust row(s) for this trust
-  const remaining = owners.filter((o) => !(o.kind === "entity" && o.entityId === trustId));
+  // Drop row(s) for this entity
+  const remaining = owners.filter((o) => !(o.kind === "entity" && o.entityId === entityId));
 
   if (Math.abs(freedPct) < EPSILON) {
     // Nothing was owned — just return unchanged (minus the dropped row)
@@ -116,35 +116,35 @@ function opSetPercent(
   newPercent: number, // fraction 0-1
   ctx: ApplyOpContext,
 ): AccountOwner[] {
-  const { trustId } = ctx;
+  const { entityId } = ctx;
 
-  // Current trust row
-  const trustRow = owners.find((o) => o.kind === "entity" && o.entityId === trustId);
-  const oldPercent = trustRow ? trustRow.percent : 0;
-  const delta = newPercent - oldPercent; // positive = growing trust share
+  // Current entity row
+  const entityRow = owners.find((o) => o.kind === "entity" && o.entityId === entityId);
+  const oldPercent = entityRow ? entityRow.percent : 0;
+  const delta = newPercent - oldPercent; // positive = growing entity share
 
-  // All non-trust rows
-  const others = owners.filter((o) => !(o.kind === "entity" && o.entityId === trustId));
+  // All non-entity rows (other than this one)
+  const others = owners.filter((o) => !(o.kind === "entity" && o.entityId === entityId));
   const othersSum = others.reduce((s, o) => s + o.percent, 0);
 
-  const newTrust: AccountOwner = { kind: "entity", entityId: trustId, percent: newPercent };
+  const newEntity: AccountOwner = { kind: "entity", entityId, percent: newPercent };
 
   if (Math.abs(othersSum) < EPSILON && Math.abs(delta) > EPSILON) {
     // No other rows exist.
     if (newPercent >= 1 - EPSILON) {
-      // Setting to 100% — trust is sole owner.
-      return [newTrust];
+      // Setting to 100% — entity is sole owner.
+      return [newEntity];
     }
     // Shrinking below 100%: freed % must go to household FM fallback rows.
     const freedPct = 1 - newPercent;
-    return defaultHouseholdRows(freedPct, ctx, [newTrust]).filter((r) => r.percent > EPSILON);
+    return defaultHouseholdRows(freedPct, ctx, [newEntity]).filter((r) => r.percent > EPSILON);
   }
 
   // Scale other rows proportionally to absorb the delta
   const scale = othersSum > EPSILON ? (othersSum - delta) / othersSum : 0;
   const scaledOthers = others.map((o) => ({ ...o, percent: o.percent * scale }));
 
-  return [...scaledOthers, newTrust].filter((r) => r.percent > EPSILON);
+  return [...scaledOthers, newEntity].filter((r) => r.percent > EPSILON);
 }
 
 // ── add ───────────────────────────────────────────────────────────────────────
@@ -154,21 +154,21 @@ function opAdd(
   percent: number, // fraction 0-1
   ctx: ApplyOpContext,
 ): AccountOwner[] {
-  const { trustId } = ctx;
+  const { entityId } = ctx;
 
-  // Check if trust already has a row
-  const existingTrustRow = owners.find((o) => o.kind === "entity" && o.entityId === trustId);
-  if (existingTrustRow) {
+  // Check if entity already has a row
+  const existingEntityRow = owners.find((o) => o.kind === "entity" && o.entityId === entityId);
+  if (existingEntityRow) {
     // Treat as a set-percent to the new value
     return opSetPercent(owners, percent, ctx);
   }
 
-  // No existing trust row — insert one and shrink others proportionally
+  // No existing entity row — insert one and shrink others proportionally
   const othersSum = owners.reduce((s, o) => s + o.percent, 0);
   const scale = othersSum > EPSILON ? (othersSum - percent) / othersSum : 0;
 
   const scaledOthers = owners.map((o) => ({ ...o, percent: o.percent * scale }));
-  const trustRow: AccountOwner = { kind: "entity", entityId: trustId, percent };
+  const entityRow: AccountOwner = { kind: "entity", entityId, percent };
 
-  return [...scaledOthers, trustRow].filter((r) => r.percent > EPSILON);
+  return [...scaledOthers, entityRow].filter((r) => r.percent > EPSILON);
 }

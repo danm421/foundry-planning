@@ -66,7 +66,7 @@ describe("AssetsTab", () => {
   it("renders trust-owned accounts and liabilities", () => {
     render(
       <AssetsTab
-        trustId={TRUST_ID}
+        entityId={TRUST_ID}
         accounts={accounts}
         liabilities={liabilities}
         incomes={incomes}
@@ -86,7 +86,7 @@ describe("AssetsTab", () => {
   it("shows correct total trust value (250k + 200k - 120k = 330k)", () => {
     render(
       <AssetsTab
-        trustId={TRUST_ID}
+        entityId={TRUST_ID}
         accounts={accounts}
         liabilities={liabilities}
         incomes={[]}
@@ -103,7 +103,7 @@ describe("AssetsTab", () => {
   it("shows read-only income panel filtered to trust asset ids only", () => {
     render(
       <AssetsTab
-        trustId={TRUST_ID}
+        entityId={TRUST_ID}
         accounts={accounts}
         liabilities={liabilities}
         incomes={incomes}
@@ -123,7 +123,7 @@ describe("AssetsTab", () => {
     const onChange = vi.fn();
     render(
       <AssetsTab
-        trustId={TRUST_ID}
+        entityId={TRUST_ID}
         accounts={accounts}
         liabilities={liabilities}
         incomes={[]}
@@ -156,7 +156,7 @@ describe("AssetsTab", () => {
     ];
     render(
       <AssetsTab
-        trustId={TRUST_ID}
+        entityId={TRUST_ID}
         accounts={unownedAccounts}
         liabilities={[]}
         incomes={[]}

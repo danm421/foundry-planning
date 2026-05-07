@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { Entity } from "../family-view";
 import type { EntityFormCommonProps } from "./types";
 import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName } from "../forms/input-styles";
+import AssetsTab, {
+  type AssetsTabAccount,
+  type AssetsTabLiability,
+  type AssetsTabIncome,
+  type AssetsTabExpense,
+  type AssetsTabFamilyMember,
+} from "../forms/assets-tab";
+import { applyAssetTabOp, type AssetTabOp } from "../forms/asset-tab-ops";
 
 type BusinessEntityType = "llc" | "s_corp" | "c_corp" | "partnership" | "other";
 
@@ -17,6 +25,13 @@ const BUSINESS_ENTITY_TYPE_LABELS: Record<BusinessEntityType, string> = {
 };
 
 interface BusinessFormProps extends EntityFormCommonProps {
+  activeTab: "details" | "assets" | "notes";
+  accounts?: AssetsTabAccount[];
+  liabilities?: AssetsTabLiability[];
+  incomes?: AssetsTabIncome[];
+  expenses?: AssetsTabExpense[];
+  assetFamilyMembers?: AssetsTabFamilyMember[];
+  otherEntities?: { id: string; name: string }[];
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
 }
 
@@ -25,6 +40,13 @@ export default function BusinessForm({
   editing,
   onSaved,
   onClose,
+  activeTab,
+  accounts,
+  liabilities,
+  incomes,
+  expenses,
+  assetFamilyMembers,
+  otherEntities,
   onSubmitStateChange,
 }: BusinessFormProps) {
   const writer = useScenarioWriter(clientId);
@@ -41,7 +63,63 @@ export default function BusinessForm({
   const [isGrantor, setIsGrantor] = useState<boolean>(editing?.isGrantor ?? false);
   const [value, setValue] = useState<string>(editing?.value ?? "0");
   const [owner, setOwner] = useState<"client" | "spouse" | "joint" | "">(editing?.owner ?? "");
+  const [notes, setNotes] = useState<string>(editing?.notes ?? "");
   const isEdit = Boolean(editing);
+
+  const handleAssetTabOp = useCallback(async (op: AssetTabOp) => {
+    if (!editing) return;
+    const ctx = {
+      entityId: editing.id,
+      familyMembers: (assetFamilyMembers ?? []).map((m) => ({ id: m.id, role: m.role })),
+    };
+
+    const assetType = op.assetType;
+    const assetId = op.assetId;
+
+    const currentItem =
+      assetType === "account"
+        ? (accounts ?? []).find((a) => a.id === assetId)
+        : (liabilities ?? []).find((l) => l.id === assetId);
+
+    if (!currentItem && op.type !== "add") return;
+    const currentOwners = currentItem?.owners ?? [];
+
+    let newOwners: import("@/engine/ownership").AccountOwner[];
+    try {
+      newOwners = applyAssetTabOp(currentOwners, op, ctx);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Cannot apply this change");
+      return;
+    }
+
+    const url =
+      assetType === "account"
+        ? `/api/clients/${clientId}/accounts/${assetId}`
+        : `/api/clients/${clientId}/liabilities/${assetId}`;
+
+    try {
+      const res = await writer.submit(
+        {
+          op: "edit",
+          targetKind: assetType,
+          targetId: assetId,
+          desiredFields: { owners: newOwners },
+        },
+        {
+          url,
+          method: "PUT",
+          body: { owners: newOwners },
+        },
+      );
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(json.error ?? "Failed to update asset ownership");
+        return;
+      }
+    } catch {
+      setError("Failed to update asset ownership");
+    }
+  }, [editing, accounts, liabilities, assetFamilyMembers, clientId, writer]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -51,7 +129,7 @@ export default function BusinessForm({
     const body = {
       name: data.get("name") as string,
       entityType,
-      notes: (data.get("notes") as string) || null,
+      notes: notes || null,
       includeInPortfolio,
       isGrantor,
       value: value || "0",
@@ -118,120 +196,142 @@ export default function BusinessForm({
     <form id="entity-business-form" onSubmit={handleSubmit} className="space-y-4">
       {error && <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>}
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="col-span-2">
-          <label className={fieldLabelClassName} htmlFor="ent-name">
-            Name <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="ent-name"
-            name="name"
-            type="text"
-            required
-            defaultValue={editing?.name ?? ""}
-            placeholder="e.g., Smith Family Trust"
-            className={inputClassName}
-          />
+      <div className={activeTab !== "details" ? "hidden" : ""}>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="col-span-2">
+            <label className={fieldLabelClassName} htmlFor="ent-name">
+              Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="ent-name"
+              name="name"
+              type="text"
+              required
+              defaultValue={editing?.name ?? ""}
+              placeholder="e.g., Smith Holdings LLC"
+              className={inputClassName}
+            />
+          </div>
+
+          <div>
+            <label className={fieldLabelClassName} htmlFor="ent-type">Type</label>
+            <select
+              id="ent-type"
+              name="entityType"
+              value={entityType}
+              onChange={(e) => setEntityType(e.target.value as BusinessEntityType)}
+              className={selectClassName}
+            >
+              {Object.entries(BUSINESS_ENTITY_TYPE_LABELS).map(([v, l]) => (
+                <option key={v} value={v}>{l}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div>
-          <label className={fieldLabelClassName} htmlFor="ent-type">Type</label>
-          <select
-            id="ent-type"
-            name="entityType"
-            value={entityType}
-            onChange={(e) => setEntityType(e.target.value as BusinessEntityType)}
-            className={selectClassName}
-          >
-            {Object.entries(BUSINESS_ENTITY_TYPE_LABELS).map(([v, l]) => (
-              <option key={v} value={v}>{l}</option>
-            ))}
-          </select>
-        </div>
-      </div>
+        <div className="grid grid-cols-2 gap-4 mt-4">
+          <div>
+            <label className={fieldLabelClassName} htmlFor="ent-value">
+              Value ($)
+            </label>
+            <input
+              id="ent-value"
+              type="number"
+              step="0.01"
+              min="0"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              className={inputClassName}
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              Standalone equity value. Owned accounts are tracked separately on the Assets tab.
+            </p>
+          </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className={fieldLabelClassName} htmlFor="ent-value">
-            Value ($)
-          </label>
-          <input
-            id="ent-value"
-            type="number"
-            step="0.01"
-            min="0"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            className={inputClassName}
-          />
-          <p className="mt-1 text-xs text-gray-400">
-            Shown as an out-of-estate asset on the balance sheet.
+          <div>
+            <label className={fieldLabelClassName} htmlFor="ent-owner">
+              Owner
+            </label>
+            <select
+              id="ent-owner"
+              value={owner}
+              onChange={(e) => setOwner(e.target.value as typeof owner)}
+              className={selectClassName}
+            >
+              <option value="">—</option>
+              <option value="client">Client</option>
+              <option value="spouse">Spouse</option>
+              <option value="joint">Joint</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-md border border-gray-800 bg-gray-900/60 p-3 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-300">
+            Cash-flow treatment
           </p>
-        </div>
-
-        <div>
-          <label className={fieldLabelClassName} htmlFor="ent-owner">
-            Owner
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={includeInPortfolio}
+              onChange={(e) => setIncludeInPortfolio(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+            />
+            <span className="text-sm text-gray-200">
+              Include this entity&apos;s accounts in portfolio assets
+              <span className="block text-xs text-gray-400">
+                Balances roll into the cash-flow portfolio view even though the assets are out of estate.
+              </span>
+            </span>
           </label>
-          <select
-            id="ent-owner"
-            value={owner}
-            onChange={(e) => setOwner(e.target.value as typeof owner)}
-            className={selectClassName}
-          >
-            <option value="">—</option>
-            <option value="client">Client</option>
-            <option value="spouse">Spouse</option>
-            <option value="joint">Joint</option>
-          </select>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isGrantor}
+              onChange={(e) => setIsGrantor(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+            />
+            <span className="text-sm text-gray-200">
+              Pass-through taxation (taxes paid by household)
+              <span className="block text-xs text-gray-400">
+                Income, capital gains, and RMDs from this entity&apos;s accounts are taxed at the household rate.
+              </span>
+            </span>
+          </label>
         </div>
       </div>
 
-      <div>
+      <div className={activeTab !== "assets" ? "hidden" : ""}>
+        {editing && accounts !== undefined ? (
+          <AssetsTab
+            entityId={editing.id}
+            accounts={accounts ?? []}
+            liabilities={liabilities ?? []}
+            incomes={incomes ?? []}
+            expenses={expenses ?? []}
+            familyMembers={assetFamilyMembers ?? []}
+            entities={otherEntities ?? []}
+            entityLabel="business"
+            onChange={handleAssetTabOp}
+          />
+        ) : (
+          <p className="text-[13px] text-ink-3 text-center py-6">
+            Asset management is available when editing an existing business.
+          </p>
+        )}
+      </div>
+
+      <div className={activeTab !== "notes" ? "hidden" : ""}>
         <label className={fieldLabelClassName} htmlFor="ent-notes">Notes</label>
         <textarea
           id="ent-notes"
           name="notes"
-          rows={2}
-          defaultValue={editing?.notes ?? ""}
+          rows={8}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
           className={textareaClassName}
         />
       </div>
-
-      <div className="rounded-md border border-gray-800 bg-gray-900/60 p-3 space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wider text-gray-300">
-          Cash-flow treatment
-        </p>
-        <label className="flex items-start gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={includeInPortfolio}
-            onChange={(e) => setIncludeInPortfolio(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
-          />
-          <span className="text-sm text-gray-200">
-            Include this entity&apos;s accounts in portfolio assets
-            <span className="block text-xs text-gray-400">
-              Balances roll into the cash-flow portfolio view even though the assets are out of estate.
-            </span>
-          </span>
-        </label>
-        <label className="flex items-start gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={isGrantor}
-            onChange={(e) => setIsGrantor(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
-          />
-          <span className="text-sm text-gray-200">
-            Grantor trust (taxes paid by household)
-            <span className="block text-xs text-gray-400">
-              Income, capital gains, and RMDs from this entity&apos;s accounts are taxed at the household rate.
-            </span>
-          </span>
-        </label>
-      </div>
-
     </form>
   );
 }

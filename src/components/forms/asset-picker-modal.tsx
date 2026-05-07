@@ -25,11 +25,13 @@ export interface PickerLiability {
 }
 
 interface AssetPickerModalProps {
-  trustId: string;
+  entityId: string;
   accounts: PickerAccount[];
   liabilities: PickerLiability[];
   onClose: () => void;
   onAdd: (op: { type: "add"; assetType: "account" | "liability"; assetId: string; percent: number }) => void;
+  /** Singular noun for user-facing copy (e.g. "trust", "business"). Defaults to "trust". */
+  entityLabel?: string;
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -39,13 +41,13 @@ function isRetirement(subType?: string): boolean {
   return (RETIREMENT_SUBTYPES as readonly string[]).includes(subType);
 }
 
-function isOtherEntityDefaultChecking(account: PickerAccount, trustId: string): boolean {
+function isOtherEntityDefaultChecking(account: PickerAccount, entityId: string): boolean {
   if (!account.isDefaultChecking) return false;
   const firstOwner = account.owners[0];
   if (!firstOwner) return false;
   return (
     firstOwner.kind === "entity" &&
-    (firstOwner as { entityId: string }).entityId !== trustId
+    (firstOwner as { entityId: string }).entityId !== entityId
   );
 }
 
@@ -61,28 +63,30 @@ interface PickedItem {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function AssetPickerModal({
-  trustId,
+  entityId,
   accounts,
   liabilities,
   onClose,
   onAdd,
+  entityLabel = "trust",
 }: AssetPickerModalProps) {
   const [step, setStep] = useState<"pick" | "percent">("pick");
   const [picked, setPicked] = useState<PickedItem | null>(null);
   const [pctStr, setPctStr] = useState("100");
+  const titleNoun = entityLabel.charAt(0).toUpperCase() + entityLabel.slice(1);
 
   // Filter accounts
   const availableAccounts = accounts.filter((a) => {
-    // Hide if already 100% owned by this trust
-    if (Math.abs(ownedByEntity(a, trustId) - 1) < 0.0001) return false;
+    // Hide if already 100% owned by this entity
+    if (Math.abs(ownedByEntity(a, entityId) - 1) < 0.0001) return false;
     // Hide other-entity default-checking accounts
-    if (isOtherEntityDefaultChecking(a, trustId)) return false;
+    if (isOtherEntityDefaultChecking(a, entityId)) return false;
     return true;
   });
 
   // Filter liabilities (no special filter rules beyond the 100% check)
   const availableLiabilities = liabilities.filter((l) => {
-    return Math.abs(ownedByEntity(l, trustId) - 1) >= 0.0001;
+    return Math.abs(ownedByEntity(l, entityId) - 1) >= 0.0001;
   });
 
   function selectItem(item: PickedItem) {
@@ -102,7 +106,7 @@ export default function AssetPickerModal({
     <DialogShell
       open={true}
       onOpenChange={(o) => { if (!o) onClose(); }}
-      title={step === "pick" ? "Add Asset to Trust" : "Set Ownership Percent"}
+      title={step === "pick" ? `Add Asset to ${titleNoun}` : "Set Ownership Percent"}
       size="sm"
       primaryAction={
         step === "pick"
@@ -121,7 +125,7 @@ export default function AssetPickerModal({
         <div className="space-y-4">
           {availableAccounts.length === 0 && availableLiabilities.length === 0 && (
             <p className="text-[13px] text-ink-3 text-center py-4">
-              All household assets are already fully assigned to this trust.
+              All household assets are already fully assigned to this {entityLabel}.
             </p>
           )}
 
@@ -130,7 +134,7 @@ export default function AssetPickerModal({
               <label className={fieldLabelClassName}>Accounts</label>
               <ul className="space-y-1">
                 {availableAccounts.map((a) => {
-                  const currentPct = ownedByEntity(a, trustId);
+                  const currentPct = ownedByEntity(a, entityId);
                   return (
                     <li key={a.id}>
                       <button
@@ -163,7 +167,7 @@ export default function AssetPickerModal({
               <label className={fieldLabelClassName}>Liabilities</label>
               <ul className="space-y-1">
                 {availableLiabilities.map((l) => {
-                  const currentPct = ownedByEntity(l, trustId);
+                  const currentPct = ownedByEntity(l, entityId);
                   return (
                     <li key={l.id}>
                       <button
@@ -201,7 +205,7 @@ export default function AssetPickerModal({
             <div className="rounded-[var(--radius-sm)] border border-hair bg-card-2 p-3">
               <p className="text-[12px] text-ink-3">
                 Retirement accounts require a single owner at 100%. This will reassign full
-                ownership to the trust.
+                ownership to the {entityLabel}.
               </p>
             </div>
           ) : (

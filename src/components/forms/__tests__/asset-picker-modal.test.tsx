@@ -27,7 +27,7 @@ describe("AssetPickerModal", () => {
     ];
     render(
       <AssetPickerModal
-        trustId={TRUST_ID}
+        entityId={TRUST_ID}
         accounts={accounts}
         liabilities={[]}
         onClose={vi.fn()}
@@ -56,7 +56,7 @@ describe("AssetPickerModal", () => {
     ];
     render(
       <AssetPickerModal
-        trustId={TRUST_ID}
+        entityId={TRUST_ID}
         accounts={accounts}
         liabilities={[]}
         onClose={vi.fn()}
@@ -78,7 +78,7 @@ describe("AssetPickerModal", () => {
     ];
     render(
       <AssetPickerModal
-        trustId={TRUST_ID}
+        entityId={TRUST_ID}
         accounts={accounts}
         liabilities={[]}
         onClose={vi.fn()}
@@ -103,7 +103,7 @@ describe("AssetPickerModal", () => {
     ];
     render(
       <AssetPickerModal
-        trustId={TRUST_ID}
+        entityId={TRUST_ID}
         accounts={accounts}
         liabilities={[]}
         onClose={vi.fn()}
@@ -128,7 +128,7 @@ describe("AssetPickerModal", () => {
     ];
     render(
       <AssetPickerModal
-        trustId={TRUST_ID}
+        entityId={TRUST_ID}
         accounts={accounts}
         liabilities={[]}
         onClose={vi.fn()}
@@ -152,7 +152,7 @@ describe("AssetPickerModal", () => {
     ];
     render(
       <AssetPickerModal
-        trustId={TRUST_ID}
+        entityId={TRUST_ID}
         accounts={[]}
         liabilities={liabilities}
         onClose={vi.fn()}

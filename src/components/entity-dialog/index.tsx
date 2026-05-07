@@ -33,6 +33,9 @@ export interface EntityDialogProps {
   assetFamilyMembers?: AssetsTabFamilyMember[];
 }
 
+type TrustTab = "details" | "assets" | "transfers" | "notes";
+type BusinessTab = "details" | "assets" | "notes";
+
 export default function EntityDialog({
   clientId,
   open,
@@ -56,7 +59,8 @@ export default function EntityDialog({
     canSubmit: true,
     loading: false,
   });
-  const [trustTab, setTrustTab] = useState<"details" | "assets" | "transfers" | "notes">("details");
+  const [trustTab, setTrustTab] = useState<TrustTab>("details");
+  const [businessTab, setBusinessTab] = useState<BusinessTab>("details");
 
   if (!open) return null;
 
@@ -66,21 +70,42 @@ export default function EntityDialog({
     ? kind === "trust" ? "Edit Trust" : "Edit Business"
     : kind === "trust" ? "Add Trust" : "Add Business";
 
+  const tabs =
+    kind === "trust"
+      ? [
+          { id: "details", label: "Details" },
+          { id: "assets", label: "Assets" },
+          { id: "transfers", label: "Transfers" },
+          { id: "notes", label: "Notes" },
+        ]
+      : [
+          { id: "details", label: "Details" },
+          { id: "assets", label: "Assets" },
+          { id: "notes", label: "Notes" },
+        ];
+
+  const activeTab = kind === "trust" ? trustTab : businessTab;
+  const onTabChange = (tab: string) => {
+    if (kind === "trust") setTrustTab(tab as TrustTab);
+    else setBusinessTab(tab as BusinessTab);
+  };
+
+  // Tabs that don't own a primary form action (Assets / Transfers manage their own data inline).
+  const noPrimaryAction =
+    (kind === "trust" && (trustTab === "assets" || trustTab === "transfers")) ||
+    (kind === "business" && businessTab === "assets");
+
   return (
     <DialogShell
       open={open}
       onOpenChange={onOpenChange}
       title={title}
       size="md"
-      tabs={
-        kind === "trust"
-          ? [{ id: "details", label: "Details" }, { id: "assets", label: "Assets" }, { id: "transfers", label: "Transfers" }, { id: "notes", label: "Notes" }]
-          : undefined
-      }
-      activeTab={kind === "trust" ? trustTab : undefined}
-      onTabChange={kind === "trust" ? (tab) => setTrustTab(tab as "details" | "assets" | "transfers" | "notes") : undefined}
+      tabs={tabs}
+      activeTab={activeTab}
+      onTabChange={onTabChange}
       primaryAction={
-        kind === "trust" && (trustTab === "assets" || trustTab === "transfers")
+        noPrimaryAction
           ? undefined
           : {
               label: isEdit ? "Save Changes" : kind === "trust" ? "Add Trust" : "Add Business",
@@ -118,6 +143,13 @@ export default function EntityDialog({
         <BusinessForm
           clientId={clientId}
           editing={editing}
+          activeTab={businessTab}
+          accounts={accounts}
+          liabilities={liabilities}
+          incomes={incomes}
+          expenses={expenses}
+          assetFamilyMembers={assetFamilyMembers}
+          otherEntities={otherEntities}
           onSaved={onSaved}
           onClose={() => onOpenChange(false)}
           onSubmitStateChange={setSubmitState}

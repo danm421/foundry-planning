@@ -157,9 +157,8 @@ export default function AddTrustForm({
   // ── Asset tab op handler ───────────────────────────────────────────────────
   const handleAssetTabOp = useCallback(async (op: AssetTabOp) => {
     if (!editing) return; // no trust id in create mode — shouldn't be reachable
-    const trustId = editing.id;
     const ctx = {
-      trustId,
+      entityId: editing.id,
       familyMembers: (assetFamilyMembers ?? []).map((m) => ({ id: m.id, role: m.role })),
     };
 
@@ -462,13 +461,14 @@ export default function AddTrustForm({
       <div className={activeTab !== "assets" ? "hidden" : ""}>
         {editing && accounts !== undefined ? (
           <AssetsTab
-            trustId={editing.id}
+            entityId={editing.id}
             accounts={accounts ?? []}
             liabilities={liabilities ?? []}
             incomes={incomes ?? []}
             expenses={expenses ?? []}
             familyMembers={assetFamilyMembers ?? []}
             entities={entities}
+            entityLabel="trust"
             onChange={handleAssetTabOp}
           />
         ) : (

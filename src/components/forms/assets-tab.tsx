@@ -48,7 +48,7 @@ export interface AssetsTabFamilyMember {
 }
 
 interface AssetsTabProps {
-  trustId: string;
+  entityId: string;
   accounts: AssetsTabAccount[];
   liabilities: AssetsTabLiability[];
   incomes: AssetsTabIncome[];
@@ -56,23 +56,26 @@ interface AssetsTabProps {
   familyMembers: AssetsTabFamilyMember[];
   entities: { id: string; name: string }[];
   onChange: (op: AssetTabOp) => void;
+  /** Singular noun for user-facing copy (e.g. "trust", "business"). Defaults to "trust". */
+  entityLabel?: string;
 }
 
 // ── RemoveConfirmation (inline, no extra dep) ─────────────────────────────────
 
 interface RemoveConfirmProps {
   name: string;
+  entityLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-function RemoveConfirm({ name, onConfirm, onCancel }: RemoveConfirmProps) {
+function RemoveConfirm({ name, entityLabel, onConfirm, onCancel }: RemoveConfirmProps) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-paper/70 backdrop-blur-sm" onClick={onCancel} />
       <div className="relative z-10 w-full max-w-[400px] rounded-[var(--radius)] border-2 border-ink-3 ring-1 ring-black/60 bg-card p-6 shadow-2xl">
         <p className="text-[14px] text-ink-2">
-          Remove <strong className="text-ink">{name}</strong> from this trust?
+          Remove <strong className="text-ink">{name}</strong> from this {entityLabel}?
           <span className="mt-1 block text-[12px] text-ink-4">
             The freed ownership will be redistributed to household members.
           </span>
@@ -104,13 +107,14 @@ interface AssetRowProps {
   name: string;
   proRatedValue: number; // positive for asset, negative for liability
   ownerPct: number; // 0-1
+  entityLabel: string;
   onRemove: () => void;
   onPctChange: (pct: number) => void;
 }
 
 const EPSILON = 0.0001;
 
-function AssetRow({ name, proRatedValue, ownerPct, onRemove, onPctChange }: AssetRowProps) {
+function AssetRow({ name, proRatedValue, ownerPct, entityLabel, onRemove, onPctChange }: AssetRowProps) {
   const [pctStr, setPctStr] = useState(() => (ownerPct * 100).toFixed(0));
   const isNeg = proRatedValue < 0;
 
@@ -153,7 +157,7 @@ function AssetRow({ name, proRatedValue, ownerPct, onRemove, onPctChange }: Asse
         type="button"
         onClick={onRemove}
         className="text-ink-4 hover:text-crit text-[13px] ml-1"
-        aria-label={`Remove ${name} from trust`}
+        aria-label={`Remove ${name} from ${entityLabel}`}
       >
         ✕
       </button>
@@ -164,12 +168,13 @@ function AssetRow({ name, proRatedValue, ownerPct, onRemove, onPctChange }: Asse
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function AssetsTab({
-  trustId,
+  entityId,
   accounts,
   liabilities,
   incomes,
   expenses,
   onChange,
+  entityLabel = "trust",
 }: AssetsTabProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [removingItem, setRemovingItem] = useState<{
@@ -178,20 +183,20 @@ export default function AssetsTab({
     name: string;
   } | null>(null);
 
-  // Filter to trust-owned items
-  const ownedAccounts = accounts.filter((a) => ownedByEntity(a, trustId) > 0);
-  const ownedLiabilities = liabilities.filter((l) => ownedByEntity(l, trustId) > 0);
+  // Filter to entity-owned items
+  const ownedAccounts = accounts.filter((a) => ownedByEntity(a, entityId) > 0);
+  const ownedLiabilities = liabilities.filter((l) => ownedByEntity(l, entityId) > 0);
 
-  // Trust-asset id set for income/expense lookup
-  const trustAssetIds = new Set(ownedAccounts.map((a) => a.id));
+  // Entity-asset id set for income/expense lookup
+  const entityAssetIds = new Set(ownedAccounts.map((a) => a.id));
 
-  const linkedIncomes = incomes.filter((i) => i.cashAccountId && trustAssetIds.has(i.cashAccountId));
-  const linkedExpenses = expenses.filter((e) => e.cashAccountId && trustAssetIds.has(e.cashAccountId));
+  const linkedIncomes = incomes.filter((i) => i.cashAccountId && entityAssetIds.has(i.cashAccountId));
+  const linkedExpenses = expenses.filter((e) => e.cashAccountId && entityAssetIds.has(e.cashAccountId));
 
-  // Total trust value
+  // Total entity value
   const totalValue =
-    ownedAccounts.reduce((s, a) => s + a.value * ownedByEntity(a, trustId), 0) -
-    ownedLiabilities.reduce((s, l) => s + l.balance * ownedByEntity(l, trustId), 0);
+    ownedAccounts.reduce((s, a) => s + a.value * ownedByEntity(a, entityId), 0) -
+    ownedLiabilities.reduce((s, l) => s + l.balance * ownedByEntity(l, entityId), 0);
 
   const isEmpty = ownedAccounts.length === 0 && ownedLiabilities.length === 0;
 
@@ -200,7 +205,7 @@ export default function AssetsTab({
       {/* Summary row */}
       <div className="flex items-center justify-between rounded-[var(--radius-sm)] border border-hair bg-card-2 px-3 py-2">
         <span className="text-[12px] font-medium text-ink-3 uppercase tracking-wider">
-          Net trust value
+          Net {entityLabel} value
         </span>
         <MoneyText value={totalValue} className="text-[15px] font-semibold text-ink" />
       </div>
@@ -209,17 +214,18 @@ export default function AssetsTab({
       <div>
         <label className={fieldLabelClassName}>Accounts</label>
         {ownedAccounts.length === 0 ? (
-          <p className="text-[12px] text-ink-4 py-2">No accounts owned by this trust.</p>
+          <p className="text-[12px] text-ink-4 py-2">No accounts owned by this {entityLabel}.</p>
         ) : (
           <ul className="space-y-1.5">
             {ownedAccounts.map((a) => {
-              const ownerPct = ownedByEntity(a, trustId);
+              const ownerPct = ownedByEntity(a, entityId);
               return (
                 <AssetRow
                   key={a.id}
                   name={a.name}
                   proRatedValue={a.value * ownerPct}
                   ownerPct={ownerPct}
+                  entityLabel={entityLabel}
                   onRemove={() => setRemovingItem({ kind: "account", id: a.id, name: a.name })}
                   onPctChange={(pct) =>
                     onChange({ type: "set-percent", assetType: "account", assetId: a.id, percent: pct })
@@ -235,17 +241,18 @@ export default function AssetsTab({
       <div>
         <label className={fieldLabelClassName}>Liabilities</label>
         {ownedLiabilities.length === 0 ? (
-          <p className="text-[12px] text-ink-4 py-2">No liabilities owned by this trust.</p>
+          <p className="text-[12px] text-ink-4 py-2">No liabilities owned by this {entityLabel}.</p>
         ) : (
           <ul className="space-y-1.5">
             {ownedLiabilities.map((l) => {
-              const ownerPct = ownedByEntity(l, trustId);
+              const ownerPct = ownedByEntity(l, entityId);
               return (
                 <AssetRow
                   key={l.id}
                   name={l.name}
                   proRatedValue={-(l.balance * ownerPct)}
                   ownerPct={ownerPct}
+                  entityLabel={entityLabel}
                   onRemove={() => setRemovingItem({ kind: "liability", id: l.id, name: l.name })}
                   onPctChange={(pct) =>
                     onChange({ type: "set-percent", assetType: "liability", assetId: l.id, percent: pct })
@@ -293,16 +300,17 @@ export default function AssetsTab({
 
       {isEmpty && (
         <p className="text-[12px] text-ink-4 text-center py-4">
-          No assets assigned to this trust. Use &quot;+ Add asset&quot; to assign accounts or liabilities.
+          No assets assigned to this {entityLabel}. Use &quot;+ Add asset&quot; to assign accounts or liabilities.
         </p>
       )}
 
       {/* Asset picker modal */}
       {pickerOpen && (
         <AssetPickerModal
-          trustId={trustId}
+          entityId={entityId}
           accounts={accounts}
           liabilities={liabilities}
+          entityLabel={entityLabel}
           onClose={() => setPickerOpen(false)}
           onAdd={(op) => {
             onChange(op);
@@ -315,6 +323,7 @@ export default function AssetsTab({
       {removingItem && (
         <RemoveConfirm
           name={removingItem.name}
+          entityLabel={entityLabel}
           onConfirm={() => {
             onChange({
               type: "remove",

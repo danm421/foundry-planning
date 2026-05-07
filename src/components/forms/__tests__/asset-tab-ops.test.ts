@@ -3,7 +3,7 @@ import { applyAssetTabOp, type ApplyOpContext } from "../asset-tab-ops";
 import type { AccountOwner } from "@/engine/ownership";
 
 const CTX: ApplyOpContext = {
-  trustId: "trust-1",
+  entityId: "trust-1",
   familyMembers: [
     { id: "fm-c", role: "client" as const },
     { id: "fm-s", role: "spouse" as const },
@@ -11,7 +11,7 @@ const CTX: ApplyOpContext = {
 };
 
 const CTX_NO_SPOUSE: ApplyOpContext = {
-  trustId: "trust-1",
+  entityId: "trust-1",
   familyMembers: [{ id: "fm-c", role: "client" as const }],
 };
 
@@ -63,7 +63,7 @@ describe("remove op", () => {
   });
 
   it("throws when no FM available to absorb freed %", () => {
-    const ctxEmpty: ApplyOpContext = { trustId: "trust-1", familyMembers: [] };
+    const ctxEmpty: ApplyOpContext = { entityId: "trust-1", familyMembers: [] };
     const owners: AccountOwner[] = [{ kind: "entity", entityId: "trust-1", percent: 1.0 }];
     expect(() => applyAssetTabOp(owners, { type: "remove", assetType: "account", assetId: "a1" }, ctxEmpty)).toThrow();
   });
@@ -153,7 +153,7 @@ describe("add op", () => {
 describe("set-percent on trust-only-owned asset (C1)", () => {
   it("shrink trust from 100% to 50%: freed 50% redistributed to client+spouse 25/25", () => {
     const ctx: ApplyOpContext = {
-      trustId: "trust-1",
+      entityId: "trust-1",
       familyMembers: [
         { id: "fm-c", role: "client" as const },
         { id: "fm-s", role: "spouse" as const },
@@ -177,7 +177,7 @@ describe("set-percent on trust-only-owned asset (C1)", () => {
 
   it("shrink trust-only to 80%: freed 20% goes to client when no spouse", () => {
     const ctxClientOnly: ApplyOpContext = {
-      trustId: "trust-1",
+      entityId: "trust-1",
       familyMembers: [{ id: "fm-c", role: "client" as const }],
     };
     const result = applyAssetTabOp(
@@ -199,7 +199,7 @@ describe("set-percent on trust-only-owned asset (C1)", () => {
 describe("remove with zero-pct FM rows (C2)", () => {
   it("falls back to client/spouse split when all FM rows are at 0%", () => {
     const ctx: ApplyOpContext = {
-      trustId: "trust-1",
+      entityId: "trust-1",
       familyMembers: [
         { id: "fm-c", role: "client" as const },
         { id: "fm-s", role: "spouse" as const },
