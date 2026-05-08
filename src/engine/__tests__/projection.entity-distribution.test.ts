@@ -140,6 +140,32 @@ describe("Phase 3: business entity tax incidence", () => {
   });
 });
 
+describe("Phase 3: tax-treatment mapping", () => {
+  it("qbi treatment: net income lands in taxDetail.qbi (deduction-eligible)", () => {
+    // NOTE: flat mode taxes QBI and ordinary identically via taxableIncome
+    // accumulation (see projection.ts ~L1256). We therefore assert bucket
+    // assignment directly rather than comparing tax totals, which would be
+    // equal in flat mode regardless of treatment.
+    const data = mkData({ entity: { taxTreatment: "qbi" } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // The $100k pass-through should land in taxDetail.qbi, not ordinaryIncome.
+    expect(y0.taxDetail!.qbi).toBeCloseTo(100_000, 0);
+    expect(y0.taxDetail!.ordinaryIncome).toBeCloseTo(0, 0);
+  });
+
+  it("non_taxable treatment: zero tax incidence (income flows to taxExempt)", () => {
+    const data = mkData({ entity: { taxTreatment: "non_taxable" } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // Compare to no-income baseline — taxes should be equal (within rounding).
+    const noIncomeYears = runProjection(mkData({ incomes: [] }));
+    expect(y0.expenses.taxes).toBeCloseTo(noIncomeYears[0].expenses.taxes, 0);
+  });
+});
+
 describe("Phase 3: business entity distribution flow", () => {
   it("100% distribution: entity net income flows to household checking", () => {
     const data = mkData(); // 100% distribution, $100k net
