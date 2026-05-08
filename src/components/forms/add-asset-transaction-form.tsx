@@ -220,6 +220,20 @@ export default function AddAssetTransactionForm({
   const [sellPurchaseTransactionId, setSellPurchaseTransactionId] = useState<string>(
     initialData?.purchaseTransactionId ?? "",
   );
+  // Sell amount mode — drives whether we submit fractionSold or overrideSaleValue.
+  type SellAmountMode = "full" | "percent" | "dollar";
+  const initialSellMode: SellAmountMode =
+    initialData?.fractionSold != null && initialData.fractionSold !== "1"
+      ? "percent"
+      : initialData?.overrideSaleValue
+      ? "dollar"
+      : "full";
+  const [sellAmountMode, setSellAmountMode] = useState<SellAmountMode>(initialSellMode);
+  const [fractionSoldPct, setFractionSoldPct] = useState<string>(
+    initialData?.fractionSold != null
+      ? String(Math.round(Number(initialData.fractionSold) * 10000) / 100)
+      : "100",
+  );
   const [overrideSaleValue, setOverrideSaleValue] = useState(
     initialData?.overrideSaleValue ?? "",
   );
@@ -400,7 +414,17 @@ export default function AddAssetTransactionForm({
     if (sellHasData) {
       body.accountId = sellAccountId || null;
       body.purchaseTransactionId = sellPurchaseTransactionId || null;
-      body.overrideSaleValue = toOptionalString(overrideSaleValue as string);
+      // Sell-amount mode dictates exactly one of fractionSold / overrideSaleValue.
+      if (sellAmountMode === "full") {
+        body.fractionSold = null;
+        body.overrideSaleValue = null;
+      } else if (sellAmountMode === "percent") {
+        body.fractionSold = Number(fractionSoldPct) / 100;
+        body.overrideSaleValue = null;
+      } else {
+        body.fractionSold = null;
+        body.overrideSaleValue = toOptionalString(overrideSaleValue as string);
+      }
       body.overrideBasis = toOptionalString(overrideBasis as string);
       body.transactionCostPct = toOptionalDecimal(transactionCostPct);
       body.transactionCostFlat = toOptionalString(transactionCostFlat as string);
@@ -611,11 +635,46 @@ export default function AddAssetTransactionForm({
                 </select>
               </div>
 
-              {/* Override Sale Value + Basis */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Sell amount mode */}
+              <div>
+                <label className={LABEL_CLASS}>Sell amount</label>
+                <div className="mt-1 flex gap-1 text-xs">
+                  {(["full", "percent", "dollar"] as SellAmountMode[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setSellAmountMode(m)}
+                      className={
+                        "rounded-md border px-2 py-1 text-xs font-medium transition-colors " +
+                        (sellAmountMode === m
+                          ? "border-accent bg-accent/15 text-accent"
+                          : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800")
+                      }
+                    >
+                      {m === "full"
+                        ? "Full sale"
+                        : m === "percent"
+                        ? "% of asset"
+                        : "$ amount"}
+                    </button>
+                  ))}
+                </div>
+                {sellAmountMode === "percent" && (
+                  <div className="mt-2">
+                    <PercentInput
+                      value={fractionSoldPct}
+                      onChange={(raw) => setFractionSoldPct(raw)}
+                      className="w-32 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Sell value: dollar amount inline, otherwise hidden under "More overrides" */}
+              {sellAmountMode === "dollar" ? (
                 <div>
                   <label className={LABEL_CLASS} htmlFor="overrideSaleValue">
-                    Override Sale Value ($)
+                    Sell amount ($)
                   </label>
                   <CurrencyInput
                     id="overrideSaleValue"
@@ -632,29 +691,76 @@ export default function AddAssetTransactionForm({
                       </span>
                     </p>
                   )}
+                  <div className="mt-3">
+                    <label className={LABEL_CLASS} htmlFor="overrideBasis">
+                      Override Basis ($)
+                    </label>
+                    <CurrencyInput
+                      id="overrideBasis"
+                      value={overrideBasis}
+                      onChange={(raw) => setOverrideBasis(raw)}
+                      placeholder="Leave blank for projected"
+                      className={INPUT_CLASS.replace("px-3", "pr-3")}
+                    />
+                    {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
+                      <p className="mt-1 text-xs text-gray-400">
+                        Projected basis in {year}:{" "}
+                        <span className="text-gray-300">
+                          {formatCurrency(projectedSellInfo.projectedBasis)}
+                        </span>
+                      </p>
+                    )}
+                  </div>
                 </div>
-
-                <div>
-                  <label className={LABEL_CLASS} htmlFor="overrideBasis">
-                    Override Basis ($)
-                  </label>
-                  <CurrencyInput
-                    id="overrideBasis"
-                    value={overrideBasis}
-                    onChange={(raw) => setOverrideBasis(raw)}
-                    placeholder="Leave blank for projected"
-                    className={INPUT_CLASS.replace("px-3", "pr-3")}
-                  />
-                  {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
-                    <p className="mt-1 text-xs text-gray-400">
-                      Projected basis in {year}:{" "}
-                      <span className="text-gray-300">
-                        {formatCurrency(projectedSellInfo.projectedBasis)}
-                      </span>
-                    </p>
-                  )}
-                </div>
-              </div>
+              ) : (
+                <details className="rounded border border-gray-700 bg-gray-900 px-3 py-2">
+                  <summary className="cursor-pointer text-sm text-gray-300">
+                    More overrides
+                  </summary>
+                  <div className="mt-2 grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={LABEL_CLASS} htmlFor="overrideSaleValue">
+                        Override Sale Value ($)
+                      </label>
+                      <CurrencyInput
+                        id="overrideSaleValue"
+                        value={overrideSaleValue}
+                        onChange={(raw) => setOverrideSaleValue(raw)}
+                        placeholder="Leave blank for projected"
+                        className={INPUT_CLASS.replace("px-3", "pr-3")}
+                      />
+                      {projectedSellInfo && projectedSellInfo.projectedValue > 0 && (
+                        <p className="mt-1 text-xs text-gray-400">
+                          Projected value in {year}:{" "}
+                          <span className="text-gray-300">
+                            {formatCurrency(projectedSellInfo.projectedValue)}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className={LABEL_CLASS} htmlFor="overrideBasis">
+                        Override Basis ($)
+                      </label>
+                      <CurrencyInput
+                        id="overrideBasis"
+                        value={overrideBasis}
+                        onChange={(raw) => setOverrideBasis(raw)}
+                        placeholder="Leave blank for projected"
+                        className={INPUT_CLASS.replace("px-3", "pr-3")}
+                      />
+                      {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
+                        <p className="mt-1 text-xs text-gray-400">
+                          Projected basis in {year}:{" "}
+                          <span className="text-gray-300">
+                            {formatCurrency(projectedSellInfo.projectedBasis)}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </details>
+              )}
 
               {/* Transaction Costs */}
               <div className="grid grid-cols-2 gap-4">
