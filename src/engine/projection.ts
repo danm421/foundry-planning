@@ -1227,7 +1227,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const netIncome = computeBusinessEntityNetIncome(
         entity.id,
         currentIncomes,
-        data.expenses,
+        allExpenses,
         year,
       );
       if (netIncome <= 0) continue;
