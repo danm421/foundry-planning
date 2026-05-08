@@ -12,6 +12,13 @@ vi.mock("@/hooks/use-scenario-writer", () => ({
   }),
 }));
 
+vi.mock("@/hooks/use-scenario-state", () => ({
+  useScenarioState: () => ({
+    scenarioId: null,
+    setScenario: vi.fn(),
+  }),
+}));
+
 beforeEach(() => {
   submitMock.mockReset();
   submitMock.mockResolvedValue({
@@ -31,6 +38,9 @@ const baseProps = {
   taxTreatment: "ordinary" as const,
   planStartYear: 2026,
   defaultEndYear: 2050,
+  planEndYear: 2050,
+  primaryClientBirthYear: 1964,
+  initialFlowOverrides: [],
 };
 
 describe("FlowsTab", () => {

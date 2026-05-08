@@ -27,6 +27,15 @@ vi.mock("@/hooks/use-scenario-writer", () => ({
   useScenarioWriter: () => ({ submit: vi.fn() }),
 }));
 
+// useScenarioState is used by FlowsTab (rendered inside AddTrustForm) and
+// calls useRouter/useSearchParams from Next.js App Router — not available in jsdom.
+vi.mock("@/hooks/use-scenario-state", () => ({
+  useScenarioState: () => ({
+    scenarioId: null,
+    setScenario: vi.fn(),
+  }),
+}));
+
 // MilestoneYearPicker renders a complex picker — stub it to a plain number input
 // so we don't have to set up the full milestones context.
 vi.mock("@/components/milestone-year-picker", () => ({

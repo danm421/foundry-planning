@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AddTrustForm from "../forms/add-trust-form";
 import BusinessForm from "./business-form";
 import { getEntityKind, type EntityKind } from "./types";
@@ -32,6 +32,9 @@ export interface EntityDialogProps {
   incomes?: AssetsTabIncome[];
   expenses?: AssetsTabExpense[];
   assetFamilyMembers?: AssetsTabFamilyMember[];
+  /** Schedule modal context — derived from client plan settings + primary client DOB */
+  planEndYear?: number;
+  primaryClientBirthYear?: number;
 }
 
 type TrustTab = "details" | "flows" | "assets" | "transfers" | "notes";
@@ -78,6 +81,8 @@ export default function EntityDialog({
   incomes,
   expenses,
   assetFamilyMembers,
+  planEndYear,
+  primaryClientBirthYear,
 }: EntityDialogProps) {
   const [submitState, setSubmitState] = useState<{ canSubmit: boolean; loading: boolean }>({
     canSubmit: true,
@@ -85,6 +90,30 @@ export default function EntityDialog({
   });
   const [trustTab, setTrustTab] = useState<TrustTab>("details");
   const [businessTab, setBusinessTab] = useState<BusinessTab>("details");
+
+  const [initialFlowOverrides, setInitialFlowOverrides] = useState<Array<{
+    year: number;
+    incomeAmount: number | null;
+    expenseAmount: number | null;
+    distributionPercent: number | null;
+  }>>([]);
+
+  useEffect(() => {
+    if (!editing?.id) return;
+    // Use "base" as a sentinel when no scenario is active — the endpoint treats
+    // it as base-plan (no overrides exist yet in that case and returns []).
+    const scenarioParam = typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("scenario") ?? "base"
+      : "base";
+    fetch(
+      `/api/clients/${clientId}/entities/${editing.id}/flow-overrides?scenarioId=${scenarioParam}`,
+    )
+      .then((r) => r.json())
+      .then((j: { overrides?: Array<{ year: number; incomeAmount: number | null; expenseAmount: number | null; distributionPercent: number | null }> }) =>
+        setInitialFlowOverrides(j.overrides ?? []),
+      )
+      .catch(() => setInitialFlowOverrides([]));
+  }, [clientId, editing?.id]);
 
   if (!open) return null;
 
@@ -171,6 +200,9 @@ export default function EntityDialog({
           entityIncome={entityIncome}
           entityExpense={entityExpense}
           assetFamilyMembers={assetFamilyMembers}
+          planEndYear={planEndYear}
+          primaryClientBirthYear={primaryClientBirthYear}
+          initialFlowOverrides={initialFlowOverrides}
           onSaved={onSaved}
           onClose={() => onOpenChange(false)}
           onSubmitStateChange={setSubmitState}
@@ -188,6 +220,9 @@ export default function EntityDialog({
           entityExpense={entityExpense}
           assetFamilyMembers={assetFamilyMembers}
           otherEntities={otherEntities}
+          planEndYear={planEndYear}
+          primaryClientBirthYear={primaryClientBirthYear}
+          initialFlowOverrides={initialFlowOverrides}
           onSaved={onSaved}
           onClose={() => onOpenChange(false)}
           onSubmitStateChange={setSubmitState}
