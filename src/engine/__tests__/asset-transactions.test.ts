@@ -351,3 +351,40 @@ describe("applyAssetPurchases", () => {
     expect(balances["checking-1"]).toBe(50000);
   });
 });
+
+describe("applyAssetPurchases — deterministic synthetic ids", () => {
+  it("uses technique-acct-${purchase.id} so resells can resolve later", () => {
+    _resetSyntheticIdCounter();
+    const purchase: AssetTransaction = {
+      id: "buy-uuid-fixed",
+      name: "Vacation Home",
+      type: "buy",
+      year: 2030,
+      assetName: "Lakeside Cottage",
+      assetCategory: "real_estate",
+      assetSubType: "rental_property",
+      purchasePrice: 400_000,
+      growthRate: 0.05,
+      basis: 400_000,
+    };
+    const accountBalances: Record<string, number> = { checking: 1_000_000 };
+    const basisMap: Record<string, number> = { checking: 1_000_000 };
+    const accountLedgers: Record<string, AccountLedger> = {
+      checking: makeLedger(1_000_000),
+    };
+
+    const result = applyAssetPurchases({
+      purchases: [purchase],
+      accounts: [],
+      liabilities: [],
+      accountBalances,
+      basisMap,
+      accountLedgers,
+      year: 2030,
+      defaultCheckingId: "checking",
+    });
+
+    expect(result.newAccounts).toHaveLength(1);
+    expect(result.newAccounts[0].id).toBe("technique-acct-buy-uuid-fixed");
+  });
+});

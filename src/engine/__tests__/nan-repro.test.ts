@@ -78,21 +78,14 @@ describe("NaN propagation — sell→buy→buy→sell with linked mortgage", () 
       mortgageTermMonths: 360,
     };
     // Sell the 2028 purchase in 2030 (Dan's pattern)
-    // We can't name the sell target by id before it exists — engine uses
-    // technique-acct-<n> synthetic ids. So instead sell by name via a
-    // post-hoc lookup is not supported; mirror the real flow: sell something
-    // that exists at year 2030.  The engine creates ids like technique-acct-N.
-    // For repro we'll sell "home-orig" replaced later; but since home-orig is
-    // gone by 2030, we'll craft a sell referencing one of the synthetic ids.
-    // applyAssetSales only fires if accountId matches, so we need to know it.
-    // The synthetic counter resets per projection; 2028 buy → technique-acct-1,
-    // 2029 buy → technique-acct-2 (approximate).
+    // With deterministic ids, the buy with id "tx-buy-1" produces
+    // technique-acct-tx-buy-1, so we can reference it directly.
     const sellSynth: AssetTransaction = {
       id: "tx-sell-synth",
       name: "Sell Second Home",
       type: "sell",
       year: 2030,
-      accountId: "technique-acct-1",
+      accountId: "technique-acct-tx-buy-1",
       qualifiesForHomeSaleExclusion: true,
     };
 

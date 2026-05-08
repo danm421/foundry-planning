@@ -294,7 +294,7 @@ export function applyAssetPurchases(input: ApplyAssetPurchasesInput): AssetPurch
     }
 
     // Create synthetic account
-    const newAccountId = nextSyntheticId("technique-acct");
+    const newAccountId = `technique-acct-${purchase.id}`;
     const assetBasis = purchase.basis ?? purchasePrice;
 
     const newAccount: Account = {
