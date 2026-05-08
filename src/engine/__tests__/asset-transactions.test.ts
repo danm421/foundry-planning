@@ -576,3 +576,110 @@ describe("applyAssetSales — source resolution", () => {
     expect(result.breakdown[0].skipped).toBe("no-source-balance");
   });
 });
+
+describe("applyAssetSales — partial sales on synthetic accounts", () => {
+  it("partial sale on synthetic source carries residual into next year", () => {
+    const sell: AssetTransaction = {
+      id: "partial-synth",
+      name: "Partial vacation home",
+      type: "sell",
+      year: 2035,
+      purchaseTransactionId: "buy-uuid-fixed",
+      fractionSold: 0.5,
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const accountBalances: Record<string, number> = {
+      "technique-acct-buy-uuid-fixed": 510_000,
+      checking: 0,
+    };
+    const basisMap: Record<string, number> = {
+      "technique-acct-buy-uuid-fixed": 400_000,
+      checking: 0,
+    };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [{
+        id: "technique-acct-buy-uuid-fixed",
+        category: "real_estate",
+      } as Account],
+      liabilities: [],
+      accountBalances, basisMap,
+      accountLedgers: {
+        "technique-acct-buy-uuid-fixed": makeLedger(510_000),
+        checking: makeLedger(0),
+      },
+      year: 2035, defaultCheckingId: "checking", filingStatus: "married_joint",
+    });
+    expect(result.breakdown[0].saleValue).toBeCloseTo(255_000, 2);
+    expect(result.breakdown[0].basis).toBeCloseTo(200_000, 2);
+    expect(result.breakdown[0].capitalGain).toBeCloseTo(55_000, 2);
+    expect(accountBalances["technique-acct-buy-uuid-fixed"]).toBeCloseTo(255_000, 2);
+    expect(result.removedAccountIds).not.toContain("technique-acct-buy-uuid-fixed");
+  });
+
+  it("partial sale on mortgaged real-estate does NOT pay off the mortgage", () => {
+    const sell: AssetTransaction = {
+      id: "partial-mortgaged",
+      name: "Partial mortgaged",
+      type: "sell",
+      year: 2035,
+      accountId: "rental-1",
+      fractionSold: 0.5,
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const accountBalances: Record<string, number> = { "rental-1": 600_000, checking: 0 };
+    const basisMap: Record<string, number> = { "rental-1": 400_000, checking: 0 };
+    const liability = {
+      id: "mortgage-1",
+      name: "Mortgage",
+      balance: 200_000,
+      linkedPropertyId: "rental-1",
+    } as Liability;
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [{ id: "rental-1", category: "real_estate" } as Account],
+      liabilities: [liability],
+      accountBalances, basisMap,
+      accountLedgers: {
+        "rental-1": makeLedger(600_000),
+        checking: makeLedger(0),
+      },
+      year: 2035, defaultCheckingId: "checking", filingStatus: "married_joint",
+    });
+    expect(result.breakdown[0].mortgagePaidOff).toBe(0);
+    expect(result.removedLiabilityIds).not.toContain("mortgage-1");
+  });
+
+  it("full sale on mortgaged real-estate pays off the mortgage (regression)", () => {
+    const sell: AssetTransaction = {
+      id: "full-mortgaged",
+      name: "Full mortgaged",
+      type: "sell",
+      year: 2035,
+      accountId: "rental-2",
+      // fractionSold null → full sale
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const accountBalances: Record<string, number> = { "rental-2": 600_000, checking: 0 };
+    const basisMap: Record<string, number> = { "rental-2": 400_000, checking: 0 };
+    const liability = {
+      id: "mortgage-2",
+      name: "Mortgage",
+      balance: 200_000,
+      linkedPropertyId: "rental-2",
+    } as Liability;
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [{ id: "rental-2", category: "real_estate" } as Account],
+      liabilities: [liability],
+      accountBalances, basisMap,
+      accountLedgers: {
+        "rental-2": makeLedger(600_000),
+        checking: makeLedger(0),
+      },
+      year: 2035, defaultCheckingId: "checking", filingStatus: "married_joint",
+    });
+    expect(result.breakdown[0].mortgagePaidOff).toBe(200_000);
+    expect(result.removedLiabilityIds).toContain("mortgage-2");
+  });
+});

@@ -148,16 +148,19 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
     // Net proceeds after costs
     let netProceeds = saleValue - transactionCosts;
 
-    // Pay off linked mortgage if this is a real estate / property sale
+    // Pay off linked mortgage only on full sales. Partial real-estate sales
+    // route net proceeds to checking; the mortgage continues amortizing.
     let mortgagePaidOff = 0;
-    const linkedMortgage = liabilities.find(
-      (l) => l.linkedPropertyId === accountId
-    );
-    if (linkedMortgage) {
-      const mortgageBalance = linkedMortgage.balance;
-      netProceeds -= mortgageBalance;
-      mortgagePaidOff = mortgageBalance;
-      removedLiabilityIds.push(linkedMortgage.id);
+    if (fraction >= 1) {
+      const linkedMortgage = liabilities.find(
+        (l) => l.linkedPropertyId === accountId
+      );
+      if (linkedMortgage) {
+        const mortgageBalance = linkedMortgage.balance;
+        netProceeds -= mortgageBalance;
+        mortgagePaidOff = mortgageBalance;
+        removedLiabilityIds.push(linkedMortgage.id);
+      }
     }
 
     // Drain the sold portion. fraction === 1 (or remaining < $1 from float
