@@ -683,6 +683,20 @@ export default function TechniquesView({
     };
   }, [projectionYears]);
 
+  const pastBuys = useMemo(
+    () =>
+      assetTransactions
+        .filter((t) => t.type === "buy")
+        .map((t) => ({
+          id: t.id,
+          name: t.name,
+          assetName: t.assetName,
+          year: t.year,
+          assetCategory: t.assetCategory,
+        })),
+    [assetTransactions],
+  );
+
   async function handleDeleteTransfer(transferId: string) {
     await writer.submit(
       { op: "remove", targetKind: "transfer", targetId: transferId },
@@ -861,6 +875,7 @@ export default function TechniquesView({
           clientId={clientId}
           accounts={accounts}
           liabilities={liabilities}
+          pastBuys={pastBuys}
           milestones={milestones}
           clientFirstName={clientFirstName}
           spouseFirstName={spouseFirstName}
