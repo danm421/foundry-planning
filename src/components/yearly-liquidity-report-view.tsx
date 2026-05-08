@@ -152,7 +152,6 @@ export default function YearlyLiquidityReportView({
 
       <YearlyLiquidityTable
         rows={report.rows}
-        totals={report.totals}
         showPortfolio={showPortfolio}
       />
     </div>

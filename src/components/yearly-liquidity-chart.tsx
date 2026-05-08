@@ -67,8 +67,11 @@ export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
       fill?: boolean;
       pointRadius?: number;
       tension?: number;
+      // Chart.js draws lower-order datasets later, so they appear on top.
+      order?: number;
     })[] = [];
 
+    // Bar segments share order: 1 (drawn first, appear behind).
     if (showPortfolio) {
       datasets.push({
         type: "bar",
@@ -76,6 +79,7 @@ export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
         data: portfolio,
         backgroundColor: "#3b82f6",
         stack: "stack",
+        order: 1,
       });
     }
     datasets.push(
@@ -85,6 +89,7 @@ export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
         data: insIn,
         backgroundColor: "#14b8a6",
         stack: "stack",
+        order: 1,
       },
       {
         type: "bar",
@@ -92,6 +97,7 @@ export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
         data: insOut,
         backgroundColor: "#22c55e",
         stack: "stack",
+        order: 1,
       },
       {
         type: "line",
@@ -99,10 +105,12 @@ export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
         data: transfer,
         borderColor: "#ef4444",
         backgroundColor: "#ef4444",
-        borderWidth: 2,
-        pointRadius: 0,
+        borderWidth: 4,
+        pointRadius: 3,
         tension: 0,
         fill: false,
+        // Lower order than the bars → drawn last → on top.
+        order: 0,
       },
     );
 

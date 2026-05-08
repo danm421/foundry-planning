@@ -16,14 +16,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.25,
     borderBottomColor: "#1f2937",
   },
-  footerRow: {
-    flexDirection: "row",
-    paddingTop: 6,
-    marginTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: "#374151",
-    fontWeight: "bold",
-  },
   cellLeft: { flex: 1, textAlign: "left" },
   cellNum: { flex: 1.4, textAlign: "right" },
   surplus: { color: "#10b981" },
@@ -75,26 +67,6 @@ export function YearlyLiquidityPdfTable({ report }: { report: YearlyLiquidityRep
           </View>
         );
       })}
-      <FooterRow report={report} />
-    </View>
-  );
-}
-
-function FooterRow({ report }: { report: YearlyLiquidityReport }) {
-  const t = report.totals;
-  const surplus = moneyText(t.surplusDeficitWithPortfolio);
-  return (
-    <View style={styles.footerRow}>
-      <Text style={styles.cellLeft}>Lifetime</Text>
-      <Text style={styles.cellLeft}>—</Text>
-      <Text style={styles.cellNum}>{fmt.format(t.insuranceInEstate)}</Text>
-      <Text style={styles.cellNum}>{fmt.format(t.insuranceOutOfEstate)}</Text>
-      <Text style={styles.cellNum}>{fmt.format(t.totalInsuranceBenefit)}</Text>
-      <Text style={styles.cellNum}>{fmt.format(t.totalPortfolioAssets)}</Text>
-      <Text style={styles.cellNum}>{fmt.format(t.totalTransferCost)}</Text>
-      <Text style={[styles.cellNum, surplus.isDeficit ? styles.deficit : styles.surplus]}>
-        {surplus.text}
-      </Text>
     </View>
   );
 }
