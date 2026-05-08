@@ -2215,7 +2215,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         data.entityFlowOverrides ?? [],
       );
       if (netIncome <= 0) continue;
-      const distPercent = entity.distributionPolicyPercent ?? 1.0;
+      const distPercent = resolveDistributionPercent(
+        entity,
+        year,
+        data.entityFlowOverrides ?? [],
+      );
       const distAmount = netIncome * distPercent;
       if (distAmount === 0) continue;
       const entityCheckingId = entityCheckingByEntityId[entity.id];

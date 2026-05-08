@@ -418,3 +418,43 @@ describe("Phase 3: multi-year 2-owner LLC integration", () => {
     }
   });
 });
+
+describe("Phase 2: per-year distribution % override", () => {
+  it("override 0.25 in year Y is honored over the entity base 1.0", () => {
+    const data = mkData({ entity: { distributionPolicyPercent: 1.0 } });
+    const dataWithOverride = {
+      ...data,
+      entityFlowOverrides: [
+        { entityId: "llc1", year: 2026, distributionPercent: 0.25 },
+      ],
+    };
+    const years = runProjection(dataWithOverride);
+    const y0 = years[0];
+
+    // $100k net × 0.25 = $25k distributed; $75k retained in entity.
+    const entityLedger = y0.accountLedgers["llc1-checking"];
+    expect(entityLedger.endingValue).toBeCloseTo(75_000, 0);
+
+    const hhEntries = y0.accountLedgers["hh-checking"].entries;
+    const distEntry = hhEntries.find((e) => e.category === "entity_distribution");
+    expect(distEntry).toBeDefined();
+    expect(distEntry!.amount).toBeCloseTo(25_000, 0);
+  });
+
+  it("override income amount in year Y replaces base+growth", () => {
+    const data = mkData(); // 100% distribution, base $100k income
+    const dataWithOverride = {
+      ...data,
+      entityFlowOverrides: [
+        { entityId: "llc1", year: 2026, incomeAmount: 250_000 },
+      ],
+    };
+    const years = runProjection(dataWithOverride);
+    const y0 = years[0];
+
+    const hhEntries = y0.accountLedgers["hh-checking"].entries;
+    const distEntry = hhEntries.find((e) => e.category === "entity_distribution");
+    expect(distEntry).toBeDefined();
+    expect(distEntry!.amount).toBeCloseTo(250_000, 0);
+  });
+});
