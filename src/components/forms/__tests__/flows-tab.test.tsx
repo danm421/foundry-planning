@@ -1,14 +1,24 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import FlowsTab from "../flows-tab";
+
+const submitMock = vi.fn();
 
 vi.mock("@/hooks/use-scenario-writer", () => ({
   useScenarioWriter: () => ({
-    submit: vi.fn().mockResolvedValue({ ok: true, json: () => ({}) }),
+    submit: submitMock,
     scenarioActive: false,
   }),
 }));
+
+beforeEach(() => {
+  submitMock.mockReset();
+  submitMock.mockResolvedValue({
+    ok: true,
+    json: async () => ({}),
+  });
+});
 
 const baseProps = {
   clientId: "client-1",
@@ -56,5 +66,28 @@ describe("FlowsTab", () => {
 
     rerender(<FlowsTab {...baseProps} entityType="trust" />);
     expect(screen.queryByText(/distribution policy/i)).not.toBeInTheDocument();
+  });
+
+  it("routes Distribution & Tax saves through writer.submit with targetKind=entity", async () => {
+    render(
+      <FlowsTab
+        {...baseProps}
+        distributionPolicyPercent={0.25}
+        taxTreatment="qbi"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
+    const [edit, baseFallback] = submitMock.mock.calls[0];
+    expect(edit).toMatchObject({
+      op: "edit",
+      targetKind: "entity",
+      targetId: "ent-1",
+      desiredFields: { distributionPolicyPercent: 0.25, taxTreatment: "qbi" },
+    });
+    expect(baseFallback).toMatchObject({
+      url: "/api/clients/client-1/entities/ent-1",
+      method: "PUT",
+    });
   });
 });
