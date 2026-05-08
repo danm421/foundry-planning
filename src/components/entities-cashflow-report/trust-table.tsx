@@ -9,7 +9,9 @@ export default function TrustTable({ rows, currentYear }: { rows: TrustCashFlowR
           <tr className="border-b border-gray-800">
             {TRUST_COLUMNS.map((c) => (
               <th key={c.key} className="px-2 py-2 text-right text-xs font-normal align-bottom leading-tight first:text-left">
-                {c.label}
+                {c.label.map((line, i) => (
+                  <span key={i} className="block">{line}</span>
+                ))}
               </th>
             ))}
           </tr>
