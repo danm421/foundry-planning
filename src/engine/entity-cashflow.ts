@@ -115,6 +115,17 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
         }
       }
 
+      let transfersIn = 0;
+      if (entity.entityType === "trust") {
+        const giftsForEntity = input.giftsByEntityYear.get(entityId);
+        if (giftsForEntity) transfersIn += giftsForEntity.get(year.year) ?? 0;
+        for (const t of year.deathTransfers ?? []) {
+          if (t.recipientKind === "entity" && t.recipientId === entityId) {
+            transfersIn += t.amount;
+          }
+        }
+      }
+
       if (entity.entityType === "trust") {
         year.entityCashFlow.set(entityId, {
           kind: "trust",
@@ -125,7 +136,7 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           trustSubType: entity.trustSubType ?? "irrevocable",
           isGrantor: entity.isGrantor,
           beginningBalance,
-          transfersIn: 0,
+          transfersIn,
           growth,
           income,
           totalDistributions,

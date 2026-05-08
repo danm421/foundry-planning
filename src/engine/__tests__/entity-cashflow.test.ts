@@ -192,6 +192,88 @@ describe("computeEntityCashFlow", () => {
     expect((row as { kind: "trust"; totalDistributions: number }).totalDistributions).toBe(50_000);
   });
 
+  it("populates Transfers In from gifts and death-event bequests", () => {
+    const trust = {
+      id: "trust-1",
+      name: "Smith SLAT",
+      entityType: "trust" as const,
+      trustSubType: "slat" as const,
+      isGrantor: false,
+      initialValue: 0,
+      initialBasis: 0,
+    };
+    const y2026 = makeYear(2026);
+    const y2027 = makeYear(2027);
+    // DeathTransfer uses recipientKind: "entity" + recipientId for entity recipients.
+    y2027.deathTransfers = [
+      {
+        year: 2027,
+        deathOrder: 1,
+        deceased: "client",
+        sourceAccountId: "acc-x",
+        sourceAccountName: "Joint Brokerage",
+        sourceLiabilityId: null,
+        sourceLiabilityName: null,
+        via: "will",
+        recipientKind: "entity",
+        recipientId: "trust-1",
+        recipientLabel: "Smith SLAT",
+        amount: 250_000,
+        basis: 100_000,
+        resultingAccountId: null,
+        resultingLiabilityId: null,
+      } as never,
+      // A non-entity transfer in the same year must NOT count.
+      {
+        year: 2027,
+        deathOrder: 1,
+        deceased: "client",
+        sourceAccountId: "acc-y",
+        sourceAccountName: "IRA",
+        sourceLiabilityId: null,
+        sourceLiabilityName: null,
+        via: "beneficiary_designation",
+        recipientKind: "spouse",
+        recipientId: null,
+        recipientLabel: "Spouse",
+        amount: 999_999,
+        basis: 0,
+        resultingAccountId: null,
+        resultingLiabilityId: null,
+      } as never,
+      // An entity transfer to a different entity must NOT count.
+      {
+        year: 2027,
+        deathOrder: 1,
+        deceased: "client",
+        sourceAccountId: "acc-z",
+        sourceAccountName: "Other",
+        sourceLiabilityId: null,
+        sourceLiabilityName: null,
+        via: "will",
+        recipientKind: "entity",
+        recipientId: "trust-other",
+        recipientLabel: "Other Trust",
+        amount: 999_999,
+        basis: 0,
+        resultingAccountId: null,
+        resultingLiabilityId: null,
+      } as never,
+    ];
+    computeEntityCashFlow({
+      years: [y2026, y2027],
+      entitiesById: new Map([["trust-1", trust]]),
+      accountEntityOwners: new Map(),
+      giftsByEntityYear: new Map([["trust-1", new Map([[2026, 100_000]])]]),
+      incomes: [],
+      expenses: [],
+    });
+    const row2026 = y2026.entityCashFlow.get("trust-1")!;
+    const row2027 = y2027.entityCashFlow.get("trust-1")!;
+    expect((row2026 as { kind: "trust"; transfersIn: number }).transfersIn).toBe(100_000);
+    expect((row2027 as { kind: "trust"; transfersIn: number }).transfersIn).toBe(250_000);
+  });
+
   it("includes charitable outflows and termination payouts in totalDistributions", () => {
     const trust = {
       id: "clut-1",
