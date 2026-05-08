@@ -1,0 +1,7 @@
+ALTER TABLE "asset_transactions" ADD COLUMN "purchase_transaction_id" uuid;--> statement-breakpoint
+ALTER TABLE "asset_transactions" ADD COLUMN "fraction_sold" numeric(7, 6);--> statement-breakpoint
+ALTER TABLE "asset_transactions" ADD CONSTRAINT "asset_transactions_purchase_transaction_id_asset_transactions_id_fk" FOREIGN KEY ("purchase_transaction_id") REFERENCES "public"."asset_transactions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "asset_transactions_purchase_idx" ON "asset_transactions" USING btree ("purchase_transaction_id") WHERE "asset_transactions"."purchase_transaction_id" IS NOT NULL;--> statement-breakpoint
+ALTER TABLE "asset_transactions" ADD CONSTRAINT "asset_transactions_sell_source_check" CHECK ("asset_transactions"."type" <> 'sell' OR NOT ("asset_transactions"."account_id" IS NOT NULL AND "asset_transactions"."purchase_transaction_id" IS NOT NULL));--> statement-breakpoint
+ALTER TABLE "asset_transactions" ADD CONSTRAINT "asset_transactions_buy_no_source_check" CHECK ("asset_transactions"."type" <> 'buy' OR ("asset_transactions"."purchase_transaction_id" IS NULL AND "asset_transactions"."account_id" IS NULL AND "asset_transactions"."fraction_sold" IS NULL));--> statement-breakpoint
+ALTER TABLE "asset_transactions" ADD CONSTRAINT "asset_transactions_fraction_sold_range_check" CHECK ("asset_transactions"."fraction_sold" IS NULL OR ("asset_transactions"."fraction_sold" > 0 AND "asset_transactions"."fraction_sold" <= 1));

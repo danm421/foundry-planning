@@ -1,6 +1,6 @@
 {
-  "id": "0843f342-194d-491b-addb-b99e568a06e7",
-  "prevId": "c2d17384-0bd2-40d3-a147-c9fedeec2656",
+  "id": "5bc2e4dd-b256-4438-8fd9-b46acab68b94",
+  "prevId": "0843f342-194d-491b-addb-b99e568a06e7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -755,6 +755,18 @@
           "notNull": true,
           "default": false
         },
+        "purchase_transaction_id": {
+          "name": "purchase_transaction_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fraction_sold": {
+          "name": "fraction_sold",
+          "type": "numeric(7, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "asset_name": {
           "name": "asset_name",
           "type": "text",
@@ -845,7 +857,24 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "asset_transactions_purchase_idx": {
+          "name": "asset_transactions_purchase_idx",
+          "columns": [
+            {
+              "expression": "purchase_transaction_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"asset_transactions\".\"purchase_transaction_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "asset_transactions_client_id_clients_id_fk": {
           "name": "asset_transactions_client_id_clients_id_fk",
@@ -899,6 +928,19 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
+        "asset_transactions_purchase_transaction_id_asset_transactions_id_fk": {
+          "name": "asset_transactions_purchase_transaction_id_asset_transactions_id_fk",
+          "tableFrom": "asset_transactions",
+          "tableTo": "asset_transactions",
+          "columnsFrom": [
+            "purchase_transaction_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
         "asset_transactions_asset_model_portfolio_id_model_portfolios_id_fk": {
           "name": "asset_transactions_asset_model_portfolio_id_model_portfolios_id_fk",
           "tableFrom": "asset_transactions",
@@ -929,7 +971,20 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "asset_transactions_sell_source_check": {
+          "name": "asset_transactions_sell_source_check",
+          "value": "\"asset_transactions\".\"type\" <> 'sell' OR NOT (\"asset_transactions\".\"account_id\" IS NOT NULL AND \"asset_transactions\".\"purchase_transaction_id\" IS NOT NULL)"
+        },
+        "asset_transactions_buy_no_source_check": {
+          "name": "asset_transactions_buy_no_source_check",
+          "value": "\"asset_transactions\".\"type\" <> 'buy' OR (\"asset_transactions\".\"purchase_transaction_id\" IS NULL AND \"asset_transactions\".\"account_id\" IS NULL AND \"asset_transactions\".\"fraction_sold\" IS NULL)"
+        },
+        "asset_transactions_fraction_sold_range_check": {
+          "name": "asset_transactions_fraction_sold_range_check",
+          "value": "\"asset_transactions\".\"fraction_sold\" IS NULL OR (\"asset_transactions\".\"fraction_sold\" > 0 AND \"asset_transactions\".\"fraction_sold\" <= 1)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.audit_log": {
