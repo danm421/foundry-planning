@@ -105,7 +105,15 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           if (entry.category === "expense") expenses += Math.abs(entry.amount);
         }
       }
-      const totalDistributions = year.trustDistributionsByEntity?.get(entityId) ?? 0;
+      let totalDistributions = year.trustDistributionsByEntity?.get(entityId) ?? 0;
+      if (entity.entityType === "trust") {
+        for (const o of year.charitableOutflowDetail ?? []) {
+          if (o.trustId === entityId) totalDistributions += o.amount;
+        }
+        for (const t of year.trustTerminations ?? []) {
+          if (t.trustId === entityId) totalDistributions += t.totalDistributed;
+        }
+      }
 
       if (entity.entityType === "trust") {
         year.entityCashFlow.set(entityId, {

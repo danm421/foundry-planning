@@ -191,4 +191,45 @@ describe("computeEntityCashFlow", () => {
     expect((row as { kind: "trust"; expenses: number }).expenses).toBe(10_000);
     expect((row as { kind: "trust"; totalDistributions: number }).totalDistributions).toBe(50_000);
   });
+
+  it("includes charitable outflows and termination payouts in totalDistributions", () => {
+    const trust = {
+      id: "clut-1",
+      name: "Smith CLUT",
+      entityType: "trust" as const,
+      trustSubType: "clut" as const,
+      isGrantor: false,
+      initialValue: 0,
+      initialBasis: 0,
+    };
+    const y = makeYear(2030);
+    y.accountLedgers = {};
+    y.charitableOutflowDetail = [
+      {
+        kind: "clut_unitrust",
+        trustId: "clut-1",
+        trustName: "Smith CLUT",
+        charityId: "char-1",
+        amount: 25_000,
+      } as never,
+    ];
+    y.trustTerminations = [
+      {
+        trustId: "clut-1",
+        trustName: "Smith CLUT",
+        totalDistributed: 500_000,
+        toBeneficiaries: [],
+      } as never,
+    ];
+    computeEntityCashFlow({
+      years: [y],
+      entitiesById: new Map([["clut-1", trust]]),
+      accountEntityOwners: new Map(),
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+    });
+    const row = y.entityCashFlow.get("clut-1")!;
+    expect((row as { kind: "trust"; totalDistributions: number }).totalDistributions).toBe(525_000);
+  });
 });
