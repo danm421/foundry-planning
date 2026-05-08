@@ -1,6 +1,7 @@
 import type { BusinessCashFlowRow } from "@/engine/types";
 import type { LedgerSection } from "@/lib/entity-ledger";
 import { BUSINESS_COLUMNS, formatCurrency, formatAges } from "./tokens";
+import { ClickableCell } from "./clickable-cell";
 
 interface Props {
   rows: BusinessCashFlowRow[];
@@ -9,25 +10,6 @@ interface Props {
 }
 
 export default function BusinessTable({ rows, currentYear, onCellClick }: Props) {
-  const Cell = ({
-    value,
-    onClick,
-  }: {
-    value: number;
-    onClick?: () => void;
-  }) =>
-    onClick ? (
-      <button
-        type="button"
-        onClick={onClick}
-        className="w-full text-right tabular-nums text-blue-300 hover:text-blue-200 hover:underline"
-      >
-        {formatCurrency(value)}
-      </button>
-    ) : (
-      <>{formatCurrency(value)}</>
-    );
-
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -62,18 +44,18 @@ export default function BusinessTable({ rows, currentYear, onCellClick }: Props)
                 <td className="px-2 py-1.5 text-right tabular-nums">{formatCurrency(r.beginningTotalValue)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{formatCurrency(r.beginningBasis)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">
-                  <Cell value={r.growth} onClick={onCellClick && (() => onCellClick(r, "growth"))} />
+                  <ClickableCell value={r.growth} onClick={onCellClick && (() => onCellClick(r, "growth"))} />
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">
-                  <Cell value={r.income} onClick={onCellClick && (() => onCellClick(r, "income"))} />
+                  <ClickableCell value={r.income} onClick={onCellClick && (() => onCellClick(r, "income"))} />
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">
-                  <Cell value={r.expenses} onClick={onCellClick && (() => onCellClick(r, "expenses"))} />
+                  <ClickableCell value={r.expenses} onClick={onCellClick && (() => onCellClick(r, "expenses"))} />
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{formatCurrency(r.annualDistribution)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{formatCurrency(r.retainedEarnings)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">
-                  <Cell value={r.endingTotalValue} onClick={onCellClick && (() => onCellClick(r, "ending"))} />
+                  <ClickableCell value={r.endingTotalValue} onClick={onCellClick && (() => onCellClick(r, "ending"))} />
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{formatCurrency(r.endingBasis)}</td>
               </tr>

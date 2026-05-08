@@ -1,12 +1,7 @@
 "use client";
 
 import type { LedgerSection, LedgerSourceRow } from "@/lib/entity-ledger";
-
-const fmt = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
+import { formatCurrency } from "./tokens";
 
 const SECTION_TITLES: Record<LedgerSection, string> = {
   growth: "Growth",
@@ -78,7 +73,7 @@ export default function EntityLedgerModal({
                 >
                   <td className="px-2 py-1.5 text-left">{r.label}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">
-                    {fmt.format(r.amount)}
+                    {formatCurrency(r.amount)}
                   </td>
                 </tr>
               ))}
@@ -86,13 +81,13 @@ export default function EntityLedgerModal({
             <tfoot className="text-gray-100">
               <tr className="border-t border-gray-700 font-semibold">
                 <td className="px-2 py-2 text-left">Total</td>
-                <td className="px-2 py-2 text-right tabular-nums">{fmt.format(total)}</td>
+                <td className="px-2 py-2 text-right tabular-nums">{formatCurrency(total)}</td>
               </tr>
               {!reconciles && (
                 <tr>
                   <td colSpan={2} className="px-2 py-1 text-right text-xs text-amber-400">
-                    Sources sum to {fmt.format(sum)} — reconciliation gap of{" "}
-                    {fmt.format(total - sum)}.
+                    Sources sum to {formatCurrency(sum)} — reconciliation gap of{" "}
+                    {formatCurrency(total - sum)}.
                   </td>
                 </tr>
               )}

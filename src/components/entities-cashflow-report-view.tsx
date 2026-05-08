@@ -110,11 +110,8 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
     });
   }, [years, selectedEntityId, yearRange]);
 
-  const ledger = useMemo<EntityLedger | null>(() => {
-    if (!openLedger || !apiData) return null;
-    const yr = years.find((y) => y.year === openLedger.year);
-    if (!yr) return null;
-
+  const ledgerLookups = useMemo(() => {
+    if (!apiData) return null;
     const entitiesById = new Map<string, EntityMetadata>(
       apiData.entities.map((e) => [
         e.id,
@@ -131,9 +128,7 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
         },
       ]),
     );
-
     const accountNamesById = new Map(apiData.accounts.map((a) => [a.id, a.name]));
-
     const accountEntityOwners = new Map<string, { entityId: string; percent: number }>();
     for (const a of apiData.accounts) {
       for (const o of a.owners ?? []) {
@@ -142,18 +137,24 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
         }
       }
     }
+    return { entitiesById, accountNamesById, accountEntityOwners };
+  }, [apiData]);
 
+  const ledger = useMemo<EntityLedger | null>(() => {
+    if (!openLedger || !apiData || !ledgerLookups) return null;
+    const yr = years.find((y) => y.year === openLedger.year);
+    if (!yr) return null;
     return getEntityLedger(openLedger.entityId, {
       year: yr,
       planStartYear: years[0]?.year ?? openLedger.year,
-      entitiesById,
-      accountNamesById,
-      accountEntityOwners,
+      entitiesById: ledgerLookups.entitiesById,
+      accountNamesById: ledgerLookups.accountNamesById,
+      accountEntityOwners: ledgerLookups.accountEntityOwners,
       incomes: apiData.incomes,
       expenses: apiData.expenses,
       entityFlowOverrides: apiData.entityFlowOverrides ?? [],
     });
-  }, [openLedger, apiData, years]);
+  }, [openLedger, apiData, ledgerLookups, years]);
 
   const onExportPdf = async () => {
     setExporting(true);

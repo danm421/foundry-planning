@@ -103,7 +103,6 @@ const baseInput: BuildViewModelInput = {
   projectionYears: [priorYear, projectionYear],
   selectedYear: 2026,
   view: "consolidated",
-  planStartYear: 2025,
 };
 
 describe("buildViewModel (consolidated)", () => {
@@ -342,9 +341,9 @@ describe("buildViewModel (edge cases)", () => {
 });
 
 describe("buildViewModel — flat business value projection", () => {
-  function bizFixture(selectedYear: number, planStartYear: number = 2026): BuildViewModelInput {
+  function bizFixture(selectedYear: number, planStart: number = 2026): BuildViewModelInput {
     const years = Array.from({ length: 11 }, (_, i) => ({
-      year: planStartYear + i,
+      year: planStart + i,
       portfolioAssets: {
         cash: {},
         taxable: {},
@@ -380,7 +379,6 @@ describe("buildViewModel — flat business value projection", () => {
       projectionYears: years,
       selectedYear,
       view: "entities",
-      planStartYear,
     };
   }
 

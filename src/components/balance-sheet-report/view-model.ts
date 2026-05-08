@@ -8,6 +8,7 @@
 
 import type { AccountOwner } from "@/engine/ownership";
 import type { FamilyMember } from "@/engine/types";
+import { flatBusinessValueAt } from "@/engine/entity-cashflow";
 import type { OwnershipView } from "./ownership-filter";
 import { yoyPct, sliceBarAnchors, type YoyResult } from "./yoy";
 import { CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_HEX, type AssetCategoryKey } from "./tokens";
@@ -82,9 +83,6 @@ export interface BuildViewModelInput {
    * (the advisor-entered current balances). "eoy" = end-of-year balances
    * for the selected year. Default: "eoy". */
   asOfMode?: AsOfMode;
-  /** Plan's first projection year — used to compound flat business values
-   *  forward to the selected year. */
-  planStartYear: number;
 }
 
 // ── Output shape ─────────────────────────────────────────────────────────────
@@ -319,8 +317,9 @@ function ownerLabelForFamily(
 // ── Builder ──────────────────────────────────────────────────────────────────
 
 export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewModel {
-  const { accounts, liabilities, entities, familyMembers, projectionYears, selectedYear, view, planStartYear } = input;
+  const { accounts, liabilities, entities, familyMembers, projectionYears, selectedYear, view } = input;
   const asOfMode: AsOfMode = input.asOfMode ?? "eoy";
+  const planStartYear = projectionYears[0]?.year ?? selectedYear;
 
   const yearData =
     asOfMode === "today"
@@ -502,9 +501,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   //     share so the Business category appears in their personal totals.
   for (const e of entities) {
     if (!isBusinessEntity(e)) continue;
-    const yrs = selectedYear - planStartYear;
-    const g = e.valueGrowthRate ?? 0;
-    const flat = (e.value ?? 0) * Math.pow(1 + g, yrs + 1);
+    const flat = flatBusinessValueAt(e.value ?? 0, e.valueGrowthRate, selectedYear, planStartYear).now;
     if (flat <= 0) continue;
     const familyShare = familyOwnedFraction(e);
 
@@ -928,7 +925,8 @@ function computeYearTotals(
   input: BuildViewModelInput,
   yearData: ProjectionYearLike,
 ): YearTotals {
-  const { accounts, liabilities, entities, familyMembers, planStartYear } = input;
+  const { accounts, liabilities, entities, familyMembers, projectionYears, selectedYear } = input;
+  const planStartYear = projectionYears[0]?.year ?? selectedYear;
   const entitiesById = new Map(entities.map((e) => [e.id, e]));
   const familyMemberById = new Map(familyMembers.map((fm) => [fm.id, fm]));
   void familyMemberById; // referenced only for symmetry with main builder
@@ -966,9 +964,7 @@ function computeYearTotals(
 
   for (const e of entities) {
     if (!isBusinessEntity(e)) continue;
-    const yrs = yearData.year - planStartYear;
-    const g = e.valueGrowthRate ?? 0;
-    const flat = (e.value ?? 0) * Math.pow(1 + g, yrs + 1);
+    const flat = flatBusinessValueAt(e.value ?? 0, e.valueGrowthRate, yearData.year, planStartYear).now;
     if (flat <= 0) continue;
     const inEstate = flat * familyOwnedFraction(e);
     if (inEstate > 0) {

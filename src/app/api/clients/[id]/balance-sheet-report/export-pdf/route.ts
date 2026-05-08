@@ -133,7 +133,6 @@ export async function POST(
       selectedYear: year,
       view: viewParam,
       asOfMode,
-      planStartYear: projectionYears[0]?.year ?? year,
     });
 
     const clientName = [client.firstName, client.lastName].filter(Boolean).join(" ") || "Client";

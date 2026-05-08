@@ -151,7 +151,6 @@ export default function BalanceSheetReportView({
       selectedYear,
       view,
       asOfMode,
-      planStartYear: projectionYears[0]?.year ?? selectedYear,
     });
   }, [apiData, mappedAccounts, mappedLiabilities, fullEntities, mappedFamilyMembers, projectionYears, selectedAsOf, view]);
 

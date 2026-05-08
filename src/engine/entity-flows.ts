@@ -72,9 +72,8 @@ export interface EntityFlowDetail {
   expenseRows: EntityFlowDetailRow[];
 }
 
-/** Shared internal helper: emits per-source detail rows. Both
- *  resolveEntityFlows (totals) and resolveEntityFlows.withDetail (rows) call
- *  this so they cannot drift. */
+/** Per-source detail rows that sum to the same totals as resolveEntityFlows.
+ *  See `resolveEntityFlows.withDetail` (the public attached method) for usage. */
 function resolveEntityFlowsDetail(
   entityId: string,
   incomes: Income[],
@@ -141,7 +140,11 @@ function resolveEntityFlowsDetail(
  *  base rows, and the projection still picks up those flows.
  *
  *  Annual mode keeps the legacy behavior: iterate over base rows where
- *  ownerEntityId matches, applying per-year overrides (sparse) on top. */
+ *  ownerEntityId matches, applying per-year overrides (sparse) on top.
+ *
+ *  Hot path: this is called once per business entity per projection year,
+ *  so we sum directly instead of building per-source rows that immediately
+ *  get discarded. The detail path lives on `resolveEntityFlows.withDetail`. */
 export function resolveEntityFlows(
   entityId: string,
   incomes: Income[],
@@ -150,18 +153,23 @@ export function resolveEntityFlows(
   overrides: EntityFlowOverride[] = [],
   flowMode: EntityFlowMode = "annual",
 ): { income: number; expense: number } {
-  const { incomeRows, expenseRows } = resolveEntityFlowsDetail(
-    entityId,
-    incomes,
-    expenses,
-    year,
-    overrides,
-    flowMode,
-  );
+  if (flowMode === "schedule") {
+    const ovr = overrides.find((o) => o.entityId === entityId && o.year === year);
+    return {
+      income: ovr?.incomeAmount ?? 0,
+      expense: ovr?.expenseAmount ?? 0,
+    };
+  }
   let income = 0;
-  for (const r of incomeRows) income += r.amount;
+  for (const inc of incomes) {
+    if (inc.ownerEntityId !== entityId) continue;
+    income += resolveEntityFlowAmount(inc, entityId, "income", year, overrides, flowMode);
+  }
   let expense = 0;
-  for (const r of expenseRows) expense += r.amount;
+  for (const exp of expenses) {
+    if (exp.ownerEntityId !== entityId) continue;
+    expense += resolveEntityFlowAmount(exp, entityId, "expense", year, overrides, flowMode);
+  }
   return { income, expense };
 }
 

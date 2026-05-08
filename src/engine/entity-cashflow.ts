@@ -58,6 +58,22 @@ export interface EntityMetadata {
   valueGrowthRate?: number | null;
 }
 
+/** Compound a business entity's flat valuation forward to year-N. The "+1"
+ *  offset means year 0 (planStartYear) reports EoY of year 0 = initialValue × (1+g),
+ *  matching how account ledgers grow (BoY → growth → EoY). */
+export function flatBusinessValueAt(
+  initialValue: number,
+  growthRate: number | null | undefined,
+  year: number,
+  planStartYear: number,
+): { prior: number; now: number; growth: number } {
+  const yrs = year - planStartYear;
+  const g = growthRate ?? 0;
+  const prior = initialValue * Math.pow(1 + g, yrs);
+  const now = initialValue * Math.pow(1 + g, yrs + 1);
+  return { prior, now, growth: now - prior };
+}
+
 export interface ComputeEntityCashFlowInput {
   years: ProjectionYear[];
   /** Entity metadata indexed by id. */
@@ -168,16 +184,8 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
         });
       } else {
         // Business branch: llc | s_corp | c_corp | partnership | foundation | other.
-        // Flat-value compounding: the standalone equity value (entity.initialValue)
-        // grows during every projection year at entity.valueGrowthRate (null =
-        // 0% — pre-2026 behavior). Year 1 BoY = initialValue, EoY = initialValue
-        // × (1 + g); year 2 BoY picks up where year 1 left off, and so on. This
-        // matches how account ledgers grow (BoY → growth → EoY).
-        const yrs = year.year - planStart;
-        const g = entity.valueGrowthRate ?? 0;
-        const flatValuePrior = entity.initialValue * Math.pow(1 + g, yrs);
-        const flatValueNow = entity.initialValue * Math.pow(1 + g, yrs + 1);
-        const flatGrowthThisYear = flatValueNow - flatValuePrior;
+        const { prior: flatValuePrior, growth: flatGrowthThisYear } =
+          flatBusinessValueAt(entity.initialValue, entity.valueGrowthRate, year.year, planStart);
         const beginningTotalValue = flatValuePrior + beginningBalance;
         const totalGrowth = growth + flatGrowthThisYear;
 

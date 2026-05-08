@@ -185,7 +185,6 @@ export function buildWidgetData(
             selectedYear: year,
             view: props.ownership,
             asOfMode: "eoy",
-            planStartYear: ctx.projection[0]?.year ?? year,
           });
         } else {
           // TODO(Task 19+): pass per-widget scope projection rather than the
