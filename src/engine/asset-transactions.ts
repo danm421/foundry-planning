@@ -115,9 +115,11 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
     const currentBalance = accountBalances[accountId];
     const currentBasis = basisMap[accountId] ?? 0;
 
-    // Determine sale value and basis (use overrides when provided)
-    const saleValue = sale.overrideSaleValue ?? currentBalance;
-    const basis = sale.overrideBasis ?? currentBasis;
+    // Determine sale value and basis (use overrides when provided; else
+    // prorate by fractionSold).
+    const fraction = sale.fractionSold ?? 1;
+    const saleValue = sale.overrideSaleValue ?? (currentBalance * fraction);
+    const basis = sale.overrideBasis ?? (currentBasis * fraction);
 
     // Calculate transaction costs
     const costPct = (sale.transactionCostPct ?? 0) * saleValue;
@@ -158,15 +160,21 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
       removedLiabilityIds.push(linkedMortgage.id);
     }
 
-    // Zero out the sold account
-    accountBalances[accountId] = 0;
-    basisMap[accountId] = 0;
-    removedAccountIds.push(accountId);
+    // Drain the sold portion. fraction === 1 (or remaining < $1 from float
+    // drift) zeroes the account and signals removal; partial sales leave
+    // the residual.
+    const newBalance = Math.max(0, currentBalance - saleValue);
+    const newBasis = Math.max(0, currentBasis - basis);
+    accountBalances[accountId] = newBalance;
+    basisMap[accountId] = newBasis;
+    if (fraction >= 1 || newBalance < 1) {
+      removedAccountIds.push(accountId);
+    }
 
     // Update sold account ledger
     if (accountLedgers[accountId]) {
       accountLedgers[accountId].distributions -= saleValue;
-      accountLedgers[accountId].endingValue = 0;
+      accountLedgers[accountId].endingValue = newBalance;
       accountLedgers[accountId].entries.push({
         category: "withdrawal",
         label: `Asset sale: ${sale.name}`,
