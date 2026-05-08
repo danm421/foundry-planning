@@ -46,6 +46,12 @@ export interface ProjectionYearLike {
    *  business-owned accounts surface in the report regardless of their
    *  treatment in the engine's portfolio-assets totals. */
   accountLedgers: Record<string, { endingValue: number; beginningValue: number }>;
+  /** Engine-emitted locked entity share for split-owned accounts: entityId →
+   *  accountId → entity's EoY dollar share. When present, the balance sheet
+   *  uses this in place of `ledger.endingValue × ownerPercent` so the entity
+   *  view matches the cash-flow report and household drains don't bleed into
+   *  the entity's share. */
+  entityAccountSharesEoY?: Map<string, Map<string, number>>;
 }
 
 export interface EntityInfo {
@@ -356,8 +362,36 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       categoryKey === "realEstate" &&
       (mortgagesByPropertyId.get(acct.id)?.length ?? 0) > 0;
 
+    // For EoY views: use the engine's locked entity shares (so household
+    // drains on a joint account don't bleed into the entity's portion).
+    // Family slices then split the remaining (value - sum of entity shares)
+    // by their relative ownership.
+    const useLockedShares = asOfMode === "eoy";
+    const entityShareFor = (entityId: string, percent: number): number => {
+      if (!useLockedShares) return value * percent;
+      return yearData.entityAccountSharesEoY?.get(entityId)?.get(acct.id) ?? value * percent;
+    };
+    let totalEntityShare = 0;
+    let familyPercentTotal = 0;
     for (const owner of acct.owners) {
-      const sliceValue = value * owner.percent;
+      if (owner.kind === "entity") {
+        totalEntityShare += entityShareFor(owner.entityId, owner.percent);
+      } else {
+        familyPercentTotal += owner.percent;
+      }
+    }
+    const familyPool = Math.max(0, value - totalEntityShare);
+
+    for (const owner of acct.owners) {
+      let sliceValue: number;
+      if (owner.kind === "entity") {
+        sliceValue = entityShareFor(owner.entityId, owner.percent);
+      } else {
+        sliceValue =
+          familyPercentTotal > 0
+            ? familyPool * (owner.percent / familyPercentTotal)
+            : value * owner.percent;
+      }
       if (sliceValue <= 0) continue;
       const common: SliceCommon = {
         rowKey:
@@ -941,8 +975,28 @@ function computeYearTotals(
     if (!ledger) continue;
     const value = ledger.endingValue;
     if (value <= 0) continue;
+    const entityShareFor = (entityId: string, percent: number): number =>
+      yearData.entityAccountSharesEoY?.get(entityId)?.get(acct.id) ?? value * percent;
+    let totalEntityShare = 0;
+    let familyPercentTotal = 0;
     for (const owner of acct.owners) {
-      const sliceValue = value * owner.percent;
+      if (owner.kind === "entity") {
+        totalEntityShare += entityShareFor(owner.entityId, owner.percent);
+      } else {
+        familyPercentTotal += owner.percent;
+      }
+    }
+    const familyPool = Math.max(0, value - totalEntityShare);
+    for (const owner of acct.owners) {
+      let sliceValue: number;
+      if (owner.kind === "entity") {
+        sliceValue = entityShareFor(owner.entityId, owner.percent);
+      } else {
+        sliceValue =
+          familyPercentTotal > 0
+            ? familyPool * (owner.percent / familyPercentTotal)
+            : value * owner.percent;
+      }
       if (sliceValue <= 0) continue;
       let inEstateValue = 0;
       if (owner.kind === "family_member") {

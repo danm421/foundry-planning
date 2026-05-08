@@ -958,6 +958,13 @@ export interface ProjectionYear {
   /** Per-entity cash-flow rollup. Keyed by entity id. Empty map if no
    *  entities exist or none have activity in this year. */
   entityCashFlow: Map<string, EntityCashFlowRow>;
+  /** End-of-year locked share for split-owned accounts: entityId → accountId
+   *  → entity's EoY dollar share. Populated only for accounts where the entity
+   *  owns < 100%. Household-driven flows on the joint account don't reduce
+   *  the entity's locked share. Consumers (balance sheet, reports) should use
+   *  this in place of `ledger.endingValue × ownerPercent` to keep the entity
+   *  view consistent with the cash-flow report. */
+  entityAccountSharesEoY?: Map<string, Map<string, number>>;
   /** Sum of estimated beneficiary-level tax on distributed DNI to out-of-household beneficiaries. */
   estimatedBeneficiaryTax?: number;
   /** Non-fatal warnings emitted by the trust annual pass. */

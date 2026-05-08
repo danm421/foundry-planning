@@ -158,6 +158,15 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
             lockedShareByEntityAccount.set(entityId, new Map());
           }
           lockedShareByEntityAccount.get(entityId)!.set(aid, lockedEoY);
+          // Expose to consumers (balance sheet, reports) so they can render
+          // the same locked share rather than ledger.endingValue × percent.
+          if (!year.entityAccountSharesEoY) {
+            year.entityAccountSharesEoY = new Map();
+          }
+          if (!year.entityAccountSharesEoY.has(entityId)) {
+            year.entityAccountSharesEoY.set(entityId, new Map());
+          }
+          year.entityAccountSharesEoY.get(entityId)!.set(aid, lockedEoY);
         }
       }
       let totalDistributions = year.trustDistributionsByEntity?.get(entityId) ?? 0;
