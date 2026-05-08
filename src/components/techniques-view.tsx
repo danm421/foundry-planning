@@ -33,6 +33,8 @@ export interface AssetTransactionRow {
   type: "buy" | "sell";
   year: number;
   accountId: string | null;
+  purchaseTransactionId: string | null;
+  fractionSold: string | null;
   overrideSaleValue: string | null;
   overrideBasis: string | null;
   transactionCostPct: string | null;

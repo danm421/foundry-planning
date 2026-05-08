@@ -23,6 +23,13 @@ interface AddAssetTransactionFormProps {
   clientId: string;
   accounts: { id: string; name: string; category: string; subType: string }[];
   liabilities: { id: string; name: string; linkedPropertyId: string | null; balance: string }[];
+  pastBuys?: {
+    id: string;
+    name: string;
+    assetName: string | null;
+    year: number;
+    assetCategory: string | null;
+  }[];
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
@@ -32,6 +39,8 @@ interface AddAssetTransactionFormProps {
     type: "buy" | "sell";
     year: number;
     accountId: string | null;
+    purchaseTransactionId: string | null;
+    fractionSold: string | null;
     overrideSaleValue: string | null;
     overrideBasis: string | null;
     transactionCostPct: string | null;
@@ -175,6 +184,7 @@ export default function AddAssetTransactionForm({
   clientId,
   accounts,
   liabilities,
+  pastBuys: pastBuysProp,
   milestones,
   clientFirstName,
   spouseFirstName,
@@ -185,6 +195,7 @@ export default function AddAssetTransactionForm({
   const writer = useScenarioWriter(clientId);
   const isEdit = !!initialData;
   const currentYear = new Date().getFullYear();
+  const pastBuys = pastBuysProp ?? [];
 
   // Determine initial section state from initialData
   const initialHasSell = !initialData || initialData.type === "sell";
@@ -205,6 +216,9 @@ export default function AddAssetTransactionForm({
   // ── Sell-side state ───────────────────────────────────────────────────────
   const [sellAccountId, setSellAccountId] = useState<string>(
     initialData?.accountId ?? "",
+  );
+  const [sellPurchaseTransactionId, setSellPurchaseTransactionId] = useState<string>(
+    initialData?.purchaseTransactionId ?? "",
   );
   const [overrideSaleValue, setOverrideSaleValue] = useState(
     initialData?.overrideSaleValue ?? "",
@@ -311,7 +325,7 @@ export default function AddAssetTransactionForm({
   }, [projectionYears, linkedMortgage, year]);
 
   // ── Net Summary calculations ──────────────────────────────────────────────
-  const sellHasData = !!(sellAccountId);
+  const sellHasData = !!(sellAccountId || sellPurchaseTransactionId);
   const buyHasData = !!(assetName || parseNum(purchasePrice as string) > 0);
 
   const netSummary = useMemo(() => {
@@ -385,6 +399,7 @@ export default function AddAssetTransactionForm({
     // Sell-side fields (always include if sell side has data)
     if (sellHasData) {
       body.accountId = sellAccountId || null;
+      body.purchaseTransactionId = sellPurchaseTransactionId || null;
       body.overrideSaleValue = toOptionalString(overrideSaleValue as string);
       body.overrideBasis = toOptionalString(overrideBasis as string);
       body.transactionCostPct = toOptionalDecimal(transactionCostPct);
@@ -556,16 +571,43 @@ export default function AddAssetTransactionForm({
                 </label>
                 <select
                   id="sellAccountId"
-                  value={sellAccountId}
-                  onChange={(e) => setSellAccountId(e.target.value)}
+                  value={
+                    sellAccountId ||
+                    (sellPurchaseTransactionId
+                      ? `buy:${sellPurchaseTransactionId}`
+                      : "")
+                  }
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v.startsWith("buy:")) {
+                      setSellPurchaseTransactionId(v.slice(4));
+                      setSellAccountId("");
+                    } else {
+                      setSellAccountId(v);
+                      setSellPurchaseTransactionId("");
+                    }
+                  }}
                   className={SELECT_CLASS}
                 >
-                  <option value="">-- Select account --</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
+                  <option value="">-- Select source --</option>
+                  <optgroup label="Existing accounts">
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {pastBuys.filter((b) => b.year < year).length > 0 && (
+                    <optgroup label="Bought via transaction">
+                      {pastBuys
+                        .filter((b) => b.year < year)
+                        .map((b) => (
+                          <option key={b.id} value={`buy:${b.id}`}>
+                            {b.assetName ?? b.name} (buy {b.year})
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
 
