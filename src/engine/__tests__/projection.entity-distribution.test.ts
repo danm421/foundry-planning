@@ -346,6 +346,30 @@ describe("Phase 3: trust regression — taxTreatment ignored", () => {
   });
 });
 
+describe("Phase 3: isGrantor=true business entity regression", () => {
+  it("isGrantor=true LLC: Phase 3 does not fire (uses grantor path instead)", () => {
+    // The "Pass-through taxation" checkbox on business-form.tsx sets isGrantor=true.
+    // The existing grantor pipeline already adds the entity's income to
+    // taxDetail/taxableIncome via computeIncome's grantor filter. Phase 3 must
+    // skip such entities to avoid double-counting.
+    const data = mkData({ entity: { isGrantor: true } });
+    const noIncomeData = mkData({ entity: { isGrantor: true }, incomes: [] });
+
+    const taxDelta =
+      runProjection(data)[0].expenses.taxes
+      - runProjection(noIncomeData)[0].expenses.taxes;
+
+    // Tax increase should be SINGLE-pass (~$29k on $100k at 29% combined),
+    // not double (~$58k). Same bound as the ordinary single-owner test.
+    expect(taxDelta).toBeGreaterThan(20_000);
+    expect(taxDelta).toBeLessThan(40_000);
+
+    // Phase 3 bySource entry should be ABSENT (Phase 3 skipped this entity).
+    const y0 = runProjection(data)[0];
+    expect(y0.taxDetail!.bySource["entity_passthrough:llc1"]).toBeUndefined();
+  });
+});
+
 describe("Phase 3: multi-year 2-owner LLC integration", () => {
   it("60/40 owners, 50% distribution, 3-year QBI projection: cash + tax accumulate correctly", () => {
     const llc60_40: EntitySummary = {

@@ -1224,6 +1224,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Bracket mode reads taxDetail directly, so both modes are covered.
     for (const entity of currentEntities) {
       if (entity.entityType === "trust") continue;
+      // Grantor business entities already flow through the household path
+      // (computeIncome's grantor filter + the household-tax loop above include
+      // them in taxDetail/taxableIncome). Skipping here prevents double-counting.
+      if (entity.isGrantor) continue;
       const netIncome = computeBusinessEntityNetIncome(
         entity.id,
         currentIncomes,
@@ -2163,6 +2167,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     //   P3-8: losses → no distribution (skip net ≤ 0)
     for (const entity of currentEntities) {
       if (entity.entityType === "trust") continue;
+      // Grantor business entities already flow through the household path
+      // (computeIncome's grantor filter + the household-tax loop above include
+      // them in taxDetail/taxableIncome). Skipping here prevents double-counting.
+      if (entity.isGrantor) continue;
       const netIncome = computeBusinessEntityNetIncome(
         entity.id,
         currentIncomes,
