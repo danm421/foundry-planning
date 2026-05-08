@@ -15,6 +15,7 @@ import type {
   EntityFlowOverride,
 } from "@/engine/types";
 import type { EntityMetadata } from "@/engine/entity-cashflow";
+import { resolveEntityFlows } from "@/engine/entity-flows";
 
 export type LedgerSection = "growth" | "income" | "expenses" | "ending";
 
@@ -95,6 +96,48 @@ export function getEntityLedger(
         amount: contribution,
         sourceKind: "account",
         sourceId: accountId,
+      });
+    }
+  }
+
+  if (isBusiness) {
+    const flowMode = entity.flowMode ?? "annual";
+    const { incomeRows } = resolveEntityFlows.withDetail(
+      entityId,
+      ctx.incomes,
+      ctx.expenses,
+      ctx.year.year,
+      ctx.entityFlowOverrides,
+      flowMode,
+    );
+    for (const r of incomeRows) {
+      if (r.amount === 0) continue;
+      income.push({
+        label: r.name,
+        amount: r.amount,
+        sourceKind: r.isOverride ? "flow-override" : "flow-base",
+        sourceId: r.id,
+      });
+    }
+  }
+
+  for (const [accountId, owner] of ctx.accountEntityOwners) {
+    if (owner.entityId !== entityId) continue;
+    const acctLedger = ctx.year.accountLedgers[accountId];
+    if (!acctLedger) continue;
+    const share = owner.percent;
+    for (const entry of acctLedger.entries ?? []) {
+      if (entry.isInternalTransfer) continue;
+      if (entry.category !== "income") continue;
+      const contribution = Math.abs(entry.amount) * share;
+      if (contribution === 0) continue;
+      const name = ctx.accountNamesById.get(accountId) ?? accountId;
+      const suffix = share === 1 ? "" : ` (${(share * 100).toFixed(0)}%)`;
+      income.push({
+        label: `${name}${suffix} — ${entry.label ?? "income"}`,
+        amount: contribution,
+        sourceKind: "account-entry",
+        sourceId: `${accountId}:${entry.sourceId ?? entry.label ?? "income"}`,
       });
     }
   }

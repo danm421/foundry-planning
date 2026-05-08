@@ -65,6 +65,64 @@ function makeYear(year: number): ProjectionYear {
   } as unknown as ProjectionYear;
 }
 
+function buildBusinessWithIncomeFixture() {
+  const year = makeYear(2026);
+
+  const entitiesById = new Map<string, EntityMetadata>([
+    [
+      "ent-biz",
+      {
+        id: "ent-biz",
+        name: "Acme LLC",
+        entityType: "llc",
+        trustSubType: null,
+        isGrantor: false,
+        initialValue: 0,
+        initialBasis: 0,
+        valueGrowthRate: 0,
+        flowMode: "annual",
+      },
+    ],
+  ]);
+
+  const incomes = [
+    {
+      id: "inc-1",
+      type: "business" as const,
+      name: "Acme revenue",
+      annualAmount: 200_000,
+      startYear: 2026,
+      endYear: 2030,
+      growthRate: 0,
+      owner: "joint" as const,
+      ownerEntityId: "ent-biz",
+    },
+  ];
+
+  computeEntityCashFlow({
+    years: [year],
+    entitiesById,
+    accountEntityOwners: new Map(),
+    giftsByEntityYear: new Map(),
+    incomes,
+    expenses: [],
+    entityFlowOverrides: [],
+  });
+
+  const ctx: EntityLedgerContext = {
+    year,
+    planStartYear: 2026,
+    entitiesById,
+    accountNamesById: new Map(),
+    accountEntityOwners: new Map(),
+    incomes,
+    expenses: [],
+    entityFlowOverrides: [],
+  };
+
+  return { year, ctx };
+}
+
 function buildBusinessFixture() {
   const year = makeYear(2026);
   year.accountLedgers["acct-biz"] = {
@@ -154,5 +212,20 @@ describe("getEntityLedger", () => {
     const acct = ledger.growth.find((r) => r.sourceKind === "account");
     expect(acct?.amount).toBeCloseTo(2_500, 2);
     expect(acct?.label).toContain("Acme Brokerage");
+  });
+
+  it("income section emits flow-base rows for business entities", () => {
+    const { year, ctx } = buildBusinessWithIncomeFixture();
+    const row = year.entityCashFlow.get("ent-biz");
+    expect(row?.kind).toBe("business");
+    if (row?.kind !== "business") return;
+
+    const ledger = getEntityLedger("ent-biz", ctx);
+    const flowBase = ledger.income.find((r) => r.sourceKind === "flow-base");
+    expect(flowBase?.amount).toBeCloseTo(200_000, 2);
+    expect(flowBase?.label).toContain("Acme revenue");
+
+    const sum = ledger.income.reduce((a, r) => a + r.amount, 0);
+    expect(sum).toBeCloseTo(row.income, 2);
   });
 });

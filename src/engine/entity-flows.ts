@@ -60,6 +60,78 @@ export function resolveDistributionPercent(
   return 1.0;
 }
 
+export interface EntityFlowDetailRow {
+  id: string;
+  name: string;
+  amount: number;
+  isOverride: boolean;
+}
+
+export interface EntityFlowDetail {
+  incomeRows: EntityFlowDetailRow[];
+  expenseRows: EntityFlowDetailRow[];
+}
+
+/** Shared internal helper: emits per-source detail rows. Both
+ *  resolveEntityFlows (totals) and resolveEntityFlows.withDetail (rows) call
+ *  this so they cannot drift. */
+function resolveEntityFlowsDetail(
+  entityId: string,
+  incomes: Income[],
+  expenses: Expense[],
+  year: number,
+  overrides: EntityFlowOverride[],
+  flowMode: EntityFlowMode,
+): EntityFlowDetail {
+  if (flowMode === "schedule") {
+    const ovr = overrides.find((o) => o.entityId === entityId && o.year === year);
+    const incomeRows: EntityFlowDetailRow[] = [];
+    const expenseRows: EntityFlowDetailRow[] = [];
+    if (ovr?.incomeAmount != null && ovr.incomeAmount !== 0) {
+      incomeRows.push({
+        id: `schedule:${entityId}:${year}:income`,
+        name: "Schedule income",
+        amount: ovr.incomeAmount,
+        isOverride: true,
+      });
+    }
+    if (ovr?.expenseAmount != null && ovr.expenseAmount !== 0) {
+      expenseRows.push({
+        id: `schedule:${entityId}:${year}:expense`,
+        name: "Schedule expense",
+        amount: ovr.expenseAmount,
+        isOverride: true,
+      });
+    }
+    return { incomeRows, expenseRows };
+  }
+
+  const ovr = overrides.find((o) => o.entityId === entityId && o.year === year);
+  const incomeRows: EntityFlowDetailRow[] = [];
+  for (const inc of incomes) {
+    if (inc.ownerEntityId !== entityId) continue;
+    const amount = resolveEntityFlowAmount(inc, entityId, "income", year, overrides, flowMode);
+    incomeRows.push({
+      id: inc.id,
+      name: inc.name,
+      amount,
+      isOverride: ovr?.incomeAmount != null,
+    });
+  }
+  const expenseRows: EntityFlowDetailRow[] = [];
+  for (const exp of expenses) {
+    if (exp.ownerEntityId !== entityId) continue;
+    const amount = resolveEntityFlowAmount(exp, entityId, "expense", year, overrides, flowMode);
+    expenseRows.push({
+      id: exp.id,
+      name: exp.name,
+      amount,
+      isOverride: ovr?.expenseAmount != null,
+    });
+  }
+  return { incomeRows, expenseRows };
+}
+
 /** Resolve total entity income & expense for a business entity in year Y.
  *
  *  Schedule mode is the source-of-truth for the schedule grid: the engine
@@ -78,25 +150,41 @@ export function resolveEntityFlows(
   overrides: EntityFlowOverride[] = [],
   flowMode: EntityFlowMode = "annual",
 ): { income: number; expense: number } {
-  if (flowMode === "schedule") {
-    const ovr = overrides.find((o) => o.entityId === entityId && o.year === year);
-    return {
-      income: ovr?.incomeAmount ?? 0,
-      expense: ovr?.expenseAmount ?? 0,
-    };
-  }
+  const { incomeRows, expenseRows } = resolveEntityFlowsDetail(
+    entityId,
+    incomes,
+    expenses,
+    year,
+    overrides,
+    flowMode,
+  );
   let income = 0;
-  for (const inc of incomes) {
-    if (inc.ownerEntityId !== entityId) continue;
-    income += resolveEntityFlowAmount(inc, entityId, "income", year, overrides, flowMode);
-  }
+  for (const r of incomeRows) income += r.amount;
   let expense = 0;
-  for (const exp of expenses) {
-    if (exp.ownerEntityId !== entityId) continue;
-    expense += resolveEntityFlowAmount(exp, entityId, "expense", year, overrides, flowMode);
-  }
+  for (const r of expenseRows) expense += r.amount;
   return { income, expense };
 }
+
+/** Per-source detail rows that sum to the same totals as resolveEntityFlows.
+ *  Use for ledger drill-downs that need to attribute income/expense to
+ *  specific base rows or schedule overrides. */
+resolveEntityFlows.withDetail = function withDetail(
+  entityId: string,
+  incomes: Income[],
+  expenses: Expense[],
+  year: number,
+  overrides: EntityFlowOverride[] = [],
+  flowMode: EntityFlowMode = "annual",
+): EntityFlowDetail {
+  return resolveEntityFlowsDetail(
+    entityId,
+    incomes,
+    expenses,
+    year,
+    overrides,
+    flowMode,
+  );
+};
 
 /** Sum of (income amounts − expense amounts) for the given business entity in
  *  year Y. Negative result means the entity ran a loss this year (P3-8:
