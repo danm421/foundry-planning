@@ -870,7 +870,6 @@ interface ExpenseDialogProps {
 function ExpenseDialog({
   clientId,
   defaultType = "living",
-  entities,
   clientInfo,
   ownerNames,
   open,
@@ -888,7 +887,6 @@ function ExpenseDialog({
   const [stagedSchedule, setStagedSchedule] = useState<{ year: number; amount: number }[]>(schedule ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ownerEntityId, setOwnerEntityId] = useState<string>(editing?.ownerEntityId ?? "");
   const [deductionType, setDeductionType] = useState<string>(editing?.deductionType ?? "");
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
@@ -935,7 +933,6 @@ function ExpenseDialog({
       endYear: String(endYear),
       growthRate: String(Number(growthRateDisplay) / 100),
       growthSource,
-      ownerEntityId: ownerEntityId || null,
       cashAccountId: null,
       inflationStartYear: todaysDollars ? planStartYear : null,
       startYearRef,
@@ -1165,41 +1162,6 @@ function ExpenseDialog({
               </>
             )}
           </div>
-
-          {entities && entities.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-300">Paid by</label>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                <PillToggle
-                  label="Household"
-                  active={!ownerEntityId}
-                  onClick={() => setOwnerEntityId("")}
-                />
-                <PillToggle
-                  label="Custom"
-                  active={!!ownerEntityId}
-                  onClick={() => {
-                    if (!ownerEntityId && entities[0]) setOwnerEntityId(entities[0].id);
-                  }}
-                />
-              </div>
-              {ownerEntityId && (
-                <>
-                  <select
-                    id="exp-entity"
-                    value={ownerEntityId}
-                    onChange={(e) => setOwnerEntityId(e.target.value)}
-                    className="mt-2 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                  >
-                    {entities.map((ent) => (
-                      <option key={ent.id} value={ent.id}>{ent.name}</option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-xs text-amber-400">Counted as out of estate.</p>
-                </>
-              )}
-            </div>
-          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-300" htmlFor="exp-deductionType">Tax Treatment</label>
