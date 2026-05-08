@@ -26,7 +26,10 @@ describe("<ClutDetailsSection>", () => {
   it("renders the unitrust input fields", () => {
     render(<ClutDetailsSection {...baseProps} />);
     expect(screen.getByLabelText(/inception year/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/funding-year fmv/i)).toBeInTheDocument();
+    // For origin = 'new', funding-year FMV is now a disclosure dropdown — the label associates with the trigger button.
+    expect(
+      screen.getByRole("button", { name: /funding-year fmv/i }),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText(/payout percentage/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/7520 rate/i)).toBeInTheDocument();
   });
@@ -114,5 +117,23 @@ describe("<ClutDetailsSection>", () => {
     );
     expect(screen.getByLabelText(/measuring life 1/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/measuring life 2/i)).toBeInTheDocument();
+  });
+
+  it("renders a manual FMV input (no picker) when origin = 'existing'", () => {
+    render(
+      <ClutDetailsSection
+        {...baseProps}
+        value={{
+          ...baseProps.value,
+          origin: "existing",
+          originalIncomeInterest: 461_385,
+          originalRemainderInterest: 538_615,
+        }}
+      />,
+    );
+    expect(screen.getByLabelText(/fmv at original funding/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /funding-year fmv/i }),
+    ).toBeNull();
   });
 });

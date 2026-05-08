@@ -4,6 +4,10 @@ import { useMemo } from "react";
 import { inputClassName, selectClassName, fieldLabelClassName } from "./input-styles";
 import { computeClutInceptionInterests } from "@/lib/entities/compute-clut-inception";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
+import ClutFundingPicker, {
+  type ClutFundingPickerAccount,
+} from "./clut-funding-picker";
+import type { ClutFundingPick } from "@/lib/forms/clut-funding-diff";
 
 const TERM_TYPE_LABELS = {
   years: "Years (term certain)",
@@ -17,6 +21,14 @@ interface ClutDetailsSectionProps {
   onChange: (next: TrustSplitInterestInput) => void;
   familyMembers: { id: string; firstName: string; dateOfBirth: string | null }[];
   charities: { id: string; name: string }[];
+  /** Required for origin === "new". Filtered list of accounts available for funding. */
+  fundingAccounts?: ClutFundingPickerAccount[];
+  /** Required for origin === "new". Current picks. */
+  fundingPicks?: ClutFundingPick[];
+  /** Required for origin === "new". Picks change handler. */
+  onFundingPicksChange?: (next: ClutFundingPick[]) => void;
+  /** Default grantor for new cash picks (the trust's grantor). Defaults to "client". */
+  defaultGrantor?: "client" | "spouse";
 }
 
 export default function ClutDetailsSection({
@@ -24,6 +36,10 @@ export default function ClutDetailsSection({
   onChange,
   familyMembers,
   charities,
+  fundingAccounts,
+  fundingPicks,
+  onFundingPicksChange,
+  defaultGrantor,
 }: ClutDetailsSectionProps) {
   const origin = value.origin ?? "new";
   const isNew = origin === "new";
@@ -136,15 +152,26 @@ export default function ClutDetailsSection({
           <label className={fieldLabelClassName} htmlFor="clut-fmv">
             {isNew ? "Funding-year FMV" : "FMV at original funding"}
           </label>
-          <input
-            id="clut-fmv"
-            type="number"
-            min={0}
-            step={1}
-            className={inputClassName}
-            value={value.inceptionValue}
-            onChange={(e) => set("inceptionValue", Number(e.target.value))}
-          />
+          {isNew ? (
+            <ClutFundingPicker
+              id="clut-fmv"
+              accounts={fundingAccounts ?? []}
+              picks={fundingPicks ?? []}
+              inceptionValue={value.inceptionValue}
+              defaultGrantor={defaultGrantor ?? "client"}
+              onChange={onFundingPicksChange ?? (() => {})}
+            />
+          ) : (
+            <input
+              id="clut-fmv"
+              type="number"
+              min={0}
+              step={1}
+              className={inputClassName}
+              value={value.inceptionValue}
+              onChange={(e) => set("inceptionValue", Number(e.target.value))}
+            />
+          )}
         </div>
 
         <div>

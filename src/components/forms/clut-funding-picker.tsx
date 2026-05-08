@@ -19,6 +19,8 @@ interface ClutFundingPickerProps {
   inceptionValue: number;
   defaultGrantor: "client" | "spouse";
   onChange: (next: ClutFundingPick[]) => void;
+  /** Optional DOM id for the trigger button — used for label-htmlFor association. */
+  id?: string;
 }
 
 const MONEY_FMT = new Intl.NumberFormat("en-US", {
@@ -52,6 +54,7 @@ export default function ClutFundingPicker({
   inceptionValue,
   defaultGrantor,
   onChange,
+  id,
 }: ClutFundingPickerProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -134,6 +137,7 @@ export default function ClutFundingPicker({
     <div className="relative">
       <button
         ref={triggerRef}
+        id={id}
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
