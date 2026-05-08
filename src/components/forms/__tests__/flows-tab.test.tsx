@@ -78,6 +78,12 @@ describe("FlowsTab", () => {
     expect(screen.queryByText(/distribution policy/i)).not.toBeInTheDocument();
   });
 
+  it("Schedule button is enabled in base mode (no scenarioId)", () => {
+    render(<FlowsTab {...baseProps} />);
+    const btn = screen.getByRole("button", { name: /schedule/i });
+    expect(btn).not.toBeDisabled();
+  });
+
   it("routes Distribution & Tax saves through writer.submit with targetKind=entity", async () => {
     render(
       <FlowsTab

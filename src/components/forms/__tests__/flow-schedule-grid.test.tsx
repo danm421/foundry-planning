@@ -74,4 +74,18 @@ describe("FlowScheduleGrid", () => {
     const row2026 = body.overrides.find((o: { year: number }) => o.year === 2026);
     expect(row2026.incomeAmount).toBe(250000);
   });
+
+  it("Save in base mode (scenarioId=null) omits the scenarioId query param", async () => {
+    render(<FlowScheduleGrid {...baseProps} scenarioId={null} />);
+    const inputs = screen.getAllByRole("textbox");
+    fireEvent.change(inputs[0], { target: { value: "175000" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(call[0]).toContain("/flow-overrides");
+    expect(call[0]).not.toContain("scenarioId=");
+    const body = JSON.parse(call[1]?.body as string);
+    const row2026 = body.overrides.find((o: { year: number }) => o.year === 2026);
+    expect(row2026.incomeAmount).toBe(175000);
+  });
 });

@@ -35,7 +35,8 @@ export interface FlowScheduleGridProps {
   entityId: string;
   entityName: string;
   entityType: EntityType;
-  scenarioId: string;
+  /** Null = base-plan overrides (scenario_id IS NULL). */
+  scenarioId: string | null;
   planStartYear: number;
   planEndYear: number;
   primaryClientBirthYear: number;
@@ -119,14 +120,14 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
       }
     }
     try {
-      const res = await fetch(
-        `/api/clients/${props.clientId}/entities/${props.entityId}/flow-overrides?scenarioId=${props.scenarioId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ overrides }),
-        },
-      );
+      const url = props.scenarioId
+        ? `/api/clients/${props.clientId}/entities/${props.entityId}/flow-overrides?scenarioId=${props.scenarioId}`
+        : `/api/clients/${props.clientId}/entities/${props.entityId}/flow-overrides`;
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ overrides }),
+      });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error((j as { error?: string }).error ?? "Failed to save");

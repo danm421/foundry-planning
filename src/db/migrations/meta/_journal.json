@@ -561,6 +561,13 @@
       "when": 1778258724149,
       "tag": "0079_asset_transaction_resells",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1778260660349,
+      "tag": "0080_entity_flow_overrides_nullable_scenario",
+      "breakpoints": true
     }
   ]
 }

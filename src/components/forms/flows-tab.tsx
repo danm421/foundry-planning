@@ -74,8 +74,10 @@ export default function FlowsTab(props: FlowsTabProps) {
 
   return (
     <div className="space-y-6">
-      {/* Schedule button — only shown when there is a real entity + active scenario to write to */}
-      {props.entityId && scenarioId ? (
+      {/* Schedule button — needs a real (saved) entity. Base mode (scenarioId
+          null) writes to scenario_id IS NULL; scenario mode writes to that
+          scenario. */}
+      {props.entityId ? (
         <div className="flex justify-end">
           <button
             type="button"
@@ -85,18 +87,7 @@ export default function FlowsTab(props: FlowsTabProps) {
             Schedule…
           </button>
         </div>
-      ) : (
-        <div className="flex justify-end">
-          <button
-            type="button"
-            disabled
-            title="Open a scenario to edit the schedule"
-            className="rounded-md border border-hair bg-card px-3 py-1.5 text-xs text-ink-3 opacity-50 cursor-not-allowed"
-          >
-            Schedule…
-          </button>
-        </div>
-      )}
+      ) : null}
 
       <FlowCard kind="income" {...props} writer={writer} />
       <FlowCard kind="expense" {...props} writer={writer} />
@@ -105,7 +96,7 @@ export default function FlowsTab(props: FlowsTabProps) {
         <DistributionAndTaxSection {...props} writer={writer} />
       )}
 
-      {props.entityId && scenarioId && (
+      {props.entityId && (
         <FlowScheduleGrid
           open={scheduleOpen}
           onClose={() => setScheduleOpen(false)}

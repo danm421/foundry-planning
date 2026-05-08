@@ -1,8 +1,8 @@
 // src/lib/scenario/loader.ts
 import { cache } from "react";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { clients, scenarioSnapshots, scenarios } from "@/db/schema";
+import { clients, entityFlowOverrides, scenarioSnapshots, scenarios } from "@/db/schema";
 import { loadClientDataWithContext } from "@/lib/projection/load-client-data";
 import {
   resolveAccountFromRaw,
@@ -11,7 +11,7 @@ import {
   resolveSavingsRuleFromRaw,
   type ResolutionContext,
 } from "@/lib/projection/resolve-entity";
-import type { ClientData } from "@/engine/types";
+import type { ClientData, EntityFlowOverride } from "@/engine/types";
 import {
   applyScenarioChanges,
 } from "@/engine/scenario/applyChanges";
@@ -84,19 +84,57 @@ export const loadEffectiveTree = cache(
     }
 
     // Fast path: when scenarioId resolves to the client's base case AND no
-    // toggles are explicitly set, we can return baseTree directly.
+    // toggles are explicitly set, we can return baseTree directly. The base
+    // tree already carries the base (scenario_id IS NULL) flow overrides.
     if (resolvedScenario.isBaseCase && Object.keys(toggleState).length === 0) {
       return { effectiveTree: baseTree, warnings: [] };
     }
 
-    const [changes, groups] = await Promise.all([
+    const entityIds = baseTree.entities?.map((e) => e.id) ?? [];
+    const [changes, groups, scenarioFlowOverrideRows] = await Promise.all([
       loadScenarioChanges(resolvedScenario.id),
       loadScenarioToggleGroups(resolvedScenario.id),
+      // Scenario-only behavior: when a non-base scenario is active, replace
+      // base flow overrides with that scenario's rows. Empty entity list →
+      // skip the query (Postgres rejects `IN ()`).
+      resolvedScenario.isBaseCase || entityIds.length === 0
+        ? Promise.resolve([])
+        : db
+            .select({
+              entityId: entityFlowOverrides.entityId,
+              year: entityFlowOverrides.year,
+              incomeAmount: entityFlowOverrides.incomeAmount,
+              expenseAmount: entityFlowOverrides.expenseAmount,
+              distributionPercent: entityFlowOverrides.distributionPercent,
+            })
+            .from(entityFlowOverrides)
+            .where(
+              and(
+                inArray(entityFlowOverrides.entityId, entityIds),
+                eq(entityFlowOverrides.scenarioId, resolvedScenario.id),
+              ),
+            ),
     ]);
+
+    const treeForChanges: ClientData = resolvedScenario.isBaseCase
+      ? baseTree
+      : {
+          ...baseTree,
+          entityFlowOverrides: scenarioFlowOverrideRows.map(
+            (r): EntityFlowOverride => ({
+              entityId: r.entityId,
+              year: r.year,
+              incomeAmount: r.incomeAmount != null ? parseFloat(r.incomeAmount) : null,
+              expenseAmount: r.expenseAmount != null ? parseFloat(r.expenseAmount) : null,
+              distributionPercent:
+                r.distributionPercent != null ? parseFloat(r.distributionPercent) : null,
+            }),
+          ),
+        };
 
     const resolvedChanges = changes.map((c) => resolveAddPayload(c, resolutionContext));
 
-    return applyScenarioChanges(baseTree, resolvedChanges, toggleState, groups);
+    return applyScenarioChanges(treeForChanges, resolvedChanges, toggleState, groups);
   },
 );
 

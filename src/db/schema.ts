@@ -659,9 +659,10 @@ export const entityFlowOverrides = pgTable(
     entityId: uuid("entity_id")
       .notNull()
       .references(() => entities.id, { onDelete: "cascade" }),
-    scenarioId: uuid("scenario_id")
-      .notNull()
-      .references(() => scenarios.id, { onDelete: "cascade" }),
+    // Null = base-plan override (no scenario active). Non-null = override scoped
+    // to a specific scenario. Unique index uses NULLS NOT DISTINCT so the base
+    // case still gets one row per (entity, year).
+    scenarioId: uuid("scenario_id").references(() => scenarios.id, { onDelete: "cascade" }),
     year: integer("year").notNull(),
     // Sparse cells — null = use base+growth (or entity base for distribution_percent).
     incomeAmount: decimal("income_amount", { precision: 15, scale: 2 }),
@@ -671,11 +672,9 @@ export const entityFlowOverrides = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    uniqueEntityScenarioYear: uniqueIndex("entity_flow_overrides_entity_scenario_year_idx").on(
-      t.entityId,
-      t.scenarioId,
-      t.year,
-    ),
+    uniqueEntityScenarioYear: unique("entity_flow_overrides_entity_scenario_year_uniq")
+      .on(t.entityId, t.scenarioId, t.year)
+      .nullsNotDistinct(),
     entityScenarioIdx: index("entity_flow_overrides_entity_scenario_idx").on(
       t.entityId,
       t.scenarioId,
