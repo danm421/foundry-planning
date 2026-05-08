@@ -57,6 +57,8 @@ export interface Entity {
   distributionMode: "fixed" | "pct_liquid" | "pct_income" | null;
   distributionAmount: number | null;
   distributionPercent: number | null;
+  taxTreatment?: "qbi" | "ordinary" | "non_taxable";
+  distributionPolicyPercent?: number | null;
 }
 
 export type Gift = {

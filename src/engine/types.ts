@@ -494,7 +494,6 @@ export interface Income {
   inflationStartYear?: number;
   owner: "client" | "spouse" | "joint";
   claimingAge?: number;
-  linkedEntityId?: string;
   ownerEntityId?: string;
   // Cash account this income deposits into. When unset, the engine falls back to the
   // household default checking (or the entity's default checking if ownerEntityId is set).

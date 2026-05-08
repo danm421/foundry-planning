@@ -32,6 +32,13 @@ export interface AssetsTabIncome {
   name: string;
   annualAmount: number;
   cashAccountId?: string;
+  // ── Optional flow-tab metadata (populated when needed by FlowsTab) ──
+  ownerEntityId?: string | null;
+  startYear?: number;
+  endYear?: number;
+  growthRate?: number;
+  growthSource?: "inflation" | "custom" | string | null;
+  inflationStartYear?: number | null;
 }
 
 export interface AssetsTabExpense {
@@ -39,6 +46,13 @@ export interface AssetsTabExpense {
   name: string;
   annualAmount: number;
   cashAccountId?: string;
+  // ── Optional flow-tab metadata (populated when needed by FlowsTab) ──
+  ownerEntityId?: string | null;
+  startYear?: number;
+  endYear?: number;
+  growthRate?: number;
+  growthSource?: "inflation" | "custom" | string | null;
+  inflationStartYear?: number | null;
 }
 
 export interface AssetsTabFamilyMember {

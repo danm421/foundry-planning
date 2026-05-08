@@ -40,7 +40,6 @@ export interface IncomeView {
   owner: EngineIncome["owner"];
   claimingAge: number | null;
   claimingAgeMonths?: number | null;
-  linkedEntityId: string | null;
   growthRate: string;
   growthSource?: string | null;
   ownerEntityId?: string | null;
@@ -64,7 +63,6 @@ export function incomeEngineToView(income: EngineIncome): IncomeView {
     owner: income.owner,
     claimingAge: income.claimingAge ?? null,
     claimingAgeMonths: income.claimingAgeMonths ?? null,
-    linkedEntityId: income.linkedEntityId ?? null,
     growthRate: String(income.growthRate),
     growthSource: income.growthSource ?? null,
     ownerEntityId: income.ownerEntityId ?? null,

@@ -15,6 +15,7 @@ import AssetsTab, {
   type AssetsTabExpense,
   type AssetsTabFamilyMember,
 } from "../forms/assets-tab";
+import FlowsTab, { type FlowsTabIncome, type FlowsTabExpense } from "../forms/flows-tab";
 import { applyAssetTabOp, type AssetTabOp } from "../forms/asset-tab-ops";
 
 type BusinessEntityType = "llc" | "s_corp" | "c_corp" | "partnership" | "other";
@@ -28,11 +29,14 @@ const BUSINESS_ENTITY_TYPE_LABELS: Record<BusinessEntityType, string> = {
 };
 
 interface BusinessFormProps extends EntityFormCommonProps {
-  activeTab: "details" | "assets" | "notes";
+  activeTab: "details" | "flows" | "assets" | "notes";
   accounts?: AssetsTabAccount[];
   liabilities?: AssetsTabLiability[];
   incomes?: AssetsTabIncome[];
   expenses?: AssetsTabExpense[];
+  /** Flows tab — single income + expense scoped to this entity. */
+  entityIncome?: FlowsTabIncome | null;
+  entityExpense?: FlowsTabExpense | null;
   assetFamilyMembers?: AssetsTabFamilyMember[];
   otherEntities?: { id: string; name: string }[];
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
@@ -54,6 +58,8 @@ export default function BusinessForm({
   liabilities,
   incomes,
   expenses,
+  entityIncome,
+  entityExpense,
   assetFamilyMembers,
   otherEntities,
   onSubmitStateChange,
@@ -353,6 +359,27 @@ export default function BusinessForm({
         ) : (
           <p className="text-[13px] text-ink-3 text-center py-6">
             Asset management is available when editing an existing business.
+          </p>
+        )}
+      </div>
+
+      <div className={activeTab !== "flows" ? "hidden" : ""}>
+        {editing ? (
+          <FlowsTab
+            clientId={clientId}
+            entityId={editing.id}
+            entityName={editing.name}
+            entityType={editing.entityType as "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other"}
+            income={entityIncome ?? null}
+            expense={entityExpense ?? null}
+            distributionPolicyPercent={editing.distributionPolicyPercent ?? null}
+            taxTreatment={editing.taxTreatment ?? "ordinary"}
+            planStartYear={new Date().getFullYear()}
+            defaultEndYear={new Date().getFullYear() + 30}
+          />
+        ) : (
+          <p className="text-[13px] text-ink-3 text-center py-6">
+            Flows are available when editing an existing business.
           </p>
         )}
       </div>

@@ -66,7 +66,6 @@ describe("view-adapters", () => {
       expect(view.growthSource).toBeNull();
       expect(view.piaMonthly).toBeNull();
       expect(view.claimingAge).toBeNull();
-      expect(view.linkedEntityId).toBeNull();
     });
   });
 

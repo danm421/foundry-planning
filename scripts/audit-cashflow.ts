@@ -324,7 +324,7 @@ async function loadClientData(clientId: string): Promise<ClientData> {
       startYear: i.startYear, endYear: i.endYear,
       growthRate: i.growthSource === "inflation" ? resolvedInflationRate : parseFloat(i.growthRate),
       owner: i.owner, claimingAge: i.claimingAge ?? undefined,
-      linkedEntityId: i.linkedEntityId ?? undefined, ownerEntityId: i.ownerEntityId ?? undefined,
+      ownerEntityId: i.ownerEntityId ?? undefined,
       cashAccountId: i.cashAccountId ?? undefined, inflationStartYear: i.inflationStartYear ?? undefined,
       taxType: i.taxType ?? undefined, ssBenefitMode: i.ssBenefitMode ?? undefined,
       piaMonthly: i.piaMonthly != null ? parseFloat(i.piaMonthly) : undefined,

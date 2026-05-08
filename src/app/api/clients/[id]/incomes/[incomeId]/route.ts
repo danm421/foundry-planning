@@ -41,14 +41,13 @@ export async function PUT(
       growthSource,
       owner,
       claimingAge,
-      linkedEntityId,
       ownerEntityId,
       cashAccountId,
       inflationStartYear,
     } = body;
 
-    if (linkedEntityId !== undefined || ownerEntityId !== undefined) {
-      const c = await assertEntitiesInClient(id, [linkedEntityId, ownerEntityId]);
+    if (ownerEntityId !== undefined) {
+      const c = await assertEntitiesInClient(id, [ownerEntityId]);
       if (!c.ok) return NextResponse.json({ error: c.reason }, { status: 400 });
     }
     if (cashAccountId !== undefined) {
@@ -68,7 +67,6 @@ export async function PUT(
         ...(growthSource !== undefined && { growthSource: growthSource === "inflation" ? "inflation" : "custom" }),
         ...(owner !== undefined && { owner }),
         ...(claimingAge !== undefined && { claimingAge: claimingAge ? Number(claimingAge) : null }),
-        ...(linkedEntityId !== undefined && { linkedEntityId: linkedEntityId ?? null }),
         ...(ownerEntityId !== undefined && { ownerEntityId: ownerEntityId ?? null }),
         ...(cashAccountId !== undefined && { cashAccountId: cashAccountId ?? null }),
         ...(inflationStartYear !== undefined && {

@@ -533,6 +533,20 @@
       "when": 1778180334240,
       "tag": "0075_trust_split_interest_clut",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1778199819197,
+      "tag": "0076_entity_flow_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1778208135295,
+      "tag": "0077_drop_income_linked_entity",
+      "breakpoints": true
     }
   ]
 }

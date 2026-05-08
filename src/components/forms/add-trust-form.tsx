@@ -10,6 +10,7 @@ import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
 import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName } from "./input-styles";
 import AssetsTab, { type AssetsTabAccount, type AssetsTabLiability, type AssetsTabIncome, type AssetsTabExpense, type AssetsTabFamilyMember } from "./assets-tab";
+import FlowsTab, { type FlowsTabIncome, type FlowsTabExpense } from "./flows-tab";
 import { applyAssetTabOp } from "./asset-tab-ops";
 import type { AssetTabOp } from "./asset-tab-ops";
 import TransfersTab, { type TransferEvent, type TransferSeries } from "./transfers-tab";
@@ -34,12 +35,15 @@ interface AddTrustFormProps {
   externals: ExternalBeneficiary[];
   entities: { id: string; name: string }[];  // for remainder picker
   initialDesignations?: Designation[];        // pre-loaded for edit mode
-  activeTab: "details" | "assets" | "transfers" | "notes";
+  activeTab: "details" | "flows" | "assets" | "transfers" | "notes";
   /** Assets tab data — when absent the tab degrades gracefully */
   accounts?: AssetsTabAccount[];
   liabilities?: AssetsTabLiability[];
   incomes?: AssetsTabIncome[];
   expenses?: AssetsTabExpense[];
+  /** Flows tab — single income + expense scoped to this entity. */
+  entityIncome?: FlowsTabIncome | null;
+  entityExpense?: FlowsTabExpense | null;
   assetFamilyMembers?: AssetsTabFamilyMember[];
   onSaved: (entity: Entity, mode: "create" | "edit") => void;
   onClose: () => void;
@@ -87,6 +91,7 @@ function ownerSummary(owners: import("@/engine/ownership").AccountOwner[]): stri
 export default function AddTrustForm({
   clientId, editing, household, members, externals, entities,
   initialDesignations, activeTab, accounts, liabilities, incomes, expenses,
+  entityIncome, entityExpense,
   assetFamilyMembers, onSaved, onClose, onSubmitStateChange,
 }: AddTrustFormProps) {
   const [loading, setLoading] = useState(false);
@@ -686,6 +691,27 @@ export default function AddTrustForm({
         ) : (
           <p className="text-[13px] text-ink-3 text-center py-6">
             Asset management is available when editing an existing trust from the Estate Planning page.
+          </p>
+        )}
+      </div>
+
+      <div className={activeTab !== "flows" ? "hidden" : ""}>
+        {editing ? (
+          <FlowsTab
+            clientId={clientId}
+            entityId={editing.id}
+            entityName={editing.name}
+            entityType="trust"
+            income={entityIncome ?? null}
+            expense={entityExpense ?? null}
+            distributionPolicyPercent={null /* trusts don't use this in P1 */}
+            taxTreatment={editing.taxTreatment ?? "ordinary"}
+            planStartYear={new Date().getFullYear()}
+            defaultEndYear={new Date().getFullYear() + 30}
+          />
+        ) : (
+          <p className="text-[13px] text-ink-3 text-center py-6">
+            Flows are available when editing an existing trust.
           </p>
         )}
       </div>

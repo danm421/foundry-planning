@@ -120,6 +120,10 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
     distributionMode: (e.distributionMode as "fixed" | "pct_liquid" | "pct_income" | null) ?? null,
     distributionAmount: e.distributionAmount != null ? parseFloat(String(e.distributionAmount)) : null,
     distributionPercent: e.distributionPercent != null ? parseFloat(String(e.distributionPercent)) : null,
+    taxTreatment: e.taxTreatment ?? undefined,
+    distributionPolicyPercent: e.distributionPolicyPercent != null
+      ? Number(e.distributionPolicyPercent)
+      : null,
   }));
 
   const externals: ExternalBeneficiary[] = externalRows.map((e) => ({
@@ -157,12 +161,24 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
     name: i.name,
     annualAmount: i.annualAmount,
     cashAccountId: i.cashAccountId,
+    ownerEntityId: i.ownerEntityId ?? null,
+    startYear: i.startYear,
+    endYear: i.endYear,
+    growthRate: i.growthRate,
+    growthSource: i.growthSource ?? null,
+    inflationStartYear: i.inflationStartYear ?? null,
   }));
   const fullExpenses = (effectiveTree.expenses ?? []).map((e) => ({
     id: e.id,
     name: e.name,
     annualAmount: e.annualAmount,
     cashAccountId: e.cashAccountId,
+    ownerEntityId: e.ownerEntityId ?? null,
+    startYear: e.startYear,
+    endYear: e.endYear,
+    growthRate: e.growthRate,
+    growthSource: e.growthSource ?? null,
+    inflationStartYear: e.inflationStartYear ?? null,
   }));
   const assetFamilyMembers = allMemberRows.map((m) => ({
     id: m.id,

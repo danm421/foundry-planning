@@ -118,7 +118,6 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "growthSource": "custom",
       "id": "00000000-0000-0000-0000-000000000040",
       "inflationStartYear": undefined,
-      "linkedEntityId": undefined,
       "name": "Alice Salary",
       "owner": "client",
       "ownerEntityId": undefined,

@@ -99,6 +99,8 @@ export async function PUT(
       distributionMode?: "fixed" | "pct_liquid" | "pct_income" | null;
       distributionAmount?: number | null;
       distributionPercent?: number | null;
+      taxTreatment?: "qbi" | "ordinary" | "non_taxable";
+      distributionPolicyPercent?: number | null;
       splitInterest?: TrustSplitInterestInput;
     };
 
@@ -270,6 +272,13 @@ export async function PUT(
           distributionPercent:
             patch.distributionPercent != null
               ? String(patch.distributionPercent)
+              : null,
+        }),
+        ...(patch.taxTreatment !== undefined && { taxTreatment: patch.taxTreatment }),
+        ...(patch.distributionPolicyPercent !== undefined && {
+          distributionPolicyPercent:
+            patch.distributionPolicyPercent != null
+              ? String(patch.distributionPolicyPercent)
               : null,
         }),
         ...(typeSwitchedAwayFromTrust && {
