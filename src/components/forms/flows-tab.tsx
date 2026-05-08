@@ -80,51 +80,67 @@ export default function FlowsTab(props: FlowsTabProps) {
         <DistributionAndTaxSection {...props} writer={writer} />
       )}
 
-      <div className="flex justify-end pt-2">
-        <button
-          type="button"
-          onClick={() => setScheduleOpen(true)}
-          className="rounded-md border border-hair bg-card px-3 py-1.5 text-xs text-ink-2 hover:text-ink-1"
-        >
-          Schedule…
-        </button>
-      </div>
+      {/* Schedule button — only shown when there is a real entity + active scenario to write to */}
+      {props.entityId && scenarioId ? (
+        <div className="flex justify-end pt-2">
+          <button
+            type="button"
+            onClick={() => setScheduleOpen(true)}
+            className="rounded-md border border-hair bg-card px-3 py-1.5 text-xs text-ink-2 hover:text-ink-1"
+          >
+            Schedule…
+          </button>
+        </div>
+      ) : (
+        <div className="flex justify-end pt-2">
+          <button
+            type="button"
+            disabled
+            title="Open a scenario to edit the schedule"
+            className="rounded-md border border-hair bg-card px-3 py-1.5 text-xs text-ink-3 opacity-50 cursor-not-allowed"
+          >
+            Schedule…
+          </button>
+        </div>
+      )}
 
-      <FlowScheduleGrid
-        open={scheduleOpen}
-        onClose={() => setScheduleOpen(false)}
-        clientId={props.clientId}
-        entityId={props.entityId}
-        entityName={props.entityName}
-        entityType={props.entityType}
-        scenarioId={scenarioId ?? "base"}
-        planStartYear={props.planStartYear}
-        planEndYear={props.planEndYear}
-        primaryClientBirthYear={props.primaryClientBirthYear}
-        income={
-          props.income
-            ? {
-                annualAmount: props.income.annualAmount,
-                growthRate: props.income.growthRate,
-                startYear: props.income.startYear,
-                endYear: props.income.endYear,
-                inflationStartYear: props.income.inflationStartYear,
-              }
-            : null
-        }
-        expense={
-          props.expense
-            ? {
-                annualAmount: props.expense.annualAmount,
-                growthRate: props.expense.growthRate,
-                startYear: props.expense.startYear,
-                endYear: props.expense.endYear,
-                inflationStartYear: props.expense.inflationStartYear,
-              }
-            : null
-        }
-        initialOverrides={props.initialFlowOverrides}
-      />
+      {props.entityId && scenarioId && (
+        <FlowScheduleGrid
+          open={scheduleOpen}
+          onClose={() => setScheduleOpen(false)}
+          clientId={props.clientId}
+          entityId={props.entityId}
+          entityName={props.entityName}
+          entityType={props.entityType}
+          scenarioId={scenarioId}
+          planStartYear={props.planStartYear}
+          planEndYear={props.planEndYear}
+          primaryClientBirthYear={props.primaryClientBirthYear}
+          income={
+            props.income
+              ? {
+                  annualAmount: props.income.annualAmount,
+                  growthRate: props.income.growthRate,
+                  startYear: props.income.startYear,
+                  endYear: props.income.endYear,
+                  inflationStartYear: props.income.inflationStartYear,
+                }
+              : null
+          }
+          expense={
+            props.expense
+              ? {
+                  annualAmount: props.expense.annualAmount,
+                  growthRate: props.expense.growthRate,
+                  startYear: props.expense.startYear,
+                  endYear: props.expense.endYear,
+                  inflationStartYear: props.expense.inflationStartYear,
+                }
+              : null
+          }
+          initialOverrides={props.initialFlowOverrides}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import AddTrustForm from "../forms/add-trust-form";
 import BusinessForm from "./business-form";
 import { getEntityKind, type EntityKind } from "./types";
@@ -84,6 +85,8 @@ export default function EntityDialog({
   planEndYear,
   primaryClientBirthYear,
 }: EntityDialogProps) {
+  const searchParams = useSearchParams();
+
   const [submitState, setSubmitState] = useState<{ canSubmit: boolean; loading: boolean }>({
     canSubmit: true,
     loading: false,
@@ -98,22 +101,19 @@ export default function EntityDialog({
     distributionPercent: number | null;
   }>>([]);
 
+  const scenarioId = searchParams.get("scenarioId");
+
   useEffect(() => {
-    if (!editing?.id) return;
-    // Use "base" as a sentinel when no scenario is active — the endpoint treats
-    // it as base-plan (no overrides exist yet in that case and returns []).
-    const scenarioParam = typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("scenario") ?? "base"
-      : "base";
+    if (!editing?.id || !scenarioId) return;
     fetch(
-      `/api/clients/${clientId}/entities/${editing.id}/flow-overrides?scenarioId=${scenarioParam}`,
+      `/api/clients/${clientId}/entities/${editing.id}/flow-overrides?scenarioId=${scenarioId}`,
     )
       .then((r) => r.json())
       .then((j: { overrides?: Array<{ year: number; incomeAmount: number | null; expenseAmount: number | null; distributionPercent: number | null }> }) =>
         setInitialFlowOverrides(j.overrides ?? []),
       )
       .catch(() => setInitialFlowOverrides([]));
-  }, [clientId, editing?.id]);
+  }, [clientId, editing?.id, scenarioId]);
 
   if (!open) return null;
 
