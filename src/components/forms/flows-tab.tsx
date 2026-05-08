@@ -117,7 +117,7 @@ export default function FlowsTab(props: FlowsTabProps) {
               "rounded px-3 py-1 font-medium transition " +
               (mode === "annual"
                 ? "bg-accent text-accent-on"
-                : "text-ink-3 hover:text-ink-1")
+                : "text-ink-2 hover:text-ink")
             }
           >
             Annual + growth
@@ -129,7 +129,7 @@ export default function FlowsTab(props: FlowsTabProps) {
               "rounded px-3 py-1 font-medium transition " +
               (mode === "schedule"
                 ? "bg-accent text-accent-on"
-                : "text-ink-3 hover:text-ink-1")
+                : "text-ink-2 hover:text-ink")
             }
           >
             Custom schedule
