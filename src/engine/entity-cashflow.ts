@@ -1,5 +1,6 @@
 // src/engine/entity-cashflow.ts
-import type { ProjectionYear, Income, Expense } from "./types";
+import type { ProjectionYear, Income, Expense, EntityFlowOverride } from "./types";
+import { resolveEntityFlowAmount } from "./entity-flows";
 import type { trustSubTypeEnum } from "@/db/schema";
 
 type TrustSubType = (typeof trustSubTypeEnum.enumValues)[number];
@@ -62,10 +63,15 @@ export interface ComputeEntityCashFlowInput {
   /** Gifts to entities, grouped by recipient entity id and year. */
   giftsByEntityYear: Map<string, Map<number, number>>;
   /** The same resolved currentIncomes array runProjection built. Used by
-   *  the business branch to derive per-entity gross income via resolveAmount. */
+   *  the business branch to derive per-entity gross income via
+   *  resolveEntityFlowAmount (Phase 2 overrides win). */
   incomes: Income[];
   /** The same resolved allExpenses array runProjection built. Same usage. */
   expenses: Expense[];
+  /** Phase 2 entity flow overrides (per-entity per-year sparse cells).
+   *  Pass-through to resolveEntityFlowAmount so the business branch picks
+   *  up Schedule-grid edits the same way the engine does. */
+  entityFlowOverrides: EntityFlowOverride[];
 }
 
 /**
@@ -150,8 +156,62 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           taxes,
           endingBalance,
         });
+      } else {
+        // Business branch: llc | s_corp | c_corp | partnership | foundation | other.
+        // Flat-value growth is 0 in v1 — see "Out of scope" in the spec.
+        const beginningTotalValue = entity.initialValue + beginningBalance;
+        const totalGrowth = growth; // entity-owned account growth only
+
+        // Derive per-entity gross income/expenses via resolveEntityFlowAmount
+        // so Phase 2 per-year overrides win + the same inflate-from convention
+        // applies as in computeBusinessEntityNetIncome.
+        let bizIncome = 0;
+        let bizExpenses = 0;
+        for (const inc of input.incomes) {
+          if (inc.ownerEntityId !== entityId) continue;
+          bizIncome += resolveEntityFlowAmount(inc, entityId, "income", year.year, input.entityFlowOverrides);
+        }
+        for (const exp of input.expenses) {
+          if (exp.ownerEntityId !== entityId) continue;
+          bizExpenses += resolveEntityFlowAmount(exp, entityId, "expense", year.year, input.entityFlowOverrides);
+        }
+
+        // Annual distribution = sum of |entity_distribution| debits on entity-owned
+        // accounts. The engine writes a debit on entity checking and a credit on
+        // household checking (Phase 3 wiring); this side reads the entity-side debit.
+        let annualDistribution = 0;
+        for (const aid of accountIds) {
+          const ledger = year.accountLedgers[aid];
+          if (!ledger) continue;
+          for (const entry of ledger.entries) {
+            if (entry.category !== "entity_distribution") continue;
+            if (entry.amount < 0) annualDistribution += Math.abs(entry.amount);
+          }
+        }
+
+        const netIncome = bizIncome - bizExpenses;
+        const retainedEarnings = netIncome - annualDistribution;
+        const endingTotalValue = beginningTotalValue + totalGrowth + retainedEarnings;
+        const beginningBasis = entity.initialBasis;
+
+        year.entityCashFlow.set(entityId, {
+          kind: "business",
+          entityId,
+          entityName: entity.name,
+          year: year.year,
+          ages: year.ages,
+          entityType: entity.entityType,
+          beginningTotalValue,
+          beginningBasis,
+          growth: totalGrowth,
+          income: bizIncome,
+          expenses: bizExpenses,
+          annualDistribution,
+          retainedEarnings,
+          endingTotalValue,
+          endingBasis: beginningBasis, // basis-altering events out-of-scope for v1
+        });
       }
-      // Business branch added in later task.
     }
   }
 }

@@ -1,7 +1,7 @@
 // src/engine/__tests__/entity-cashflow.test.ts
 import { describe, it, expect } from "vitest";
 import { computeEntityCashFlow } from "../entity-cashflow";
-import type { ProjectionYear } from "../types";
+import type { ProjectionYear, Income, Expense } from "../types";
 
 function makeYear(year: number): ProjectionYear {
   // Minimal-shape ProjectionYear for unit testing the cashflow pass.
@@ -76,6 +76,7 @@ describe("computeEntityCashFlow", () => {
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
+      entityFlowOverrides: [],
     });
     expect(years[0].entityCashFlow.size).toBe(0);
     expect(years[1].entityCashFlow.size).toBe(0);
@@ -140,6 +141,7 @@ describe("computeEntityCashFlow", () => {
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
+      entityFlowOverrides: [],
     });
     const row = y.entityCashFlow.get("trust-1");
     expect(row?.kind).toBe("trust");
@@ -184,6 +186,7 @@ describe("computeEntityCashFlow", () => {
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
+      entityFlowOverrides: [],
     });
     const row = y.entityCashFlow.get("trust-1")!;
     expect(row.kind).toBe("trust");
@@ -267,6 +270,7 @@ describe("computeEntityCashFlow", () => {
       giftsByEntityYear: new Map([["trust-1", new Map([[2026, 100_000]])]]),
       incomes: [],
       expenses: [],
+      entityFlowOverrides: [],
     });
     const row2026 = y2026.entityCashFlow.get("trust-1")!;
     const row2027 = y2027.entityCashFlow.get("trust-1")!;
@@ -309,6 +313,7 @@ describe("computeEntityCashFlow", () => {
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
+      entityFlowOverrides: [],
     });
     const ng = y.entityCashFlow.get("ng-1")!;
     const g = y.entityCashFlow.get("g-1")!;
@@ -352,8 +357,50 @@ describe("computeEntityCashFlow", () => {
       giftsByEntityYear: new Map(),
       incomes: [],
       expenses: [],
+      entityFlowOverrides: [],
     });
     const row = y.entityCashFlow.get("clut-1")!;
     expect((row as { kind: "trust"; totalDistributions: number }).totalDistributions).toBe(525_000);
+  });
+
+  it("computes business row: flat value + basis + growth + income/expenses + distribution + retained + EoY", () => {
+    const llc = { id: "llc-1", name: "Smith Holdings", entityType: "llc" as const, trustSubType: null, isGrantor: false, initialValue: 50_000_000, initialBasis: 1_000_000 };
+    const y = makeYear(2026);
+    // The engine wrote the entity_distribution debit + household credit during
+    // the projection. The report reads the debit on the entity's checking.
+    y.accountLedgers = {
+      "biz-cash": { beginningValue: 0, endingValue: 0, growth: 0, contributions: 10_000_000, distributions: 5_800_000, internalContributions: 0, internalDistributions: 0, rmdAmount: 0, fees: 0, entries: [
+        { category: "income",              label: "Income: Operating",                  amount:  10_000_000, sourceId: "biz-inc" },
+        { category: "expense",             label: "Expense: Operating",                 amount:  -4_200_000, sourceId: "biz-exp" },
+        { category: "entity_distribution", label: "Distribution from Smith Holdings",   amount:  -5_800_000, sourceId: "llc-1"   },
+      ] },
+    };
+    const incomes: Income[] = [
+      { id: "biz-inc", type: "business", name: "Operating", annualAmount: 10_000_000, startYear: 2026, endYear: 2055, growthRate: 0, owner: "joint", ownerEntityId: "llc-1" } as never,
+    ];
+    const expenses: Expense[] = [
+      { id: "biz-exp", type: "other", name: "Operating", annualAmount: 4_200_000, startYear: 2026, endYear: 2055, growthRate: 0, ownerEntityId: "llc-1" } as never,
+    ];
+    computeEntityCashFlow({
+      years: [y],
+      entitiesById: new Map([["llc-1", llc]]),
+      accountEntityOwners: new Map([["biz-cash", { entityId: "llc-1", percent: 1 }]]),
+      giftsByEntityYear: new Map(),
+      incomes,
+      expenses,
+      entityFlowOverrides: [],
+    });
+    const row = y.entityCashFlow.get("llc-1")!;
+    expect(row.kind).toBe("business");
+    if (row.kind !== "business") return;
+    expect(row.beginningTotalValue).toBe(50_000_000);   // entities.value (no entity-owned BoY balance on biz-cash)
+    expect(row.beginningBasis).toBe(1_000_000);
+    expect(row.growth).toBe(0);                          // 0 flat-value growth + 0 from cash account
+    expect(row.income).toBe(10_000_000);
+    expect(row.expenses).toBe(4_200_000);
+    expect(row.annualDistribution).toBe(5_800_000);
+    expect(row.retainedEarnings).toBe(0);                // (10M − 4.2M) − 5.8M
+    expect(row.endingTotalValue).toBe(50_000_000);       // BoY + 0 growth + 0 retained
+    expect(row.endingBasis).toBe(1_000_000);
   });
 });
