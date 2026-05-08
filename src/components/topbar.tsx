@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import Breadcrumb from "./breadcrumb";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
 
@@ -41,6 +41,7 @@ const TABS: ReadonlyArray<{
       { label: "Planning", path: "" },
       { label: "Estate Tax", path: "/estate-tax" },
       { label: "Estate Transfer", path: "/estate-transfer" },
+      { label: "Liquidity", path: "/liquidity" },
       { label: "Gift Tax", path: "/gift-tax" },
     ],
   },
@@ -56,6 +57,7 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
   const withScenario = useScenarioPreservingHref();
   const match = pathname.match(/^\/clients\/([^/]+)/);
   const clientId = match?.[1];
+  const [dismissedTab, setDismissedTab] = useState<string | null>(null);
 
   return (
     <header className="sticky top-0 z-20 grid h-14 grid-cols-[1fr_auto_1fr] items-center border-b border-hair bg-paper px-[var(--pad-card)]">
@@ -86,13 +88,21 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
               return <div key={tab.href}>{tabLink}</div>;
             }
 
+            const dismissed = dismissedTab === tab.href;
+            const menuClassName = dismissed
+              ? "invisible absolute left-1/2 top-full z-30 -translate-x-1/2 pt-1 opacity-0"
+              : "invisible absolute left-1/2 top-full z-30 -translate-x-1/2 pt-1 opacity-0 transition-opacity duration-100 group-hover/tab:visible group-hover/tab:opacity-100 group-focus-within/tab:visible group-focus-within/tab:opacity-100";
             return (
-              <div key={tab.href} className="group/tab relative">
+              <div
+                key={tab.href}
+                className="group/tab relative"
+                onMouseLeave={() => setDismissedTab((prev) => (prev === tab.href ? null : prev))}
+              >
                 {tabLink}
                 <div
                   role="menu"
                   aria-label={`${tab.label} sections`}
-                  className="invisible absolute left-1/2 top-full z-30 -translate-x-1/2 pt-1 opacity-0 transition-opacity duration-100 group-hover/tab:visible group-hover/tab:opacity-100 group-focus-within/tab:visible group-focus-within/tab:opacity-100"
+                  className={menuClassName}
                 >
                   <div className="min-w-[160px] rounded-md border border-hair bg-paper py-1 shadow-lg">
                     {tab.subTabs.map((sub) => {
@@ -109,6 +119,10 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
                           href={withScenario(subHref)}
                           role="menuitem"
                           className={`${subClassName} whitespace-nowrap`}
+                          onClick={(e) => {
+                            setDismissedTab(tab.href);
+                            e.currentTarget.blur();
+                          }}
                         >
                           {sub.label}
                         </Link>
