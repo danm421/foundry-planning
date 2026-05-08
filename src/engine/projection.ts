@@ -77,7 +77,11 @@ import {
   controllingFamilyMember,
   controllingEntity,
 } from "./ownership";
-import { computeBusinessEntityNetIncome } from "./entity-flows";
+import {
+  computeBusinessEntityNetIncome,
+  resolveEntityFlowAmount,
+  resolveDistributionPercent,
+} from "./entity-flows";
 import { type CharityBucket } from "./charitable-deduction";
 import {
   emptyCharityCarryforward,
@@ -1233,6 +1237,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         currentIncomes,
         allExpenses,
         year,
+        data.entityFlowOverrides ?? [],
       );
       if (netIncome <= 0) continue;
       const treatment = entity.taxTreatment ?? "ordinary";
@@ -2022,7 +2027,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (year < inc.startYear || year > inc.endYear) continue;
       if (inc.ownerEntityId != null && !isGrantorEntity(inc.ownerEntityId)) continue;
       let amount: number;
-      if (inc.scheduleOverrides) {
+      if (inc.ownerEntityId != null) {
+        // Phase 2: grantor-entity SE income uses entity overrides.
+        amount = resolveEntityFlowAmount(
+          inc,
+          inc.ownerEntityId,
+          "income",
+          year,
+          data.entityFlowOverrides ?? [],
+        );
+      } else if (inc.scheduleOverrides) {
         amount = inc.scheduleOverrides[year] ?? 0;
       } else {
         const inflateFrom = inc.inflationStartYear ?? inc.startYear;
@@ -2136,6 +2150,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         const inflateFrom = inc.inflationStartYear ?? inc.startYear;
         amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
       }
+      // Phase 2: for entity-owned rows, apply year-overrides (P2-3 — overrides
+      // win over base+growth; per-row scheduleOverrides on entity rows is no
+      // longer consulted).
+      if (inc.ownerEntityId != null) {
+        amount = resolveEntityFlowAmount(
+          inc,
+          inc.ownerEntityId,
+          "income",
+          year,
+          data.entityFlowOverrides ?? [],
+        );
+      }
       creditCash(resolveCashAccount(inc.ownerEntityId, inc.cashAccountId), amount, {
         category: "income",
         label: `Income: ${inc.name}`,
@@ -2147,7 +2173,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const exp of allExpenses) {
       if (year < exp.startYear || year > exp.endYear) continue;
       const inflateFrom = exp.inflationStartYear ?? exp.startYear;
-      const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, year - inflateFrom);
+      let amount = exp.annualAmount * Math.pow(1 + exp.growthRate, year - inflateFrom);
+      // Phase 2: for entity-owned rows, apply year-overrides.
+      if (exp.ownerEntityId != null) {
+        amount = resolveEntityFlowAmount(
+          exp,
+          exp.ownerEntityId,
+          "expense",
+          year,
+          data.entityFlowOverrides ?? [],
+        );
+      }
       creditCash(resolveCashAccount(exp.ownerEntityId, exp.cashAccountId), -amount, {
         category: "expense",
         label: `Expense: ${exp.name}`,
@@ -2176,6 +2212,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         currentIncomes,
         allExpenses,
         year,
+        data.entityFlowOverrides ?? [],
       );
       if (netIncome <= 0) continue;
       const distPercent = entity.distributionPolicyPercent ?? 1.0;
