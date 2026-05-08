@@ -9,6 +9,7 @@ import type {
   EstateTaxResult,
 } from "@/engine/types";
 import { buildYearlyLiquidityReport } from "./yearly-liquidity-report";
+import { buildYearlyEstateReport } from "./yearly-estate-report";
 
 const NAMES = { clientName: "Alice", spouseName: "Bob" };
 const DOBS = { clientDob: "1960-01-01", spouseDob: "1962-01-01" };
@@ -545,5 +546,107 @@ describe("buildYearlyLiquidityReport — portfolio assets", () => {
       ownerDobs: DOBS,
     });
     expect(report.rows[0].totalPortfolioAssets).toBe(500_000);
+  });
+});
+
+describe("buildYearlyLiquidityReport — invariants", () => {
+  it("surplusDeficitWithPortfolio − totalPortfolioAssets === surplusDeficitInsuranceOnly per row", () => {
+    const data = emptyClientData();
+    data.accounts = [
+      plainAccount({ id: "tax-1", category: "taxable", value: 0 }),
+      whole({
+        id: "p1",
+        faceValue: 2_000_000,
+        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+      }),
+    ];
+    const projection = {
+      years: [
+        projectionYear({
+          year: 2026,
+          hypothetical: htMarried({ firstTax: 100_000, finalTax: 200_000 }),
+          ledgers: { "tax-1": { endingValue: 1_500_000 } },
+        }),
+      ],
+    } as unknown as ProjectionResult;
+
+    const report = buildYearlyLiquidityReport({
+      projection,
+      clientData: data,
+      ownerNames: NAMES,
+      ownerDobs: DOBS,
+    });
+    const r = report.rows[0];
+    expect(r.surplusDeficitWithPortfolio - r.totalPortfolioAssets).toBe(
+      r.surplusDeficitInsuranceOnly,
+    );
+  });
+
+  it("totalTransferCost matches yearly-estate-report taxesAndExpenses for the same year", () => {
+    const data = emptyClientData();
+    const projection = {
+      years: [
+        projectionYear({
+          year: 2026,
+          hypothetical: htMarried({
+            firstTax: 100_000,
+            firstIrd: 25_000,
+            finalTax: 200_000,
+            finalIrd: 50_000,
+          }),
+        }),
+      ],
+    } as unknown as ProjectionResult;
+
+    const liquidity = buildYearlyLiquidityReport({
+      projection,
+      clientData: data,
+      ownerNames: NAMES,
+      ownerDobs: DOBS,
+    });
+    const yearly = buildYearlyEstateReport({
+      projection,
+      clientData: data,
+      ordering: "primaryFirst",
+      ownerNames: { clientName: "Alice", spouseName: "Bob" },
+      ownerDobs: DOBS,
+    });
+
+    expect(liquidity.rows[0].totalTransferCost).toBe(yearly.rows[0].taxesAndExpenses);
+  });
+
+  it("single-life plan (no spouse) returns ageSpouse=null and uses only firstDeath", () => {
+    const data = emptyClientData();
+    data.client = {
+      ...data.client,
+      filingStatus: "single",
+      spouseDob: undefined,
+      spouseRetirementAge: undefined,
+      spouseName: undefined,
+    };
+    const ht = {
+      primaryFirst: {
+        firstDecedent: "client",
+        firstDeath: deathResult({
+          decedent: "client",
+          order: 1,
+          totalTaxesAndExpenses: 500_000,
+        }),
+        firstDeathTransfers: [],
+        totals: { federal: 0, state: 0, admin: 0, total: 0 },
+      },
+    } as unknown as HypotheticalEstateTax;
+    const projection = {
+      years: [projectionYear({ year: 2026, hypothetical: ht })],
+    } as unknown as ProjectionResult;
+
+    const report = buildYearlyLiquidityReport({
+      projection,
+      clientData: data,
+      ownerNames: { clientName: "Alice", spouseName: null },
+      ownerDobs: { clientDob: "1960-01-01", spouseDob: null },
+    });
+    expect(report.rows[0].ageSpouse).toBe(null);
+    expect(report.rows[0].totalTransferCost).toBe(500_000);
   });
 });
