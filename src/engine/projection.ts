@@ -10,9 +10,11 @@ import type {
   PlanSettings,
   DeductionBreakdown,
   Income,
+  Expense,
   EstateTaxResult,
   HypotheticalEstateTax,
 } from "./types";
+import { computeEntityCashFlow, type EntityMetadata } from "./entity-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
 import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
@@ -503,6 +505,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   let stashedDSUE = 0;
 
   let currentIncomes: Income[] = [...data.incomes];
+  // Snapshot of the year's resolved `allExpenses` (data.expenses + synthetic
+  // property-tax rows). Captured each iteration so the post-loop entity
+  // cash-flow pass can read entity-tagged synthetic expenses.
+  let lastAllExpenses: Expense[] = data.expenses;
 
   const annualExclusionsByYear = buildAnnualExclusionsMap(data.taxYearRows ?? []);
   let charityCarryforward: CharityCarryforward = emptyCharityCarryforward();
@@ -755,6 +761,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
     const allExpenses = [...data.expenses, ...syntheticExpenses];
+    lastAllExpenses = allExpenses;
 
     // 3. Liability payments — amortize all liabilities (so balances roll forward),
     // and keep the per-liability map so entity liability payments can be routed
@@ -3153,6 +3160,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       accountBasisBoY,
       liabilityBalancesBoY,
       hypotheticalEstateTax,
+      entityCashFlow: new Map(),
       ...(Object.keys(rothConversionResult.byConversion).length > 0
         ? {
             rothConversions: Object.entries(rothConversionResult.byConversion).map(
@@ -3196,6 +3204,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         ? {
             ...(trustPassResult != null ? {
               trustTaxByEntity: trustPassResult.taxByEntity,
+              trustDistributionsByEntity: new Map(
+                Array.from(trustPassResult.distributionsByEntity.entries(),
+                  ([eid, d]) => [eid, d.drawFromCash ?? 0]),
+              ),
               estimatedBeneficiaryTax: trustPassResult.estimatedBeneficiaryTax,
             } : {}),
             trustWarnings: (() => {
@@ -3336,6 +3348,59 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       break;
     }
   }
+
+  // ── Entity cash-flow pass ──────────────────────────────────────────────────
+  // Runs once after every year is finalized. Mutates years[i].entityCashFlow
+  // in place, populating one row per entity per year.
+  const entitiesById = new Map<string, EntityMetadata>();
+  for (const entity of data.entities ?? []) {
+    entitiesById.set(entity.id, {
+      id: entity.id,
+      name: entity.name ?? entity.id,
+      entityType: entity.entityType ?? "trust",
+      trustSubType: entity.trustSubType ?? null,
+      isGrantor: entity.isGrantor,
+      initialValue: entity.value ?? 0,
+      initialBasis: entity.basis ?? 0,
+    });
+  }
+  // Account → entity-owner map. Only fully entity-owned accounts (a single
+  // entity owner with percent === 1) participate; mixed-ownership is out of
+  // scope for v1.
+  const accountEntityOwners = new Map<string, { entityId: string; percent: number }>();
+  for (const acct of data.accounts) {
+    if (!isFullyEntityOwned(acct)) continue;
+    const entityOwner = acct.owners.find((o) => o.kind === "entity") as
+      | { kind: "entity"; entityId: string; percent: number }
+      | undefined;
+    if (entityOwner && entityOwner.percent === 1) {
+      accountEntityOwners.set(acct.id, {
+        entityId: entityOwner.entityId,
+        percent: entityOwner.percent,
+      });
+    }
+  }
+  // Gifts to entities, grouped by recipient entity id and year. Only cash gifts
+  // carry a numeric `amount` field; asset/liability gifts use the same value
+  // model elsewhere and are surfaced via account ledgers, so they are not
+  // double-counted here.
+  const giftsByEntityYear = new Map<string, Map<number, number>>();
+  for (const ge of data.giftEvents ?? []) {
+    if (!ge.recipientEntityId) continue;
+    if (ge.kind !== "cash") continue;
+    const inner = giftsByEntityYear.get(ge.recipientEntityId) ?? new Map<number, number>();
+    inner.set(ge.year, (inner.get(ge.year) ?? 0) + ge.amount);
+    giftsByEntityYear.set(ge.recipientEntityId, inner);
+  }
+  computeEntityCashFlow({
+    years,
+    entitiesById,
+    accountEntityOwners,
+    giftsByEntityYear,
+    incomes: currentIncomes,
+    expenses: lastAllExpenses,
+    entityFlowOverrides: data.entityFlowOverrides ?? [],
+  });
 
   return years;
 }

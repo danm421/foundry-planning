@@ -72,6 +72,7 @@ function makeYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
     accountBasisBoY: {},
     liabilityBalancesBoY: {},
     hypotheticalEstateTax: {} as unknown as HypotheticalEstateTax,
+    entityCashFlow: new Map(),
     ...overrides,
   };
 }

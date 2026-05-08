@@ -3,6 +3,7 @@ import type { ClientDeductionRow } from "../lib/tax/derive-deductions";
 import type { TrustSubType } from "@/lib/entities/trust";
 import type { TrustTaxBreakdown, TrustWarning } from "./trust-tax/types";
 import type { AccountOwner } from "./ownership";
+import type { EntityCashFlowRow } from "./entity-cashflow";
 
 // ── Input Types ──────────────────────────────────────────────────────────────
 
@@ -922,6 +923,16 @@ export interface ProjectionYear {
   hypotheticalEstateTax: HypotheticalEstateTax;
   /** Per-entity trust-tax breakdown. Populated only when non-grantor trusts exist. */
   trustTaxByEntity?: Map<string, TrustTaxBreakdown>;
+  /** Per-entity total distribution amount in dollars. Populated for non-grantor
+   *  trusts that ran an annual pass this year (mandatory + discretionary).
+   *  Sourced from trustPassResult.distributionsByEntity[entityId].drawFromCash.
+   *  Excludes grantor-trust distributions (those flow through ledger entries
+   *  with category: "expense" / "income") and CLUT charity payments
+   *  (read charitableOutflowDetail for those). */
+  trustDistributionsByEntity?: Map<string, number>;
+  /** Per-entity cash-flow rollup. Keyed by entity id. Empty map if no
+   *  entities exist or none have activity in this year. */
+  entityCashFlow: Map<string, EntityCashFlowRow>;
   /** Sum of estimated beneficiary-level tax on distributed DNI to out-of-household beneficiaries. */
   estimatedBeneficiaryTax?: number;
   /** Non-fatal warnings emitted by the trust annual pass. */
@@ -1079,3 +1090,5 @@ export function emptyCharityCarryforward(): CharityCarryforward {
     appreciatedPrivate: [],
   };
 }
+
+export type { EntityCashFlowRow, TrustCashFlowRow, BusinessCashFlowRow } from "./entity-cashflow";
