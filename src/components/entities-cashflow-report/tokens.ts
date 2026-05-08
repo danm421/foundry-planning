@@ -34,5 +34,5 @@ export const BUSINESS_COLUMNS = [
   { key: "endingBasis",         label: ["End of Year", "Basis"] },
 ] as const;
 
-export const formatAges = (a: { client: number; spouse?: number }): string =>
-  a.spouse !== undefined ? `${a.client}/${a.spouse}` : String(a.client);
+export const formatAges = (a: { client: number; spouse?: number | null }): string =>
+  a.spouse != null ? `${a.client}/${a.spouse}` : String(a.client);
