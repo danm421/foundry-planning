@@ -339,6 +339,33 @@ describe("PUT /api/clients/[id]/entities/[entityId] — distribution policy", ()
     expect(body.distributionPercent).toBeNull();
   });
 
+  it("clears distributionPolicyPercent on business → foundation type switch", async () => {
+    const [llcRow] = await db
+      .insert(entities)
+      .values({
+        clientId,
+        name: "LLC With Distribution Policy",
+        entityType: "llc",
+        isGrantor: false,
+        includeInPortfolio: true,
+        value: "0",
+        distributionPolicyPercent: "0.5000",
+        taxTreatment: "qbi",
+      })
+      .returning();
+
+    const res = await PUT(
+      makePutReq({ entityType: "foundation" }),
+      { params: Promise.resolve({ id: clientId, entityId: llcRow.id }) },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.entityType).toBe("foundation");
+    expect(body.distributionPolicyPercent).toBeNull();
+    // taxTreatment is shared across all entity types per spec — should NOT be cleared
+    expect(body.taxTreatment).toBe("qbi");
+  });
+
   it("rejects distributionMode on a revocable trust via merged-row gate (I1 fix)", async () => {
     // Create a revocable trust (no distribution policy)
     const [trustRow] = await db
