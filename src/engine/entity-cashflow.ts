@@ -126,6 +126,12 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
         }
       }
 
+      let taxes = 0;
+      if (entity.entityType === "trust" && !entity.isGrantor) {
+        const tt = year.trustTaxByEntity?.get(entityId);
+        if (tt) taxes = tt.total;
+      }
+
       if (entity.entityType === "trust") {
         year.entityCashFlow.set(entityId, {
           kind: "trust",
@@ -141,7 +147,7 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           income,
           totalDistributions,
           expenses,
-          taxes: 0,
+          taxes,
           endingBalance,
         });
       }

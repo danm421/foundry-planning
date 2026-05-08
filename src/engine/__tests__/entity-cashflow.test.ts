@@ -274,6 +274,48 @@ describe("computeEntityCashFlow", () => {
     expect((row2027 as { kind: "trust"; transfersIn: number }).transfersIn).toBe(250_000);
   });
 
+  it("populates trust Taxes from trustTaxByEntity for non-grantor; zero for grantor", () => {
+    const nongrantor = {
+      id: "ng-1",
+      name: "Non-Grantor",
+      entityType: "trust" as const,
+      trustSubType: "irrevocable" as const,
+      isGrantor: false,
+      initialValue: 0,
+      initialBasis: 0,
+    };
+    const grantor = {
+      id: "g-1",
+      name: "Grantor",
+      entityType: "trust" as const,
+      trustSubType: "revocable" as const,
+      isGrantor: true,
+      initialValue: 0,
+      initialBasis: 0,
+    };
+    const y = makeYear(2026);
+    // TrustTaxBreakdown total field is `total`, not `totalTax`.
+    y.trustTaxByEntity = new Map([
+      ["ng-1", { total: 12_000 } as never],
+      ["g-1", { total: 9_000 } as never],
+    ]);
+    computeEntityCashFlow({
+      years: [y],
+      entitiesById: new Map([
+        ["ng-1", nongrantor],
+        ["g-1", grantor],
+      ]),
+      accountEntityOwners: new Map(),
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+    });
+    const ng = y.entityCashFlow.get("ng-1")!;
+    const g = y.entityCashFlow.get("g-1")!;
+    expect((ng as { kind: "trust"; taxes: number }).taxes).toBe(12_000);
+    expect((g as { kind: "trust"; taxes: number }).taxes).toBe(0);
+  });
+
   it("includes charitable outflows and termination payouts in totalDistributions", () => {
     const trust = {
       id: "clut-1",
