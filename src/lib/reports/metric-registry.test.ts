@@ -69,6 +69,7 @@ function makeYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
     // The metric tests don't read this; satisfy the required type with a
     // typed stub instead of a full estate-tax tree.
     hypotheticalEstateTax: {} as unknown as HypotheticalEstateTax,
+    entityCashFlow: new Map(),
     ...overrides,
   };
 }

@@ -3153,6 +3153,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       accountBasisBoY,
       liabilityBalancesBoY,
       hypotheticalEstateTax,
+      entityCashFlow: new Map(),
       ...(Object.keys(rothConversionResult.byConversion).length > 0
         ? {
             rothConversions: Object.entries(rothConversionResult.byConversion).map(
