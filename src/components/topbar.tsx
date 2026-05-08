@@ -31,6 +31,7 @@ const TABS: ReadonlyArray<{
       { label: "Income Tax", path: "/income-tax" },
       { label: "Monte Carlo", path: "/monte-carlo" },
       { label: "Timeline", path: "/timeline" },
+      { label: "Entities", path: "/entities" },
     ],
   },
   {
