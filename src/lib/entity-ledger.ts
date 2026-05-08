@@ -142,5 +142,47 @@ export function getEntityLedger(
     }
   }
 
+  if (isBusiness) {
+    const flowMode = entity.flowMode ?? "annual";
+    const { expenseRows } = resolveEntityFlows.withDetail(
+      entityId,
+      ctx.incomes,
+      ctx.expenses,
+      ctx.year.year,
+      ctx.entityFlowOverrides,
+      flowMode,
+    );
+    for (const r of expenseRows) {
+      if (r.amount === 0) continue;
+      expenses.push({
+        label: r.name,
+        amount: r.amount,
+        sourceKind: r.isOverride ? "flow-override" : "flow-base",
+        sourceId: r.id,
+      });
+    }
+  }
+
+  for (const [accountId, owner] of ctx.accountEntityOwners) {
+    if (owner.entityId !== entityId) continue;
+    const acctLedger = ctx.year.accountLedgers[accountId];
+    if (!acctLedger) continue;
+    const share = owner.percent;
+    for (const entry of acctLedger.entries ?? []) {
+      if (entry.isInternalTransfer) continue;
+      if (entry.category !== "expense") continue;
+      const contribution = Math.abs(entry.amount) * share;
+      if (contribution === 0) continue;
+      const name = ctx.accountNamesById.get(accountId) ?? accountId;
+      const suffix = share === 1 ? "" : ` (${(share * 100).toFixed(0)}%)`;
+      expenses.push({
+        label: `${name}${suffix} — ${entry.label ?? "expense"}`,
+        amount: contribution,
+        sourceKind: "account-entry",
+        sourceId: `${accountId}:${entry.sourceId ?? entry.label ?? "expense"}`,
+      });
+    }
+  }
+
   return { growth, income, expenses, ending };
 }
