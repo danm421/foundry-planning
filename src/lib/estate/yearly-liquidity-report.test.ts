@@ -444,3 +444,106 @@ describe("buildYearlyLiquidityReport — insurance allocation", () => {
     expect(report.rows[1].insuranceInEstate).toBe(0);          // 2027 = later retirement
   });
 });
+
+function plainAccount(opts: {
+  id: string;
+  category: Account["category"];
+  value: number;
+  owners?: Account["owners"];
+}): Account {
+  return {
+    id: opts.id,
+    name: opts.id,
+    category: opts.category,
+    subType: "x",
+    value: opts.value,
+    basis: 0,
+    growthRate: 0,
+    rmdEnabled: false,
+    owners: opts.owners ?? [
+      { kind: "family_member", familyMemberId: "fm-client", percent: 1 },
+    ],
+  };
+}
+
+describe("buildYearlyLiquidityReport — portfolio assets", () => {
+  it("sums taxable + cash + retirement at year-end balances; excludes real estate, business, insurance", () => {
+    const data = emptyClientData();
+    data.accounts = [
+      plainAccount({ id: "tax-1", category: "taxable", value: 0 }),
+      plainAccount({ id: "cash-1", category: "cash", value: 0 }),
+      plainAccount({ id: "ira-1", category: "retirement", value: 0 }),
+      plainAccount({ id: "re-1", category: "real_estate", value: 0 }),
+      plainAccount({ id: "biz-1", category: "business", value: 0 }),
+      whole({
+        id: "ins-1",
+        faceValue: 0,
+        owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+      }),
+    ];
+
+    const projection = {
+      years: [
+        projectionYear({
+          year: 2026,
+          hypothetical: htMarried({ firstTax: 0, finalTax: 0 }),
+          ledgers: {
+            "tax-1": { endingValue: 1_000_000 },
+            "cash-1": { endingValue: 50_000 },
+            "ira-1": { endingValue: 750_000 },
+            "re-1": { endingValue: 2_000_000 },
+            "biz-1": { endingValue: 5_000_000 },
+            "ins-1": { endingValue: 25_000 },
+          },
+        }),
+      ],
+    } as unknown as ProjectionResult;
+
+    const report = buildYearlyLiquidityReport({
+      projection,
+      clientData: data,
+      ownerNames: NAMES,
+      ownerDobs: DOBS,
+    });
+
+    expect(report.rows[0].totalPortfolioAssets).toBe(1_800_000);
+  });
+
+  it("apportions portfolio by in-estate ownership (ILIT-held taxable account excluded)", () => {
+    const data = emptyClientData();
+    data.entities = [ILIT];
+    data.accounts = [
+      plainAccount({
+        id: "tax-ilit",
+        category: "taxable",
+        value: 0,
+        owners: [{ kind: "entity", entityId: "ilit-1", percent: 1 }],
+      }),
+      plainAccount({
+        id: "tax-mine",
+        category: "taxable",
+        value: 0,
+      }),
+    ];
+    const projection = {
+      years: [
+        projectionYear({
+          year: 2026,
+          hypothetical: htMarried({ firstTax: 0, finalTax: 0 }),
+          ledgers: {
+            "tax-ilit": { endingValue: 1_000_000 },
+            "tax-mine": { endingValue: 500_000 },
+          },
+        }),
+      ],
+    } as unknown as ProjectionResult;
+
+    const report = buildYearlyLiquidityReport({
+      projection,
+      clientData: data,
+      ownerNames: NAMES,
+      ownerDobs: DOBS,
+    });
+    expect(report.rows[0].totalPortfolioAssets).toBe(500_000);
+  });
+});

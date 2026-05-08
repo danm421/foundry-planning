@@ -148,7 +148,12 @@ function buildRow(args: RowArgs): YearlyLiquidityRow {
     spouseRetirementYear,
   });
   const totalInsuranceBenefit = insuranceInEstate + insuranceOutOfEstate;
-  const totalPortfolioAssets = 0; // implemented in next task
+  const totalPortfolioAssets = computePortfolioAssets({
+    yearRow,
+    clientData,
+    giftEvents,
+    projectionStartYear,
+  });
   const totalTransferCost = transferCost(branch);
 
   return {
@@ -215,6 +220,40 @@ function computeInsurance(args: InsuranceArgs): {
   }
 
   return { insuranceInEstate: inEstate, insuranceOutOfEstate: outOfEstate };
+}
+
+const LIQUID_CATEGORIES: ReadonlySet<Account["category"]> = new Set([
+  "taxable",
+  "cash",
+  "retirement",
+]);
+
+interface PortfolioArgs {
+  yearRow: ProjectionYear;
+  clientData: ClientData;
+  giftEvents: GiftEvent[];
+  projectionStartYear: number;
+}
+
+function computePortfolioAssets(args: PortfolioArgs): number {
+  const { yearRow, clientData, giftEvents, projectionStartYear } = args;
+  let total = 0;
+  for (const account of clientData.accounts) {
+    if (!LIQUID_CATEGORIES.has(account.category)) continue;
+    const ledger = yearRow.accountLedgers?.[account.id];
+    const balance = ledger?.endingValue ?? 0;
+    if (balance === 0) continue;
+    const owners = ownersForYear(
+      account,
+      giftEvents,
+      yearRow.year,
+      projectionStartYear,
+    );
+    for (const owner of owners) {
+      total += balance * owner.percent * inEstateWeight(clientData, owner);
+    }
+  }
+  return total;
 }
 
 function resolveInsuredRetirementYear(
