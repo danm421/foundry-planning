@@ -197,6 +197,16 @@ describe("Phase 3: business entity distribution flow", () => {
     expect(entityLedger.endingValue).toBeCloseTo(50_000, 0);
   });
 
+  it("null distributionPolicyPercent defaults to 100% (full passthrough)", () => {
+    const data = mkData({ entity: { distributionPolicyPercent: null } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // Entity checking should be empty after distribution (started 0, +100k income, -100k dist).
+    const entityLedger = y0.accountLedgers["llc1-checking"];
+    expect(entityLedger.endingValue).toBeCloseTo(0, 0);
+  });
+
   it("distribution audit entry uses 'entity_distribution' category", () => {
     const data = mkData();
     const years = runProjection(data);
