@@ -108,6 +108,8 @@ const baseEntityFields = {
   distributionMode: z.enum(["fixed", "pct_liquid", "pct_income"]).nullish(),
   distributionAmount: z.number().nonnegative().nullish(),
   distributionPercent: z.number().min(0).max(1).nullish(),
+  taxTreatment: z.enum(["qbi", "ordinary", "non_taxable"]).optional(),
+  distributionPolicyPercent: z.number().min(0).max(1).optional().nullable(),
   splitInterest: trustSplitInterestSchema.optional(),
 };
 
@@ -226,14 +228,17 @@ export const entityCreateSchema = z
   });
 
 export const entityUpdateSchema = z
-  .object(
-    Object.fromEntries(
+  .object({
+    ...(Object.fromEntries(
       Object.entries(baseEntityFields).map(([k, v]) => [
         k,
         (v as z.ZodTypeAny).optional(),
       ]),
-    ) as Record<string, z.ZodTypeAny>,
-  )
+    ) as Record<string, z.ZodTypeAny>),
+    // Update path uses partial semantics — both Phase 1 flow fields are nullable.
+    taxTreatment: z.enum(["qbi", "ordinary", "non_taxable"]).optional().nullable(),
+    distributionPolicyPercent: z.number().min(0).max(1).optional().nullable(),
+  })
   .superRefine((data, ctx) => {
     const d = data as {
       trustSubType?: string;

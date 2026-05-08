@@ -217,3 +217,40 @@ describe("entityUpdateSchema", () => {
     }
   });
 });
+
+describe("entityCreateSchema — Phase 1 flow fields", () => {
+  it("accepts taxTreatment + distributionPolicyPercent on create", () => {
+    const r = entityCreateSchema.safeParse({
+      name: "Acme",
+      entityType: "llc",
+      taxTreatment: "qbi",
+      distributionPolicyPercent: 0.5,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects taxTreatment outside the enum", () => {
+    const r = entityCreateSchema.safeParse({
+      name: "Acme",
+      entityType: "llc",
+      taxTreatment: "garbage",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects distributionPolicyPercent > 1", () => {
+    const r = entityCreateSchema.safeParse({
+      name: "Acme",
+      entityType: "llc",
+      distributionPolicyPercent: 1.5,
+    });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("entityUpdateSchema — Phase 1 flow fields", () => {
+  it("allows nulling distributionPolicyPercent", () => {
+    const r = entityUpdateSchema.safeParse({ distributionPolicyPercent: null });
+    expect(r.success).toBe(true);
+  });
+});
