@@ -31,7 +31,36 @@ export default function YearlyLiquidityReportView({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showPortfolio, setShowPortfolio] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const chartRef = useRef<ChartJSType<"bar" | "line"> | null>(null);
+
+  async function exportPdf() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const chartPng = chartRef.current?.canvas?.toDataURL("image/png") ?? null;
+      const res = await fetch(
+        `/api/clients/${clientId}/liquidity-report/export-pdf`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chartPng }),
+        },
+      );
+      if (!res.ok) throw new Error(`PDF export failed: HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "liquidity.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -97,13 +126,21 @@ export default function YearlyLiquidityReportView({
 
   return (
     <div className="space-y-4 pt-4">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
         <button
           type="button"
           onClick={() => setShowPortfolio((p) => !p)}
           className="rounded border border-gray-700 bg-gray-900 px-3 py-1 text-sm text-gray-200 hover:bg-gray-800"
         >
           {showPortfolio ? "Hide portfolio assets" : "Show portfolio assets"}
+        </button>
+        <button
+          type="button"
+          onClick={exportPdf}
+          disabled={exporting}
+          className="rounded border border-indigo-700 bg-indigo-900/30 px-3 py-1 text-sm text-indigo-200 hover:bg-indigo-900/50 disabled:opacity-50"
+        >
+          {exporting ? "Exporting…" : "Export PDF"}
         </button>
       </div>
 
