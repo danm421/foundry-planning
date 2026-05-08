@@ -19,6 +19,7 @@ import {
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations, sql, type InferSelectModel, type InferInsertModel } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { BracketTier } from "@/lib/tax/types";
 import type { ReportPagesPersisted } from "@/lib/reports/types";
 
@@ -2014,6 +2015,17 @@ export const assetTransactions = pgTable("asset_transactions", {
   qualifiesForHomeSaleExclusion: boolean("qualifies_for_home_sale_exclusion")
     .notNull()
     .default(false),
+  // Resell: link from a sell row to the buy row whose synthetic asset is being
+  // sold. Mutually exclusive with accountId on sells (enforced by CHECK +
+  // route-level Zod). ON DELETE SET NULL realizes the orphan-on-buy-delete
+  // model — see add-asset-transaction-form.tsx for the "must re-source" UX.
+  purchaseTransactionId: uuid("purchase_transaction_id").references(
+    (): AnyPgColumn => assetTransactions.id,
+    { onDelete: "set null" },
+  ),
+  // Partial-sale fraction. null = full sale (today's binary behavior). 0 < x ≤ 1
+  // = partial. Sell-only via CHECK; null on buys.
+  fractionSold: decimal("fraction_sold", { precision: 7, scale: 6 }),
   // Buy fields
   assetName: text("asset_name"),
   assetCategory: accountCategoryEnum("asset_category"),
@@ -2029,7 +2041,28 @@ export const assetTransactions = pgTable("asset_transactions", {
   mortgageTermMonths: integer("mortgage_term_months"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+},
+(t) => [
+  // Sells have AT MOST one source. Both-null is allowed temporarily when the
+  // referenced buy is deleted (FK SET NULL cascade). Both-non-null is never legal.
+  check(
+    "asset_transactions_sell_source_check",
+    sql`${t.type} <> 'sell' OR NOT (${t.accountId} IS NOT NULL AND ${t.purchaseTransactionId} IS NOT NULL)`,
+  ),
+  // Buys never carry sell-side fields.
+  check(
+    "asset_transactions_buy_no_source_check",
+    sql`${t.type} <> 'buy' OR (${t.purchaseTransactionId} IS NULL AND ${t.accountId} IS NULL AND ${t.fractionSold} IS NULL)`,
+  ),
+  // fraction_sold must be in (0, 1] when present.
+  check(
+    "asset_transactions_fraction_sold_range_check",
+    sql`${t.fractionSold} IS NULL OR (${t.fractionSold} > 0 AND ${t.fractionSold} <= 1)`,
+  ),
+  index("asset_transactions_purchase_idx")
+    .on(t.purchaseTransactionId)
+    .where(sql`${t.purchaseTransactionId} IS NOT NULL`),
+]);
 
 export const reportComments = pgTable(
   "report_comments",

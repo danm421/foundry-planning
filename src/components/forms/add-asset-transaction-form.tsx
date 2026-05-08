@@ -23,6 +23,13 @@ interface AddAssetTransactionFormProps {
   clientId: string;
   accounts: { id: string; name: string; category: string; subType: string }[];
   liabilities: { id: string; name: string; linkedPropertyId: string | null; balance: string }[];
+  pastBuys?: {
+    id: string;
+    name: string;
+    assetName: string | null;
+    year: number;
+    assetCategory: string | null;
+  }[];
   milestones?: ClientMilestones;
   clientFirstName?: string;
   spouseFirstName?: string;
@@ -32,6 +39,8 @@ interface AddAssetTransactionFormProps {
     type: "buy" | "sell";
     year: number;
     accountId: string | null;
+    purchaseTransactionId: string | null;
+    fractionSold: string | null;
     overrideSaleValue: string | null;
     overrideBasis: string | null;
     transactionCostPct: string | null;
@@ -175,6 +184,7 @@ export default function AddAssetTransactionForm({
   clientId,
   accounts,
   liabilities,
+  pastBuys: pastBuysProp,
   milestones,
   clientFirstName,
   spouseFirstName,
@@ -185,6 +195,7 @@ export default function AddAssetTransactionForm({
   const writer = useScenarioWriter(clientId);
   const isEdit = !!initialData;
   const currentYear = new Date().getFullYear();
+  const pastBuys = pastBuysProp ?? [];
 
   // Determine initial section state from initialData
   const initialHasSell = !initialData || initialData.type === "sell";
@@ -205,6 +216,23 @@ export default function AddAssetTransactionForm({
   // ── Sell-side state ───────────────────────────────────────────────────────
   const [sellAccountId, setSellAccountId] = useState<string>(
     initialData?.accountId ?? "",
+  );
+  const [sellPurchaseTransactionId, setSellPurchaseTransactionId] = useState<string>(
+    initialData?.purchaseTransactionId ?? "",
+  );
+  // Sell amount mode — drives whether we submit fractionSold or overrideSaleValue.
+  type SellAmountMode = "full" | "percent" | "dollar";
+  const initialSellMode: SellAmountMode =
+    initialData?.fractionSold != null && initialData.fractionSold !== "1"
+      ? "percent"
+      : initialData?.overrideSaleValue
+      ? "dollar"
+      : "full";
+  const [sellAmountMode, setSellAmountMode] = useState<SellAmountMode>(initialSellMode);
+  const [fractionSoldPct, setFractionSoldPct] = useState<string>(
+    initialData?.fractionSold != null
+      ? String(Math.round(Number(initialData.fractionSold) * 10000) / 100)
+      : "100",
   );
   const [overrideSaleValue, setOverrideSaleValue] = useState(
     initialData?.overrideSaleValue ?? "",
@@ -311,8 +339,32 @@ export default function AddAssetTransactionForm({
   }, [projectionYears, linkedMortgage, year]);
 
   // ── Net Summary calculations ──────────────────────────────────────────────
-  const sellHasData = !!(sellAccountId);
+  const sellHasData = !!(sellAccountId || sellPurchaseTransactionId);
   const buyHasData = !!(assetName || parseNum(purchasePrice as string) > 0);
+
+  // ── Resell/orphan/mortgage derivations ────────────────────────────────────
+  // The synthetic id used by the engine when a sell points at a prior buy is
+  // `technique-acct-${buy.id}`. liabilities can be linked to those ids by
+  // funding a buy with a mortgage.
+  const selectedAccountId =
+    sellAccountId ||
+    (sellPurchaseTransactionId ? `technique-acct-${sellPurchaseTransactionId}` : "");
+  const selectedHasMortgage =
+    !!selectedAccountId &&
+    liabilities.some((l) => l.linkedPropertyId === selectedAccountId);
+
+  // Editing an existing sell whose source link was nulled by FK cascade
+  // (the referenced buy was deleted). User must re-source before saving.
+  const isOrphan =
+    !!initialData &&
+    initialData.type === "sell" &&
+    !initialData.accountId &&
+    !initialData.purchaseTransactionId;
+
+  // Year-floor: when a buy is selected, the sell year must be > buy.year.
+  const linkedBuy = pastBuys.find((b) => b.id === sellPurchaseTransactionId);
+  const minSellYear = linkedBuy ? linkedBuy.year + 1 : undefined;
+  const yearBeforeBuy = !!linkedBuy && year <= linkedBuy.year;
 
   const netSummary = useMemo(() => {
     const saleValue = parseNum(overrideSaleValue as string) ||
@@ -385,7 +437,18 @@ export default function AddAssetTransactionForm({
     // Sell-side fields (always include if sell side has data)
     if (sellHasData) {
       body.accountId = sellAccountId || null;
-      body.overrideSaleValue = toOptionalString(overrideSaleValue as string);
+      body.purchaseTransactionId = sellPurchaseTransactionId || null;
+      // Sell-amount mode dictates exactly one of fractionSold / overrideSaleValue.
+      if (sellAmountMode === "full") {
+        body.fractionSold = null;
+        body.overrideSaleValue = null;
+      } else if (sellAmountMode === "percent") {
+        body.fractionSold = Number(fractionSoldPct) / 100;
+        body.overrideSaleValue = null;
+      } else {
+        body.fractionSold = null;
+        body.overrideSaleValue = toOptionalString(overrideSaleValue as string);
+      }
       body.overrideBasis = toOptionalString(overrideBasis as string);
       body.transactionCostPct = toOptionalDecimal(transactionCostPct);
       body.transactionCostFlat = toOptionalString(transactionCostFlat as string);
@@ -519,6 +582,7 @@ export default function AddAssetTransactionForm({
                 label="Year *"
                 clientFirstName={clientFirstName}
                 spouseFirstName={spouseFirstName}
+                minYear={minSellYear}
               />
             ) : (
               <>
@@ -529,11 +593,17 @@ export default function AddAssetTransactionForm({
                   id="txn-year"
                   type="number"
                   required
+                  min={minSellYear}
                   value={year}
                   onChange={(e) => { setYear(Number(e.target.value)); setYearRef(null); }}
                   className={INPUT_CLASS}
                 />
               </>
+            )}
+            {linkedBuy && yearBeforeBuy && (
+              <p className="mt-1 text-xs text-red-400">
+                Sell year must be after buy year ({linkedBuy.year}).
+              </p>
             )}
           </div>
         </div>
@@ -549,6 +619,13 @@ export default function AddAssetTransactionForm({
             accentColor="red"
           >
             <div className="space-y-4">
+              {isOrphan && (
+                <p className="rounded border border-red-800 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+                  ⚠ Source removed — please re-select. The buy transaction this
+                  sell referenced was deleted.
+                </p>
+              )}
+
               {/* Account to sell */}
               <div>
                 <label className={LABEL_CLASS} htmlFor="sellAccountId">
@@ -556,24 +633,91 @@ export default function AddAssetTransactionForm({
                 </label>
                 <select
                   id="sellAccountId"
-                  value={sellAccountId}
-                  onChange={(e) => setSellAccountId(e.target.value)}
+                  value={
+                    sellAccountId ||
+                    (sellPurchaseTransactionId
+                      ? `buy:${sellPurchaseTransactionId}`
+                      : "")
+                  }
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v.startsWith("buy:")) {
+                      setSellPurchaseTransactionId(v.slice(4));
+                      setSellAccountId("");
+                    } else {
+                      setSellAccountId(v);
+                      setSellPurchaseTransactionId("");
+                    }
+                  }}
                   className={SELECT_CLASS}
                 >
-                  <option value="">-- Select account --</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
+                  <option value="">-- Select source --</option>
+                  <optgroup label="Existing accounts">
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {pastBuys.filter((b) => b.year < year).length > 0 && (
+                    <optgroup label="Bought via transaction">
+                      {pastBuys
+                        .filter((b) => b.year < year)
+                        .map((b) => (
+                          <option key={b.id} value={`buy:${b.id}`}>
+                            {b.assetName ?? b.name} (buy {b.year})
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
 
-              {/* Override Sale Value + Basis */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Sell amount mode */}
+              <div>
+                <label className={LABEL_CLASS}>Sell amount</label>
+                <div className="mt-1 flex gap-1 text-xs">
+                  {(["full", "percent", "dollar"] as SellAmountMode[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setSellAmountMode(m)}
+                      className={
+                        "rounded-md border px-2 py-1 text-xs font-medium transition-colors " +
+                        (sellAmountMode === m
+                          ? "border-accent bg-accent/15 text-accent"
+                          : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800")
+                      }
+                    >
+                      {m === "full"
+                        ? "Full sale"
+                        : m === "percent"
+                        ? "% of asset"
+                        : "$ amount"}
+                    </button>
+                  ))}
+                </div>
+                {sellAmountMode === "percent" && (
+                  <div className="mt-2">
+                    <PercentInput
+                      value={fractionSoldPct}
+                      onChange={(raw) => setFractionSoldPct(raw)}
+                      className="w-32 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                  </div>
+                )}
+                {selectedHasMortgage && sellAmountMode !== "full" && (
+                  <p className="mt-2 text-xs text-yellow-400">
+                    ⚠ Linked mortgage will not be paid off on a partial sale.
+                  </p>
+                )}
+              </div>
+
+              {/* Sell value: dollar amount inline, otherwise hidden under "More overrides" */}
+              {sellAmountMode === "dollar" ? (
                 <div>
                   <label className={LABEL_CLASS} htmlFor="overrideSaleValue">
-                    Override Sale Value ($)
+                    Sell amount ($)
                   </label>
                   <CurrencyInput
                     id="overrideSaleValue"
@@ -590,29 +734,76 @@ export default function AddAssetTransactionForm({
                       </span>
                     </p>
                   )}
+                  <div className="mt-3">
+                    <label className={LABEL_CLASS} htmlFor="overrideBasis">
+                      Override Basis ($)
+                    </label>
+                    <CurrencyInput
+                      id="overrideBasis"
+                      value={overrideBasis}
+                      onChange={(raw) => setOverrideBasis(raw)}
+                      placeholder="Leave blank for projected"
+                      className={INPUT_CLASS.replace("px-3", "pr-3")}
+                    />
+                    {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
+                      <p className="mt-1 text-xs text-gray-400">
+                        Projected basis in {year}:{" "}
+                        <span className="text-gray-300">
+                          {formatCurrency(projectedSellInfo.projectedBasis)}
+                        </span>
+                      </p>
+                    )}
+                  </div>
                 </div>
-
-                <div>
-                  <label className={LABEL_CLASS} htmlFor="overrideBasis">
-                    Override Basis ($)
-                  </label>
-                  <CurrencyInput
-                    id="overrideBasis"
-                    value={overrideBasis}
-                    onChange={(raw) => setOverrideBasis(raw)}
-                    placeholder="Leave blank for projected"
-                    className={INPUT_CLASS.replace("px-3", "pr-3")}
-                  />
-                  {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
-                    <p className="mt-1 text-xs text-gray-400">
-                      Projected basis in {year}:{" "}
-                      <span className="text-gray-300">
-                        {formatCurrency(projectedSellInfo.projectedBasis)}
-                      </span>
-                    </p>
-                  )}
-                </div>
-              </div>
+              ) : (
+                <details className="rounded border border-gray-700 bg-gray-900 px-3 py-2">
+                  <summary className="cursor-pointer text-sm text-gray-300">
+                    More overrides
+                  </summary>
+                  <div className="mt-2 grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={LABEL_CLASS} htmlFor="overrideSaleValue">
+                        Override Sale Value ($)
+                      </label>
+                      <CurrencyInput
+                        id="overrideSaleValue"
+                        value={overrideSaleValue}
+                        onChange={(raw) => setOverrideSaleValue(raw)}
+                        placeholder="Leave blank for projected"
+                        className={INPUT_CLASS.replace("px-3", "pr-3")}
+                      />
+                      {projectedSellInfo && projectedSellInfo.projectedValue > 0 && (
+                        <p className="mt-1 text-xs text-gray-400">
+                          Projected value in {year}:{" "}
+                          <span className="text-gray-300">
+                            {formatCurrency(projectedSellInfo.projectedValue)}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className={LABEL_CLASS} htmlFor="overrideBasis">
+                        Override Basis ($)
+                      </label>
+                      <CurrencyInput
+                        id="overrideBasis"
+                        value={overrideBasis}
+                        onChange={(raw) => setOverrideBasis(raw)}
+                        placeholder="Leave blank for projected"
+                        className={INPUT_CLASS.replace("px-3", "pr-3")}
+                      />
+                      {projectedSellInfo && projectedSellInfo.projectedBasis != null && (
+                        <p className="mt-1 text-xs text-gray-400">
+                          Projected basis in {year}:{" "}
+                          <span className="text-gray-300">
+                            {formatCurrency(projectedSellInfo.projectedBasis)}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </details>
+              )}
 
               {/* Transaction Costs */}
               <div className="grid grid-cols-2 gap-4">
@@ -996,7 +1187,12 @@ export default function AddAssetTransactionForm({
           </button>
           <button
             type="submit"
-            disabled={loading || (!sellHasData && !buyHasData)}
+            disabled={
+              loading ||
+              (!sellHasData && !buyHasData) ||
+              (isOrphan && !sellAccountId && !sellPurchaseTransactionId) ||
+              yearBeforeBuy
+            }
             className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
           >
             {loading ? "Saving..." : isEdit ? "Save Changes" : "Save"}

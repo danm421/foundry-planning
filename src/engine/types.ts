@@ -736,6 +736,13 @@ export interface AssetTransaction {
   mortgageTermMonths?: number;
   // Resolved at API layer (same as Account.realization)
   realization?: Account["realization"];
+  /** Sell-only. References the buy row whose synthetic asset is being sold.
+   *  Mutually exclusive with accountId on sells. Null when this is a sell of
+   *  an existing real account, or when the referenced buy was deleted (orphan). */
+  purchaseTransactionId?: string | null;
+  /** Sell-only. Fraction of the source's balance + basis to sell.
+   *  null = full sale (today's behavior). 0 < x ≤ 1 = partial. */
+  fractionSold?: number | null;
 }
 
 export interface PlanSettings {

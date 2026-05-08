@@ -554,6 +554,13 @@
       "when": 1778253524786,
       "tag": "0078_entity_flow_overrides",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1778258724149,
+      "tag": "0079_asset_transaction_resells",
+      "breakpoints": true
     }
   ]
 }

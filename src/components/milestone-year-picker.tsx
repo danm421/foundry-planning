@@ -39,6 +39,12 @@ interface MilestoneYearPickerProps {
    * Defaults to "start" for backwards compatibility.
    */
   position?: "start" | "end";
+  /**
+   * Optional minimum allowed year. Applied as the HTML `min` attribute on the
+   * underlying number input. Used by callers that need to floor the year above
+   * a related event (e.g. a sell-year picker floored to buy.year + 1).
+   */
+  minYear?: number;
 }
 
 const INPUT_CLASS =
@@ -77,6 +83,7 @@ export default function MilestoneYearPicker({
   spouseFirstName,
   startYearForDuration,
   position = "start",
+  minYear,
 }: MilestoneYearPickerProps) {
   type Mode = "manual" | "milestone" | "duration";
   const [currentRef, setCurrentRef] = useState<YearRef | null>(yearRef);
@@ -194,7 +201,7 @@ export default function MilestoneYearPicker({
             id={id}
             name={name}
             type="number"
-            min={2000}
+            min={minYear != null ? Math.max(2000, minYear) : 2000}
             max={2100}
             value={currentYear}
             readOnly={currentRef !== null}

@@ -96,6 +96,8 @@ export default async function TechniquesPage({ params, searchParams }: PageProps
     type: tx.type as "buy" | "sell",
     year: tx.year,
     accountId: tx.accountId ?? null,
+    purchaseTransactionId: tx.purchaseTransactionId ?? null,
+    fractionSold: tx.fractionSold == null ? null : String(tx.fractionSold),
     overrideSaleValue: tx.overrideSaleValue == null ? null : String(tx.overrideSaleValue),
     overrideBasis: tx.overrideBasis == null ? null : String(tx.overrideBasis),
     transactionCostPct: tx.transactionCostPct == null ? null : String(tx.transactionCostPct),

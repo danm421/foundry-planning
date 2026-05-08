@@ -33,6 +33,8 @@ export interface AssetTransactionRow {
   type: "buy" | "sell";
   year: number;
   accountId: string | null;
+  purchaseTransactionId: string | null;
+  fractionSold: string | null;
   overrideSaleValue: string | null;
   overrideBasis: string | null;
   transactionCostPct: string | null;
@@ -367,26 +369,44 @@ function RothConversionCard({
 
 // ── Asset Transaction Card ────────────────────────────────────────────────────
 
+type PastBuy = {
+  id: string;
+  name: string;
+  assetName: string | null;
+  year: number;
+  assetCategory: string | null;
+};
+
 function describeTransaction(
   transaction: AssetTransactionRow,
   accounts: AccountOption[],
+  pastBuys: PastBuy[],
 ): string {
   const accountMap = new Map(accounts.map((a) => [a.id, a]));
   const sellAccount = transaction.accountId ? accountMap.get(transaction.accountId) : null;
-  const hasSell = !!transaction.accountId;
+  const linkedBuy = transaction.purchaseTransactionId
+    ? pastBuys.find((b) => b.id === transaction.purchaseTransactionId)
+    : null;
+  const isSell = transaction.type === "sell";
+  const isOrphanSell = isSell && !transaction.accountId && !transaction.purchaseTransactionId;
+  const hasSellSource = !!sellAccount || !!linkedBuy;
   const hasBuy = !!(transaction.assetName || (transaction.purchasePrice && parseFloat(transaction.purchasePrice) > 0));
 
-  if (hasSell && hasBuy) {
-    const sellName = sellAccount?.name ?? "Asset";
-    const buyName = transaction.assetName ?? "New Asset";
-    return `Sell ${sellName} → Buy ${buyName}`;
+  let sellLabel: string | null = null;
+  if (isOrphanSell) {
+    sellLabel = "Sell — source removed";
+  } else if (sellAccount) {
+    sellLabel = `Sell ${sellAccount.name}`;
+  } else if (linkedBuy) {
+    sellLabel = `Sell ${linkedBuy.assetName ?? linkedBuy.name} (buy ${linkedBuy.year})`;
   }
-  if (hasSell) {
-    return `Sell ${sellAccount?.name ?? "Asset"}`;
+
+  if (sellLabel && hasBuy) {
+    return `${sellLabel} → Buy ${transaction.assetName ?? "New Asset"}`;
   }
-  if (hasBuy) {
-    return `Buy ${transaction.assetName ?? "New Asset"}`;
-  }
+  if (sellLabel) return sellLabel;
+  if (hasBuy) return `Buy ${transaction.assetName ?? "New Asset"}`;
+  if (isSell && !hasSellSource) return "Sell";
   return transaction.type === "buy" ? "Buy" : "Sell";
 }
 
@@ -468,6 +488,7 @@ function AssetTransactionCard({
   transaction,
   accounts,
   liabilities,
+  pastBuys,
   projectedSaleValue,
   projectedMortgagePayoff,
   onEdit,
@@ -476,6 +497,7 @@ function AssetTransactionCard({
   transaction: AssetTransactionRow;
   accounts: AccountOption[];
   liabilities: LiabilityOption[];
+  pastBuys: PastBuy[];
   projectedSaleValue: number | null;
   projectedMortgagePayoff: number | null;
   onEdit: () => void;
@@ -492,7 +514,11 @@ function AssetTransactionCard({
 
   const hasSell = !!transaction.accountId;
   const hasBuy = !!(transaction.assetName || (transaction.purchasePrice && parseFloat(transaction.purchasePrice) > 0));
-  const description = describeTransaction(transaction, accounts);
+  const isOrphanSell =
+    transaction.type === "sell"
+    && !transaction.accountId
+    && !transaction.purchaseTransactionId;
+  const description = describeTransaction(transaction, accounts, pastBuys);
   const saleBreakdown = hasSell
     ? computeSaleBreakdown(transaction, liabilities, projectedSaleValue, projectedMortgagePayoff)
     : null;
@@ -518,6 +544,12 @@ function AssetTransactionCard({
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-gray-100">{transaction.name}</span>
           <Badge label={badgeLabel} className={badgeClass} />
+          {isOrphanSell && (
+            <Badge
+              label="⚠ Source removed"
+              className="border border-red-700/60 bg-red-950/50 text-red-300"
+            />
+          )}
           <span className="text-xs text-gray-400">{transaction.year}</span>
         </div>
 
@@ -681,6 +713,20 @@ export default function TechniquesView({
     };
   }, [projectionYears]);
 
+  const pastBuys = useMemo(
+    () =>
+      assetTransactions
+        .filter((t) => t.type === "buy")
+        .map((t) => ({
+          id: t.id,
+          name: t.name,
+          assetName: t.assetName,
+          year: t.year,
+          assetCategory: t.assetCategory,
+        })),
+    [assetTransactions],
+  );
+
   async function handleDeleteTransfer(transferId: string) {
     await writer.submit(
       { op: "remove", targetKind: "transfer", targetId: transferId },
@@ -814,6 +860,7 @@ export default function TechniquesView({
                   transaction={tx}
                   accounts={accounts}
                   liabilities={liabilities}
+                  pastBuys={pastBuys}
                   projectedSaleValue={projectedSaleValue}
                   projectedMortgagePayoff={projectedMortgagePayoff}
                   onEdit={() => setEditingTransaction(tx)}
@@ -859,6 +906,7 @@ export default function TechniquesView({
           clientId={clientId}
           accounts={accounts}
           liabilities={liabilities}
+          pastBuys={pastBuys}
           milestones={milestones}
           clientFirstName={clientFirstName}
           spouseFirstName={spouseFirstName}

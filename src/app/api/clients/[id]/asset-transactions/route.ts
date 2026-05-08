@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { db } from "@/db";
 import { clients, scenarios, assetTransactions } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -10,9 +11,215 @@ import {
 import { recordCreate, recordUpdate, recordDelete } from "@/lib/audit";
 import { toAssetTransactionSnapshot, ASSET_TRANSACTION_FIELD_LABELS } from "@/lib/audit/snapshots/asset-transaction";
 
+// ---------------------------------------------------------------------------
+// Zod schemas
+// ---------------------------------------------------------------------------
+
+const postBodySchema = z
+  .object({
+    name: z.string().min(1),
+    type: z.enum(["buy", "sell"]),
+    year: z.number().int(),
+    // Sale fields
+    accountId: z.string().uuid().nullable().optional(),
+    overrideSaleValue: z.number().nullable().optional(),
+    overrideBasis: z.number().nullable().optional(),
+    transactionCostPct: z.number().nullable().optional(),
+    transactionCostFlat: z.number().nullable().optional(),
+    proceedsAccountId: z.string().uuid().nullable().optional(),
+    qualifiesForHomeSaleExclusion: z.boolean().optional(),
+    // Buy fields
+    assetName: z.string().nullable().optional(),
+    assetCategory: z
+      .enum(["taxable", "cash", "retirement", "real_estate", "business", "life_insurance"])
+      .nullable()
+      .optional(),
+    assetSubType: z
+      .enum([
+        "brokerage",
+        "savings",
+        "checking",
+        "traditional_ira",
+        "roth_ira",
+        "401k",
+        "403b",
+        "529",
+        "trust",
+        "other",
+        "primary_residence",
+        "rental_property",
+        "commercial_property",
+        "sole_proprietorship",
+        "partnership",
+        "s_corp",
+        "c_corp",
+        "llc",
+        "term",
+        "whole_life",
+        "universal_life",
+        "variable_life",
+      ])
+      .nullable()
+      .optional(),
+    purchasePrice: z.number().nullable().optional(),
+    growthRate: z.number().nullable().optional(),
+    growthSource: z
+      .enum(["default", "model_portfolio", "custom", "asset_mix", "inflation"])
+      .nullable()
+      .optional(),
+    modelPortfolioId: z.string().uuid().nullable().optional(),
+    basis: z.number().nullable().optional(),
+    fundingAccountId: z.string().uuid().nullable().optional(),
+    mortgageAmount: z.number().nullable().optional(),
+    mortgageRate: z.number().nullable().optional(),
+    mortgageTermMonths: z.number().int().nullable().optional(),
+    // Resell fields
+    purchaseTransactionId: z.string().uuid().nullable().optional(),
+    fractionSold: z.number().gt(0).lte(1).nullable().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.type === "sell") {
+      const hasAccount = val.accountId != null;
+      const hasPurchase = val.purchaseTransactionId != null;
+      if (hasAccount && hasPurchase) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["purchaseTransactionId"],
+          message:
+            "A sell must have exactly one source: accountId OR purchaseTransactionId, not both.",
+        });
+      }
+      if (!hasAccount && !hasPurchase) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["accountId"],
+          message:
+            "A sell must have exactly one source: accountId or purchaseTransactionId.",
+        });
+      }
+    }
+    if (val.type === "buy") {
+      if (
+        val.purchaseTransactionId != null ||
+        val.accountId != null ||
+        val.fractionSold != null
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["type"],
+          message:
+            "Buy rows cannot carry sell-side fields (accountId, purchaseTransactionId, fractionSold).",
+        });
+      }
+    }
+  });
+
+// PUT allows all fields to be optional (partial update), and type may or may
+// not be present. The superRefine only fires when type IS provided.
+const putBodySchema = z
+  .object({
+    transactionId: z.string().uuid(),
+    name: z.string().min(1).optional(),
+    type: z.enum(["buy", "sell"]).optional(),
+    year: z.number().int().optional(),
+    // Sale fields
+    accountId: z.string().uuid().nullable().optional(),
+    overrideSaleValue: z.number().nullable().optional(),
+    overrideBasis: z.number().nullable().optional(),
+    transactionCostPct: z.number().nullable().optional(),
+    transactionCostFlat: z.number().nullable().optional(),
+    proceedsAccountId: z.string().uuid().nullable().optional(),
+    qualifiesForHomeSaleExclusion: z.boolean().optional(),
+    // Buy fields
+    assetName: z.string().nullable().optional(),
+    assetCategory: z
+      .enum(["taxable", "cash", "retirement", "real_estate", "business", "life_insurance"])
+      .nullable()
+      .optional(),
+    assetSubType: z
+      .enum([
+        "brokerage",
+        "savings",
+        "checking",
+        "traditional_ira",
+        "roth_ira",
+        "401k",
+        "403b",
+        "529",
+        "trust",
+        "other",
+        "primary_residence",
+        "rental_property",
+        "commercial_property",
+        "sole_proprietorship",
+        "partnership",
+        "s_corp",
+        "c_corp",
+        "llc",
+        "term",
+        "whole_life",
+        "universal_life",
+        "variable_life",
+      ])
+      .nullable()
+      .optional(),
+    purchasePrice: z.number().nullable().optional(),
+    growthRate: z.number().nullable().optional(),
+    growthSource: z
+      .enum(["default", "model_portfolio", "custom", "asset_mix", "inflation"])
+      .nullable()
+      .optional(),
+    modelPortfolioId: z.string().uuid().nullable().optional(),
+    basis: z.number().nullable().optional(),
+    fundingAccountId: z.string().uuid().nullable().optional(),
+    mortgageAmount: z.number().nullable().optional(),
+    mortgageRate: z.number().nullable().optional(),
+    mortgageTermMonths: z.number().int().nullable().optional(),
+    // Resell fields
+    purchaseTransactionId: z.string().uuid().nullable().optional(),
+    fractionSold: z.number().gt(0).lte(1).nullable().optional(),
+  })
+  .superRefine((val, ctx) => {
+    // Only enforce sell/buy source rules when type is explicitly supplied.
+    if (val.type === "sell") {
+      const hasAccount = val.accountId != null;
+      const hasPurchase = val.purchaseTransactionId != null;
+      if (hasAccount && hasPurchase) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["purchaseTransactionId"],
+          message:
+            "A sell must have exactly one source: accountId OR purchaseTransactionId, not both.",
+        });
+      }
+      if (!hasAccount && !hasPurchase) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["accountId"],
+          message:
+            "A sell must have exactly one source: accountId or purchaseTransactionId.",
+        });
+      }
+    }
+    if (val.type === "buy") {
+      if (
+        val.purchaseTransactionId != null ||
+        val.accountId != null ||
+        val.fractionSold != null
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["type"],
+          message:
+            "Buy rows cannot carry sell-side fields (accountId, purchaseTransactionId, fractionSold).",
+        });
+      }
+    }
+  });
+
 export const dynamic = "force-dynamic";
 
-const toStr = (v: any) => (v != null ? String(v) : null);
+const toStr = (v: unknown) => (v != null ? String(v) : null);
 
 async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
   const [client] = await db
@@ -74,6 +281,14 @@ export async function POST(
     }
 
     const body = await request.json();
+    const parseResult = postBodySchema.safeParse(body);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: "Validation error", issues: parseResult.error.flatten() },
+        { status: 422 },
+      );
+    }
+    const parsed = parseResult.data;
     const {
       name,
       type,
@@ -99,11 +314,10 @@ export async function POST(
       mortgageAmount,
       mortgageRate,
       mortgageTermMonths,
-    } = body;
-
-    if (!name || !type || typeof year !== "number") {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-    }
+      // Resell fields
+      purchaseTransactionId,
+      fractionSold,
+    } = parsed;
 
     const acctCheck = await assertAccountsInClient(id, [
       accountId,
@@ -116,6 +330,35 @@ export async function POST(
     const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
     if (!mpCheck.ok) {
       return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
+    }
+
+    // Cross-buy validation: referenced buy must exist in same client+scenario
+    // and have a strictly earlier year.
+    if (purchaseTransactionId) {
+      const buyRow = await db
+        .select()
+        .from(assetTransactions)
+        .where(
+          and(
+            eq(assetTransactions.id, purchaseTransactionId),
+            eq(assetTransactions.clientId, id),
+            eq(assetTransactions.scenarioId, scenarioId),
+            eq(assetTransactions.type, "buy"),
+          ),
+        )
+        .limit(1);
+      if (buyRow.length === 0) {
+        return NextResponse.json(
+          { error: "purchaseTransactionId must reference a buy in the same client+scenario" },
+          { status: 422 },
+        );
+      }
+      if (buyRow[0].year >= year) {
+        return NextResponse.json(
+          { error: `Sell year (${year}) must be after buy year (${buyRow[0].year}).` },
+          { status: 422 },
+        );
+      }
     }
 
     const [created] = await db
@@ -147,6 +390,10 @@ export async function POST(
         mortgageAmount: toStr(mortgageAmount),
         mortgageRate: toStr(mortgageRate),
         mortgageTermMonths: mortgageTermMonths ?? null,
+        // Resell fields
+        purchaseTransactionId: purchaseTransactionId ?? null,
+        fractionSold:
+          fractionSold != null ? String(fractionSold) : null,
       })
       .returning();
 
@@ -187,11 +434,15 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { transactionId, ...rest } = body;
-
-    if (!transactionId) {
-      return NextResponse.json({ error: "Missing transactionId" }, { status: 400 });
+    const parseResult = putBodySchema.safeParse(body);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { error: "Validation error", issues: parseResult.error.flatten() },
+        { status: 422 },
+      );
     }
+    const parsed = parseResult.data;
+    const { transactionId } = parsed;
 
     const [existing] = await db
       .select()
@@ -226,7 +477,10 @@ export async function PUT(
       mortgageAmount,
       mortgageRate,
       mortgageTermMonths,
-    } = rest;
+      // Resell fields
+      purchaseTransactionId,
+      fractionSold,
+    } = parsed;
 
     const acctCheck = await assertAccountsInClient(id, [
       accountId,
@@ -239,6 +493,36 @@ export async function PUT(
     const mpCheck = await assertModelPortfoliosInFirm(firmId, [modelPortfolioId]);
     if (!mpCheck.ok) {
       return NextResponse.json({ error: mpCheck.reason }, { status: 400 });
+    }
+
+    // Cross-buy validation: referenced buy must exist in same client+scenario
+    // and have a strictly earlier year than the sell.
+    if (purchaseTransactionId) {
+      const resolvedYear = year ?? existing.year;
+      const buyRow = await db
+        .select()
+        .from(assetTransactions)
+        .where(
+          and(
+            eq(assetTransactions.id, purchaseTransactionId),
+            eq(assetTransactions.clientId, id),
+            eq(assetTransactions.scenarioId, existing.scenarioId),
+            eq(assetTransactions.type, "buy"),
+          ),
+        )
+        .limit(1);
+      if (buyRow.length === 0) {
+        return NextResponse.json(
+          { error: "purchaseTransactionId must reference a buy in the same client+scenario" },
+          { status: 422 },
+        );
+      }
+      if (buyRow[0].year >= resolvedYear) {
+        return NextResponse.json(
+          { error: `Sell year (${resolvedYear}) must be after buy year (${buyRow[0].year}).` },
+          { status: 422 },
+        );
+      }
     }
 
     const [updated] = await db
@@ -269,6 +553,11 @@ export async function PUT(
         basis: basis !== undefined ? toStr(basis) : undefined,
         mortgageAmount: mortgageAmount !== undefined ? toStr(mortgageAmount) : undefined,
         mortgageRate: mortgageRate !== undefined ? toStr(mortgageRate) : undefined,
+        // Resell fields
+        ...(purchaseTransactionId !== undefined && { purchaseTransactionId }),
+        ...(fractionSold !== undefined && {
+          fractionSold: fractionSold !== null ? String(fractionSold) : null,
+        }),
         updatedAt: new Date(),
       })
       .where(and(eq(assetTransactions.id, transactionId), eq(assetTransactions.clientId, id)))

@@ -69,6 +69,7 @@ const NUMERIC_FIELDS_BY_KIND: Partial<Record<TargetKind, readonly string[]>> = {
   ],
   client_deduction: ["annualAmount", "growthRate"],
   roth_conversion: ["fixedAmount", "fillUpBracket", "indexingRate"],
+  asset_transaction: ["fractionSold"],
 };
 
 function toNumberIfNumericString(v: unknown): unknown {

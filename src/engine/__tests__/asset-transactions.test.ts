@@ -351,3 +351,368 @@ describe("applyAssetPurchases", () => {
     expect(balances["checking-1"]).toBe(50000);
   });
 });
+
+describe("applyAssetPurchases — deterministic synthetic ids", () => {
+  it("uses technique-acct-${purchase.id} so resells can resolve later", () => {
+    _resetSyntheticIdCounter();
+    const purchase: AssetTransaction = {
+      id: "buy-uuid-fixed",
+      name: "Vacation Home",
+      type: "buy",
+      year: 2030,
+      assetName: "Lakeside Cottage",
+      assetCategory: "real_estate",
+      assetSubType: "rental_property",
+      purchasePrice: 400_000,
+      growthRate: 0.05,
+      basis: 400_000,
+    };
+    const accountBalances: Record<string, number> = { checking: 1_000_000 };
+    const basisMap: Record<string, number> = { checking: 1_000_000 };
+    const accountLedgers: Record<string, AccountLedger> = {
+      checking: makeLedger(1_000_000),
+    };
+
+    const result = applyAssetPurchases({
+      purchases: [purchase],
+      accounts: [],
+      liabilities: [],
+      accountBalances,
+      basisMap,
+      accountLedgers,
+      year: 2030,
+      defaultCheckingId: "checking",
+    });
+
+    expect(result.newAccounts).toHaveLength(1);
+    expect(result.newAccounts[0].id).toBe("technique-acct-buy-uuid-fixed");
+  });
+});
+
+describe("applyAssetSales — partial sales on existing accounts", () => {
+  it("partial 40%: balance and basis prorate; account NOT removed", () => {
+    const sell: AssetTransaction = {
+      id: "partial-sell",
+      name: "40% sell",
+      type: "sell",
+      year: 2030,
+      accountId: "real-acct-1",
+      fractionSold: 0.4,
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const accountBalances: Record<string, number> = { "real-acct-1": 500_000, checking: 0 };
+    const basisMap: Record<string, number> = { "real-acct-1": 200_000, checking: 0 };
+
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [{ id: "real-acct-1", category: "taxable" } as Account],
+      liabilities: [],
+      accountBalances,
+      basisMap,
+      accountLedgers: {
+        "real-acct-1": makeLedger(500_000),
+        checking: makeLedger(0),
+      },
+      year: 2030,
+      defaultCheckingId: "checking",
+      filingStatus: "married_joint",
+    });
+
+    expect(result.breakdown[0].saleValue).toBeCloseTo(200_000, 2);
+    expect(result.breakdown[0].basis).toBeCloseTo(80_000, 2);
+    expect(result.breakdown[0].capitalGain).toBeCloseTo(120_000, 2);
+    expect(accountBalances["real-acct-1"]).toBeCloseTo(300_000, 2);
+    expect(basisMap["real-acct-1"]).toBeCloseTo(120_000, 2);
+    expect(result.removedAccountIds).not.toContain("real-acct-1");
+  });
+
+  it("fraction=1 mirrors today's full-sale behavior", () => {
+    const sell: AssetTransaction = {
+      id: "full-sell",
+      name: "100% sell",
+      type: "sell",
+      year: 2030,
+      accountId: "real-acct-2",
+      fractionSold: 1,
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const accountBalances: Record<string, number> = { "real-acct-2": 500_000, checking: 0 };
+    const basisMap: Record<string, number> = { "real-acct-2": 200_000, checking: 0 };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [{ id: "real-acct-2", category: "taxable" } as Account],
+      liabilities: [],
+      accountBalances, basisMap,
+      accountLedgers: {
+        "real-acct-2": makeLedger(500_000),
+        checking: makeLedger(0),
+      },
+      year: 2030, defaultCheckingId: "checking", filingStatus: "married_joint",
+    });
+    expect(accountBalances["real-acct-2"]).toBe(0);
+    expect(result.removedAccountIds).toContain("real-acct-2");
+  });
+
+  it("overrideSaleValue takes precedence over fraction-derived saleValue", () => {
+    const sell: AssetTransaction = {
+      id: "override-partial",
+      name: "Override partial",
+      type: "sell",
+      year: 2030,
+      accountId: "real-acct-3",
+      fractionSold: 0.4,
+      overrideSaleValue: 250_000,  // wins over 0.4 * 500_000 = 200_000
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const accountBalances: Record<string, number> = { "real-acct-3": 500_000, checking: 0 };
+    const basisMap: Record<string, number> = { "real-acct-3": 200_000, checking: 0 };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [{ id: "real-acct-3", category: "taxable" } as Account],
+      liabilities: [],
+      accountBalances, basisMap,
+      accountLedgers: {
+        "real-acct-3": makeLedger(500_000),
+        checking: makeLedger(0),
+      },
+      year: 2030, defaultCheckingId: "checking", filingStatus: "married_joint",
+    });
+    expect(result.breakdown[0].saleValue).toBe(250_000);
+    // basis still pro-rates to fraction (no overrideBasis)
+    expect(result.breakdown[0].basis).toBeCloseTo(80_000, 2);
+  });
+});
+
+describe("applyAssetSales — source resolution", () => {
+  it("resolves sell.purchaseTransactionId → technique-acct-${purchase.id}", () => {
+    const sell: AssetTransaction = {
+      id: "sell-uuid",
+      name: "Sell Vacation Home",
+      type: "sell",
+      year: 2035,
+      purchaseTransactionId: "buy-uuid-fixed",
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const accountBalances: Record<string, number> = {
+      "technique-acct-buy-uuid-fixed": 510_000,  // post-growth value
+      "checking": 50_000,
+    };
+    const basisMap: Record<string, number> = {
+      "technique-acct-buy-uuid-fixed": 400_000,
+      "checking": 50_000,
+    };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [{
+        id: "technique-acct-buy-uuid-fixed",
+        category: "real_estate",
+      } as Account],
+      liabilities: [],
+      accountBalances,
+      basisMap,
+      accountLedgers: {
+        "technique-acct-buy-uuid-fixed": makeLedger(510_000),
+        "checking": makeLedger(50_000),
+      },
+      year: 2035,
+      defaultCheckingId: "checking",
+      filingStatus: "married_joint",
+    });
+
+    expect(result.breakdown[0].accountId).toBe("technique-acct-buy-uuid-fixed");
+    expect(result.breakdown[0].capitalGain).toBeCloseTo(110_000, 2);
+    expect(result.capitalGains).toBeCloseTo(110_000, 2);
+  });
+
+  it("skips with skipped='orphaned' when sell has neither accountId nor purchaseTransactionId", () => {
+    const sell: AssetTransaction = {
+      id: "orphan-sell",
+      name: "Orphaned",
+      type: "sell",
+      year: 2035,
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [],
+      liabilities: [],
+      accountBalances: { checking: 0 },
+      basisMap: { checking: 0 },
+      accountLedgers: { checking: makeLedger(0) },
+      year: 2035,
+      defaultCheckingId: "checking",
+      filingStatus: "married_joint",
+    });
+    expect(result.capitalGains).toBe(0);
+    expect(result.breakdown).toEqual([
+      expect.objectContaining({
+        transactionId: "orphan-sell",
+        skipped: "orphaned",
+      }),
+    ]);
+  });
+
+  it("skips with skipped='no-source-balance' when synthetic source not yet created", () => {
+    // Sell year before buy year: form should block this, defense-in-depth here.
+    const sell: AssetTransaction = {
+      id: "early-sell",
+      name: "Early",
+      type: "sell",
+      year: 2025,
+      purchaseTransactionId: "buy-uuid-fixed",
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [],
+      liabilities: [],
+      accountBalances: { checking: 0 },  // no technique-acct-* yet
+      basisMap: { checking: 0 },
+      accountLedgers: { checking: makeLedger(0) },
+      year: 2025,
+      defaultCheckingId: "checking",
+      filingStatus: "married_joint",
+    });
+    expect(result.breakdown[0].skipped).toBe("no-source-balance");
+  });
+});
+
+describe("applyAssetSales — partial sales on synthetic accounts", () => {
+  it("partial sale on synthetic source carries residual into next year", () => {
+    const sell: AssetTransaction = {
+      id: "partial-synth",
+      name: "Partial vacation home",
+      type: "sell",
+      year: 2035,
+      purchaseTransactionId: "buy-uuid-fixed",
+      fractionSold: 0.5,
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const accountBalances: Record<string, number> = {
+      "technique-acct-buy-uuid-fixed": 510_000,
+      checking: 0,
+    };
+    const basisMap: Record<string, number> = {
+      "technique-acct-buy-uuid-fixed": 400_000,
+      checking: 0,
+    };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [{
+        id: "technique-acct-buy-uuid-fixed",
+        category: "real_estate",
+      } as Account],
+      liabilities: [],
+      accountBalances, basisMap,
+      accountLedgers: {
+        "technique-acct-buy-uuid-fixed": makeLedger(510_000),
+        checking: makeLedger(0),
+      },
+      year: 2035, defaultCheckingId: "checking", filingStatus: "married_joint",
+    });
+    expect(result.breakdown[0].saleValue).toBeCloseTo(255_000, 2);
+    expect(result.breakdown[0].basis).toBeCloseTo(200_000, 2);
+    expect(result.breakdown[0].capitalGain).toBeCloseTo(55_000, 2);
+    expect(accountBalances["technique-acct-buy-uuid-fixed"]).toBeCloseTo(255_000, 2);
+    expect(result.removedAccountIds).not.toContain("technique-acct-buy-uuid-fixed");
+  });
+
+  it("partial sale on mortgaged real-estate does NOT pay off the mortgage", () => {
+    const sell: AssetTransaction = {
+      id: "partial-mortgaged",
+      name: "Partial mortgaged",
+      type: "sell",
+      year: 2035,
+      accountId: "rental-1",
+      fractionSold: 0.5,
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const accountBalances: Record<string, number> = { "rental-1": 600_000, checking: 0 };
+    const basisMap: Record<string, number> = { "rental-1": 400_000, checking: 0 };
+    const liability = {
+      id: "mortgage-1",
+      name: "Mortgage",
+      balance: 200_000,
+      linkedPropertyId: "rental-1",
+    } as Liability;
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [{ id: "rental-1", category: "real_estate" } as Account],
+      liabilities: [liability],
+      accountBalances, basisMap,
+      accountLedgers: {
+        "rental-1": makeLedger(600_000),
+        checking: makeLedger(0),
+      },
+      year: 2035, defaultCheckingId: "checking", filingStatus: "married_joint",
+    });
+    expect(result.breakdown[0].mortgagePaidOff).toBe(0);
+    expect(result.removedLiabilityIds).not.toContain("mortgage-1");
+  });
+
+  it("full sale on mortgaged real-estate pays off the mortgage (regression)", () => {
+    const sell: AssetTransaction = {
+      id: "full-mortgaged",
+      name: "Full mortgaged",
+      type: "sell",
+      year: 2035,
+      accountId: "rental-2",
+      // fractionSold null → full sale
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const accountBalances: Record<string, number> = { "rental-2": 600_000, checking: 0 };
+    const basisMap: Record<string, number> = { "rental-2": 400_000, checking: 0 };
+    const liability = {
+      id: "mortgage-2",
+      name: "Mortgage",
+      balance: 200_000,
+      linkedPropertyId: "rental-2",
+    } as Liability;
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [{ id: "rental-2", category: "real_estate" } as Account],
+      liabilities: [liability],
+      accountBalances, basisMap,
+      accountLedgers: {
+        "rental-2": makeLedger(600_000),
+        checking: makeLedger(0),
+      },
+      year: 2035, defaultCheckingId: "checking", filingStatus: "married_joint",
+    });
+    expect(result.breakdown[0].mortgagePaidOff).toBe(200_000);
+    expect(result.removedLiabilityIds).toContain("mortgage-2");
+  });
+});
+
+describe("applyAssetSales — §121 + partial sales", () => {
+  it("partial sale of a primary-residence buy uses per-sale §121 cap", () => {
+    const sell: AssetTransaction = {
+      id: "partial-primary",
+      name: "Partial primary residence",
+      type: "sell",
+      year: 2035,
+      accountId: "primary-1",
+      fractionSold: 0.5,
+      qualifiesForHomeSaleExclusion: true,
+    };
+    // Half-balance: sale 600_000, basis 300_000, gain 300_000.
+    // Single cap = 250_000 → taxable = 50_000.
+    const accountBalances: Record<string, number> = { "primary-1": 1_200_000, checking: 0 };
+    const basisMap: Record<string, number> = { "primary-1": 600_000, checking: 0 };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [{ id: "primary-1", category: "real_estate" } as Account],
+      liabilities: [],
+      accountBalances, basisMap,
+      accountLedgers: {
+        "primary-1": makeLedger(1_200_000),
+        checking: makeLedger(0),
+      },
+      year: 2035, defaultCheckingId: "checking", filingStatus: "single",
+    });
+    expect(result.breakdown[0].capitalGain).toBeCloseTo(300_000, 2);
+    expect(result.breakdown[0].homeSaleExclusionApplied).toBe(250_000);
+    expect(result.breakdown[0].taxableCapitalGain).toBeCloseTo(50_000, 2);
+    expect(result.capitalGains).toBeCloseTo(50_000, 2);
+  });
+});
