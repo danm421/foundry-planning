@@ -127,14 +127,18 @@ export function getEntityLedger(
       });
     }
 
+    // Account-entry flow contributions are only attributable to the entity
+    // when it owns the account fully. On split-owned accounts, flows are
+    // household-driven (the engine locks the entity's share to BoY + growth).
+    if (share !== 1) continue;
     for (const entry of ledger.entries ?? []) {
       if (entry.isInternalTransfer) continue;
       if (entry.category !== "income" && entry.category !== "expense") continue;
-      const contribution = Math.abs(entry.amount) * share;
+      const contribution = Math.abs(entry.amount);
       if (contribution === 0) continue;
       const bucket = entry.category === "income" ? income : expenses;
       bucket.push({
-        label: `${name}${suffix} — ${entry.label ?? entry.category}`,
+        label: `${name} — ${entry.label ?? entry.category}`,
         amount: contribution,
         sourceKind: "account-entry",
         sourceId: `${accountId}:${entry.sourceId ?? entry.label ?? entry.category}`,

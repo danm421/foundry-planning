@@ -115,6 +115,11 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
 
   const planStart = years[0]?.year ?? 0;
 
+  // Per-entity per-account locked EoY share for split-owned accounts. Carries
+  // year-over-year so household-driven flows on the joint account never bleed
+  // into the entity's reported share.
+  const lockedShareByEntityAccount = new Map<string, Map<string, number>>();
+
   for (const year of years) {
     for (const [entityId, entity] of entitiesById) {
       const accountIds = accountsByEntity.get(entityId) ?? [];
@@ -128,13 +133,31 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
         if (!ledger) continue;
         const owner = accountEntityOwners.get(aid);
         const share = owner?.percent ?? 1;
-        beginningBalance += ledger.beginningValue * share;
-        endingBalance += ledger.endingValue * share;
-        growth += ledger.growth * share;
-        for (const entry of ledger.entries) {
-          if (entry.isInternalTransfer) continue;
-          if (entry.category === "income") income += Math.abs(entry.amount) * share;
-          if (entry.category === "expense") expenses += Math.abs(entry.amount) * share;
+        if (share === 1) {
+          // Fully entity-owned — the account's full activity belongs to the entity.
+          beginningBalance += ledger.beginningValue;
+          endingBalance += ledger.endingValue;
+          growth += ledger.growth;
+          for (const entry of ledger.entries) {
+            if (entry.isInternalTransfer) continue;
+            if (entry.category === "income") income += Math.abs(entry.amount);
+            if (entry.category === "expense") expenses += Math.abs(entry.amount);
+          }
+        } else {
+          // Split-owned — entity's share is locked to (carried EoY share or
+          // initial BoY × percent) plus its share of passive growth. Flow
+          // entries on the account are treated as household-attributable.
+          const carried = lockedShareByEntityAccount.get(entityId)?.get(aid);
+          const lockedBoY = carried ?? ledger.beginningValue * share;
+          const lockedGrowth = ledger.growth * share;
+          const lockedEoY = lockedBoY + lockedGrowth;
+          beginningBalance += lockedBoY;
+          endingBalance += lockedEoY;
+          growth += lockedGrowth;
+          if (!lockedShareByEntityAccount.has(entityId)) {
+            lockedShareByEntityAccount.set(entityId, new Map());
+          }
+          lockedShareByEntityAccount.get(entityId)!.set(aid, lockedEoY);
         }
       }
       let totalDistributions = year.trustDistributionsByEntity?.get(entityId) ?? 0;

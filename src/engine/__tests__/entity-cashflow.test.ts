@@ -521,6 +521,129 @@ describe("computeEntityCashFlow", () => {
     }
   });
 
+  it("locks the entity share on split-owned accounts so household drains don't bleed into it", () => {
+    const year = makeYear(2026);
+    year.accountLedgers["acct-split"] = {
+      beginningValue: 100_000,
+      endingValue: 80_000, // household drained $20k from the account
+      growth: 0,
+      contributions: 0,
+      distributions: 20_000,
+      internalContributions: 0,
+      internalDistributions: 0,
+      rmdAmount: 0,
+      fees: 0,
+      entries: [],
+    };
+
+    const entitiesById = new Map<string, EntityMetadata>([
+      [
+        "ent-biz",
+        {
+          id: "ent-biz",
+          name: "Acme LLC",
+          entityType: "llc",
+          trustSubType: null,
+          isGrantor: false,
+          initialValue: 0,
+          initialBasis: 0,
+          valueGrowthRate: 0,
+        },
+      ],
+    ]);
+
+    const accountEntityOwners = new Map<string, { entityId: string; percent: number }>([
+      ["acct-split", { entityId: "ent-biz", percent: 0.2 }],
+    ]);
+
+    computeEntityCashFlow({
+      years: [year],
+      entitiesById,
+      accountEntityOwners,
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+      entityFlowOverrides: [],
+    });
+
+    const row = year.entityCashFlow.get("ent-biz");
+    if (row?.kind !== "business") throw new Error("expected business row");
+    expect(row.beginningTotalValue).toBeCloseTo(20_000, 2); // locked at 20% × $100k BoY
+    expect(row.growth).toBeCloseTo(0, 2);
+    // No retained earnings (no income/expenses), so EoY = BoY + growth = $20k
+    // (NOT 20% × $80k = $16k as a naive proportional rollup would give)
+    expect(row.endingTotalValue).toBeCloseTo(20_000, 2);
+  });
+
+  it("carries the locked entity share across years on split-owned accounts", () => {
+    const y1 = makeYear(2026);
+    y1.accountLedgers["acct-split"] = {
+      beginningValue: 100_000,
+      endingValue: 90_000, // year 1 household drain $10k
+      growth: 0,
+      contributions: 0,
+      distributions: 10_000,
+      internalContributions: 0,
+      internalDistributions: 0,
+      rmdAmount: 0,
+      fees: 0,
+      entries: [],
+    };
+    const y2 = makeYear(2027);
+    y2.accountLedgers["acct-split"] = {
+      beginningValue: 90_000, // carries from y1 EoY
+      endingValue: 85_000, // year 2 drain $5k
+      growth: 0,
+      contributions: 0,
+      distributions: 5_000,
+      internalContributions: 0,
+      internalDistributions: 0,
+      rmdAmount: 0,
+      fees: 0,
+      entries: [],
+    };
+
+    const entitiesById = new Map<string, EntityMetadata>([
+      [
+        "ent-biz",
+        {
+          id: "ent-biz",
+          name: "Acme LLC",
+          entityType: "llc",
+          trustSubType: null,
+          isGrantor: false,
+          initialValue: 0,
+          initialBasis: 0,
+          valueGrowthRate: 0,
+        },
+      ],
+    ]);
+
+    const accountEntityOwners = new Map<string, { entityId: string; percent: number }>([
+      ["acct-split", { entityId: "ent-biz", percent: 0.2 }],
+    ]);
+
+    computeEntityCashFlow({
+      years: [y1, y2],
+      entitiesById,
+      accountEntityOwners,
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+      entityFlowOverrides: [],
+    });
+
+    const r1 = y1.entityCashFlow.get("ent-biz");
+    if (r1?.kind !== "business") throw new Error("expected business row y1");
+    expect(r1.beginningTotalValue).toBeCloseTo(20_000, 2);
+    expect(r1.endingTotalValue).toBeCloseTo(20_000, 2);
+
+    const r2 = y2.entityCashFlow.get("ent-biz");
+    if (r2?.kind !== "business") throw new Error("expected business row y2");
+    expect(r2.beginningTotalValue).toBeCloseTo(20_000, 2); // carried, not 20% × $90k = $18k
+    expect(r2.endingTotalValue).toBeCloseTo(20_000, 2);
+  });
+
   it("rolls in account values proportionally for split entity/personal ownership", () => {
     const year = makeYear(2026);
     year.accountLedgers["acct-split"] = {
