@@ -365,6 +365,7 @@ export function CanvasDndProvider({
       willId,
       bequestId,
       draft: {
+        kind: "asset",
         name: bequest.name,
         assetMode: bequest.assetMode ?? "specific",
         accountId: bequest.accountId,
@@ -473,6 +474,7 @@ export function CanvasDndProvider({
               id: m.id,
               firstName: m.firstName,
               lastName: m.lastName ?? null,
+              role: m.role,
             }))}
             externalBeneficiaries={(tree.externalBeneficiaries ?? []).map((x) => ({
               id: x.id,

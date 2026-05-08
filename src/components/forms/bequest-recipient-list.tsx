@@ -89,6 +89,14 @@ export default function BequestRecipientList({
     setLockedKeys(new Set());
   }
 
+  // Hide the principals (role: client/spouse) from the dropdown — the spouse
+  // already appears under "Household" and the grantor isn't a valid recipient
+  // of their own will. We keep the full `familyMembers` list available for
+  // label lookup of existing recipient rows.
+  const selectableFamilyMembers = familyMembers.filter(
+    (f) => f.role !== "client" && f.role !== "spouse",
+  );
+
   const sum = rows.reduce((acc, r) => acc + (Number.isFinite(r.percentage) ? r.percentage : 0), 0);
   const sumOk = rows.length === 0 || Math.abs(sum - 100) <= 0.01;
 
@@ -120,8 +128,8 @@ export default function BequestRecipientList({
     const next: BequestRecipient =
       mode === "asset" || mode === "residuary"
         ? { recipientKind: "spouse", recipientId: null, percentage: 0, sortOrder: rows.length }
-        : familyMembers.length > 0
-          ? { recipientKind: "family_member", recipientId: familyMembers[0].id, percentage: 0, sortOrder: rows.length }
+        : selectableFamilyMembers.length > 0
+          ? { recipientKind: "family_member", recipientId: selectableFamilyMembers[0].id, percentage: 0, sortOrder: rows.length }
           : entities.length > 0
             ? { recipientKind: "entity", recipientId: entities[0].id, percentage: 0, sortOrder: rows.length }
             : { recipientKind: "family_member", recipientId: null, percentage: 0, sortOrder: rows.length };
@@ -166,9 +174,9 @@ export default function BequestRecipientList({
                   <option value={SPOUSE_VALUE}>{spouseLabel(primary)}</option>
                 </optgroup>
               )}
-              {familyMembers.length > 0 && (
+              {selectableFamilyMembers.length > 0 && (
                 <optgroup label="Family">
-                  {familyMembers.map((f) => (
+                  {selectableFamilyMembers.map((f) => (
                     <option key={f.id} value={`fm:${f.id}`}>{familyLabel(f)}</option>
                   ))}
                 </optgroup>

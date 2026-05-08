@@ -2,12 +2,6 @@
 
 import { useEffect, useState } from "react";
 import BequestDialog, { type BequestDraft } from "@/components/bequest-dialog";
-import DialogShell from "@/components/dialog-shell";
-import {
-  selectClassName,
-  fieldLabelClassName,
-} from "@/components/forms/input-styles";
-import BequestRecipientList from "@/components/forms/bequest-recipient-list";
 import WillResiduarySection from "@/components/forms/will-residuary-section";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 
@@ -85,6 +79,10 @@ export interface WillsPanelFamilyMember {
   id: string;
   firstName: string;
   lastName: string | null;
+  /** Role on the family table; "client" / "spouse" rows are hidden from the
+   *  recipient dropdowns since the will's grantor doesn't bequeath to
+   *  themselves and the spouse already appears under "Household". */
+  role?: "client" | "spouse" | "child" | "other";
 }
 
 export interface WillsPanelExternal {
@@ -141,140 +139,63 @@ function recipientLabel(
   return en ? en.name : "(entity)";
 }
 
-// ─── Asset draft ─────────────────────────────────────────────────────────────
-
-type AssetDraft = Omit<WillsPanelAssetBequest, "kind">;
-type LiabilityDraft = Omit<WillsPanelLiabilityBequest, "kind">;
-
-// ─── Debt bequest dialog ──────────────────────────────────────────────────────
-
-const DEBT_FORM_ID = "debt-bequest-dialog-form";
-
-interface DebtBequestDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  draft: LiabilityDraft;
-  setDraft: (d: LiabilityDraft) => void;
-  liabilities: WillsPanelLiability[];
-  alreadyBequeathedIds: string[];
-  primary: WillsPanelPrimary;
-  familyMembers: WillsPanelFamilyMember[];
-  externalBeneficiaries: WillsPanelExternal[];
-  entities: WillsPanelEntity[];
-  isEdit: boolean;
-  saving: boolean;
-  onSave: () => void;
-}
-
-function DebtBequestDialog({
-  open,
-  onOpenChange,
-  draft,
-  setDraft,
-  liabilities,
-  alreadyBequeathedIds,
-  primary,
-  familyMembers,
-  externalBeneficiaries,
-  entities,
-  isEdit,
-  saving,
-  onSave,
-}: DebtBequestDialogProps) {
-  const recipientSum = draft.recipients.reduce((s, x) => s + x.percentage, 0);
-  const recipientSumOk = recipientSum > 0 && recipientSum <= 100.01;
-  const remainder = Math.round((100 - recipientSum) * 100) / 100;
-
-  // Eligible: unlinked + not entity-owned
-  const eligibleLiabilities = liabilities.filter(
-    (l) => l.linkedPropertyId == null && l.ownerEntityId == null,
-  );
-
-  const recipientsHaveIds = draft.recipients.every((r) => r.recipientId != null);
-  const canSave = !!draft.liabilityId && recipientSumOk && recipientsHaveIds && !saving;
-
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!canSave) return;
-    onSave();
+function bequestToDraft(b: WillsPanelBequest): BequestDraft {
+  if (b.kind === "asset") {
+    return {
+      kind: "asset",
+      name: b.name,
+      assetMode: b.assetMode,
+      accountId: b.accountId,
+      percentage: b.percentage,
+      condition: b.condition,
+      sortOrder: b.sortOrder,
+      recipients: b.recipients.map((r, i) => ({
+        recipientKind: r.recipientKind,
+        recipientId: r.recipientId,
+        percentage: r.percentage,
+        sortOrder: i,
+      })),
+    };
   }
-
-  return (
-    <DialogShell
-      open={open}
-      onOpenChange={onOpenChange}
-      title={isEdit ? "Edit debt bequest" : "New debt bequest"}
-      size="md"
-      primaryAction={{
-        label: saving ? "Saving…" : "Save",
-        form: DEBT_FORM_ID,
-        disabled: !canSave,
-        loading: saving,
-      }}
-    >
-      <form id={DEBT_FORM_ID} onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className={fieldLabelClassName}>Liability</label>
-          <select
-            aria-label="Liability"
-            value={draft.liabilityId ?? ""}
-            onChange={(e) => {
-              const liab = liabilities.find((l) => l.id === e.target.value);
-              setDraft({
-                ...draft,
-                liabilityId: e.target.value || null,
-                name: liab?.name?.trim() || "(unnamed liability)",
-              });
-            }}
-            className={selectClassName}
-          >
-            <option value="">— select a liability —</option>
-            {eligibleLiabilities.map((l) => {
-              const disabled =
-                alreadyBequeathedIds.includes(l.id) && l.id !== draft.liabilityId;
-              return (
-                <option
-                  key={l.id}
-                  value={l.id}
-                  disabled={disabled}
-                  aria-disabled={disabled}
-                >
-                  {l.name}
-                  {disabled ? " (already bequeathed)" : ""}
-                </option>
-              );
-            })}
-          </select>
-          {eligibleLiabilities.length === 0 && (
-            <p className="mt-1.5 text-xs text-amber-400/80">
-              No bequest-eligible liabilities exist. A liability must be
-              unlinked (no linked property) and not owned by an entity.
-            </p>
-          )}
-        </div>
-
-        <BequestRecipientList
-          mode="debt"
-          rows={draft.recipients}
-          onChange={(recipients) => setDraft({ ...draft, recipients })}
-          primary={primary}
-          familyMembers={familyMembers}
-          externalBeneficiaries={externalBeneficiaries}
-          entities={entities}
-        />
-
-        {recipientSumOk && remainder > 0.009 && (
-          <p className="text-xs text-ink-3">
-            Recipients sum to {recipientSum.toFixed(2)}% — remainder ({remainder.toFixed(2)}%) falls
-            to estate creditor-payoff
-          </p>
-        )}
-      </form>
-    </DialogShell>
-  );
+  return {
+    kind: "liability",
+    name: b.name,
+    liabilityId: b.liabilityId,
+    percentage: b.percentage,
+    condition: "always",
+    sortOrder: b.sortOrder,
+    recipients: b.recipients.map((r, i) => ({
+      recipientKind: r.recipientKind,
+      recipientId: r.recipientId,
+      percentage: r.percentage,
+      sortOrder: i,
+    })),
+  };
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+function draftToBequest(draft: BequestDraft): WillsPanelBequest {
+  if (draft.kind === "asset") {
+    return {
+      kind: "asset",
+      name: draft.name,
+      assetMode: draft.assetMode,
+      accountId: draft.accountId,
+      percentage: draft.percentage,
+      condition: draft.condition,
+      sortOrder: draft.sortOrder,
+      recipients: draft.recipients,
+    };
+  }
+  return {
+    kind: "liability",
+    name: draft.name,
+    liabilityId: draft.liabilityId,
+    percentage: draft.percentage,
+    condition: "always",
+    sortOrder: draft.sortOrder,
+    recipients: draft.recipients,
+  };
+}
 
 export default function WillsPanel(props: WillsPanelProps) {
   const {
@@ -298,33 +219,8 @@ export default function WillsPanel(props: WillsPanelProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // "asset" dialog state
-  const [assetModalOpen, setAssetModalOpen] = useState<WillGrantor | null>(null);
-  // "liability" dialog state
-  const [debtModalOpen, setDebtModalOpen] = useState<WillGrantor | null>(null);
-
-  const [assetDraft, setAssetDraft] = useState<AssetDraft>({
-    name: "",
-    assetMode: "specific",
-    accountId: null,
-    percentage: 100,
-    condition: "always",
-    sortOrder: 0,
-    recipients: [
-      { recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 },
-    ],
-  });
-
-  const [liabilityDraft, setLiabilityDraft] = useState<LiabilityDraft>({
-    name: "",
-    liabilityId: null,
-    percentage: 100,
-    condition: "always",
-    sortOrder: 0,
-    recipients: [
-      { recipientKind: "family_member", recipientId: familyMembers[0]?.id ?? null, percentage: 100, sortOrder: 0 },
-    ],
-  });
+  const [dialogOpenFor, setDialogOpenFor] = useState<WillGrantor | null>(null);
+  const [dialogEditing, setDialogEditing] = useState<BequestDraft | undefined>(undefined);
 
   async function fetchWill(willId: string): Promise<WillsPanelWill | null> {
     const res = await fetch(`/api/clients/${props.clientId}/wills/${willId}`);
@@ -535,12 +431,9 @@ export default function WillsPanel(props: WillsPanelProps) {
         const will = wills.find((w) => w.grantor === g);
         const grantorWarnings = warnings.filter((x) => x.grantor === g);
         const heading = grantorFullName(g, primary) || (g === "client" ? "Client" : "Spouse");
-
-        const assetBequests = (will?.bequests ?? []).filter(
-          (b): b is WillsPanelAssetBequest => b.kind === "asset",
-        );
-        const liabilityBequests = (will?.bequests ?? []).filter(
-          (b): b is WillsPanelLiabilityBequest => b.kind === "liability",
+        const bequests = will?.bequests ?? [];
+        const alreadyBequeathedLiabilityIds = bequests.flatMap((b) =>
+          b.kind === "liability" && b.liabilityId ? [b.liabilityId] : [],
         );
 
         return (
@@ -568,20 +461,9 @@ export default function WillsPanel(props: WillsPanelProps) {
                   disabled={saving}
                   className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-100 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => {
-                    const hasAccounts = accounts.length > 0;
-                    setAssetDraft({
-                      name: "",
-                      assetMode: hasAccounts ? "specific" : "all_assets",
-                      accountId: hasAccounts ? accounts[0].id : null,
-                      percentage: 100,
-                      condition: "always",
-                      sortOrder: will?.bequests.length ?? 0,
-                      recipients: [
-                        { recipientKind: "spouse", recipientId: null, percentage: 100, sortOrder: 0 },
-                      ],
-                    });
+                    setDialogEditing(undefined);
                     setEditingIndex(null);
-                    setAssetModalOpen(g);
+                    setDialogOpenFor(g);
                   }}
                 >
                   + Add bequest
@@ -599,163 +481,68 @@ export default function WillsPanel(props: WillsPanelProps) {
               </div>
             )}
 
-            {/* Asset bequests section */}
             <div className="mb-4">
-              <h3 className="mb-2 text-sm font-medium text-gray-300">Asset bequests</h3>
-              {assetBequests.length === 0 ? (
+              <h3 className="mb-2 text-sm font-medium text-gray-300">Bequests</h3>
+              {bequests.length === 0 ? (
                 <p className="text-sm text-gray-400">No bequests yet.</p>
               ) : (
                 <ol className="space-y-2">
-                  {assetBequests.map((b, idx) => {
-                    const assetLabel =
-                      b.assetMode === "all_assets"
-                        ? "Remaining Estate Value"
-                        : accounts.find((a) => a.id === b.accountId)?.name ??
-                          "(unknown account)";
-                    // Global index in full bequests list
-                    const globalIdx = will!.bequests.indexOf(b);
-                    return (
-                      <li
-                        key={b.id ?? `a-${idx}`}
-                        className="rounded-md border border-gray-800 bg-gray-900 p-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-medium text-gray-100">{b.name}</p>
-                            <p className="text-sm text-gray-300">
-                              {b.percentage}% of {assetLabel}
-                            </p>
-                            <p className="mt-1 text-xs text-gray-400">
-                              {CONDITION_LABEL[b.condition]}
-                            </p>
-                            <p className="mt-1 text-xs text-gray-300">
-                              {b.recipients
-                                .map(
-                                  (r) =>
-                                    `${recipientLabel(r, familyMembers, externalBeneficiaries, entities, primary)} (${r.percentage}%)`,
-                                )
-                                .join(", ")}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-1">
-                            <button
-                              type="button"
-                              aria-label="Move up"
-                              disabled={globalIdx === 0 || saving}
-                              onClick={async () => {
-                                const next = [...(will?.bequests ?? [])];
-                                const tmp = next[globalIdx - 1];
-                                next[globalIdx - 1] = { ...next[globalIdx], sortOrder: globalIdx - 1 };
-                                next[globalIdx] = { ...tmp, sortOrder: globalIdx };
-                                await saveWill(g, next);
-                              }}
-                              className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              ↑
-                            </button>
-                            <button
-                              type="button"
-                              aria-label="Move down"
-                              disabled={globalIdx === (will?.bequests.length ?? 1) - 1 || saving}
-                              onClick={async () => {
-                                const next = [...(will?.bequests ?? [])];
-                                const tmp = next[globalIdx + 1];
-                                next[globalIdx + 1] = { ...next[globalIdx], sortOrder: globalIdx + 1 };
-                                next[globalIdx] = { ...tmp, sortOrder: globalIdx };
-                                await saveWill(g, next);
-                              }}
-                              className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              ↓
-                            </button>
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={() => {
-                                setAssetDraft(b);
-                                setEditingIndex(globalIdx);
-                                setAssetModalOpen(g);
-                              }}
-                              className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={async () => {
-                                const next = (will?.bequests ?? [])
-                                  .filter((_, i) => i !== globalIdx)
-                                  .map((x, i) => ({ ...x, sortOrder: i }));
-                                await saveWill(g, next);
-                              }}
-                              className="rounded border border-gray-700 px-2 py-0.5 text-xs text-red-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
-              )}
-            </div>
+                  {bequests.map((b, idx) => {
+                    const isAsset = b.kind === "asset";
+                    const tagLabel = isAsset ? "Asset" : "Debt";
+                    const tagClass = isAsset
+                      ? "border-emerald-800 bg-emerald-900/30 text-emerald-300"
+                      : "border-amber-800 bg-amber-900/30 text-amber-300";
 
-            {/* Debt bequests section */}
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-sm font-medium text-gray-300">Debt bequests</h3>
-                <button
-                  type="button"
-                  disabled={saving}
-                  className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-gray-100 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={() => {
-                    setLiabilityDraft({
-                      name: "",
-                      liabilityId: null,
-                      percentage: 100,
-                      condition: "always",
-                      sortOrder: will?.bequests.length ?? 0,
-                      recipients: [
-                        {
-                          recipientKind: "family_member",
-                          recipientId: familyMembers[0]?.id ?? null,
-                          percentage: 100,
-                          sortOrder: 0,
-                        },
-                      ],
-                    });
-                    setEditingIndex(null);
-                    setDebtModalOpen(g);
-                  }}
-                >
-                  + Add debt bequest
-                </button>
-              </div>
-              {liabilityBequests.length === 0 ? (
-                <p className="text-sm text-gray-400">No debt bequests yet.</p>
-              ) : (
-                <ol className="space-y-2">
-                  {liabilityBequests.map((b, idx) => {
-                    const liab = liabilities.find((l) => l.id === b.liabilityId);
+                    let detailLine: React.ReactNode = null;
+                    let conditionLine: React.ReactNode = null;
+
+                    if (isAsset) {
+                      const assetLabel =
+                        b.assetMode === "all_assets"
+                          ? "Remaining Estate Value"
+                          : accounts.find((a) => a.id === b.accountId)?.name ??
+                            "(unknown account)";
+                      detailLine = (
+                        <p className="text-sm text-gray-300">
+                          {b.percentage}% of {assetLabel}
+                        </p>
+                      );
+                      conditionLine = (
+                        <p className="mt-1 text-xs text-gray-400">
+                          {CONDITION_LABEL[b.condition]}
+                        </p>
+                      );
+                    } else {
+                      const liab = liabilities.find((l) => l.id === b.liabilityId);
+                      detailLine = liab ? (
+                        <p className="text-sm text-gray-300">
+                          Balance: ${liab.balance.toLocaleString()}
+                        </p>
+                      ) : null;
+                    }
+
                     const recipientSum = b.recipients.reduce((s, r) => s + r.percentage, 0);
                     const remainder = Math.round((100 - recipientSum) * 100) / 100;
-                    const isPartial = remainder > 0.009;
-                    const globalIdx = will!.bequests.indexOf(b);
+                    const isPartialDebt = !isAsset && remainder > 0.009;
+
                     return (
                       <li
-                        key={b.id ?? `l-${idx}`}
+                        key={b.id ?? `${b.kind}-${idx}`}
                         className="rounded-md border border-gray-800 bg-gray-900 p-3"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="font-medium text-gray-100">{b.name}</p>
-                            {liab && (
-                              <p className="text-sm text-gray-300">
-                                Balance: ${liab.balance.toLocaleString()}
-                              </p>
-                            )}
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${tagClass}`}
+                              >
+                                {tagLabel}
+                              </span>
+                              <p className="font-medium text-gray-100">{b.name}</p>
+                            </div>
+                            {detailLine}
+                            {conditionLine}
                             <p className="mt-1 text-xs text-gray-300">
                               {b.recipients
                                 .map(
@@ -763,7 +550,7 @@ export default function WillsPanel(props: WillsPanelProps) {
                                     `${recipientLabel(r, familyMembers, externalBeneficiaries, entities, primary)} (${r.percentage}%)`,
                                 )
                                 .join(", ")}
-                              {isPartial && (
+                              {isPartialDebt && (
                                 <span className="ml-1 text-gray-400">
                                   · {remainder.toFixed(2)}% to estate creditor-payoff
                                 </span>
@@ -774,12 +561,12 @@ export default function WillsPanel(props: WillsPanelProps) {
                             <button
                               type="button"
                               aria-label="Move up"
-                              disabled={globalIdx === 0 || saving}
+                              disabled={idx === 0 || saving}
                               onClick={async () => {
-                                const next = [...(will?.bequests ?? [])];
-                                const tmp = next[globalIdx - 1];
-                                next[globalIdx - 1] = { ...next[globalIdx], sortOrder: globalIdx - 1 };
-                                next[globalIdx] = { ...tmp, sortOrder: globalIdx };
+                                const next = [...bequests];
+                                const tmp = next[idx - 1];
+                                next[idx - 1] = { ...next[idx], sortOrder: idx - 1 };
+                                next[idx] = { ...tmp, sortOrder: idx };
                                 await saveWill(g, next);
                               }}
                               className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
@@ -789,12 +576,12 @@ export default function WillsPanel(props: WillsPanelProps) {
                             <button
                               type="button"
                               aria-label="Move down"
-                              disabled={globalIdx === (will?.bequests.length ?? 1) - 1 || saving}
+                              disabled={idx === bequests.length - 1 || saving}
                               onClick={async () => {
-                                const next = [...(will?.bequests ?? [])];
-                                const tmp = next[globalIdx + 1];
-                                next[globalIdx + 1] = { ...next[globalIdx], sortOrder: globalIdx + 1 };
-                                next[globalIdx] = { ...tmp, sortOrder: globalIdx };
+                                const next = [...bequests];
+                                const tmp = next[idx + 1];
+                                next[idx + 1] = { ...next[idx], sortOrder: idx + 1 };
+                                next[idx] = { ...tmp, sortOrder: idx };
                                 await saveWill(g, next);
                               }}
                               className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
@@ -805,9 +592,9 @@ export default function WillsPanel(props: WillsPanelProps) {
                               type="button"
                               disabled={saving}
                               onClick={() => {
-                                setLiabilityDraft(b);
-                                setEditingIndex(globalIdx);
-                                setDebtModalOpen(g);
+                                setDialogEditing(bequestToDraft(b));
+                                setEditingIndex(idx);
+                                setDialogOpenFor(g);
                               }}
                               className="rounded border border-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
                             >
@@ -817,8 +604,8 @@ export default function WillsPanel(props: WillsPanelProps) {
                               type="button"
                               disabled={saving}
                               onClick={async () => {
-                                const next = (will?.bequests ?? [])
-                                  .filter((_, i) => i !== globalIdx)
+                                const next = bequests
+                                  .filter((_, i) => i !== idx)
                                   .map((x, i) => ({ ...x, sortOrder: i }));
                                 await saveWill(g, next);
                               }}
@@ -846,91 +633,50 @@ export default function WillsPanel(props: WillsPanelProps) {
               entities={entities}
               saving={saving}
             />
+            {/* Surface already-bequeathed liability ids so the editor disables them
+                in the dropdown when this section's "Add bequest" is active. */}
+            {dialogOpenFor === g && (
+              <BequestDialog
+                open
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setDialogOpenFor(null);
+                    setDialogEditing(undefined);
+                    setEditingIndex(null);
+                  }
+                }}
+                primary={primary}
+                accounts={accounts}
+                liabilities={liabilities}
+                alreadyBequeathedLiabilityIds={alreadyBequeathedLiabilityIds}
+                familyMembers={familyMembers}
+                externalBeneficiaries={externalBeneficiaries}
+                entities={entities}
+                editing={dialogEditing}
+                saving={saving}
+                onSave={async (draft) => {
+                  const existing = bequests;
+                  const built = draftToBequest(draft);
+                  let next: WillsPanelBequest[];
+                  if (editingIndex != null) {
+                    next = existing.map((b, i) =>
+                      i === editingIndex
+                        ? ({ ...built, sortOrder: i, id: b.id } as WillsPanelBequest)
+                        : b,
+                    );
+                  } else {
+                    next = [...existing, { ...built, sortOrder: existing.length }];
+                  }
+                  await saveWill(g, next);
+                  setDialogOpenFor(null);
+                  setDialogEditing(undefined);
+                  setEditingIndex(null);
+                }}
+              />
+            )}
           </section>
         );
       })}
-
-      {/* Asset bequest modal */}
-      <BequestDialog
-        open={assetModalOpen != null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setAssetModalOpen(null);
-            setEditingIndex(null);
-          }
-        }}
-        primary={primary}
-        accounts={accounts}
-        familyMembers={familyMembers}
-        externalBeneficiaries={externalBeneficiaries}
-        entities={entities}
-        editing={editingIndex != null ? assetDraft : undefined}
-        saving={saving}
-        onSave={async (draft: BequestDraft) => {
-          if (!assetModalOpen) return;
-          const g = assetModalOpen;
-          const existing = wills.find((w) => w.grantor === g)?.bequests ?? [];
-          const assetBequest: WillsPanelAssetBequest = { kind: "asset", ...draft };
-          const next: WillsPanelBequest[] = editingIndex != null
-            ? existing.map((b, i) =>
-                i === editingIndex
-                  ? { ...assetBequest, sortOrder: i, id: b.id }
-                  : b,
-              )
-            : [...existing, { ...assetBequest, sortOrder: existing.length }];
-          await saveWill(g, next);
-          setAssetModalOpen(null);
-          setEditingIndex(null);
-        }}
-      />
-
-      {/* Debt bequest modal */}
-      <DebtBequestDialog
-        open={debtModalOpen != null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDebtModalOpen(null);
-            setEditingIndex(null);
-          }
-        }}
-        draft={liabilityDraft}
-        setDraft={setLiabilityDraft}
-        liabilities={liabilities}
-        alreadyBequeathedIds={
-          (wills.find((w) => w.grantor === debtModalOpen)?.bequests ?? []).flatMap(
-            (b) => (b.kind === "liability" && b.liabilityId ? [b.liabilityId] : []),
-          )
-        }
-        primary={primary}
-        familyMembers={familyMembers}
-        externalBeneficiaries={externalBeneficiaries}
-        entities={entities}
-        isEdit={editingIndex != null}
-        saving={saving}
-        onSave={async () => {
-          if (!debtModalOpen) return;
-          const g = debtModalOpen;
-          const existing = wills.find((w) => w.grantor === g)?.bequests ?? [];
-          const liabilityBequest: WillsPanelLiabilityBequest = {
-            kind: "liability",
-            ...liabilityDraft,
-          };
-          let next: WillsPanelBequest[];
-          if (editingIndex != null) {
-            next = existing.map((b, i) =>
-              i === editingIndex
-                ? { ...liabilityBequest, sortOrder: i, id: b.id }
-                : b,
-            );
-          } else {
-            next = [...existing, { ...liabilityBequest, sortOrder: existing.length }];
-          }
-          await saveWill(g, next);
-          setDebtModalOpen(null);
-          setEditingIndex(null);
-        }}
-      />
-
     </div>
   );
 }

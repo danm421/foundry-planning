@@ -8,6 +8,7 @@ import type {
   WillsPanelEntity,
   WillsPanelExternal,
   WillsPanelFamilyMember,
+  WillsPanelLiability,
   WillsPanelPrimary,
 } from "@/components/wills-panel";
 
@@ -15,6 +16,13 @@ const acct: WillsPanelAccount = { id: "a1", name: "Brokerage A", category: "taxa
 const fm: WillsPanelFamilyMember = { id: "f1", firstName: "Tom", lastName: "Jr" };
 const ext: WillsPanelExternal = { id: "e1", name: "Red Cross" };
 const ent: WillsPanelEntity = { id: "t1", name: "Family ILIT" };
+const liab: WillsPanelLiability = {
+  id: "l1",
+  name: "Auto loan",
+  balance: 12000,
+  linkedPropertyId: null,
+  ownerEntityId: null,
+};
 const primary: WillsPanelPrimary = {
   firstName: "Cooper",
   lastName: "Smith",
@@ -56,6 +64,7 @@ describe("BequestDialog", () => {
         externalBeneficiaries={[ext]}
         entities={[ent]}
         editing={{
+          kind: "asset",
           name: "To kids",
           assetMode: "specific",
           accountId: "a1",
@@ -83,6 +92,7 @@ describe("BequestDialog", () => {
         externalBeneficiaries={[ext]}
         entities={[ent]}
         editing={{
+          kind: "asset",
           name: "Bad split",
           assetMode: "specific",
           accountId: "a1",
@@ -112,6 +122,7 @@ describe("BequestDialog", () => {
         externalBeneficiaries={[ext]}
         entities={[ent]}
         editing={{
+          kind: "asset",
           name: "ignored",
           assetMode: "specific",
           accountId: "a1",
@@ -151,6 +162,7 @@ describe("BequestDialog", () => {
         externalBeneficiaries={[ext]}
         entities={[ent]}
         editing={{
+          kind: "asset",
           name: "ignored",
           assetMode: "specific",
           accountId: "a1",
@@ -164,7 +176,7 @@ describe("BequestDialog", () => {
         onSave={onSave}
       />,
     );
-    await user.selectOptions(screen.getByLabelText("Asset"), "__residual__");
+    await user.selectOptions(screen.getByLabelText("Asset or debt"), "__residual__");
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -186,6 +198,7 @@ describe("BequestDialog", () => {
         externalBeneficiaries={[ext]}
         entities={[ent]}
         editing={{
+          kind: "asset",
           name: "Missing account",
           assetMode: "specific",
           accountId: null,
@@ -218,7 +231,7 @@ describe("BequestDialog", () => {
       />,
     );
     // Pick an account so canSave can flip
-    await user.selectOptions(screen.getByLabelText("Asset"), "a1");
+    await user.selectOptions(screen.getByLabelText("Asset or debt"), "asset:a1");
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -258,6 +271,7 @@ describe("BequestDialog", () => {
         externalBeneficiaries={[ext]}
         entities={[ent]}
         editing={{
+          kind: "asset",
           name: "Residual",
           assetMode: "specific",
           accountId: "a1",
@@ -271,7 +285,7 @@ describe("BequestDialog", () => {
         onSave={onSave}
       />,
     );
-    await user.selectOptions(screen.getByLabelText("Asset"), "__residual__");
+    await user.selectOptions(screen.getByLabelText("Asset or debt"), "__residual__");
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({ assetMode: "all_assets", accountId: null }),
@@ -303,5 +317,59 @@ describe("BequestDialog", () => {
     // No bare category labels
     expect(optionLabels).not.toContain("Family member");
     expect(optionLabels).not.toContain("Entity / Trust");
+  });
+
+  it("flips into debt mode when a liability is selected and saves a liability draft", async () => {
+    const onSave = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <BequestDialog
+        open
+        onOpenChange={() => {}}
+        primary={primary}
+        accounts={[acct]}
+        liabilities={[liab]}
+        familyMembers={[fm]}
+        externalBeneficiaries={[ext]}
+        entities={[ent]}
+        onSave={onSave}
+      />,
+    );
+    await user.selectOptions(screen.getByLabelText("Asset or debt"), "debt:l1");
+    // Percentage and Condition inputs disappear in debt mode.
+    expect(screen.queryByLabelText("Percentage")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Condition/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "liability",
+        name: "Auto loan",
+        liabilityId: "l1",
+        percentage: 100,
+        condition: "always",
+      }),
+    );
+  });
+
+  it("disables Save in debt mode when recipient sum exceeds 100", async () => {
+    const user = userEvent.setup();
+    render(
+      <BequestDialog
+        open
+        onOpenChange={() => {}}
+        primary={primary}
+        accounts={[acct]}
+        liabilities={[liab]}
+        familyMembers={[fm]}
+        externalBeneficiaries={[ext]}
+        entities={[ent]}
+        onSave={vi.fn()}
+      />,
+    );
+    await user.selectOptions(screen.getByLabelText("Asset or debt"), "debt:l1");
+    const pctInput = screen.getByLabelText("Percent 1");
+    await user.clear(pctInput);
+    await user.type(pctInput, "150");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 });

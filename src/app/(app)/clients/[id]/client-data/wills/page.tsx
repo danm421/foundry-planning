@@ -135,6 +135,7 @@ export default async function WillsPage({ params, searchParams }: PageProps) {
     id: f.id,
     firstName: f.firstName,
     lastName: f.lastName ?? null,
+    role: f.role,
   }));
   const exts: WillsPanelExternal[] = externalRows.map((e) => ({
     id: e.id,

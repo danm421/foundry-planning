@@ -103,9 +103,9 @@ describe("WillsPanel — add bequest modal", () => {
     const addButtons = screen.getAllByRole("button", { name: /Add bequest/i });
     fireEvent.click(addButtons[0]);
     expect(screen.getByText(/New bequest/i)).toBeDefined();
-    expect(screen.getByLabelText(/^Asset$/i)).toBeDefined();
+    expect(screen.getByLabelText(/^Asset or debt$/i)).toBeDefined();
     expect(screen.getByLabelText(/^Percentage$/i)).toBeDefined();
-    // Name field is gone — auto-derived from the chosen asset on save.
+    // Name field is gone — auto-derived from the chosen target on save.
     expect(screen.queryByLabelText(/^Name$/i)).toBeNull();
   });
 
@@ -114,14 +114,18 @@ describe("WillsPanel — add bequest modal", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /Add bequest/i })[0]);
     const save = screen.getByRole("button", { name: /^Save$/i });
     expect((save as HTMLButtonElement).disabled).toBe(true); // accountId null (assetMode 'specific')
-    fireEvent.change(screen.getByLabelText(/^Asset$/i), { target: { value: u("a1") } });
+    fireEvent.change(screen.getByLabelText(/^Asset or debt$/i), {
+      target: { value: `asset:${u("a1")}` },
+    });
     expect((save as HTMLButtonElement).disabled).toBe(false); // account picked, spouse default at 100%
   });
 
   it("disables Save when recipient percentages drift from 100", () => {
     render(<WillsPanel {...baseProps} initialWills={[]} />);
     fireEvent.click(screen.getAllByRole("button", { name: /Add bequest/i })[0]);
-    fireEvent.change(screen.getByLabelText(/^Asset$/i), { target: { value: u("a1") } });
+    fireEvent.change(screen.getByLabelText(/^Asset or debt$/i), {
+      target: { value: `asset:${u("a1")}` },
+    });
     const pctInputs = screen.getAllByRole("spinbutton");
     // Recipient percentage input is the second spinbutton (first is bequest-percentage).
     fireEvent.change(pctInputs[1], { target: { value: "50" } });
@@ -229,15 +233,8 @@ const liabilityBequestPartial: WillsPanelLiabilityBequest = {
   ],
 };
 
-describe("WillsPanel — Debt bequests section", () => {
-  it("renders Debt bequests heading even when no liability bequests exist", () => {
-    const { container } = render(
-      <WillsPanel {...baseProps} initialWills={[]} />,
-    );
-    expect(container.textContent).toMatch(/Debt bequests/);
-  });
-
-  it("renders a full-bequest row without the remainder caption", () => {
+describe("WillsPanel — debt bequests in the unified list", () => {
+  it("renders a full-debt-bequest row without the remainder caption", () => {
     const { container } = render(
       <WillsPanel
         {...baseProps}
@@ -257,7 +254,23 @@ describe("WillsPanel — Debt bequests section", () => {
     expect(container.textContent).toMatch(/100%/);
   });
 
-  it("renders a partial-bequest row with the remainder caption", () => {
+  it("tags debt bequests with a 'Debt' label in the unified list", () => {
+    render(
+      <WillsPanel
+        {...baseProps}
+        initialWills={[
+          {
+            id: u("w1"),
+            grantor: "client",
+            bequests: [liabilityBequestFull],
+          },
+        ]}
+      />,
+    );
+    expect(screen.getAllByText(/^Debt$/).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders a partial-debt-bequest row with the remainder caption", () => {
     const { container } = render(
       <WillsPanel
         {...baseProps}
@@ -273,21 +286,19 @@ describe("WillsPanel — Debt bequests section", () => {
     expect(container.textContent).toMatch(/40\.00% to estate creditor-payoff/);
   });
 
-  it("add-debt-bequest dialog restricts recipient picker to family + entity (no spouse, no external)", () => {
+  it("flips into debt mode when a liability is selected and restricts the recipient picker", () => {
     const propsWithExternals = {
       ...baseProps,
       externalBeneficiaries: [{ id: u("ext1"), name: "Red Cross" }],
       entities: [{ id: u("ent1"), name: "Family ILIT" }],
     };
     render(<WillsPanel {...propsWithExternals} initialWills={[]} />);
-    // Click the first "+ Add debt bequest" button (Tom Smith's section)
-    const addDebtButtons = screen.getAllByRole("button", { name: /Add debt bequest/i });
-    fireEvent.click(addDebtButtons[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /Add bequest/i })[0]);
+    fireEvent.change(screen.getByLabelText(/^Asset or debt$/i), {
+      target: { value: `debt:${u("l1")}` },
+    });
 
     const dialog = screen.getByRole("dialog");
-    expect(dialog).toBeDefined();
-
-    // Single combined recipient picker (matches BeneficiaryRowList pattern).
     const recipientSelect = within(dialog).getByRole("combobox", { name: /Recipient 1/i });
     const optgroupLabels = Array.from(recipientSelect.querySelectorAll("optgroup")).map(
       (g) => (g as HTMLOptGroupElement).label,
@@ -298,23 +309,22 @@ describe("WillsPanel — Debt bequests section", () => {
     expect(optgroupLabels).not.toContain("External");
   });
 
-  it("liability picker excludes liabilities with linkedPropertyId or ownerEntityId set", () => {
+  it("dropdown excludes liabilities with linkedPropertyId or ownerEntityId set", () => {
     // baseProps has: l1=Visa Card (unlinked, eligible), l2=Mortgage (linkedPropertyId set)
     render(<WillsPanel {...baseProps} initialWills={[]} />);
-    const addDebtButtons = screen.getAllByRole("button", { name: /Add debt bequest/i });
-    fireEvent.click(addDebtButtons[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /Add bequest/i })[0]);
 
     const dialog = screen.getByRole("dialog");
-    const liabilitySelect = within(dialog).getByRole("combobox", { name: /Liability/i });
-    const options = Array.from(liabilitySelect.querySelectorAll("option")).map(
+    const select = within(dialog).getByLabelText(/^Asset or debt$/i);
+    const values = Array.from(select.querySelectorAll("option")).map(
       (o) => (o as HTMLOptionElement).value,
     );
 
-    expect(options).toContain(u("l1")); // Visa Card — eligible
-    expect(options).not.toContain(u("l2")); // Mortgage — linked, ineligible
+    expect(values).toContain(`debt:${u("l1")}`); // Visa Card — eligible
+    expect(values).not.toContain(`debt:${u("l2")}`); // Mortgage — linked, ineligible
   });
 
-  it("liability picker disables liabilities already bequeathed in this will", () => {
+  it("dropdown disables liabilities already bequeathed in this will", () => {
     render(
       <WillsPanel
         {...baseProps}
@@ -327,13 +337,12 @@ describe("WillsPanel — Debt bequests section", () => {
         ]}
       />,
     );
-    const addDebtButtons = screen.getAllByRole("button", { name: /Add debt bequest/i });
-    fireEvent.click(addDebtButtons[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /Add bequest/i })[0]);
 
     const dialog = screen.getByRole("dialog");
-    const liabilitySelect = within(dialog).getByRole("combobox", { name: /Liability/i });
-    const visaOption = Array.from(liabilitySelect.querySelectorAll("option")).find(
-      (o) => (o as HTMLOptionElement).value === u("l1"),
+    const select = within(dialog).getByLabelText(/^Asset or debt$/i);
+    const visaOption = Array.from(select.querySelectorAll("option")).find(
+      (o) => (o as HTMLOptionElement).value === `debt:${u("l1")}`,
     ) as HTMLOptionElement | undefined;
 
     expect(visaOption).toBeDefined();
