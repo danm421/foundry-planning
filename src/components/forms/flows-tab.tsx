@@ -61,7 +61,6 @@ const formatCurrency = (n: number) =>
 export default function FlowsTab(props: FlowsTabProps) {
   const writer = useScenarioWriter(props.clientId);
   const { scenarioId } = useScenarioState(props.clientId);
-  const [scheduleOpen, setScheduleOpen] = useState(false);
   const [mode, setMode] = useState<EntityFlowMode>(props.flowMode);
   const [modeError, setModeError] = useState<string | null>(null);
 
@@ -110,39 +109,30 @@ export default function FlowsTab(props: FlowsTabProps) {
   return (
     <div className="space-y-6">
       {props.entityId ? (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="inline-flex rounded-md border border-hair bg-card p-0.5 text-xs">
-            <button
-              type="button"
-              onClick={() => handleModeChange("annual")}
-              className={
-                "rounded px-3 py-1 font-medium transition " +
-                (mode === "annual"
-                  ? "bg-accent text-accent-on"
-                  : "text-ink-3 hover:text-ink-1")
-              }
-            >
-              Annual + growth
-            </button>
-            <button
-              type="button"
-              onClick={() => handleModeChange("schedule")}
-              className={
-                "rounded px-3 py-1 font-medium transition " +
-                (mode === "schedule"
-                  ? "bg-accent text-accent-on"
-                  : "text-ink-3 hover:text-ink-1")
-              }
-            >
-              Custom schedule
-            </button>
-          </div>
+        <div className="inline-flex rounded-md border border-hair bg-card p-0.5 text-xs">
           <button
             type="button"
-            onClick={() => setScheduleOpen(true)}
-            className="rounded-md border border-hair bg-card px-3 py-1.5 text-xs text-ink-2 hover:text-ink-1"
+            onClick={() => handleModeChange("annual")}
+            className={
+              "rounded px-3 py-1 font-medium transition " +
+              (mode === "annual"
+                ? "bg-accent text-accent-on"
+                : "text-ink-3 hover:text-ink-1")
+            }
           >
-            {isSchedule ? "Edit schedule" : "Schedule…"}
+            Annual + growth
+          </button>
+          <button
+            type="button"
+            onClick={() => handleModeChange("schedule")}
+            className={
+              "rounded px-3 py-1 font-medium transition " +
+              (mode === "schedule"
+                ? "bg-accent text-accent-on"
+                : "text-ink-3 hover:text-ink-1")
+            }
+          >
+            Custom schedule
           </button>
         </div>
       ) : null}
@@ -151,33 +141,10 @@ export default function FlowsTab(props: FlowsTabProps) {
         <p className="rounded bg-red-900/50 px-3 py-2 text-xs text-red-400">{modeError}</p>
       )}
 
-      {isSchedule ? (
-        <div className="rounded-md border border-hair bg-card-2 p-4 text-sm text-ink-2">
-          <p>
-            Schedule mode is active. Year-by-year values come from the schedule grid.
-          </p>
-          <p className="mt-1 text-xs text-ink-3">
-            Switch back to <span className="font-medium">Annual + growth</span> to use
-            the income/expense fields below.
-          </p>
-        </div>
-      ) : (
-        <>
-          <FlowCard kind="income" {...props} writer={writer} />
-          <FlowCard kind="expense" {...props} writer={writer} />
-          {isBusinessType(props.entityType) && (
-            <DistributionAndTaxSection {...props} writer={writer} />
-          )}
-        </>
-      )}
-
-      {props.entityId && (
+      {isSchedule && props.entityId ? (
         <FlowScheduleGrid
-          open={scheduleOpen}
-          onClose={() => setScheduleOpen(false)}
           clientId={props.clientId}
           entityId={props.entityId}
-          entityName={props.entityName}
           entityType={props.entityType}
           scenarioId={scenarioId}
           planStartYear={props.planStartYear}
@@ -207,6 +174,14 @@ export default function FlowsTab(props: FlowsTabProps) {
           }
           initialOverrides={props.initialFlowOverrides}
         />
+      ) : (
+        <>
+          <FlowCard kind="income" {...props} writer={writer} />
+          <FlowCard kind="expense" {...props} writer={writer} />
+          {isBusinessType(props.entityType) && (
+            <DistributionAndTaxSection {...props} writer={writer} />
+          )}
+        </>
       )}
     </div>
   );

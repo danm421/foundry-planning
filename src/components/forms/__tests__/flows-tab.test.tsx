@@ -79,15 +79,16 @@ describe("FlowsTab", () => {
     expect(screen.queryByText(/distribution policy/i)).not.toBeInTheDocument();
   });
 
-  it("Schedule button is enabled in base mode (no scenarioId)", () => {
+  it("Annual mode shows the income/expense/distribution forms (no inline grid)", () => {
     render(<FlowsTab {...baseProps} />);
-    const btn = screen.getByRole("button", { name: /^Schedule…$/i });
-    expect(btn).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /add income/i })).toBeInTheDocument();
+    // The schedule grid's Save button is the canonical inline-grid marker.
+    expect(screen.queryByRole("button", { name: /save schedule/i })).not.toBeInTheDocument();
   });
 
-  it("hides Income/Expense/Distribution forms when flowMode is 'schedule'", () => {
+  it("Schedule mode renders the inline grid in place of the income/expense forms", () => {
     render(<FlowsTab {...baseProps} flowMode="schedule" />);
-    expect(screen.getByText(/schedule mode is active/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save schedule/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /add income/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/distribution policy/i)).not.toBeInTheDocument();
   });

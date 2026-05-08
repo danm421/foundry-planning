@@ -4,11 +4,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import FlowScheduleGrid from "../flow-schedule-grid";
 
 const baseProps = {
-  open: true,
-  onClose: vi.fn(),
   clientId: "client-1",
   entityId: "ent-1",
-  entityName: "Acme LLC",
   entityType: "llc" as const,
   scenarioId: "scenario-1",
   planStartYear: 2026,
@@ -49,14 +46,6 @@ describe("FlowScheduleGrid", () => {
   it("hides Distribution % column for trusts", () => {
     render(<FlowScheduleGrid {...baseProps} entityType="trust" />);
     expect(screen.queryByText(/distribution/i)).not.toBeInTheDocument();
-  });
-
-  it("Cancel does not call fetch", () => {
-    const onClose = vi.fn();
-    render(<FlowScheduleGrid {...baseProps} onClose={onClose} />);
-    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
-    expect(global.fetch).not.toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalled();
   });
 
   // Quick-fill panel adds 4 textbox-role inputs (income, expense, dist %, growth)

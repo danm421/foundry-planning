@@ -30,11 +30,8 @@ export interface FlowScheduleGridOverride {
 }
 
 export interface FlowScheduleGridProps {
-  open: boolean;
-  onClose: () => void;
   clientId: string;
   entityId: string;
-  entityName: string;
   entityType: EntityType;
   /** Null = base-plan overrides (scenario_id IS NULL). */
   scenarioId: string | null;
@@ -94,6 +91,7 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
   });
 
   const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Quick-fill panel state
@@ -136,8 +134,6 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
     applyEntries(setDist, fillFlat(props.planStartYear, props.planEndYear, percent), String);
   }
 
-  if (!props.open) return null;
-
   async function handleSave() {
     setSaving(true);
     setError(null);
@@ -173,7 +169,7 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
         const j = await res.json().catch(() => ({}));
         throw new Error((j as { error?: string }).error ?? "Failed to save");
       }
-      props.onClose();
+      setSavedAt(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -182,21 +178,10 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-2xl rounded-md border border-hair bg-card-2 p-5 shadow-xl">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-ink-1">Schedule — {props.entityName}</h2>
-          <button
-            type="button"
-            onClick={props.onClose}
-            className="text-xs text-ink-3 hover:text-ink-1"
-          >
-            ✕
-          </button>
-        </div>
-        <p className="mb-3 text-xs text-ink-3">
-          Override individual years. Blank cells use the base value with growth applied.
-        </p>
+    <section className="space-y-3 rounded-md border border-hair bg-card-2 p-4">
+      <p className="text-xs text-ink-3">
+        Override individual years. Blank cells resolve to $0 in schedule mode.
+      </p>
 
         {/* Quick fill */}
         <div className="mb-3 rounded-md border border-hair bg-card p-3">
@@ -328,24 +313,21 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
           </table>
         </div>
 
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={props.onClose}
-            className="rounded-md border border-hair px-3 py-1.5 text-xs text-ink-2"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save schedule"}
-          </button>
-        </div>
+      <div className="flex items-center justify-end gap-3">
+        {savedAt && !saving && (
+          <span className="text-[11px] text-ink-3">
+            Saved at {savedAt.toLocaleTimeString()}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save schedule"}
+        </button>
       </div>
-    </div>
+    </section>
   );
 }
