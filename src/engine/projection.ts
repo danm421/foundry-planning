@@ -77,6 +77,7 @@ import {
   controllingFamilyMember,
   controllingEntity,
 } from "./ownership";
+import { computeBusinessEntityNetIncome } from "./entity-flows";
 import { type CharityBucket } from "./charitable-deduction";
 import {
   emptyCharityCarryforward,
@@ -1147,7 +1148,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     }
 
     // 5. Compute taxable income total and per-category tax detail.
-    const taxableIncome =
+    // Declared `let` so the Phase 3 entity-passthrough block can add its
+    // passthrough total for flat-mode compatibility (bracket mode reads
+    // taxDetail directly; flat mode reads taxableIncome).
+    let taxableIncome =
       income.salaries +
       income.business +
       income.deferred +
@@ -1203,6 +1207,74 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
       taxDetail.bySource[inc.id] = { type: tt, amount };
     }
+
+    // ── Phase 3: business-entity tax incidence (passthrough K-1) ──────────
+    // For each business entity (entityType !== 'trust'), compute net income
+    // and flow it to owners' 1040 buckets per the entity's taxTreatment,
+    // scaled by each family-member owner's percent. Trusts are skipped —
+    // they keep the existing 1041 / grantor pass.
+    // Per spec § Phase 3 decisions:
+    //   P3-2: qbi → qbi; ordinary → ordinaryIncome; non_taxable → taxExempt
+    //   P3-3: skip when entityType === 'trust'
+    //   P3-6: ownership gap (sum < 1) → only known shares are taxed
+    //   P3-8: losses (net ≤ 0) → no tax incidence
+    //
+    // Also adds family-owned taxable share to `taxableIncome` so flat-rate mode
+    // (which reads taxableIncome, not taxDetail buckets) picks it up correctly.
+    // Bracket mode reads taxDetail directly, so both modes are covered.
+    for (const entity of currentEntities) {
+      if (entity.entityType === "trust") continue;
+      // Grantor business entities already flow through the household path
+      // (computeIncome's grantor filter + the household-tax loop above include
+      // them in taxDetail/taxableIncome). Skipping here prevents double-counting.
+      if (entity.isGrantor) continue;
+      const netIncome = computeBusinessEntityNetIncome(
+        entity.id,
+        currentIncomes,
+        allExpenses,
+        year,
+      );
+      if (netIncome <= 0) continue;
+      const treatment = entity.taxTreatment ?? "ordinary";
+      const familyOwners = entity.owners ?? [];
+      let entityFamilyTaxable = 0;
+      for (const owner of familyOwners) {
+        const taxableShare = netIncome * owner.percent;
+        if (taxableShare === 0) continue;
+        entityFamilyTaxable += taxableShare;
+        switch (treatment) {
+          case "qbi":
+            taxDetail.qbi += taxableShare;
+            break;
+          case "ordinary":
+            taxDetail.ordinaryIncome += taxableShare;
+            break;
+          case "non_taxable":
+            taxDetail.taxExempt += taxableShare;
+            break;
+        }
+      }
+      // Flat-rate mode: add to taxableIncome so calculateTaxYearFlat sees it.
+      // Non-taxable treatment is excluded — it should not count as taxable income.
+      if (treatment !== "non_taxable") {
+        taxableIncome += entityFamilyTaxable;
+      }
+      // Drilldown: attribute the entity's total taxable amount under one bySource
+      // key so reports can identify the source. Owner % split is a 1040 detail
+      // not surfaced in bySource.
+      const totalTaxable = netIncome * familyOwners.reduce((s, o) => s + o.percent, 0);
+      if (totalTaxable !== 0) {
+        const bySourceType =
+          treatment === "qbi" ? "qbi"
+          : treatment === "non_taxable" ? "tax_exempt"
+          : "ordinary_income";
+        taxDetail.bySource[`entity_passthrough:${entity.id}`] = {
+          type: bySourceType,
+          amount: totalTaxable,
+        };
+      }
+    }
+
     // Add RMDs to ordinary income
     if (householdRmdIncome > 0) {
       taxDetail.ordinaryIncome += householdRmdIncome;
@@ -2080,6 +2152,48 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         category: "expense",
         label: `Expense: ${exp.name}`,
         sourceId: exp.id,
+      });
+    }
+
+    // ── Phase 3: business-entity distribution to household ─────────────────
+    // After income/expense crediting on entity checking, sweep net income to
+    // household checking per the entity's distributionPolicyPercent. Trusts
+    // skipped (they keep the existing distribution-policy mechanic).
+    // Per spec § Phase 3 decisions:
+    //   P3-3: skip when entityType === 'trust'
+    //   P3-4: same year, audit category "entity_distribution"
+    //   P3-5: null distributionPolicyPercent defaults to 1.0
+    //   P3-7: target is household defaultChecking always
+    //   P3-8: losses → no distribution (skip net ≤ 0)
+    for (const entity of currentEntities) {
+      if (entity.entityType === "trust") continue;
+      // Grantor business entities already flow through the household path
+      // (computeIncome's grantor filter + the household-tax loop above include
+      // them in taxDetail/taxableIncome). Skipping here prevents double-counting.
+      if (entity.isGrantor) continue;
+      const netIncome = computeBusinessEntityNetIncome(
+        entity.id,
+        currentIncomes,
+        allExpenses,
+        year,
+      );
+      if (netIncome <= 0) continue;
+      const distPercent = entity.distributionPolicyPercent ?? 1.0;
+      const distAmount = netIncome * distPercent;
+      if (distAmount === 0) continue;
+      const entityCheckingId = entityCheckingByEntityId[entity.id];
+      if (!entityCheckingId) continue; // entity has no cash account → cannot distribute
+      // Debit entity checking
+      creditCash(entityCheckingId, -distAmount, {
+        category: "entity_distribution",
+        label: `Distribution from ${entity.name ?? entity.id}`,
+        sourceId: entity.id,
+      });
+      // Credit household checking
+      creditCash(defaultChecking?.id, distAmount, {
+        category: "entity_distribution",
+        label: `Distribution from ${entity.name ?? entity.id}`,
+        sourceId: entity.id,
       });
     }
 
