@@ -101,7 +101,7 @@ export default function EntityDialog({
     distributionPercent: number | null;
   }>>([]);
 
-  const scenarioId = searchParams.get("scenarioId");
+  const scenarioId = searchParams.get("scenario");
 
   useEffect(() => {
     if (!editing?.id || !scenarioId) return;
