@@ -24,6 +24,7 @@ import {
 } from "@tanstack/react-table";
 import { runProjection } from "@/engine";
 import type { ClientData, ProjectionYear, AccountLedger } from "@/engine";
+import { isFullyEntityOwned } from "@/engine/ownership";
 import { TaxDetailModal } from "@/components/cashflow/tax-detail-modal";
 import { TaxDrillDownModal } from "@/components/cashflow/tax-drill-down-modal";
 import { YearRangeSlider } from "@/components/cashflow/year-range-slider";
@@ -1087,6 +1088,32 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     return groups;
   }
 
+  // Build per-gift line items for the Cash Gifts cell modal. Mirrors the
+  // engine's household-source filter so the displayed rows sum to the cell.
+  function buildCashGiftYearDetails(year: number): LineItem[] {
+    if (!clientData) return [];
+    const defaultChecking = clientData.accounts.find(
+      (a) => a.isDefaultChecking && !isFullyEntityOwned(a),
+    );
+    const items: LineItem[] = [];
+    for (const gift of clientData.giftEvents ?? []) {
+      if (gift.kind !== "cash" || gift.year !== year) continue;
+      const sourceId = gift.sourceAccountId ?? defaultChecking?.id;
+      if (!sourceId) continue;
+      const sourceAccount = clientData.accounts.find((a) => a.id === sourceId);
+      if (!sourceAccount || isFullyEntityOwned(sourceAccount)) continue;
+      const recipient = clientData.entities?.find(
+        (e) => e.id === gift.recipientEntityId,
+      );
+      const recipientName = recipient?.name ?? gift.recipientEntityId;
+      items.push({
+        label: `${sourceAccount.name} → ${recipientName}`,
+        amount: gift.amount,
+      });
+    }
+    return items;
+  }
+
   function buildColumns(): ColumnDef<ProjectionYear>[] {
     const level = drillPath[0];
     const subLevel = drillPath[1];
@@ -1476,7 +1503,35 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               ]
             : []),
           ...(showCashGifts
-            ? [numCol("exp_cash_gifts", "Cash Gifts", cashGiftsYearTotal)]
+            ? [
+                col(
+                  "exp_cash_gifts",
+                  "Cash Gifts",
+                  cashGiftsYearTotal,
+                  (info) => {
+                    const v = info.getValue() as number;
+                    if (v === 0)
+                      return <span className="tabular-nums text-gray-400">&mdash;</span>;
+                    const row = info.row.original;
+                    return (
+                      <button
+                        onClick={() => {
+                          setSourceDetailModal({
+                            name: "Cash Gifts",
+                            year: row.year,
+                            amount: v,
+                            details: buildCashGiftYearDetails(row.year),
+                          });
+                        }}
+                        className="text-accent hover:text-accent-ink tabular-nums focus:outline-none"
+                        title="View cash gift breakdown"
+                      >
+                        {fmtNum(v)}
+                      </button>
+                    );
+                  },
+                ),
+              ]
             : []),
           numCol(
             "exp_subtype_total",
