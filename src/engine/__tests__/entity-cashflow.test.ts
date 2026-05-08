@@ -520,6 +520,59 @@ describe("computeEntityCashFlow", () => {
       expect(row.endingTotalValue).toBe(750_000);
     }
   });
+
+  it("rolls in account values proportionally for split entity/personal ownership", () => {
+    const year = makeYear(2026);
+    year.accountLedgers["acct-split"] = {
+      beginningValue: 100_000,
+      endingValue: 105_000,
+      growth: 5_000,
+      contributions: 0,
+      distributions: 0,
+      internalContributions: 0,
+      internalDistributions: 0,
+      rmdAmount: 0,
+      fees: 0,
+      entries: [],
+    };
+
+    const entitiesById = new Map<string, EntityMetadata>([
+      [
+        "ent-biz",
+        {
+          id: "ent-biz",
+          name: "Acme LLC",
+          entityType: "llc",
+          trustSubType: null,
+          isGrantor: false,
+          initialValue: 0,
+          initialBasis: 0,
+          valueGrowthRate: 0,
+        },
+      ],
+    ]);
+
+    const accountEntityOwners = new Map<string, { entityId: string; percent: number }>([
+      ["acct-split", { entityId: "ent-biz", percent: 0.6 }],
+    ]);
+
+    computeEntityCashFlow({
+      years: [year],
+      entitiesById,
+      accountEntityOwners,
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+      entityFlowOverrides: [],
+    });
+
+    const row = year.entityCashFlow.get("ent-biz");
+    expect(row?.kind).toBe("business");
+    if (row?.kind !== "business") return;
+    expect(row.beginningTotalValue).toBeCloseTo(60_000, 2);
+    expect(row.growth).toBeCloseTo(3_000, 2);
+    expect(row.endingTotalValue).toBeCloseTo(63_000, 2);
+  });
 });
 
 // ── Integration: runProjection wires computeEntityCashFlow ──────────────────

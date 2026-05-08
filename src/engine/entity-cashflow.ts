@@ -62,8 +62,8 @@ export interface ComputeEntityCashFlowInput {
   years: ProjectionYear[];
   /** Entity metadata indexed by id. */
   entitiesById: Map<string, EntityMetadata>;
-  /** Account → entity-owner mapping. Only entries where percent === 1
-   *  belong to the entity rollup. */
+  /** Account → entity-owner mapping. Split ownership is supported: the
+   *  account contributes to the entity rollup proportionally to `percent`. */
   accountEntityOwners: Map<string, { entityId: string; percent: number }>;
   /** Gifts to entities, grouped by recipient entity id and year. */
   giftsByEntityYear: Map<string, Map<number, number>>;
@@ -87,10 +87,11 @@ export interface ComputeEntityCashFlowInput {
 export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
   const { years, entitiesById, accountEntityOwners } = input;
 
-  // Build entity → account list (only percent === 1 entries belong to the entity)
+  // Build entity → account list. Split ownership is allowed; share is applied
+  // during the rollup so a 60/40 entity/personal account contributes 60% to
+  // the entity row.
   const accountsByEntity = new Map<string, string[]>();
   for (const [accountId, owner] of accountEntityOwners) {
-    if (owner.percent !== 1) continue;
     const list = accountsByEntity.get(owner.entityId) ?? [];
     list.push(accountId);
     accountsByEntity.set(owner.entityId, list);
@@ -109,13 +110,15 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
       for (const aid of accountIds) {
         const ledger = year.accountLedgers[aid];
         if (!ledger) continue;
-        beginningBalance += ledger.beginningValue;
-        endingBalance += ledger.endingValue;
-        growth += ledger.growth;
+        const owner = accountEntityOwners.get(aid);
+        const share = owner?.percent ?? 1;
+        beginningBalance += ledger.beginningValue * share;
+        endingBalance += ledger.endingValue * share;
+        growth += ledger.growth * share;
         for (const entry of ledger.entries) {
           if (entry.isInternalTransfer) continue;
-          if (entry.category === "income") income += Math.abs(entry.amount);
-          if (entry.category === "expense") expenses += Math.abs(entry.amount);
+          if (entry.category === "income") income += Math.abs(entry.amount) * share;
+          if (entry.category === "expense") expenses += Math.abs(entry.amount) * share;
         }
       }
       let totalDistributions = year.trustDistributionsByEntity?.get(entityId) ?? 0;
