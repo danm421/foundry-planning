@@ -279,3 +279,69 @@ describe("Phase 3: business entity distribution flow", () => {
     expect(y0.accountLedgers["llc1-checking"].endingValue).toBeCloseTo(200_000, 0);
   });
 });
+
+describe("Phase 3: trust regression — taxTreatment ignored", () => {
+  it("trust with taxTreatment set does not trigger Phase 3 incidence or distribution", () => {
+    // Build a non-grantor irrevocable trust with taxTreatment set (which the
+    // engine MUST ignore — trusts use the 1041 path).
+    const trustEntity: EntitySummary = {
+      id: "trust1",
+      name: "Test Trust",
+      includeInPortfolio: true,
+      isGrantor: false,
+      entityType: "trust",
+      isIrrevocable: true,
+      taxTreatment: "qbi", // should be ignored
+      distributionPolicyPercent: 0.5, // should be ignored
+      distributionMode: null,
+      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const trustIncome: Income = {
+      id: "ti1",
+      type: "business",
+      name: "Trust Revenue",
+      annualAmount: 50_000,
+      startYear: 2026,
+      endYear: 2050,
+      growthRate: 0,
+      owner: "client",
+      ownerEntityId: "trust1",
+    };
+    const trustChecking: Account = {
+      id: "trust1-checking",
+      name: "Trust Checking",
+      category: "cash",
+      subType: "checking",
+      value: 0,
+      basis: 0,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "trust1", percent: 1 }],
+      isDefaultChecking: true,
+    };
+
+    const data: ClientData = {
+      client,
+      accounts: [hhChecking, trustChecking],
+      incomes: [trustIncome],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings,
+      familyMembers: [],
+      entities: [trustEntity],
+      giftEvents: [],
+    };
+
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // No Phase 3 bySource key for the trust
+    expect(y0.taxDetail!.bySource["entity_passthrough:trust1"]).toBeUndefined();
+
+    // No entity_distribution ledger entry on household checking
+    const hhEntries = y0.accountLedgers["hh-checking"].entries;
+    expect(hhEntries.find((e) => e.category === "entity_distribution")).toBeUndefined();
+  });
+});
