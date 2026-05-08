@@ -7,7 +7,7 @@ import type { ProjectionYear } from "@/engine/types";
 import HeaderControls, { type EntityOption } from "./entities-cashflow-report/header-controls";
 import TrustTable from "./entities-cashflow-report/trust-table";
 import BusinessTable from "./entities-cashflow-report/business-table";
-import { selectEntityRows } from "./entities-cashflow-report/view-model";
+import { selectEntityRows, type SelectedRows } from "./entities-cashflow-report/view-model";
 
 interface Props {
   clientId: string;
@@ -60,8 +60,8 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
     void load();
   }, [clientId, searchParams]);
 
-  const selected = useMemo(() => {
-    if (!yearRange) return { kind: "empty" as const, rows: [] as never[] };
+  const selected = useMemo<SelectedRows>(() => {
+    if (!yearRange) return { kind: "empty", rows: [] };
     return selectEntityRows({
       years,
       entityId: selectedEntityId,
@@ -75,7 +75,6 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
     try {
       const [{ pdf }, { default: Document }] = await Promise.all([
         import("@react-pdf/renderer"),
-        // @ts-expect-error -- module created in Task 18
         import("./entities-cashflow-report-pdf/document"),
       ]);
       const entityName = entities.find((e) => e.id === selectedEntityId)?.name ?? "Entity";
