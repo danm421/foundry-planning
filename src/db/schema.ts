@@ -1039,9 +1039,6 @@ export const incomes = pgTable("incomes", {
   inflationStartYear: integer("inflation_start_year"),
   owner: ownerEnum("owner").notNull().default("client"),
   claimingAge: integer("claiming_age"),
-  linkedEntityId: uuid("linked_entity_id").references(() => accounts.id, {
-    onDelete: "set null",
-  }),
   ownerEntityId: uuid("owner_entity_id").references(() => entities.id, {
     onDelete: "set null",
   }),
@@ -1652,10 +1649,6 @@ export const incomesRelations = relations(incomes, ({ one }) => ({
   scenario: one(scenarios, {
     fields: [incomes.scenarioId],
     references: [scenarios.id],
-  }),
-  linkedEntity: one(accounts, {
-    fields: [incomes.linkedEntityId],
-    references: [accounts.id],
   }),
 }));
 
