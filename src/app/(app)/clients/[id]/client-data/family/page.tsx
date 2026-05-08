@@ -157,12 +157,24 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
     name: i.name,
     annualAmount: i.annualAmount,
     cashAccountId: i.cashAccountId,
+    ownerEntityId: i.ownerEntityId ?? null,
+    startYear: i.startYear,
+    endYear: i.endYear,
+    growthRate: i.growthRate,
+    growthSource: i.growthSource ?? null,
+    inflationStartYear: i.inflationStartYear ?? null,
   }));
   const fullExpenses = (effectiveTree.expenses ?? []).map((e) => ({
     id: e.id,
     name: e.name,
     annualAmount: e.annualAmount,
     cashAccountId: e.cashAccountId,
+    ownerEntityId: e.ownerEntityId ?? null,
+    startYear: e.startYear,
+    endYear: e.endYear,
+    growthRate: e.growthRate,
+    growthSource: e.growthSource ?? null,
+    inflationStartYear: e.inflationStartYear ?? null,
   }));
   const assetFamilyMembers = allMemberRows.map((m) => ({
     id: m.id,

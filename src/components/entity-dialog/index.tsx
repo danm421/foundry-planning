@@ -6,6 +6,7 @@ import BusinessForm from "./business-form";
 import { getEntityKind, type EntityKind } from "./types";
 import type { Entity, FamilyMember, ExternalBeneficiary, Designation } from "../family-view";
 import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember } from "../forms/assets-tab";
+import type { FlowsTabIncome, FlowsTabExpense } from "../forms/flows-tab";
 import DialogShell from "../dialog-shell";
 
 export interface EntityDialogProps {
@@ -35,6 +36,29 @@ export interface EntityDialogProps {
 
 type TrustTab = "details" | "flows" | "assets" | "transfers" | "notes";
 type BusinessTab = "details" | "flows" | "assets" | "notes";
+
+/**
+ * Adapt the assets-tab income/expense row (which carries optional flow-tab
+ * metadata from the page-level enrichment) to the FlowsTab shape. Returns null
+ * when the row is missing the flow fields — e.g. older callers that only
+ * populated id/name/annualAmount/cashAccountId.
+ */
+function toFlowsTabIncome(
+  row: AssetsTabIncome | AssetsTabExpense | undefined,
+): FlowsTabIncome | null {
+  if (!row) return null;
+  if (row.startYear == null || row.endYear == null || row.growthRate == null) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    annualAmount: row.annualAmount,
+    startYear: row.startYear,
+    endYear: row.endYear,
+    growthRate: row.growthRate,
+    growthSource: row.growthSource === "custom" ? "custom" : "inflation",
+    inflationStartYear: row.inflationStartYear ?? null,
+  };
+}
 
 export default function EntityDialog({
   clientId,
@@ -97,6 +121,14 @@ export default function EntityDialog({
     (kind === "trust" && (trustTab === "assets" || trustTab === "transfers" || trustTab === "flows")) ||
     (kind === "business" && (businessTab === "assets" || businessTab === "flows"));
 
+  // Find the entity-owned income + expense for THIS entity to feed the FlowsTab.
+  const entityIncome: FlowsTabIncome | null = editing
+    ? toFlowsTabIncome((incomes ?? []).find((i) => i.ownerEntityId === editing.id))
+    : null;
+  const entityExpense: FlowsTabExpense | null = editing
+    ? toFlowsTabIncome((expenses ?? []).find((e) => e.ownerEntityId === editing.id))
+    : null;
+
   return (
     <DialogShell
       open={open}
@@ -136,6 +168,8 @@ export default function EntityDialog({
           liabilities={liabilities}
           incomes={incomes}
           expenses={expenses}
+          entityIncome={entityIncome}
+          entityExpense={entityExpense}
           assetFamilyMembers={assetFamilyMembers}
           onSaved={onSaved}
           onClose={() => onOpenChange(false)}
@@ -150,6 +184,8 @@ export default function EntityDialog({
           liabilities={liabilities}
           incomes={incomes}
           expenses={expenses}
+          entityIncome={entityIncome}
+          entityExpense={entityExpense}
           assetFamilyMembers={assetFamilyMembers}
           otherEntities={otherEntities}
           onSaved={onSaved}
