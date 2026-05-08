@@ -34,7 +34,7 @@ interface AddTrustFormProps {
   externals: ExternalBeneficiary[];
   entities: { id: string; name: string }[];  // for remainder picker
   initialDesignations?: Designation[];        // pre-loaded for edit mode
-  activeTab: "details" | "assets" | "transfers" | "notes";
+  activeTab: "details" | "flows" | "assets" | "transfers" | "notes";
   /** Assets tab data — when absent the tab degrades gracefully */
   accounts?: AssetsTabAccount[];
   liabilities?: AssetsTabLiability[];

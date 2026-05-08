@@ -33,8 +33,8 @@ export interface EntityDialogProps {
   assetFamilyMembers?: AssetsTabFamilyMember[];
 }
 
-type TrustTab = "details" | "assets" | "transfers" | "notes";
-type BusinessTab = "details" | "assets" | "notes";
+type TrustTab = "details" | "flows" | "assets" | "transfers" | "notes";
+type BusinessTab = "details" | "flows" | "assets" | "notes";
 
 export default function EntityDialog({
   clientId,
@@ -74,12 +74,14 @@ export default function EntityDialog({
     kind === "trust"
       ? [
           { id: "details", label: "Details" },
+          { id: "flows", label: "Flows" },
           { id: "assets", label: "Assets" },
           { id: "transfers", label: "Transfers" },
           { id: "notes", label: "Notes" },
         ]
       : [
           { id: "details", label: "Details" },
+          { id: "flows", label: "Flows" },
           { id: "assets", label: "Assets" },
           { id: "notes", label: "Notes" },
         ];
@@ -90,10 +92,10 @@ export default function EntityDialog({
     else setBusinessTab(tab as BusinessTab);
   };
 
-  // Tabs that don't own a primary form action (Assets / Transfers manage their own data inline).
+  // Tabs that don't own a primary form action (Assets / Transfers / Flows manage their own data inline).
   const noPrimaryAction =
-    (kind === "trust" && (trustTab === "assets" || trustTab === "transfers")) ||
-    (kind === "business" && businessTab === "assets");
+    (kind === "trust" && (trustTab === "assets" || trustTab === "transfers" || trustTab === "flows")) ||
+    (kind === "business" && (businessTab === "assets" || businessTab === "flows"));
 
   return (
     <DialogShell

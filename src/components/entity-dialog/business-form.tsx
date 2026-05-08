@@ -28,7 +28,7 @@ const BUSINESS_ENTITY_TYPE_LABELS: Record<BusinessEntityType, string> = {
 };
 
 interface BusinessFormProps extends EntityFormCommonProps {
-  activeTab: "details" | "assets" | "notes";
+  activeTab: "details" | "flows" | "assets" | "notes";
   accounts?: AssetsTabAccount[];
   liabilities?: AssetsTabLiability[];
   incomes?: AssetsTabIncome[];
