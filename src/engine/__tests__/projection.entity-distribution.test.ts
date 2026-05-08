@@ -218,4 +218,35 @@ describe("Phase 3: business entity distribution flow", () => {
     expect(distEntry!.amount).toBeCloseTo(100_000, 0);
     expect(distEntry!.sourceId).toBe("llc1");
   });
+
+  it("loss year: no distribution and no tax incidence; loss retained in entity", () => {
+    const lossExpense: Expense = {
+      id: "x1",
+      type: "other",
+      name: "Big Loss",
+      annualAmount: 200_000,
+      startYear: 2026,
+      endYear: 2026,
+      growthRate: 0,
+      ownerEntityId: "llc1",
+    };
+    // Income $100k - expense $200k = -$100k net. We seed the entity checking
+    // with $300k so the expense actually clears.
+    const dataWithSeed = {
+      ...mkData({ expenses: [lossExpense] }),
+      accounts: [hhChecking, entityChecking("llc1", 300_000)],
+    };
+    const years = runProjection(dataWithSeed);
+    const y0 = years[0];
+
+    // No entity_distribution entry on household checking
+    const hhEntries = y0.accountLedgers["hh-checking"].entries;
+    expect(hhEntries.find((e) => e.category === "entity_distribution")).toBeUndefined();
+
+    // Tax incidence: no entry in bySource for this entity
+    expect(y0.taxDetail!.bySource["entity_passthrough:llc1"]).toBeUndefined();
+
+    // Entity checking ends at: 300k seed + $100k income - $200k expense = $200k
+    expect(y0.accountLedgers["llc1-checking"].endingValue).toBeCloseTo(200_000, 0);
+  });
 });
