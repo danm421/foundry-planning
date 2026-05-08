@@ -25,7 +25,7 @@ export default function BusinessTablePdf({ rows }: { rows: BusinessCashFlowRow[]
       <View style={[s.row, s.header]}>
         {BUSINESS_COLUMNS.map((c, i) => (
           <Text key={c.key} style={i < 2 ? s.cellL : s.cell}>
-            {c.label.join(" ")}
+            {c.label.filter((s) => s).join(" ")}
           </Text>
         ))}
       </View>

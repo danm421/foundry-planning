@@ -25,7 +25,7 @@ export default function TrustTablePdf({ rows }: { rows: TrustCashFlowRow[] }) {
       <View style={[s.row, s.header]}>
         {TRUST_COLUMNS.map((c, i) => (
           <Text key={c.key} style={i < 2 ? s.cellL : s.cell}>
-            {c.label.join(" ")}
+            {c.label.filter((s) => s).join(" ")}
           </Text>
         ))}
       </View>

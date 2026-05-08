@@ -5,24 +5,25 @@ export const formatCurrency = (n: number): string => {
   return fmt.format(n);
 };
 
-/** Each label is split into lines so column headers wrap deterministically
- *  even when the column is wide enough to fit the full text on one line. */
+/** Each label is two lines. Short labels get an empty first line ("") so
+ *  every header occupies the same height — that way the rendered text always
+ *  bottom-aligns regardless of `vertical-align` quirks across browsers. */
 export const TRUST_COLUMNS = [
-  { key: "year",                label: ["Year"] },
-  { key: "ages",                label: ["Age"] },
+  { key: "year",                label: ["", "Year"] },
+  { key: "ages",                label: ["", "Age"] },
   { key: "beginningBalance",    label: ["Beginning of", "Year Balance"] },
   { key: "transfersIn",         label: ["Transfers", "In"] },
-  { key: "growth",              label: ["Growth"] },
-  { key: "income",              label: ["Income"] },
+  { key: "growth",              label: ["", "Growth"] },
+  { key: "income",              label: ["", "Income"] },
   { key: "totalDistributions",  label: ["Total", "Distributions"] },
-  { key: "expenses",            label: ["Expenses"] },
-  { key: "taxes",               label: ["Taxes"] },
+  { key: "expenses",            label: ["", "Expenses"] },
+  { key: "taxes",               label: ["", "Taxes"] },
   { key: "endingBalance",       label: ["End of Year", "Balance"] },
 ] as const;
 
 export const BUSINESS_COLUMNS = [
-  { key: "year",                label: ["Year"] },
-  { key: "ages",                label: ["Age"] },
+  { key: "year",                label: ["", "Year"] },
+  { key: "ages",                label: ["", "Age"] },
   { key: "beginningTotalValue", label: ["Beginning of Year", "Total Value"] },
   { key: "beginningBasis",      label: ["Beginning of", "Year Basis"] },
   { key: "growth",              label: ["Business", "Growth"] },
