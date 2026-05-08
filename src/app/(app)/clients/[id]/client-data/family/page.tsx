@@ -120,6 +120,10 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
     distributionMode: (e.distributionMode as "fixed" | "pct_liquid" | "pct_income" | null) ?? null,
     distributionAmount: e.distributionAmount != null ? parseFloat(String(e.distributionAmount)) : null,
     distributionPercent: e.distributionPercent != null ? parseFloat(String(e.distributionPercent)) : null,
+    taxTreatment: e.taxTreatment ?? undefined,
+    distributionPolicyPercent: e.distributionPolicyPercent != null
+      ? Number(e.distributionPolicyPercent)
+      : null,
   }));
 
   const externals: ExternalBeneficiary[] = externalRows.map((e) => ({

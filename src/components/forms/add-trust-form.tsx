@@ -705,7 +705,7 @@ export default function AddTrustForm({
             income={entityIncome ?? null}
             expense={entityExpense ?? null}
             distributionPolicyPercent={null /* trusts don't use this in P1 */}
-            taxTreatment={(editing as Entity & { taxTreatment?: "qbi" | "ordinary" | "non_taxable" }).taxTreatment ?? "ordinary"}
+            taxTreatment={editing.taxTreatment ?? "ordinary"}
             planStartYear={new Date().getFullYear()}
             defaultEndYear={new Date().getFullYear() + 30}
           />

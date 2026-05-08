@@ -372,12 +372,8 @@ export default function BusinessForm({
             entityType={editing.entityType as "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other"}
             income={entityIncome ?? null}
             expense={entityExpense ?? null}
-            distributionPolicyPercent={(() => {
-              const raw = (editing as unknown as { distributionPolicyPercent?: string | number | null })
-                .distributionPolicyPercent;
-              return raw != null ? Number(raw) : null;
-            })()}
-            taxTreatment={(editing as Entity & { taxTreatment?: "qbi" | "ordinary" | "non_taxable" }).taxTreatment ?? "ordinary"}
+            distributionPolicyPercent={editing.distributionPolicyPercent ?? null}
+            taxTreatment={editing.taxTreatment ?? "ordinary"}
             planStartYear={new Date().getFullYear()}
             defaultEndYear={new Date().getFullYear() + 30}
           />
