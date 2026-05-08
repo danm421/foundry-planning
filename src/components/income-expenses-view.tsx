@@ -391,7 +391,6 @@ function IncomeDialog({
   clientId,
   defaultType = "salary",
   accounts,
-  entities,
   clientInfo,
   ownerNames,
   open,
@@ -411,7 +410,6 @@ function IncomeDialog({
   const [error, setError] = useState<string | null>(null);
   const [type, setType] = useState<IncomeType>(editing?.type ?? defaultType);
   const [owner, setOwner] = useState<Owner>(editing?.owner ?? "client");
-  const [ownerEntityId, setOwnerEntityId] = useState<string>(editing?.ownerEntityId ?? "");
   const [cashAccountId, setCashAccountId] = useState<string>(editing?.cashAccountId ?? "");
   const planStartYear = clientInfo?.planStartYear ?? new Date().getFullYear();
   const [todaysDollars, setTodaysDollars] = useState<boolean>(
@@ -501,7 +499,6 @@ function IncomeDialog({
       growthSource,
       owner: data.get("owner") as string,
       linkedEntityId: data.get("linkedEntityId") || null,
-      ownerEntityId: ownerEntityId || null,
       cashAccountId: cashAccountId || null,
       // "Today's dollars" mode inflates the amount from plan start through the
       // entry's startYear so retirement-era amounts can be entered in current
@@ -634,48 +631,24 @@ function IncomeDialog({
               <div className="mt-1 flex flex-wrap gap-1.5">
                 <PillToggle
                   label={ownerNames.clientName.split(" ")[0]}
-                  active={!ownerEntityId && owner === "client"}
-                  onClick={() => { setOwner("client"); setOwnerEntityId(""); }}
+                  active={owner === "client"}
+                  onClick={() => setOwner("client")}
                 />
                 {ownerNames.spouseName && (
                   <PillToggle
                     label={ownerNames.spouseName.split(" ")[0]}
-                    active={!ownerEntityId && owner === "spouse"}
-                    onClick={() => { setOwner("spouse"); setOwnerEntityId(""); }}
+                    active={owner === "spouse"}
+                    onClick={() => setOwner("spouse")}
                   />
                 )}
                 {ownerNames.spouseName && (
                   <PillToggle
                     label="Joint 50/50"
-                    active={!ownerEntityId && owner === "joint"}
-                    onClick={() => { setOwner("joint"); setOwnerEntityId(""); }}
-                  />
-                )}
-                {entities && entities.length > 0 && (
-                  <PillToggle
-                    label="Custom"
-                    active={!!ownerEntityId}
-                    onClick={() => {
-                      if (!ownerEntityId && entities[0]) setOwnerEntityId(entities[0].id);
-                    }}
+                    active={owner === "joint"}
+                    onClick={() => setOwner("joint")}
                   />
                 )}
               </div>
-              {ownerEntityId && entities && entities.length > 0 && (
-                <>
-                  <select
-                    id="inc-entity"
-                    value={ownerEntityId}
-                    onChange={(e) => setOwnerEntityId(e.target.value)}
-                    className="mt-2 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-                  >
-                    {entities.map((ent) => (
-                      <option key={ent.id} value={ent.id}>{ent.name}</option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-xs text-amber-400">Counted as out of estate.</p>
-                </>
-              )}
             </div>
           </div>
 
@@ -843,7 +816,6 @@ function IncomeDialog({
             id="inc-cash"
             label="Deposits to"
             accounts={accounts}
-            ownerEntityId={ownerEntityId || null}
             value={cashAccountId}
             onChange={setCashAccountId}
           />
