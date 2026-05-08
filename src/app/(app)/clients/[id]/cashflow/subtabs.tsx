@@ -18,6 +18,7 @@ export default function CashFlowSubtabs({
   const root = `/clients/${clientId}/cashflow`;
   const tabs: { label: string; href: string; exact?: true }[] = [
     { label: "Cash Flow", href: root, exact: true },
+    { label: "Entities", href: `${root}/entities` },
     { label: "Income Tax", href: `${root}/income-tax` },
     { label: "Monte Carlo", href: `${root}/monte-carlo` },
     { label: "Timeline", href: `${root}/timeline` },

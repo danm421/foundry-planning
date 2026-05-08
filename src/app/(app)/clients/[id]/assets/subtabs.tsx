@@ -18,7 +18,6 @@ export default function AssetsSubtabs({
   const root = `/clients/${clientId}/assets`;
   const tabs: { label: string; href: string }[] = [
     { label: "Balance Sheet", href: `${root}/balance-sheet-report` },
-    { label: "Entities Cash Flow", href: `${root}/entities-cash-flow` },
     { label: "Investments", href: `${root}/investments` },
   ];
 
