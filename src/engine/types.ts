@@ -294,6 +294,9 @@ export interface ClientData {
   withdrawalStrategy: WithdrawalPriority[];
   planSettings: PlanSettings;
   entities?: EntitySummary[];
+  /** Phase 2: per-year overrides scoped to the active scenario. Empty/undefined
+   *  means every entity uses its base flow values everywhere. */
+  entityFlowOverrides?: EntityFlowOverride[];
   /** IRS-published tax year parameters seeded from the DB. Empty = flat-mode fallback. */
   taxYearRows?: TaxYearParameters[];
   /** Itemized deduction line items (charitable, SALT, mortgage interest, etc.). */
@@ -388,6 +391,18 @@ export interface EntitySummary {
    *  trustSubType = 'clut'. Captures inception-time inputs and computed
    *  income/remainder interests so engine passes don't recompute mid-projection. */
   splitInterest?: TrustSplitInterestSnapshot;
+}
+
+/** Phase 2: per-year override for an entity's flows. Sparse cells — any null
+ *  field falls through to the base+growth value (income/expense) or to the
+ *  entity's distributionPolicyPercent / 1.0 default (distributionPercent).
+ *  Distribution % is ignored for trusts (P3-3 carries through). */
+export interface EntityFlowOverride {
+  entityId: string;
+  year: number;
+  incomeAmount?: number | null;
+  expenseAmount?: number | null;
+  distributionPercent?: number | null;
 }
 
 export interface TrustSplitInterestSnapshot {

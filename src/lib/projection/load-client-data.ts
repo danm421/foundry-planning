@@ -12,6 +12,7 @@ import {
   clientDeductions,
   clients,
   entities,
+  entityFlowOverrides,
   entityOwners,
   trustSplitInterestDetails,
   expenses,
@@ -45,6 +46,7 @@ import {
 import type {
   BeneficiaryRef,
   ClientData,
+  EntityFlowOverride,
   GiftEvent,
   Will,
   WillBequest,
@@ -997,6 +999,26 @@ export const loadClientDataWithContext = cache(
       filingStatus: client.filingStatus,
     };
 
+    const flowOverrideRows = await db
+      .select({
+        entityId: entityFlowOverrides.entityId,
+        year: entityFlowOverrides.year,
+        incomeAmount: entityFlowOverrides.incomeAmount,
+        expenseAmount: entityFlowOverrides.expenseAmount,
+        distributionPercent: entityFlowOverrides.distributionPercent,
+      })
+      .from(entityFlowOverrides)
+      .where(eq(entityFlowOverrides.scenarioId, scenario.id));
+
+    const mappedFlowOverrides: EntityFlowOverride[] = flowOverrideRows.map((r) => ({
+      entityId: r.entityId,
+      year: r.year,
+      incomeAmount: r.incomeAmount != null ? parseFloat(r.incomeAmount) : null,
+      expenseAmount: r.expenseAmount != null ? parseFloat(r.expenseAmount) : null,
+      distributionPercent:
+        r.distributionPercent != null ? parseFloat(r.distributionPercent) : null,
+    }));
+
     const clientData: ClientData = {
       client: clientInfo,
       accounts: mappedAccounts,
@@ -1007,6 +1029,7 @@ export const loadClientDataWithContext = cache(
       withdrawalStrategy: mappedWithdrawalStrategy,
       planSettings: mappedPlanSettings,
       entities: mappedEntities,
+      entityFlowOverrides: mappedFlowOverrides,
       externalBeneficiaries: mappedExternalBeneficiaries,
       taxYearRows: parsedTaxRows,
       deductions: parsedDeductions,

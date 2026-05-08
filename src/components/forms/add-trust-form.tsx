@@ -45,6 +45,15 @@ interface AddTrustFormProps {
   entityIncome?: FlowsTabIncome | null;
   entityExpense?: FlowsTabExpense | null;
   assetFamilyMembers?: AssetsTabFamilyMember[];
+  /** Schedule modal props */
+  planEndYear?: number;
+  primaryClientBirthYear?: number;
+  initialFlowOverrides?: Array<{
+    year: number;
+    incomeAmount: number | null;
+    expenseAmount: number | null;
+    distributionPercent: number | null;
+  }>;
   onSaved: (entity: Entity, mode: "create" | "edit") => void;
   onClose: () => void;
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
@@ -92,7 +101,11 @@ export default function AddTrustForm({
   clientId, editing, household, members, externals, entities,
   initialDesignations, activeTab, accounts, liabilities, incomes, expenses,
   entityIncome, entityExpense,
-  assetFamilyMembers, onSaved, onClose, onSubmitStateChange,
+  assetFamilyMembers,
+  planEndYear,
+  primaryClientBirthYear,
+  initialFlowOverrides,
+  onSaved, onClose, onSubmitStateChange,
 }: AddTrustFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -707,7 +720,10 @@ export default function AddTrustForm({
             distributionPolicyPercent={null /* trusts don't use this in P1 */}
             taxTreatment={editing.taxTreatment ?? "ordinary"}
             planStartYear={new Date().getFullYear()}
-            defaultEndYear={new Date().getFullYear() + 30}
+            defaultEndYear={planEndYear ?? new Date().getFullYear() + 30}
+            planEndYear={planEndYear ?? new Date().getFullYear() + 30}
+            primaryClientBirthYear={primaryClientBirthYear ?? new Date().getFullYear() - 55}
+            initialFlowOverrides={initialFlowOverrides ?? []}
           />
         ) : (
           <p className="text-[13px] text-ink-3 text-center py-6">

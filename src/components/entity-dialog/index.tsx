@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import AddTrustForm from "../forms/add-trust-form";
 import BusinessForm from "./business-form";
 import { getEntityKind, type EntityKind } from "./types";
@@ -32,6 +33,9 @@ export interface EntityDialogProps {
   incomes?: AssetsTabIncome[];
   expenses?: AssetsTabExpense[];
   assetFamilyMembers?: AssetsTabFamilyMember[];
+  /** Schedule modal context — derived from client plan settings + primary client DOB */
+  planEndYear?: number;
+  primaryClientBirthYear?: number;
 }
 
 type TrustTab = "details" | "flows" | "assets" | "transfers" | "notes";
@@ -78,13 +82,38 @@ export default function EntityDialog({
   incomes,
   expenses,
   assetFamilyMembers,
+  planEndYear,
+  primaryClientBirthYear,
 }: EntityDialogProps) {
+  const searchParams = useSearchParams();
+
   const [submitState, setSubmitState] = useState<{ canSubmit: boolean; loading: boolean }>({
     canSubmit: true,
     loading: false,
   });
   const [trustTab, setTrustTab] = useState<TrustTab>("details");
   const [businessTab, setBusinessTab] = useState<BusinessTab>("details");
+
+  const [initialFlowOverrides, setInitialFlowOverrides] = useState<Array<{
+    year: number;
+    incomeAmount: number | null;
+    expenseAmount: number | null;
+    distributionPercent: number | null;
+  }>>([]);
+
+  const scenarioId = searchParams.get("scenario");
+
+  useEffect(() => {
+    if (!editing?.id || !scenarioId) return;
+    fetch(
+      `/api/clients/${clientId}/entities/${editing.id}/flow-overrides?scenarioId=${scenarioId}`,
+    )
+      .then((r) => r.json())
+      .then((j: { overrides?: Array<{ year: number; incomeAmount: number | null; expenseAmount: number | null; distributionPercent: number | null }> }) =>
+        setInitialFlowOverrides(j.overrides ?? []),
+      )
+      .catch(() => setInitialFlowOverrides([]));
+  }, [clientId, editing?.id, scenarioId]);
 
   if (!open) return null;
 
@@ -171,6 +200,9 @@ export default function EntityDialog({
           entityIncome={entityIncome}
           entityExpense={entityExpense}
           assetFamilyMembers={assetFamilyMembers}
+          planEndYear={planEndYear}
+          primaryClientBirthYear={primaryClientBirthYear}
+          initialFlowOverrides={initialFlowOverrides}
           onSaved={onSaved}
           onClose={() => onOpenChange(false)}
           onSubmitStateChange={setSubmitState}
@@ -188,6 +220,9 @@ export default function EntityDialog({
           entityExpense={entityExpense}
           assetFamilyMembers={assetFamilyMembers}
           otherEntities={otherEntities}
+          planEndYear={planEndYear}
+          primaryClientBirthYear={primaryClientBirthYear}
+          initialFlowOverrides={initialFlowOverrides}
           onSaved={onSaved}
           onClose={() => onOpenChange(false)}
           onSubmitStateChange={setSubmitState}

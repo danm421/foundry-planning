@@ -566,6 +566,16 @@ export default function FamilyView({
           incomes={initialFullIncomes}
           expenses={initialFullExpenses}
           assetFamilyMembers={initialAssetFamilyMembers}
+          primaryClientBirthYear={
+            primary.dateOfBirth
+              ? new Date(primary.dateOfBirth).getFullYear()
+              : undefined
+          }
+          planEndYear={
+            primary.dateOfBirth
+              ? new Date(primary.dateOfBirth).getFullYear() + primary.lifeExpectancy
+              : undefined
+          }
           onSaved={(e, mode) => {
             if (mode === "create") setEntities((prev) => [...prev, e]);
             else setEntities((prev) => prev.map((x) => (x.id === e.id ? e : x)));

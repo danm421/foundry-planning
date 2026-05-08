@@ -39,6 +39,15 @@ interface BusinessFormProps extends EntityFormCommonProps {
   entityExpense?: FlowsTabExpense | null;
   assetFamilyMembers?: AssetsTabFamilyMember[];
   otherEntities?: { id: string; name: string }[];
+  /** Schedule modal props */
+  planEndYear?: number;
+  primaryClientBirthYear?: number;
+  initialFlowOverrides?: Array<{
+    year: number;
+    incomeAmount: number | null;
+    expenseAmount: number | null;
+    distributionPercent: number | null;
+  }>;
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
 }
 
@@ -62,6 +71,9 @@ export default function BusinessForm({
   entityExpense,
   assetFamilyMembers,
   otherEntities,
+  planEndYear,
+  primaryClientBirthYear,
+  initialFlowOverrides,
   onSubmitStateChange,
 }: BusinessFormProps) {
   const writer = useScenarioWriter(clientId);
@@ -375,7 +387,10 @@ export default function BusinessForm({
             distributionPolicyPercent={editing.distributionPolicyPercent ?? null}
             taxTreatment={editing.taxTreatment ?? "ordinary"}
             planStartYear={new Date().getFullYear()}
-            defaultEndYear={new Date().getFullYear() + 30}
+            defaultEndYear={planEndYear ?? new Date().getFullYear() + 30}
+            planEndYear={planEndYear ?? new Date().getFullYear() + 30}
+            primaryClientBirthYear={primaryClientBirthYear ?? new Date().getFullYear() - 55}
+            initialFlowOverrides={initialFlowOverrides ?? []}
           />
         ) : (
           <p className="text-[13px] text-ink-3 text-center py-6">

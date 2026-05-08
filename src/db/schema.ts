@@ -651,6 +651,37 @@ export const trustSplitInterestDetails = pgTable(
   ],
 );
 
+export const entityFlowOverrides = pgTable(
+  "entity_flow_overrides",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    entityId: uuid("entity_id")
+      .notNull()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    scenarioId: uuid("scenario_id")
+      .notNull()
+      .references(() => scenarios.id, { onDelete: "cascade" }),
+    year: integer("year").notNull(),
+    // Sparse cells — null = use base+growth (or entity base for distribution_percent).
+    incomeAmount: decimal("income_amount", { precision: 15, scale: 2 }),
+    expenseAmount: decimal("expense_amount", { precision: 15, scale: 2 }),
+    distributionPercent: decimal("distribution_percent", { precision: 5, scale: 4 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqueEntityScenarioYear: uniqueIndex("entity_flow_overrides_entity_scenario_year_idx").on(
+      t.entityId,
+      t.scenarioId,
+      t.year,
+    ),
+    entityScenarioIdx: index("entity_flow_overrides_entity_scenario_idx").on(
+      t.entityId,
+      t.scenarioId,
+    ),
+  }),
+);
+
 export const familyMembers = pgTable("family_members", {
   id: uuid("id").defaultRandom().primaryKey(),
   clientId: uuid("client_id")
@@ -1277,6 +1308,17 @@ export const entitiesRelations = relations(entities, ({ one, many }) => ({
     references: [clients.id],
   }),
   accounts: many(accounts),
+}));
+
+export const entityFlowOverridesRelations = relations(entityFlowOverrides, ({ one }) => ({
+  entity: one(entities, {
+    fields: [entityFlowOverrides.entityId],
+    references: [entities.id],
+  }),
+  scenario: one(scenarios, {
+    fields: [entityFlowOverrides.scenarioId],
+    references: [scenarios.id],
+  }),
 }));
 
 export const familyMembersRelations = relations(familyMembers, ({ one }) => ({
