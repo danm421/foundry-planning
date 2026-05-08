@@ -683,3 +683,36 @@ describe("applyAssetSales — partial sales on synthetic accounts", () => {
     expect(result.removedLiabilityIds).toContain("mortgage-2");
   });
 });
+
+describe("applyAssetSales — §121 + partial sales", () => {
+  it("partial sale of a primary-residence buy uses per-sale §121 cap", () => {
+    const sell: AssetTransaction = {
+      id: "partial-primary",
+      name: "Partial primary residence",
+      type: "sell",
+      year: 2035,
+      accountId: "primary-1",
+      fractionSold: 0.5,
+      qualifiesForHomeSaleExclusion: true,
+    };
+    // Half-balance: sale 600_000, basis 300_000, gain 300_000.
+    // Single cap = 250_000 → taxable = 50_000.
+    const accountBalances: Record<string, number> = { "primary-1": 1_200_000, checking: 0 };
+    const basisMap: Record<string, number> = { "primary-1": 600_000, checking: 0 };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [{ id: "primary-1", category: "real_estate" } as Account],
+      liabilities: [],
+      accountBalances, basisMap,
+      accountLedgers: {
+        "primary-1": makeLedger(1_200_000),
+        checking: makeLedger(0),
+      },
+      year: 2035, defaultCheckingId: "checking", filingStatus: "single",
+    });
+    expect(result.breakdown[0].capitalGain).toBeCloseTo(300_000, 2);
+    expect(result.breakdown[0].homeSaleExclusionApplied).toBe(250_000);
+    expect(result.breakdown[0].taxableCapitalGain).toBeCloseTo(50_000, 2);
+    expect(result.capitalGains).toBeCloseTo(50_000, 2);
+  });
+});
