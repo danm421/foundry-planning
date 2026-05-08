@@ -54,10 +54,12 @@ export interface EntityInfo {
   entityType: string;
   /** Trusts only. Undefined → treat as revocable (in-estate). */
   isIrrevocable?: boolean;
-  /** Business-entity flat valuation (LLC / S-Corp / C-Corp / partnership /
-   *  other). Counts toward the in-estate Business category proportional to
-   *  family ownership. Zero / undefined for trusts and foundations. */
+  /** Business-entity flat valuation at plan start. Year-N projection is
+   *  computed inside the view-model using `valueGrowthRate` + `planStartYear`. */
   value?: number;
+  /** Annual compound growth rate for the flat business value. Null/undefined
+   *  means 0% (pre-2026 flat-value behavior). */
+  valueGrowthRate?: number | null;
   /** Per-family-member ownership of a business entity (sourced from
    *  entity_owners). Trusts leave this undefined. Sum may be < 1 for legacy
    *  rows; in that case the family-owned share is treated as fully family
@@ -80,6 +82,9 @@ export interface BuildViewModelInput {
    * (the advisor-entered current balances). "eoy" = end-of-year balances
    * for the selected year. Default: "eoy". */
   asOfMode?: AsOfMode;
+  /** Plan's first projection year — used to compound flat business values
+   *  forward to the selected year. */
+  planStartYear: number;
 }
 
 // ── Output shape ─────────────────────────────────────────────────────────────
@@ -314,7 +319,7 @@ function ownerLabelForFamily(
 // ── Builder ──────────────────────────────────────────────────────────────────
 
 export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewModel {
-  const { accounts, liabilities, entities, familyMembers, projectionYears, selectedYear, view } = input;
+  const { accounts, liabilities, entities, familyMembers, projectionYears, selectedYear, view, planStartYear } = input;
   const asOfMode: AsOfMode = input.asOfMode ?? "eoy";
 
   const yearData =
@@ -497,7 +502,9 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
   //     share so the Business category appears in their personal totals.
   for (const e of entities) {
     if (!isBusinessEntity(e)) continue;
-    const flat = e.value ?? 0;
+    const yrs = selectedYear - planStartYear;
+    const g = e.valueGrowthRate ?? 0;
+    const flat = (e.value ?? 0) * Math.pow(1 + g, yrs + 1);
     if (flat <= 0) continue;
     const familyShare = familyOwnedFraction(e);
 
@@ -921,7 +928,7 @@ function computeYearTotals(
   input: BuildViewModelInput,
   yearData: ProjectionYearLike,
 ): YearTotals {
-  const { accounts, liabilities, entities, familyMembers } = input;
+  const { accounts, liabilities, entities, familyMembers, planStartYear } = input;
   const entitiesById = new Map(entities.map((e) => [e.id, e]));
   const familyMemberById = new Map(familyMembers.map((fm) => [fm.id, fm]));
   void familyMemberById; // referenced only for symmetry with main builder
@@ -959,7 +966,9 @@ function computeYearTotals(
 
   for (const e of entities) {
     if (!isBusinessEntity(e)) continue;
-    const flat = e.value ?? 0;
+    const yrs = yearData.year - planStartYear;
+    const g = e.valueGrowthRate ?? 0;
+    const flat = (e.value ?? 0) * Math.pow(1 + g, yrs + 1);
     if (flat <= 0) continue;
     const inEstate = flat * familyOwnedFraction(e);
     if (inEstate > 0) {

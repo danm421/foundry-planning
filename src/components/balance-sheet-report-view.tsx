@@ -42,6 +42,7 @@ interface ProjectionApiResponse {
     entityType?: string;
     isIrrevocable?: boolean;
     value?: number;
+    valueGrowthRate?: number;
     owners?: Array<{ familyMemberId: string; percent: number }>;
   }>;
   familyMembers?: FamilyMember[];
@@ -121,6 +122,7 @@ export default function BalanceSheetReportView({
         entityType: e.entityType,
         isIrrevocable: fromApi?.isIrrevocable,
         value: fromApi?.value,
+        valueGrowthRate: fromApi?.valueGrowthRate,
         owners: fromApi?.owners,
       };
     });
@@ -149,6 +151,7 @@ export default function BalanceSheetReportView({
       selectedYear,
       view,
       asOfMode,
+      planStartYear: projectionYears[0]?.year ?? selectedYear,
     });
   }, [apiData, mappedAccounts, mappedLiabilities, fullEntities, mappedFamilyMembers, projectionYears, selectedAsOf, view]);
 

@@ -103,6 +103,7 @@ const baseInput: BuildViewModelInput = {
   projectionYears: [priorYear, projectionYear],
   selectedYear: 2026,
   view: "consolidated",
+  planStartYear: 2025,
 };
 
 describe("buildViewModel (consolidated)", () => {
@@ -337,5 +338,86 @@ describe("buildViewModel (edge cases)", () => {
     });
     expect(vm.liabilityRows).toEqual([]);
     expect(vm.totalLiabilities).toBe(0);
+  });
+});
+
+describe("buildViewModel — flat business value projection", () => {
+  function bizFixture(selectedYear: number, planStartYear: number = 2026): BuildViewModelInput {
+    const years = Array.from({ length: 11 }, (_, i) => ({
+      year: planStartYear + i,
+      portfolioAssets: {
+        cash: {},
+        taxable: {},
+        retirement: {},
+        realEstate: {},
+        business: {},
+        lifeInsurance: {},
+        cashTotal: 0,
+        taxableTotal: 0,
+        retirementTotal: 0,
+        realEstateTotal: 0,
+        businessTotal: 0,
+        lifeInsuranceTotal: 0,
+        total: 0,
+      },
+      liabilityBalancesBoY: {},
+      accountLedgers: {},
+    }));
+    return {
+      accounts: [],
+      liabilities: [],
+      entities: [
+        {
+          id: "ent-biz",
+          name: "Acme LLC",
+          entityType: "llc",
+          value: 10_000,
+          valueGrowthRate: 0.05,
+          owners: [{ familyMemberId: FM_CLIENT, percent: 1 }],
+        },
+      ],
+      familyMembers,
+      projectionYears: years,
+      selectedYear,
+      view: "entities",
+      planStartYear,
+    };
+  }
+
+  it("compounds the flat value to EoY of the selected year on entities view", () => {
+    const vm = buildViewModel(bizFixture(2031)); // yrs=5, EoY uses (1+g)^6
+    const expected = 10_000 * Math.pow(1.05, 6); // ≈ 13,400.96
+
+    const business = vm.assetCategories.find((c) => c.key === "business");
+    const flatRow = business?.rows.find((r) => r.rowKey.startsWith("flat:ent-biz"));
+    expect(flatRow?.value).toBeCloseTo(expected, 1);
+  });
+
+  it("at planStartYear shows EoY of year 0 = initialValue × (1+g)^1", () => {
+    const vm = buildViewModel(bizFixture(2026));
+    const expected = 10_000 * 1.05;
+
+    const business = vm.assetCategories.find((c) => c.key === "business");
+    const flatRow = business?.rows.find((r) => r.rowKey.startsWith("flat:ent-biz"));
+    expect(flatRow?.value).toBeCloseTo(expected, 1);
+  });
+
+  it("zero-growth-rate entity preserves pre-2026 flat behavior across years", () => {
+    const vm = buildViewModel({
+      ...bizFixture(2031),
+      entities: [
+        {
+          id: "ent-biz",
+          name: "Acme LLC",
+          entityType: "llc",
+          value: 10_000,
+          valueGrowthRate: 0,
+          owners: [{ familyMemberId: FM_CLIENT, percent: 1 }],
+        },
+      ],
+    });
+    const business = vm.assetCategories.find((c) => c.key === "business");
+    const flatRow = business?.rows.find((r) => r.rowKey.startsWith("flat:ent-biz"));
+    expect(flatRow?.value).toBe(10_000);
   });
 });
