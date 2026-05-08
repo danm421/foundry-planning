@@ -568,6 +568,10 @@ export const entities = pgTable("entities", {
   // distributionPolicyPercent. 'schedule' = engine reads entity_flow_overrides
   // exclusively; empty cells resolve to 0 (no fall-through to base+growth).
   flowMode: entityFlowModeEnum("flow_mode").notNull().default("annual"),
+  // Annual compound growth rate applied to the standalone equity value
+  // (entities.value). Null defaults to 0% (no growth, today's behavior).
+  // Business-entity only — trusts/foundations track value via accounts.
+  valueGrowthRate: decimal("value_growth_rate", { precision: 7, scale: 4 }),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

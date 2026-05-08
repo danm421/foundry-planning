@@ -575,6 +575,13 @@
       "when": 1778264818735,
       "tag": "0081_entity_flow_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1778266895990,
+      "tag": "0082_entity_value_growth_rate",
+      "breakpoints": true
     }
   ]
 }
