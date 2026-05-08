@@ -13,6 +13,12 @@
 import { ownersForYear } from "@/engine/ownership";
 import type { AccountOwner } from "@/engine/ownership";
 import type { ClientData, EntitySummary, GiftEvent } from "@/engine/types";
+import {
+  familyOwnedFraction,
+  inEstateWeight,
+  isBusinessEntity,
+  outOfEstateWeight,
+} from "./in-estate-weights";
 
 export interface ComputeAtYearArgs {
   tree: ClientData;
@@ -20,27 +26,6 @@ export interface ComputeAtYearArgs {
   year: number;
   projectionStartYear: number;
   accountBalances: Map<string, number>;
-}
-
-const BUSINESS_ENTITY_TYPES = new Set([
-  "llc",
-  "s_corp",
-  "c_corp",
-  "partnership",
-  "other",
-]);
-
-function isBusinessEntity(e: EntitySummary | undefined): boolean {
-  return !!e && !!e.entityType && BUSINESS_ENTITY_TYPES.has(e.entityType);
-}
-
-/** Fraction of a non-trust entity owned by household family members. Missing
- *  `owners` is treated as fully family-owned for back-compat with legacy data
- *  imported before the entity_owners table existed. */
-function familyOwnedFraction(entity: EntitySummary): number {
-  if (entity.owners == null) return 1;
-  const sum = entity.owners.reduce((s, o) => s + (o.percent ?? 0), 0);
-  return Math.max(0, Math.min(1, sum));
 }
 
 function sumAccountsWhere(
@@ -58,32 +43,6 @@ function sumAccountsWhere(
     }
   }
   return total;
-}
-
-function entityById(tree: ClientData, id: string | undefined): EntitySummary | undefined {
-  if (!id) return undefined;
-  return tree.entities?.find((e) => e.id === id);
-}
-
-/** In-estate weight (0–1) for an account-level owner slice. */
-function inEstateWeight(tree: ClientData, owner: AccountOwner): number {
-  if (owner.kind === "family_member") return 1;
-  const entity = entityById(tree, owner.entityId);
-  if (!entity) return 0;
-  if (entity.entityType === "trust") return entity.isIrrevocable ? 0 : 1;
-  if (isBusinessEntity(entity)) return familyOwnedFraction(entity);
-  // foundations and unknown entity types: out-of-estate.
-  return 0;
-}
-
-/** Out-of-estate weight (0–1) for an account-level owner slice. */
-function outOfEstateWeight(tree: ClientData, owner: AccountOwner): number {
-  if (owner.kind === "family_member") return 0;
-  const entity = entityById(tree, owner.entityId);
-  if (!entity) return 0;
-  if (entity.entityType === "trust") return entity.isIrrevocable ? 1 : 0;
-  if (isBusinessEntity(entity)) return 1 - familyOwnedFraction(entity);
-  return 1;
 }
 
 /** Sum of business-entity flat valuations weighted by `weight(entity)`. */
