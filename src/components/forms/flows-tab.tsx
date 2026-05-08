@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
@@ -48,6 +48,17 @@ const formatCurrency = (n: number) =>
 
 export default function FlowsTab(props: FlowsTabProps) {
   const writer = useScenarioWriter(props.clientId);
+
+  // Belt-and-suspenders self-heal: if this entity is missing a default-
+  // checking cash account in any base scenario, the route creates it.
+  // Fire-and-forget — backfill script is the source of truth, so silent
+  // failure here is acceptable.
+  useEffect(() => {
+    fetch(
+      `/api/clients/${props.clientId}/entities/${props.entityId}/ensure-cash`,
+      { method: "POST" },
+    ).catch(() => {});
+  }, [props.clientId, props.entityId]);
 
   return (
     <div className="space-y-6">
