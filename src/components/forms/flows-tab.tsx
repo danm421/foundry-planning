@@ -76,13 +76,10 @@ export default function FlowsTab(props: FlowsTabProps) {
     <div className="space-y-6">
       <FlowCard kind="income" {...props} writer={writer} />
       <FlowCard kind="expense" {...props} writer={writer} />
-      {isBusinessType(props.entityType) && (
-        <DistributionAndTaxSection {...props} writer={writer} />
-      )}
 
       {/* Schedule button — only shown when there is a real entity + active scenario to write to */}
       {props.entityId && scenarioId ? (
-        <div className="flex justify-end pt-2">
+        <div className="flex justify-end">
           <button
             type="button"
             onClick={() => setScheduleOpen(true)}
@@ -92,7 +89,7 @@ export default function FlowsTab(props: FlowsTabProps) {
           </button>
         </div>
       ) : (
-        <div className="flex justify-end pt-2">
+        <div className="flex justify-end">
           <button
             type="button"
             disabled
@@ -102,6 +99,10 @@ export default function FlowsTab(props: FlowsTabProps) {
             Schedule…
           </button>
         </div>
+      )}
+
+      {isBusinessType(props.entityType) && (
+        <DistributionAndTaxSection {...props} writer={writer} />
       )}
 
       {props.entityId && scenarioId && (
@@ -493,9 +494,6 @@ function DistributionAndTaxSection({
           Distribution policy (% of net income to owners)
         </label>
         <PercentInput id="flow-dist-pct" value={pct} onChange={setPct} />
-        <p className="mt-1 text-[11px] text-ink-3">
-          Engine wiring lands in Phase 3 — saving here persists the value.
-        </p>
       </div>
 
       <div>
