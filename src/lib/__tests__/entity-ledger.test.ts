@@ -140,4 +140,19 @@ describe("getEntityLedger", () => {
     expect(sum(ledger.expenses)).toBeCloseTo(row.expenses, 2);
     expect(sum(ledger.ending)).toBeCloseTo(row.endingTotalValue, 2);
   });
+
+  it("growth section emits flat-business + per-account rows", () => {
+    const { ctx } = buildBusinessFixture();
+    const ledger = getEntityLedger("ent-biz", ctx);
+
+    // Flat business growth at year 0: initialValue × ((1+g)^1 - (1+g)^0) = 10000 × 0.05 = 500
+    const flat = ledger.growth.find((r) => r.sourceKind === "flat-business");
+    expect(flat?.amount).toBeCloseTo(500, 2);
+    expect(flat?.label).toContain("Acme LLC");
+
+    // Account growth: 100% × $2,500
+    const acct = ledger.growth.find((r) => r.sourceKind === "account");
+    expect(acct?.amount).toBeCloseTo(2_500, 2);
+    expect(acct?.label).toContain("Acme Brokerage");
+  });
 });

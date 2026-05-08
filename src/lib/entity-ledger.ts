@@ -53,8 +53,51 @@ export interface EntityLedgerContext {
 }
 
 export function getEntityLedger(
-  _entityId: string,
-  _ctx: EntityLedgerContext,
+  entityId: string,
+  ctx: EntityLedgerContext,
 ): EntityLedger {
-  return { growth: [], income: [], expenses: [], ending: [] };
+  const entity = ctx.entitiesById.get(entityId);
+  if (!entity) return { growth: [], income: [], expenses: [], ending: [] };
+
+  const growth: LedgerSourceRow[] = [];
+  const income: LedgerSourceRow[] = [];
+  const expenses: LedgerSourceRow[] = [];
+  const ending: LedgerSourceRow[] = [];
+
+  const isBusiness = entity.entityType !== "trust";
+  if (isBusiness && entity.initialValue > 0) {
+    const yrs = ctx.year.year - ctx.planStartYear;
+    const g = entity.valueGrowthRate ?? 0;
+    const flatPrior = entity.initialValue * Math.pow(1 + g, yrs);
+    const flatNow = entity.initialValue * Math.pow(1 + g, yrs + 1);
+    const flatGrowth = flatNow - flatPrior;
+    if (flatGrowth !== 0) {
+      growth.push({
+        label: `${entity.name} flat value (${(g * 100).toFixed(2)}%)`,
+        amount: flatGrowth,
+        sourceKind: "flat-business",
+        sourceId: entityId,
+      });
+    }
+  }
+
+  for (const [accountId, owner] of ctx.accountEntityOwners) {
+    if (owner.entityId !== entityId) continue;
+    const ledger = ctx.year.accountLedgers[accountId];
+    if (!ledger) continue;
+    const share = owner.percent;
+    const contribution = ledger.growth * share;
+    if (contribution !== 0) {
+      const name = ctx.accountNamesById.get(accountId) ?? accountId;
+      const suffix = share === 1 ? "" : ` (${(share * 100).toFixed(0)}%)`;
+      growth.push({
+        label: `${name}${suffix}`,
+        amount: contribution,
+        sourceKind: "account",
+        sourceId: accountId,
+      });
+    }
+  }
+
+  return { growth, income, expenses, ending };
 }
