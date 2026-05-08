@@ -148,6 +148,12 @@ interface IncomeExpensesViewProps {
   resolvedInflationRate: number;
   ssClientInfo?: EngineClientInfo;
   ssPlanSettings?: PlanSettings;
+  /**
+   * Optional callback to open the entity edit dialog from the "Linked Entities"
+   * section. When omitted, those rows are still rendered (read-only) but clicks
+   * fall through. Phase 2 polish: wire this up from the consuming page.
+   */
+  onOpenEntity?: (entityId: string, tab?: "details" | "flows" | "assets" | "transfers" | "notes") => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1250,6 +1256,7 @@ export default function IncomeExpensesView({
   resolvedInflationRate,
   ssClientInfo,
   ssPlanSettings,
+  onOpenEntity,
 }: IncomeExpensesViewProps) {
   const writer = useScenarioWriter(clientId);
   const [incomeList, setIncomeList] = useState<Income[]>(initialIncomes);
@@ -1387,39 +1394,106 @@ export default function IncomeExpensesView({
           {nonSsIncomeList.length === 0 ? (
             <EmptyRow message="No income entries yet." />
           ) : (
-            INCOME_GROUPS.map((group) => {
-              const items = incomeList.filter((i) => group.types.includes(i.type));
-              if (items.length === 0) return null;
-              const subtotal = items.reduce((s, i) => s + Number(i.annualAmount), 0);
-              return (
-                <Group
-                  key={group.label}
-                  label={group.label}
-                  total={fmt(subtotal)}
-                  onAdd={() => setIncomeDialog({ open: true, defaultType: group.types[0] })}
-                >
-                  {items.map((income) => {
-                    const entityName = income.ownerEntityId ? entityMap[income.ownerEntityId]?.name : undefined;
-                    return (
-                      <Row
-                        key={income.id}
-                        onClick={() => !incomeEdit && setIncomeDialog({ open: true, editing: income })}
-                        editMode={incomeEdit}
-                        onDelete={() => setDeletingIncome(income)}
-                        label={income.name}
-                        meta={[
-                          entityName ?? individualOwnerLabel(income.owner, ownerNames),
-                          income.claimingAge ? `Claim @ ${income.claimingAge}` : null,
-                        ]}
-                        starts={yearsDescriptor(income.startYear, income.endYear, planStart, planEnd)}
-                        value={fmt(income.annualAmount)}
-                        outOfEstate={Boolean(income.ownerEntityId)}
-                      />
-                    );
-                  })}
-                </Group>
-              );
-            })
+            <>
+              {INCOME_GROUPS.map((group) => {
+                const items = incomeList.filter((i) => group.types.includes(i.type));
+                if (items.length === 0) return null;
+                const subtotal = items.reduce((s, i) => s + Number(i.annualAmount), 0);
+                return (
+                  <Group
+                    key={group.label}
+                    label={group.label}
+                    total={fmt(subtotal)}
+                    onAdd={() => setIncomeDialog({ open: true, defaultType: group.types[0] })}
+                  >
+                    {items.map((income) => {
+                      const entityName = income.ownerEntityId
+                        ? entityMap[income.ownerEntityId]?.name
+                        : undefined;
+                      return (
+                        <Row
+                          key={income.id}
+                          onClick={() => !incomeEdit && setIncomeDialog({ open: true, editing: income })}
+                          editMode={incomeEdit}
+                          onDelete={() => setDeletingIncome(income)}
+                          label={income.name}
+                          meta={[
+                            entityName ?? individualOwnerLabel(income.owner, ownerNames),
+                            income.claimingAge ? `Claim @ ${income.claimingAge}` : null,
+                          ]}
+                          starts={yearsDescriptor(income.startYear, income.endYear, planStart, planEnd)}
+                          value={fmt(income.annualAmount)}
+                          outOfEstate={Boolean(income.ownerEntityId)}
+                        />
+                      );
+                    })}
+                  </Group>
+                );
+              })}
+
+              {(() => {
+                // "Linked Entities" — read-only rollup of incomes/expenses that
+                // are owned by a trust or business. Filter to ids present in
+                // entityMap so orphaned data doesn't render a placeholder row.
+                const linkedIncomes = incomeList.filter(
+                  (i) => i.ownerEntityId && entityMap[i.ownerEntityId],
+                );
+                const linkedExpenses = expenseList.filter(
+                  (e) => e.ownerEntityId && entityMap[e.ownerEntityId],
+                );
+                if (linkedIncomes.length === 0 && linkedExpenses.length === 0) return null;
+                const byEntity = new Map<
+                  string,
+                  { incomes: typeof linkedIncomes; expenses: typeof linkedExpenses; name: string }
+                >();
+                for (const i of linkedIncomes) {
+                  const id = i.ownerEntityId!;
+                  const bucket =
+                    byEntity.get(id) ?? { incomes: [], expenses: [], name: entityMap[id].name };
+                  bucket.incomes.push(i);
+                  byEntity.set(id, bucket);
+                }
+                for (const e of linkedExpenses) {
+                  const id = e.ownerEntityId!;
+                  const bucket =
+                    byEntity.get(id) ?? { incomes: [], expenses: [], name: entityMap[id].name };
+                  bucket.expenses.push(e);
+                  byEntity.set(id, bucket);
+                }
+                return (
+                  <Group label="Linked Entities" total="">
+                    {[...byEntity.entries()].map(([entId, b]) => {
+                      const incomeTotal = b.incomes.reduce(
+                        (s, i) => s + Number(i.annualAmount),
+                        0,
+                      );
+                      const expenseTotal = b.expenses.reduce(
+                        (s, e) => s + Number(e.annualAmount),
+                        0,
+                      );
+                      return (
+                        <Row
+                          key={entId}
+                          onClick={onOpenEntity ? () => onOpenEntity(entId, "flows") : undefined}
+                          editMode={false}
+                          label={b.name}
+                          meta={[
+                            b.incomes.length > 0
+                              ? `${b.incomes.length} income${b.incomes.length === 1 ? "" : "s"}`
+                              : null,
+                            b.expenses.length > 0
+                              ? `${b.expenses.length} expense${b.expenses.length === 1 ? "" : "s"}`
+                              : null,
+                          ]}
+                          value={fmt(incomeTotal - expenseTotal)}
+                          outOfEstate
+                        />
+                      );
+                    })}
+                  </Group>
+                );
+              })()}
+            </>
           )}
 
           {ssClientInfo && ssPlanSettings && (
@@ -1681,7 +1755,7 @@ function Group({
 }: {
   label: string;
   total: string;
-  onAdd: () => void;
+  onAdd?: () => void;
   children: React.ReactNode;
 }) {
   return (
@@ -1689,7 +1763,7 @@ function Group({
       <div className="flex items-center justify-between bg-gray-900/70 px-4 py-2">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wider text-gray-300">{label}</span>
-          <AddGroupButton onClick={onAdd} label={`Add to ${label}`} />
+          {onAdd && <AddGroupButton onClick={onAdd} label={`Add to ${label}`} />}
         </div>
         <span className="text-xs text-gray-400">{total}</span>
       </div>
@@ -1708,9 +1782,9 @@ function Row({
   value,
   outOfEstate,
 }: {
-  onClick: () => void;
+  onClick?: () => void;
   editMode: boolean;
-  onDelete: () => void;
+  onDelete?: () => void;
   label: string;
   meta?: (string | null | undefined)[];
   starts?: string;
@@ -1718,12 +1792,13 @@ function Row({
   outOfEstate?: boolean;
 }) {
   const metaLine = (meta ?? []).filter(Boolean).join(" · ");
+  const interactive = Boolean(onClick);
   return (
     <div
       onClick={onClick}
-      className={`flex cursor-pointer items-center justify-between gap-3 px-4 py-2 hover:bg-gray-800/60 ${
-        outOfEstate ? "bg-amber-950/10" : ""
-      }`}
+      className={`flex items-center justify-between gap-3 px-4 py-2 ${
+        interactive ? "cursor-pointer hover:bg-gray-800/60" : ""
+      } ${outOfEstate ? "bg-amber-950/10" : ""}`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -1741,7 +1816,7 @@ function Row({
           <span className="min-w-[72px] text-right text-xs text-gray-400">{starts}</span>
         )}
         <span className="min-w-[88px] text-right text-sm font-medium text-gray-100">{value}</span>
-        {editMode && (
+        {editMode && onDelete && (
           <button
             onClick={(e) => {
               e.stopPropagation();
