@@ -3399,6 +3399,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     giftsByEntityYear,
     incomes: currentIncomes,
     expenses: lastAllExpenses,
+    entityFlowOverrides: data.entityFlowOverrides ?? [],
   });
 
   return years;
