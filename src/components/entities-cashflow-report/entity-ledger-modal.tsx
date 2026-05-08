@@ -66,21 +66,35 @@ export default function EntityLedgerModal({
               </tr>
             </thead>
             <tbody className="text-gray-100">
-              {rows.map((r, i) => (
-                <tr
-                  key={`${r.sourceKind}:${r.sourceId ?? i}`}
-                  className="border-b border-gray-800/60 last:border-b-0"
-                >
-                  <td className="px-2 py-1.5 text-left">{r.label}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
-                    {formatCurrency(r.amount)}
-                  </td>
-                </tr>
-              ))}
+              {rows.map((r, i) => {
+                const isAnchor = r.sourceKind === "walk-anchor";
+                const isNegative = r.amount < 0;
+                return (
+                  <tr
+                    key={`${r.sourceKind}:${r.sourceId ?? i}`}
+                    className={
+                      isAnchor
+                        ? "border-b-2 border-gray-700 font-medium"
+                        : "border-b border-gray-800/60 last:border-b-0"
+                    }
+                  >
+                    <td className="px-2 py-1.5 text-left">{r.label}</td>
+                    <td
+                      className={`px-2 py-1.5 text-right tabular-nums ${
+                        isNegative ? "text-rose-300" : ""
+                      }`}
+                    >
+                      {formatCurrency(r.amount)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
             <tfoot className="text-gray-100">
               <tr className="border-t border-gray-700 font-semibold">
-                <td className="px-2 py-2 text-left">Total</td>
+                <td className="px-2 py-2 text-left">
+                  {section === "ending" ? "End of year" : "Total"}
+                </td>
                 <td className="px-2 py-2 text-right tabular-nums">{formatCurrency(total)}</td>
               </tr>
               {!reconciles && (

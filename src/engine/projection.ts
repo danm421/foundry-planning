@@ -3430,16 +3430,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       valueGrowthRate: entity.valueGrowthRate ?? null,
     });
   }
-  // Account → entity-owner map. Only fully entity-owned accounts (a single
-  // entity owner with percent === 1) participate; mixed-ownership is out of
-  // scope for v1.
+  // Account → entity-owner map. Any account with an entity-owner row
+  // contributes to that entity's rollup at its share percent (split
+  // ownership with a family member is supported). Accounts split between
+  // multiple entities are not yet modeled — the first entity-owner wins.
   const accountEntityOwners = new Map<string, { entityId: string; percent: number }>();
   for (const acct of data.accounts) {
-    if (!isFullyEntityOwned(acct)) continue;
     const entityOwner = acct.owners.find((o) => o.kind === "entity") as
       | { kind: "entity"; entityId: string; percent: number }
       | undefined;
-    if (entityOwner && entityOwner.percent === 1) {
+    if (entityOwner) {
       accountEntityOwners.set(acct.id, {
         entityId: entityOwner.entityId,
         percent: entityOwner.percent,

@@ -24,7 +24,11 @@ export type LedgerSourceKind =
   | "account"
   | "flow-base"
   | "flow-override"
-  | "account-entry";
+  | "account-entry"
+  /** Ending-section anchor row: beginning-of-year balance the deltas accrete on. */
+  | "walk-anchor"
+  /** Ending-section signed delta (growth, income +, expenses −, distributions −, etc). */
+  | "walk-flow";
 
 export interface LedgerSourceRow {
   label: string;
@@ -136,16 +140,6 @@ export function getEntityLedger(
         sourceId: `${accountId}:${entry.sourceId ?? entry.label ?? entry.category}`,
       });
     }
-
-    const endingContribution = ledger.endingValue * share;
-    if (endingContribution !== 0) {
-      ending.push({
-        label: `${name}${suffix} — ending`,
-        amount: endingContribution,
-        sourceKind: "account",
-        sourceId: accountId,
-      });
-    }
   }
 
   if (flowDetail) {
@@ -169,38 +163,62 @@ export function getEntityLedger(
     }
   }
 
-  if (isBusiness && entity.initialValue > 0) {
-    const { now: flatNow } = flatBusinessValueAt(
-      entity.initialValue,
-      entity.valueGrowthRate,
-      ctx.year.year,
-      ctx.planStartYear,
-    );
-    if (flatNow !== 0) {
+  // ── Ending section: year-walk (BoY + signed flows = EoY) ──────────────
+  const row = ctx.year.entityCashFlow.get(entityId);
+  if (row?.kind === "business") {
+    ending.push({
+      label: "Beginning of year",
+      amount: row.beginningTotalValue,
+      sourceKind: "walk-anchor",
+      sourceId: `${entityId}:boy`,
+    });
+    if (row.growth !== 0) {
       ending.push({
-        label: `${entity.name} flat value (EoY)`,
-        amount: flatNow,
-        sourceKind: "flat-business",
-        sourceId: entityId,
+        label: "Business growth",
+        amount: row.growth,
+        sourceKind: "walk-flow",
+        sourceId: `${entityId}:growth`,
       });
     }
-  }
-
-  // Retained earnings is the bridging item that closes the math:
-  // row.endingTotalValue = beginningTotalValue + growth + retainedEarnings.
-  // The aggregator's ending section is built from EoY snapshots (flat now +
-  // account ending) which capture flat growth and account growth. Append
-  // the residual as its own row so Σ(ending) reconciles exactly.
-  const row = ctx.year.entityCashFlow.get(entityId);
-  if (row?.kind === "business" && row.retainedEarnings !== 0) {
-    const sumSoFar = ending.reduce((a, r) => a + r.amount, 0);
-    const gap = row.endingTotalValue - sumSoFar;
-    if (Math.abs(gap) > 0.01) {
+    if (row.income !== 0) {
       ending.push({
-        label: "Retained earnings",
-        amount: gap,
-        sourceKind: "flat-business",
-        sourceId: entityId,
+        label: "Business income",
+        amount: row.income,
+        sourceKind: "walk-flow",
+        sourceId: `${entityId}:income`,
+      });
+    }
+    if (row.expenses !== 0) {
+      ending.push({
+        label: "Business expenses",
+        amount: -row.expenses,
+        sourceKind: "walk-flow",
+        sourceId: `${entityId}:expenses`,
+      });
+    }
+    if (row.annualDistribution !== 0) {
+      ending.push({
+        label: "Annual distribution",
+        amount: -row.annualDistribution,
+        sourceKind: "walk-flow",
+        sourceId: `${entityId}:distribution`,
+      });
+    }
+  } else if (row?.kind === "trust") {
+    // Trust ending balance is a snapshot of held-account ending values.
+    // The trust's row income/expenses/taxes/distributions are descriptive
+    // rollups that already net through the account ledgers — surfacing them
+    // again as walk deltas would double-count. Show the snapshot instead.
+    for (const { accountId, share, name, suffix } of ownedAccounts) {
+      const ledger = ctx.year.accountLedgers[accountId];
+      if (!ledger) continue;
+      const contribution = ledger.endingValue * share;
+      if (contribution === 0) continue;
+      ending.push({
+        label: `${name}${suffix} — ending`,
+        amount: contribution,
+        sourceKind: "account",
+        sourceId: accountId,
       });
     }
   }
