@@ -1,5 +1,5 @@
 {
-  "id": "0843f342-194d-491b-addb-b99e568a06e7",
+  "id": "2e90f790-e8b6-4798-8421-cb086f110077",
   "prevId": "c2d17384-0bd2-40d3-a147-c9fedeec2656",
   "version": "7",
   "dialect": "postgresql",
@@ -755,6 +755,18 @@
           "notNull": true,
           "default": false
         },
+        "purchase_transaction_id": {
+          "name": "purchase_transaction_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fraction_sold": {
+          "name": "fraction_sold",
+          "type": "numeric(7, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "asset_name": {
           "name": "asset_name",
           "type": "text",
@@ -892,6 +904,19 @@
           "tableTo": "accounts",
           "columnsFrom": [
             "proceeds_account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "asset_transactions_purchase_transaction_id_asset_transactions_id_fk": {
+          "name": "asset_transactions_purchase_transaction_id_asset_transactions_id_fk",
+          "tableFrom": "asset_transactions",
+          "tableTo": "asset_transactions",
+          "columnsFrom": [
+            "purchase_transaction_id"
           ],
           "columnsTo": [
             "id"
@@ -2457,152 +2482,6 @@
           "tableTo": "clients",
           "columnsFrom": [
             "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.entity_flow_overrides": {
-      "name": "entity_flow_overrides",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "entity_id": {
-          "name": "entity_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scenario_id": {
-          "name": "scenario_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "year": {
-          "name": "year",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "income_amount": {
-          "name": "income_amount",
-          "type": "numeric(15, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expense_amount": {
-          "name": "expense_amount",
-          "type": "numeric(15, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "distribution_percent": {
-          "name": "distribution_percent",
-          "type": "numeric(5, 4)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "entity_flow_overrides_entity_scenario_year_idx": {
-          "name": "entity_flow_overrides_entity_scenario_year_idx",
-          "columns": [
-            {
-              "expression": "entity_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scenario_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "year",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "entity_flow_overrides_entity_scenario_idx": {
-          "name": "entity_flow_overrides_entity_scenario_idx",
-          "columns": [
-            {
-              "expression": "entity_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scenario_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "entity_flow_overrides_entity_id_entities_id_fk": {
-          "name": "entity_flow_overrides_entity_id_entities_id_fk",
-          "tableFrom": "entity_flow_overrides",
-          "tableTo": "entities",
-          "columnsFrom": [
-            "entity_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "entity_flow_overrides_scenario_id_scenarios_id_fk": {
-          "name": "entity_flow_overrides_scenario_id_scenarios_id_fk",
-          "tableFrom": "entity_flow_overrides",
-          "tableTo": "scenarios",
-          "columnsFrom": [
-            "scenario_id"
           ],
           "columnsTo": [
             "id"

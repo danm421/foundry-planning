@@ -19,6 +19,7 @@ import {
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations, sql, type InferSelectModel, type InferInsertModel } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { BracketTier } from "@/lib/tax/types";
 import type { ReportPagesPersisted } from "@/lib/reports/types";
 
@@ -2014,6 +2015,17 @@ export const assetTransactions = pgTable("asset_transactions", {
   qualifiesForHomeSaleExclusion: boolean("qualifies_for_home_sale_exclusion")
     .notNull()
     .default(false),
+  // Resell: link from a sell row to the buy row whose synthetic asset is being
+  // sold. Mutually exclusive with accountId on sells (enforced by CHECK +
+  // route-level Zod). ON DELETE SET NULL realizes the orphan-on-buy-delete
+  // model — see add-asset-transaction-form.tsx for the "must re-source" UX.
+  purchaseTransactionId: uuid("purchase_transaction_id").references(
+    (): AnyPgColumn => assetTransactions.id,
+    { onDelete: "set null" },
+  ),
+  // Partial-sale fraction. null = full sale (today's binary behavior). 0 < x ≤ 1
+  // = partial. Sell-only via CHECK; null on buys.
+  fractionSold: decimal("fraction_sold", { precision: 7, scale: 6 }),
   // Buy fields
   assetName: text("asset_name"),
   assetCategory: accountCategoryEnum("asset_category"),
