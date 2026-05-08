@@ -2041,7 +2041,28 @@ export const assetTransactions = pgTable("asset_transactions", {
   mortgageTermMonths: integer("mortgage_term_months"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+},
+(t) => [
+  // Sells have AT MOST one source. Both-null is allowed temporarily when the
+  // referenced buy is deleted (FK SET NULL cascade). Both-non-null is never legal.
+  check(
+    "asset_transactions_sell_source_check",
+    sql`${t.type} <> 'sell' OR NOT (${t.accountId} IS NOT NULL AND ${t.purchaseTransactionId} IS NOT NULL)`,
+  ),
+  // Buys never carry sell-side fields.
+  check(
+    "asset_transactions_buy_no_source_check",
+    sql`${t.type} <> 'buy' OR (${t.purchaseTransactionId} IS NULL AND ${t.accountId} IS NULL AND ${t.fractionSold} IS NULL)`,
+  ),
+  // fraction_sold must be in (0, 1] when present.
+  check(
+    "asset_transactions_fraction_sold_range_check",
+    sql`${t.fractionSold} IS NULL OR (${t.fractionSold} > 0 AND ${t.fractionSold} <= 1)`,
+  ),
+  index("asset_transactions_purchase_idx")
+    .on(t.purchaseTransactionId)
+    .where(sql`${t.purchaseTransactionId} IS NOT NULL`),
+]);
 
 export const reportComments = pgTable(
   "report_comments",
