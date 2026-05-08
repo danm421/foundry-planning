@@ -498,7 +498,6 @@ function IncomeDialog({
       growthRate: String(Number(growthRateDisplay) / 100),
       growthSource,
       owner: data.get("owner") as string,
-      linkedEntityId: data.get("linkedEntityId") || null,
       cashAccountId: cashAccountId || null,
       // "Today's dollars" mode inflates the amount from plan start through the
       // entry's startYear so retirement-era amounts can be entered in current
@@ -569,8 +568,6 @@ function IncomeDialog({
       setLoading(false);
     }
   }
-
-  const needsLinkedEntity = type === "business" || type === "trust";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -792,25 +789,6 @@ function IncomeDialog({
               </>
             )}
           </div>
-
-          {needsLinkedEntity && accounts.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-300" htmlFor="inc-linked">
-                Linked Account (optional)
-              </label>
-              <select
-                id="inc-linked"
-                name="linkedEntityId"
-                defaultValue={editing?.linkedEntityId ?? ""}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                <option value="">None</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
 
           <CashAccountPicker
             id="inc-cash"
@@ -1470,9 +1448,6 @@ export default function IncomeExpensesView({
                         meta={[
                           entityName ?? individualOwnerLabel(income.owner, ownerNames),
                           income.claimingAge ? `Claim @ ${income.claimingAge}` : null,
-                          income.linkedEntityId && accountMap[income.linkedEntityId]
-                            ? accountMap[income.linkedEntityId].name
-                            : null,
                         ]}
                         starts={yearsDescriptor(income.startYear, income.endYear, planStart, planEnd)}
                         value={fmt(income.annualAmount)}
