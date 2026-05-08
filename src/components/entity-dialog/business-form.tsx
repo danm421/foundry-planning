@@ -6,6 +6,7 @@ import type { Entity } from "../family-view";
 import type { EntityFormCommonProps } from "./types";
 import { selectClassName, fieldLabelClassName, inputClassName, textareaClassName } from "../forms/input-styles";
 import { CurrencyInput } from "../currency-input";
+import { PercentInput } from "../percent-input";
 import { OwnershipEditor } from "../forms/ownership-editor";
 import type { AccountOwner } from "@/engine/ownership";
 import AssetsTab, {
@@ -94,6 +95,13 @@ export default function BusinessForm({
   const [isGrantor, setIsGrantor] = useState<boolean>(editing?.isGrantor ?? false);
   const [value, setValue] = useState<string>(editing?.value ?? "");
   const [basis, setBasis] = useState<string>(editing?.basis ?? "");
+  // valueGrowthRate is stored as a decimal (0.05 = 5%); the input renders %.
+  // Number() collapses trailing zeros: 0.05 → "5", 0.0525 → "5.25", 0.10 → "10".
+  const [valueGrowthRate, setValueGrowthRate] = useState<string>(
+    editing?.valueGrowthRate != null
+      ? String(Number((editing.valueGrowthRate * 100).toFixed(4)))
+      : "",
+  );
   const [owners, setOwners] = useState<AccountOwner[]>(
     editing?.owners && editing.owners.length > 0 ? editing.owners : defaultOwners(familyMembers),
   );
@@ -185,6 +193,8 @@ export default function BusinessForm({
       isGrantor,
       value: value || "0",
       basis: basis || "0",
+      valueGrowthRate:
+        valueGrowthRate.trim() === "" ? null : Number(valueGrowthRate) / 100,
       owners: familyOnly.map((o) => ({ familyMemberId: o.familyMemberId, percent: o.percent })),
       grantor: null,
       beneficiaries: null,
@@ -292,31 +302,49 @@ export default function BusinessForm({
             />
           </div>
 
-          <div>
-            <label className={fieldLabelClassName} htmlFor="ent-value">
-              Current Value ($)
-            </label>
-            <CurrencyInput
-              id="ent-value"
-              value={value}
-              onChange={(raw) => setValue(raw)}
-              className={inputClassName}
-            />
-            <p className="mt-1 text-xs text-gray-400">
-              Standalone equity value. Owned accounts are tracked separately on the Assets tab.
-            </p>
-          </div>
+          <div className="col-span-2 grid grid-cols-3 gap-4">
+            <div>
+              <label className={fieldLabelClassName} htmlFor="ent-value">
+                Current Value ($)
+              </label>
+              <CurrencyInput
+                id="ent-value"
+                value={value}
+                onChange={(raw) => setValue(raw)}
+                className={inputClassName}
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Standalone equity value. Owned accounts are tracked separately on the Assets tab.
+              </p>
+            </div>
 
-          <div>
-            <label className={fieldLabelClassName} htmlFor="ent-basis">
-              Cost Basis ($)
-            </label>
-            <CurrencyInput
-              id="ent-basis"
-              value={basis}
-              onChange={(raw) => setBasis(raw)}
-              className={inputClassName}
-            />
+            <div>
+              <label className={fieldLabelClassName} htmlFor="ent-basis">
+                Cost Basis ($)
+              </label>
+              <CurrencyInput
+                id="ent-basis"
+                value={basis}
+                onChange={(raw) => setBasis(raw)}
+                className={inputClassName}
+              />
+            </div>
+
+            <div>
+              <label className={fieldLabelClassName} htmlFor="ent-value-growth">
+                Growth (%/yr)
+              </label>
+              <PercentInput
+                id="ent-value-growth"
+                value={valueGrowthRate}
+                onChange={(raw) => setValueGrowthRate(raw)}
+                className={inputClassName}
+                placeholder="0"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Annual compound growth applied to Current Value. Blank = 0%.
+              </p>
+            </div>
           </div>
         </div>
 

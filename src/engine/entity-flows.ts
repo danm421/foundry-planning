@@ -60,19 +60,31 @@ export function resolveDistributionPercent(
   return 1.0;
 }
 
-/** Sum of (income amounts − expense amounts) for the given business entity in
- *  year Y. Counts rows where ownerEntityId matches; values resolved via
- *  resolveEntityFlowAmount.
- *  Negative result means the entity ran a loss this year (P3-8: losses are
- *  retained in the entity, not carried forward). */
-export function computeBusinessEntityNetIncome(
+/** Resolve total entity income & expense for a business entity in year Y.
+ *
+ *  Schedule mode is the source-of-truth for the schedule grid: the engine
+ *  reads the (entityId, year) override row's incomeAmount/expenseAmount
+ *  scalars directly. Base income/expense rows are NOT consulted — this
+ *  means a user can populate the grid without first creating placeholder
+ *  base rows, and the projection still picks up those flows.
+ *
+ *  Annual mode keeps the legacy behavior: iterate over base rows where
+ *  ownerEntityId matches, applying per-year overrides (sparse) on top. */
+export function resolveEntityFlows(
   entityId: string,
   incomes: Income[],
   expenses: Expense[],
   year: number,
   overrides: EntityFlowOverride[] = [],
   flowMode: EntityFlowMode = "annual",
-): number {
+): { income: number; expense: number } {
+  if (flowMode === "schedule") {
+    const ovr = overrides.find((o) => o.entityId === entityId && o.year === year);
+    return {
+      income: ovr?.incomeAmount ?? 0,
+      expense: ovr?.expenseAmount ?? 0,
+    };
+  }
   let income = 0;
   for (const inc of incomes) {
     if (inc.ownerEntityId !== entityId) continue;
@@ -83,5 +95,27 @@ export function computeBusinessEntityNetIncome(
     if (exp.ownerEntityId !== entityId) continue;
     expense += resolveEntityFlowAmount(exp, entityId, "expense", year, overrides, flowMode);
   }
+  return { income, expense };
+}
+
+/** Sum of (income amounts − expense amounts) for the given business entity in
+ *  year Y. Negative result means the entity ran a loss this year (P3-8:
+ *  losses are retained in the entity, not carried forward). */
+export function computeBusinessEntityNetIncome(
+  entityId: string,
+  incomes: Income[],
+  expenses: Expense[],
+  year: number,
+  overrides: EntityFlowOverride[] = [],
+  flowMode: EntityFlowMode = "annual",
+): number {
+  const { income, expense } = resolveEntityFlows(
+    entityId,
+    incomes,
+    expenses,
+    year,
+    overrides,
+    flowMode,
+  );
   return income - expense;
 }

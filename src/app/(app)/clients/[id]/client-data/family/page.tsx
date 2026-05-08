@@ -125,6 +125,7 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
       ? Number(e.distributionPolicyPercent)
       : null,
     flowMode: e.flowMode,
+    valueGrowthRate: e.valueGrowthRate != null ? Number(e.valueGrowthRate) : null,
   }));
 
   const externals: ExternalBeneficiary[] = externalRows.map((e) => ({

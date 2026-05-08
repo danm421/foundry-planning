@@ -414,6 +414,111 @@ describe("computeEntityCashFlow", () => {
     expect(row.endingTotalValue).toBe(50_000_000);       // BoY + 0 growth + 0 retained
     expect(row.endingBasis).toBe(1_000_000);
   });
+
+  it("compounds business flat value at valueGrowthRate starting in year 1", () => {
+    const llc = {
+      id: "llc-1",
+      name: "Smith Holdings",
+      entityType: "llc" as const,
+      trustSubType: null,
+      isGrantor: false,
+      initialValue: 1_000_000,
+      initialBasis: 0,
+      valueGrowthRate: 0.05,
+    };
+    const years = [makeYear(2026), makeYear(2027), makeYear(2028)];
+    computeEntityCashFlow({
+      years,
+      entitiesById: new Map([["llc-1", llc]]),
+      accountEntityOwners: new Map(),
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+      entityFlowOverrides: [],
+    });
+
+    const r0 = years[0].entityCashFlow.get("llc-1")!;
+    const r1 = years[1].entityCashFlow.get("llc-1")!;
+    const r2 = years[2].entityCashFlow.get("llc-1")!;
+    if (r0.kind !== "business" || r1.kind !== "business" || r2.kind !== "business") {
+      throw new Error("expected business rows");
+    }
+
+    // Year 1 (planStart): BoY = initialValue, grows by 5% during the year.
+    expect(r0.beginningTotalValue).toBe(1_000_000);
+    expect(r0.growth).toBeCloseTo(50_000, 6);
+    expect(r0.endingTotalValue).toBeCloseTo(1_050_000, 6);
+
+    // Year 2: BoY matches Y1 ending; grows by 1,050,000 * 5% = 52,500.
+    expect(r1.beginningTotalValue).toBeCloseTo(1_050_000, 6);
+    expect(r1.growth).toBeCloseTo(52_500, 6);
+    expect(r1.endingTotalValue).toBeCloseTo(1_102_500, 6);
+
+    // Year 3: BoY matches Y2 ending; grows by 1,102,500 * 5% = 55,125.
+    expect(r2.beginningTotalValue).toBeCloseTo(1_102_500, 6);
+    expect(r2.growth).toBeCloseTo(55_125, 6);
+    expect(r2.endingTotalValue).toBeCloseTo(1_157_625, 6);
+  });
+
+  it("schedule mode: business income/expense come from override scalars even without base rows", () => {
+    const llc = {
+      id: "llc-1",
+      name: "Schedule LLC",
+      entityType: "llc" as const,
+      trustSubType: null,
+      isGrantor: false,
+      initialValue: 0,
+      initialBasis: 0,
+      flowMode: "schedule" as const,
+    };
+    const y = makeYear(2026);
+    computeEntityCashFlow({
+      years: [y],
+      entitiesById: new Map([["llc-1", llc]]),
+      accountEntityOwners: new Map(),
+      giftsByEntityYear: new Map(),
+      // No base rows — schedule grid is the source of truth.
+      incomes: [],
+      expenses: [],
+      entityFlowOverrides: [
+        { entityId: "llc-1", year: 2026, incomeAmount: 10_000, expenseAmount: 1_000, distributionPercent: 1 },
+      ],
+    });
+    const row = y.entityCashFlow.get("llc-1")!;
+    if (row.kind !== "business") throw new Error("expected business row");
+    expect(row.income).toBe(10_000);
+    expect(row.expenses).toBe(1_000);
+  });
+
+  it("treats null valueGrowthRate as 0 — flat value stays constant year over year", () => {
+    const llc = {
+      id: "llc-1",
+      name: "Static Co",
+      entityType: "llc" as const,
+      trustSubType: null,
+      isGrantor: false,
+      initialValue: 750_000,
+      initialBasis: 0,
+      valueGrowthRate: null,
+    };
+    const years = [makeYear(2026), makeYear(2027), makeYear(2028)];
+    computeEntityCashFlow({
+      years,
+      entitiesById: new Map([["llc-1", llc]]),
+      accountEntityOwners: new Map(),
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+      entityFlowOverrides: [],
+    });
+    for (const y of years) {
+      const row = y.entityCashFlow.get("llc-1")!;
+      if (row.kind !== "business") throw new Error("expected business row");
+      expect(row.beginningTotalValue).toBe(750_000);
+      expect(row.growth).toBe(0);
+      expect(row.endingTotalValue).toBe(750_000);
+    }
+  });
 });
 
 // ── Integration: runProjection wires computeEntityCashFlow ──────────────────

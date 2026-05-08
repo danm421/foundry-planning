@@ -111,6 +111,9 @@ const baseEntityFields = {
   taxTreatment: z.enum(["qbi", "ordinary", "non_taxable"]).optional(),
   distributionPolicyPercent: z.number().min(0).max(1).optional().nullable(),
   flowMode: z.enum(["annual", "schedule"]).optional(),
+  /** Annual compound growth rate applied to the standalone equity value
+   *  (`value`). Null = 0% (today's behavior). Business-entity only. */
+  valueGrowthRate: z.number().min(0).max(1).optional().nullable(),
   splitInterest: trustSplitInterestSchema.optional(),
 };
 

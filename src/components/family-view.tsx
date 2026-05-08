@@ -61,6 +61,9 @@ export interface Entity {
   taxTreatment?: "qbi" | "ordinary" | "non_taxable";
   distributionPolicyPercent?: number | null;
   flowMode?: EntityFlowMode;
+  /** Annual compound growth rate for the standalone equity value (`value`).
+   *  Null = 0% (today's behavior). Business-entity only. */
+  valueGrowthRate?: number | null;
 }
 
 export type Gift = {

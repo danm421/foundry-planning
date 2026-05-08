@@ -1,6 +1,6 @@
 // src/engine/entity-cashflow.ts
 import type { ProjectionYear, Income, Expense, EntityFlowMode, EntityFlowOverride } from "./types";
-import { resolveEntityFlowAmount } from "./entity-flows";
+import { resolveEntityFlows } from "./entity-flows";
 import type { trustSubTypeEnum } from "@/db/schema";
 
 type TrustSubType = (typeof trustSubTypeEnum.enumValues)[number];
@@ -52,6 +52,10 @@ export interface EntityMetadata {
   initialValue: number;
   initialBasis: number;
   flowMode?: EntityFlowMode;
+  /** Annual compound growth rate applied to `initialValue`. Null/undefined
+   *  means 0 (no growth — preserves the pre-2026 flat-value behavior).
+   *  Business-entity only. */
+  valueGrowthRate?: number | null;
 }
 
 export interface ComputeEntityCashFlowInput {
@@ -91,6 +95,8 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
     list.push(accountId);
     accountsByEntity.set(owner.entityId, list);
   }
+
+  const planStart = years[0]?.year ?? 0;
 
   for (const year of years) {
     for (const [entityId, entity] of entitiesById) {
@@ -159,24 +165,32 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
         });
       } else {
         // Business branch: llc | s_corp | c_corp | partnership | foundation | other.
-        // Flat-value growth is 0 in v1 — see "Out of scope" in the spec.
-        const beginningTotalValue = entity.initialValue + beginningBalance;
-        const totalGrowth = growth; // entity-owned account growth only
+        // Flat-value compounding: the standalone equity value (entity.initialValue)
+        // grows during every projection year at entity.valueGrowthRate (null =
+        // 0% — pre-2026 behavior). Year 1 BoY = initialValue, EoY = initialValue
+        // × (1 + g); year 2 BoY picks up where year 1 left off, and so on. This
+        // matches how account ledgers grow (BoY → growth → EoY).
+        const yrs = year.year - planStart;
+        const g = entity.valueGrowthRate ?? 0;
+        const flatValuePrior = entity.initialValue * Math.pow(1 + g, yrs);
+        const flatValueNow = entity.initialValue * Math.pow(1 + g, yrs + 1);
+        const flatGrowthThisYear = flatValueNow - flatValuePrior;
+        const beginningTotalValue = flatValuePrior + beginningBalance;
+        const totalGrowth = growth + flatGrowthThisYear;
 
-        // Derive per-entity gross income/expenses via resolveEntityFlowAmount
-        // so Phase 2 per-year overrides win + the same inflate-from convention
-        // applies as in computeBusinessEntityNetIncome.
-        let bizIncome = 0;
-        let bizExpenses = 0;
+        // Derive per-entity gross income/expenses via resolveEntityFlows so
+        // Phase 2 per-year overrides win + the same inflate-from convention
+        // applies as in computeBusinessEntityNetIncome. Schedule mode reads
+        // the override grid directly (no base row required).
         const flowMode = entity.flowMode ?? "annual";
-        for (const inc of input.incomes) {
-          if (inc.ownerEntityId !== entityId) continue;
-          bizIncome += resolveEntityFlowAmount(inc, entityId, "income", year.year, input.entityFlowOverrides, flowMode);
-        }
-        for (const exp of input.expenses) {
-          if (exp.ownerEntityId !== entityId) continue;
-          bizExpenses += resolveEntityFlowAmount(exp, entityId, "expense", year.year, input.entityFlowOverrides, flowMode);
-        }
+        const { income: bizIncome, expense: bizExpenses } = resolveEntityFlows(
+          entityId,
+          input.incomes,
+          input.expenses,
+          year.year,
+          input.entityFlowOverrides,
+          flowMode,
+        );
 
         // Annual distribution = sum of |entity_distribution| debits on entity-owned
         // accounts. The engine writes a debit on entity checking and a credit on

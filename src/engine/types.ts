@@ -392,6 +392,11 @@ export interface EntitySummary {
   /** Cost basis for the business-entity flat valuation. Used at death-event
    *  for step-up analysis. */
   basis?: number;
+  /** Annual compound growth rate applied to the business-entity flat
+   *  valuation (`value`). Null/undefined defaults to 0 — preserves the
+   *  pre-2026 behavior where flat-value growth was unmodeled. Ignored for
+   *  trusts and foundations, which track value through accounts. */
+  valueGrowthRate?: number | null;
   /** Per-family-member ownership of a business entity (sourced from
    *  entity_owners). Trusts leave this undefined. Sum may be < 1 when legacy
    *  data is missing rows; in that case in-estate treatment defaults to fully
