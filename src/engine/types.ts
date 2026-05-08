@@ -351,6 +351,18 @@ export interface EntitySummary {
   distributionMode?: "fixed" | "pct_liquid" | "pct_income" | null;
   distributionAmount?: number | null;
   distributionPercent?: number | null;
+  /** Phase 3: business-entity tax treatment (one selector per entity).
+   *  Maps to existing taxDetail buckets:
+   *    qbi → taxDetail.qbi
+   *    ordinary → taxDetail.ordinaryIncome
+   *    non_taxable → taxDetail.taxExempt
+   *  Trusts ignore this field (they keep their 1041 / grantor pass). */
+  taxTreatment?: "qbi" | "ordinary" | "non_taxable";
+  /** Phase 3: business-entity distribution policy. Fraction (0-1) of net
+   *  income flowing to household checking each year. Null defaults to 1.0
+   *  (full pass-through). Trusts use distributionMode/Amount/Percent
+   *  instead — this field is ignored for entityType === 'trust'. */
+  distributionPolicyPercent?: number | null;
   incomeBeneficiaries?: Array<{
     familyMemberId?: string;
     externalBeneficiaryId?: string;
@@ -991,7 +1003,8 @@ export interface AccountLedgerEntry {
     | "employer_match"
     | "withdrawal"
     | "withdrawal_tax"
-    | "gift";
+    | "gift"
+    | "entity_distribution";
   label: string;
   amount: number;
   sourceId?: string;

@@ -799,6 +799,11 @@ export const loadClientDataWithContext = cache(
       distributionMode: e.distributionMode ?? undefined,
       distributionAmount: e.distributionAmount != null ? parseFloat(e.distributionAmount) : undefined,
       distributionPercent: e.distributionPercent != null ? parseFloat(e.distributionPercent) : undefined,
+      taxTreatment: e.taxTreatment ?? undefined,
+      distributionPolicyPercent:
+        e.distributionPolicyPercent != null
+          ? parseFloat(e.distributionPolicyPercent)
+          : undefined,
       incomeBeneficiaries: incomeByEntity.get(e.id) ?? [],
       trustEnds: e.trustEnds ?? null,
       value: e.value != null ? parseFloat(e.value) : undefined,
