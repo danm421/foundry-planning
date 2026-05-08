@@ -104,10 +104,12 @@ export default function EntityDialog({
   const scenarioId = searchParams.get("scenario");
 
   useEffect(() => {
-    if (!editing?.id || !scenarioId) return;
-    fetch(
-      `/api/clients/${clientId}/entities/${editing.id}/flow-overrides?scenarioId=${scenarioId}`,
-    )
+    if (!editing?.id) return;
+    // Omitting scenarioId (base mode) loads scenario_id IS NULL overrides.
+    const url = scenarioId
+      ? `/api/clients/${clientId}/entities/${editing.id}/flow-overrides?scenarioId=${scenarioId}`
+      : `/api/clients/${clientId}/entities/${editing.id}/flow-overrides`;
+    fetch(url)
       .then((r) => r.json())
       .then((j: { overrides?: Array<{ year: number; incomeAmount: number | null; expenseAmount: number | null; distributionPercent: number | null }> }) =>
         setInitialFlowOverrides(j.overrides ?? []),

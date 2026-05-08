@@ -1,4 +1,4 @@
-import type { Income, Expense, EntityFlowOverride, EntitySummary } from "./types";
+import type { Income, Expense, EntityFlowOverride, EntityFlowMode, EntitySummary } from "./types";
 
 interface BaseRow {
   annualAmount: number;
@@ -9,10 +9,14 @@ interface BaseRow {
 }
 
 /** Resolve an entity-owned income or expense row to its year amount.
- *  Order of resolution:
- *    1. Phase 2 entity_flow_overrides for (entityId, year) — wins if non-null.
- *    2. Base annualAmount × (1 + growthRate)^(year − inflationStartYear|startYear).
- *    3. 0 if year is outside [startYear, endYear] AND no override applies.
+ *
+ *  When the entity is in 'schedule' mode (flowMode === 'schedule'):
+ *    Use the override cell value or 0. Base+growth is NOT consulted.
+ *
+ *  When the entity is in 'annual' mode (flowMode === 'annual', the default):
+ *    1. Override cell wins if non-null (sparse override semantics).
+ *    2. Otherwise base+growth within [startYear, endYear].
+ *    3. 0 outside the row's window.
  *
  *  Per-row scheduleOverrides on entity-owned rows is intentionally NOT consulted
  *  here (P2-3 — Phase 2 replaces that path). Non-entity rows go through the
@@ -23,9 +27,11 @@ export function resolveEntityFlowAmount(
   field: "income" | "expense",
   year: number,
   overrides: EntityFlowOverride[],
+  flowMode: EntityFlowMode = "annual",
 ): number {
   const ovr = overrides.find((o) => o.entityId === entityId && o.year === year);
   const ovrAmount = field === "income" ? ovr?.incomeAmount : ovr?.expenseAmount;
+  if (flowMode === "schedule") return ovrAmount ?? 0;
   if (ovrAmount != null) return ovrAmount;
   if (year < row.startYear || year > row.endYear) return 0;
   const inflateFrom = row.inflationStartYear ?? row.startYear;
@@ -33,10 +39,12 @@ export function resolveEntityFlowAmount(
 }
 
 /** Resolve the distribution percent for a business entity in a given year.
- *  Order of resolution (P2-7):
- *    1. Phase 2 override.distributionPercent (non-null).
- *    2. entity.distributionPolicyPercent (non-null).
- *    3. 1.0 (P3-5 default — full passthrough).
+ *  Order of resolution:
+ *    'schedule' mode: per-year override.distributionPercent, else 0 (no fallback).
+ *    'annual' mode (default):
+ *      1. Phase 2 override.distributionPercent (non-null).
+ *      2. entity.distributionPolicyPercent (non-null).
+ *      3. 1.0 (P3-5 default — full passthrough).
  *
  *  Trusts ignore distribution percent entirely; callers should gate on
  *  entity.entityType !== "trust" before invoking this. */
@@ -46,32 +54,68 @@ export function resolveDistributionPercent(
   overrides: EntityFlowOverride[],
 ): number {
   const ovr = overrides.find((o) => o.entityId === entity.id && o.year === year);
+  if (entity.flowMode === "schedule") return ovr?.distributionPercent ?? 0;
   if (ovr?.distributionPercent != null) return ovr.distributionPercent;
   if (entity.distributionPolicyPercent != null) return entity.distributionPolicyPercent;
   return 1.0;
 }
 
+/** Resolve total entity income & expense for a business entity in year Y.
+ *
+ *  Schedule mode is the source-of-truth for the schedule grid: the engine
+ *  reads the (entityId, year) override row's incomeAmount/expenseAmount
+ *  scalars directly. Base income/expense rows are NOT consulted — this
+ *  means a user can populate the grid without first creating placeholder
+ *  base rows, and the projection still picks up those flows.
+ *
+ *  Annual mode keeps the legacy behavior: iterate over base rows where
+ *  ownerEntityId matches, applying per-year overrides (sparse) on top. */
+export function resolveEntityFlows(
+  entityId: string,
+  incomes: Income[],
+  expenses: Expense[],
+  year: number,
+  overrides: EntityFlowOverride[] = [],
+  flowMode: EntityFlowMode = "annual",
+): { income: number; expense: number } {
+  if (flowMode === "schedule") {
+    const ovr = overrides.find((o) => o.entityId === entityId && o.year === year);
+    return {
+      income: ovr?.incomeAmount ?? 0,
+      expense: ovr?.expenseAmount ?? 0,
+    };
+  }
+  let income = 0;
+  for (const inc of incomes) {
+    if (inc.ownerEntityId !== entityId) continue;
+    income += resolveEntityFlowAmount(inc, entityId, "income", year, overrides, flowMode);
+  }
+  let expense = 0;
+  for (const exp of expenses) {
+    if (exp.ownerEntityId !== entityId) continue;
+    expense += resolveEntityFlowAmount(exp, entityId, "expense", year, overrides, flowMode);
+  }
+  return { income, expense };
+}
+
 /** Sum of (income amounts − expense amounts) for the given business entity in
- *  year Y. Counts rows where ownerEntityId matches; values resolved via
- *  resolveEntityFlowAmount (overrides win, then base+growth, then 0).
- *  Negative result means the entity ran a loss this year (P3-8: losses are
- *  retained in the entity, not carried forward). */
+ *  year Y. Negative result means the entity ran a loss this year (P3-8:
+ *  losses are retained in the entity, not carried forward). */
 export function computeBusinessEntityNetIncome(
   entityId: string,
   incomes: Income[],
   expenses: Expense[],
   year: number,
   overrides: EntityFlowOverride[] = [],
+  flowMode: EntityFlowMode = "annual",
 ): number {
-  let income = 0;
-  for (const inc of incomes) {
-    if (inc.ownerEntityId !== entityId) continue;
-    income += resolveEntityFlowAmount(inc, entityId, "income", year, overrides);
-  }
-  let expense = 0;
-  for (const exp of expenses) {
-    if (exp.ownerEntityId !== entityId) continue;
-    expense += resolveEntityFlowAmount(exp, entityId, "expense", year, overrides);
-  }
+  const { income, expense } = resolveEntityFlows(
+    entityId,
+    incomes,
+    expenses,
+    year,
+    overrides,
+    flowMode,
+  );
   return income - expense;
 }

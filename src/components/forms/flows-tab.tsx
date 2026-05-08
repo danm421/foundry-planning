@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { useScenarioState } from "@/hooks/use-scenario-state";
+import type { EntityFlowMode } from "@/engine/types";
 import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
 import { inputClassName, fieldLabelClassName } from "./input-styles";
@@ -39,6 +40,7 @@ export interface FlowsTabProps {
   expense: FlowsTabExpense | null;
   distributionPolicyPercent: number | null;
   taxTreatment: "qbi" | "ordinary" | "non_taxable";
+  flowMode: EntityFlowMode;
   planStartYear: number;
   defaultEndYear: number;
   planEndYear: number;
@@ -59,7 +61,8 @@ const formatCurrency = (n: number) =>
 export default function FlowsTab(props: FlowsTabProps) {
   const writer = useScenarioWriter(props.clientId);
   const { scenarioId } = useScenarioState(props.clientId);
-  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [mode, setMode] = useState<EntityFlowMode>(props.flowMode);
+  const [modeError, setModeError] = useState<string | null>(null);
 
   // Belt-and-suspenders self-heal: if this entity is missing a default-
   // checking cash account in any base scenario, the route creates it.
@@ -72,46 +75,76 @@ export default function FlowsTab(props: FlowsTabProps) {
     ).catch(() => {});
   }, [props.clientId, props.entityId]);
 
+  async function handleModeChange(next: EntityFlowMode) {
+    if (next === mode) return;
+    const previous = mode;
+    setMode(next);
+    setModeError(null);
+    try {
+      const res = await writer.submit(
+        {
+          op: "edit",
+          targetKind: "entity",
+          targetId: props.entityId,
+          desiredFields: { flowMode: next },
+        },
+        {
+          url: `/api/clients/${props.clientId}/entities/${props.entityId}`,
+          method: "PUT",
+          body: { flowMode: next },
+        },
+      );
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? "Failed to switch mode");
+      }
+    } catch (err) {
+      setMode(previous);
+      setModeError(err instanceof Error ? err.message : "Unknown error");
+    }
+  }
+
+  const isSchedule = mode === "schedule";
+
   return (
     <div className="space-y-6">
-      {/* Schedule button — only shown when there is a real entity + active scenario to write to */}
-      {props.entityId && scenarioId ? (
-        <div className="flex justify-end">
+      {props.entityId ? (
+        <div className="inline-flex rounded-md border border-hair bg-card p-0.5 text-xs">
           <button
             type="button"
-            onClick={() => setScheduleOpen(true)}
-            className="rounded-md border border-hair bg-card px-3 py-1.5 text-xs text-ink-2 hover:text-ink-1"
+            onClick={() => handleModeChange("annual")}
+            className={
+              "rounded px-3 py-1 font-medium transition " +
+              (mode === "annual"
+                ? "bg-accent text-accent-on"
+                : "text-ink-2 hover:text-ink")
+            }
           >
-            Schedule…
+            Annual + growth
           </button>
-        </div>
-      ) : (
-        <div className="flex justify-end">
           <button
             type="button"
-            disabled
-            title="Open a scenario to edit the schedule"
-            className="rounded-md border border-hair bg-card px-3 py-1.5 text-xs text-ink-3 opacity-50 cursor-not-allowed"
+            onClick={() => handleModeChange("schedule")}
+            className={
+              "rounded px-3 py-1 font-medium transition " +
+              (mode === "schedule"
+                ? "bg-accent text-accent-on"
+                : "text-ink-2 hover:text-ink")
+            }
           >
-            Schedule…
+            Custom schedule
           </button>
         </div>
+      ) : null}
+
+      {modeError && (
+        <p className="rounded bg-red-900/50 px-3 py-2 text-xs text-red-400">{modeError}</p>
       )}
 
-      <FlowCard kind="income" {...props} writer={writer} />
-      <FlowCard kind="expense" {...props} writer={writer} />
-
-      {isBusinessType(props.entityType) && (
-        <DistributionAndTaxSection {...props} writer={writer} />
-      )}
-
-      {props.entityId && scenarioId && (
+      {isSchedule && props.entityId ? (
         <FlowScheduleGrid
-          open={scheduleOpen}
-          onClose={() => setScheduleOpen(false)}
           clientId={props.clientId}
           entityId={props.entityId}
-          entityName={props.entityName}
           entityType={props.entityType}
           scenarioId={scenarioId}
           planStartYear={props.planStartYear}
@@ -141,6 +174,14 @@ export default function FlowsTab(props: FlowsTabProps) {
           }
           initialOverrides={props.initialFlowOverrides}
         />
+      ) : (
+        <>
+          <FlowCard kind="income" {...props} writer={writer} />
+          <FlowCard kind="expense" {...props} writer={writer} />
+          {isBusinessType(props.entityType) && (
+            <DistributionAndTaxSection {...props} writer={writer} />
+          )}
+        </>
       )}
     </div>
   );

@@ -258,3 +258,55 @@ describe("computeBusinessEntityNetIncome — Phase 2 overrides", () => {
     ).toBe(100_000 - 30_000);
   });
 });
+
+describe("flowMode = 'schedule' (custom-schedule mode)", () => {
+  it("ignores base+growth and returns 0 when no override exists", () => {
+    const inc = baseIncome({ ownerEntityId: "e1", annualAmount: 100_000, growthRate: 0.05 });
+    expect(
+      resolveEntityFlowAmount(inc, "e1", "income", 2027, [], "schedule"),
+    ).toBe(0);
+  });
+
+  it("returns the override when one exists for that year", () => {
+    const inc = baseIncome({ ownerEntityId: "e1", annualAmount: 100_000 });
+    const overrides: EntityFlowOverride[] = [
+      { entityId: "e1", year: 2027, incomeAmount: 250_000, expenseAmount: null, distributionPercent: null },
+    ];
+    expect(
+      resolveEntityFlowAmount(inc, "e1", "income", 2027, overrides, "schedule"),
+    ).toBe(250_000);
+  });
+
+  it("net income returns 0 when in schedule mode and no overrides exist", () => {
+    const incomes = [baseIncome({ ownerEntityId: "e1", annualAmount: 100_000 })];
+    const expenses = [baseExpense({ ownerEntityId: "e1", annualAmount: 30_000 })];
+    expect(
+      computeBusinessEntityNetIncome("e1", incomes, expenses, 2026, [], "schedule"),
+    ).toBe(0);
+  });
+
+  it("distribution percent returns 0 when in schedule mode without override", () => {
+    const entity: EntitySummary = {
+      id: "e1",
+      isGrantor: false,
+      entityType: "llc",
+      distributionPolicyPercent: 0.5,
+      flowMode: "schedule",
+    };
+    expect(resolveDistributionPercent(entity, 2027, [])).toBe(0);
+  });
+
+  it("distribution percent returns the override in schedule mode", () => {
+    const entity: EntitySummary = {
+      id: "e1",
+      isGrantor: false,
+      entityType: "llc",
+      distributionPolicyPercent: 0.5,
+      flowMode: "schedule",
+    };
+    const overrides: EntityFlowOverride[] = [
+      { entityId: "e1", year: 2027, incomeAmount: null, expenseAmount: null, distributionPercent: 0.25 },
+    ];
+    expect(resolveDistributionPercent(entity, 2027, overrides)).toBe(0.25);
+  });
+});

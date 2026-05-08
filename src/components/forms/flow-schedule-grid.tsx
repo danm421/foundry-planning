@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
+import { fillFlat, fillGrowth, type ScheduleEntry } from "@/lib/schedule-utils";
 
 type EntityType =
   | "trust"
@@ -29,13 +30,11 @@ export interface FlowScheduleGridOverride {
 }
 
 export interface FlowScheduleGridProps {
-  open: boolean;
-  onClose: () => void;
   clientId: string;
   entityId: string;
-  entityName: string;
   entityType: EntityType;
-  scenarioId: string;
+  /** Null = base-plan overrides (scenario_id IS NULL). */
+  scenarioId: string | null;
   planStartYear: number;
   planEndYear: number;
   primaryClientBirthYear: number;
@@ -92,9 +91,48 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
   });
 
   const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  if (!props.open) return null;
+  // Quick-fill panel state
+  const [qfStart, setQfStart] = useState<string>(String(props.planStartYear));
+  const [qfEnd, setQfEnd] = useState<string>(String(props.planEndYear));
+  const [qfIncome, setQfIncome] = useState<string>("");
+  const [qfExpense, setQfExpense] = useState<string>("");
+  const [qfDist, setQfDist] = useState<string>("");
+  const [qfGrowth, setQfGrowth] = useState<string>("");
+
+  function applyEntries(
+    setter: React.Dispatch<React.SetStateAction<Record<number, Cell>>>,
+    entries: ScheduleEntry[],
+    format: (n: number) => string,
+  ) {
+    setter((prev) => {
+      const next = { ...prev };
+      for (const e of entries) next[e.year] = format(e.amount);
+      return next;
+    });
+  }
+
+  function applyQuickFill() {
+    const start = parseInt(qfStart, 10);
+    const end = parseInt(qfEnd, 10);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return;
+    const incBase = qfIncome.trim() === "" ? null : Number(qfIncome);
+    const expBase = qfExpense.trim() === "" ? null : Number(qfExpense);
+    const distVal = qfDist.trim() === "" ? null : Number(qfDist);
+    const growthPct = qfGrowth.trim() === "" ? 0 : Number(qfGrowth) / 100;
+    if (incBase == null && expBase == null && distVal == null) return;
+
+    const intStr = (n: number) => String(Math.round(n));
+    if (incBase != null) applyEntries(setIncome, fillGrowth(start, end, incBase, growthPct), intStr);
+    if (expBase != null) applyEntries(setExpense, fillGrowth(start, end, expBase, growthPct), intStr);
+    if (distVal != null) applyEntries(setDist, fillFlat(start, end, distVal), String);
+  }
+
+  function setDistAll(percent: number) {
+    applyEntries(setDist, fillFlat(props.planStartYear, props.planEndYear, percent), String);
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -119,19 +157,19 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
       }
     }
     try {
-      const res = await fetch(
-        `/api/clients/${props.clientId}/entities/${props.entityId}/flow-overrides?scenarioId=${props.scenarioId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ overrides }),
-        },
-      );
+      const url = props.scenarioId
+        ? `/api/clients/${props.clientId}/entities/${props.entityId}/flow-overrides?scenarioId=${props.scenarioId}`
+        : `/api/clients/${props.clientId}/entities/${props.entityId}/flow-overrides`;
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ overrides }),
+      });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error((j as { error?: string }).error ?? "Failed to save");
       }
-      props.onClose();
+      setSavedAt(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -139,38 +177,109 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
     }
   }
 
+  const qfLabelClass = "flex flex-col gap-0.5 text-[11px] font-semibold text-ink";
+  const qfNumberInputClass =
+    "rounded border border-hair bg-card-2 px-2 py-1 text-xs text-ink";
+  const thClass = "py-2 text-right text-[13px] font-semibold text-ink";
+  const distSetButtonClass =
+    "rounded border border-hair bg-card-2 px-1.5 py-0.5 text-[10px] font-semibold text-ink hover:bg-card";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-2xl rounded-md border border-hair bg-card-2 p-5 shadow-xl">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-ink-1">Schedule — {props.entityName}</h2>
+    <section className="space-y-3 rounded-md border border-hair bg-card-2 p-4">
+      <p className="text-xs text-ink-3">
+        Override individual years. Blank cells resolve to $0 in schedule mode.
+      </p>
+
+      {/* Quick fill */}
+      <div className="rounded-md border border-hair bg-card p-3">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-2">
+          Quick fill
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
+          <label className={qfLabelClass}>
+            Start year
+            <input
+              type="number"
+              value={qfStart}
+              onChange={(e) => setQfStart(e.target.value)}
+              className={qfNumberInputClass}
+            />
+          </label>
+          <label className={qfLabelClass}>
+            End year
+            <input
+              type="number"
+              value={qfEnd}
+              onChange={(e) => setQfEnd(e.target.value)}
+              className={qfNumberInputClass}
+            />
+          </label>
+          <label className={qfLabelClass}>
+            Income
+            <CurrencyInput value={qfIncome} onChange={setQfIncome} placeholder="—" />
+          </label>
+          <label className={qfLabelClass}>
+            Expense
+            <CurrencyInput value={qfExpense} onChange={setQfExpense} placeholder="—" />
+          </label>
+          {showDist && (
+            <label className={qfLabelClass}>
+              Distribution %
+              <PercentInput value={qfDist} onChange={setQfDist} placeholder="—" />
+            </label>
+          )}
+          <label className={qfLabelClass}>
+            Growth %
+            <PercentInput value={qfGrowth} onChange={setQfGrowth} placeholder="0" />
+          </label>
+        </div>
+        <div className="mt-2 flex justify-end">
           <button
             type="button"
-            onClick={props.onClose}
-            className="text-xs text-ink-3 hover:text-ink-1"
+            onClick={applyQuickFill}
+            className="rounded-md border border-hair bg-card-2 px-3 py-1 text-xs font-medium text-ink-2 hover:bg-card hover:text-ink"
           >
-            ✕
+            Apply
           </button>
         </div>
-        <p className="mb-3 text-xs text-ink-3">
-          Override individual years. Blank cells use the base value with growth applied.
-        </p>
-        {error && (
-          <p className="mb-2 rounded bg-red-900/50 px-3 py-2 text-xs text-red-400">{error}</p>
-        )}
+      </div>
 
-        <div className="max-h-[60vh] overflow-y-auto">
-          <table className="w-full border-collapse text-xs">
-            <thead className="sticky top-0 bg-card-2">
-              <tr className="border-b border-hair">
-                <th className="py-2 text-left font-medium text-ink-3">Year (Age)</th>
-                <th className="py-2 text-right font-medium text-ink-3">Income</th>
-                <th className="py-2 text-right font-medium text-ink-3">Expense</th>
-                {showDist && (
-                  <th className="py-2 text-right font-medium text-ink-3">Distribution %</th>
-                )}
-              </tr>
-            </thead>
+      {error && (
+        <p className="rounded bg-red-900/50 px-3 py-2 text-xs text-red-400">{error}</p>
+      )}
+
+      <div className="max-h-[60vh] overflow-y-auto">
+        <table className="w-full border-collapse text-xs">
+          <thead className="sticky top-0 bg-card-2">
+            <tr className="border-b border-hair">
+              <th className={thClass + " text-left"}>Year (Age)</th>
+              <th className={thClass}>Income</th>
+              <th className={thClass}>Expense</th>
+              {showDist && (
+                <th className={thClass}>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span>Distribution %</span>
+                    <button
+                      type="button"
+                      onClick={() => setDistAll(0)}
+                      className={distSetButtonClass}
+                      title="Set every year to 0%"
+                    >
+                      0%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDistAll(100)}
+                      className={distSetButtonClass}
+                      title="Set every year to 100%"
+                    >
+                      100%
+                    </button>
+                  </div>
+                </th>
+              )}
+            </tr>
+          </thead>
             <tbody>
               {years.map((y) => {
                 const age = y - props.primaryClientBirthYear;
@@ -178,7 +287,7 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
                 const expBase = baseAmount(props.expense, y);
                 return (
                   <tr key={y} className="border-b border-hair/50">
-                    <td className="py-1.5 text-ink-2">
+                    <td className="py-1.5 text-ink">
                       {y} (Age {age})
                     </td>
                     <td className="py-1.5">
@@ -211,24 +320,21 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
           </table>
         </div>
 
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={props.onClose}
-            className="rounded-md border border-hair px-3 py-1.5 text-xs text-ink-2"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save schedule"}
-          </button>
-        </div>
+      <div className="flex items-center justify-end gap-3">
+        {savedAt && !saving && (
+          <span className="text-[11px] text-ink-3">
+            Saved at {savedAt.toLocaleTimeString()}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save schedule"}
+        </button>
       </div>
-    </div>
+    </section>
   );
 }

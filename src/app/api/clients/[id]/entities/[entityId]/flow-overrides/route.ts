@@ -6,7 +6,7 @@ import {
   scenarios,
   entityFlowOverrides,
 } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, type SQL } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { flowOverrideBulkSchema } from "@/lib/schemas/flow-overrides";
@@ -28,6 +28,13 @@ async function authorize(clientId: string, entityId: string) {
   return { firmId, ent };
 }
 
+// Missing/empty `scenarioId` query param → base-plan overrides (scenario_id IS NULL).
+function scenarioFilter(scenarioId: string | null): SQL | undefined {
+  return scenarioId
+    ? eq(entityFlowOverrides.scenarioId, scenarioId)
+    : isNull(entityFlowOverrides.scenarioId);
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; entityId: string }> },
@@ -35,19 +42,18 @@ export async function GET(
   try {
     const { id, entityId } = await params;
     const scenarioId = req.nextUrl.searchParams.get("scenarioId");
-    if (!scenarioId) {
-      return NextResponse.json({ error: "scenarioId required" }, { status: 400 });
-    }
     const auth = await authorize(id, entityId);
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
-    const [scenario] = await db
-      .select()
-      .from(scenarios)
-      .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, id)));
-    if (!scenario) {
-      return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
+    if (scenarioId) {
+      const [scenario] = await db
+        .select()
+        .from(scenarios)
+        .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, id)));
+      if (!scenario) {
+        return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
+      }
     }
 
     const rows = await db
@@ -61,7 +67,7 @@ export async function GET(
       .where(
         and(
           eq(entityFlowOverrides.entityId, entityId),
-          eq(entityFlowOverrides.scenarioId, scenarioId),
+          scenarioFilter(scenarioId),
         ),
       );
 
@@ -90,19 +96,18 @@ export async function PUT(
   try {
     const { id, entityId } = await params;
     const scenarioId = req.nextUrl.searchParams.get("scenarioId");
-    if (!scenarioId) {
-      return NextResponse.json({ error: "scenarioId required" }, { status: 400 });
-    }
     const auth = await authorize(id, entityId);
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
-    const [scenario] = await db
-      .select()
-      .from(scenarios)
-      .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, id)));
-    if (!scenario) {
-      return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
+    if (scenarioId) {
+      const [scenario] = await db
+        .select()
+        .from(scenarios)
+        .where(and(eq(scenarios.id, scenarioId), eq(scenarios.clientId, id)));
+      if (!scenario) {
+        return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
+      }
     }
 
     const body = await req.json();
@@ -121,14 +126,14 @@ export async function PUT(
         .where(
           and(
             eq(entityFlowOverrides.entityId, entityId),
-            eq(entityFlowOverrides.scenarioId, scenarioId),
+            scenarioFilter(scenarioId),
           ),
         );
       if (parsed.data.overrides.length > 0) {
         await tx.insert(entityFlowOverrides).values(
           parsed.data.overrides.map((o) => ({
             entityId,
-            scenarioId,
+            scenarioId: scenarioId ?? null,
             year: o.year,
             incomeAmount: o.incomeAmount != null ? String(o.incomeAmount) : null,
             expenseAmount: o.expenseAmount != null ? String(o.expenseAmount) : null,
@@ -145,7 +150,7 @@ export async function PUT(
       resourceId: entityId,
       clientId: id,
       firmId: auth.firmId,
-      metadata: { scenarioId, count: parsed.data.overrides.length },
+      metadata: { scenarioId: scenarioId ?? null, count: parsed.data.overrides.length },
     });
 
     return NextResponse.json({ ok: true, count: parsed.data.overrides.length });

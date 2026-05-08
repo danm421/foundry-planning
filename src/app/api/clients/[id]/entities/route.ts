@@ -186,6 +186,10 @@ export async function POST(
           data.entityType !== "trust" && data.entityType !== "foundation" && data.distributionPolicyPercent != null
             ? String(data.distributionPolicyPercent)
             : null,
+        valueGrowthRate:
+          data.entityType !== "trust" && data.entityType !== "foundation" && data.valueGrowthRate != null
+            ? String(data.valueGrowthRate)
+            : null,
       })
       .returning();
 

@@ -1245,6 +1245,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         allExpenses,
         year,
         data.entityFlowOverrides ?? [],
+        entity.flowMode ?? "annual",
       );
       if (netIncome <= 0) continue;
       const treatment = entity.taxTreatment ?? "ordinary";
@@ -2042,6 +2043,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           "income",
           year,
           data.entityFlowOverrides ?? [],
+          entityMap[inc.ownerEntityId]?.flowMode ?? "annual",
         );
       } else if (inc.scheduleOverrides) {
         amount = inc.scheduleOverrides[year] ?? 0;
@@ -2140,6 +2142,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // different SS numbers per row.
     for (const inc of currentIncomes) {
       if (year < inc.startYear || year > inc.endYear) continue;
+      // Schedule-mode entities are handled in a dedicated loop below — the
+      // schedule grid is the source of truth, so base income rows are not
+      // routed here (would double-count or, worse, miss override-only cells
+      // when no base row exists).
+      if (
+        inc.ownerEntityId != null &&
+        entityMap[inc.ownerEntityId]?.flowMode === "schedule"
+      ) {
+        continue;
+      }
       const resolved = income.bySource[inc.id] ?? grantorIncome.bySource[inc.id];
       let amount: number;
       if (resolved != null) {
@@ -2167,6 +2179,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           "income",
           year,
           data.entityFlowOverrides ?? [],
+          entityMap[inc.ownerEntityId]?.flowMode ?? "annual",
         );
       }
       creditCash(resolveCashAccount(inc.ownerEntityId, inc.cashAccountId), amount, {
@@ -2179,6 +2192,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // 7. Route each expense as an outflow from its cash account.
     for (const exp of allExpenses) {
       if (year < exp.startYear || year > exp.endYear) continue;
+      // Schedule-mode entities are handled below.
+      if (
+        exp.ownerEntityId != null &&
+        entityMap[exp.ownerEntityId]?.flowMode === "schedule"
+      ) {
+        continue;
+      }
       const inflateFrom = exp.inflationStartYear ?? exp.startYear;
       let amount = exp.annualAmount * Math.pow(1 + exp.growthRate, year - inflateFrom);
       // Phase 2: for entity-owned rows, apply year-overrides.
@@ -2189,6 +2209,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           "expense",
           year,
           data.entityFlowOverrides ?? [],
+          entityMap[exp.ownerEntityId]?.flowMode ?? "annual",
         );
       }
       creditCash(resolveCashAccount(exp.ownerEntityId, exp.cashAccountId), -amount, {
@@ -2196,6 +2217,36 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         label: `Expense: ${exp.name}`,
         sourceId: exp.id,
       });
+    }
+
+    // 7b. Schedule-mode entities: route the (entityId, year) override row's
+    // incomeAmount and expenseAmount scalars to the entity's checking. The
+    // schedule grid is the authoritative source — base rows (if any) are
+    // ignored for schedule-mode entities. This keeps the projection in sync
+    // with the entity-cashflow report and lets users populate the grid
+    // without first creating placeholder base income/expense rows.
+    for (const entity of currentEntities) {
+      if (entity.flowMode !== "schedule") continue;
+      if (entity.entityType === "trust") continue;
+      const ovr = (data.entityFlowOverrides ?? []).find(
+        (o) => o.entityId === entity.id && o.year === year,
+      );
+      if (!ovr) continue;
+      const cashAccountId = resolveCashAccount(entity.id, null);
+      if (ovr.incomeAmount != null && ovr.incomeAmount !== 0) {
+        creditCash(cashAccountId, ovr.incomeAmount, {
+          category: "income",
+          label: `Income: ${entity.name ?? "Entity"} (schedule)`,
+          sourceId: `entity_schedule_income:${entity.id}`,
+        });
+      }
+      if (ovr.expenseAmount != null && ovr.expenseAmount !== 0) {
+        creditCash(cashAccountId, -ovr.expenseAmount, {
+          category: "expense",
+          label: `Expense: ${entity.name ?? "Entity"} (schedule)`,
+          sourceId: `entity_schedule_expense:${entity.id}`,
+        });
+      }
     }
 
     // ── Phase 3: business-entity distribution to household ─────────────────
@@ -2220,6 +2271,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         allExpenses,
         year,
         data.entityFlowOverrides ?? [],
+        entity.flowMode ?? "annual",
       );
       if (netIncome <= 0) continue;
       const distPercent = resolveDistributionPercent(
@@ -3362,6 +3414,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       isGrantor: entity.isGrantor,
       initialValue: entity.value ?? 0,
       initialBasis: entity.basis ?? 0,
+      flowMode: entity.flowMode ?? "annual",
+      valueGrowthRate: entity.valueGrowthRate ?? null,
     });
   }
   // Account → entity-owner map. Only fully entity-owned accounts (a single

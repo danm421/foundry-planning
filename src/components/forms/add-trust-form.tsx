@@ -719,6 +719,7 @@ export default function AddTrustForm({
             expense={entityExpense ?? null}
             distributionPolicyPercent={null /* trusts don't use this in P1 */}
             taxTreatment={editing.taxTreatment ?? "ordinary"}
+            flowMode={editing.flowMode ?? "annual"}
             planStartYear={new Date().getFullYear()}
             defaultEndYear={planEndYear ?? new Date().getFullYear() + 30}
             planEndYear={planEndYear ?? new Date().getFullYear() + 30}

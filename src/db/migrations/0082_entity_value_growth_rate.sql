@@ -1,0 +1,1 @@
+ALTER TABLE "entities" ADD COLUMN "value_growth_rate" numeric(7, 4);

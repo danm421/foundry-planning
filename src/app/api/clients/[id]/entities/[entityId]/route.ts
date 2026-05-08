@@ -101,6 +101,8 @@ export async function PUT(
       distributionPercent?: number | null;
       taxTreatment?: "qbi" | "ordinary" | "non_taxable";
       distributionPolicyPercent?: number | null;
+      flowMode?: "annual" | "schedule";
+      valueGrowthRate?: number | null;
       splitInterest?: TrustSplitInterestInput;
     };
 
@@ -289,6 +291,13 @@ export async function PUT(
               ? String(patch.distributionPolicyPercent)
               : null,
         }),
+        ...(patch.flowMode !== undefined && { flowMode: patch.flowMode }),
+        ...(patch.valueGrowthRate !== undefined && {
+          valueGrowthRate:
+            patch.valueGrowthRate != null
+              ? String(patch.valueGrowthRate)
+              : null,
+        }),
         ...(typeSwitchedAwayFromTrust && {
           trustSubType: null,
           isIrrevocable: null,
@@ -300,6 +309,7 @@ export async function PUT(
         }),
         ...(typeSwitchedAwayFromBusiness && {
           distributionPolicyPercent: null,
+          valueGrowthRate: null,
         }),
         updatedAt: new Date(),
       })

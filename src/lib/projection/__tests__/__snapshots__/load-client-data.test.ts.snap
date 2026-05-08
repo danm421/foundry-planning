@@ -66,6 +66,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
   },
   "deductions": [],
   "entities": [],
+  "entityFlowOverrides": [],
   "expenses": [
     {
       "annualAmount": 80000,

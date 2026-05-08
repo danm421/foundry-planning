@@ -324,6 +324,10 @@ export interface ClientData {
   externalBeneficiaries?: Array<{ id: string; name: string; kind: "charity" | "individual"; charityType: "public" | "private" }>;
 }
 
+/** 'annual' uses base+growth math; 'schedule' uses entity_flow_overrides
+ *  exclusively (missing cells = 0). Mirrored as the `entity_flow_mode` enum. */
+export type EntityFlowMode = "annual" | "schedule";
+
 // Minimal entity view used by the engine to decide cash-flow treatment of entity-owned
 // accounts, incomes, expenses, and liabilities.
 export interface EntitySummary {
@@ -367,6 +371,11 @@ export interface EntitySummary {
    *  (full pass-through). Trusts use distributionMode/Amount/Percent
    *  instead — this field is ignored for entityType === 'trust'. */
   distributionPolicyPercent?: number | null;
+  /** 'annual' = engine reads income/expense rows (annualAmount + growthRate)
+   *  and distributionPolicyPercent. 'schedule' = engine reads
+   *  entityFlowOverrides exclusively; missing/null cells resolve to 0
+   *  (no fall-through to base+growth). Defaults to 'annual'. */
+  flowMode?: EntityFlowMode;
   incomeBeneficiaries?: Array<{
     familyMemberId?: string;
     externalBeneficiaryId?: string;
@@ -383,6 +392,11 @@ export interface EntitySummary {
   /** Cost basis for the business-entity flat valuation. Used at death-event
    *  for step-up analysis. */
   basis?: number;
+  /** Annual compound growth rate applied to the business-entity flat
+   *  valuation (`value`). Null/undefined defaults to 0 — preserves the
+   *  pre-2026 behavior where flat-value growth was unmodeled. Ignored for
+   *  trusts and foundations, which track value through accounts. */
+  valueGrowthRate?: number | null;
   /** Per-family-member ownership of a business entity (sourced from
    *  entity_owners). Trusts leave this undefined. Sum may be < 1 when legacy
    *  data is missing rows; in that case in-estate treatment defaults to fully

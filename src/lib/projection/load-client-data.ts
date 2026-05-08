@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import {
   accounts,
@@ -806,6 +806,9 @@ export const loadClientDataWithContext = cache(
         e.distributionPolicyPercent != null
           ? parseFloat(e.distributionPolicyPercent)
           : undefined,
+      flowMode: e.flowMode ?? "annual",
+      valueGrowthRate:
+        e.valueGrowthRate != null ? parseFloat(e.valueGrowthRate) : undefined,
       incomeBeneficiaries: incomeByEntity.get(e.id) ?? [],
       trustEnds: e.trustEnds ?? null,
       value: e.value != null ? parseFloat(e.value) : undefined,
@@ -1001,16 +1004,26 @@ export const loadClientDataWithContext = cache(
       filingStatus: client.filingStatus,
     };
 
-    const flowOverrideRows = await db
-      .select({
-        entityId: entityFlowOverrides.entityId,
-        year: entityFlowOverrides.year,
-        incomeAmount: entityFlowOverrides.incomeAmount,
-        expenseAmount: entityFlowOverrides.expenseAmount,
-        distributionPercent: entityFlowOverrides.distributionPercent,
-      })
-      .from(entityFlowOverrides)
-      .where(eq(entityFlowOverrides.scenarioId, scenario.id));
+    // Base-plan overrides (scenario_id IS NULL). Scenario-specific overrides
+    // are layered in by `loadEffectiveTree` for non-base scenarios.
+    const entityIds = mappedEntities.map((e) => e.id);
+    const flowOverrideRows = entityIds.length === 0
+      ? []
+      : await db
+          .select({
+            entityId: entityFlowOverrides.entityId,
+            year: entityFlowOverrides.year,
+            incomeAmount: entityFlowOverrides.incomeAmount,
+            expenseAmount: entityFlowOverrides.expenseAmount,
+            distributionPercent: entityFlowOverrides.distributionPercent,
+          })
+          .from(entityFlowOverrides)
+          .where(
+            and(
+              inArray(entityFlowOverrides.entityId, entityIds),
+              isNull(entityFlowOverrides.scenarioId),
+            ),
+          );
 
     const mappedFlowOverrides: EntityFlowOverride[] = flowOverrideRows.map((r) => ({
       entityId: r.entityId,
