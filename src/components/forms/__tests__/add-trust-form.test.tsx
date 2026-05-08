@@ -186,3 +186,280 @@ describe("AddTrustForm — Transfers tab (T21)", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(/Unauthorized/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// CLUT funding pick save-flow tests (Task 6)
+// ---------------------------------------------------------------------------
+
+/** One brokerage account eligible for CLUT funding. */
+const CLUT_ACCOUNT = {
+  id: "acct-a",
+  name: "Schwab Brokerage",
+  value: 850_000,
+  subType: "brokerage",
+  isDefaultChecking: false,
+  owners: [{ kind: "family_member" as const, familyMemberId: "fm-c", percent: 1.0 }],
+};
+
+/** Second brokerage account — used in the 2-pick edit-mode delete test. */
+const CLUT_ACCOUNT_B = {
+  id: "acct-b",
+  name: "Fidelity Brokerage",
+  value: 500_000,
+  subType: "brokerage",
+  isDefaultChecking: false,
+  owners: [{ kind: "family_member" as const, familyMemberId: "fm-c", percent: 1.0 }],
+};
+
+/** CLUT editing fixture — only the Entity fields; splitInterest is form-internal. */
+const EDITING_CLUT: Entity = {
+  id: "trust-existing-id",
+  name: "Existing CLUT",
+  entityType: "trust",
+  trustSubType: "clut",
+  isIrrevocable: true,
+  grantor: "client",
+  trustee: null,
+  trustEnds: "survivorship",
+  includeInPortfolio: false,
+  isGrantor: false,
+  notes: null,
+  value: "0",
+  basis: "0",
+  owners: [],
+  owner: null,
+  beneficiaries: null,
+  distributionMode: null,
+  distributionAmount: null,
+  distributionPercent: null,
+};
+
+describe("<AddTrustForm> CLUT funding picks", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("posts an asset gift after the entity POST when an asset is picked for a new CLUT", async () => {
+    // Record every fetch call so we can assert ordering.
+    const calls: { url: string; method: string; body: unknown }[] = [];
+
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method?.toUpperCase() ?? "GET";
+      let body: unknown = undefined;
+      if (init?.body && typeof init.body === "string") {
+        try { body = JSON.parse(init.body); } catch { body = init.body; }
+      }
+      calls.push({ url, method, body });
+
+      if (method === "POST" && url.endsWith("/entities")) {
+        return { ok: true, json: async () => ({ id: "trust-new-id", name: "New Trust" }) };
+      }
+      if (method === "PUT" && url.includes("/beneficiaries")) {
+        return { ok: true, json: async () => ({}) };
+      }
+      if (method === "POST" && url.endsWith("/gifts")) {
+        return { ok: true, json: async () => ({ id: "g-new" }) };
+      }
+      // Default: empty arrays (covers any incidental GETs)
+      return { ok: true, json: async () => [] };
+    }));
+
+    render(
+      <AddTrustForm
+        {...defaultProps("details")}
+        editing={undefined}
+        accounts={[CLUT_ACCOUNT]}
+      />,
+    );
+
+    // Switch to CLUT type
+    fireEvent.change(screen.getByLabelText(/^Type/i), { target: { value: "clut" } });
+
+    // Open the funding picker (trigger has id="clut-fmv" → labelled by "Funding-year FMV" label)
+    fireEvent.click(screen.getByRole("button", { name: /funding-year fmv/i }));
+
+    // Pick the first asset checkbox (the Schwab Brokerage account)
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[0]);
+
+    // Close the popover by clicking Done
+    fireEvent.click(screen.getByRole("button", { name: /done/i }));
+
+    // Submit the form
+    const form = document.getElementById("add-trust-form")!;
+    fireEvent.submit(form);
+
+    // Wait for the async submit chain to complete (entity POST + gift POST)
+    await waitFor(() => {
+      expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/gifts"))).toBe(true);
+    });
+
+    const entityCallIdx = calls.findIndex(
+      (c) => c.method === "POST" && c.url.endsWith("/entities"),
+    );
+    const giftCallIdx = calls.findIndex(
+      (c) => c.method === "POST" && c.url.endsWith("/gifts"),
+    );
+
+    expect(entityCallIdx).toBeGreaterThanOrEqual(0);
+    expect(giftCallIdx).toBeGreaterThan(entityCallIdx);
+
+    const giftCall = calls[giftCallIdx];
+    expect(giftCall.body).toMatchObject({
+      recipientEntityId: "trust-new-id",
+      year: expect.any(Number),
+      accountId: "acct-a",
+      percent: 1.0,
+    });
+  });
+
+  it("blocks Save with an error when origin=new and no funding picks", async () => {
+    // Fetch mock — only GETs should fire (save is blocked before any POST)
+    const calls: { url: string; method: string }[] = [];
+
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method?.toUpperCase() ?? "GET";
+      calls.push({ url, method });
+      return { ok: true, json: async () => [] };
+    }));
+
+    render(
+      <AddTrustForm
+        {...defaultProps("details")}
+        editing={undefined}
+        accounts={[CLUT_ACCOUNT]}
+      />,
+    );
+
+    // Switch to CLUT type
+    fireEvent.change(screen.getByLabelText(/^Type/i), { target: { value: "clut" } });
+
+    // Do NOT open the picker — leave picks empty
+
+    // Submit
+    const form = document.getElementById("add-trust-form")!;
+    fireEvent.submit(form);
+
+    // Error message should appear synchronously (validation before fetch)
+    await screen.findByText(/at least one funding asset/i);
+
+    // No POST to /entities should have been made
+    expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/entities"))).toBe(false);
+  });
+
+  it("fires DELETE when an originally-checked pick is unticked on edit", async () => {
+    // The inception year the form defaults to (matches the gift row year)
+    const INCEPTION_YEAR = new Date().getFullYear();
+
+    const calls: { url: string; method: string; body: unknown }[] = [];
+
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method?.toUpperCase() ?? "GET";
+      let body: unknown = undefined;
+      if (init?.body && typeof init.body === "string") {
+        try { body = JSON.parse(init.body); } catch { body = init.body; }
+      }
+      calls.push({ url, method, body });
+
+      // Initial gifts self-fetch: return TWO existing asset gifts (one per account)
+      // so that unticking one still leaves one pick remaining (passes validation).
+      if (method === "GET" && url.endsWith("/gifts")) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              id: "g1",
+              year: INCEPTION_YEAR,
+              amount: null,
+              grantor: "client" as const,
+              recipientEntityId: "trust-existing-id",
+              accountId: "acct-a",
+              liabilityId: null,
+              percent: "1",
+              parentGiftId: null,
+              useCrummeyPowers: false,
+              notes: null,
+            },
+            {
+              id: "g2",
+              year: INCEPTION_YEAR,
+              amount: null,
+              grantor: "client" as const,
+              recipientEntityId: "trust-existing-id",
+              accountId: "acct-b",
+              liabilityId: null,
+              percent: "0.5",
+              parentGiftId: null,
+              useCrummeyPowers: false,
+              notes: null,
+            },
+          ],
+        };
+      }
+      // Series fetch
+      if (method === "GET" && url.endsWith("/gifts/series")) {
+        return { ok: true, json: async () => [] };
+      }
+      // Entity PUT (edit save)
+      if (method === "PUT" && url.includes("/entities/")) {
+        return { ok: true, json: async () => ({ ...EDITING_CLUT }) };
+      }
+      // Beneficiaries PUT
+      if (method === "PUT" && url.includes("/beneficiaries")) {
+        return { ok: true, json: async () => ({}) };
+      }
+      // Gift DELETE (either gift)
+      if (method === "DELETE" && url.includes("/gifts/")) {
+        return { ok: true, json: async () => ({}) };
+      }
+      // Default
+      return { ok: true, json: async () => [] };
+    }));
+
+    render(
+      <AddTrustForm
+        {...defaultProps("details")}
+        editing={EDITING_CLUT}
+        accounts={[CLUT_ACCOUNT, CLUT_ACCOUNT_B]}
+      />,
+    );
+
+    // Wait for both picks to seed: once inceptionValue > 0, the CLUT preview
+    // shows a non-dash value for the income interest.
+    await waitFor(() => {
+      const incomeEl = screen.getByTestId("clut-income-interest");
+      expect(incomeEl.textContent).toMatch(/\$/);
+    });
+
+    // Open the picker — both asset rows should be checked
+    fireEvent.click(screen.getByRole("button", { name: /funding-year fmv/i }));
+
+    // Untick the FIRST asset checkbox (Schwab Brokerage / acct-a / g1).
+    // getAllByRole("checkbox") returns rows in DOM order; the first is acct-a.
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[0]);
+
+    // Close picker — one pick (acct-b / g2) remains, so validation passes.
+    fireEvent.click(screen.getByRole("button", { name: /done/i }));
+
+    // Submit
+    const form = document.getElementById("add-trust-form")!;
+    fireEvent.submit(form);
+
+    // Wait for DELETE to fire for g1
+    await waitFor(() => {
+      expect(
+        calls.some((c) => c.method === "DELETE" && c.url.endsWith("/gifts/g1")),
+      ).toBe(true);
+    });
+
+    // No POST to /gifts (unticking is a delete, not a create)
+    expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/gifts"))).toBe(false);
+
+    // g2 was NOT touched (it stayed checked)
+    expect(
+      calls.some((c) => c.method === "DELETE" && c.url.endsWith("/gifts/g2")),
+    ).toBe(false);
+  });
+});
