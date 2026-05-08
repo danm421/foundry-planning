@@ -246,7 +246,6 @@ export const incomeRow = {
   inflationStartYear: null,
   owner: "client" as const,
   claimingAge: null,
-  linkedEntityId: null,
   ownerEntityId: null,
   cashAccountId: null,
   taxType: "earned_income" as const,

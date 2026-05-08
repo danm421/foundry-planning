@@ -172,7 +172,6 @@ type RawIncome = {
   growthRate: string | number | null;
   owner: string;
   claimingAge?: number | null;
-  linkedEntityId?: string | null;
   ownerEntityId?: string | null;
   cashAccountId?: string | null;
   inflationStartYear?: number | null;
@@ -202,7 +201,6 @@ export function resolveIncomeFromRaw(
     growthRate,
     owner: raw.owner as Income["owner"],
     claimingAge: raw.claimingAge ?? undefined,
-    linkedEntityId: raw.linkedEntityId ?? undefined,
     ownerEntityId: raw.ownerEntityId ?? undefined,
     cashAccountId: raw.cashAccountId ?? undefined,
     inflationStartYear: raw.inflationStartYear ?? undefined,

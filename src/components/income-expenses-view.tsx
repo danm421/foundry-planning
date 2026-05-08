@@ -32,7 +32,6 @@ interface Income {
   owner: Owner;
   claimingAge: number | null;
   claimingAgeMonths?: number | null;
-  linkedEntityId: string | null;
   growthRate: string;
   growthSource?: string | null;
   ownerEntityId?: string | null;
