@@ -345,3 +345,52 @@ describe("Phase 3: trust regression — taxTreatment ignored", () => {
     expect(hhEntries.find((e) => e.category === "entity_distribution")).toBeUndefined();
   });
 });
+
+describe("Phase 3: multi-year 2-owner LLC integration", () => {
+  it("60/40 owners, 50% distribution, 3-year QBI projection: cash + tax accumulate correctly", () => {
+    const llc60_40: EntitySummary = {
+      ...llcEntity,
+      taxTreatment: "qbi",
+      distributionPolicyPercent: 0.5,
+      owners: [
+        { familyMemberId: LEGACY_FM_CLIENT, percent: 0.6 },
+        { familyMemberId: LEGACY_FM_SPOUSE, percent: 0.4 },
+      ],
+    };
+    // 3-year projection
+    const multiYearPlan: PlanSettings = {
+      ...planSettings,
+      planEndYear: 2028,
+    };
+    const data: ClientData = {
+      ...mkData({ entity: llc60_40 }),
+      planSettings: multiYearPlan,
+    };
+    const years = runProjection(data);
+    expect(years).toHaveLength(3);
+
+    // Each year: $100k income, no expenses → $50k distribution to household,
+    // $50k retained in entity. After 3 years, entity should hold $150k.
+    expect(years[2].accountLedgers["llc1-checking"].endingValue).toBeCloseTo(
+      150_000,
+      0,
+    );
+
+    // Each year, household receives a $50k entity_distribution audit entry.
+    for (const y of years) {
+      const distEntries = y.accountLedgers["hh-checking"].entries.filter(
+        (e) => e.category === "entity_distribution",
+      );
+      expect(distEntries).toHaveLength(1);
+      expect(distEntries[0].amount).toBeCloseTo(50_000, 0);
+    }
+
+    // Each year, taxDetail.bySource includes the entity passthrough.
+    for (const y of years) {
+      const src = y.taxDetail!.bySource["entity_passthrough:llc1"];
+      expect(src).toBeDefined();
+      expect(src!.type).toBe("qbi");
+      expect(src!.amount).toBeCloseTo(100_000, 0);
+    }
+  });
+});
