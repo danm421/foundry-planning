@@ -166,6 +166,35 @@ describe("Phase 3: tax-treatment mapping", () => {
   });
 });
 
+describe("Phase 3: ownership gap", () => {
+  it("ownership gap: only known shares taxed; full distribution still flows to household", () => {
+    // Owners sum to 0.7 — there's a 30% legacy gap.
+    const data = mkData({
+      entity: {
+        owners: [
+          { familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+          { familyMemberId: LEGACY_FM_SPOUSE, percent: 0.2 },
+        ],
+      },
+    });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // Tax incidence: only $70k taxed (50% + 20% of $100k).
+    const noIncomeYears = runProjection(mkData({ incomes: [] }));
+    const taxDelta = y0.expenses.taxes - noIncomeYears[0].expenses.taxes;
+    // At ~29% combined federal+state on $70k → ~$20k extra tax.
+    expect(taxDelta).toBeGreaterThan(15_000);
+    expect(taxDelta).toBeLessThan(25_000);
+
+    // Distribution still 100% (P3-7): household gets full $100k.
+    const hhEntries = y0.accountLedgers["hh-checking"].entries;
+    const distEntry = hhEntries.find((e) => e.category === "entity_distribution");
+    expect(distEntry).toBeDefined();
+    expect(distEntry!.amount).toBeCloseTo(100_000, 0);
+  });
+});
+
 describe("Phase 3: business entity distribution flow", () => {
   it("100% distribution: entity net income flows to household checking", () => {
     const data = mkData(); // 100% distribution, $100k net
