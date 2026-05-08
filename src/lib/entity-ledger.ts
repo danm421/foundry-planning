@@ -184,5 +184,56 @@ export function getEntityLedger(
     }
   }
 
+  const row = ctx.year.entityCashFlow.get(entityId);
+
+  if (isBusiness && entity.initialValue > 0) {
+    const yrs = ctx.year.year - ctx.planStartYear;
+    const g = entity.valueGrowthRate ?? 0;
+    const flatNow = entity.initialValue * Math.pow(1 + g, yrs + 1);
+    if (flatNow !== 0) {
+      ending.push({
+        label: `${entity.name} flat value (EoY)`,
+        amount: flatNow,
+        sourceKind: "flat-business",
+        sourceId: entityId,
+      });
+    }
+  }
+
+  for (const [accountId, owner] of ctx.accountEntityOwners) {
+    if (owner.entityId !== entityId) continue;
+    const acctLedger = ctx.year.accountLedgers[accountId];
+    if (!acctLedger) continue;
+    const share = owner.percent;
+    const contribution = acctLedger.endingValue * share;
+    if (contribution === 0) continue;
+    const name = ctx.accountNamesById.get(accountId) ?? accountId;
+    const suffix = share === 1 ? "" : ` (${(share * 100).toFixed(0)}%)`;
+    ending.push({
+      label: `${name}${suffix} — ending`,
+      amount: contribution,
+      sourceKind: "account",
+      sourceId: accountId,
+    });
+  }
+
+  // Retained earnings is the bridging item that closes the math:
+  // row.endingTotalValue = beginningTotalValue + growth + retainedEarnings.
+  // The aggregator's ending section is built from EoY snapshots (flat now +
+  // account ending) which capture flat growth and account growth. To match
+  // the invariant exactly, append the retained earnings as its own row.
+  if (row?.kind === "business" && row.retainedEarnings !== 0) {
+    const sumSoFar = ending.reduce((a, r) => a + r.amount, 0);
+    const gap = row.endingTotalValue - sumSoFar;
+    if (Math.abs(gap) > 0.01) {
+      ending.push({
+        label: "Retained earnings",
+        amount: gap,
+        sourceKind: "flat-business",
+        sourceId: entityId,
+      });
+    }
+  }
+
   return { growth, income, expenses, ending };
 }

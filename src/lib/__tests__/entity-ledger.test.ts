@@ -175,6 +175,68 @@ function buildBusinessWithExpenseFixture() {
   return { year, ctx };
 }
 
+function buildTrustFixture() {
+  const year = makeYear(2026);
+  year.accountLedgers["acct-trust"] = {
+    beginningValue: 500_000,
+    endingValue: 525_000,
+    growth: 25_000,
+    contributions: 0,
+    distributions: 0,
+    internalContributions: 0,
+    internalDistributions: 0,
+    rmdAmount: 0,
+    fees: 0,
+    entries: [
+      { category: "income", amount: 12_000, label: "Dividends", sourceId: "div" },
+      { category: "expense", amount: -3_000, label: "Trustee fee", sourceId: "fee" },
+    ],
+  };
+
+  const entitiesById = new Map<string, EntityMetadata>([
+    [
+      "ent-trust",
+      {
+        id: "ent-trust",
+        name: "Family Trust",
+        entityType: "trust",
+        trustSubType: "irrevocable",
+        isGrantor: false,
+        initialValue: 0,
+        initialBasis: 0,
+        valueGrowthRate: 0,
+      },
+    ],
+  ]);
+
+  const accountEntityOwners = new Map<string, { entityId: string; percent: number }>([
+    ["acct-trust", { entityId: "ent-trust", percent: 1 }],
+  ]);
+
+  computeEntityCashFlow({
+    years: [year],
+    entitiesById,
+    accountEntityOwners,
+    giftsByEntityYear: new Map(),
+    incomes: [],
+    expenses: [],
+    entityFlowOverrides: [],
+  });
+
+  const ctx: EntityLedgerContext = {
+    year,
+    planStartYear: 2026,
+    entitiesById,
+    accountNamesById: new Map([["acct-trust", "Trust Brokerage"]]),
+    accountEntityOwners,
+    incomes: [],
+    expenses: [],
+    entityFlowOverrides: [],
+  };
+
+  return { year, ctx };
+}
+
 function buildBusinessFixture() {
   const year = makeYear(2026);
   year.accountLedgers["acct-biz"] = {
@@ -293,5 +355,29 @@ describe("getEntityLedger", () => {
 
     const sum = ledger.expenses.reduce((a, r) => a + r.amount, 0);
     expect(sum).toBeCloseTo(row.expenses, 2);
+  });
+
+  it("ending section sums to row.endingTotalValue for a business with growth + flat value", () => {
+    const { year, ctx } = buildBusinessFixture();
+    const row = year.entityCashFlow.get("ent-biz");
+    if (row?.kind !== "business") return;
+
+    const ledger = getEntityLedger("ent-biz", ctx);
+    const sum = ledger.ending.reduce((a, r) => a + r.amount, 0);
+    expect(sum).toBeCloseTo(row.endingTotalValue, 2);
+  });
+
+  it("section sums equal the matching TrustCashFlowRow fields", () => {
+    const { year, ctx } = buildTrustFixture();
+    const row = year.entityCashFlow.get("ent-trust");
+    expect(row?.kind).toBe("trust");
+    if (row?.kind !== "trust") return;
+    const ledger = getEntityLedger("ent-trust", ctx);
+    const sum = (rows: { amount: number }[]) =>
+      rows.reduce((a, r) => a + r.amount, 0);
+    expect(sum(ledger.growth)).toBeCloseTo(row.growth, 2);
+    expect(sum(ledger.income)).toBeCloseTo(row.income, 2);
+    expect(sum(ledger.expenses)).toBeCloseTo(row.expenses, 2);
+    expect(sum(ledger.ending)).toBeCloseTo(row.endingBalance, 2);
   });
 });
