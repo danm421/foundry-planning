@@ -80,4 +80,71 @@ describe("computeEntityCashFlow", () => {
     expect(years[0].entityCashFlow.size).toBe(0);
     expect(years[1].entityCashFlow.size).toBe(0);
   });
+
+  it("computes trust BoY/EoY balance from entity-owned account ledgers", () => {
+    const trust = {
+      id: "trust-1",
+      name: "Smith SLAT",
+      entityType: "trust" as const,
+      trustSubType: "slat" as const,
+      isGrantor: false,
+      initialValue: 0,
+      initialBasis: 0,
+    };
+    const y = makeYear(2026);
+    y.accountLedgers = {
+      "acc-1": {
+        beginningValue: 100_000,
+        endingValue: 105_000,
+        growth: 5_000,
+        contributions: 0,
+        distributions: 0,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [],
+      },
+      "acc-2": {
+        beginningValue: 50_000,
+        endingValue: 53_000,
+        growth: 3_000,
+        contributions: 0,
+        distributions: 0,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [],
+      },
+      "acc-3": {
+        beginningValue: 200_000,
+        endingValue: 210_000,
+        growth: 10_000,
+        contributions: 0,
+        distributions: 0,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [],
+      }, // household-owned, must NOT count
+    };
+    computeEntityCashFlow({
+      years: [y],
+      entitiesById: new Map([["trust-1", trust]]),
+      accountEntityOwners: new Map([
+        ["acc-1", { entityId: "trust-1", percent: 1 }],
+        ["acc-2", { entityId: "trust-1", percent: 1 }],
+      ]),
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+    });
+    const row = y.entityCashFlow.get("trust-1");
+    expect(row?.kind).toBe("trust");
+    expect(row && row.kind === "trust" && row.beginningBalance).toBe(150_000);
+    expect(row && row.kind === "trust" && row.endingBalance).toBe(158_000);
+    expect(row && row.kind === "trust" && row.growth).toBe(8_000);
+  });
 });

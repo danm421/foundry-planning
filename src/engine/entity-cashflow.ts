@@ -73,6 +73,52 @@ export interface ComputeEntityCashFlowInput {
  * EntityCashFlowRow per entity per year (skipping years where the entity
  * has no presence).
  */
-export function computeEntityCashFlow(_input: ComputeEntityCashFlowInput): void {
-  // Implemented in subsequent tasks.
+export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
+  const { years, entitiesById, accountEntityOwners } = input;
+
+  // Build entity → account list (only percent === 1 entries belong to the entity)
+  const accountsByEntity = new Map<string, string[]>();
+  for (const [accountId, owner] of accountEntityOwners) {
+    if (owner.percent !== 1) continue;
+    const list = accountsByEntity.get(owner.entityId) ?? [];
+    list.push(accountId);
+    accountsByEntity.set(owner.entityId, list);
+  }
+
+  for (const year of years) {
+    for (const [entityId, entity] of entitiesById) {
+      const accountIds = accountsByEntity.get(entityId) ?? [];
+      let beginningBalance = 0;
+      let endingBalance = 0;
+      let growth = 0;
+      for (const aid of accountIds) {
+        const ledger = year.accountLedgers[aid];
+        if (!ledger) continue;
+        beginningBalance += ledger.beginningValue;
+        endingBalance += ledger.endingValue;
+        growth += ledger.growth;
+      }
+
+      if (entity.entityType === "trust") {
+        year.entityCashFlow.set(entityId, {
+          kind: "trust",
+          entityId,
+          entityName: entity.name,
+          year: year.year,
+          ages: year.ages,
+          trustSubType: entity.trustSubType ?? "irrevocable",
+          isGrantor: entity.isGrantor,
+          beginningBalance,
+          transfersIn: 0,
+          growth,
+          income: 0,
+          totalDistributions: 0,
+          expenses: 0,
+          taxes: 0,
+          endingBalance,
+        });
+      }
+      // Business branch added in later task.
+    }
+  }
 }
