@@ -78,7 +78,6 @@ export async function POST(
       growthSource,
       owner,
       claimingAge,
-      linkedEntityId,
       ownerEntityId,
       cashAccountId,
       inflationStartYear,
@@ -95,7 +94,7 @@ export async function POST(
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    const entCheck = await assertEntitiesInClient(id, [linkedEntityId, ownerEntityId]);
+    const entCheck = await assertEntitiesInClient(id, [ownerEntityId]);
     if (!entCheck.ok) {
       return NextResponse.json({ error: entCheck.reason }, { status: 400 });
     }
@@ -118,7 +117,6 @@ export async function POST(
         growthSource: growthSource === "inflation" ? "inflation" : "custom",
         owner: owner ?? "client",
         claimingAge: claimingAge ? Number(claimingAge) : null,
-        linkedEntityId: linkedEntityId ?? null,
         ownerEntityId: ownerEntityId ?? null,
         cashAccountId: cashAccountId ?? null,
         inflationStartYear: inflationStartYear != null ? Number(inflationStartYear) : null,

@@ -81,7 +81,6 @@ export const incomeCreateSchema = z
     growthSource: z.string().max(40).optional(),
     owner: ownerSchema.optional(),
     claimingAge: z.coerce.number().int().min(0).max(100).optional().nullable(),
-    linkedEntityId: uuidLike.optional().nullable(),
     ownerEntityId: uuidLike.optional().nullable(),
     cashAccountId: uuidLike.optional().nullable(),
     inflationStartYear: year.optional().nullable(),
