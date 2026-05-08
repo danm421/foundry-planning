@@ -124,6 +124,12 @@ export const entityTypeEnum = pgEnum("entity_type", [
   "other",
 ]);
 
+export const entityTaxTreatmentEnum = pgEnum("entity_tax_treatment", [
+  "qbi",
+  "ordinary",
+  "non_taxable",
+]);
+
 export const familyRelationshipEnum = pgEnum("family_relationship", [
   "child",
   "grandchild",
@@ -546,6 +552,15 @@ export const entities = pgTable("entities", {
   distributionMode: text("distribution_mode").$type<"fixed" | "pct_liquid" | "pct_income" | null>(),
   distributionAmount: decimal("distribution_amount", { precision: 14, scale: 2 }),
   distributionPercent: decimal("distribution_percent", { precision: 7, scale: 4 }),
+  taxTreatment: entityTaxTreatmentEnum("tax_treatment")
+    .notNull()
+    .default("ordinary"),
+  // Business-type only. % of net income distributed to entity_owners each year.
+  // Null for trusts (which use distributionMode + distributionPercent above).
+  distributionPolicyPercent: decimal("distribution_policy_percent", {
+    precision: 5,
+    scale: 4,
+  }),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
