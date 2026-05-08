@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import { deriveIsIrrevocable, type TrustSubType } from "@/lib/entities/trust";
 import type { Designation, Entity, ExternalBeneficiary, FamilyMember } from "../family-view";
@@ -19,6 +19,12 @@ import TransferSeriesForm from "./transfer-series-form";
 import DialogShell from "../dialog-shell";
 import ClutDetailsSection from "./clut-details-section";
 import type { TrustSplitInterestInput } from "@/lib/schemas/trust-split-interest";
+import {
+  diffClutFundingPicks,
+  type ClutFundingPick,
+} from "@/lib/forms/clut-funding-diff";
+import type { ClutFundingPickerAccount } from "./clut-funding-picker";
+import { RETIREMENT_SUBTYPES } from "@/lib/ownership";
 
 interface AddTrustFormProps {
   clientId: string;
@@ -67,6 +73,16 @@ const TRUST_TYPE_LABELS: Record<TrustSubType, string> = {
   qtip: "QTIP",
   bypass: "Bypass / Credit Shelter",
 };
+
+function ownerSummary(owners: import("@/engine/ownership").AccountOwner[]): string {
+  if (owners.length === 1) {
+    const o = owners[0];
+    const pct = Math.round((o.percent ?? 1) * 100);
+    if (o.kind === "family_member") return `Family ${pct}%`;
+    return `Entity ${pct}%`;
+  }
+  return `${owners.length} owners`;
+}
 
 export default function AddTrustForm({
   clientId, editing, household, members, externals, entities,
@@ -144,6 +160,10 @@ export default function AddTrustForm({
     charityId: "",
   }));
 
+  // Picks for the CLUT funding-year FMV dropdown. Seeded from inception-year asset/cash transfers when editing.
+  const [clutFundingPicks, setClutFundingPicks] = useState<ClutFundingPick[]>([]);
+  const [originalClutFundingPicks, setOriginalClutFundingPicks] = useState<ClutFundingPick[]>([]);
+
   // ── Transfers tab state ────────────────────────────────────────────────────
   const [openModal, setOpenModal] = useState<"asset" | "cash" | "series" | null>(null);
   const [transferEvents, setTransferEvents] = useState<TransferEvent[]>([]);
@@ -179,6 +199,90 @@ export default function AddTrustForm({
     return () => { alive = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, editing?.id, clientId, refetchTick, accounts, liabilities, trustSubType]);
+
+  // Seed CLUT funding picks from transferEvents at the inception year.
+  // Re-runs when the inception year changes or when transferEvents reload.
+  useEffect(() => {
+    if (trustSubType !== "clut") return;
+    if (splitInterest.origin !== "new") return;
+    if (!editing) return; // create mode has no fetched gifts to seed from
+    const year = splitInterest.inceptionYear;
+    const seeded: ClutFundingPick[] = [];
+    for (const ev of transferEvents) {
+      if (ev.year !== year) continue;
+      if (ev.kind === "asset") {
+        // transferEvents only carry accountName, so we look up by name in the accounts prop.
+        // Fragile if two accounts share a name — tracked as future work.
+        const acct = (accounts ?? []).find((a) => a.name === ev.accountName);
+        if (!acct) continue;
+        seeded.push({
+          kind: "asset",
+          accountId: acct.id,
+          percent: ev.percent,
+          existingGiftId: ev.id,
+        });
+      } else if (ev.kind === "cash") {
+        seeded.push({
+          kind: "cash",
+          grantor: ev.grantor,
+          amount: ev.amount,
+          existingGiftId: ev.id,
+        });
+      }
+      // liability_only: not in scope — left on the Transfers tab.
+    }
+    setClutFundingPicks(seeded);
+    setOriginalClutFundingPicks(seeded);
+  }, [trustSubType, splitInterest.origin, splitInterest.inceptionYear, transferEvents, accounts, editing]);
+
+  const fundingAccounts = useMemo<ClutFundingPickerAccount[]>(() => {
+    if (trustSubType !== "clut") return [];
+    const trustId = editing?.id;
+    return (accounts ?? [])
+      .filter((a) => {
+        if (a.subType && (RETIREMENT_SUBTYPES as readonly string[]).includes(a.subType)) return false;
+        if (a.isDefaultChecking) return false;
+        if (trustId) {
+          const trustOwn = a.owners.find(
+            (o) => o.kind === "entity" && o.entityId === trustId,
+          );
+          if (trustOwn && (trustOwn.percent ?? 0) >= 1) return false;
+        }
+        const pinnedToOther = a.owners.some(
+          (o) =>
+            o.kind === "entity" &&
+            o.entityId !== trustId &&
+            (o.percent ?? 0) > 0,
+        );
+        if (pinnedToOther) return false;
+        return true;
+      })
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        subType: a.subType,
+        ownerSummary: ownerSummary(a.owners),
+        value: a.value,
+      }));
+  }, [accounts, trustSubType, editing?.id]);
+
+  // Sync splitInterest.inceptionValue to Σ(asset.value × pct) + Σ(cash.amount) whenever picks change.
+  useEffect(() => {
+    if (trustSubType !== "clut") return;
+    if (splitInterest.origin !== "new") return;
+    const total = clutFundingPicks.reduce((sum, p) => {
+      if (p.kind === "asset") {
+        const acct = fundingAccounts.find((a) => a.id === p.accountId);
+        if (!acct) return sum;
+        return sum + acct.value * p.percent;
+      }
+      return sum + p.amount;
+    }, 0);
+    if (total !== splitInterest.inceptionValue) {
+      setSplitInterest((prev) => ({ ...prev, inceptionValue: total }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clutFundingPicks, fundingAccounts, trustSubType, splitInterest.origin]);
 
   // ── Asset tab op handler ───────────────────────────────────────────────────
   const handleAssetTabOp = useCallback(async (op: AssetTabOp) => {
@@ -253,6 +357,24 @@ export default function AddTrustForm({
       return;
     }
 
+    if (trustSubType === "clut" && splitInterest.origin === "new") {
+      if (clutFundingPicks.length === 0) {
+        setError("Pick at least one funding asset or cash gift for the CLUT.");
+        return;
+      }
+      const bad = clutFundingPicks.find(
+        (p) => (p.kind === "asset" ? p.percent <= 0 : p.amount <= 0),
+      );
+      if (bad) {
+        setError(
+          bad.kind === "asset"
+            ? "Asset picks must have a percent greater than 0."
+            : "Cash picks must have an amount greater than 0.",
+        );
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -286,6 +408,48 @@ export default function AddTrustForm({
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
       const saved = (await res.json()) as Entity;
+
+      // Apply CLUT funding-pick changes as gift ops.
+      if (trustSubType === "clut" && splitInterest.origin === "new") {
+        const ops = diffClutFundingPicks({
+          original: originalClutFundingPicks,
+          current: clutFundingPicks,
+          entityId: saved.id,
+          year: splitInterest.inceptionYear,
+          defaultAssetGrantor: grantor === "" ? "client" : grantor,
+        });
+        for (const op of ops) {
+          if (op.type === "create") {
+            const res = await fetch(`/api/clients/${clientId}/gifts`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(op.body),
+            });
+            if (!res.ok) {
+              const j = (await res.json().catch(() => ({}))) as { error?: string };
+              throw new Error(j.error ?? `Failed to create gift (HTTP ${res.status})`);
+            }
+          } else if (op.type === "update") {
+            const res = await fetch(`/api/clients/${clientId}/gifts/${op.giftId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(op.body),
+            });
+            if (!res.ok) {
+              const j = (await res.json().catch(() => ({}))) as { error?: string };
+              throw new Error(j.error ?? `Failed to update gift (HTTP ${res.status})`);
+            }
+          } else {
+            const res = await fetch(`/api/clients/${clientId}/gifts/${op.giftId}`, {
+              method: "DELETE",
+            });
+            if (!res.ok) {
+              const j = (await res.json().catch(() => ({}))) as { error?: string };
+              throw new Error(j.error ?? `Failed to delete gift (HTTP ${res.status})`);
+            }
+          }
+        }
+      }
 
       // Save designations (income + remainder)
       const designations = [
@@ -449,6 +613,10 @@ export default function AddTrustForm({
               charities={externals
                 .filter((e) => e.kind === "charity")
                 .map((e) => ({ id: e.id, name: e.name }))}
+              fundingAccounts={fundingAccounts}
+              fundingPicks={clutFundingPicks}
+              onFundingPicksChange={setClutFundingPicks}
+              defaultGrantor={grantor === "" ? "client" : grantor}
             />
           </div>
         )}
