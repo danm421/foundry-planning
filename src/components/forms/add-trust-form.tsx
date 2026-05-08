@@ -156,7 +156,12 @@ export default function AddTrustForm({
   // Mirrors the pattern used in beneficiaries-tab.tsx (per-account self-fetch on mount).
   // Fetches ALL gifts for the client then filters to this trust on the client side.
   useEffect(() => {
-    if (activeTab !== "transfers" || !editing) return;
+    // Fetch when editing any trust (Transfers tab is the obvious consumer; Details
+    // tab also needs inception-year gifts for the CLUT funding picker).
+    if (!editing) return;
+    // Skip the fetch on Details tab for non-CLUT trusts to avoid the network hit.
+    const needsGifts = activeTab === "transfers" || trustSubType === "clut";
+    if (!needsGifts) return;
     let alive = true;
     setTransferFetchError(null);
     Promise.all([
@@ -173,7 +178,7 @@ export default function AddTrustForm({
     });
     return () => { alive = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, editing?.id, clientId, refetchTick, accounts, liabilities]);
+  }, [activeTab, editing?.id, clientId, refetchTick, accounts, liabilities, trustSubType]);
 
   // ── Asset tab op handler ───────────────────────────────────────────────────
   const handleAssetTabOp = useCallback(async (op: AssetTabOp) => {
