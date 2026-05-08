@@ -74,9 +74,6 @@ export default function FlowsTab(props: FlowsTabProps) {
 
   return (
     <div className="space-y-6">
-      <FlowCard kind="income" {...props} writer={writer} />
-      <FlowCard kind="expense" {...props} writer={writer} />
-
       {/* Schedule button — only shown when there is a real entity + active scenario to write to */}
       {props.entityId && scenarioId ? (
         <div className="flex justify-end">
@@ -100,6 +97,9 @@ export default function FlowsTab(props: FlowsTabProps) {
           </button>
         </div>
       )}
+
+      <FlowCard kind="income" {...props} writer={writer} />
+      <FlowCard kind="expense" {...props} writer={writer} />
 
       {isBusinessType(props.entityType) && (
         <DistributionAndTaxSection {...props} writer={writer} />
