@@ -42,6 +42,8 @@ export interface AssetSaleBreakdown {
   taxableCapitalGain: number;
   mortgagePaidOff: number;
   proceedsAccountId: string;
+  fractionSold: number;
+  skipped?: "orphaned" | "no-source-balance";
 }
 
 export interface AssetSalesResult {
@@ -87,10 +89,30 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
 
   for (const sale of sales) {
     if (sale.type !== "sell" || sale.year !== year) continue;
-    if (!sale.accountId) continue;
 
-    const accountId = sale.accountId;
-    const currentBalance = accountBalances[accountId] ?? 0;
+    const sourceAccountId = sale.accountId
+      ?? (sale.purchaseTransactionId ? `technique-acct-${sale.purchaseTransactionId}` : null);
+
+    // Skeleton breakdown shared by orphan + no-source-balance paths.
+    const skeleton: AssetSaleBreakdown = {
+      transactionId: sale.id,
+      accountId: sourceAccountId ?? "",
+      saleValue: 0, basis: 0, transactionCosts: 0, netProceeds: 0,
+      capitalGain: 0, homeSaleExclusionApplied: 0, taxableCapitalGain: 0,
+      mortgagePaidOff: 0, proceedsAccountId: "",
+      fractionSold: sale.fractionSold ?? 1,
+    };
+    if (!sourceAccountId) {
+      breakdown.push({ ...skeleton, skipped: "orphaned" });
+      continue;
+    }
+    if (accountBalances[sourceAccountId] === undefined) {
+      breakdown.push({ ...skeleton, skipped: "no-source-balance" });
+      continue;
+    }
+
+    const accountId = sourceAccountId;
+    const currentBalance = accountBalances[accountId];
     const currentBasis = basisMap[accountId] ?? 0;
 
     // Determine sale value and basis (use overrides when provided)
@@ -182,6 +204,7 @@ export function applyAssetSales(input: ApplyAssetSalesInput): AssetSalesResult {
       taxableCapitalGain,
       mortgagePaidOff,
       proceedsAccountId,
+      fractionSold: sale.fractionSold ?? 1,
     });
   }
 

@@ -388,3 +388,97 @@ describe("applyAssetPurchases — deterministic synthetic ids", () => {
     expect(result.newAccounts[0].id).toBe("technique-acct-buy-uuid-fixed");
   });
 });
+
+describe("applyAssetSales — source resolution", () => {
+  it("resolves sell.purchaseTransactionId → technique-acct-${purchase.id}", () => {
+    const sell: AssetTransaction = {
+      id: "sell-uuid",
+      name: "Sell Vacation Home",
+      type: "sell",
+      year: 2035,
+      purchaseTransactionId: "buy-uuid-fixed",
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const accountBalances: Record<string, number> = {
+      "technique-acct-buy-uuid-fixed": 510_000,  // post-growth value
+      "checking": 50_000,
+    };
+    const basisMap: Record<string, number> = {
+      "technique-acct-buy-uuid-fixed": 400_000,
+      "checking": 50_000,
+    };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [{
+        id: "technique-acct-buy-uuid-fixed",
+        category: "real_estate",
+      } as Account],
+      liabilities: [],
+      accountBalances,
+      basisMap,
+      accountLedgers: {
+        "technique-acct-buy-uuid-fixed": makeLedger(510_000),
+        "checking": makeLedger(50_000),
+      },
+      year: 2035,
+      defaultCheckingId: "checking",
+      filingStatus: "married_joint",
+    });
+
+    expect(result.breakdown[0].accountId).toBe("technique-acct-buy-uuid-fixed");
+    expect(result.breakdown[0].capitalGain).toBeCloseTo(110_000, 2);
+    expect(result.capitalGains).toBeCloseTo(110_000, 2);
+  });
+
+  it("skips with skipped='orphaned' when sell has neither accountId nor purchaseTransactionId", () => {
+    const sell: AssetTransaction = {
+      id: "orphan-sell",
+      name: "Orphaned",
+      type: "sell",
+      year: 2035,
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [],
+      liabilities: [],
+      accountBalances: { checking: 0 },
+      basisMap: { checking: 0 },
+      accountLedgers: { checking: makeLedger(0) },
+      year: 2035,
+      defaultCheckingId: "checking",
+      filingStatus: "married_joint",
+    });
+    expect(result.capitalGains).toBe(0);
+    expect(result.breakdown).toEqual([
+      expect.objectContaining({
+        transactionId: "orphan-sell",
+        skipped: "orphaned",
+      }),
+    ]);
+  });
+
+  it("skips with skipped='no-source-balance' when synthetic source not yet created", () => {
+    // Sell year before buy year: form should block this, defense-in-depth here.
+    const sell: AssetTransaction = {
+      id: "early-sell",
+      name: "Early",
+      type: "sell",
+      year: 2025,
+      purchaseTransactionId: "buy-uuid-fixed",
+      qualifiesForHomeSaleExclusion: false,
+    };
+    const result = applyAssetSales({
+      sales: [sell],
+      accounts: [],
+      liabilities: [],
+      accountBalances: { checking: 0 },  // no technique-acct-* yet
+      basisMap: { checking: 0 },
+      accountLedgers: { checking: makeLedger(0) },
+      year: 2025,
+      defaultCheckingId: "checking",
+      filingStatus: "married_joint",
+    });
+    expect(result.breakdown[0].skipped).toBe("no-source-balance");
+  });
+});
