@@ -139,3 +139,47 @@ describe("Phase 3: business entity tax incidence", () => {
     expect(taxDelta).toBeLessThan(40_000);
   });
 });
+
+describe("Phase 3: business entity distribution flow", () => {
+  it("100% distribution: entity net income flows to household checking", () => {
+    const data = mkData(); // 100% distribution, $100k net
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // Compare to no-income baseline: household checking should be ~$100k higher.
+    const noIncomeData = mkData({ incomes: [] });
+    const noIncomeYears = runProjection(noIncomeData);
+
+    const hhDelta =
+      y0.accountLedgers["hh-checking"].endingValue -
+      noIncomeYears[0].accountLedgers["hh-checking"].endingValue;
+
+    // Inflow ≈ $100k pre-tax. Tax debits are also higher (~$29k extra), so the
+    // net delta is roughly $100k - $29k ≈ $71k. We just check direction + bound.
+    expect(hhDelta).toBeGreaterThan(50_000);
+    expect(hhDelta).toBeLessThan(110_000);
+  });
+
+  it("partial distribution (50%): only half flows to household; rest retained in entity", () => {
+    const data = mkData({ entity: { distributionPolicyPercent: 0.5 } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // Entity checking should hold the retained half.
+    // Started at $0, no growth, +$100k income, -$50k distribution → $50k.
+    const entityLedger = y0.accountLedgers["llc1-checking"];
+    expect(entityLedger.endingValue).toBeCloseTo(50_000, 0);
+  });
+
+  it("distribution audit entry uses 'entity_distribution' category", () => {
+    const data = mkData();
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    const hhEntries = y0.accountLedgers["hh-checking"].entries;
+    const distEntry = hhEntries.find((e) => e.category === "entity_distribution");
+    expect(distEntry).toBeDefined();
+    expect(distEntry!.amount).toBeCloseTo(100_000, 0);
+    expect(distEntry!.sourceId).toBe("llc1");
+  });
+});

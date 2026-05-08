@@ -2151,6 +2151,44 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       });
     }
 
+    // ── Phase 3: business-entity distribution to household ─────────────────
+    // After income/expense crediting on entity checking, sweep net income to
+    // household checking per the entity's distributionPolicyPercent. Trusts
+    // skipped (they keep the existing distribution-policy mechanic).
+    // Per spec § Phase 3 decisions:
+    //   P3-3: skip when entityType === 'trust'
+    //   P3-4: same year, audit category "entity_distribution"
+    //   P3-5: null distributionPolicyPercent defaults to 1.0
+    //   P3-7: target is household defaultChecking always
+    //   P3-8: losses → no distribution (skip net ≤ 0)
+    for (const entity of currentEntities) {
+      if (entity.entityType === "trust") continue;
+      const netIncome = computeBusinessEntityNetIncome(
+        entity.id,
+        currentIncomes,
+        allExpenses,
+        year,
+      );
+      if (netIncome <= 0) continue;
+      const distPercent = entity.distributionPolicyPercent ?? 1.0;
+      const distAmount = netIncome * distPercent;
+      if (distAmount === 0) continue;
+      const entityCheckingId = entityCheckingByEntityId[entity.id];
+      if (!entityCheckingId) continue; // entity has no cash account → cannot distribute
+      // Debit entity checking
+      creditCash(entityCheckingId, -distAmount, {
+        category: "entity_distribution",
+        label: `Distribution from ${entity.name ?? entity.id}`,
+        sourceId: entity.id,
+      });
+      // Credit household checking
+      creditCash(defaultChecking?.id, distAmount, {
+        category: "entity_distribution",
+        label: `Distribution from ${entity.name ?? entity.id}`,
+        sourceId: entity.id,
+      });
+    }
+
     // 8. Liability payments settle against the owning party's cash account —
     // pro-rated by ownership share. Household share leaves household checking;
     // each entity owner's share leaves that entity's checking.
