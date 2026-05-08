@@ -65,7 +65,7 @@ export default function FlowsTab(props: FlowsTabProps) {
       <FlowCard kind="income" {...props} writer={writer} />
       <FlowCard kind="expense" {...props} writer={writer} />
       {isBusinessType(props.entityType) && (
-        <DistributionAndTaxSection {...props} />
+        <DistributionAndTaxSection {...props} writer={writer} />
       )}
     </div>
   );
@@ -361,7 +361,8 @@ function DistributionAndTaxSection({
   clientId,
   distributionPolicyPercent,
   taxTreatment,
-}: FlowsTabProps) {
+  writer,
+}: FlowsTabProps & { writer: WriterShape }) {
   const [pct, setPct] = useState(
     distributionPolicyPercent != null
       ? String((distributionPolicyPercent * 100).toFixed(2))
@@ -375,16 +376,22 @@ function DistributionAndTaxSection({
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/clients/${clientId}/entities/${entityId}`,
+      const desiredFields = {
+        distributionPolicyPercent:
+          pct.trim() === "" ? null : Number(pct) / 100,
+        taxTreatment: tx,
+      };
+      const res = await writer.submit(
         {
+          op: "edit",
+          targetKind: "entity",
+          targetId: entityId,
+          desiredFields,
+        },
+        {
+          url: `/api/clients/${clientId}/entities/${entityId}`,
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            distributionPolicyPercent:
-              pct.trim() === "" ? null : Number(pct) / 100,
-            taxTreatment: tx,
-          }),
+          body: desiredFields,
         },
       );
       if (!res.ok) {

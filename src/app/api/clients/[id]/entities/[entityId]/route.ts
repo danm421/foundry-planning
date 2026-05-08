@@ -225,6 +225,14 @@ export async function PUT(
       patch.entityType !== "trust" &&
       existing.entityType === "trust";
 
+    const existingWasBusiness = !["trust", "foundation"].includes(
+      existing.entityType,
+    );
+    const typeSwitchedAwayFromBusiness =
+      patch.entityType !== undefined &&
+      existingWasBusiness &&
+      !isBusinessType;
+
     const [updated] = await db
       .update(entities)
       .set({
@@ -289,6 +297,9 @@ export async function PUT(
           distributionMode: null,
           distributionAmount: null,
           distributionPercent: null,
+        }),
+        ...(typeSwitchedAwayFromBusiness && {
+          distributionPolicyPercent: null,
         }),
         updatedAt: new Date(),
       })
