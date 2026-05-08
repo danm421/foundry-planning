@@ -35,6 +35,7 @@ function makeYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
       insurance: 0,
       realEstate: 0,
       taxes: 0,
+      cashGifts: 0,
       total: 80_000,
       bySource: {},
       byLiability: {},

@@ -848,6 +848,10 @@ export interface ProjectionYear {
     insurance: number;
     realEstate: number;
     taxes: number;
+    /** Cash gifts that drained a household-owned account in this year. Already
+     *  rolled into `other` and `total`; surfaced separately so the cashflow
+     *  report can show a dedicated column under Expenses > Other. */
+    cashGifts: number;
     total: number;
     bySource: Record<string, number>;
     byLiability: Record<string, number>;

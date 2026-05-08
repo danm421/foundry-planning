@@ -1428,6 +1428,13 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           subLevel === "other_expense" && techniqueExpenseIds.length > 0;
         const techniqueYearTotal = (r: ProjectionYear) =>
           techniqueExpenseIds.reduce((sum, id) => sum + (r.expenses.bySource[id] ?? 0), 0);
+        // Cash gifts that drained household-owned accounts already roll into
+        // r.expenses.other; surface them as their own column under Other so
+        // the report shows the portfolio drain explicitly.
+        const cashGiftsYearTotal = (r: ProjectionYear) => r.expenses.cashGifts ?? 0;
+        const showCashGifts =
+          subLevel === "other_expense" &&
+          visibleYears.some((y) => cashGiftsYearTotal(y) > 0);
         return [
           ...baseColumns,
           ...sourceIds.map((id) =>
@@ -1468,12 +1475,16 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                 ),
               ]
             : []),
+          ...(showCashGifts
+            ? [numCol("exp_cash_gifts", "Cash Gifts", cashGiftsYearTotal)]
+            : []),
           numCol(
             "exp_subtype_total",
             `${DRILL_LABELS[subLevel] ?? subLevel} Total`,
             (r) =>
               sourceIds.reduce((sum, id) => sum + (r.expenses.bySource[id] ?? 0), 0) +
-              (showConsolidatedTechnique ? techniqueYearTotal(r) : 0),
+              (showConsolidatedTechnique ? techniqueYearTotal(r) : 0) +
+              (showCashGifts ? cashGiftsYearTotal(r) : 0),
             true,
           ),
         ];

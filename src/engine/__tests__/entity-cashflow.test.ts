@@ -38,6 +38,7 @@ function makeYear(year: number): ProjectionYear {
       insurance: 0,
       realEstate: 0,
       taxes: 0,
+      cashGifts: 0,
       total: 0,
       bySource: {},
       byLiability: {},

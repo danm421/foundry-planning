@@ -2419,6 +2419,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // advisor-specified override) and credit the recipient trust's default checking.
     // Inserted after savings/employer-match so the household shortfall (if any) is
     // visible to the withdrawal gap-fill in step 12.
+    let householdCashGiftsTotal = 0;
     for (const gift of data.giftEvents) {
       if (gift.kind !== "cash" || gift.year !== year) continue;
       // Resolve source: use the advisor-specified account if set; fall back to
@@ -2441,6 +2442,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         label: `Cash gift received`,
         sourceId: gift.recipientEntityId,
       });
+
+      // Surface household-side outflows on the cashflow report. Counted only
+      // when the source is a household-owned account; gifts originating from
+      // entity-owned accounts (e.g. trust → charity) drain the entity, not the
+      // household portfolio.
+      const sourceAccount = data.accounts.find((a) => a.id === sourceId);
+      if (sourceAccount && !isFullyEntityOwned(sourceAccount)) {
+        householdCashGiftsTotal += gift.amount;
+      }
     }
 
     // Snapshot the checking balance *before* this year's inflows/outflows are applied
@@ -3111,10 +3121,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const expenses = {
       living: expenseBreakdown.living,
       liabilities: liabResult.totalPayment,
-      other: expenseBreakdown.other + techniqueExpenses,
+      other: expenseBreakdown.other + techniqueExpenses + householdCashGiftsTotal,
       insurance: expenseBreakdown.insurance,
       realEstate: householdSyntheticExpenseTotal,
       taxes: totalTaxes,
+      cashGifts: householdCashGiftsTotal,
       total:
         expenseBreakdown.living +
         expenseBreakdown.other +
@@ -3122,7 +3133,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         householdSyntheticExpenseTotal +
         liabResult.totalPayment +
         totalTaxes +
-        techniqueExpenses,
+        techniqueExpenses +
+        householdCashGiftsTotal,
       bySource: {
         ...expenseBreakdown.bySource,
         ...Object.fromEntries(

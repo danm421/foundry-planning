@@ -3492,4 +3492,165 @@ describe("cash gift cashflow routing (Task 10 — Phase 3)", () => {
     );
     expect(trustGift2031.length).toBe(0);
   });
+
+  it("surfaces household cash gifts in expenses.cashGifts and rolls them into other/total", () => {
+    const data: ClientData = {
+      client: cashGiftClient,
+      accounts: [
+        {
+          id: "acct-hh-cg-expense",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 200_000,
+          basis: 200_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+        {
+          id: "acct-trust-cg-expense",
+          name: "Trust Checking",
+          category: "cash",
+          subType: "checking",
+          value: 0,
+          basis: 0,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "entity", entityId: "trust-cg-1", percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: cashGiftPlanSettings,
+      entities: [
+        {
+          id: "trust-cg-1",
+          name: "SLAT",
+          includeInPortfolio: false,
+          isGrantor: true,
+          isIrrevocable: true,
+          entityType: "trust",
+          distributionMode: null,
+        },
+      ],
+      giftEvents: [
+        {
+          kind: "cash",
+          year: 2028,
+          amount: 25_000,
+          grantor: "client",
+          recipientEntityId: "trust-cg-1",
+          useCrummeyPowers: false,
+        },
+      ],
+    };
+
+    const yrs = runProjection(data);
+    const yr2027 = yrs.find((y) => y.year === 2027)!;
+    const yr2028 = yrs.find((y) => y.year === 2028)!;
+
+    // Pre-gift year: cashGifts is zero and other/total don't include any gift.
+    expect(yr2027.expenses.cashGifts).toBeCloseTo(0, 0);
+
+    // Gift year: cashGifts surfaces the household-side outflow, and the value
+    // rolls into expenses.other and expenses.total.
+    expect(yr2028.expenses.cashGifts).toBeCloseTo(25_000, 0);
+    const otherDelta = yr2028.expenses.other - yr2027.expenses.other;
+    expect(otherDelta).toBeCloseTo(25_000, 0);
+    const totalDelta = yr2028.expenses.total - yr2027.expenses.total;
+    expect(totalDelta).toBeCloseTo(25_000, 0);
+  });
+
+  it("does not double-count gifts whose source is an entity-owned account", () => {
+    // A gift sourced from a trust-owned account should not contribute to
+    // household cashGifts or to household expenses.other / expenses.total.
+    const data: ClientData = {
+      client: cashGiftClient,
+      accounts: [
+        {
+          id: "acct-hh-skip",
+          name: "Household Checking",
+          category: "cash",
+          subType: "checking",
+          value: 200_000,
+          basis: 200_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+        },
+        {
+          id: "acct-trust-source",
+          name: "Trust A Checking",
+          category: "cash",
+          subType: "checking",
+          value: 100_000,
+          basis: 100_000,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "entity", entityId: "trust-source", percent: 1 }],
+        },
+        {
+          id: "acct-trust-recipient",
+          name: "Trust B Checking",
+          category: "cash",
+          subType: "checking",
+          value: 0,
+          basis: 0,
+          growthRate: 0,
+          rmdEnabled: false,
+          isDefaultChecking: true,
+          owners: [{ kind: "entity", entityId: "trust-recipient", percent: 1 }],
+        },
+      ],
+      incomes: [],
+      expenses: [],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: [],
+      planSettings: cashGiftPlanSettings,
+      entities: [
+        {
+          id: "trust-source",
+          name: "Source Trust",
+          includeInPortfolio: false,
+          isGrantor: true,
+          isIrrevocable: true,
+          entityType: "trust",
+          distributionMode: null,
+        },
+        {
+          id: "trust-recipient",
+          name: "Recipient Trust",
+          includeInPortfolio: false,
+          isGrantor: true,
+          isIrrevocable: true,
+          entityType: "trust",
+          distributionMode: null,
+        },
+      ],
+      giftEvents: [
+        {
+          kind: "cash",
+          year: 2028,
+          amount: 15_000,
+          grantor: "client",
+          recipientEntityId: "trust-recipient",
+          sourceAccountId: "acct-trust-source",
+          useCrummeyPowers: false,
+        },
+      ],
+    };
+
+    const yrs = runProjection(data);
+    const yr2028 = yrs.find((y) => y.year === 2028)!;
+    expect(yr2028.expenses.cashGifts).toBeCloseTo(0, 0);
+  });
 });
