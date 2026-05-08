@@ -91,13 +91,21 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
       let beginningBalance = 0;
       let endingBalance = 0;
       let growth = 0;
+      let income = 0;
+      let expenses = 0;
       for (const aid of accountIds) {
         const ledger = year.accountLedgers[aid];
         if (!ledger) continue;
         beginningBalance += ledger.beginningValue;
         endingBalance += ledger.endingValue;
         growth += ledger.growth;
+        for (const entry of ledger.entries) {
+          if (entry.isInternalTransfer) continue;
+          if (entry.category === "income") income += Math.abs(entry.amount);
+          if (entry.category === "expense") expenses += Math.abs(entry.amount);
+        }
       }
+      const totalDistributions = year.trustDistributionsByEntity?.get(entityId) ?? 0;
 
       if (entity.entityType === "trust") {
         year.entityCashFlow.set(entityId, {
@@ -111,9 +119,9 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           beginningBalance,
           transfersIn: 0,
           growth,
-          income: 0,
-          totalDistributions: 0,
-          expenses: 0,
+          income,
+          totalDistributions,
+          expenses,
           taxes: 0,
           endingBalance,
         });

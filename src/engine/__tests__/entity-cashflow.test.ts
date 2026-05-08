@@ -147,4 +147,48 @@ describe("computeEntityCashFlow", () => {
     expect(row && row.kind === "trust" && row.endingBalance).toBe(158_000);
     expect(row && row.kind === "trust" && row.growth).toBe(8_000);
   });
+
+  it("populates trust income, expenses, and totalDistributions", () => {
+    const trust = {
+      id: "trust-1",
+      name: "Smith SLAT",
+      entityType: "trust" as const,
+      trustSubType: "slat" as const,
+      isGrantor: false,
+      initialValue: 0,
+      initialBasis: 0,
+    };
+    const y = makeYear(2026);
+    y.accountLedgers = {
+      "trust-cash": {
+        beginningValue: 0,
+        endingValue: 0,
+        growth: 0,
+        contributions: 75_000,
+        distributions: 60_000,
+        internalContributions: 0,
+        internalDistributions: 0,
+        rmdAmount: 0,
+        fees: 0,
+        entries: [
+          { category: "income", label: "Rental", amount: 75_000, sourceId: "inc-rental" },
+          { category: "expense", label: "Management fees", amount: -10_000, sourceId: "exp-mgmt" },
+        ],
+      },
+    };
+    y.trustDistributionsByEntity = new Map([["trust-1", 50_000]]);
+    computeEntityCashFlow({
+      years: [y],
+      entitiesById: new Map([["trust-1", trust]]),
+      accountEntityOwners: new Map([["trust-cash", { entityId: "trust-1", percent: 1 }]]),
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+    });
+    const row = y.entityCashFlow.get("trust-1")!;
+    expect(row.kind).toBe("trust");
+    expect((row as { kind: "trust"; income: number }).income).toBe(75_000);
+    expect((row as { kind: "trust"; expenses: number }).expenses).toBe(10_000);
+    expect((row as { kind: "trust"; totalDistributions: number }).totalDistributions).toBe(50_000);
+  });
 });
