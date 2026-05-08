@@ -3,26 +3,65 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { runProjection } from "@/engine/projection";
-import type { ProjectionYear } from "@/engine/types";
+import type { ProjectionYear, Income, Expense, EntityFlowOverride } from "@/engine/types";
 import HeaderControls, { type EntityOption } from "./entities-cashflow-report/header-controls";
 import TrustTable from "./entities-cashflow-report/trust-table";
 import BusinessTable from "./entities-cashflow-report/business-table";
+import EntityLedgerModal from "./entities-cashflow-report/entity-ledger-modal";
 import { selectEntityRows, type SelectedRows } from "./entities-cashflow-report/view-model";
+import {
+  getEntityLedger,
+  type EntityLedger,
+  type LedgerSection,
+} from "@/lib/entity-ledger";
+import type { EntityMetadata } from "@/engine/entity-cashflow";
 
 interface Props {
   clientId: string;
   entities: EntityOption[];
 }
 
+interface ApiData {
+  accounts: {
+    id: string;
+    name: string;
+    owners?: Array<
+      | { kind: "family_member"; familyMemberId: string; percent: number }
+      | { kind: "entity"; entityId: string; percent: number }
+    >;
+  }[];
+  entities: {
+    id: string;
+    name: string;
+    entityType?: string;
+    valueGrowthRate?: number;
+    flowMode?: string;
+    value?: number;
+    basis?: number;
+    isGrantor?: boolean;
+    trustSubType?: string;
+  }[];
+  incomes: Income[];
+  expenses: Expense[];
+  entityFlowOverrides?: EntityFlowOverride[];
+}
+
 export default function EntitiesCashFlowReportView({ clientId, entities }: Props) {
   const searchParams = useSearchParams();
   const [years, setYears] = useState<ProjectionYear[]>([]);
+  const [apiData, setApiData] = useState<ApiData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedEntityId, setSelectedEntityId] = useState(entities[0]?.id ?? "");
   const [yearRange, setYearRange] = useState<[number, number] | null>(null);
   const [clientRetirementYear, setClientRetirementYear] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [openLedger, setOpenLedger] = useState<{
+    entityId: string;
+    entityName: string;
+    year: number;
+    section: LedgerSection;
+  } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -39,6 +78,7 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
         const data = await res.json();
         const projection = runProjection(data);
         setYears(projection);
+        setApiData(data as ApiData);
         if (projection.length > 0) {
           setYearRange([projection[0].year, projection[projection.length - 1].year]);
         }
@@ -69,6 +109,51 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
       endYear: yearRange[1],
     });
   }, [years, selectedEntityId, yearRange]);
+
+  const ledger = useMemo<EntityLedger | null>(() => {
+    if (!openLedger || !apiData) return null;
+    const yr = years.find((y) => y.year === openLedger.year);
+    if (!yr) return null;
+
+    const entitiesById = new Map<string, EntityMetadata>(
+      apiData.entities.map((e) => [
+        e.id,
+        {
+          id: e.id,
+          name: e.name,
+          entityType: (e.entityType ?? "other") as EntityMetadata["entityType"],
+          trustSubType: (e.trustSubType ?? null) as EntityMetadata["trustSubType"],
+          isGrantor: e.isGrantor ?? false,
+          initialValue: e.value ?? 0,
+          initialBasis: e.basis ?? 0,
+          flowMode: (e.flowMode ?? "annual") as EntityMetadata["flowMode"],
+          valueGrowthRate: e.valueGrowthRate ?? null,
+        },
+      ]),
+    );
+
+    const accountNamesById = new Map(apiData.accounts.map((a) => [a.id, a.name]));
+
+    const accountEntityOwners = new Map<string, { entityId: string; percent: number }>();
+    for (const a of apiData.accounts) {
+      for (const o of a.owners ?? []) {
+        if (o.kind === "entity") {
+          accountEntityOwners.set(a.id, { entityId: o.entityId, percent: o.percent });
+        }
+      }
+    }
+
+    return getEntityLedger(openLedger.entityId, {
+      year: yr,
+      planStartYear: years[0]?.year ?? openLedger.year,
+      entitiesById,
+      accountNamesById,
+      accountEntityOwners,
+      incomes: apiData.incomes,
+      expenses: apiData.expenses,
+      entityFlowOverrides: apiData.entityFlowOverrides ?? [],
+    });
+  }, [openLedger, apiData, years]);
 
   const onExportPdf = async () => {
     setExporting(true);
@@ -115,12 +200,69 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
         onExportPdf={onExportPdf}
       />
       <div className="p-4">
-        {selected.kind === "trust" && <TrustTable rows={selected.rows} currentYear={currentYear} />}
-        {selected.kind === "business" && <BusinessTable rows={selected.rows} currentYear={currentYear} />}
+        {selected.kind === "trust" && (
+          <TrustTable
+            rows={selected.rows}
+            currentYear={currentYear}
+            onCellClick={(row, section) =>
+              setOpenLedger({
+                entityId: row.entityId,
+                entityName: row.entityName,
+                year: row.year,
+                section,
+              })
+            }
+          />
+        )}
+        {selected.kind === "business" && (
+          <BusinessTable
+            rows={selected.rows}
+            currentYear={currentYear}
+            onCellClick={(row, section) =>
+              setOpenLedger({
+                entityId: row.entityId,
+                entityName: row.entityName,
+                year: row.year,
+                section,
+              })
+            }
+          />
+        )}
         {selected.kind === "empty" && (
           <div className="text-sm text-gray-400">No activity for this entity in the selected year range.</div>
         )}
       </div>
+      {openLedger && ledger && (() => {
+        let total: number | null = null;
+        if (selected.kind === "business") {
+          const row = selected.rows.find((r) => r.year === openLedger.year);
+          if (!row) return null;
+          if (openLedger.section === "growth") total = row.growth;
+          else if (openLedger.section === "income") total = row.income;
+          else if (openLedger.section === "expenses") total = row.expenses;
+          else total = row.endingTotalValue;
+        } else if (selected.kind === "trust") {
+          const row = selected.rows.find((r) => r.year === openLedger.year);
+          if (!row) return null;
+          if (openLedger.section === "growth") total = row.growth;
+          else if (openLedger.section === "income") total = row.income;
+          else if (openLedger.section === "expenses") total = row.expenses;
+          else total = row.endingBalance;
+        }
+        if (total === null) return null;
+
+        return (
+          <EntityLedgerModal
+            open={true}
+            onClose={() => setOpenLedger(null)}
+            entityName={openLedger.entityName}
+            year={openLedger.year}
+            section={openLedger.section}
+            rows={ledger[openLedger.section]}
+            total={total}
+          />
+        );
+      })()}
     </div>
   );
 }
