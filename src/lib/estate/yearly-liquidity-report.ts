@@ -1,12 +1,17 @@
+import { ownersForYear } from "@/engine/ownership";
 import type {
+  Account,
   ClientData,
   DrainAttribution,
   EstateTaxResult,
+  GiftEvent,
   HypotheticalEstateTax,
   HypotheticalEstateTaxOrdering,
   ProjectionResult,
   ProjectionYear,
 } from "@/engine/types";
+import { inEstateWeight, outOfEstateWeight } from "./in-estate-weights";
+import { isPolicyInForce } from "./insurance-in-force";
 
 export interface YearlyLiquidityReportInput {
   projection: ProjectionResult;
@@ -54,10 +59,21 @@ const ZERO_TOTALS: YearlyLiquidityReport["totals"] = {
 export function buildYearlyLiquidityReport(
   input: YearlyLiquidityReportInput,
 ): YearlyLiquidityReport {
-  const { projection, ownerDobs } = input;
+  const { projection, clientData, ownerDobs } = input;
 
   const clientBirthYear = parseBirthYear(ownerDobs.clientDob);
   const spouseBirthYear = parseBirthYear(ownerDobs.spouseDob);
+  const projectionStartYear = clientData.planSettings.planStartYear;
+  const giftEvents = clientData.giftEvents ?? [];
+
+  const clientRetirementYear =
+    clientBirthYear != null
+      ? clientBirthYear + clientData.client.retirementAge
+      : null;
+  const spouseRetirementYear =
+    spouseBirthYear != null && clientData.client.spouseRetirementAge != null
+      ? spouseBirthYear + clientData.client.spouseRetirementAge
+      : null;
 
   const rows: YearlyLiquidityRow[] = [];
   for (const yearRow of projection.years) {
@@ -65,7 +81,19 @@ export function buildYearlyLiquidityReport(
     if (!ht) continue;
     const branch = pickBranch(ht);
     if (!branch) continue;
-    rows.push(buildRow({ yearRow, branch, clientBirthYear, spouseBirthYear }));
+    rows.push(
+      buildRow({
+        yearRow,
+        branch,
+        clientBirthYear,
+        spouseBirthYear,
+        clientData,
+        giftEvents,
+        projectionStartYear,
+        clientRetirementYear,
+        spouseRetirementYear,
+      }),
+    );
   }
 
   const totals = rows.reduce<YearlyLiquidityReport["totals"]>(
@@ -91,18 +119,36 @@ interface RowArgs {
   branch: HypotheticalEstateTaxOrdering;
   clientBirthYear: number | null;
   spouseBirthYear: number | null;
+  clientData: ClientData;
+  giftEvents: GiftEvent[];
+  projectionStartYear: number;
+  clientRetirementYear: number | null;
+  spouseRetirementYear: number | null;
 }
 
-function buildRow({
-  yearRow,
-  branch,
-  clientBirthYear,
-  spouseBirthYear,
-}: RowArgs): YearlyLiquidityRow {
-  const insuranceInEstate = 0;
-  const insuranceOutOfEstate = 0;
-  const totalInsuranceBenefit = 0;
-  const totalPortfolioAssets = 0;
+function buildRow(args: RowArgs): YearlyLiquidityRow {
+  const {
+    yearRow,
+    branch,
+    clientBirthYear,
+    spouseBirthYear,
+    clientData,
+    giftEvents,
+    projectionStartYear,
+    clientRetirementYear,
+    spouseRetirementYear,
+  } = args;
+
+  const { insuranceInEstate, insuranceOutOfEstate } = computeInsurance({
+    yearRow,
+    clientData,
+    giftEvents,
+    projectionStartYear,
+    clientRetirementYear,
+    spouseRetirementYear,
+  });
+  const totalInsuranceBenefit = insuranceInEstate + insuranceOutOfEstate;
+  const totalPortfolioAssets = 0; // implemented in next task
   const totalTransferCost = transferCost(branch);
 
   return {
@@ -118,6 +164,77 @@ function buildRow({
       totalPortfolioAssets + totalInsuranceBenefit - totalTransferCost,
     surplusDeficitInsuranceOnly: totalInsuranceBenefit - totalTransferCost,
   };
+}
+
+interface InsuranceArgs {
+  yearRow: ProjectionYear;
+  clientData: ClientData;
+  giftEvents: GiftEvent[];
+  projectionStartYear: number;
+  clientRetirementYear: number | null;
+  spouseRetirementYear: number | null;
+}
+
+function computeInsurance(args: InsuranceArgs): {
+  insuranceInEstate: number;
+  insuranceOutOfEstate: number;
+} {
+  const {
+    yearRow,
+    clientData,
+    giftEvents,
+    projectionStartYear,
+    clientRetirementYear,
+    spouseRetirementYear,
+  } = args;
+
+  let inEstate = 0;
+  let outOfEstate = 0;
+
+  for (const account of clientData.accounts) {
+    if (account.category !== "life_insurance" || !account.lifeInsurance) continue;
+
+    const insuredRetirementYear = resolveInsuredRetirementYear(
+      account,
+      clientRetirementYear,
+      spouseRetirementYear,
+    );
+    if (!isPolicyInForce(account, yearRow.year, insuredRetirementYear)) continue;
+
+    const owners = ownersForYear(
+      account,
+      giftEvents,
+      yearRow.year,
+      projectionStartYear,
+    );
+    const face = account.lifeInsurance.faceValue;
+    for (const owner of owners) {
+      inEstate += face * owner.percent * inEstateWeight(clientData, owner);
+      outOfEstate += face * owner.percent * outOfEstateWeight(clientData, owner);
+    }
+  }
+
+  return { insuranceInEstate: inEstate, insuranceOutOfEstate: outOfEstate };
+}
+
+function resolveInsuredRetirementYear(
+  account: Account,
+  clientRetirementYear: number | null,
+  spouseRetirementYear: number | null,
+): number | null {
+  switch (account.insuredPerson) {
+    case "client":
+      return clientRetirementYear;
+    case "spouse":
+      return spouseRetirementYear;
+    case "joint":
+      // Policy lapses only when BOTH have retired, so use the later year.
+      if (clientRetirementYear == null) return spouseRetirementYear;
+      if (spouseRetirementYear == null) return clientRetirementYear;
+      return Math.max(clientRetirementYear, spouseRetirementYear);
+    default:
+      return null;
+  }
 }
 
 function transferCost(branch: HypotheticalEstateTaxOrdering): number {
