@@ -3196,6 +3196,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         ? {
             ...(trustPassResult != null ? {
               trustTaxByEntity: trustPassResult.taxByEntity,
+              trustDistributionsByEntity: new Map(
+                Array.from(trustPassResult.distributionsByEntity.entries(),
+                  ([eid, d]) => [eid, d.drawFromCash ?? 0]),
+              ),
               estimatedBeneficiaryTax: trustPassResult.estimatedBeneficiaryTax,
             } : {}),
             trustWarnings: (() => {

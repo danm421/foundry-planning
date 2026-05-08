@@ -922,6 +922,13 @@ export interface ProjectionYear {
   hypotheticalEstateTax: HypotheticalEstateTax;
   /** Per-entity trust-tax breakdown. Populated only when non-grantor trusts exist. */
   trustTaxByEntity?: Map<string, TrustTaxBreakdown>;
+  /** Per-entity total distribution amount in dollars. Populated for non-grantor
+   *  trusts that ran an annual pass this year (mandatory + discretionary).
+   *  Sourced from trustPassResult.distributionsByEntity[entityId].drawFromCash.
+   *  Excludes grantor-trust distributions (those flow through ledger entries
+   *  with category: "expense" / "income") and CLUT charity payments
+   *  (read charitableOutflowDetail for those). */
+  trustDistributionsByEntity?: Map<string, number>;
   /** Sum of estimated beneficiary-level tax on distributed DNI to out-of-household beneficiaries. */
   estimatedBeneficiaryTax?: number;
   /** Non-fatal warnings emitted by the trust annual pass. */
