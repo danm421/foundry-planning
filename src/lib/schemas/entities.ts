@@ -110,6 +110,7 @@ const baseEntityFields = {
   distributionPercent: z.number().min(0).max(1).nullish(),
   taxTreatment: z.enum(["qbi", "ordinary", "non_taxable"]).optional(),
   distributionPolicyPercent: z.number().min(0).max(1).optional().nullable(),
+  flowMode: z.enum(["annual", "schedule"]).optional(),
   splitInterest: trustSplitInterestSchema.optional(),
 };
 

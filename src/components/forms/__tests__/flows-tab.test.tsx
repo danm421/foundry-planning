@@ -36,6 +36,7 @@ const baseProps = {
   expense: null,
   distributionPolicyPercent: null,
   taxTreatment: "ordinary" as const,
+  flowMode: "annual" as const,
   planStartYear: 2026,
   defaultEndYear: 2050,
   planEndYear: 2050,
@@ -80,8 +81,33 @@ describe("FlowsTab", () => {
 
   it("Schedule button is enabled in base mode (no scenarioId)", () => {
     render(<FlowsTab {...baseProps} />);
-    const btn = screen.getByRole("button", { name: /schedule/i });
+    const btn = screen.getByRole("button", { name: /^Schedule…$/i });
     expect(btn).not.toBeDisabled();
+  });
+
+  it("hides Income/Expense/Distribution forms when flowMode is 'schedule'", () => {
+    render(<FlowsTab {...baseProps} flowMode="schedule" />);
+    expect(screen.getByText(/schedule mode is active/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add income/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/distribution policy/i)).not.toBeInTheDocument();
+  });
+
+  it("clicking 'Custom schedule' submits a flowMode edit through writer.submit", async () => {
+    render(<FlowsTab {...baseProps} />);
+    fireEvent.click(screen.getByRole("button", { name: /custom schedule/i }));
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
+    const [edit, baseFallback] = submitMock.mock.calls[0];
+    expect(edit).toMatchObject({
+      op: "edit",
+      targetKind: "entity",
+      targetId: "ent-1",
+      desiredFields: { flowMode: "schedule" },
+    });
+    expect(baseFallback).toMatchObject({
+      url: "/api/clients/client-1/entities/ent-1",
+      method: "PUT",
+      body: { flowMode: "schedule" },
+    });
   });
 
   it("routes Distribution & Tax saves through writer.submit with targetKind=entity", async () => {

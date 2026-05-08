@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
+import { fillFlat, fillGrowth, type ScheduleEntry } from "@/lib/schedule-utils";
 
 type EntityType =
   | "trust"
@@ -95,6 +96,46 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Quick-fill panel state
+  const [qfStart, setQfStart] = useState<string>(String(props.planStartYear));
+  const [qfEnd, setQfEnd] = useState<string>(String(props.planEndYear));
+  const [qfIncome, setQfIncome] = useState<string>("");
+  const [qfExpense, setQfExpense] = useState<string>("");
+  const [qfDist, setQfDist] = useState<string>("");
+  const [qfGrowth, setQfGrowth] = useState<string>("");
+
+  function applyEntries(
+    setter: React.Dispatch<React.SetStateAction<Record<number, Cell>>>,
+    entries: ScheduleEntry[],
+    format: (n: number) => string,
+  ) {
+    setter((prev) => {
+      const next = { ...prev };
+      for (const e of entries) next[e.year] = format(e.amount);
+      return next;
+    });
+  }
+
+  function applyQuickFill() {
+    const start = parseInt(qfStart, 10);
+    const end = parseInt(qfEnd, 10);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return;
+    const incBase = qfIncome.trim() === "" ? null : Number(qfIncome);
+    const expBase = qfExpense.trim() === "" ? null : Number(qfExpense);
+    const distVal = qfDist.trim() === "" ? null : Number(qfDist);
+    const growthPct = qfGrowth.trim() === "" ? 0 : Number(qfGrowth) / 100;
+    if (incBase == null && expBase == null && distVal == null) return;
+
+    const intStr = (n: number) => String(Math.round(n));
+    if (incBase != null) applyEntries(setIncome, fillGrowth(start, end, incBase, growthPct), intStr);
+    if (expBase != null) applyEntries(setExpense, fillGrowth(start, end, expBase, growthPct), intStr);
+    if (distVal != null) applyEntries(setDist, fillFlat(start, end, distVal), String);
+  }
+
+  function setDistAll(percent: number) {
+    applyEntries(setDist, fillFlat(props.planStartYear, props.planEndYear, percent), String);
+  }
+
   if (!props.open) return null;
 
   async function handleSave() {
@@ -156,6 +197,61 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
         <p className="mb-3 text-xs text-ink-3">
           Override individual years. Blank cells use the base value with growth applied.
         </p>
+
+        {/* Quick fill */}
+        <div className="mb-3 rounded-md border border-hair bg-card p-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-3">
+            Quick fill
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
+            <label className="flex flex-col gap-0.5 text-[11px] text-ink-3">
+              Start year
+              <input
+                type="number"
+                value={qfStart}
+                onChange={(e) => setQfStart(e.target.value)}
+                className="rounded border border-hair bg-card-2 px-2 py-1 text-xs text-ink-1"
+              />
+            </label>
+            <label className="flex flex-col gap-0.5 text-[11px] text-ink-3">
+              End year
+              <input
+                type="number"
+                value={qfEnd}
+                onChange={(e) => setQfEnd(e.target.value)}
+                className="rounded border border-hair bg-card-2 px-2 py-1 text-xs text-ink-1"
+              />
+            </label>
+            <label className="flex flex-col gap-0.5 text-[11px] text-ink-3">
+              Income
+              <CurrencyInput value={qfIncome} onChange={setQfIncome} placeholder="—" />
+            </label>
+            <label className="flex flex-col gap-0.5 text-[11px] text-ink-3">
+              Expense
+              <CurrencyInput value={qfExpense} onChange={setQfExpense} placeholder="—" />
+            </label>
+            {showDist && (
+              <label className="flex flex-col gap-0.5 text-[11px] text-ink-3">
+                Distribution %
+                <PercentInput value={qfDist} onChange={setQfDist} placeholder="—" />
+              </label>
+            )}
+            <label className="flex flex-col gap-0.5 text-[11px] text-ink-3">
+              Growth %
+              <PercentInput value={qfGrowth} onChange={setQfGrowth} placeholder="0" />
+            </label>
+          </div>
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={applyQuickFill}
+              className="rounded-md border border-hair bg-card-2 px-3 py-1 text-xs text-ink-1 hover:bg-card"
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+
         {error && (
           <p className="mb-2 rounded bg-red-900/50 px-3 py-2 text-xs text-red-400">{error}</p>
         )}
@@ -168,7 +264,27 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
                 <th className="py-2 text-right font-medium text-ink-3">Income</th>
                 <th className="py-2 text-right font-medium text-ink-3">Expense</th>
                 {showDist && (
-                  <th className="py-2 text-right font-medium text-ink-3">Distribution %</th>
+                  <th className="py-2 text-right font-medium text-ink-3">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Distribution %</span>
+                      <button
+                        type="button"
+                        onClick={() => setDistAll(0)}
+                        className="rounded border border-hair bg-card-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-2 hover:text-ink-1"
+                        title="Set every year to 0%"
+                      >
+                        0%
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDistAll(100)}
+                        className="rounded border border-hair bg-card-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-2 hover:text-ink-1"
+                        title="Set every year to 100%"
+                      >
+                        100%
+                      </button>
+                    </div>
+                  </th>
                 )}
               </tr>
             </thead>

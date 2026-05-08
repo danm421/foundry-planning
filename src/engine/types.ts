@@ -324,6 +324,10 @@ export interface ClientData {
   externalBeneficiaries?: Array<{ id: string; name: string; kind: "charity" | "individual"; charityType: "public" | "private" }>;
 }
 
+/** 'annual' uses base+growth math; 'schedule' uses entity_flow_overrides
+ *  exclusively (missing cells = 0). Mirrored as the `entity_flow_mode` enum. */
+export type EntityFlowMode = "annual" | "schedule";
+
 // Minimal entity view used by the engine to decide cash-flow treatment of entity-owned
 // accounts, incomes, expenses, and liabilities.
 export interface EntitySummary {
@@ -367,6 +371,11 @@ export interface EntitySummary {
    *  (full pass-through). Trusts use distributionMode/Amount/Percent
    *  instead — this field is ignored for entityType === 'trust'. */
   distributionPolicyPercent?: number | null;
+  /** 'annual' = engine reads income/expense rows (annualAmount + growthRate)
+   *  and distributionPolicyPercent. 'schedule' = engine reads
+   *  entityFlowOverrides exclusively; missing/null cells resolve to 0
+   *  (no fall-through to base+growth). Defaults to 'annual'. */
+  flowMode?: EntityFlowMode;
   incomeBeneficiaries?: Array<{
     familyMemberId?: string;
     externalBeneficiaryId?: string;

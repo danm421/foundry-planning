@@ -41,7 +41,9 @@ describe("FlowScheduleGrid", () => {
 
   it("renders Distribution % column for business entities", () => {
     render(<FlowScheduleGrid {...baseProps} />);
-    expect(screen.getByText(/distribution/i)).toBeInTheDocument();
+    // Column header — anchored by the 0%/100% quick-set buttons in the same cell.
+    expect(screen.getByRole("button", { name: "0%" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "100%" })).toBeInTheDocument();
   });
 
   it("hides Distribution % column for trusts", () => {
@@ -57,14 +59,18 @@ describe("FlowScheduleGrid", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  // Quick-fill panel adds 4 textbox-role inputs (income, expense, dist %, growth)
+  // ahead of the per-year grid for business entities. Per-year grid order is
+  // income, expense, dist for each row.
+  const QUICK_FILL_TEXTBOXES_BUSINESS = 4;
+  const incomeInputForYearIndex = (yearOffset: number, distColumn = true) =>
+    QUICK_FILL_TEXTBOXES_BUSINESS + yearOffset * (distColumn ? 3 : 2);
+
   it("Save sends a PUT with the typed values", async () => {
     render(<FlowScheduleGrid {...baseProps} />);
-    // Find the income input for 2026 and type a value.
-    // CurrencyInput renders type="text" inputs, so use "textbox" role.
-    // Row order: income-2026, expense-2026, dist-2026, income-2027, ...
     const inputs = screen.getAllByRole("textbox");
-    // First textbox in row 1 = income for 2026.
-    fireEvent.change(inputs[0], { target: { value: "250000" } });
+    // Year 2026 income (first per-year row, first column after the quick-fill panel).
+    fireEvent.change(inputs[incomeInputForYearIndex(0)], { target: { value: "250000" } });
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -78,7 +84,7 @@ describe("FlowScheduleGrid", () => {
   it("Save in base mode (scenarioId=null) omits the scenarioId query param", async () => {
     render(<FlowScheduleGrid {...baseProps} scenarioId={null} />);
     const inputs = screen.getAllByRole("textbox");
-    fireEvent.change(inputs[0], { target: { value: "175000" } });
+    fireEvent.change(inputs[incomeInputForYearIndex(0)], { target: { value: "175000" } });
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -87,5 +93,71 @@ describe("FlowScheduleGrid", () => {
     const body = JSON.parse(call[1]?.body as string);
     const row2026 = body.overrides.find((o: { year: number }) => o.year === 2026);
     expect(row2026.incomeAmount).toBe(175000);
+  });
+
+  it("Quick-fill applies income with growth across the year range", async () => {
+    render(<FlowScheduleGrid {...baseProps} />);
+    // Quick-fill panel order: Start year (number), End year (number),
+    // Income, Expense, Distribution %, Growth %.
+    const numbers = screen.getAllByRole("spinbutton"); // type=number inputs
+    const startYearInput = numbers[0];
+    const endYearInput = numbers[1];
+    // First 4 textboxes (CurrencyInput/PercentInput) are the quick-fill row.
+    const textboxes = screen.getAllByRole("textbox");
+    const qfIncomeInput = textboxes[0];
+    const qfGrowthInput = textboxes[3];
+
+    fireEvent.change(startYearInput, { target: { value: "2026" } });
+    fireEvent.change(endYearInput, { target: { value: "2028" } });
+    fireEvent.change(qfIncomeInput, { target: { value: "100000" } });
+    fireEvent.change(qfGrowthInput, { target: { value: "10" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /apply/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const body = JSON.parse(
+      (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]?.body as string,
+    );
+    const r26 = body.overrides.find((o: { year: number }) => o.year === 2026);
+    const r27 = body.overrides.find((o: { year: number }) => o.year === 2027);
+    const r28 = body.overrides.find((o: { year: number }) => o.year === 2028);
+    expect(r26.incomeAmount).toBe(100000);
+    expect(r27.incomeAmount).toBe(110000);
+    expect(r28.incomeAmount).toBe(121000);
+  });
+
+  it("Distribution 100% button fills every year with 1.0", async () => {
+    render(<FlowScheduleGrid {...baseProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "100%" }));
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const body = JSON.parse(
+      (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]?.body as string,
+    );
+    expect(body.overrides).toHaveLength(3); // 2026, 2027, 2028
+    for (const o of body.overrides) {
+      expect(o.distributionPercent).toBe(1);
+    }
+  });
+
+  it("Distribution 0% button fills every year with 0", async () => {
+    render(<FlowScheduleGrid {...baseProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "0%" }));
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    const body = JSON.parse(
+      (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]?.body as string,
+    );
+    expect(body.overrides).toHaveLength(3);
+    for (const o of body.overrides) {
+      expect(o.distributionPercent).toBe(0);
+    }
+  });
+
+  it("0%/100% buttons are not rendered for trust entities", () => {
+    render(<FlowScheduleGrid {...baseProps} entityType="trust" />);
+    expect(screen.queryByRole("button", { name: "0%" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "100%" })).not.toBeInTheDocument();
   });
 });

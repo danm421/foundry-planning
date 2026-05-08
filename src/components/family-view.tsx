@@ -10,6 +10,7 @@ import BeneficiarySummary from "./beneficiary-summary";
 import AddAccountDialog from "./add-account-dialog";
 import FamilyMemberDialog from "./family-member-dialog";
 import type { AccountFormInitial } from "./forms/add-account-form";
+import type { EntityFlowMode } from "@/engine/types";
 import type { EntityKind } from "./entity-dialog/types";
 import type { ClientFormInitial } from "./forms/add-client-form";
 import { type TrustSubType } from "@/lib/entities/trust";
@@ -59,6 +60,7 @@ export interface Entity {
   distributionPercent: number | null;
   taxTreatment?: "qbi" | "ordinary" | "non_taxable";
   distributionPolicyPercent?: number | null;
+  flowMode?: EntityFlowMode;
 }
 
 export type Gift = {

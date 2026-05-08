@@ -386,6 +386,7 @@ export default function BusinessForm({
             expense={entityExpense ?? null}
             distributionPolicyPercent={editing.distributionPolicyPercent ?? null}
             taxTreatment={editing.taxTreatment ?? "ordinary"}
+            flowMode={editing.flowMode ?? "annual"}
             planStartYear={new Date().getFullYear()}
             defaultEndYear={planEndYear ?? new Date().getFullYear() + 30}
             planEndYear={planEndYear ?? new Date().getFullYear() + 30}

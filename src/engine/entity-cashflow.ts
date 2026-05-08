@@ -1,5 +1,5 @@
 // src/engine/entity-cashflow.ts
-import type { ProjectionYear, Income, Expense, EntityFlowOverride } from "./types";
+import type { ProjectionYear, Income, Expense, EntityFlowMode, EntityFlowOverride } from "./types";
 import { resolveEntityFlowAmount } from "./entity-flows";
 import type { trustSubTypeEnum } from "@/db/schema";
 
@@ -51,6 +51,7 @@ export interface EntityMetadata {
   /** entities.value at plan start. Only meaningful for businesses. */
   initialValue: number;
   initialBasis: number;
+  flowMode?: EntityFlowMode;
 }
 
 export interface ComputeEntityCashFlowInput {
@@ -167,13 +168,14 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
         // applies as in computeBusinessEntityNetIncome.
         let bizIncome = 0;
         let bizExpenses = 0;
+        const flowMode = entity.flowMode ?? "annual";
         for (const inc of input.incomes) {
           if (inc.ownerEntityId !== entityId) continue;
-          bizIncome += resolveEntityFlowAmount(inc, entityId, "income", year.year, input.entityFlowOverrides);
+          bizIncome += resolveEntityFlowAmount(inc, entityId, "income", year.year, input.entityFlowOverrides, flowMode);
         }
         for (const exp of input.expenses) {
           if (exp.ownerEntityId !== entityId) continue;
-          bizExpenses += resolveEntityFlowAmount(exp, entityId, "expense", year.year, input.entityFlowOverrides);
+          bizExpenses += resolveEntityFlowAmount(exp, entityId, "expense", year.year, input.entityFlowOverrides, flowMode);
         }
 
         // Annual distribution = sum of |entity_distribution| debits on entity-owned

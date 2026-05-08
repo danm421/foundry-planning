@@ -806,6 +806,7 @@ export const loadClientDataWithContext = cache(
         e.distributionPolicyPercent != null
           ? parseFloat(e.distributionPolicyPercent)
           : undefined,
+      flowMode: e.flowMode ?? "annual",
       incomeBeneficiaries: incomeByEntity.get(e.id) ?? [],
       trustEnds: e.trustEnds ?? null,
       value: e.value != null ? parseFloat(e.value) : undefined,

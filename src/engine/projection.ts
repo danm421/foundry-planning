@@ -1245,6 +1245,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         allExpenses,
         year,
         data.entityFlowOverrides ?? [],
+        entity.flowMode ?? "annual",
       );
       if (netIncome <= 0) continue;
       const treatment = entity.taxTreatment ?? "ordinary";
@@ -2042,6 +2043,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           "income",
           year,
           data.entityFlowOverrides ?? [],
+          entityMap[inc.ownerEntityId]?.flowMode ?? "annual",
         );
       } else if (inc.scheduleOverrides) {
         amount = inc.scheduleOverrides[year] ?? 0;
@@ -2167,6 +2169,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           "income",
           year,
           data.entityFlowOverrides ?? [],
+          entityMap[inc.ownerEntityId]?.flowMode ?? "annual",
         );
       }
       creditCash(resolveCashAccount(inc.ownerEntityId, inc.cashAccountId), amount, {
@@ -2189,6 +2192,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           "expense",
           year,
           data.entityFlowOverrides ?? [],
+          entityMap[exp.ownerEntityId]?.flowMode ?? "annual",
         );
       }
       creditCash(resolveCashAccount(exp.ownerEntityId, exp.cashAccountId), -amount, {
@@ -2220,6 +2224,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         allExpenses,
         year,
         data.entityFlowOverrides ?? [],
+        entity.flowMode ?? "annual",
       );
       if (netIncome <= 0) continue;
       const distPercent = resolveDistributionPercent(
@@ -3362,6 +3367,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       isGrantor: entity.isGrantor,
       initialValue: entity.value ?? 0,
       initialBasis: entity.basis ?? 0,
+      flowMode: entity.flowMode ?? "annual",
     });
   }
   // Account → entity-owner map. Only fully entity-owned accounts (a single
