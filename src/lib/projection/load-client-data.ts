@@ -881,6 +881,8 @@ export const loadClientDataWithContext = cache(
       transactionCostFlat: t.transactionCostFlat ? parseFloat(t.transactionCostFlat) : undefined,
       proceedsAccountId: t.proceedsAccountId ?? undefined,
       qualifiesForHomeSaleExclusion: t.qualifiesForHomeSaleExclusion,
+      purchaseTransactionId: t.purchaseTransactionId ?? null,
+      fractionSold: t.fractionSold !== null ? Number(t.fractionSold) : null,
       assetName: t.assetName ?? undefined,
       assetCategory: t.assetCategory ?? undefined,
       assetSubType: t.assetSubType ?? undefined,
