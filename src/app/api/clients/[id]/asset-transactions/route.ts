@@ -219,7 +219,7 @@ const putBodySchema = z
 
 export const dynamic = "force-dynamic";
 
-const toStr = (v: any) => (v != null ? String(v) : null);
+const toStr = (v: unknown) => (v != null ? String(v) : null);
 
 async function getBaseCaseScenarioId(clientId: string, firmId: string): Promise<string | null> {
   const [client] = await db
