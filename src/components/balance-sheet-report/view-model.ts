@@ -52,6 +52,13 @@ export interface ProjectionYearLike {
    *  view matches the cash-flow report and household drains don't bleed into
    *  the entity's share. */
   entityAccountSharesEoY?: Map<string, Map<string, number>>;
+  /** Engine-emitted locked family-member share for jointly-held accounts:
+   *  familyMemberId → accountId → that member's EoY dollar share. Populated
+   *  by computeFamilyAccountShares for accounts with ≥2 family-member owners.
+   *  When present in EoY mode, the balance sheet uses these slices in place
+   *  of `value × authored ownerPercent` so projected percentages reflect drift
+   *  from the original split. */
+  familyAccountSharesEoY?: Map<string, Map<string, number>>;
 }
 
 export interface EntityInfo {
@@ -387,12 +394,25 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
       if (owner.kind === "entity") {
         sliceValue = entityShareFor(owner.entityId, owner.percent);
       } else {
-        sliceValue =
-          familyPercentTotal > 0
-            ? familyPool * (owner.percent / familyPercentTotal)
-            : value * owner.percent;
+        // Prefer engine-emitted locked family share (drifted percentages).
+        // Falls back to the family-pool × authored-percent split for BoY
+        // views or accounts the engine didn't track (single family owner).
+        const locked = useLockedShares
+          ? yearData.familyAccountSharesEoY?.get(owner.familyMemberId)?.get(acct.id)
+          : undefined;
+        if (locked != null) {
+          sliceValue = locked;
+        } else {
+          sliceValue =
+            familyPercentTotal > 0
+              ? familyPool * (owner.percent / familyPercentTotal)
+              : value * owner.percent;
+        }
       }
       if (sliceValue <= 0) continue;
+      // Derive percent from slice / account so multi-owner accounts surface
+      // the projected (drifted) ownership rather than the static authored split.
+      const derivedPercent = value > 0 ? sliceValue / value : owner.percent;
       const common: SliceCommon = {
         rowKey:
           owner.kind === "family_member"
@@ -401,7 +421,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         accountId: acct.id,
         accountName: acct.name,
         category: categoryKey,
-        ownerPercent: owner.percent,
+        ownerPercent: derivedPercent,
         ownerLabel: "", // filled in below
         value: sliceValue,
         hasLinkedMortgage,
