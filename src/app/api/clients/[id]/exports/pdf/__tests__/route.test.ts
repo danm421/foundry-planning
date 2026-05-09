@@ -33,7 +33,7 @@ vi.mock("@react-pdf/renderer", () => ({
 }));
 
 const fetchDataMock = vi.fn();
-const renderPdfMock = vi.fn(() => null);
+const renderPdfMock = vi.fn((_input: { charts: unknown[] }) => null);
 const toCsvSingleMock = vi.fn(() => [{ name: "single.csv", contents: "a,b\r\n1,2\r\n" }]);
 const toCsvMultiMock = vi.fn(() => [
   { name: "one.csv", contents: "a\r\n" },
@@ -158,7 +158,7 @@ describe("POST /api/clients/[id]/exports/pdf", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/pdf");
     expect(renderPdfMock).toHaveBeenCalledOnce();
-    const callArgs = renderPdfMock.mock.calls[0][0] as { charts: unknown[] };
+    const callArgs = renderPdfMock.mock.calls[0][0];
     expect(callArgs.charts).toEqual([]);
   });
 
