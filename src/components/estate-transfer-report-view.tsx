@@ -13,7 +13,6 @@ import {
 import type { ClientData } from "@/engine/types";
 import { EstateTransferDeathSection } from "./estate-transfer-death-section";
 import { EstateTransferRecipientTotals } from "./estate-transfer-recipient-totals";
-import { EstateTransferCharts } from "./estate-transfer-charts";
 
 interface EstateTransferReportViewProps {
   clientId: string;
@@ -188,10 +187,6 @@ export default function EstateTransferReportView({
         <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
           No transfers to display for this selection.
         </div>
-      )}
-
-      {reportData && reportData.aggregateRecipientTotals.length > 0 && (
-        <EstateTransferCharts totals={reportData.aggregateRecipientTotals} />
       )}
 
       {reportData?.firstDeath && (
