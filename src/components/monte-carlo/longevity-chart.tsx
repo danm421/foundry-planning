@@ -13,6 +13,7 @@ import {
 import { Bar } from "react-chartjs-2";
 import { formatPercent } from "./lib/format";
 import { PromoteButton } from "./promote-button";
+import { successByYear } from "@/lib/comparison/success-by-year";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip);
 
@@ -45,23 +46,16 @@ export function LongevityChart({
 }: LongevityChartProps) {
   const isMain = variant === "main";
   const data = useMemo<LongevityYear[]>(() => {
-    const trialCount = byYearLiquidAssetsPerTrial.length;
-    if (trialCount === 0) return [];
-    const yearCount = byYearLiquidAssetsPerTrial[0].length;
-    const rows: LongevityYear[] = [];
-    for (let i = 0; i < yearCount; i++) {
-      let above = 0;
-      for (let t = 0; t < trialCount; t++) {
-        if (byYearLiquidAssetsPerTrial[t][i] > requiredMinimumAssetLevel) above++;
-      }
+    const rates = successByYear(byYearLiquidAssetsPerTrial, requiredMinimumAssetLevel);
+    if (rates.length === 0) return [];
+    return rates.map((successRate, i) => {
       const year = planStartYear + i;
-      rows.push({
+      return {
         year,
         age: clientBirthYear != null ? year - clientBirthYear : null,
-        successRate: above / trialCount,
-      });
-    }
-    return rows;
+        successRate,
+      };
+    });
   }, [byYearLiquidAssetsPerTrial, requiredMinimumAssetLevel, planStartYear, clientBirthYear]);
 
   if (data.length === 0) {
