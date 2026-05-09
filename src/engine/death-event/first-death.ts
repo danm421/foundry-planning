@@ -280,6 +280,8 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     entities: prepared.entities,
     deceasedFmId,
     survivorFmId,
+    entityAccountSharesEoY: input.entityAccountSharesEoY,
+    familyAccountSharesEoY: input.familyAccountSharesEoY,
   });
 
   // Phase 4 — deductions (marital + charitable + admin). Pass the post-chain

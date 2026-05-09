@@ -71,67 +71,89 @@ export function computeGrossEstate(input: {
     const fmv = input.accountBalances[a.id] ?? 0;
     if (fmv <= 0) continue;
 
-    // Compute the family pool once per account using locked entity shares so
-    // a household withdrawal on a joint+entity-owned account doesn't bleed
-    // into the joint convention (or vice versa). For pure-FM joint accounts
-    // the family pool === fmv (no entity slices to subtract), so existing
-    // joint-account behavior is preserved. Mirrors balance-sheet view-model.
+    // Compute per-owner locked entity slices once. Used both to derive the
+    // family pool and to evaluate rev-trust-grantor inclusion below.
+    const entitySlices: Array<{ entityId: string; locked: number }> = [];
     let totalEntityLocked = 0;
     for (const o of a.owners) {
       if (o.kind !== "entity") continue;
       const locked = input.entityAccountSharesEoY?.get(o.entityId)?.get(a.id);
-      totalEntityLocked += locked ?? fmv * o.percent;
+      const slice = locked ?? fmv * o.percent;
+      entitySlices.push({ entityId: o.entityId, locked: slice });
+      totalEntityLocked += slice;
     }
     const familyPool = Math.max(0, fmv - totalEntityLocked);
 
-    let pct = 0;
-    let inEntity = false;
-    let basis = fmv;
-
+    // ── Sole-entity routing (100% entity-owned) — preserved early-out ────
     const solEntityId = controllingEntity(a);
     if (solEntityId != null) {
-      inEntity = true;
       const ent = entityById.get(solEntityId);
       if (!ent) continue;
-      if (ent.isIrrevocable) {
-        continue; // ILIT / IDGT excluded
-      }
-      if (ent.grantor === input.deceased) {
-        pct = 1;
-      } else {
-        continue;
-      }
-    } else {
-      // Household / family-member owned
-      const cfm = controllingFamilyMember(a);
-      if (cfm != null) {
-        // Single FM owner (no entity owners — controllingFamilyMember returns
-        // null when entities are present). familyPool === fmv here.
-        if (cfm === input.deceasedFmId) {
-          pct = 1;
-        } else if (cfm === input.survivorFmId) {
-          continue; // survivor-owned
-        } else {
-          continue; // already inherited by a child/heir FM
-        }
-        basis = familyPool;
-      } else {
-        // Joint (multi-FM, optionally with entity owners) — apply the joint
-        // convention to the family pool, NOT the post-withdrawal total.
-        const hh = ownedByHousehold(a);
-        if (hh < 0.0001) continue; // entity-dominated, skip
-        pct = input.deathOrder === 1 ? 0.5 : 1;
-        basis = familyPool;
-      }
+      if (ent.isIrrevocable) continue; // ILIT / IDGT excluded
+      if (ent.grantor !== input.deceased) continue;
+      const amount = fmv * 1;
+      lines.push({
+        label: formatLabel(a.name, 1, /* inEntity */ true),
+        accountId: a.id,
+        liabilityId: null,
+        percentage: 1,
+        amount,
+      });
+      continue;
     }
 
-    if (pct <= 0) continue;
-    const amount = basis * pct;
+    // ── Mixed / family-only routing — accumulate per-owner contributions ──
+    let amount = 0;
+    let hasEntityContribution = false;
+
+    // Family contribution
+    const cfm = controllingFamilyMember(a);
+    if (cfm != null) {
+      // Single FM, no entity owners — sole-owner of the family pool ( = fmv).
+      if (cfm === input.deceasedFmId) amount += familyPool * 1;
+      // survivor / non-principal-heir → contributes 0
+    } else {
+      const fmOwners = a.owners.filter((o) => o.kind === "family_member");
+      if (fmOwners.length === 1) {
+        const lone = fmOwners[0] as { familyMemberId: string };
+        if (lone.familyMemberId === input.deceasedFmId) amount += familyPool * 1;
+        // survivor / non-principal-heir → contributes 0
+      } else if (fmOwners.length > 1) {
+        // Multi-FM joint (with or without entity owners). Apply joint
+        // convention to the family pool. Skip entity-dominated accounts
+        // (no household ownership at all).
+        const hh = ownedByHousehold(a);
+        if (hh >= 0.0001) {
+          const pct = input.deathOrder === 1 ? 0.5 : 1;
+          amount += familyPool * pct;
+        }
+      }
+      // fmOwners.length === 0 → entity-only account; no family contribution.
+    }
+
+    // Per-entity contributions on mixed accounts: rev-trust where deceased
+    // is grantor pulls in at locked share × 1; irrevocable trusts excluded;
+    // any other entity-grantor case is unmodeled today.
+    for (const slice of entitySlices) {
+      const ent = entityById.get(slice.entityId);
+      if (!ent) continue;
+      if (ent.isIrrevocable) continue;
+      if (ent.grantor !== input.deceased) continue;
+      amount += slice.locked;
+      hasEntityContribution = true;
+    }
+
+    if (amount <= 0) continue;
+    // fmv > 0 guaranteed by the early-out at the top of the loop.
+    const effPct = amount / fmv;
     lines.push({
-      label: formatLabel(a.name, pct, inEntity),
+      // hasEntityContribution=true adds "(Trust)" suffix. On a mixed account
+      // (family pool + rev-trust-grantor slice) the line aggregates both
+      // contributions; the suffix flags any entity contribution, not exclusivity.
+      label: formatLabel(a.name, effPct, hasEntityContribution),
       accountId: a.id,
       liabilityId: null,
-      percentage: pct,
+      percentage: effPct,
       amount,
     });
   }

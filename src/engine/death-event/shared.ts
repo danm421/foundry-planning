@@ -1090,6 +1090,19 @@ export interface DeathEventInput {
   /** Pre-plan post-1976 cumulative taxable gifts per grantor.
    *  Sourced from PlanSettings.priorTaxableGifts. */
   priorTaxableGifts: { client: number; spouse: number };
+  /** Engine-published locked entity slice EoY for the death year (entityId →
+   *  accountId → dollars). When provided, threaded into computeGrossEstate so
+   *  the joint / mixed-ownership branch computes the family pool as
+   *  `fmv − Σ locked entity shares` instead of `fmv × pct`. Same shape as
+   *  ProjectionYear.entityAccountSharesEoY. Optional — fallback is the legacy
+   *  `fmv × pct` per the existing computeGrossEstate logic. */
+  entityAccountSharesEoY?: Map<string, Map<string, number>>;
+  /** Engine-published locked family-member slice EoY for the death year
+   *  (fmId → accountId → dollars). Currently unused inside computeGrossEstate;
+   *  reserved for future per-FM gross-estate attribution. The same data is
+   *  actively consumed by the balance sheet, in-estate-at-year, and the
+   *  yearly-liquidity report. */
+  familyAccountSharesEoY?: Map<string, Map<string, number>>;
 }
 
 export interface DeathEventResult {

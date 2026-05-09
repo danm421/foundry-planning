@@ -292,9 +292,113 @@ describe("computeGrossEstate", () => {
     });
     // Family pool $621k × 0.5 (joint, first death) = $310,500.
     // (Buggy result was $921k × 0.5 = $460,500.)
+    // percentage is now effPct = amount / fmv = 310_500 / 921_000.
     expect(r.total).toBeCloseTo(310_500, 2);
     expect(r.lines).toHaveLength(1);
-    expect(r.lines[0].percentage).toBe(0.5);
+    expect(r.lines[0].percentage).toBeCloseTo(310_500 / 921_000, 6);
+  });
+
+  it("treats a single-FM-with-entity account as sole-owned, not joint, at first death", () => {
+    // 70% Cooper (no spouse FM on this account) + 30% non-IIP irrevocable SLAT.
+    // Plan-start $1M; household withdrew $79k → ledger.endingValue $921k,
+    // entity locked share $300k, family pool $621k. Cooper is the sole
+    // family-pool owner — the joint convention's `× 0.5` must NOT apply.
+    const slat: EntitySummary = {
+      id: "slat",
+      includeInPortfolio: false,
+      isGrantor: false,
+      isIrrevocable: true,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("mixed", 1_000_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+          { kind: "entity", entityId: "slat", percent: 0.3 },
+        ],
+      })],
+      accountBalances: { mixed: 921_000 },
+      liabilities: [],
+      entities: [slat],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: null,
+      entityAccountSharesEoY: new Map([
+        ["slat", new Map([["mixed", 300_000]])],
+      ]),
+    });
+    // percentage is now effPct = amount / fmv = 621_000 / 921_000.
+    expect(r.total).toBeCloseTo(621_000, 2);
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0].percentage).toBeCloseTo(621_000 / 921_000, 6);
+  });
+
+  it("treats a single-FM-with-entity account where the survivor is the FM as excluded", () => {
+    // Mirror case: the lone FM is the survivor — Cooper's spouse owns 70%,
+    // SLAT owns 30%. Cooper's death pulls in 0%.
+    const slat: EntitySummary = {
+      id: "slat",
+      includeInPortfolio: false,
+      isGrantor: false,
+      isIrrevocable: true,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("mixed", 1_000_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.7 },
+          { kind: "entity", entityId: "slat", percent: 0.3 },
+        ],
+      })],
+      accountBalances: { mixed: 921_000 },
+      liabilities: [],
+      entities: [slat],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+      entityAccountSharesEoY: new Map([
+        ["slat", new Map([["mixed", 300_000]])],
+      ]),
+    });
+    expect(r.total).toBe(0);
+    expect(r.lines).toEqual([]);
+  });
+
+  it("single-FM-with-entity at second death routes the lone FM at pct=1 (no deathOrder discrimination)", () => {
+    // Documents the invariant: the single-FM branch must NOT branch on
+    // deathOrder. The multi-FM joint branch does (0.5 → 1), but a sole
+    // family-pool owner is always at 100% regardless of which death this is.
+    const slat: EntitySummary = {
+      id: "slat",
+      includeInPortfolio: false,
+      isGrantor: false,
+      isIrrevocable: true,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 2,
+      accounts: [acct("mixed", 1_000_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+          { kind: "entity", entityId: "slat", percent: 0.3 },
+        ],
+      })],
+      accountBalances: { mixed: 921_000 },
+      liabilities: [],
+      entities: [slat],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: null,
+      entityAccountSharesEoY: new Map([
+        ["slat", new Map([["mixed", 300_000]])],
+      ]),
+    });
+    // percentage is now effPct = amount / fmv = 621_000 / 921_000.
+    expect(r.total).toBeCloseTo(621_000, 2);
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0].percentage).toBeCloseTo(621_000 / 921_000, 6);
   });
 
   it("joint convention without locked shares falls back to existing fmv × pct (backward-compatible)", () => {
@@ -342,6 +446,170 @@ describe("computeGrossEstate", () => {
     const debtLine = r.lines.find((l) => l.liabilityId === "mortgage");
     expect(debtLine?.percentage).toBe(1);
     expect(debtLine?.amount).toBeCloseTo(-100_000, 2);
+  });
+
+  it("includes the rev-trust-grantor slice on a mixed account at first death (single-FM + rev-trust)", () => {
+    // 70% Cooper + 30% Cooper's revocable trust. Cooper is grantor of the trust.
+    // No spouse. ledger.endingValue $1M. Both slices should be in Cooper's
+    // gross estate at first death:
+    //   family pool ($700k) routed via single-FM-as-sole-owner branch (Phase 1) → $700k × 1
+    //   rev-trust slice ($300k) routed via "controllingEntity" rules → $300k × 1
+    // Total: $1,000,000.
+    const rev: EntitySummary = {
+      id: "rev",
+      includeInPortfolio: true,
+      isGrantor: true,
+      isIrrevocable: false,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("mixed", 1_000_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+          { kind: "entity", entityId: "rev", percent: 0.3 },
+        ],
+      })],
+      accountBalances: { mixed: 1_000_000 },
+      liabilities: [],
+      entities: [rev],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: null,
+      entityAccountSharesEoY: new Map([
+        ["rev", new Map([["mixed", 300_000]])],
+      ]),
+    });
+    expect(r.total).toBeCloseTo(1_000_000, 2);
+  });
+
+  it("includes the rev-trust-grantor slice on a multi-FM joint + rev-trust account at first death", () => {
+    // 35% Cooper + 35% spouse + 30% Cooper's revocable trust at first death.
+    // Family pool $700k joint convention → Cooper's share $350k.
+    // Rev-trust slice $300k × 1 (Cooper is grantor).
+    // Total: $650k.
+    const rev: EntitySummary = {
+      id: "rev",
+      includeInPortfolio: true,
+      isGrantor: true,
+      isIrrevocable: false,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("mixed", 1_000_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.35 },
+          { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.35 },
+          { kind: "entity", entityId: "rev", percent: 0.3 },
+        ],
+      })],
+      accountBalances: { mixed: 1_000_000 },
+      liabilities: [],
+      entities: [rev],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+      entityAccountSharesEoY: new Map([
+        ["rev", new Map([["mixed", 300_000]])],
+      ]),
+    });
+    expect(r.total).toBeCloseTo(650_000, 2);
+  });
+
+  it("excludes the irrevocable-trust slice on a multi-FM joint + irrev-trust account at first death", () => {
+    // Regression check that the rev-trust fix doesn't break the existing
+    // irrevocable-trust path. Irrevocable trusts are excluded from the
+    // gross estate; only the family pool's joint share is included.
+    const slat: EntitySummary = {
+      id: "slat",
+      includeInPortfolio: false,
+      isGrantor: false,
+      isIrrevocable: true,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("mixed", 1_000_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.35 },
+          { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.35 },
+          { kind: "entity", entityId: "slat", percent: 0.3 },
+        ],
+      })],
+      accountBalances: { mixed: 1_000_000 },
+      liabilities: [],
+      entities: [slat],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+      entityAccountSharesEoY: new Map([
+        ["slat", new Map([["mixed", 300_000]])],
+      ]),
+    });
+    // Family pool = $700k × 0.5 (joint, first death) = $350k. Trust excluded.
+    expect(r.total).toBeCloseTo(350_000, 2);
+  });
+
+  it("includes ONLY the rev-trust-grantor slice when the lone FM owner is the survivor", () => {
+    // 70% spouse (survivor) + 30% client's revocable trust (client = deceased
+    // = grantor). Family pool ($700k) belongs to the survivor → contributes 0.
+    // Rev-trust slice ($300k) is in the deceased's estate at × 1.
+    // Total: $300k.
+    const rev: EntitySummary = {
+      id: "rev",
+      includeInPortfolio: true,
+      isGrantor: true,
+      isIrrevocable: false,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("mixed", 1_000_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.7 },
+          { kind: "entity", entityId: "rev", percent: 0.3 },
+        ],
+      })],
+      accountBalances: { mixed: 1_000_000 },
+      liabilities: [],
+      entities: [rev],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+      entityAccountSharesEoY: new Map([
+        ["rev", new Map([["mixed", 300_000]])],
+      ]),
+    });
+    expect(r.total).toBeCloseTo(300_000, 2);
+    expect(r.lines).toHaveLength(1);
+  });
+
+  it("excludes a 100%-revocable-trust account when the deceased is NOT the grantor", () => {
+    // Spouse is the grantor; client dies. The sole-entity early-out's
+    // `ent.grantor !== input.deceased` guard must fire — distinct from the
+    // irrevocable-trust path. Total = 0.
+    const spouseRev: EntitySummary = {
+      id: "spouse-rev",
+      includeInPortfolio: true,
+      isGrantor: true,
+      isIrrevocable: false,
+      grantor: "spouse",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("rev-spouse", 400_000, {
+        owners: [{ kind: "entity", entityId: "spouse-rev", percent: 1 }],
+      })],
+      accountBalances: { "rev-spouse": 400_000 },
+      liabilities: [],
+      entities: [spouseRev],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+    });
+    expect(r.total).toBe(0);
+    expect(r.lines).toEqual([]);
   });
 });
 
