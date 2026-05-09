@@ -184,6 +184,128 @@ describe("computeFamilyAccountShares — year-0 init + passive growth", () => {
   });
 });
 
+describe("computeFamilyAccountShares — invariants", () => {
+  it("sum of family shares equals account EoY value across years with mixed flows", () => {
+    // Year 0: BoY 100k 50/50, +50k client salary, growth 5k → EoY 155k.
+    // Year 1: BoY 155k carried, growth 7.75k, withdrawal 30k → EoY 132.75k.
+    const year0 = makeYear(2026, {
+      acctA: {
+        beginningValue: 100_000,
+        endingValue: 155_000,
+        growth: 5_000,
+        entries: [
+          { category: "income", label: "Salary", amount: 50_000, sourceId: "inc-1" },
+        ] as never,
+      },
+    });
+    const year1 = makeYear(2027, {
+      acctA: {
+        beginningValue: 155_000,
+        endingValue: 132_750,
+        growth: 7_750,
+        entries: [
+          { category: "withdrawal", label: "Household draw", amount: -30_000 },
+        ] as never,
+      },
+    });
+    const incomes: Income[] = [
+      {
+        id: "inc-1",
+        type: "salary",
+        name: "Salary",
+        annualAmount: 50_000,
+        startYear: 2026,
+        endYear: 2026,
+        growthRate: 0,
+        owner: "client",
+      } as Income,
+    ];
+    computeFamilyAccountShares({
+      years: [year0, year1],
+      accountFamilyOwners: new Map([
+        [
+          "acctA",
+          [
+            { familyMemberId: "fm-client", percent: 0.5 },
+            { familyMemberId: "fm-spouse", percent: 0.5 },
+          ],
+        ],
+      ]),
+      clientFamilyMemberId: "fm-client",
+      spouseFamilyMemberId: "fm-spouse",
+      incomes,
+      gifts: [],
+      familyMembers: [],
+    });
+
+    const sumYear = (y: ProjectionYear) =>
+      (y.familyAccountSharesEoY?.get("fm-client")?.get("acctA") ?? 0) +
+      (y.familyAccountSharesEoY?.get("fm-spouse")?.get("acctA") ?? 0);
+
+    expect(sumYear(year0)).toBeCloseTo(155_000);
+    expect(sumYear(year1)).toBeCloseTo(132_750);
+  });
+
+  it("pro-rata withdrawals preserve drift built up by attributed deposits", () => {
+    // Saving year drives client to 75/25. Retirement year withdraws 20% of the account.
+    // Expected: percentages stay ~75/25, not revert to 50/50.
+    const year0 = makeYear(2026, {
+      acctA: {
+        beginningValue: 100_000,
+        endingValue: 200_000,
+        growth: 0,
+        entries: [
+          { category: "income", label: "Salary", amount: 100_000, sourceId: "inc-1" },
+        ] as never,
+      },
+    });
+    const year1 = makeYear(2027, {
+      acctA: {
+        beginningValue: 200_000,
+        endingValue: 160_000,
+        growth: 0,
+        entries: [
+          { category: "withdrawal", label: "Retirement spend", amount: -40_000 },
+        ] as never,
+      },
+    });
+    const incomes: Income[] = [
+      {
+        id: "inc-1",
+        type: "salary",
+        name: "Salary",
+        annualAmount: 100_000,
+        startYear: 2026,
+        endYear: 2026,
+        growthRate: 0,
+        owner: "client",
+      } as Income,
+    ];
+    computeFamilyAccountShares({
+      years: [year0, year1],
+      accountFamilyOwners: new Map([
+        [
+          "acctA",
+          [
+            { familyMemberId: "fm-client", percent: 0.5 },
+            { familyMemberId: "fm-spouse", percent: 0.5 },
+          ],
+        ],
+      ]),
+      clientFamilyMemberId: "fm-client",
+      spouseFamilyMemberId: "fm-spouse",
+      incomes,
+      gifts: [],
+      familyMembers: [],
+    });
+
+    const c = year1.familyAccountSharesEoY!.get("fm-client")!.get("acctA")!;
+    const s = year1.familyAccountSharesEoY!.get("fm-spouse")!.get("acctA")!;
+    expect(c / (c + s)).toBeCloseTo(0.75, 2);
+    expect(s / (c + s)).toBeCloseTo(0.25, 2);
+  });
+});
+
 describe("computeFamilyAccountShares — cash gift attribution", () => {
   it("draws cash gift from the grantor's share first", () => {
     const year0 = makeYear(2026, {
