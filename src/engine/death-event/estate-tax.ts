@@ -116,11 +116,27 @@ export function computeGrossEstate(input: {
         }
         basis = familyPool;
       } else {
-        // Joint (multi-FM, optionally with entity owners) — apply the joint
-        // convention to the family pool, NOT the post-withdrawal total.
+        // No `controllingFamilyMember` (entity present, OR multiple FMs, OR
+        // empty owners[]). Distinguish single-FM-with-entity (sole owner of
+        // the family pool — joint convention does NOT apply) from true
+        // multi-FM joint.
         const hh = ownedByHousehold(a);
         if (hh < 0.0001) continue; // entity-dominated, skip
-        pct = input.deathOrder === 1 ? 0.5 : 1;
+        const fmOwners = a.owners.filter((o) => o.kind === "family_member");
+        if (fmOwners.length === 1) {
+          const lone = fmOwners[0] as { familyMemberId: string };
+          if (lone.familyMemberId === input.deceasedFmId) {
+            pct = 1;
+          } else if (lone.familyMemberId === input.survivorFmId) {
+            continue; // survivor-owned family pool
+          } else {
+            continue; // owned by a non-principal heir
+          }
+        } else {
+          // Multi-FM joint (with or without entity owners) — apply the joint
+          // convention to the family pool, NOT the post-withdrawal total.
+          pct = input.deathOrder === 1 ? 0.5 : 1;
+        }
         basis = familyPool;
       }
     }

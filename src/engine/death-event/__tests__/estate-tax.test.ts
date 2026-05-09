@@ -297,6 +297,73 @@ describe("computeGrossEstate", () => {
     expect(r.lines[0].percentage).toBe(0.5);
   });
 
+  it("treats a single-FM-with-entity account as sole-owned, not joint, at first death", () => {
+    // 70% Cooper (no spouse FM on this account) + 30% non-IIP irrevocable SLAT.
+    // Plan-start $1M; household withdrew $79k → ledger.endingValue $921k,
+    // entity locked share $300k, family pool $621k. Cooper is the sole
+    // family-pool owner — the joint convention's `× 0.5` must NOT apply.
+    const slat: EntitySummary = {
+      id: "slat",
+      includeInPortfolio: false,
+      isGrantor: false,
+      isIrrevocable: true,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("mixed", 1_000_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+          { kind: "entity", entityId: "slat", percent: 0.3 },
+        ],
+      })],
+      accountBalances: { mixed: 921_000 },
+      liabilities: [],
+      entities: [slat],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: null,
+      entityAccountSharesEoY: new Map([
+        ["slat", new Map([["mixed", 300_000]])],
+      ]),
+    });
+    expect(r.total).toBeCloseTo(621_000, 2);
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0].percentage).toBe(1);
+  });
+
+  it("treats a single-FM-with-entity account where the survivor is the FM as excluded", () => {
+    // Mirror case: the lone FM is the survivor — Cooper's spouse owns 70%,
+    // SLAT owns 30%. Cooper's death pulls in 0%.
+    const slat: EntitySummary = {
+      id: "slat",
+      includeInPortfolio: false,
+      isGrantor: false,
+      isIrrevocable: true,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("mixed", 1_000_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.7 },
+          { kind: "entity", entityId: "slat", percent: 0.3 },
+        ],
+      })],
+      accountBalances: { mixed: 921_000 },
+      liabilities: [],
+      entities: [slat],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+      entityAccountSharesEoY: new Map([
+        ["slat", new Map([["mixed", 300_000]])],
+      ]),
+    });
+    expect(r.total).toBe(0);
+    expect(r.lines).toEqual([]);
+  });
+
   it("joint convention without locked shares falls back to existing fmv × pct (backward-compatible)", () => {
     // Pure-spouse joint, no entity, no locked shares passed — old behavior.
     const r = computeGrossEstate({
