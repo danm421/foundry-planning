@@ -8,7 +8,6 @@ import {
   BarElement,
   Tooltip,
   Legend,
-  type ChartOptions,
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import type {
@@ -39,16 +38,16 @@ export function YearlyEstateBeneficiaryChart({ breakdown, colors }: Props) {
     if (breakdown.rows.length === 0 || breakdown.beneficiaries.length === 0) {
       return null;
     }
-    const labels = breakdown.rows.map((r: { year: number }) => String(r.year));
+    const labels = breakdown.rows.map((r) => String(r.year));
     const yearCount = breakdown.rows.length;
     // Two datasets per beneficiary: 1st-death (lighter) then 2nd-death (full).
     // Both use `stack: "main"` so they pile together per year.
-    const datasets = breakdown.beneficiaries.flatMap((b: { key: string; recipientLabel: string }) => {
+    const datasets = breakdown.beneficiaries.flatMap((b) => {
       const color = colors[b.key] ?? "#6b7280";
       const firstData = new Array<number>(yearCount).fill(0);
       const secondData = new Array<number>(yearCount).fill(0);
-      breakdown.rows.forEach((row: { beneficiaries: Array<{ key: string; fromFirstDeath: number; fromSecondDeath: number }> }, idx: number) => {
-        const share = row.beneficiaries.find((x: { key: string }) => x.key === b.key);
+      breakdown.rows.forEach((row, idx) => {
+        const share = row.beneficiaries.find((x) => x.key === b.key);
         if (!share) return;
         firstData[idx] = share.fromFirstDeath;
         secondData[idx] = share.fromSecondDeath;
@@ -80,89 +79,82 @@ export function YearlyEstateBeneficiaryChart({ breakdown, colors }: Props) {
   }, [breakdown, colors]);
 
   const options = useMemo(
-    () =>
-      ({
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            display: true,
-            position: "bottom" as const,
-            labels: {
-              color: "#d1d5db",
-              boxWidth: 12,
-              padding: 10,
-              // Show one entry per beneficiary (the 2nd-death dataset),
-              // with the label simplified to the recipient name.
-              generateLabels: ((chart: unknown) => {
-                const typedChart = chart as {
-                  data: {
-                    datasets: Array<{
-                      label?: string;
-                      backgroundColor?: string;
-                      legendKind?: "first" | "second";
-                      beneficiaryKey?: string;
-                    }>;
-                  };
+    () => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: "bottom" as const,
+          labels: {
+            color: "#d1d5db",
+            boxWidth: 12,
+            padding: 10,
+            // Show one entry per beneficiary (the 2nd-death dataset),
+            // with the label simplified to the recipient name.
+            generateLabels: (chart: unknown) => {
+              const typedChart = chart as {
+                data: {
+                  datasets: Array<{
+                    label?: string;
+                    backgroundColor?: string;
+                    legendKind?: "first" | "second";
+                    beneficiaryKey?: string;
+                  }>;
                 };
-                const seen = new Set<string>();
-                const items: Array<{
-                  text: string;
-                  fillStyle: string;
-                  hidden: boolean;
-                  datasetIndex: number;
-                }> = [];
-                typedChart.data.datasets.forEach((ds, i) => {
-                  if (ds.legendKind !== "second") return;
-                  if (!ds.beneficiaryKey || seen.has(ds.beneficiaryKey)) return;
-                  seen.add(ds.beneficiaryKey);
-                  const label =
-                    ds.label?.replace(/ — 2nd death$/, "") ?? `Series ${i}`;
-                  items.push({
-                    text: label,
-                    fillStyle: (ds.backgroundColor as string) ?? "#6b7280",
-                    hidden: false,
-                    datasetIndex: i,
-                  });
+              };
+              const seen = new Set<string>();
+              const items: Array<{
+                text: string;
+                fillStyle: string;
+                hidden: boolean;
+                datasetIndex: number;
+              }> = [];
+              typedChart.data.datasets.forEach((ds, i) => {
+                if (ds.legendKind !== "second") return;
+                if (!ds.beneficiaryKey || seen.has(ds.beneficiaryKey)) return;
+                seen.add(ds.beneficiaryKey);
+                const label =
+                  ds.label?.replace(/ — 2nd death$/, "") ?? `Series ${i}`;
+                items.push({
+                  text: label,
+                  fillStyle: (ds.backgroundColor as string) ?? "#6b7280",
+                  hidden: false,
+                  datasetIndex: i,
                 });
-                return items;
-              }) as unknown,
-            },
-          },
-          tooltip: {
-            mode: "index" as const,
-            intersect: false,
-            backgroundColor: "#1f2937",
-            titleColor: "#f3f4f6",
-            bodyColor: "#d1d5db",
-            callbacks: {
-              label: ((ctx: unknown) =>
-                (() => {
-                  const typedCtx = ctx as {
-                    dataset: { label?: string };
-                    raw: unknown;
-                  };
-                  return `${typedCtx.dataset.label}: ${fmt.format(Number(typedCtx.raw))}`;
-                })()) as unknown,
+              });
+              return items;
             },
           },
         },
-        scales: {
-          x: {
-            stacked: true,
-            ticks: { color: "#9ca3af" },
-            grid: { color: "#374151" },
-          },
-          y: {
-            stacked: true,
-            ticks: {
-              color: "#9ca3af",
-              callback: (value: unknown) => fmt.format(Number(value)),
-            },
-            grid: { color: "#374151" },
+        tooltip: {
+          mode: "index" as const,
+          intersect: false,
+          backgroundColor: "#1f2937",
+          titleColor: "#f3f4f6",
+          bodyColor: "#d1d5db",
+          callbacks: {
+            label: (ctx: unknown) =>
+              `${(ctx as { dataset: { label?: string } }).dataset.label}: ${fmt.format(Number((ctx as { raw: unknown }).raw))}`,
           },
         },
-      }) as ChartOptions<'bar'>,
+      },
+      scales: {
+        x: {
+          stacked: true,
+          ticks: { color: "#9ca3af" },
+          grid: { color: "#374151" },
+        },
+        y: {
+          stacked: true,
+          ticks: {
+            color: "#9ca3af",
+            callback: (value: unknown) => fmt.format(Number(value)),
+          },
+          grid: { color: "#374151" },
+        },
+      },
+    }),
     [],
   );
 
