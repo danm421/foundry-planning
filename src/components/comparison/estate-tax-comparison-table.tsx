@@ -18,26 +18,89 @@ function deltaClass(n: number | undefined, betterDirection: "lower" | "higher"):
   return isBetter ? "text-emerald-400" : "text-rose-400";
 }
 
-function tax(e?: EstateTaxResult): number | undefined {
+// IRD = sum of drainAttributions where drainKind === "ird_tax". Mirrors the
+// logic in `estate-tax-report-view.tsx` and `transfer-report.ts`.
+function irdTotal(e?: EstateTaxResult): number {
+  if (!e) return 0;
+  return (e.drainAttributions ?? [])
+    .filter((a) => a.drainKind === "ird_tax")
+    .reduce((s, a) => s + a.amount, 0);
+}
+
+function deathSubtotal(e?: EstateTaxResult): number | undefined {
   if (!e) return undefined;
-  return (e.federalEstateTax ?? 0) + (e.stateEstateTax ?? 0);
+  return (e.totalTaxesAndExpenses ?? 0) + irdTotal(e);
 }
-function admin(e?: EstateTaxResult): number | undefined {
-  return e ? (e.estateAdminExpenses ?? 0) : undefined;
+
+function combinedTotal(first?: EstateTaxResult, second?: EstateTaxResult): number | undefined {
+  const a = deathSubtotal(first);
+  const b = deathSubtotal(second);
+  if (a === undefined && b === undefined) return undefined;
+  return (a ?? 0) + (b ?? 0);
 }
-function subtotal(e?: EstateTaxResult): number | undefined {
-  if (!e) return undefined;
-  return (tax(e) ?? 0) + (admin(e) ?? 0);
-}
+
 function delta(a?: number, b?: number): number | undefined {
   if (a === undefined || b === undefined) return undefined;
   return b - a;
 }
-function combinedTotal(first?: EstateTaxResult, second?: EstateTaxResult): number | undefined {
-  const a = subtotal(first);
-  const b = subtotal(second);
-  if (a === undefined && b === undefined) return undefined;
-  return (a ?? 0) + (b ?? 0);
+
+type LineItemRow = {
+  kind: "row";
+  label: string;
+  a: number | undefined;
+  b: number | undefined;
+  better: "lower" | "higher";
+  bold?: boolean;
+  hideIfZero?: boolean;
+};
+type HeaderRow = { kind: "header"; label: string; year?: number };
+type Row = HeaderRow | LineItemRow;
+
+function deathRows(label: string, e1?: EstateTaxResult, e2?: EstateTaxResult): Row[] {
+  const ird1 = irdTotal(e1);
+  const ird2 = irdTotal(e2);
+  return [
+    { kind: "header", label, year: e1?.year ?? e2?.year },
+    {
+      kind: "row",
+      label: "Federal Estate Tax",
+      a: e1 ? e1.federalEstateTax : undefined,
+      b: e2 ? e2.federalEstateTax : undefined,
+      better: "lower",
+    },
+    {
+      kind: "row",
+      label: "State Estate Tax",
+      a: e1 ? e1.stateEstateTax : undefined,
+      b: e2 ? e2.stateEstateTax : undefined,
+      better: "lower",
+      hideIfZero: true,
+    },
+    {
+      kind: "row",
+      label: "Probate & Final Expenses",
+      a: e1 ? e1.estateAdminExpenses : undefined,
+      b: e2 ? e2.estateAdminExpenses : undefined,
+      better: "lower",
+      hideIfZero: true,
+    },
+    {
+      kind: "row",
+      label: "Tax on Income with Respect to Decedent (IRD)",
+      a: e1 ? ird1 : undefined,
+      b: e2 ? ird2 : undefined,
+      better: "lower",
+      hideIfZero: true,
+    },
+    {
+      kind: "row",
+      label: "Subtotal",
+      a: deathSubtotal(e1),
+      b: deathSubtotal(e2),
+      better: "lower",
+      bold: true,
+    },
+  ];
 }
 
 interface Props {
@@ -53,23 +116,24 @@ export function EstateTaxComparisonTable({ plan1Result, plan2Result, plan1Label,
   const s1 = plan1Result.secondDeathEvent;
   const s2 = plan2Result.secondDeathEvent;
 
-  const rows = [
-    { label: "First Death", year: f1?.year ?? f2?.year, kind: "header" as const },
-    { label: "Estate tax", a: tax(f1), b: tax(f2), better: "lower" as const },
-    { label: "Probate & final expenses", a: admin(f1), b: admin(f2), better: "lower" as const },
-    { label: "Subtotal", a: subtotal(f1), b: subtotal(f2), better: "lower" as const, bold: true },
-    { label: "Second Death", year: s1?.year ?? s2?.year, kind: "header" as const },
-    { label: "Estate tax", a: tax(s1), b: tax(s2), better: "lower" as const },
-    { label: "Probate & final expenses", a: admin(s1), b: admin(s2), better: "lower" as const },
-    { label: "Subtotal", a: subtotal(s1), b: subtotal(s2), better: "lower" as const, bold: true },
+  const rows: Row[] = [
+    ...deathRows("First Death", f1, f2),
+    ...deathRows("Second Death", s1, s2),
     {
-      label: "Combined total",
+      kind: "row",
+      label: "Combined Total — Taxes & Expenses",
       a: combinedTotal(f1, s1),
       b: combinedTotal(f2, s2),
-      better: "lower" as const,
+      better: "lower",
       bold: true,
     },
   ];
+
+  // Drop hide-if-zero rows where both plans render zero or undefined.
+  const visible = rows.filter((row) => {
+    if (row.kind !== "row" || !row.hideIfZero) return true;
+    return (row.a ?? 0) > 0 || (row.b ?? 0) > 0;
+  });
 
   return (
     <table className="w-full text-sm">
@@ -82,7 +146,7 @@ export function EstateTaxComparisonTable({ plan1Result, plan2Result, plan1Label,
         </tr>
       </thead>
       <tbody>
-        {rows.map((row, i) => {
+        {visible.map((row, i) => {
           if (row.kind === "header") {
             return (
               <tr key={i} className="border-t border-slate-800">
