@@ -129,6 +129,11 @@ export function MonteCarloAndLongevity({
         planStartYear={plan1Years[0]?.year ?? new Date().getFullYear()}
         plan1Label={plan1Label}
         plan2Label={plan2Label}
+        clientBirthYear={
+          plan1Tree.client.dateOfBirth
+            ? parseInt(plan1Tree.client.dateOfBirth.slice(0, 4), 10) || undefined
+            : undefined
+        }
       />
     </>
   );

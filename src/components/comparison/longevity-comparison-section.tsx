@@ -1,6 +1,6 @@
 "use client";
 
-import { LongevityComparisonChart } from "@/components/monte-carlo/longevity-comparison-chart";
+import { LongevityChart } from "@/components/monte-carlo/longevity-chart";
 import { successByYear } from "@/lib/comparison/success-by-year";
 
 function lastYearAtThreshold(
@@ -21,6 +21,7 @@ interface Props {
   planStartYear: number;
   plan1Label: string;
   plan2Label: string;
+  clientBirthYear?: number;
 }
 
 export function LongevityComparisonSection(props: Props) {
@@ -36,14 +37,32 @@ export function LongevityComparisonSection(props: Props) {
         {props.plan1Label} stays ≥ 90% through {last90Plan1 ?? "—"} ·{" "}
         {props.plan2Label} stays ≥ 90% through {last90Plan2 ?? "—"}
       </div>
-      <LongevityComparisonChart
-        plan1Matrix={props.plan1Matrix}
-        plan2Matrix={props.plan2Matrix}
-        threshold={props.threshold}
-        planStartYear={props.planStartYear}
-        plan1Label={props.plan1Label}
-        plan2Label={props.plan2Label}
-      />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div>
+          <div className="mb-2 text-xs uppercase tracking-wide text-slate-400">
+            {props.plan1Label}
+          </div>
+          <LongevityChart
+            byYearLiquidAssetsPerTrial={props.plan1Matrix}
+            requiredMinimumAssetLevel={props.threshold}
+            planStartYear={props.planStartYear}
+            clientBirthYear={props.clientBirthYear}
+            variant="compact"
+          />
+        </div>
+        <div>
+          <div className="mb-2 text-xs uppercase tracking-wide text-slate-400">
+            {props.plan2Label}
+          </div>
+          <LongevityChart
+            byYearLiquidAssetsPerTrial={props.plan2Matrix}
+            requiredMinimumAssetLevel={props.threshold}
+            planStartYear={props.planStartYear}
+            clientBirthYear={props.clientBirthYear}
+            variant="compact"
+          />
+        </div>
+      </div>
     </section>
   );
 }
