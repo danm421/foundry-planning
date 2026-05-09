@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { vi } from "vitest";
 import type { ProjectionYear, ClientData } from "@/engine";
 import { cashflowArtifact } from "../cashflow";
+import type { CashflowData } from "../cashflow";
 
 describe("cashflowArtifact (skeleton)", () => {
   it("registers id, title, section, route", () => {
@@ -237,5 +238,76 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
     });
     expect(data.sections.base.rows.map((r) => r.year)).toEqual([2027, 2028]);
     expect(data.yearRange).toEqual([2027, 2028]);
+  });
+});
+
+describe("cashflowArtifact.renderPdf", () => {
+  const baseData: CashflowData = {
+    clientName: "Doe Family",
+    scenarioLabel: "Base Case",
+    yearRange: [2026, 2026],
+    sections: {
+      base: {
+        id: "base", title: "Cash Flow — Summary",
+        headers: [
+          { id: "year", label: "Year", align: "left" },
+          { id: "age", label: "Age(s)", align: "left" },
+          { id: "totalIncome", label: "Income", align: "right" },
+          { id: "totalExpenses", label: "Expenses", align: "right" },
+          { id: "netCashFlow", label: "Net Cash Flow", align: "right" },
+          { id: "portfolioTotal", label: "Portfolio", align: "right" },
+        ],
+        rows: [{ year: 2026, age: "60 / 58", cells: { totalIncome: 200_000, totalExpenses: 134_000, netCashFlow: 66_000, portfolioTotal: 500_000 } }],
+        totals: { totalIncome: 200_000, totalExpenses: 134_000, netCashFlow: 66_000, portfolioTotal: 500_000 },
+      },
+      income: { id: "income", title: "Income Detail", headers: [], rows: [], totals: {} },
+      expenses: { id: "expenses", title: "Expenses Detail", headers: [], rows: [], totals: {} },
+      withdrawals: { id: "withdrawals", title: "Net Cash Flow Detail", headers: [], rows: [], totals: {} },
+      assets: { id: "assets", title: "Portfolio Detail", headers: [], rows: [], totals: {} },
+    },
+  };
+
+  // Re-import cashflow.tsx without the engine/loader mocks from the earlier describe.
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unmock("@/lib/scenario/loader");
+    vi.unmock("@/engine");
+  });
+
+  it("returns non-null view-blocks for variant=data (no charts)", async () => {
+    const { cashflowArtifact: art } = await import("../cashflow");
+    const node = art.renderPdf({
+      data: baseData,
+      opts: { scenarioId: null, yearStart: null, yearEnd: null },
+      variant: "data",
+      charts: [],
+    });
+    expect(node).not.toBeNull();
+  });
+
+  it("returns non-null view-blocks for variant=chart+data with no charts cached", async () => {
+    const { cashflowArtifact: art } = await import("../cashflow");
+    const node = art.renderPdf({
+      data: baseData,
+      opts: { scenarioId: null, yearStart: null, yearEnd: null },
+      variant: "chart+data",
+      charts: [],
+    });
+    expect(node).not.toBeNull();
+  });
+
+  it("returns non-null view-blocks for variant=chart with one cached chart", async () => {
+    const { cashflowArtifact: art } = await import("../cashflow");
+    const node = art.renderPdf({
+      data: baseData,
+      opts: { scenarioId: null, yearStart: null, yearEnd: null },
+      variant: "chart",
+      charts: [{
+        id: "income",
+        dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+        width: 400, height: 220, dataVersion: "v1",
+      }],
+    });
+    expect(node).not.toBeNull();
   });
 });

@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { ReactNode } from "react";
-import type { ReportArtifact, FetchDataResult, RenderPdfInput, CsvFile } from "../types";
+import { View, Text, StyleSheet } from "@react-pdf/renderer";
+import { DataTable } from "@/components/reports-pdf/widgets/data-table";
+import { ChartImage } from "@/components/reports-pdf/widgets/chart-image";
+import type { ReportArtifact, FetchDataResult, RenderPdfInput, CsvFile, ChartImage as ChartImageType } from "../types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
 import type { ProjectionYear, ClientData } from "@/engine";
@@ -294,8 +297,90 @@ function buildAssetsSection(years: ProjectionYear[], c: ClientData): CashflowSec
   return { id: "assets", title: "Portfolio Detail", headers, rows, totals };
 }
 
-function renderCashflowPdf(_input: RenderPdfInput<CashflowData, CashflowOptions>): ReactNode {
-  throw new Error("not implemented");
+const pdfStyles = StyleSheet.create({
+  sectionTitle: { fontSize: 13, fontWeight: 700, marginTop: 12, marginBottom: 4 },
+  scenarioLine: { fontSize: 10, color: "#6b7280", marginBottom: 8 },
+  break: { marginTop: 8 },
+});
+
+function fmtMoneyCompact(n: number): string {
+  if (n === 0) return "—";
+  const abs = Math.abs(n);
+  let formatted: string;
+  if (abs >= 1_000_000_000) formatted = `$${(abs / 1_000_000_000).toFixed(1)}B`;
+  else if (abs >= 1_000_000) formatted = `$${(abs / 1_000_000).toFixed(1)}M`;
+  else if (abs >= 1_000) formatted = `$${(abs / 1_000).toFixed(0)}K`;
+  else formatted = `$${abs.toFixed(0)}`;
+  return n < 0 ? `(${formatted})` : formatted;
+}
+
+const SECTION_ORDER: CashflowSectionId[] = ["base", "income", "expenses", "withdrawals", "assets"];
+
+function renderSection(
+  data: CashflowData,
+  sectionId: CashflowSectionId,
+  variant: RenderPdfInput<CashflowData, CashflowOptions>["variant"],
+  charts: ChartImageType[],
+  isFirst: boolean,
+): ReactNode {
+  const showCharts = variant === "chart" || variant === "chart+data";
+  const showData = variant === "data" || variant === "chart+data";
+  const section = data.sections[sectionId];
+  if (section.rows.length === 0) return null;
+
+  const chartIdFor = (id: CashflowSectionId): string =>
+    id === "base" ? "base-cashflow" : id;
+  const baseChart = charts.find((c) => c.id === "base-cashflow")
+    ?? charts.find((c) => c.id === "base-portfolio");
+  const sectionChart = sectionId === "base" ? baseChart : charts.find((c) => c.id === chartIdFor(sectionId));
+
+  const ageByYear = new Map(data.sections.base.rows.map((r) => [r.year, r.age]));
+  const rowsWithAge = section.rows.map((r) => ({
+    ...r,
+    age: r.age || (ageByYear.get(r.year) ?? ""),
+  }));
+
+  const columns = section.headers.map((h) => ({
+    header: h.label,
+    align: h.align,
+    accessor: (row: typeof rowsWithAge[number]) => {
+      if (h.id === "year") return String(row.year);
+      if (h.id === "age") return row.age;
+      const v = row.cells[h.id];
+      return typeof v === "number" ? fmtMoneyCompact(v) : "";
+    },
+  }));
+
+  const footerRow = section.rows.length > 0
+    ? {
+        year: 0,
+        age: "TOTAL",
+        cells: section.totals,
+      } as typeof rowsWithAge[number]
+    : undefined;
+
+  return (
+    <View key={sectionId} break={!isFirst} style={isFirst ? undefined : pdfStyles.break}>
+      <Text style={pdfStyles.sectionTitle}>{section.title}</Text>
+      {isFirst && (
+        <Text style={pdfStyles.scenarioLine}>
+          {data.scenarioLabel} · Years {data.yearRange[0]}–{data.yearRange[1]}
+        </Text>
+      )}
+      {showCharts && sectionChart && <ChartImage chart={sectionChart} maxWidth={520} />}
+      {showData && (
+        <DataTable columns={columns} rows={rowsWithAge} footerRow={footerRow} />
+      )}
+    </View>
+  );
+}
+
+function renderCashflowPdf({ data, variant, charts }: RenderPdfInput<CashflowData, CashflowOptions>): ReactNode {
+  return (
+    <View>
+      {SECTION_ORDER.map((id, idx) => renderSection(data, id, variant, charts, idx === 0))}
+    </View>
+  );
 }
 
 function cashflowToCsv(_data: CashflowData, _opts: CashflowOptions): CsvFile[] {
