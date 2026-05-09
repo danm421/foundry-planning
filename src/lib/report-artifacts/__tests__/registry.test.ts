@@ -3,7 +3,9 @@ import { z } from "zod";
 import { _resetRegistry, registerArtifact, getArtifact, listArtifacts } from "../registry";
 import type { ReportArtifact } from "../types";
 
-const fakeArtifact = (id: string): ReportArtifact<{ n: number }, z.ZodObject<{}>> => ({
+const fakeArtifact = (
+  id: string,
+): ReportArtifact<{ n: number }, z.ZodObject<Record<string, never>>> => ({
   id,
   title: id,
   section: "assets",
