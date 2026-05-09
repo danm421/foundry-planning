@@ -21,11 +21,13 @@ describe("buildHistogramSeries", () => {
     expect(belowDomainCount + aboveDomainCount).toBeLessThanOrEqual(20);
   });
 
-  it("exposes p5 / p50 / p95 of the input values", () => {
+  it("exposes p5 / p25 / p50 / p75 / p95 of the input values", () => {
     const values = Array.from({ length: 100 }, (_, i) => i + 1); // 1..100
-    const { p5, p50, p95 } = buildHistogramSeries(values);
+    const { p5, p25, p50, p75, p95 } = buildHistogramSeries(values);
     expect(p5).toBeCloseTo(5, 0);
+    expect(p25).toBeCloseTo(25, 0);
     expect(p50).toBeCloseTo(50, 0);
+    expect(p75).toBeCloseTo(75, 0);
     expect(p95).toBeCloseTo(95, 0);
   });
 

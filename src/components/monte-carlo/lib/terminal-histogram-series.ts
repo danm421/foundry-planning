@@ -35,7 +35,9 @@ export interface SDBands {
 export interface HistogramSeries {
   bins: HistogramBin[];
   p5: number;
+  p25: number;
   p50: number;
+  p75: number;
   p95: number;
   /** Trials whose value fell below the displayed domain (folded into bin 0). */
   belowDomainCount: number;
@@ -113,7 +115,7 @@ function niceStep(rawStep: number): number {
 export function buildHistogramSeries(values: number[]): HistogramSeries {
   if (values.length === 0) {
     return {
-      bins: [], p5: NaN, p50: NaN, p95: NaN,
+      bins: [], p5: NaN, p25: NaN, p50: NaN, p75: NaN, p95: NaN,
       belowDomainCount: 0, aboveDomainCount: 0,
       sd: computeSDBands([]),
     };
@@ -124,7 +126,9 @@ export function buildHistogramSeries(values: number[]): HistogramSeries {
   const trueMax = sorted[sorted.length - 1];
 
   const p5 = percentile(sorted, 0.05);
+  const p25 = percentile(sorted, 0.25);
   const p50 = percentile(sorted, 0.50);
+  const p75 = percentile(sorted, 0.75);
   const p95 = percentile(sorted, 0.95);
   const sd = computeSDBands(values);
 
@@ -138,7 +142,11 @@ export function buildHistogramSeries(values: number[]): HistogramSeries {
       count: 0,
     }));
     bins[Math.floor(TARGET_BIN_COUNT / 2)].count = values.length;
-    return { bins, p5: trueMin, p50: trueMin, p95: trueMin, belowDomainCount: 0, aboveDomainCount: 0, sd };
+    return {
+      bins,
+      p5: trueMin, p25: trueMin, p50: trueMin, p75: trueMin, p95: trueMin,
+      belowDomainCount: 0, aboveDomainCount: 0, sd,
+    };
   }
 
   const domainLow = percentile(sorted, CLIP_LOW_PERCENTILE);
@@ -179,5 +187,5 @@ export function buildHistogramSeries(values: number[]): HistogramSeries {
     bins[idx].count += 1;
   }
 
-  return { bins, p5, p50, p95, belowDomainCount, aboveDomainCount, sd };
+  return { bins, p5, p25, p50, p75, p95, belowDomainCount, aboveDomainCount, sd };
 }

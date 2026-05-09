@@ -49,20 +49,23 @@ function valueToPixel(
   return center - halfWidth + clamped * 2 * halfWidth;
 }
 
-interface SDMarkerOptions {
+interface PercentileMarkerOptions {
   bins: BinRange[];
-  minus2: number;
-  minus1: number;
-  mean: number;
-  plus1: number;
-  plus2: number;
+  p5: number;
+  p25: number;
+  median: number;
+  p75: number;
+  p95: number;
 }
 
-// Renders shaded ±1σ and ±2σ background bands behind the histogram bars,
-// plus thin dashed verticals at each σ boundary and the mean. Drawing this
-// before datasets keeps the bars on top.
-const sdBandsPlugin = {
-  id: "sdBands",
+// Renders the empirical distribution shape behind the bars: a faint outer
+// band covering P5–P95 (90% of trials), a more visible inner band covering
+// P25–P75 (the IQR — middle 50%), and a solid median line. Percentile-based
+// markers describe the actual distribution rather than implying a normal
+// shape, which matters here because compounded portfolio returns are heavily
+// right-skewed.
+const percentileBandsPlugin = {
+  id: "pctBands",
   beforeDatasetsDraw(
     chart: {
       ctx: CanvasRenderingContext2D;
@@ -70,73 +73,75 @@ const sdBandsPlugin = {
       scales: { x: { getPixelForValue(v: number): number } };
     },
     _args: unknown,
-    options: SDMarkerOptions | undefined,
+    options: PercentileMarkerOptions | undefined,
   ) {
     // This plugin is registered globally, so it fires on every Chart.js chart
     // in the app. Bail out if any required option is missing — only the
-    // terminal-histogram chart configures `sdBands`, so for FanChart and
+    // terminal-histogram chart configures `pctBands`, so for FanChart and
     // LongevityChart this guard ensures we no-op cleanly instead of crashing.
     if (!options || !Array.isArray(options.bins) || options.bins.length === 0) return;
-    if (!Number.isFinite(options.mean)) return;
+    if (!Number.isFinite(options.median)) return;
     const { ctx, chartArea, scales } = chart;
-    const { bins, minus2, minus1, mean, plus1, plus2 } = options;
+    const { bins, p5, p25, median, p75, p95 } = options;
 
-    const xMinus2 = valueToPixel(minus2, bins, scales.x);
-    const xMinus1 = valueToPixel(minus1, bins, scales.x);
-    const xMean = valueToPixel(mean, bins, scales.x);
-    const xPlus1 = valueToPixel(plus1, bins, scales.x);
-    const xPlus2 = valueToPixel(plus2, bins, scales.x);
+    const xP5 = valueToPixel(p5, bins, scales.x);
+    const xP25 = valueToPixel(p25, bins, scales.x);
+    const xP50 = valueToPixel(median, bins, scales.x);
+    const xP75 = valueToPixel(p75, bins, scales.x);
+    const xP95 = valueToPixel(p95, bins, scales.x);
 
     const top = chartArea.top;
     const height = chartArea.bottom - chartArea.top;
 
     ctx.save();
-    // ±2σ outer band — very faint
+    // Outer band P5–P25 and P75–P95 — very faint
     ctx.fillStyle = "rgba(110, 231, 183, 0.06)";
-    ctx.fillRect(xMinus2, top, xMinus1 - xMinus2, height);
-    ctx.fillRect(xPlus1, top, xPlus2 - xPlus1, height);
-    // ±1σ inner band — slightly more visible
+    ctx.fillRect(xP5, top, xP25 - xP5, height);
+    ctx.fillRect(xP75, top, xP95 - xP75, height);
+    // Inner band P25–P75 (IQR) — slightly more visible
     ctx.fillStyle = "rgba(110, 231, 183, 0.12)";
-    ctx.fillRect(xMinus1, top, xPlus1 - xMinus1, height);
+    ctx.fillRect(xP25, top, xP75 - xP25, height);
 
     // Boundary verticals
     ctx.setLineDash([3, 3]);
     ctx.lineWidth = 1;
     ctx.strokeStyle = "rgba(148, 163, 184, 0.5)";
-    for (const x of [xMinus2, xMinus1, xPlus1, xPlus2]) {
+    for (const x of [xP5, xP25, xP75, xP95]) {
       ctx.beginPath();
       ctx.moveTo(x, top);
       ctx.lineTo(x, chartArea.bottom);
       ctx.stroke();
     }
-    // Mean line — solid, more prominent
+    // Median line — solid, more prominent
     ctx.setLineDash([]);
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = "rgba(226, 232, 240, 0.7)";
     ctx.beginPath();
-    ctx.moveTo(xMean, top);
-    ctx.lineTo(xMean, chartArea.bottom);
+    ctx.moveTo(xP50, top);
+    ctx.lineTo(xP50, chartArea.bottom);
     ctx.stroke();
 
-    // Σ-band labels above the bars
+    // Percentile labels above the bars. When the distribution is heavily
+    // right-skewed the inner labels (25th / Median / 75th) cluster on the
+    // left; that visual crowding itself communicates the skew.
     ctx.font = "10px ui-sans-serif, system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
     ctx.fillStyle = "rgb(148, 163, 184)";
     const labelY = top - 2;
-    ctx.fillText("−2σ", xMinus2, labelY);
-    ctx.fillText("−1σ", xMinus1, labelY);
+    ctx.fillText("5th", xP5, labelY);
+    ctx.fillText("25th", xP25, labelY);
     ctx.fillStyle = "rgb(226, 232, 240)";
-    ctx.fillText("Mean", xMean, labelY);
+    ctx.fillText("Median", xP50, labelY);
     ctx.fillStyle = "rgb(148, 163, 184)";
-    ctx.fillText("+1σ", xPlus1, labelY);
-    ctx.fillText("+2σ", xPlus2, labelY);
+    ctx.fillText("75th", xP75, labelY);
+    ctx.fillText("95th", xP95, labelY);
 
     ctx.restore();
   },
 };
 
-ChartJS.register(sdBandsPlugin);
+ChartJS.register(percentileBandsPlugin);
 
 const ZONE_FAILED = "rgba(244, 63, 94, 0.85)"; // rose-500
 const ZONE_DEPLETED = "rgba(251, 146, 60, 0.85)"; // orange-400
@@ -191,8 +196,6 @@ export function TerminalHistogram({
 
   const failureRate = trialsRun > 0 ? failedCount / trialsRun : 0;
   const sd = series.sd;
-  const within1Pct = trialsRun > 0 ? sd.countWithin1 / trialsRun : 0;
-  const within2Pct = trialsRun > 0 ? sd.countWithin2 / trialsRun : 0;
 
   const data = {
     labels: series.bins.map((b) => formatShortCurrency(b.max)),
@@ -271,13 +274,13 @@ export function TerminalHistogram({
     ...baseOptions,
     plugins: {
       ...baseOptions.plugins,
-      sdBands: {
+      pctBands: {
         bins: series.bins,
-        minus2: sd.minus2,
-        minus1: sd.minus1,
-        mean: sd.mean,
-        plus1: sd.plus1,
-        plus2: sd.plus2,
+        p5: series.p5,
+        p25: series.p25,
+        median: series.p50,
+        p75: series.p75,
+        p95: series.p95,
       },
     },
   } as ChartOptions<"bar">;
@@ -306,17 +309,17 @@ export function TerminalHistogram({
       {isMain ? (
         <>
           <div className="grid grid-cols-4 gap-2 mb-3">
-            <Stat label="Mean" value={formatShortCurrency(sd.mean)} tone="slate" />
+            <Stat label="Median" value={formatShortCurrency(series.p50)} tone="slate" />
             <Stat
-              label={`±1σ range • ${formatPercent(within1Pct)}`}
-              value={`${formatShortCurrency(Math.max(0, sd.minus1))} – ${formatShortCurrency(sd.plus1)}`}
-              sub={`${formatInteger(sd.countWithin1)} trials`}
+              label="Inner 50% (P25–P75)"
+              value={`${formatShortCurrency(series.p25)} – ${formatShortCurrency(series.p75)}`}
+              sub="50% of trials"
               tone="emerald"
             />
             <Stat
-              label={`±2σ range • ${formatPercent(within2Pct)}`}
-              value={`${formatShortCurrency(Math.max(0, sd.minus2))} – ${formatShortCurrency(sd.plus2)}`}
-              sub={`${formatInteger(sd.countWithin2)} trials`}
+              label="Inner 90% (P5–P95)"
+              value={`${formatShortCurrency(series.p5)} – ${formatShortCurrency(series.p95)}`}
+              sub="90% of trials"
               tone="emerald"
             />
             <Stat
@@ -327,21 +330,17 @@ export function TerminalHistogram({
             />
           </div>
           <div className="text-[11px] text-slate-500 mb-1 tabular-nums">
-            5th {formatShortCurrency(series.p5)}
-            <span className="mx-1.5 text-slate-700">·</span>
-            Median {formatShortCurrency(series.p50)}
-            <span className="mx-1.5 text-slate-700">·</span>
-            95th {formatShortCurrency(series.p95)}
+            Mean {formatShortCurrency(sd.mean)}
             <span className="mx-1.5 text-slate-700">·</span>
             σ {formatShortCurrency(sd.stdDev)}
           </div>
         </>
       ) : (
         <p className="text-xs text-slate-400 mb-2 tabular-nums">
-          <span className="text-slate-200">Mean {formatShortCurrency(sd.mean)}</span>
+          <span className="text-slate-200">Median {formatShortCurrency(series.p50)}</span>
           <span className="mx-1.5 text-slate-600">·</span>
           <span>
-            ±1σ {formatShortCurrency(Math.max(0, sd.minus1))}–{formatShortCurrency(sd.plus1)}
+            P25–P75 {formatShortCurrency(series.p25)}–{formatShortCurrency(series.p75)}
           </span>
         </p>
       )}
