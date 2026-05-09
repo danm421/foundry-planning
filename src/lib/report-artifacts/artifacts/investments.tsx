@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { eq, and, inArray } from "drizzle-orm";
+import { View, Text, StyleSheet } from "@react-pdf/renderer";
+import { DataTable } from "@/components/reports-pdf/widgets/data-table";
+import { ChartImage } from "@/components/reports-pdf/widgets/chart-image";
 import { db } from "@/db";
 import {
   clients,
@@ -311,7 +314,135 @@ export const investmentsArtifact: ReportArtifact<InvestmentsData, typeof options
     return fetchInvestmentsData(clientId, firmId, opts);
   },
 
-  renderPdf: () => null, // Implemented in Task 11
+  renderPdf: ({ data, opts, variant, charts }) => {
+    const showCharts = variant === "chart" || variant === "chart+data";
+    const showData = variant === "data" || variant === "chart+data";
+    const donut = charts.find((c) => c.id === "donut");
+    const drift = charts.find((c) => c.id === "drift");
+
+    const fmtMoney = (n: number) =>
+      n.toLocaleString("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 0,
+      });
+    const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`;
+
+    // When drillDownClasses is set, filter per-account rows to only accounts
+    // that hold at least one of the requested classes. Unallocated accounts are
+    // excluded because they carry no class breakdown.
+    const filteredAccounts =
+      opts.drillDownClasses.length === 0
+        ? data.perAccount
+        : data.perAccount.filter((a) => {
+            if ("unallocated" in a.allocation) return false;
+            return a.allocation.classified.some((c) =>
+              opts.drillDownClasses.includes(c.classId),
+            );
+          });
+
+    const styles = StyleSheet.create({
+      sectionTitle: { fontSize: 13, fontWeight: 700, marginTop: 12, marginBottom: 4 },
+    });
+
+    return (
+      <View>
+        {showCharts && donut && <ChartImage chart={donut} maxWidth={420} />}
+        {showCharts && drift && <ChartImage chart={drift} maxWidth={480} />}
+
+        {showData && (
+          <>
+            <Text style={styles.sectionTitle}>Household Allocation</Text>
+            <DataTable
+              columns={[
+                {
+                  header: "Asset Class",
+                  accessor: (r: typeof data.household.byAssetClass[number]) => r.label,
+                },
+                {
+                  header: "Value",
+                  accessor: (r: typeof data.household.byAssetClass[number]) =>
+                    fmtMoney(r.value),
+                  align: "right",
+                },
+                {
+                  header: "% Classified",
+                  accessor: (r: typeof data.household.byAssetClass[number]) =>
+                    fmtPct(r.pctOfClassified),
+                  align: "right",
+                },
+              ]}
+              rows={data.household.byAssetClass}
+              footerRow={{
+                classId: "_total",
+                label: "Total Classified",
+                value: data.household.totalClassifiedValue,
+                pctOfClassified: 1,
+              }}
+            />
+
+            {data.drift.benchmarkName ? (
+              <>
+                <Text style={styles.sectionTitle}>
+                  Drift vs {data.drift.benchmarkName}
+                </Text>
+                <DataTable
+                  columns={[
+                    {
+                      header: "Asset Class",
+                      accessor: (r: typeof data.drift.rows[number]) => r.label,
+                    },
+                    {
+                      header: "Current",
+                      accessor: (r: typeof data.drift.rows[number]) =>
+                        fmtPct(r.currentPct),
+                      align: "right",
+                    },
+                    {
+                      header: "Target",
+                      accessor: (r: typeof data.drift.rows[number]) =>
+                        fmtPct(r.targetPct),
+                      align: "right",
+                    },
+                    {
+                      header: "Diff",
+                      accessor: (r: typeof data.drift.rows[number]) =>
+                        fmtPct(r.diffPct),
+                      align: "right",
+                    },
+                  ]}
+                  rows={data.drift.rows}
+                />
+              </>
+            ) : (
+              <Text style={styles.sectionTitle}>Drift: no benchmark selected</Text>
+            )}
+
+            {filteredAccounts.length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>Holdings by Account</Text>
+                <DataTable
+                  columns={[
+                    {
+                      header: "Account",
+                      accessor: (r: typeof filteredAccounts[number]) => r.accountName,
+                    },
+                    {
+                      header: "Value",
+                      accessor: (r: typeof filteredAccounts[number]) =>
+                        fmtMoney(r.value),
+                      align: "right",
+                    },
+                  ]}
+                  rows={filteredAccounts}
+                />
+              </>
+            )}
+          </>
+        )}
+      </View>
+    );
+  },
 
   toCsv: (data) => {
     const allocationRows: string[][] = [
