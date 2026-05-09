@@ -33,7 +33,7 @@ vi.mock("@react-pdf/renderer", () => ({
 }));
 
 const fetchDataMock = vi.fn();
-const renderPdfMock = vi.fn((_input: { charts: unknown[] }) => null);
+const renderPdfMock = vi.fn<(input: { charts: unknown[] }) => null>(() => null);
 const toCsvSingleMock = vi.fn(() => [{ name: "single.csv", contents: "a,b\r\n1,2\r\n" }]);
 const toCsvMultiMock = vi.fn(() => [
   { name: "one.csv", contents: "a\r\n" },
