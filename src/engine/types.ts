@@ -136,7 +136,11 @@ export interface GrossEstateLine {
   accountId: string | null;
   /** Source liability id; null when this line is an asset. */
   liabilityId: string | null;
-  /** 0.5 for joint-at-first-death, 1.0 otherwise. Stored for display. */
+  /** Effective share of FMV included in this estate line (`amount / fmv`).
+   *  0.5 for a pure-joint account at first death; 1.0 for a 100%-included
+   *  account; intermediate values when contributions from a family pool and
+   *  a rev-trust-grantor entity slice are summed onto the same account.
+   *  Stored for display; `amount` is the authoritative dollar figure. */
   percentage: number;
   /** Positive for assets, negative for debts. */
   amount: number;

@@ -104,7 +104,7 @@ export function computeGrossEstate(input: {
 
     // ── Mixed / family-only routing — accumulate per-owner contributions ──
     let amount = 0;
-    let inAnyEntity = false;
+    let hasEntityContribution = false;
 
     // Family contribution
     const cfm = controllingFamilyMember(a);
@@ -140,13 +140,17 @@ export function computeGrossEstate(input: {
       if (ent.isIrrevocable) continue;
       if (ent.grantor !== input.deceased) continue;
       amount += slice.locked;
-      inAnyEntity = true;
+      hasEntityContribution = true;
     }
 
     if (amount <= 0) continue;
-    const effPct = fmv > 0 ? amount / fmv : 0;
+    // fmv > 0 guaranteed by the early-out at the top of the loop.
+    const effPct = amount / fmv;
     lines.push({
-      label: formatLabel(a.name, effPct, inAnyEntity),
+      // hasEntityContribution=true adds "(Trust)" suffix. On a mixed account
+      // (family pool + rev-trust-grantor slice) the line aggregates both
+      // contributions; the suffix flags any entity contribution, not exclusivity.
+      label: formatLabel(a.name, effPct, hasEntityContribution),
       accountId: a.id,
       liabilityId: null,
       percentage: effPct,

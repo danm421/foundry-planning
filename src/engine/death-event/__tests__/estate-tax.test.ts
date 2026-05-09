@@ -550,6 +550,67 @@ describe("computeGrossEstate", () => {
     // Family pool = $700k × 0.5 (joint, first death) = $350k. Trust excluded.
     expect(r.total).toBeCloseTo(350_000, 2);
   });
+
+  it("includes ONLY the rev-trust-grantor slice when the lone FM owner is the survivor", () => {
+    // 70% spouse (survivor) + 30% client's revocable trust (client = deceased
+    // = grantor). Family pool ($700k) belongs to the survivor → contributes 0.
+    // Rev-trust slice ($300k) is in the deceased's estate at × 1.
+    // Total: $300k.
+    const rev: EntitySummary = {
+      id: "rev",
+      includeInPortfolio: true,
+      isGrantor: true,
+      isIrrevocable: false,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("mixed", 1_000_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.7 },
+          { kind: "entity", entityId: "rev", percent: 0.3 },
+        ],
+      })],
+      accountBalances: { mixed: 1_000_000 },
+      liabilities: [],
+      entities: [rev],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+      entityAccountSharesEoY: new Map([
+        ["rev", new Map([["mixed", 300_000]])],
+      ]),
+    });
+    expect(r.total).toBeCloseTo(300_000, 2);
+    expect(r.lines).toHaveLength(1);
+  });
+
+  it("excludes a 100%-revocable-trust account when the deceased is NOT the grantor", () => {
+    // Spouse is the grantor; client dies. The sole-entity early-out's
+    // `ent.grantor !== input.deceased` guard must fire — distinct from the
+    // irrevocable-trust path. Total = 0.
+    const spouseRev: EntitySummary = {
+      id: "spouse-rev",
+      includeInPortfolio: true,
+      isGrantor: true,
+      isIrrevocable: false,
+      grantor: "spouse",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("rev-spouse", 400_000, {
+        owners: [{ kind: "entity", entityId: "spouse-rev", percent: 1 }],
+      })],
+      accountBalances: { "rev-spouse": 400_000 },
+      liabilities: [],
+      entities: [spouseRev],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+    });
+    expect(r.total).toBe(0);
+    expect(r.lines).toEqual([]);
+  });
 });
 
 describe("computeDeductions", () => {
