@@ -12,6 +12,8 @@ import {
   type Ordering,
 } from "@/lib/estate/yearly-estate-report";
 import { YearlyEstateTable } from "./yearly-estate-table";
+import { YearlyEstateCharts } from "./yearly-estate-charts";
+import { buildYearlyBeneficiaryBreakdown } from "@/lib/estate/yearly-beneficiary-breakdown";
 import type { OwnerDobs } from "./report-controls/age-helpers";
 import { buildLifeEventsByYear } from "@/lib/life-event-markers";
 
@@ -89,6 +91,16 @@ export default function YearlyEstateReportView({
     [clientData],
   );
 
+  const beneficiaryBreakdown = useMemo(() => {
+    if (!projection || !clientData) return null;
+    return buildYearlyBeneficiaryBreakdown(
+      projection,
+      ordering,
+      clientData,
+      ownerNames,
+    );
+  }, [projection, clientData, ordering, ownerNames]);
+
   if (loadError) {
     return (
       <div className="rounded border border-red-700 bg-red-900/20 p-4 text-red-200">
@@ -136,6 +148,13 @@ export default function YearlyEstateReportView({
             </button>
           </div>
         </div>
+      )}
+
+      {beneficiaryBreakdown && (
+        <YearlyEstateCharts
+          rows={report.rows}
+          breakdown={beneficiaryBreakdown}
+        />
       )}
 
       <YearlyEstateTable
