@@ -1,6 +1,7 @@
 // src/engine/entity-cashflow.ts
 import type { ProjectionYear, Income, Expense, EntityFlowMode, EntityFlowOverride } from "./types";
 import { resolveEntityFlows } from "./entity-flows";
+import { accrueLockedEntityShare } from "./locked-shares";
 import type { trustSubTypeEnum } from "@/db/schema";
 
 type TrustSubType = (typeof trustSubTypeEnum.enumValues)[number];
@@ -148,16 +149,18 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           // initial BoY × percent) plus its share of passive growth. Flow
           // entries on the account are treated as household-attributable.
           const carried = lockedShareByEntityAccount.get(entityId)?.get(aid);
-          const lockedBoY = carried ?? ledger.beginningValue * share;
-          const lockedGrowth = ledger.growth * share;
-          const lockedEoY = lockedBoY + lockedGrowth;
-          beginningBalance += lockedBoY;
-          endingBalance += lockedEoY;
-          growth += lockedGrowth;
+          const acc = accrueLockedEntityShare({
+            carriedBoY: carried,
+            ledger: { beginningValue: ledger.beginningValue, growth: ledger.growth },
+            percent: share,
+          });
+          beginningBalance += acc.lockedBoY;
+          endingBalance += acc.lockedEoY;
+          growth += acc.lockedGrowth;
           if (!lockedShareByEntityAccount.has(entityId)) {
             lockedShareByEntityAccount.set(entityId, new Map());
           }
-          lockedShareByEntityAccount.get(entityId)!.set(aid, lockedEoY);
+          lockedShareByEntityAccount.get(entityId)!.set(aid, acc.lockedEoY);
           // Expose to consumers (balance sheet, reports) so they can render
           // the same locked share rather than ledger.endingValue × percent.
           if (!year.entityAccountSharesEoY) {
@@ -166,7 +169,7 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           if (!year.entityAccountSharesEoY.has(entityId)) {
             year.entityAccountSharesEoY.set(entityId, new Map());
           }
-          year.entityAccountSharesEoY.get(entityId)!.set(aid, lockedEoY);
+          year.entityAccountSharesEoY.get(entityId)!.set(aid, acc.lockedEoY);
         }
       }
       let totalDistributions = year.trustDistributionsByEntity?.get(entityId) ?? 0;
