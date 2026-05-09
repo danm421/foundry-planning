@@ -731,8 +731,8 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900/30">
-      <div className="flex items-center justify-between border-b border-gray-800 bg-gray-900 px-4 py-3">
+    <div className="rounded-lg border border-gray-800 bg-gray-900/30">
+      <div className="flex items-center justify-between rounded-t-lg border-b border-gray-800 bg-gray-900 px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold text-gray-100">{title}</h2>
           <p className={`text-xs ${totalClassName ?? "text-gray-400"}`}>{totalLabel}</p>

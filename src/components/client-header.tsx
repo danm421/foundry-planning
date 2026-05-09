@@ -66,7 +66,7 @@ export default function ClientHeader({
     spouseAge !== null ? `Ages ${clientAge} & ${spouseAge}` : `Age ${clientAge}`;
 
   return (
-    <div className="flex items-center gap-4 px-[var(--pad-card)] py-6 border-b border-hair">
+    <div className="sticky top-14 z-10 flex h-[100px] items-center gap-4 px-[var(--pad-card)] border-b border-hair bg-paper">
       <div
         data-testid="client-portrait"
         className={`flex h-[52px] w-[52px] items-center justify-center rounded-full bg-gradient-to-br ${gradient} text-[18px] font-semibold text-ink`}

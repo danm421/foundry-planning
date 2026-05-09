@@ -130,11 +130,9 @@ export default function ClientDataSidebar({ clientId }: ClientDataSidebarProps) 
   }
 
   return (
-    <nav className="flex h-full flex-col gap-1">
+    <nav className="flex flex-col gap-1">
       {TABS.map(renderLink)}
-      <div className="mt-auto pt-4">
-        <div className="border-t border-gray-800 pt-3">{renderLink(IMPORT_TAB)}</div>
-      </div>
+      <div className="mt-2 border-t border-gray-800 pt-3">{renderLink(IMPORT_TAB)}</div>
     </nav>
   );
 }
