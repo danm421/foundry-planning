@@ -247,7 +247,9 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
   }));
 
   // Build category default source info so the account form knows which portfolio
-  // backs the "Use category default" option for investable categories
+  // (or inflation rate, etc.) backs the "Use category default" option. Mirrors
+  // the engine's resolveCategoryDefault so the displayed rate matches the rate
+  // the engine actually applies — see src/lib/projection/resolve-growth-source.ts.
   const categoryDefaultSources: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }> = {};
   if (settings) {
     const investable = [
@@ -256,24 +258,49 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
       { category: "retirement", source: settings.growthSourceRetirement, portfolioId: settings.modelPortfolioIdRetirement },
     ];
     for (const entry of investable) {
-      const mp = entry.portfolioId ? modelPortfolioOptions.find((p) => p.id === entry.portfolioId) : undefined;
-      categoryDefaultSources[entry.category] = {
-        source: entry.source,
-        portfolioId: entry.portfolioId ?? undefined,
-        portfolioName: mp?.name,
-        blendedReturn: mp?.blendedReturn,
-      };
+      if (entry.source === "inflation") {
+        categoryDefaultSources[entry.category] = {
+          source: entry.source,
+          portfolioName: "Inflation",
+          blendedReturn: resolvedInflationRate,
+        };
+        continue;
+      }
+      if (entry.source === "model_portfolio" && entry.portfolioId) {
+        const mp = modelPortfolioOptions.find((p) => p.id === entry.portfolioId);
+        categoryDefaultSources[entry.category] = {
+          source: entry.source,
+          portfolioId: entry.portfolioId,
+          portfolioName: mp?.name,
+          blendedReturn: mp?.blendedReturn,
+        };
+        continue;
+      }
+      categoryDefaultSources[entry.category] = { source: entry.source };
     }
   }
 
   const flatRate = (rawRate: string, source: string | undefined): string =>
     source === "inflation" ? String(resolvedInflationRate) : String(rawRate);
 
+  const investableEffectiveRate = (
+    source: string | undefined,
+    portfolioId: string | null | undefined,
+    customRate: string,
+  ): string => {
+    if (source === "inflation") return String(resolvedInflationRate);
+    if (source === "model_portfolio" && portfolioId) {
+      const mp = modelPortfolioOptions.find((p) => p.id === portfolioId);
+      if (mp) return String(mp.blendedReturn);
+    }
+    return String(customRate);
+  };
+
   const categoryDefaults = settings
     ? {
-        taxable: String(settings.defaultGrowthTaxable),
-        cash: String(settings.defaultGrowthCash),
-        retirement: String(settings.defaultGrowthRetirement),
+        taxable: investableEffectiveRate(settings.growthSourceTaxable, settings.modelPortfolioIdTaxable, settings.defaultGrowthTaxable),
+        cash: investableEffectiveRate(settings.growthSourceCash, settings.modelPortfolioIdCash, settings.defaultGrowthCash),
+        retirement: investableEffectiveRate(settings.growthSourceRetirement, settings.modelPortfolioIdRetirement, settings.defaultGrowthRetirement),
         real_estate: flatRate(settings.defaultGrowthRealEstate, settings.growthSourceRealEstate),
         business: flatRate(settings.defaultGrowthBusiness, settings.growthSourceBusiness),
         life_insurance: flatRate(settings.defaultGrowthLifeInsurance, settings.growthSourceLifeInsurance),
