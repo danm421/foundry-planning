@@ -5,6 +5,7 @@ import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
   Tooltip, Legend,
 } from "chart.js";
+import type { TooltipItem } from "chart.js";
 import { successByYear } from "@/lib/comparison/success-by-year";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
@@ -56,11 +57,11 @@ export function LongevityComparisonChart({
       legend: { position: "top" as const, labels: { color: "#cbd5e1" } },
       tooltip: {
         callbacks: {
-          label: (ctx: { dataset: { label?: string }; parsed: { y: number } }) =>
-            `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(0)}%`,
-          afterBody: (items: Array<{ parsed: { y: number } }>) => {
+          label: (ctx: TooltipItem<"line">) =>
+            `${ctx.dataset.label}: ${(ctx.parsed.y ?? 0).toFixed(0)}%`,
+          afterBody: (items: TooltipItem<"line">[]) => {
             if (items.length < 2) return "";
-            const delta = items[1].parsed.y - items[0].parsed.y;
+            const delta = (items[1].parsed.y ?? 0) - (items[0].parsed.y ?? 0);
             const sign = delta >= 0 ? "+" : "";
             return `Δ: ${sign}${delta.toFixed(0)} pts`;
           },

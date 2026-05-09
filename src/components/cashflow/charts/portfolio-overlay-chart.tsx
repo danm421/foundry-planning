@@ -5,6 +5,7 @@ import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
   Tooltip, Legend,
 } from "chart.js";
+import type { TooltipItem } from "chart.js";
 import type { ProjectionYear } from "@/engine/types";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
@@ -54,11 +55,11 @@ export function PortfolioOverlayChart({ plan1Years, plan2Years, plan1Label, plan
       legend: { position: "top" as const, labels: { color: "#cbd5e1" } },
       tooltip: {
         callbacks: {
-          label: (ctx: { dataset: { label?: string }; parsed: { y: number } }) =>
-            `${ctx.dataset.label}: ${usd.format(ctx.parsed.y)}`,
-          afterBody: (items: Array<{ parsed: { y: number } }>) => {
+          label: (ctx: TooltipItem<"line">) =>
+            `${ctx.dataset.label}: ${usd.format(ctx.parsed.y ?? 0)}`,
+          afterBody: (items: TooltipItem<"line">[]) => {
             if (items.length < 2) return "";
-            const delta = items[1].parsed.y - items[0].parsed.y;
+            const delta = (items[1].parsed.y ?? 0) - (items[0].parsed.y ?? 0);
             const sign = delta >= 0 ? "+" : "";
             return `Δ: ${sign}${usd.format(delta)}`;
           },

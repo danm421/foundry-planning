@@ -4,6 +4,7 @@ import { Bar } from "react-chartjs-2";
 import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend,
 } from "chart.js";
+import type { TooltipItem } from "chart.js";
 import type { LifetimeTaxBuckets } from "@/lib/comparison/lifetime-tax";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
@@ -58,8 +59,8 @@ export function LifetimeTaxComparisonChart({ plan1Buckets, plan2Buckets, plan1La
       legend: { position: "top" as const, labels: { color: "#cbd5e1" } },
       tooltip: {
         callbacks: {
-          label: (ctx: { dataset: { label?: string }; parsed: { x: number } }) =>
-            `${ctx.dataset.label}: ${usd.format(ctx.parsed.x)}`,
+          label: (ctx: TooltipItem<"bar">) =>
+            `${ctx.dataset.label}: ${usd.format(ctx.parsed.x ?? 0)}`,
         },
       },
     },
