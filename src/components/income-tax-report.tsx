@@ -11,6 +11,7 @@ import {
   type TaxDetailTabId,
 } from "@/components/cashflow/tax-detail-view";
 import { TaxDrillDownModal } from "@/components/cashflow/tax-drill-down-modal";
+import { TaxTabChart } from "@/components/cashflow/charts/tax-tab-chart";
 
 interface TaxDrillState {
   year: number;
@@ -121,7 +122,8 @@ export default function IncomeTaxReport({ clientId }: Props) {
           activeTab={activeTab}
           onTabChange={(id) => setActiveTab(id as TaxDetailTabId)}
         />
-        <div className="p-6">
+        <div className="p-6 space-y-4">
+          <TaxTabChart activeTab={activeTab} years={visibleYears} />
           <TaxDetailView
             activeTab={activeTab}
             years={visibleYears}
