@@ -6,6 +6,7 @@ import {
   familyMembers,
   entities,
   externalBeneficiaries,
+  modelPortfolios,
 } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -15,6 +16,7 @@ import InsurancePanel, {
   type InsurancePanelFamilyMember,
   type InsurancePanelEntity,
   type InsurancePanelExternal,
+  type InsurancePanelModelPortfolio,
 } from "@/components/insurance-panel";
 import ClientDataPageShell from "@/components/client-data-page-shell";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
@@ -51,7 +53,7 @@ export default async function InsurancePage({ params, searchParams }: PageProps)
     );
   }
 
-  const [familyRows, entityRows, externalRows, { effectiveTree }] = await Promise.all([
+  const [familyRows, entityRows, externalRows, portfolioRows, { effectiveTree }] = await Promise.all([
     db
       .select()
       .from(familyMembers)
@@ -67,6 +69,11 @@ export default async function InsurancePage({ params, searchParams }: PageProps)
       .from(externalBeneficiaries)
       .where(eq(externalBeneficiaries.clientId, id))
       .orderBy(asc(externalBeneficiaries.name)),
+    db
+      .select({ id: modelPortfolios.id, name: modelPortfolios.name })
+      .from(modelPortfolios)
+      .where(eq(modelPortfolios.firmId, firmId))
+      .orderBy(asc(modelPortfolios.name)),
     loadEffectiveTree(id, firmId, sp.scenario ?? "base", {}),
   ]);
 
@@ -100,6 +107,7 @@ export default async function InsurancePage({ params, searchParams }: PageProps)
     firstName: f.firstName,
     lastName: f.lastName ?? null,
     relationship: f.relationship,
+    role: f.role,
     dateOfBirth: f.dateOfBirth ?? null,
     notes: f.notes ?? null,
   }));
@@ -114,6 +122,10 @@ export default async function InsurancePage({ params, searchParams }: PageProps)
     kind: e.kind,
     notes: e.notes ?? null,
   }));
+  const portfolios: InsurancePanelModelPortfolio[] = portfolioRows.map((p) => ({
+    id: p.id,
+    name: p.name,
+  }));
 
   return (
     <ClientDataPageShell clientId={id} scenarioId={sp.scenario}>
@@ -126,6 +138,7 @@ export default async function InsurancePage({ params, searchParams }: PageProps)
         entities={ents}
         familyMembers={fams}
         externalBeneficiaries={exts}
+        modelPortfolios={portfolios}
       />
     </ClientDataPageShell>
   );

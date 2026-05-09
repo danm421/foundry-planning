@@ -32,7 +32,13 @@ export interface PolicyFormState {
   cashValueGrowthMode: "basic" | "free_form";
   postPayoutMergeAccountId: string | null;
   postPayoutGrowthRate: number;
+  postPayoutModelPortfolioId: string | null;
   cashValueSchedule: { year: number; cashValue: number }[];
+}
+
+export interface InsurancePanelModelPortfolio {
+  id: string;
+  name: string;
 }
 
 export interface InsurancePolicyDialogProps {
@@ -44,6 +50,7 @@ export interface InsurancePolicyDialogProps {
   entities: InsurancePanelEntity[];
   familyMembers: InsurancePanelFamilyMember[];
   externalBeneficiaries: InsurancePanelExternal[];
+  modelPortfolios: InsurancePanelModelPortfolio[];
   mode: "create" | "edit";
   policyId?: string;
   onClose: () => void;
@@ -90,6 +97,7 @@ const DEFAULT_STATE: PolicyFormState = {
   cashValueGrowthMode: "basic",
   postPayoutMergeAccountId: null,
   postPayoutGrowthRate: 0.06,
+  postPayoutModelPortfolioId: null,
   cashValueSchedule: [],
 };
 
@@ -114,6 +122,7 @@ function seedStateFromRecord(
     cashValueGrowthMode: policy.cashValueGrowthMode,
     postPayoutMergeAccountId: policy.postPayoutMergeAccountId,
     postPayoutGrowthRate: policy.postPayoutGrowthRate,
+    postPayoutModelPortfolioId: policy.postPayoutModelPortfolioId ?? null,
     cashValueSchedule: policy.cashValueSchedule ?? [],
   };
 }
@@ -174,6 +183,7 @@ function buildPayload(state: PolicyFormState): Record<string, unknown> {
     cashValueGrowthMode: state.cashValueGrowthMode,
     postPayoutMergeAccountId: state.postPayoutMergeAccountId,
     postPayoutGrowthRate: state.postPayoutGrowthRate,
+    postPayoutModelPortfolioId: state.postPayoutModelPortfolioId,
     // Only persist the schedule when the user has opted into free-form mode.
     // Sending `[]` in basic mode wipes any previously-persisted rows on
     // PATCH (full-replacement semantics), which is what we want — otherwise
@@ -359,6 +369,7 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
               onChange={handlePatch}
               accounts={props.accounts}
               entities={props.entities}
+              modelPortfolios={props.modelPortfolios}
               policyId={policyId}
               mode={mode}
               clientFirstName={clientFirstName}
@@ -370,6 +381,8 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
           <div role="tabpanel" id="panel-beneficiaries" aria-labelledby="tab-beneficiaries">
             <InsurancePolicyBeneficiariesTab
               clientId={clientId}
+              clientFirstName={clientFirstName}
+              spouseFirstName={spouseFirstName}
               mode={mode}
               policyId={policyId}
               members={props.familyMembers}

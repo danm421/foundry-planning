@@ -156,8 +156,35 @@ export function resolveAccountFromRaw(
     annualPropertyTax: n(raw.annualPropertyTax),
     propertyTaxGrowthRate: n(raw.propertyTaxGrowthRate),
     insuredPerson: (raw.insuredPerson as Account["insuredPerson"]) ?? undefined,
-    lifeInsurance: raw.lifeInsurance ?? ctx.policiesByAccount?.[raw.id],
+    lifeInsurance: resolvePostPayoutPortfolio(
+      raw.lifeInsurance ?? ctx.policiesByAccount?.[raw.id],
+      ctx.resolver,
+    ),
     owners: raw.owners ?? ctx.ownersByAccountId?.get(raw.id) ?? [],
+  };
+}
+
+/** When the policy specifies a post-payout model portfolio, resolve it into
+ *  a flat `postPayoutGrowthRate` plus a `postPayoutRealization` mix. The
+ *  engine reads only the resolved values, never the portfolio id. */
+function resolvePostPayoutPortfolio(
+  policy: Account["lifeInsurance"],
+  resolver: GrowthSourceResolver,
+): Account["lifeInsurance"] {
+  if (!policy) return policy;
+  const portfolioId = policy.postPayoutModelPortfolioId;
+  if (!portfolioId) return policy;
+  const p = resolver.resolvePortfolio(portfolioId);
+  return {
+    ...policy,
+    postPayoutGrowthRate: p.geoReturn,
+    postPayoutRealization: {
+      pctOrdinaryIncome: p.pctOi,
+      pctLtCapitalGains: p.pctLtcg,
+      pctQualifiedDividends: p.pctQdiv,
+      pctTaxExempt: p.pctTaxEx,
+      turnoverPct: 0,
+    },
   };
 }
 

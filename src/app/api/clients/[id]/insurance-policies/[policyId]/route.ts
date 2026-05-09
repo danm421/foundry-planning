@@ -97,6 +97,7 @@ export async function PATCH(
       cashValueGrowthMode: "basic" | "free_form";
       postPayoutMergeAccountId: string | null;
       postPayoutGrowthRate: number;
+      postPayoutModelPortfolioId: string | null;
       cashValueSchedule: { year: number; cashValue: number }[];
     }>;
 
@@ -159,6 +160,9 @@ export async function PATCH(
       }
       if (input.postPayoutGrowthRate !== undefined) {
         policyUpdates.postPayoutGrowthRate = String(input.postPayoutGrowthRate);
+      }
+      if (input.postPayoutModelPortfolioId !== undefined) {
+        policyUpdates.postPayoutModelPortfolioId = input.postPayoutModelPortfolioId ?? null;
       }
       if (Object.keys(policyUpdates).length > 0) {
         policyUpdates.updatedAt = new Date();

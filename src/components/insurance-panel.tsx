@@ -31,6 +31,7 @@ export interface InsurancePanelFamilyMember {
   firstName: string;
   lastName: string | null;
   relationship: FamilyMemberRow["relationship"];
+  role: FamilyMemberRow["role"];
   dateOfBirth: string | null;
   notes: string | null;
 }
@@ -48,6 +49,11 @@ export interface InsurancePanelExternal {
   notes: string | null;
 }
 
+export interface InsurancePanelModelPortfolio {
+  id: string;
+  name: string;
+}
+
 export interface InsurancePanelProps {
   clientId: string;
   clientFirstName: string;
@@ -57,6 +63,7 @@ export interface InsurancePanelProps {
   entities: InsurancePanelEntity[];
   familyMembers: InsurancePanelFamilyMember[];
   externalBeneficiaries: InsurancePanelExternal[];
+  modelPortfolios: InsurancePanelModelPortfolio[];
 }
 
 const POLICY_TYPE_GROUPS = [
@@ -106,12 +113,28 @@ export default function InsurancePanel(props: InsurancePanelProps) {
   // Name column renders as a text cell; the separate "Edit" button per row owns the action.
   // Using aria-label on the edit button to disambiguate many "Edit" buttons for screen readers.
 
+  const spouseLabel = props.spouseFirstName ?? "Spouse";
+  const jointLabel = props.spouseFirstName
+    ? `${props.clientFirstName} & ${props.spouseFirstName}`
+    : "Joint";
+
+  function personLabel(p: "client" | "spouse" | "joint"): string {
+    if (p === "client") return props.clientFirstName;
+    if (p === "spouse") return spouseLabel;
+    return jointLabel;
+  }
+
+  function insuredLabel(p: "client" | "spouse" | "joint" | null): string {
+    if (p === null) return "—";
+    return personLabel(p);
+  }
+
   function ownerLabel(account: InsurancePanelAccount): string {
     if (account.ownerEntityId) {
       const ent = props.entities.find((e) => e.id === account.ownerEntityId);
       return ent ? ent.name : "Entity";
     }
-    return account.owner;
+    return personLabel(account.owner);
   }
 
   return (
@@ -159,7 +182,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
                 {items.map(({ account, policy }) => (
                   <tr key={account.id} className="border-t border-gray-800">
                     <td className="py-2 text-gray-100">{account.name}</td>
-                    <td className="text-gray-300">{account.insuredPerson ?? "—"}</td>
+                    <td className="text-gray-300">{insuredLabel(account.insuredPerson)}</td>
                     <td className="text-gray-300">{ownerLabel(account)}</td>
                     <td className="text-right tabular-nums text-gray-100">
                       {currencyFmt.format(policy.faceValue)}
@@ -202,6 +225,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
           entities={props.entities}
           familyMembers={props.familyMembers}
           externalBeneficiaries={props.externalBeneficiaries}
+          modelPortfolios={props.modelPortfolios}
           mode={dialogState.mode}
           policyId={dialogState.mode === "edit" ? dialogState.policyId : undefined}
           onClose={() => setDialogState(null)}

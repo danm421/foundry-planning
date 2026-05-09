@@ -140,6 +140,7 @@ export async function PUT(
             tier: d.tier,
             familyMemberId: d.familyMemberId ?? null,
             externalBeneficiaryId: d.externalBeneficiaryId ?? null,
+            householdRole: d.householdRole ?? null,
             percentage: String(d.percentage),
             sortOrder: d.sortOrder ?? idx,
           })),

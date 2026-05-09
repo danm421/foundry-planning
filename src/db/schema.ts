@@ -1037,6 +1037,13 @@ export const lifeInsurancePolicies = pgTable("life_insurance_policies", {
   postPayoutGrowthRate: decimal("post_payout_growth_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.06"),
+  // When set, the standalone-mode payout transforms into a taxable account
+  // driven by this model portfolio's CMA — both growth rate and tax
+  // realization mix flow from the portfolio.
+  postPayoutModelPortfolioId: uuid("post_payout_model_portfolio_id").references(
+    () => modelPortfolios.id,
+    { onDelete: "set null" },
+  ),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

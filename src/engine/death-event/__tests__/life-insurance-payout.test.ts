@@ -139,6 +139,58 @@ describe("prepareLifeInsurancePayouts", () => {
     expect(result.retiredPolicyIds).toEqual(["pol-1"]);
   });
 
+  it("standalone-mode with model-portfolio realization → taxable account with realization mix", () => {
+    const acct = mkAccount({
+      lifeInsurance: mkPolicy({
+        postPayoutGrowthRate: 0.072,
+        postPayoutRealization: {
+          pctOrdinaryIncome: 0.05,
+          pctLtCapitalGains: 0.6,
+          pctQualifiedDividends: 0.25,
+          pctTaxExempt: 0.1,
+          turnoverPct: 0,
+        },
+      }),
+    });
+    const result = prepareLifeInsurancePayouts({
+      year: 2040, deceased: "client", eventKind: "first_death",
+      accounts: [acct],
+      accountBalances: { "pol-1": 50_000 },
+      basisMap: { "pol-1": 0 },
+      entities: [],
+    });
+    const transformed = result.accounts.find((a) => a.id === "pol-1");
+    expect(transformed?.category).toBe("taxable");
+    expect(transformed?.subType).toBe("life_insurance_proceeds");
+    expect(transformed?.growthRate).toBeCloseTo(0.072, 6);
+    expect(transformed?.realization).toEqual({
+      pctOrdinaryIncome: 0.05,
+      pctLtCapitalGains: 0.6,
+      pctQualifiedDividends: 0.25,
+      pctTaxExempt: 0.1,
+      turnoverPct: 0,
+    });
+    expect(result.accountBalances["pol-1"]).toBe(1_000_000);
+    expect(result.basisMap["pol-1"]).toBe(1_000_000);
+  });
+
+  it("standalone-mode without model portfolio still produces a cash account (no realization)", () => {
+    const acct = mkAccount({
+      lifeInsurance: mkPolicy({ postPayoutGrowthRate: 0.05 }),
+    });
+    const result = prepareLifeInsurancePayouts({
+      year: 2040, deceased: "client", eventKind: "first_death",
+      accounts: [acct],
+      accountBalances: { "pol-1": 50_000 },
+      basisMap: { "pol-1": 0 },
+      entities: [],
+    });
+    const transformed = result.accounts.find((a) => a.id === "pol-1");
+    expect(transformed?.category).toBe("cash");
+    expect(transformed?.realization).toBeUndefined();
+    expect(transformed?.growthRate).toBeCloseTo(0.05, 6);
+  });
+
   it("merge-target falls back to standalone when target id does not exist", () => {
     const acct = mkAccount({
       lifeInsurance: mkPolicy({ postPayoutMergeAccountId: "does-not-exist" }),
