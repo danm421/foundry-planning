@@ -1,6 +1,7 @@
 "use client";
 
 import { FanChart } from "@/components/monte-carlo/fan-chart";
+import { SuccessGauge } from "@/components/monte-carlo/success-gauge";
 import type { MonteCarloResult, MonteCarloSummary } from "@/engine";
 
 const usd = new Intl.NumberFormat("en-US", {
@@ -72,6 +73,15 @@ export function MonteCarloComparisonSection({
           <div className="mb-2 text-xs uppercase tracking-wide text-slate-400">
             {plan1Label}
           </div>
+          <div className="mb-3 flex items-end gap-3">
+            <SuccessGauge value={plan1Result.successRate} />
+            <div className="pb-2">
+              <div className="text-2xl font-semibold text-slate-100">
+                {pct(plan1Result.successRate)}
+              </div>
+              <div className="text-xs text-slate-400">probability of success</div>
+            </div>
+          </div>
           <FanChart
             summary={plan1Summary}
             deterministic={undefined}
@@ -82,6 +92,15 @@ export function MonteCarloComparisonSection({
         <div>
           <div className="mb-2 text-xs uppercase tracking-wide text-slate-400">
             {plan2Label}
+          </div>
+          <div className="mb-3 flex items-end gap-3">
+            <SuccessGauge value={plan2Result.successRate} />
+            <div className="pb-2">
+              <div className="text-2xl font-semibold text-slate-100">
+                {pct(plan2Result.successRate)}
+              </div>
+              <div className="text-xs text-slate-400">probability of success</div>
+            </div>
           </div>
           <FanChart
             summary={plan2Summary}
