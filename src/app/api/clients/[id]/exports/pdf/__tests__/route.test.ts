@@ -53,8 +53,39 @@ const baseArtifact = {
   toCsv: toCsvSingleMock,
 };
 
+const cashflowFetchDataMock = vi.fn();
+const cashflowRenderPdfMock = vi.fn<(input: { charts: unknown[] }) => null>(() => null);
+const cashflowToCsvMultiMock = vi.fn(() => [
+  { name: "cashflow-base.csv", contents: "Year,Age(s),Income\r\n2026,60 / 58,200000\r\n" },
+  { name: "cashflow-income.csv", contents: "Year,Age(s),Salaries\r\n2026,60 / 58,200000\r\n" },
+  { name: "cashflow-expenses.csv", contents: "Year,Age(s),Living\r\n2026,60 / 58,80000\r\n" },
+  { name: "cashflow-withdrawals.csv", contents: "Year,Age(s),Growth\r\n2026,60 / 58,40000\r\n" },
+  { name: "cashflow-assets.csv", contents: "Year,Age(s),Total\r\n2026,60 / 58,500000\r\n" },
+]);
+
+const cashflowArtifactStub = {
+  id: "cashflow",
+  title: "Cash Flow",
+  section: "cashflow" as const,
+  route: "/clients/[id]/cashflow",
+  variants: ["chart", "data", "chart+data", "csv"] as const,
+  optionsSchema: z.object({
+    scenarioId: z.string().nullable().default(null),
+    yearStart: z.number().int().nullable().default(null),
+    yearEnd: z.number().int().nullable().default(null),
+  }),
+  defaultOptions: { scenarioId: null, yearStart: null, yearEnd: null },
+  fetchData: cashflowFetchDataMock,
+  renderPdf: cashflowRenderPdfMock,
+  toCsv: cashflowToCsvMultiMock,
+};
+
 vi.mock("@/lib/report-artifacts/index", () => ({
-  getArtifact: (id: string) => (id === "investments" ? baseArtifact : undefined),
+  getArtifact: (id: string) => {
+    if (id === "investments") return baseArtifact;
+    if (id === "cashflow") return cashflowArtifactStub;
+    return undefined;
+  },
   listArtifacts: () => [],
 }));
 
@@ -162,5 +193,107 @@ describe("POST /api/clients/[id]/exports/pdf", () => {
     (requireOrgId as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new UnauthorizedError());
     const res = await POST(makeReq({ reportId: "investments", variant: "data" }), { params });
     expect(res.status).toBe(401);
+  });
+});
+
+describe("POST /api/clients/[id]/exports/pdf — cashflow", () => {
+  const seedCashflowFetchData = () =>
+    cashflowFetchDataMock.mockResolvedValue({
+      data: {
+        clientName: "Jane Doe",
+        scenarioLabel: "Base Case",
+        yearRange: [2026, 2026],
+        sections: {
+          base: { id: "base", title: "Cash Flow — Summary", headers: [], rows: [{ year: 2026, age: "60 / 58", cells: { totalIncome: 200_000, totalExpenses: 134_000, netCashFlow: 66_000, portfolioTotal: 500_000 } }], totals: {} },
+          income: { id: "income", title: "Income Detail", headers: [], rows: [{ year: 2026, age: "60 / 58", cells: { salaries: 200_000, total: 200_000 } }], totals: {} },
+          expenses: { id: "expenses", title: "Expenses Detail", headers: [], rows: [{ year: 2026, age: "60 / 58", cells: { living: 80_000, total: 134_000 } }], totals: {} },
+          withdrawals: { id: "withdrawals", title: "Net Cash Flow Detail", headers: [], rows: [{ year: 2026, age: "60 / 58", cells: { growth: 40_000, netCashFlow: 66_000 } }], totals: {} },
+          assets: { id: "assets", title: "Portfolio Detail", headers: [], rows: [{ year: 2026, age: "60 / 58", cells: { taxable: 500_000, total: 500_000 } }], totals: {} },
+        },
+      },
+      asOf: new Date("2026-05-09T12:00:00Z"),
+      dataVersion: "abc123",
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedCashflowFetchData();
+  });
+
+  it("variant=data returns 200 + application/pdf", async () => {
+    const res = await POST(
+      makeReq({ reportId: "cashflow", variant: "data", opts: { scenarioId: null, yearStart: 2026, yearEnd: 2030 } }),
+      { params },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+    expect(cashflowRenderPdfMock).toHaveBeenCalledOnce();
+  });
+
+  it("variant=chart+data with empty charts returns 200 + application/pdf", async () => {
+    const res = await POST(
+      makeReq({ reportId: "cashflow", variant: "chart+data", opts: { scenarioId: null, yearStart: 2026, yearEnd: 2030 }, charts: [] }),
+      { params },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+    expect(cashflowRenderPdfMock).toHaveBeenCalledOnce();
+  });
+
+  it("variant=chart with one cached chart returns 200 + application/pdf", async () => {
+    const chart = {
+      id: "income",
+      dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+      width: 800,
+      height: 500,
+      dataVersion: "abc123",
+    };
+    const res = await POST(
+      makeReq({ reportId: "cashflow", variant: "chart", charts: [chart] }),
+      { params },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+    expect(cashflowRenderPdfMock).toHaveBeenCalledOnce();
+    const callArgs = cashflowRenderPdfMock.mock.calls[0][0];
+    expect(callArgs.charts).toEqual([chart]);
+  });
+
+  it("variant=csv returns 200 + application/zip (5 non-empty sections)", async () => {
+    const res = await POST(
+      makeReq({ reportId: "cashflow", variant: "csv", opts: { scenarioId: null, yearStart: 2026, yearEnd: 2030 } }),
+      { params },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/zip");
+    expect(res.headers.get("content-disposition")).toContain(".zip");
+  });
+
+  it("invalid options returns 400", async () => {
+    const res = await POST(
+      makeReq({ reportId: "cashflow", variant: "data", opts: { yearStart: "not-a-number" } }),
+      { params },
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/Invalid options/i);
+  });
+
+  it("unknown reportId returns 404", async () => {
+    const res = await POST(
+      makeReq({ reportId: "nonexistent", variant: "data" }),
+      { params },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("bogus variant returns 400 (Zod enum rejection)", async () => {
+    const res = await POST(
+      makeReq({ reportId: "cashflow", variant: "bogus" }),
+      { params },
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/Invalid request body/i);
   });
 });
