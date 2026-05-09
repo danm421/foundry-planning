@@ -118,15 +118,9 @@ export function AssetMixTab({
                 {(ac.geometricReturn * 100).toFixed(2)}%
               </span>
               <div className="flex items-center gap-1 w-20 shrink-0">
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.1}
-                  value={weight > 0 ? (weight * 100).toFixed(1) : ""}
-                  placeholder="0"
-                  onChange={(e) => handleWeightChange(ac.id, e.target.value)}
-                  className="h-7 w-full rounded-md border border-gray-600 bg-gray-800 px-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                <WeightInput
+                  weight={weight}
+                  onChange={(v) => handleWeightChange(ac.id, v)}
                 />
                 <span className="text-sm text-gray-400">%</span>
               </div>
@@ -169,5 +163,34 @@ export function AssetMixTab({
         <span className="text-sm w-20 text-right text-gray-100">100.0%</span>
       </div>
     </div>
+  );
+}
+
+interface WeightInputProps {
+  weight: number;
+  onChange: (raw: string) => void;
+}
+
+function WeightInput({ weight, onChange }: WeightInputProps) {
+  const formatted = weight > 0 ? (weight * 100).toFixed(1) : "";
+  const [draft, setDraft] = useState<string | null>(null);
+  const display = draft !== null ? draft : formatted;
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={display}
+      placeholder="0"
+      onChange={(e) => {
+        let cleaned = e.target.value.replace(/[^\d.]/g, "");
+        const parts = cleaned.split(".");
+        if (parts.length > 2) cleaned = parts[0] + "." + parts.slice(1).join("");
+        setDraft(cleaned);
+        onChange(cleaned);
+      }}
+      onBlur={() => setDraft(null)}
+      className="h-7 w-full rounded-md border border-gray-600 bg-gray-800 px-2 text-right text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+    />
   );
 }
