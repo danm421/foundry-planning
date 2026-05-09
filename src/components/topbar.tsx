@@ -45,6 +45,7 @@ const TABS: ReadonlyArray<{
       { label: "Gift Tax", path: "/gift-tax" },
     ],
   },
+  { label: "Comparison", href: "comparison" },
   { label: "Reports", href: "reports" },
 ];
 
