@@ -156,6 +156,13 @@ const INVESTABLE_CATEGORIES: ReadonlySet<AccountCategory> = new Set([
   "retirement",
 ]);
 
+export function isInvestableAccount(acct: {
+  category: AccountCategory;
+  ownerEntityId: string | null;
+}): boolean {
+  return INVESTABLE_CATEGORIES.has(acct.category) && acct.ownerEntityId === null;
+}
+
 /**
  * Roll up dollar-weighted resolved allocations across investable accounts.
  * "Investable" = category ∈ {taxable, cash, retirement} AND ownerEntityId is null.
@@ -175,8 +182,7 @@ export function computeHouseholdAllocation(
   const unallocatedContributions: AccountContribution[] = [];
 
   for (const acct of accounts) {
-    const isInvestable = INVESTABLE_CATEGORIES.has(acct.category) && acct.ownerEntityId === null;
-    if (!isInvestable) {
+    if (!isInvestableAccount(acct)) {
       excludedNonInvestableValue += acct.value;
       continue;
     }

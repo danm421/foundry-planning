@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { Doughnut } from "react-chartjs-2";
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
 import {
@@ -18,6 +18,7 @@ type Mode = "high_level" | "detailed" | "combined";
 interface Props {
   household: HouseholdAllocation;
   mode: Mode;
+  onChartReady?: (canvas: HTMLCanvasElement) => void;
 }
 
 const options = {
@@ -34,12 +35,20 @@ const options = {
   maintainAspectRatio: true,
 };
 
-export default function AllocationDonut({ household, mode }: Props) {
+export default function AllocationDonut({ household, mode, onChartReady }: Props) {
+  const chartRef = useRef<ChartJS<"doughnut"> | null>(null);
+
   const unallocatedRow = household.unallocatedValue > 0
     ? { label: "Unallocated", value: household.unallocatedValue, color: UNALLOCATED_COLOR }
     : null;
 
   const datasets = buildDatasets(household, mode, unallocatedRow);
+
+  useEffect(() => {
+    if (!onChartReady) return;
+    const canvas = chartRef.current?.canvas;
+    if (canvas) onChartReady(canvas);
+  }, [onChartReady, household, mode]);
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -48,7 +57,11 @@ export default function AllocationDonut({ household, mode }: Props) {
         ${household.totalInvestableValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
       </div>
       <div className="h-64 w-64">
-        <Doughnut data={{ labels: datasets.labels, datasets: datasets.datasets }} options={options} />
+        <Doughnut
+          ref={chartRef}
+          data={{ labels: datasets.labels, datasets: datasets.datasets }}
+          options={options}
+        />
       </div>
       <LegendView household={household} mode={mode} />
     </div>

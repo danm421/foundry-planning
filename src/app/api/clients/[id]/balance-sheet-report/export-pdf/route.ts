@@ -13,6 +13,7 @@ import type { OwnershipView } from "@/components/balance-sheet-report/ownership-
 import type { FamilyMember } from "@/engine/types";
 import type { AccountOwner } from "@/engine/ownership";
 import React from "react";
+import { isSafePngDataUri } from "@/lib/report-artifacts/png-validation";
 
 export const dynamic = "force-dynamic";
 // Defense-in-depth on top of the 25 s render-timeout race below: cap the
@@ -55,13 +56,6 @@ export async function POST(
     if (!isOwnershipView(viewParam)) return NextResponse.json({ error: "Invalid view" }, { status: 400 });
 
     const body = await request.json().catch(() => ({}));
-    // SSRF hardening: @react-pdf/renderer fetches any URL passed as Image src,
-     // which would reach IMDS and internal hosts. Accept only data: PNG URIs
-     // with a hard size cap.
-    const isSafePngDataUri = (v: unknown): v is string =>
-      typeof v === "string" &&
-      v.startsWith("data:image/png;base64,") &&
-      v.length < 2_000_000;
     const donutPng: string | null = isSafePngDataUri(body.donutPng) ? body.donutPng : null;
     const barPng: string | null = isSafePngDataUri(body.barPng) ? body.barPng : null;
 

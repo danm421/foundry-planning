@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import CommentDialog from "./comment-dialog";
 import BenchmarkSelector from "./benchmark-selector";
 import AllocationDonut from "./allocation-donut";
@@ -13,6 +13,9 @@ import DriftChart from "./drift-chart";
 import type { HouseholdAllocation, DriftRow, AssetClassLite } from "@/lib/investments/allocation";
 import type { AssetClassWeight } from "@/lib/investments/benchmarks";
 import { colorForAssetClass, UNALLOCATED_COLOR } from "@/lib/investments/palette";
+import { ExportButton } from "@/components/exports/export-button";
+import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
+import "@/lib/report-artifacts/index";
 
 interface Props {
   clientId: string;
@@ -44,6 +47,19 @@ export default function InvestmentsClient({
   const [commentOpen, setCommentOpen] = useState(false);
   const [drilledRowId, setDrilledRowId] = useState<string | null>(null);
   const [view, setView] = useState<AllocationView>("detailed");
+
+  const donutCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const handleDonutReady = useCallback((c: HTMLCanvasElement) => {
+    donutCanvasRef.current = c;
+  }, []);
+  // dataVersion is a v1 placeholder — server-side hash agreement is deferred
+  // to Plan 2. The route silently drops mismatched captures, so this still
+  // works end-to-end today.
+  useChartCapture(
+    { reportId: "investments", chartId: "donut", dataVersion: "v1" },
+    useCallback(() => donutCanvasRef.current, []),
+  );
+
   const hasComment = existingCommentBody.trim().length > 0;
   const disclosureParts: string[] = [];
   if (household.excludedNonInvestableValue > 0) {
@@ -183,7 +199,7 @@ export default function InvestmentsClient({
         </section>
 
         <section className="rounded-lg border border-gray-700 bg-gray-900 p-4">
-          <AllocationDonut household={household} mode={view} />
+          <AllocationDonut household={household} mode={view} onChartReady={handleDonutReady} />
           <p className="mt-3 text-center text-xs text-gray-400">{disclosure}</p>
         </section>
 
@@ -195,15 +211,7 @@ export default function InvestmentsClient({
 
       <div className="flex items-center justify-between border-t border-gray-800 pt-4">
         <div className="flex gap-2">
-          <button
-            onClick={() => {
-              // TODO: real PDF export — see FUTURE_WORK.md "Plan PDF export".
-              alert("PDF export is coming soon.");
-            }}
-            className="rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
-          >
-            Download PDF
-          </button>
+          <ExportButton reportId="investments" />
           <button
             onClick={() => setCommentOpen(true)}
             className="relative rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
