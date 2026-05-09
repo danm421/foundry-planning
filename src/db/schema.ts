@@ -396,6 +396,9 @@ export const scenarioChanges = pgTable("scenario_changes", {
   toggleGroupId: uuid("toggle_group_id")
     .references(() => scenarioToggleGroups.id, { onDelete: "set null" }),
   orderIndex: integer("order_index").notNull().default(0),
+  // When false the loader skips this change before applying overlays; the row
+  // stays in place so the user can flip it back without re-creating.
+  enabled: boolean("enabled").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
