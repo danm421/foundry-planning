@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { scenarios as scenariosTable, scenarioSnapshots } from "@/db/schema";
+import { scenarios as scenariosTable, scenarioSnapshots, clients } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import { parseCompareSearchParams } from "@/lib/scenario/scenario-from-search-params";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
@@ -39,7 +39,8 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
         isBaseCase: scenariosTable.isBaseCase,
       })
       .from(scenariosTable)
-      .where(eq(scenariosTable.clientId, clientId)),
+      .innerJoin(clients, eq(clients.id, scenariosTable.clientId))
+      .where(and(eq(scenariosTable.clientId, clientId), eq(clients.firmId, firmId))),
     db
       .select({
         id: scenarioSnapshots.id,
@@ -47,7 +48,8 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
         sourceKind: scenarioSnapshots.sourceKind,
       })
       .from(scenarioSnapshots)
-      .where(eq(scenarioSnapshots.clientId, clientId)),
+      .innerJoin(clients, eq(clients.id, scenarioSnapshots.clientId))
+      .where(and(eq(scenarioSnapshots.clientId, clientId), eq(clients.firmId, firmId))),
     loadProjectionForRef(clientId, firmId, left).catch((e: unknown) => {
       if (e instanceof Error && /not found|no base case/i.test(e.message)) notFound();
       throw e;
