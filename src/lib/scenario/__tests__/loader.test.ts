@@ -4,7 +4,14 @@ import { randomUUID } from "node:crypto";
 import { loadEffectiveTree, loadEffectiveTreeForRef } from "../loader";
 import { loadClientData } from "@/lib/projection/load-client-data";
 import { db } from "@/db";
-import { scenarios, scenarioChanges, scenarioSnapshots, externalBeneficiaries } from "@/db/schema";
+import {
+  scenarios,
+  scenarioChanges,
+  scenarioSnapshots,
+  externalBeneficiaries,
+  entities,
+  entityFlowOverrides,
+} from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import type { ClientData } from "@/engine/types";
 
@@ -243,6 +250,146 @@ describe.skipIf(!TEST_FIRM_ID || !TEST_CLIENT_ID)(
           .where(
             inArray(externalBeneficiaries.id, [charity.id, individual.id]),
           );
+      }
+    });
+  },
+);
+
+describe.skipIf(!TEST_FIRM_ID || !TEST_CLIENT_ID)(
+  "loadEffectiveTree — entity flow override inheritance",
+  () => {
+    it("inherits base flow overrides for entities the scenario hasn't customized", async () => {
+      // Seed an entity with base flow overrides (scenario_id IS NULL).
+      const [ent] = await db
+        .insert(entities)
+        .values({
+          clientId: TEST_CLIENT_ID!,
+          name: `flow-inherit-${randomUUID().slice(0, 6)}`,
+          entityType: "llc",
+          isGrantor: true,
+          flowMode: "schedule",
+          value: "10000",
+        })
+        .returning();
+      const baseRow = {
+        entityId: ent.id,
+        scenarioId: null as string | null,
+        year: 2030,
+        incomeAmount: "1234.00",
+        expenseAmount: "100.00",
+        distributionPercent: "1.0000",
+      };
+      await db.insert(entityFlowOverrides).values(baseRow);
+
+      const [scn] = await db
+        .insert(scenarios)
+        .values({
+          clientId: TEST_CLIENT_ID!,
+          name: `flow-inherit-scn-${randomUUID().slice(0, 6)}`,
+          isBaseCase: false,
+        })
+        .returning();
+
+      try {
+        const result = await loadEffectiveTree(
+          TEST_CLIENT_ID!,
+          TEST_FIRM_ID!,
+          scn.id,
+          {},
+        );
+        const inherited = (result.effectiveTree.entityFlowOverrides ?? []).find(
+          (r) => r.entityId === ent.id && r.year === 2030,
+        );
+        expect(inherited).toBeDefined();
+        expect(inherited!.incomeAmount).toBe(1234);
+      } finally {
+        // entityFlowOverrides has ON DELETE CASCADE on entity_id
+        await db.delete(scenarios).where(eq(scenarios.id, scn.id));
+        await db.delete(entities).where(eq(entities.id, ent.id));
+      }
+    });
+
+    it("uses scenario-scoped rows for an entity that has them, while still inheriting base for other entities", async () => {
+      // Two entities: A gets a scenario override, B inherits base.
+      const [entA, entB] = await db
+        .insert(entities)
+        .values([
+          {
+            clientId: TEST_CLIENT_ID!,
+            name: `flow-A-${randomUUID().slice(0, 6)}`,
+            entityType: "llc",
+            isGrantor: true,
+            flowMode: "schedule",
+            value: "10000",
+          },
+          {
+            clientId: TEST_CLIENT_ID!,
+            name: `flow-B-${randomUUID().slice(0, 6)}`,
+            entityType: "llc",
+            isGrantor: true,
+            flowMode: "schedule",
+            value: "10000",
+          },
+        ])
+        .returning();
+
+      // Base rows for both.
+      await db.insert(entityFlowOverrides).values([
+        {
+          entityId: entA.id,
+          scenarioId: null,
+          year: 2030,
+          incomeAmount: "1000.00",
+          expenseAmount: "100.00",
+          distributionPercent: "1.0000",
+        },
+        {
+          entityId: entB.id,
+          scenarioId: null,
+          year: 2030,
+          incomeAmount: "2000.00",
+          expenseAmount: "200.00",
+          distributionPercent: "1.0000",
+        },
+      ]);
+
+      const [scn] = await db
+        .insert(scenarios)
+        .values({
+          clientId: TEST_CLIENT_ID!,
+          name: `flow-mixed-scn-${randomUUID().slice(0, 6)}`,
+          isBaseCase: false,
+        })
+        .returning();
+
+      // Scenario row only for A.
+      await db.insert(entityFlowOverrides).values({
+        entityId: entA.id,
+        scenarioId: scn.id,
+        year: 2030,
+        incomeAmount: "9999.00",
+        expenseAmount: "100.00",
+        distributionPercent: "1.0000",
+      });
+
+      try {
+        const result = await loadEffectiveTree(
+          TEST_CLIENT_ID!,
+          TEST_FIRM_ID!,
+          scn.id,
+          {},
+        );
+        const aRow = (result.effectiveTree.entityFlowOverrides ?? []).find(
+          (r) => r.entityId === entA.id && r.year === 2030,
+        );
+        const bRow = (result.effectiveTree.entityFlowOverrides ?? []).find(
+          (r) => r.entityId === entB.id && r.year === 2030,
+        );
+        expect(aRow?.incomeAmount).toBe(9999);
+        expect(bRow?.incomeAmount).toBe(2000);
+      } finally {
+        await db.delete(scenarios).where(eq(scenarios.id, scn.id));
+        await db.delete(entities).where(inArray(entities.id, [entA.id, entB.id]));
       }
     });
   },

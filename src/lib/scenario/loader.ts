@@ -94,9 +94,8 @@ export const loadEffectiveTree = cache(
     const [changes, groups, scenarioFlowOverrideRows] = await Promise.all([
       loadScenarioChanges(resolvedScenario.id),
       loadScenarioToggleGroups(resolvedScenario.id),
-      // Scenario-only behavior: when a non-base scenario is active, replace
-      // base flow overrides with that scenario's rows. Empty entity list →
-      // skip the query (Postgres rejects `IN ()`).
+      // Per-entity scenario flow overrides. Empty entity list → skip the
+      // query (Postgres rejects `IN ()`).
       resolvedScenario.isBaseCase || entityIds.length === 0
         ? Promise.resolve([])
         : db
@@ -116,20 +115,38 @@ export const loadEffectiveTree = cache(
             ),
     ]);
 
+    // Per-entity inheritance: the writer at PUT
+    // /api/clients/[id]/entities/[entityId]/flow-overrides?scenarioId=…
+    // replaces flow overrides for a single (entity, scenario) pair, so the
+    // natural granularity for inheritance is also per-entity. For each entity:
+    //   • scenario has any rows → use ONLY the scenario's rows for that entity
+    //   • scenario has no rows  → inherit the base entity's rows
+    // This way a fresh non-base scenario (no scenario-scoped rows yet) is
+    // exactly equivalent to base for entity flows, instead of silently
+    // zeroing them out.
+    const scenarioEntityIdsWithOverrides = new Set(
+      scenarioFlowOverrideRows.map((r) => r.entityId),
+    );
+    const inheritedBaseRows = (baseTree.entityFlowOverrides ?? []).filter(
+      (r) => !scenarioEntityIdsWithOverrides.has(r.entityId),
+    );
     const treeForChanges: ClientData = resolvedScenario.isBaseCase
       ? baseTree
       : {
           ...baseTree,
-          entityFlowOverrides: scenarioFlowOverrideRows.map(
-            (r): EntityFlowOverride => ({
-              entityId: r.entityId,
-              year: r.year,
-              incomeAmount: r.incomeAmount != null ? parseFloat(r.incomeAmount) : null,
-              expenseAmount: r.expenseAmount != null ? parseFloat(r.expenseAmount) : null,
-              distributionPercent:
-                r.distributionPercent != null ? parseFloat(r.distributionPercent) : null,
-            }),
-          ),
+          entityFlowOverrides: [
+            ...inheritedBaseRows,
+            ...scenarioFlowOverrideRows.map(
+              (r): EntityFlowOverride => ({
+                entityId: r.entityId,
+                year: r.year,
+                incomeAmount: r.incomeAmount != null ? parseFloat(r.incomeAmount) : null,
+                expenseAmount: r.expenseAmount != null ? parseFloat(r.expenseAmount) : null,
+                distributionPercent:
+                  r.distributionPercent != null ? parseFloat(r.distributionPercent) : null,
+              }),
+            ),
+          ],
         };
 
     const resolvedChanges = changes.map((c) => resolveAddPayload(c, resolutionContext));
