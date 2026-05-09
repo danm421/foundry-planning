@@ -12,6 +12,7 @@ import {
   computeEstateTotals,
 } from "@/lib/comparison/kpi";
 import { buildYearlyEstateReport } from "@/lib/estate/yearly-estate-report";
+import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
 import type { SnapshotOption } from "@/components/scenario/scenario-picker-dropdown";
 import { ComparisonPickerBar } from "./comparison-picker-bar";
 import { ComparisonShell } from "./comparison-shell";
@@ -101,6 +102,22 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
   });
   const toHeirsDelta = heirs2.totals.totalToHeirs - heirs1.totals.totalToHeirs;
 
+  const liquidity1 = buildYearlyLiquidityReport({
+    projection: plan1Load.result,
+    clientData: plan1Load.tree,
+    ownerNames,
+    ownerDobs,
+  });
+  const liquidity2 = buildYearlyLiquidityReport({
+    projection: plan2Load.result,
+    clientData: plan2Load.tree,
+    ownerNames,
+    ownerDobs,
+  });
+
+  const finalEstate1 = heirs1.rows[heirs1.rows.length - 1] ?? null;
+  const finalEstate2 = heirs2.rows[heirs2.rows.length - 1] ?? null;
+
   const yearsSurvivesDelta =
     computeYearsPortfolioSurvives(plan2Load.result.years) -
     computeYearsPortfolioSurvives(plan1Load.result.years);
@@ -130,6 +147,10 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
         estateTaxDelta={estateTaxDelta}
         yearsSurvivesDelta={yearsSurvivesDelta}
         plan2Provided={plan2Provided}
+        liquidity1Rows={liquidity1.rows}
+        liquidity2Rows={liquidity2.rows}
+        finalEstate1={finalEstate1}
+        finalEstate2={finalEstate2}
       />
     </div>
   );

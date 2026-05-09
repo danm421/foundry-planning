@@ -4,6 +4,8 @@ import { useState } from "react";
 import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
 import type { LifetimeTaxSummary } from "@/lib/comparison/lifetime-tax";
+import type { YearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
+import type { YearlyEstateRow } from "@/lib/estate/yearly-estate-report";
 import { ComparisonKpiStrip } from "./comparison-kpi-strip";
 import { PortfolioComparisonSection } from "@/components/comparison/portfolio-comparison-section";
 import { LifetimeTaxComparisonSection } from "@/components/comparison/lifetime-tax-comparison-section";
@@ -28,6 +30,10 @@ interface Props {
   estateTaxDelta: number;
   yearsSurvivesDelta: number;
   plan2Provided: boolean;
+  liquidity1Rows: YearlyLiquidityReport["rows"];
+  liquidity2Rows: YearlyLiquidityReport["rows"];
+  finalEstate1: YearlyEstateRow | null;
+  finalEstate2: YearlyEstateRow | null;
 }
 
 export function ComparisonShell(p: Props) {
@@ -78,6 +84,10 @@ export function ComparisonShell(p: Props) {
             plan2Id={p.plan2Id}
             plan1Label={p.plan1Label}
             plan2Label={p.plan2Label}
+            liquidity1Rows={p.liquidity1Rows}
+            liquidity2Rows={p.liquidity2Rows}
+            finalEstate1={p.finalEstate1}
+            finalEstate2={p.finalEstate2}
           />
         </>
       )}
