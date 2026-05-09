@@ -26,20 +26,71 @@ export interface ComputeAtYearArgs {
   year: number;
   projectionStartYear: number;
   accountBalances: Map<string, number>;
+  /** Engine-published locked entity slice EoY (entityId → accountId → dollars).
+   *  Pass `yearRow.entityAccountSharesEoY` so household withdrawals on a
+   *  split-owned account don't bleed into the entity's slice. Same source the
+   *  balance sheet uses. Optional — falls back to `value × authored percent`. */
+  entityAccountSharesEoY?: Map<string, Map<string, number>>;
+  /** Engine-published locked family-member slice EoY (fmId → accountId → dollars).
+   *  Used for jointly-held family accounts where ownership drifts year-to-year. */
+  familyAccountSharesEoY?: Map<string, Map<string, number>>;
 }
 
 function sumAccountsWhere(
   args: ComputeAtYearArgs,
   ownerWeight: (owner: AccountOwner) => number,
 ): number {
-  const { tree, giftEvents, year, projectionStartYear, accountBalances } = args;
+  const {
+    tree,
+    giftEvents,
+    year,
+    projectionStartYear,
+    accountBalances,
+    entityAccountSharesEoY,
+    familyAccountSharesEoY,
+  } = args;
   let total = 0;
   for (const account of tree.accounts) {
     const owners = ownersForYear(account, giftEvents, year, projectionStartYear);
     const value = accountBalances.get(account.id) ?? account.value;
+
+    // Per-account locked-share resolution mirrors balance-sheet view-model:
+    // entity slice = locked share when available; family slice = locked share
+    // when available, else (value − Σ entity locked) × percent / Σ family
+    // percents. Falls back to authored value × percent when no locked data.
+    let totalEntityShare = 0;
+    let familyPercentTotal = 0;
+    for (const o of owners) {
+      if (o.kind === "entity") {
+        const locked = entityAccountSharesEoY?.get(o.entityId)?.get(account.id);
+        totalEntityShare += locked ?? value * o.percent;
+      } else {
+        familyPercentTotal += o.percent;
+      }
+    }
+    const familyPool = Math.max(0, value - totalEntityShare);
+
     for (const owner of owners) {
       const w = ownerWeight(owner);
-      if (w > 0) total += value * owner.percent * w;
+      if (w <= 0) continue;
+      let sliceValue: number;
+      if (owner.kind === "entity") {
+        const locked = entityAccountSharesEoY?.get(owner.entityId)?.get(account.id);
+        sliceValue = locked ?? value * owner.percent;
+      } else {
+        const lockedFm = familyAccountSharesEoY
+          ?.get(owner.familyMemberId)
+          ?.get(account.id);
+        if (lockedFm != null) {
+          sliceValue = lockedFm;
+        } else {
+          sliceValue =
+            familyPercentTotal > 0
+              ? familyPool * (owner.percent / familyPercentTotal)
+              : value * owner.percent;
+        }
+      }
+      total += sliceValue * w;
     }
   }
   return total;

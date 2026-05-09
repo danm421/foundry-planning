@@ -547,6 +547,50 @@ describe("buildYearlyLiquidityReport — portfolio assets", () => {
     });
     expect(report.rows[0].totalPortfolioAssets).toBe(500_000);
   });
+
+  it("uses entityAccountSharesEoY so household withdrawals don't drain a SLAT-co-owned slice from the in-estate portfolio total", () => {
+    // 70% household / 30% non-IIP irrevocable trust. Household withdrew $79k.
+    // Engine's locked entity share for the trust = $300k (untouched). The
+    // in-estate portfolio total must show family pool $621k, NOT $921k × 0.7.
+    const SLAT: EntitySummary = {
+      id: "slat-1",
+      name: "SLAT",
+      entityType: "trust",
+      isIrrevocable: true,
+    } as unknown as EntitySummary;
+    const data = emptyClientData();
+    data.entities = [SLAT];
+    data.accounts = [
+      plainAccount({
+        id: "tax-mixed",
+        category: "taxable",
+        value: 0,
+        owners: [
+          { kind: "family_member", familyMemberId: "fm-client", percent: 0.7 },
+          { kind: "entity", entityId: "slat-1", percent: 0.3 },
+        ],
+      }),
+    ];
+
+    const yearRow = projectionYear({
+      year: 2026,
+      hypothetical: htMarried({ firstTax: 0, finalTax: 0 }),
+      ledgers: { "tax-mixed": { endingValue: 921_000 } },
+    });
+    yearRow.entityAccountSharesEoY = new Map([
+      ["slat-1", new Map([["tax-mixed", 300_000]])],
+    ]);
+
+    const projection = { years: [yearRow] } as unknown as ProjectionResult;
+    const report = buildYearlyLiquidityReport({
+      projection,
+      clientData: data,
+      ownerNames: NAMES,
+      ownerDobs: DOBS,
+    });
+    // Family pool $621k → only family slice is in-estate (SLAT is OOE).
+    expect(report.rows[0].totalPortfolioAssets).toBeCloseTo(621_000, 6);
+  });
 });
 
 describe("buildYearlyLiquidityReport — invariants", () => {

@@ -296,6 +296,14 @@ function computeGrossEstateAtYear(
   const accountBalances: Record<string, number> = {};
   for (const a of overlaid.accounts) accountBalances[a.id] = a.value;
 
+  // Forward the engine's locked entity / family shares for the requested
+  // year (EoY only — BoY has no withdrawals so the slice math is identical
+  // either way). Without this, computeGrossEstate's joint-convention branch
+  // would treat the entity's drained-down portion of a mixed-ownership
+  // account as joint household property.
+  const yearRow = withResult.years.find((y) => y.year === year);
+  const useLockedShares = mode === "eoy" && yearRow != null;
+
   const result = computeGrossEstate({
     deceased: principal,
     deathOrder: 1,
@@ -305,6 +313,8 @@ function computeGrossEstateAtYear(
     entities: overlaid.entities ?? [],
     deceasedFmId: principalFmId,
     survivorFmId: otherFmId,
+    entityAccountSharesEoY: useLockedShares ? yearRow.entityAccountSharesEoY : undefined,
+    familyAccountSharesEoY: useLockedShares ? yearRow.familyAccountSharesEoY : undefined,
   });
   return result.total;
 }

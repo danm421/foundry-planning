@@ -243,6 +243,8 @@ function sumInOutAtYear(
     year,
     projectionStartYear: startYear,
     accountBalances,
+    entityAccountSharesEoY: py.entityAccountSharesEoY,
+    familyAccountSharesEoY: py.familyAccountSharesEoY,
   });
 }
 

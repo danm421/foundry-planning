@@ -50,6 +50,18 @@ export function computeGrossEstate(input: {
   deceasedFmId: string | null;
   /** FM id of the surviving principal. */
   survivorFmId: string | null;
+  /** Engine-published locked entity slice EoY (entityId → accountId → dollars).
+   *  When provided, the joint/mixed-ownership branch computes the family pool
+   *  as `fmv − Σ locked entity shares` instead of treating the entity's
+   *  drained-down portion as joint-titled household property. Same source the
+   *  balance sheet and per-person cards use. Optional — falls back to the
+   *  legacy `fmv × pct` when not passed. */
+  entityAccountSharesEoY?: Map<string, Map<string, number>>;
+  /** Engine-published locked family-member slice EoY (fmId → accountId → dollars).
+   *  Currently unused here (joint convention applies to the family pool as a
+   *  whole), but threaded through for parity with the other locked-share
+   *  consumers. Reserved for future per-FM attribution. */
+  familyAccountSharesEoY?: Map<string, Map<string, number>>;
 }): GrossEstateOutput {
   const lines: GrossEstateLine[] = [];
   const entityById = new Map(input.entities.map((e) => [e.id, e]));
@@ -59,8 +71,22 @@ export function computeGrossEstate(input: {
     const fmv = input.accountBalances[a.id] ?? 0;
     if (fmv <= 0) continue;
 
+    // Compute the family pool once per account using locked entity shares so
+    // a household withdrawal on a joint+entity-owned account doesn't bleed
+    // into the joint convention (or vice versa). For pure-FM joint accounts
+    // the family pool === fmv (no entity slices to subtract), so existing
+    // joint-account behavior is preserved. Mirrors balance-sheet view-model.
+    let totalEntityLocked = 0;
+    for (const o of a.owners) {
+      if (o.kind !== "entity") continue;
+      const locked = input.entityAccountSharesEoY?.get(o.entityId)?.get(a.id);
+      totalEntityLocked += locked ?? fmv * o.percent;
+    }
+    const familyPool = Math.max(0, fmv - totalEntityLocked);
+
     let pct = 0;
     let inEntity = false;
+    let basis = fmv;
 
     const solEntityId = controllingEntity(a);
     if (solEntityId != null) {
@@ -79,7 +105,8 @@ export function computeGrossEstate(input: {
       // Household / family-member owned
       const cfm = controllingFamilyMember(a);
       if (cfm != null) {
-        // Single FM owner
+        // Single FM owner (no entity owners — controllingFamilyMember returns
+        // null when entities are present). familyPool === fmv here.
         if (cfm === input.deceasedFmId) {
           pct = 1;
         } else if (cfm === input.survivorFmId) {
@@ -87,16 +114,19 @@ export function computeGrossEstate(input: {
         } else {
           continue; // already inherited by a child/heir FM
         }
+        basis = familyPool;
       } else {
-        // Joint (multiple FM owners) — treat as 50% at first death, 100% at final
+        // Joint (multi-FM, optionally with entity owners) — apply the joint
+        // convention to the family pool, NOT the post-withdrawal total.
         const hh = ownedByHousehold(a);
         if (hh < 0.0001) continue; // entity-dominated, skip
         pct = input.deathOrder === 1 ? 0.5 : 1;
+        basis = familyPool;
       }
     }
 
     if (pct <= 0) continue;
-    const amount = fmv * pct;
+    const amount = basis * pct;
     lines.push({
       label: formatLabel(a.name, pct, inEntity),
       accountId: a.id,

@@ -39,10 +39,50 @@ export function treeAsOfYear(
   const accounts = tree.accounts.map((a) => {
     const ledger = yearRow.accountLedgers[a.id];
     if (!ledger) return { ...a, value: 0 };
-    return {
-      ...a,
-      value: mode === "boy" ? ledger.beginningValue : ledger.endingValue,
-    };
+    const value = mode === "boy" ? ledger.beginningValue : ledger.endingValue;
+    if (mode !== "eoy" || a.owners.length <= 1 || value <= 0) {
+      return { ...a, value };
+    }
+
+    // EoY multi-owner accounts: renormalize percents from the engine's locked
+    // shares so household withdrawals don't bleed into the entity's slice
+    // (and vice versa). Mirrors balance-sheet/view-model.ts. Consumers that
+    // do `account.value × owner.percent` (render-rows.ts:82) then yield the
+    // same locked slice the balance sheet shows.
+    let totalEntityShare = 0;
+    let familyPercentTotal = 0;
+    for (const o of a.owners) {
+      if (o.kind === "entity") {
+        const locked = yearRow.entityAccountSharesEoY?.get(o.entityId)?.get(a.id);
+        totalEntityShare += locked ?? value * o.percent;
+      } else {
+        familyPercentTotal += o.percent;
+      }
+    }
+    const familyPool = Math.max(0, value - totalEntityShare);
+
+    const owners = a.owners.map((o) => {
+      let sliceValue: number;
+      if (o.kind === "entity") {
+        const locked = yearRow.entityAccountSharesEoY?.get(o.entityId)?.get(a.id);
+        sliceValue = locked ?? value * o.percent;
+      } else {
+        const lockedFm = yearRow.familyAccountSharesEoY
+          ?.get(o.familyMemberId)
+          ?.get(a.id);
+        if (lockedFm != null) {
+          sliceValue = lockedFm;
+        } else {
+          sliceValue =
+            familyPercentTotal > 0
+              ? familyPool * (o.percent / familyPercentTotal)
+              : value * o.percent;
+        }
+      }
+      return { ...o, percent: sliceValue / value };
+    });
+
+    return { ...a, value, owners };
   });
 
   const liabilities = (tree.liabilities ?? []).map((l) => {

@@ -57,12 +57,17 @@ export function deriveChartSeries(args: {
     const giftEvents = tree.giftEvents ?? [];
     return result.years.map((py) => {
       const accountBalances = pyAccountBalances(py);
+      const lockedArgs = {
+        entityAccountSharesEoY: py.entityAccountSharesEoY,
+        familyAccountSharesEoY: py.familyAccountSharesEoY,
+      };
       const inE = computeInEstateAtYear({
         tree,
         giftEvents,
         year: py.year,
         projectionStartYear: startYear,
         accountBalances,
+        ...lockedArgs,
       });
       const outE = computeOutOfEstateAtYear({
         tree,
@@ -70,6 +75,7 @@ export function deriveChartSeries(args: {
         year: py.year,
         projectionStartYear: startYear,
         accountBalances,
+        ...lockedArgs,
       });
       const drag = cumulativeTaxDrag(result, py.year);
       return [py.year, inE + outE - drag];

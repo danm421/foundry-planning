@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { runProjection } from "../projection";
-import { buildClientData } from "./fixtures";
+import { buildClientData, basePlanSettings, baseClient } from "./fixtures";
 import { LEGACY_FM_CLIENT } from "../ownership";
-import type { Account, EntitySummary } from "../types";
+import type { Account, EntitySummary, Expense, FamilyMember, WithdrawalPriority } from "../types";
 
 const ENT_IIP = "ent-iip";
 const ENT_NON_IIP_LOCKED = "ent-non-iip-locked";
@@ -230,5 +230,172 @@ describe("portfolioAssets buckets — non-IIP entity routing", () => {
       year0.portfolioAssets.accessibleTrustAssetsTotal +
       year0.portfolioAssets.realEstateTotal;
     expect(grand).toBe(100 + 500 + 300 + 50); // 950
+  });
+});
+
+// ── Mixed ownership + household withdrawal ───────────────────────────────────
+// Bug: cash-flow drilldown shows portfolioAssets[acctId] = postWithdrawalBalance × ownerPercent,
+// which proportionally reduces BOTH the household and entity shares when only the
+// household actually drew. The balance sheet uses the engine's locked entity-share
+// (entityAccountSharesEoY) which leaves the entity's share untouched. The drilldown
+// must agree with the balance sheet's accounting.
+
+describe("portfolioAssets — mixed ownership preserves entity share through household withdrawals", () => {
+  const soloClient: FamilyMember[] = [
+    {
+      id: LEGACY_FM_CLIENT,
+      role: "client",
+      relationship: "other",
+      firstName: "Solo",
+      lastName: "Test",
+      dateOfBirth: "1960-01-01", // age 66 in 2026 — avoids early-withdrawal penalty noise
+    },
+  ];
+
+  it("a household-side withdrawal from a 70/30 (HH/non-IIP-trust) account reduces only the household portfolio share", () => {
+    const checking: Account = {
+      id: "acct-checking",
+      name: "Checking",
+      category: "cash",
+      subType: "checking",
+      value: 1000,
+      basis: 1000,
+      growthRate: 0,
+      rmdEnabled: false,
+      isDefaultChecking: true,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    // 70% household / 30% non-IIP locked SLAT — entity slice should never drop
+    // because of household activity on this account.
+    const mixed: Account = {
+      id: "acct-mixed",
+      name: "Joint+SLAT Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      value: 1_000_000,
+      basis: 1_000_000,
+      growthRate: 0, // keeps math clean — no growth, no income
+      rmdEnabled: false,
+      owners: [
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+        { kind: "entity", entityId: ENT_NON_IIP_LOCKED, percent: 0.3 },
+      ],
+    };
+    const livingExpense: Expense = {
+      id: "exp-living",
+      name: "Living",
+      type: "living",
+      annualAmount: 80_000,
+      growthRate: 0,
+      startYear: 2026,
+      endYear: 2026,
+    };
+    const strategy: WithdrawalPriority[] = [
+      { accountId: "acct-mixed", priorityOrder: 1, startYear: 2026, endYear: 2026 },
+    ];
+
+    const data = buildClientData({
+      client: { ...baseClient, dateOfBirth: "1960-01-01", spouseDob: undefined },
+      familyMembers: soloClient,
+      accounts: [checking, mixed],
+      entities,
+      incomes: [],
+      expenses: [livingExpense],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: strategy,
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const [year0] = runProjection(data);
+
+    // Sanity: the engine actually pulled from the mixed account.
+    const draw = year0.withdrawals.byAccount["acct-mixed"] ?? 0;
+    expect(draw).toBeGreaterThan(0);
+
+    // Balance-sheet truth: entity locked EoY = beginningValue × percent (no growth).
+    const entityLocked =
+      year0.entityAccountSharesEoY?.get(ENT_NON_IIP_LOCKED)?.get("acct-mixed") ?? 0;
+    expect(entityLocked).toBeCloseTo(300_000, 6);
+
+    // The drilldown's per-account entity bucket must match the locked share —
+    // i.e. the entity is unaffected by the household withdrawal.
+    const drillEntity = year0.portfolioAssets.trustsAndBusinesses["acct-mixed"] ?? 0;
+    expect(drillEntity).toBeCloseTo(entityLocked, 6);
+
+    // The household side equals the family pool: ledger.endingValue − entityLocked.
+    const ledger = year0.accountLedgers["acct-mixed"];
+    expect(ledger).toBeDefined();
+    const familyPool = ledger.endingValue - entityLocked;
+    const drillFamily = year0.portfolioAssets.taxable["acct-mixed"] ?? 0;
+    expect(drillFamily).toBeCloseTo(familyPool, 6);
+  });
+
+  it("the same 70/30 split account routes the entity slice to accessibleTrustAssets when the trust is accessible", () => {
+    const checking: Account = {
+      id: "acct-checking",
+      name: "Checking",
+      category: "cash",
+      subType: "checking",
+      value: 1000,
+      basis: 1000,
+      growthRate: 0,
+      rmdEnabled: false,
+      isDefaultChecking: true,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const mixed: Account = {
+      id: "acct-mixed-acc",
+      name: "Joint+HEMS Brokerage",
+      category: "taxable",
+      subType: "brokerage",
+      value: 1_000_000,
+      basis: 1_000_000,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [
+        { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+        { kind: "entity", entityId: ENT_NON_IIP_ACCESSIBLE, percent: 0.3 },
+      ],
+    };
+    const livingExpense: Expense = {
+      id: "exp-living",
+      name: "Living",
+      type: "living",
+      annualAmount: 80_000,
+      growthRate: 0,
+      startYear: 2026,
+      endYear: 2026,
+    };
+    const strategy: WithdrawalPriority[] = [
+      { accountId: "acct-mixed-acc", priorityOrder: 1, startYear: 2026, endYear: 2026 },
+    ];
+
+    const data = buildClientData({
+      client: { ...baseClient, dateOfBirth: "1960-01-01", spouseDob: undefined },
+      familyMembers: soloClient,
+      accounts: [checking, mixed],
+      entities,
+      incomes: [],
+      expenses: [livingExpense],
+      liabilities: [],
+      savingsRules: [],
+      withdrawalStrategy: strategy,
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2026 },
+    });
+    const [year0] = runProjection(data);
+
+    const draw = year0.withdrawals.byAccount["acct-mixed-acc"] ?? 0;
+    expect(draw).toBeGreaterThan(0);
+
+    const entityLocked =
+      year0.entityAccountSharesEoY?.get(ENT_NON_IIP_ACCESSIBLE)?.get("acct-mixed-acc") ?? 0;
+    expect(entityLocked).toBeCloseTo(300_000, 6);
+
+    // Accessible trust slice in the drilldown matches the locked share.
+    const drillEntity = year0.portfolioAssets.accessibleTrustAssets["acct-mixed-acc"] ?? 0;
+    expect(drillEntity).toBeCloseTo(entityLocked, 6);
+
+    // No leak into trustsAndBusinesses for an accessible-trust slice.
+    expect(year0.portfolioAssets.trustsAndBusinesses["acct-mixed-acc"] ?? 0).toBe(0);
   });
 });

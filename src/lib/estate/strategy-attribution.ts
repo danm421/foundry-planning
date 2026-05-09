@@ -110,7 +110,12 @@ function compoundedTrustValueAtFinalYear(
     if (!slice) continue;
     const ledger = lastYear.accountLedgers?.[account.id];
     if (!ledger) continue;
-    total += (ledger.endingValue ?? 0) * slice.percent;
+    // Prefer the engine's locked entity share so household withdrawals on a
+    // split-owned account don't drain the trust slice. Falls back to the
+    // authored percent for 100%-trust accounts (where the engine doesn't
+    // publish a locked share — slice.percent === 1 makes the math identical).
+    const locked = lastYear.entityAccountSharesEoY?.get(entityId)?.get(account.id);
+    total += locked ?? (ledger.endingValue ?? 0) * slice.percent;
   }
   return total;
 }

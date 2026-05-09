@@ -3493,6 +3493,111 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     familyMembers: data.familyMembers ?? [],
   });
 
+  // Post-pass: rewrite portfolioAssets per-account values for split-owned
+  // accounts using the locked entity shares the balance sheet relies on.
+  // Without this, household withdrawals reduce the entity's snapshot share
+  // pro-rata via val × ownerPercent (the year-loop's snapshot uses the
+  // post-withdrawal account total). The balance sheet view-model carries
+  // entityAccountSharesEoY year-over-year so the entity portion is locked
+  // to its own beginning balance + its share of growth — household flows
+  // never bleed into it. This pass aligns the cash-flow drilldown with
+  // that same accounting.
+  const stableEntityById: Record<string, EntitySummary> = {};
+  for (const e of data.entities ?? []) stableEntityById[e.id] = e;
+  const portfolioCategoryToKey: Record<
+    string,
+    "taxable" | "cash" | "retirement" | "realEstate" | "business" | "lifeInsurance"
+  > = {
+    taxable: "taxable",
+    cash: "cash",
+    retirement: "retirement",
+    real_estate: "realEstate",
+    business: "business",
+    life_insurance: "lifeInsurance",
+  };
+  for (const year of years) {
+    let mutated = false;
+    for (const acct of data.accounts ?? []) {
+      const entityOwner = acct.owners.find((o) => o.kind === "entity") as
+        | { kind: "entity"; entityId: string; percent: number }
+        | undefined;
+      if (!entityOwner) continue;
+      if (entityOwner.percent >= 1) continue; // 100%-entity-owned: snapshot already correct
+      const entityLocked = year.entityAccountSharesEoY
+        ?.get(entityOwner.entityId)
+        ?.get(acct.id);
+      if (entityLocked == null) continue;
+      const ledger = year.accountLedgers[acct.id];
+      if (!ledger) continue;
+      const entity = stableEntityById[entityOwner.entityId];
+      const primaryKey = portfolioCategoryToKey[acct.category] ?? "taxable";
+
+      // Clear stale per-account entries so we can write the locked-share split fresh.
+      delete year.portfolioAssets[primaryKey][acct.id];
+      delete year.portfolioAssets.trustsAndBusinesses[acct.id];
+      delete year.portfolioAssets.accessibleTrustAssets[acct.id];
+
+      if (entity?.includeInPortfolio) {
+        // IIP entity: HH + IIP-entity together fill the primary bucket.
+        // (Locked share exists but the drilldown bundles them — same as the
+        // original Pass 1 behavior, just sourced from ledger.endingValue
+        // instead of accountBalances × inPortfolioFraction so it stays
+        // consistent across paths.)
+        const inPortfolioVal = ledger.endingValue;
+        if (inPortfolioVal > 0) {
+          year.portfolioAssets[primaryKey][acct.id] = inPortfolioVal;
+          if (primaryKey === "business") {
+            year.portfolioAssets.trustsAndBusinesses[acct.id] = inPortfolioVal;
+          }
+        }
+      } else {
+        // Non-IIP entity: family pool = ledger.endingValue − entity locked.
+        // Entity slice routes by accessibleToClient. Mirror business → t&b.
+        const familyPool = Math.max(0, ledger.endingValue - entityLocked);
+        if (familyPool > 0) {
+          year.portfolioAssets[primaryKey][acct.id] = familyPool;
+          if (primaryKey === "business") {
+            year.portfolioAssets.trustsAndBusinesses[acct.id] = familyPool;
+          }
+        }
+        const entityBucket = entity?.accessibleToClient
+          ? "accessibleTrustAssets"
+          : "trustsAndBusinesses";
+        if (entityLocked > 0) {
+          year.portfolioAssets[entityBucket][acct.id] =
+            (year.portfolioAssets[entityBucket][acct.id] ?? 0) + entityLocked;
+        }
+      }
+      mutated = true;
+    }
+
+    if (!mutated) continue;
+
+    // Recompute bucket totals from the per-bucket maps so they stay in sync.
+    const bucketKeys = [
+      "taxable",
+      "cash",
+      "retirement",
+      "realEstate",
+      "business",
+      "lifeInsurance",
+      "trustsAndBusinesses",
+      "accessibleTrustAssets",
+    ] as const;
+    for (const b of bucketKeys) {
+      const map = year.portfolioAssets[b];
+      const total = Object.values(map).reduce((s, v) => s + v, 0);
+      (year.portfolioAssets[`${b}Total`] as number) = total;
+    }
+    year.portfolioAssets.total =
+      year.portfolioAssets.taxableTotal +
+      year.portfolioAssets.cashTotal +
+      year.portfolioAssets.retirementTotal +
+      year.portfolioAssets.realEstateTotal +
+      year.portfolioAssets.businessTotal +
+      year.portfolioAssets.lifeInsuranceTotal;
+  }
+
   return years;
 }
 

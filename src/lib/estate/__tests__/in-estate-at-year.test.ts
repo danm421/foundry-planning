@@ -95,6 +95,69 @@ describe("computeInEstateAtYear", () => {
   });
 });
 
+describe("computeInEstateAtYear / computeOutOfEstateAtYear — locked entity shares", () => {
+  // Bug parity with the cash-flow drilldown and estate-planning expandable cards:
+  // a household-side withdrawal must NOT bleed into the entity's slice when an
+  // account is split between household and an irrevocable trust. The engine
+  // publishes the locked entity share via `entityAccountSharesEoY`; this
+  // function must use it instead of post-withdrawal × authored percent.
+  it("uses entityAccountSharesEoY so a household withdrawal doesn't drain the trust slice", () => {
+    const tree = {
+      accounts: [
+        {
+          id: "acc-mixed",
+          name: "Joint+SLAT Brokerage",
+          category: "taxable",
+          value: 1_000_000,
+          owners: [
+            { kind: "family_member", familyMemberId: FM_CLIENT, percent: 0.7 },
+            { kind: "entity", entityId: TRUST_IRREVOC, percent: 0.3 },
+          ],
+        },
+      ],
+      entities: [
+        {
+          id: TRUST_IRREVOC,
+          name: "SLAT",
+          isIrrevocable: true,
+          entityType: "trust",
+        },
+      ],
+    } as unknown as ClientData;
+
+    // Simulate post-withdrawal state: $1M − $79k household draw = $921k.
+    const postWithdrawalBalances = new Map([["acc-mixed", 921_000]]);
+    // Engine's locked entity share for the SLAT — protected from household draw.
+    const entityAccountSharesEoY = new Map([
+      [TRUST_IRREVOC, new Map([["acc-mixed", 300_000]])],
+    ]);
+
+    const inE = computeInEstateAtYear({
+      tree,
+      giftEvents: [],
+      year: 2026,
+      projectionStartYear: 2026,
+      accountBalances: postWithdrawalBalances,
+      entityAccountSharesEoY,
+    });
+    const outE = computeOutOfEstateAtYear({
+      tree,
+      giftEvents: [],
+      year: 2026,
+      projectionStartYear: 2026,
+      accountBalances: postWithdrawalBalances,
+      entityAccountSharesEoY,
+    });
+
+    // Out-of-estate: SLAT's locked $300k (NOT $921k × 0.3 = $276.3k).
+    expect(outE).toBeCloseTo(300_000, 6);
+    // In-estate: family pool = $921k − $300k = $621k (NOT $921k × 0.7 = $644.7k).
+    expect(inE).toBeCloseTo(621_000, 6);
+    // Sum still equals total account value (no value created or destroyed).
+    expect(inE + outE).toBeCloseTo(921_000, 6);
+  });
+});
+
 describe("computeOutOfEstateAtYear", () => {
   it("sums irrevocable-trust slices only", () => {
     const { tree, giftEvents, balances } = fixture();

@@ -141,6 +141,67 @@ describe("computeProcrastinationCardData", () => {
   });
 });
 
+describe("strategy-attribution — locked entity shares for split-owned trust accounts", () => {
+  // Bug parity with the cash-flow drilldown / estate-planning cards: when a
+  // trust co-owns an account with the household, a household-side withdrawal
+  // must NOT reduce the trust's compounded slice on the strategy card.
+  it("compoundedTrustValueAtFinalYear uses entityAccountSharesEoY for split-owned trust accounts", () => {
+    const tree = {
+      entities: [
+        {
+          id: SLAT_ID,
+          name: "SLAT",
+          entityType: "trust",
+          isIrrevocable: true,
+          trustSubType: "slat",
+          grantor: "client",
+        },
+      ],
+      accounts: [
+        {
+          id: "mixed-acc",
+          name: "Joint+SLAT brokerage",
+          category: "taxable",
+          value: 1_000_000,
+          growthRate: 0,
+          owners: [
+            { kind: "family_member", familyMemberId: "fm-client", percent: 0.7 },
+            { kind: "entity", entityId: SLAT_ID, percent: 0.3 },
+          ],
+        },
+      ],
+      gifts: [
+        {
+          id: "g-mixed",
+          year: 2026,
+          amount: 300_000,
+          grantor: "client",
+          recipientEntityId: SLAT_ID,
+          useCrummeyPowers: false,
+        },
+      ],
+      planSettings: { planStartYear: 2026, planEndYear: 2054 },
+    } as unknown as ClientData;
+
+    // Final-year row: account drained by a household withdrawal to $921k,
+    // but engine's locked SLAT share stays at $300k.
+    const lastYear = {
+      year: 2054,
+      accountLedgers: { "mixed-acc": { endingValue: 921_000 } },
+      entityAccountSharesEoY: new Map([
+        [SLAT_ID, new Map([["mixed-acc", 300_000]])],
+      ]),
+    } as unknown as ProjectionYear;
+    const withResult = [lastYear] as unknown as ProjectionYear[];
+
+    const ranked = rankTrustsByContribution(tree, withResult);
+    const slatRanked = ranked.find((r) => r.trustId === SLAT_ID);
+    expect(slatRanked).toBeDefined();
+    // $300k locked, NOT $921k × 0.3 = $276.3k.
+    expect(slatRanked!.primaryAmount).toBeCloseTo(300_000, 6);
+  });
+});
+
 describe("strategy-attribution — edge cases", () => {
   it("0 irrevocable trusts → empty ranking", () => {
     const tree = {

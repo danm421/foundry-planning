@@ -259,6 +259,64 @@ describe("computeGrossEstate", () => {
     expect(r.total).toBeCloseTo(100_000, 2);
   });
 
+  it("uses entityAccountSharesEoY so a household withdrawal doesn't bleed the SLAT share into the joint convention", () => {
+    // 35% client + 35% spouse + 30% non-IIP irrevocable SLAT.
+    // Plan-start $1M; household withdrew $79k → ledger.endingValue $921k.
+    // Engine's locked SLAT share = $300k (untouched). The joint convention
+    // must apply to the family pool ($621k), NOT the post-withdrawal total.
+    const slat: EntitySummary = {
+      id: "slat",
+      includeInPortfolio: false,
+      isGrantor: false,
+      isIrrevocable: true,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("mixed", 1_000_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.35 },
+          { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.35 },
+          { kind: "entity", entityId: "slat", percent: 0.3 },
+        ],
+      })],
+      accountBalances: { mixed: 921_000 },
+      liabilities: [],
+      entities: [slat],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+      entityAccountSharesEoY: new Map([
+        ["slat", new Map([["mixed", 300_000]])],
+      ]),
+    });
+    // Family pool $621k × 0.5 (joint, first death) = $310,500.
+    // (Buggy result was $921k × 0.5 = $460,500.)
+    expect(r.total).toBeCloseTo(310_500, 2);
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0].percentage).toBe(0.5);
+  });
+
+  it("joint convention without locked shares falls back to existing fmv × pct (backward-compatible)", () => {
+    // Pure-spouse joint, no entity, no locked shares passed — old behavior.
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 1,
+      accounts: [acct("j1", 200_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.5 },
+          { kind: "family_member", familyMemberId: LEGACY_FM_SPOUSE, percent: 0.5 },
+        ],
+      })],
+      accountBalances: { j1: 200_000 },
+      liabilities: [],
+      entities: [],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: LEGACY_FM_SPOUSE,
+    });
+    expect(r.total).toBeCloseTo(100_000, 2);
+  });
+
   it("decedent-owned liability linked to a joint property still uses the liability's owners", () => {
     // Regression: previously the linked-property's ownership overrode the
     // liability's own owners[]. A loan explicitly owned by the client should
