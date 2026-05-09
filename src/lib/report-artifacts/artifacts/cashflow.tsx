@@ -55,10 +55,10 @@ async function fetchCashflowData(
     yearRange: [yearStart, yearEnd],
     sections: {
       base: buildBaseSection(years, effectiveTree),
-      income: buildIncomeSection(years),
-      expenses: buildExpensesSection(years),
-      withdrawals: buildWithdrawalsSection(years),
-      assets: buildAssetsSection(years),
+      income: buildIncomeSection(years, effectiveTree),
+      expenses: buildExpensesSection(years, effectiveTree),
+      withdrawals: buildWithdrawalsSection(years, effectiveTree),
+      assets: buildAssetsSection(years, effectiveTree),
     },
   };
 
@@ -121,7 +121,7 @@ function buildBaseSection(years: ProjectionYear[], c: ClientData): CashflowSecti
   return { id: "base", title: "Cash Flow — Summary", headers, rows, totals };
 }
 
-function buildIncomeSection(years: ProjectionYear[]): CashflowSection {
+function buildIncomeSection(years: ProjectionYear[], c: ClientData): CashflowSection {
   const headers: CashflowSection["headers"] = [
     { id: "year", label: "Year", align: "left" },
     { id: "age", label: "Age(s)", align: "left" },
@@ -136,7 +136,7 @@ function buildIncomeSection(years: ProjectionYear[]): CashflowSection {
   ];
   const rows: CashflowRow[] = years.map((y) => ({
     year: y.year,
-    age: "",
+    age: ageString(y, c),
     cells: {
       salaries: y.income.salaries,
       socialSecurity: y.income.socialSecurity,
@@ -155,7 +155,7 @@ function buildIncomeSection(years: ProjectionYear[]): CashflowSection {
   return { id: "income", title: "Income Detail", headers, rows, totals };
 }
 
-function buildExpensesSection(years: ProjectionYear[]): CashflowSection {
+function buildExpensesSection(years: ProjectionYear[], c: ClientData): CashflowSection {
   const headers: CashflowSection["headers"] = [
     { id: "year", label: "Year", align: "left" },
     { id: "age", label: "Age(s)", align: "left" },
@@ -169,7 +169,7 @@ function buildExpensesSection(years: ProjectionYear[]): CashflowSection {
   ];
   const rows: CashflowRow[] = years.map((y) => ({
     year: y.year,
-    age: "",
+    age: ageString(y, c),
     cells: {
       living: y.expenses.living,
       liabilities: y.expenses.liabilities,
@@ -207,7 +207,7 @@ function additionsTotal(r: ProjectionYear): number {
   for (const id of portfolioAccountIds(r)) {
     const led = r.accountLedgers[id];
     if (!led) continue;
-    sum += (led.contributions ?? 0) - (led.internalContributions ?? 0);
+    sum += led.contributions - (led.internalContributions ?? 0);
   }
   return sum;
 }
@@ -217,12 +217,12 @@ function distributionsTotal(r: ProjectionYear): number {
   for (const id of portfolioAccountIds(r)) {
     const led = r.accountLedgers[id];
     if (!led) continue;
-    sum += (led.distributions ?? 0) - (led.internalDistributions ?? 0);
+    sum += led.distributions - (led.internalDistributions ?? 0);
   }
   return sum;
 }
 
-function buildWithdrawalsSection(years: ProjectionYear[]): CashflowSection {
+function buildWithdrawalsSection(years: ProjectionYear[], c: ClientData): CashflowSection {
   const headers: CashflowSection["headers"] = [
     { id: "year", label: "Year", align: "left" },
     { id: "age", label: "Age(s)", align: "left" },
@@ -233,7 +233,7 @@ function buildWithdrawalsSection(years: ProjectionYear[]): CashflowSection {
   ];
   const rows: CashflowRow[] = years.map((y) => ({
     year: y.year,
-    age: "",
+    age: ageString(y, c),
     cells: {
       growth: portfolioGrowthTotal(y),
       additions: additionsTotal(y),
@@ -250,7 +250,7 @@ function buildWithdrawalsSection(years: ProjectionYear[]): CashflowSection {
   return { id: "withdrawals", title: "Net Cash Flow Detail", headers, rows, totals };
 }
 
-function buildAssetsSection(years: ProjectionYear[]): CashflowSection {
+function buildAssetsSection(years: ProjectionYear[], c: ClientData): CashflowSection {
   const headers: CashflowSection["headers"] = [
     { id: "year", label: "Year", align: "left" },
     { id: "age", label: "Age(s)", align: "left" },
@@ -266,7 +266,7 @@ function buildAssetsSection(years: ProjectionYear[]): CashflowSection {
   ];
   const rows: CashflowRow[] = years.map((y) => ({
     year: y.year,
-    age: "",
+    age: ageString(y, c),
     cells: {
       taxable: y.portfolioAssets.taxableTotal,
       cash: y.portfolioAssets.cashTotal,

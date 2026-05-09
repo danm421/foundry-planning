@@ -69,7 +69,7 @@ function fixtureYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
     accountLedgers: {
       acct1: {
         boyValue: 460_000, growth: 40_000, contributions: 0, distributions: 0,
-        rmdAmount: 0, transfers: 0, withdrawals: 0,
+        rmdAmount: 0,
       } as unknown as ProjectionYear["accountLedgers"][string],
     },
     accountBasisBoY: {},
@@ -140,6 +140,7 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
       "year", "age", "salaries", "socialSecurity", "business", "trust",
       "deferred", "capitalGains", "other", "total",
     ]);
+    expect(sec.rows[0].age).toBe("60 / 58");
     expect(sec.rows[0].cells.salaries).toBe(100_000);
     expect(sec.rows[0].cells.total).toBe(205_000);
     expect(sec.totals.total).toBe(205_000);
