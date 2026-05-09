@@ -20,9 +20,8 @@ describe("ReportArtifact contract types", () => {
     expectTypeOf(a.id).toEqualTypeOf<string>();
   });
 
-  it("Variant union covers chart, data, chart+data, csv", () => {
-    const all: Variant[] = ["chart", "data", "chart+data", "csv"];
-    expect(all).toHaveLength(4);
+  it("Variant union is exactly chart | data | chart+data | csv", () => {
+    expectTypeOf<Variant>().toEqualTypeOf<"chart" | "data" | "chart+data" | "csv">();
   });
 
   it("ChartImage carries dataVersion for drift detection", () => {

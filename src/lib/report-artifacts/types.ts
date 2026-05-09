@@ -4,16 +4,16 @@ import type { z } from "zod";
 export type Variant = "chart" | "data" | "chart+data" | "csv";
 
 export type ChartImage = {
-  id: string;          // artifact-defined chart id, e.g., "donut", "drift"
-  dataUrl: string;     // PNG data URL from Chart.js toDataURL("image/png")
+  id: string;
+  dataUrl: string;
   width: number;
   height: number;
-  dataVersion: string; // hash of the data the chart was rendered against
+  dataVersion: string;
 };
 
 export type CsvFile = {
-  name: string;        // "holdings.csv"
-  contents: string;    // RFC-4180 serialized CSV body
+  name: string;
+  contents: string;
 };
 
 export type ArtifactSection = "assets" | "cashflow" | "estate" | "overview";
@@ -31,20 +31,22 @@ export type RenderPdfInput<TData, TOpts> = {
   charts: ChartImage[];
 };
 
+export type FetchDataInput<TOptsSchema extends z.ZodTypeAny> = {
+  clientId: string;
+  opts: z.infer<TOptsSchema>;
+};
+
 export type ReportArtifact<TData, TOptsSchema extends z.ZodTypeAny> = {
   id: string;
   title: string;
   section: ArtifactSection;
   route: string;
 
-  variants: Variant[];
+  variants: [Variant, ...Variant[]];
   optionsSchema: TOptsSchema;
   defaultOptions: z.infer<TOptsSchema>;
 
-  fetchData: (input: {
-    clientId: string;
-    opts: z.infer<TOptsSchema>;
-  }) => Promise<FetchDataResult<TData>>;
+  fetchData: (input: FetchDataInput<TOptsSchema>) => Promise<FetchDataResult<TData>>;
 
   // Returns a ReactNode of `<View>` blocks (NOT a `<Document>`). The
   // ArtifactDocument shell wraps the blocks. This is what enables
