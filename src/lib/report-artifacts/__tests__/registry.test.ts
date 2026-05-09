@@ -29,9 +29,13 @@ describe("registry", () => {
     expect(getArtifact("missing")).toBeUndefined();
   });
 
-  it("throws on duplicate registration", () => {
-    registerArtifact(fakeArtifact("a"));
-    expect(() => registerArtifact(fakeArtifact("a"))).toThrow(/already registered/);
+  it("re-registration with the same id replaces silently (HMR-safe)", () => {
+    const first = fakeArtifact("a");
+    const second = { ...fakeArtifact("a"), title: "Replaced" };
+    registerArtifact(first);
+    registerArtifact(second);
+    expect(getArtifact("a")?.title).toBe("Replaced");
+    expect(listArtifacts()).toHaveLength(1);
   });
 
   it("listArtifacts returns all registered, in insertion order", () => {

@@ -350,13 +350,8 @@ export const investmentsArtifact: ReportArtifact<InvestmentsData, typeof options
 
     const styles = StyleSheet.create({
       sectionTitle: { fontSize: 13, fontWeight: 700, marginTop: 12, marginBottom: 4 },
-      totalBlock: { alignItems: "center", marginTop: 4, marginBottom: -4 },
-      totalLabel: {
-        fontSize: 9,
-        letterSpacing: 1,
-        textTransform: "uppercase",
-        color: "#6b7280",
-      },
+      totalBlock: { alignItems: "center", marginTop: 4 },
+      totalLabel: { fontSize: 9, color: "#6b7280" },
       totalValue: { fontSize: 18, fontWeight: 700, marginTop: 2 },
     });
 
@@ -365,7 +360,7 @@ export const investmentsArtifact: ReportArtifact<InvestmentsData, typeof options
         {showCharts && donut && (
           <View>
             <View style={styles.totalBlock}>
-              <Text style={styles.totalLabel}>Investable Total</Text>
+              <Text style={styles.totalLabel}>INVESTABLE TOTAL</Text>
               <Text style={styles.totalValue}>
                 {fmtMoney(data.household.totalInvestableValue)}
               </Text>

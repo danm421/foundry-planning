@@ -3,13 +3,11 @@ import type { z } from "zod";
 
 const artifacts = new Map<string, AnyReportArtifact>();
 
+// Upsert by id. Re-registration is idempotent so HMR-driven module
+// re-evaluations don't crash the bootstrap. Last writer wins.
 export function registerArtifact<TData, TOpts extends z.ZodTypeAny>(
   artifact: ReportArtifact<TData, TOpts>,
 ): void {
-  if (artifacts.has(artifact.id)) {
-    throw new Error(`Artifact "${artifact.id}" already registered`);
-  }
-  // Erase generics for storage; consumers re-validate options via schema.
   artifacts.set(artifact.id, artifact as unknown as AnyReportArtifact);
 }
 
