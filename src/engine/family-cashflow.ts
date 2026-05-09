@@ -97,7 +97,51 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
     return sum;
   };
 
-  for (const year of years) {
+  for (let yearIdx = 0; yearIdx < years.length; yearIdx++) {
+    const year = years[yearIdx];
+
+    // Death absorption: at the start of each year, redistribute any locked
+    // shares owned by family members who died in the prior year. Surviving
+    // co-owners absorb the deceased's share pro-rata to their carried shares.
+    // (deathTransfers carries `deceased: "client" | "spouse"` per types.ts:73.)
+    const prior = yearIdx > 0 ? years[yearIdx - 1] : undefined;
+    const priorDeathRoles = new Set<"client" | "spouse">();
+    for (const dt of prior?.deathTransfers ?? []) priorDeathRoles.add(dt.deceased);
+    if (priorDeathRoles.size > 0) {
+      const priorDeathFmIds = new Set<string>();
+      for (const role of priorDeathRoles) {
+        const fmId = resolveOwnerToFm(role);
+        if (fmId) priorDeathFmIds.add(fmId);
+      }
+      for (const [accountId, owners] of accountFamilyOwners) {
+        let totalDeceased = 0;
+        for (const fmId of priorDeathFmIds) {
+          const v = getLocked(fmId, accountId);
+          if (v != null) {
+            if (v > 0) totalDeceased += v;
+            setLocked(fmId, accountId, 0);
+          }
+        }
+        if (totalDeceased <= 0) continue;
+        const survivors = owners.filter((o) => !priorDeathFmIds.has(o.familyMemberId));
+        const survivorTotal = survivors.reduce(
+          (s, o) => s + (getLocked(o.familyMemberId, accountId) ?? 0),
+          0,
+        );
+        if (survivorTotal <= 0) {
+          if (survivors.length > 0) {
+            const split = totalDeceased / survivors.length;
+            for (const o of survivors) setLocked(o.familyMemberId, accountId, split);
+          }
+        } else {
+          for (const o of survivors) {
+            const cur = getLocked(o.familyMemberId, accountId) ?? 0;
+            setLocked(o.familyMemberId, accountId, cur + totalDeceased * (cur / survivorTotal));
+          }
+        }
+      }
+    }
+
     for (const [accountId, owners] of accountFamilyOwners) {
       const ledger = year.accountLedgers[accountId];
       if (!ledger) continue;

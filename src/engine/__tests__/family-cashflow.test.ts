@@ -266,6 +266,77 @@ describe("computeFamilyAccountShares — mixed entity + family ownership", () =>
   });
 });
 
+describe("computeFamilyAccountShares — death event", () => {
+  it("survivor absorbs deceased's share at the next BoY", () => {
+    // Year 0: drift to client=70%, spouse=30% via 40k client salary into joint
+    // 100k account. Year 1: spouse dies during year. Year 2 BoY: client = 100%.
+    const year0 = makeYear(2026, {
+      acctA: {
+        beginningValue: 100_000,
+        endingValue: 140_000,
+        growth: 0,
+        entries: [
+          { category: "income", label: "Salary", amount: 40_000, sourceId: "inc-1" },
+        ] as never,
+      },
+    });
+    const year1 = makeYear(2027, {
+      acctA: {
+        beginningValue: 140_000,
+        endingValue: 140_000,
+        growth: 0,
+        entries: [] as never,
+      },
+    });
+    // Engine emits deathTransfers on the year OF death; field is `deceased`
+    // ("client" | "spouse") per src/engine/types.ts:73.
+    (year1 as { deathTransfers?: Array<{ deceased: "client" | "spouse" }> }).deathTransfers = [
+      { deceased: "spouse" },
+    ];
+    const year2 = makeYear(2028, {
+      acctA: {
+        beginningValue: 140_000,
+        endingValue: 140_000,
+        growth: 0,
+        entries: [] as never,
+      },
+    });
+    const incomes: Income[] = [
+      {
+        id: "inc-1",
+        type: "salary",
+        name: "Salary",
+        annualAmount: 40_000,
+        startYear: 2026,
+        endYear: 2026,
+        growthRate: 0,
+        owner: "client",
+      } as Income,
+    ];
+    computeFamilyAccountShares({
+      years: [year0, year1, year2],
+      accountFamilyOwners: new Map([
+        [
+          "acctA",
+          [
+            { familyMemberId: "fm-client", percent: 0.5 },
+            { familyMemberId: "fm-spouse", percent: 0.5 },
+          ],
+        ],
+      ]),
+      clientFamilyMemberId: "fm-client",
+      spouseFamilyMemberId: "fm-spouse",
+      incomes,
+      gifts: [],
+      familyMembers: [],
+    });
+
+    // Year 2 BoY = year 1 EoY → spouse's share absorbed by client.
+    expect(year2.familyAccountSharesEoY!.get("fm-client")!.get("acctA")!).toBeCloseTo(140_000);
+    expect(year2.familyAccountSharesEoY!.get("fm-spouse")?.get("acctA") ?? 0).toBeCloseTo(0);
+  });
+});
+
 describe("computeFamilyAccountShares — invariants", () => {
   it("sum of family shares equals account EoY value across years with mixed flows", () => {
     // Year 0: BoY 100k 50/50, +50k client salary, growth 5k → EoY 155k.
