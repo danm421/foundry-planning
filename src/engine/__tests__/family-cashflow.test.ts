@@ -184,6 +184,88 @@ describe("computeFamilyAccountShares — year-0 init + passive growth", () => {
   });
 });
 
+describe("computeFamilyAccountShares — mixed entity + family ownership", () => {
+  it("family shares fill the family pool only (account value minus entity shares)", () => {
+    // Account: 70% trust, 15% client, 15% spouse. EoY value 100k. Trust locked share: 70k.
+    // Family pool = 30k. With 15/15 family seed → each gets 15k EoY (no flows).
+    const year0 = makeYear(2026, {
+      acctA: {
+        beginningValue: 100_000,
+        endingValue: 100_000,
+        growth: 0,
+        entries: [],
+      },
+    });
+    year0.entityAccountSharesEoY = new Map([["ent-trust", new Map([["acctA", 70_000]])]]);
+    computeFamilyAccountShares({
+      years: [year0],
+      accountFamilyOwners: new Map([
+        [
+          "acctA",
+          [
+            { familyMemberId: "fm-client", percent: 0.15 },
+            { familyMemberId: "fm-spouse", percent: 0.15 },
+          ],
+        ],
+      ]),
+      clientFamilyMemberId: "fm-client",
+      spouseFamilyMemberId: "fm-spouse",
+      incomes: [],
+      gifts: [],
+      familyMembers: [],
+    });
+
+    const c = year0.familyAccountSharesEoY!.get("fm-client")!.get("acctA")!;
+    const s = year0.familyAccountSharesEoY!.get("fm-spouse")!.get("acctA")!;
+    expect(c).toBeCloseTo(15_000);
+    expect(s).toBeCloseTo(15_000);
+    expect(c + s + 70_000).toBeCloseTo(100_000); // full sum invariant
+  });
+
+  it("family pool growth tracks (account growth − entity-locked growth) across years", () => {
+    // Year 0: account 100k → 105k (5% growth). Entity locks 70k → 73.5k.
+    // Family pool: 30k → 31.5k. Family shares should sum to 31.5k, not 35k
+    // (which is what naive `ledger.growth × familyShare/total` would yield).
+    const year0 = makeYear(2026, {
+      acctA: { beginningValue: 100_000, endingValue: 105_000, growth: 5_000, entries: [] },
+    });
+    year0.entityAccountSharesEoY = new Map([["ent-trust", new Map([["acctA", 73_500]])]]);
+    const year1 = makeYear(2027, {
+      acctA: { beginningValue: 105_000, endingValue: 110_250, growth: 5_250, entries: [] },
+    });
+    year1.entityAccountSharesEoY = new Map([["ent-trust", new Map([["acctA", 77_175]])]]);
+    computeFamilyAccountShares({
+      years: [year0, year1],
+      accountFamilyOwners: new Map([
+        [
+          "acctA",
+          [
+            { familyMemberId: "fm-client", percent: 0.15 },
+            { familyMemberId: "fm-spouse", percent: 0.15 },
+          ],
+        ],
+      ]),
+      clientFamilyMemberId: "fm-client",
+      spouseFamilyMemberId: "fm-spouse",
+      incomes: [],
+      gifts: [],
+      familyMembers: [],
+    });
+
+    // Year 0: family pool EoY = 105k - 73.5k = 31.5k.
+    const c0 = year0.familyAccountSharesEoY!.get("fm-client")!.get("acctA")!;
+    const s0 = year0.familyAccountSharesEoY!.get("fm-spouse")!.get("acctA")!;
+    expect(c0 + s0).toBeCloseTo(31_500);
+    expect(c0 + s0 + 73_500).toBeCloseTo(105_000);
+
+    // Year 1: family pool EoY = 110.25k - 77.175k = 33.075k.
+    const c1 = year1.familyAccountSharesEoY!.get("fm-client")!.get("acctA")!;
+    const s1 = year1.familyAccountSharesEoY!.get("fm-spouse")!.get("acctA")!;
+    expect(c1 + s1).toBeCloseTo(33_075);
+    expect(c1 + s1 + 77_175).toBeCloseTo(110_250);
+  });
+});
+
 describe("computeFamilyAccountShares — invariants", () => {
   it("sum of family shares equals account EoY value across years with mixed flows", () => {
     // Year 0: BoY 100k 50/50, +50k client salary, growth 5k → EoY 155k.

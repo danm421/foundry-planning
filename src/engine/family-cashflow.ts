@@ -87,6 +87,16 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
   const getLocked = (fmId: string, aid: string) =>
     lockedShareByMemberAccount.get(fmId)?.get(aid);
 
+  // Sum of entity-locked shares on this account in this year (mixed-ownership
+  // case). Family shares track within the family pool = ledger.endingValue − this.
+  const entityLockedTotalForAccount = (year: ProjectionYear, accountId: string): number => {
+    const map = year.entityAccountSharesEoY;
+    if (!map) return 0;
+    let sum = 0;
+    for (const accMap of map.values()) sum += accMap.get(accountId) ?? 0;
+    return sum;
+  };
+
   for (const year of years) {
     for (const [accountId, owners] of accountFamilyOwners) {
       const ledger = year.accountLedgers[accountId];
@@ -94,10 +104,20 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
       const ownerFmIds = new Set(owners.map((o) => o.familyMemberId));
 
       // BoY shares: carried from prior year, or seeded from owner.percent on year 0.
+      // Year-0 seed uses the family pool BoY (account beginningValue × Σ family percents)
+      // rather than each owner's percent of the whole account, so a mixed account
+      // (e.g. 70% trust + 15%/15% family) seeds 15k each on a $100k pool, not on
+      // the post-trust 30k pool. Trust passes its own pool to entity-cashflow.
+      const familyPercentTotal = owners.reduce((s, o) => s + o.percent, 0);
+      const familyPoolBoY = ledger.beginningValue * familyPercentTotal;
       const shares: Record<string, number> = {};
       for (const o of owners) {
         const carried = getLocked(o.familyMemberId, accountId);
-        shares[o.familyMemberId] = carried ?? ledger.beginningValue * o.percent;
+        const seed =
+          familyPercentTotal > 0
+            ? familyPoolBoY * (o.percent / familyPercentTotal)
+            : 0;
+        shares[o.familyMemberId] = carried ?? seed;
       }
 
       const sumShares = () => owners.reduce((s, o) => s + shares[o.familyMemberId], 0);
@@ -109,8 +129,13 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
         }
       };
 
-      // Passive growth: pro-rata to current shares.
-      if (ledger.growth) distributeProRata(ledger.growth);
+      // Passive growth: distribute the family pool's share of growth pro-rata.
+      // For non-mixed accounts (no entity owners) this equals ledger.growth.
+      const familyGrowth =
+        ledger.beginningValue > 0
+          ? ledger.growth * (familyPoolBoY / ledger.beginningValue)
+          : 0;
+      if (familyGrowth) distributeProRata(familyGrowth);
 
       // Walk attributable entries. Income deposits with a known owner credit
       // that owner's share; everything else flows pro-rata. Skip internal
@@ -164,6 +189,24 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
             }
           }
         }
+      }
+
+      // Settle: scale shares so they sum to the actual family-pool EoY. This
+      // reconciles any rounding drift from the per-entry walk, and (more
+      // importantly) collapses overdrafts by clamping negatives to 0 first
+      // before normalizing. Mixed-ownership accounts: pool = ledger.endingValue
+      // − Σ entity-locked shares for this account.
+      const familyPoolEoY = Math.max(0, ledger.endingValue - entityLockedTotalForAccount(year, accountId));
+      let positiveSum = 0;
+      for (const o of owners) {
+        if (shares[o.familyMemberId] < 0) shares[o.familyMemberId] = 0;
+        positiveSum += shares[o.familyMemberId];
+      }
+      if (familyPoolEoY > 0 && positiveSum > 0) {
+        const scale = familyPoolEoY / positiveSum;
+        for (const o of owners) shares[o.familyMemberId] *= scale;
+      } else if (familyPoolEoY <= 0) {
+        for (const o of owners) shares[o.familyMemberId] = 0;
       }
 
       // Publish.
