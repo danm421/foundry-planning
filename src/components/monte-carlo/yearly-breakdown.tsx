@@ -1,5 +1,5 @@
 import type { MonteCarloSummary } from "@/engine";
-import { formatShortCurrency, formatPercent } from "./lib/format";
+import { formatCurrency, formatPercent2 } from "./lib/format";
 
 interface YearlyBreakdownProps {
   summary: MonteCarloSummary;
@@ -7,7 +7,7 @@ interface YearlyBreakdownProps {
 
 function formatCagr(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
-  return formatPercent(value);
+  return formatPercent2(value);
 }
 
 export function YearlyBreakdown({ summary }: YearlyBreakdownProps) {
@@ -42,19 +42,19 @@ export function YearlyBreakdown({ summary }: YearlyBreakdownProps) {
                   <td className="px-4 py-2 text-slate-200">{y.year}</td>
                   <td className="px-4 py-2 text-slate-300">{age}</td>
                   <td className="px-4 py-2 text-right text-slate-300 tabular-nums">
-                    {formatShortCurrency(y.balance.p80)}
+                    {formatCurrency(y.balance.p80)}
                   </td>
                   <td className="px-4 py-2 text-right text-slate-400 tabular-nums">
                     {formatCagr(y.cagrFromStart?.p80)}
                   </td>
                   <td className="px-4 py-2 text-right text-emerald-300 tabular-nums">
-                    {formatShortCurrency(y.balance.p50)}
+                    {formatCurrency(y.balance.p50)}
                   </td>
                   <td className="px-4 py-2 text-right text-slate-400 tabular-nums">
                     {formatCagr(y.cagrFromStart?.p50)}
                   </td>
                   <td className="px-4 py-2 text-right text-slate-300 tabular-nums">
-                    {formatShortCurrency(y.balance.p20)}
+                    {formatCurrency(y.balance.p20)}
                   </td>
                   <td className="px-4 py-2 text-right text-slate-400 tabular-nums">
                     {formatCagr(y.cagrFromStart?.p20)}

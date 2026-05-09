@@ -11,8 +11,18 @@ export function formatShortCurrency(value: number): string {
   return `${sign}$${Math.round(n)}`;
 }
 
+export function formatCurrency(value: number): string {
+  const sign = value < 0 ? MINUS : "";
+  const n = Math.abs(value);
+  return `${sign}$${Math.round(n).toLocaleString("en-US")}`;
+}
+
 export function formatPercent(fraction: number): string {
   return `${Math.round(fraction * 100)}%`;
+}
+
+export function formatPercent2(fraction: number): string {
+  return `${(fraction * 100).toFixed(2)}%`;
 }
 
 export function formatInteger(n: number): string {
