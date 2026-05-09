@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { clients, scenarios, planSettings, accounts, expenses, incomes } from "@/db/schema";
+import { clients, scenarios, planSettings, accounts, expenses, incomes, familyMembers } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { requireActiveSubscription } from "@/lib/authz";
@@ -128,6 +128,34 @@ export async function POST(request: NextRequest) {
       planStartYear: currentYear,
       planEndYear: new Date(dateOfBirth).getFullYear() + planEndAge,
     });
+
+    // Seed household family_members rows (role='client', and 'spouse' if married).
+    // OwnershipEditor's preset buttons and defaultOwners both key off these rows;
+    // without them, every newly-added account is rejected with
+    // "owners must have at least one entry". The relationship enum doesn't have
+    // 'client'/'spouse' values, so we use 'other' as a placeholder — the role
+    // column is what the UI keys off.
+    const familyRows: Array<typeof familyMembers.$inferInsert> = [
+      {
+        clientId: client.id,
+        role: "client",
+        relationship: "other",
+        firstName,
+        lastName,
+        dateOfBirth,
+      },
+    ];
+    if (spouseName) {
+      familyRows.push({
+        clientId: client.id,
+        role: "spouse",
+        relationship: "other",
+        firstName: spouseName,
+        lastName: spouseLastName ?? lastName,
+        dateOfBirth: spouseDob ?? null,
+      });
+    }
+    await db.insert(familyMembers).values(familyRows);
 
     // Insert default household cash account. Household income lands here and expenses
     // are drawn from it; the projection engine pulls from the withdrawal strategy when

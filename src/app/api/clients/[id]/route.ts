@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, planSettings } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import {
+  clients,
+  planSettings,
+  familyMembers,
+  accountOwners,
+  liabilityOwners,
+  entityOwners,
+  beneficiaryDesignations,
+  gifts,
+  trustSplitInterestDetails,
+} from "@/db/schema";
+import { eq, and, or, inArray } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { computePlanEndAge } from "@/lib/plan-horizon";
 import { recordUpdate, recordDelete } from "@/lib/audit";
@@ -54,6 +64,34 @@ export async function PUT(
 
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // If the body removes the spouse (spouseName cleared), pre-check that no
+    // rows still reference the spouse family_member. Account/liability owner
+    // triggers would otherwise abort the cascade with cryptic errors, and the
+    // CLUT/CLAT measuring-life FK is RESTRICT. Block here with a clear 409
+    // before mutating clients so we don't end up half-updated.
+    const spouseBeingRemoved =
+      "spouseName" in body &&
+      (body.spouseName == null || body.spouseName === "") &&
+      existing.spouseName != null &&
+      existing.spouseName !== "";
+    if (spouseBeingRemoved) {
+      const [spouseFm] = await db
+        .select({ id: familyMembers.id })
+        .from(familyMembers)
+        .where(and(eq(familyMembers.clientId, id), eq(familyMembers.role, "spouse")));
+      if (spouseFm) {
+        const blockers = await collectSpouseDependents(spouseFm.id);
+        if (blockers.length > 0) {
+          return NextResponse.json(
+            {
+              error: `Cannot remove spouse: still referenced by ${blockers.join(", ")}. Reassign or delete those first.`,
+            },
+            { status: 409 },
+          );
+        }
+      }
     }
 
     // Re-derive planEndAge whenever any input to the horizon calc changes.
@@ -129,6 +167,8 @@ export async function PUT(
         .where(eq(planSettings.clientId, id));
     }
 
+    await syncHouseholdFamilyMembers(id, updated);
+
     await recordUpdate({
       action: "client.update",
       resourceType: "client",
@@ -190,5 +230,92 @@ export async function DELETE(
     }
     console.error("DELETE /api/clients/[id] error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+// Returns a list of human-readable references that block deleting the spouse
+// family_member. account_owners / liability_owners / entity_owners would
+// trigger sum-violation aborts on cascade; trust_split_interest_details
+// measuring lives are RESTRICT FKs; beneficiary_designations and gifts cascade
+// cleanly but we surface them so removal isn't silent data loss.
+async function collectSpouseDependents(spouseFmId: string): Promise<string[]> {
+  const [accs, liabs, ents, mlife, beneRefs, giftRefs] = await Promise.all([
+    db.select({ id: accountOwners.accountId }).from(accountOwners).where(eq(accountOwners.familyMemberId, spouseFmId)).limit(1),
+    db.select({ id: liabilityOwners.liabilityId }).from(liabilityOwners).where(eq(liabilityOwners.familyMemberId, spouseFmId)).limit(1),
+    db.select({ id: entityOwners.entityId }).from(entityOwners).where(eq(entityOwners.familyMemberId, spouseFmId)).limit(1),
+    db
+      .select({ id: trustSplitInterestDetails.entityId })
+      .from(trustSplitInterestDetails)
+      .where(or(eq(trustSplitInterestDetails.measuringLife1Id, spouseFmId), eq(trustSplitInterestDetails.measuringLife2Id, spouseFmId)))
+      .limit(1),
+    db.select({ id: beneficiaryDesignations.id }).from(beneficiaryDesignations).where(eq(beneficiaryDesignations.familyMemberId, spouseFmId)).limit(1),
+    db.select({ id: gifts.id }).from(gifts).where(eq(gifts.recipientFamilyMemberId, spouseFmId)).limit(1),
+  ]);
+  const out: string[] = [];
+  if (accs.length) out.push("accounts");
+  if (liabs.length) out.push("liabilities");
+  if (ents.length) out.push("business ownership");
+  if (mlife.length) out.push("trust measuring lives");
+  if (beneRefs.length) out.push("beneficiary designations");
+  if (giftRefs.length) out.push("gifts");
+  return out;
+}
+
+// Reconciles role='client' / role='spouse' family_members rows with the
+// post-update client row. Insert/update/delete as needed. Caller is expected
+// to have already pre-checked that any spouse removal is dependent-free.
+async function syncHouseholdFamilyMembers(
+  clientId: string,
+  c: typeof clients.$inferSelect,
+): Promise<void> {
+  const rows = await db
+    .select()
+    .from(familyMembers)
+    .where(and(eq(familyMembers.clientId, clientId), inArray(familyMembers.role, ["client", "spouse"])));
+  const clientRow = rows.find((r) => r.role === "client");
+  const spouseRow = rows.find((r) => r.role === "spouse");
+
+  if (clientRow) {
+    await db
+      .update(familyMembers)
+      .set({
+        firstName: c.firstName,
+        lastName: c.lastName,
+        dateOfBirth: c.dateOfBirth,
+        updatedAt: new Date(),
+      })
+      .where(eq(familyMembers.id, clientRow.id));
+  } else {
+    await db.insert(familyMembers).values({
+      clientId,
+      role: "client",
+      relationship: "other",
+      firstName: c.firstName,
+      lastName: c.lastName,
+      dateOfBirth: c.dateOfBirth,
+    });
+  }
+
+  if (c.spouseName) {
+    const spouseFields = {
+      firstName: c.spouseName,
+      lastName: c.spouseLastName ?? c.lastName,
+      dateOfBirth: c.spouseDob ?? null,
+    };
+    if (spouseRow) {
+      await db
+        .update(familyMembers)
+        .set({ ...spouseFields, updatedAt: new Date() })
+        .where(eq(familyMembers.id, spouseRow.id));
+    } else {
+      await db.insert(familyMembers).values({
+        clientId,
+        role: "spouse",
+        relationship: "other",
+        ...spouseFields,
+      });
+    }
+  } else if (spouseRow) {
+    await db.delete(familyMembers).where(eq(familyMembers.id, spouseRow.id));
   }
 }
