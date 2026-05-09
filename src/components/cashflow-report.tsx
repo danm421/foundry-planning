@@ -37,6 +37,7 @@ import {
   type QuickNavView,
 } from "@/components/cashflow/quick-nav-utils";
 import { QuickNavDropdown } from "@/components/cashflow/quick-nav-dropdown";
+import { DrillChart } from "@/components/cashflow/charts/drill-chart";
 import { buildLifeEventsByYear } from "@/lib/life-event-markers";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
@@ -2025,41 +2026,53 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
       {/* Chart selector + chart */}
       <div className="mb-6 rounded-lg border border-gray-700 bg-gray-900 p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-300">
-            {chartView === "portfolio" ? "Total Portfolio Assets" : "Cash Flow Analysis"}
-            <span className="ml-2 text-xs font-normal text-gray-400">— click a point to jump to that year</span>
-          </h2>
-          <div className="flex rounded-md border border-gray-600 bg-gray-800 text-xs">
-            <button
-              onClick={() => setChartView("portfolio")}
-              className={`px-3 py-1.5 rounded-l-md ${
-                chartView === "portfolio"
-                  ? "bg-accent text-accent-on"
-                  : "text-gray-300 hover:text-gray-200"
-              }`}
-            >
-              Portfolio
-            </button>
-            <button
-              onClick={() => setChartView("cashflow")}
-              className={`px-3 py-1.5 rounded-r-md ${
-                chartView === "cashflow"
-                  ? "bg-accent text-accent-on"
-                  : "text-gray-300 hover:text-gray-200"
-              }`}
-            >
-              Cash Flow
-            </button>
-          </div>
-        </div>
-        <div style={{ height: 300 }}>
-          {chartView === "portfolio" ? (
-            <Bar data={portfolioChartData} options={portfolioChartOptions} />
-          ) : (
-            <Chart type="bar" data={cashflowChartData} options={chartOptionsWithMarkers} />
-          )}
-        </div>
+        {drillPath.length === 0 ? (
+          <>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-gray-300">
+                {chartView === "portfolio" ? "Total Portfolio Assets" : "Cash Flow Analysis"}
+                <span className="ml-2 text-xs font-normal text-gray-400">— click a point to jump to that year</span>
+              </h2>
+              <div className="flex rounded-md border border-gray-600 bg-gray-800 text-xs">
+                <button
+                  onClick={() => setChartView("portfolio")}
+                  className={`px-3 py-1.5 rounded-l-md ${
+                    chartView === "portfolio"
+                      ? "bg-accent text-accent-on"
+                      : "text-gray-300 hover:text-gray-200"
+                  }`}
+                >
+                  Portfolio
+                </button>
+                <button
+                  onClick={() => setChartView("cashflow")}
+                  className={`px-3 py-1.5 rounded-r-md ${
+                    chartView === "cashflow"
+                      ? "bg-accent text-accent-on"
+                      : "text-gray-300 hover:text-gray-200"
+                  }`}
+                >
+                  Cash Flow
+                </button>
+              </div>
+            </div>
+            <div style={{ height: 300 }}>
+              {chartView === "portfolio" ? (
+                <Bar data={portfolioChartData} options={portfolioChartOptions} />
+              ) : (
+                <Chart type="bar" data={cashflowChartData} options={chartOptionsWithMarkers} />
+              )}
+            </div>
+          </>
+        ) : (
+          <DrillChart
+            drillPath={drillPath}
+            years={visibleYears}
+            clientData={clientData}
+            accountNames={accountNames}
+            accountSubTypes={accountSubTypes}
+          />
+        )}
       </div>
 
       <div className="mb-3 flex items-center gap-4 flex-wrap">
