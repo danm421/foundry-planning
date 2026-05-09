@@ -137,29 +137,24 @@ describe("POST /api/clients/[id]/exports/pdf", () => {
     expect(res.status).toBe(400);
   });
 
-  it("silently drops stale chart captures whose dataVersion does not match", async () => {
+  it("forwards client-supplied chart captures to renderPdf without a drift gate (v1)", async () => {
     seedFetchData({ dataVersion: "v2" });
+    const chart = {
+      id: "donut",
+      dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+      width: 800,
+      height: 500,
+      dataVersion: "v1",
+    };
     const res = await POST(
-      makeReq({
-        reportId: "investments",
-        variant: "chart",
-        charts: [
-          {
-            id: "donut",
-            dataUrl: "data:image/png;base64,iVBORw0KGgo=",
-            width: 800,
-            height: 500,
-            dataVersion: "v1",
-          },
-        ],
-      }),
+      makeReq({ reportId: "investments", variant: "chart", charts: [chart] }),
       { params },
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/pdf");
     expect(renderPdfMock).toHaveBeenCalledOnce();
     const callArgs = renderPdfMock.mock.calls[0][0];
-    expect(callArgs.charts).toEqual([]);
+    expect(callArgs.charts).toEqual([chart]);
   });
 
   it("returns 401 when requireOrgId throws UnauthorizedError", async () => {

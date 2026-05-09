@@ -65,14 +65,13 @@ export async function POST(
     }
     const opts = optsParse.data;
 
-    const { data, asOf, dataVersion } = await artifact.fetchData({ clientId, firmId, opts });
+    const { data, asOf } = await artifact.fetchData({ clientId, firmId, opts });
 
-    // Soft drift detection in v1: stale chart captures get dropped silently
-    // and the PDF renders without that chart image. Strict server/client hash
-    // agreement is a known v2 problem (plan called this out as deferred).
-    const charts: ChartImage[] = (rawCharts ?? []).filter(
-      (c) => c.dataVersion === dataVersion,
-    );
+    // No drift validation in v1 — the artifact's dataVersion is a sha1 of the
+    // server-side data, but the client has no way to compute the matching hash.
+    // Charts pass through verbatim; PNG safety + size + count caps still apply
+    // via the body schema. Real drift detection is logged in future-work.
+    const charts: ChartImage[] = rawCharts ?? [];
 
     if (variant === "csv") {
       if (!artifact.toCsv) {
