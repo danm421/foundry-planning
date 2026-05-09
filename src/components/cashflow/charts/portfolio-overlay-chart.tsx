@@ -1,16 +1,27 @@
 "use client";
 
-import { Line } from "react-chartjs-2";
+import { Bar } from "react-chartjs-2";
 import {
-  Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
-  Tooltip, Legend,
+  Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend,
 } from "chart.js";
 import type { TooltipItem } from "chart.js";
 import type { ProjectionYear } from "@/engine/types";
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+// Investable portfolio total — matches the cashflow report's `liquidPortfolioTotal`.
+// Excludes real estate, business, and out-of-estate trust assets so the chart
+// reflects what advisors mean by "portfolio" in the cashflow context.
+function liquidPortfolioTotal(y: ProjectionYear): number {
+  return (
+    y.portfolioAssets.taxableTotal +
+    y.portfolioAssets.cashTotal +
+    y.portfolioAssets.retirementTotal +
+    y.portfolioAssets.lifeInsuranceTotal
+  );
+}
 
 interface Props {
   plan1Years: ProjectionYear[];
@@ -20,29 +31,42 @@ interface Props {
 }
 
 export function PortfolioOverlayChart({ plan1Years, plan2Years, plan1Label, plan2Label }: Props) {
-  const labels = plan1Years.map((y) => y.year);
-  const plan1Totals = plan1Years.map((y) => y.portfolioAssets?.total ?? 0);
-  const plan2Totals = plan2Years.map((y) => y.portfolioAssets?.total ?? 0);
+  const labels = plan2Years.map((y) => y.year);
+
+  const plan1ByYear = new Map<number, number>();
+  for (const y of plan1Years) plan1ByYear.set(y.year, liquidPortfolioTotal(y));
+
+  const floor: number[] = [];
+  const plan2Ahead: number[] = [];
+  const plan1Ahead: number[] = [];
+  for (const y of plan2Years) {
+    const plan2 = liquidPortfolioTotal(y);
+    const plan1 = plan1ByYear.get(y.year) ?? plan2;
+    floor.push(Math.min(plan1, plan2));
+    plan2Ahead.push(Math.max(0, plan2 - plan1));
+    plan1Ahead.push(Math.max(0, plan1 - plan2));
+  }
 
   const data = {
     labels,
     datasets: [
       {
-        label: plan1Label,
-        data: plan1Totals,
-        borderColor: "#60a5fa",
-        backgroundColor: "rgba(96, 165, 250, 0.05)",
-        borderWidth: 2,
-        pointRadius: 0,
+        label: `Common floor (vs ${plan1Label})`,
+        data: floor,
+        backgroundColor: "#2563eb",
+        stack: "portfolio",
       },
       {
-        label: plan2Label,
-        data: plan2Totals,
-        borderColor: "#f97316",
-        backgroundColor: "rgba(249, 115, 22, 0.05)",
-        borderWidth: 2,
-        borderDash: [6, 4],
-        pointRadius: 0,
+        label: `${plan2Label} ahead of ${plan1Label}`,
+        data: plan2Ahead,
+        backgroundColor: "#059669",
+        stack: "portfolio",
+      },
+      {
+        label: `${plan1Label} ahead of ${plan2Label}`,
+        data: plan1Ahead,
+        backgroundColor: "#9ca3af",
+        stack: "portfolio",
       },
     ],
   };
@@ -55,20 +79,29 @@ export function PortfolioOverlayChart({ plan1Years, plan2Years, plan1Label, plan
       legend: { position: "top" as const, labels: { color: "#cbd5e1" } },
       tooltip: {
         callbacks: {
-          label: (ctx: TooltipItem<"line">) =>
+          label: (ctx: TooltipItem<"bar">) =>
             `${ctx.dataset.label}: ${usd.format(ctx.parsed.y ?? 0)}`,
-          afterBody: (items: TooltipItem<"line">[]) => {
-            if (items.length < 2) return "";
-            const delta = (items[1].parsed.y ?? 0) - (items[0].parsed.y ?? 0);
-            const sign = delta >= 0 ? "+" : "";
-            return `Δ: ${sign}${usd.format(delta)}`;
+          footer: (items: TooltipItem<"bar">[]) => {
+            const f = items[0]?.parsed.y ?? 0;
+            const ahead = items[1]?.parsed.y ?? 0;
+            const behind = items[2]?.parsed.y ?? 0;
+            const plan1Total = f + behind;
+            const plan2Total = f + ahead;
+            const delta = plan2Total - plan1Total;
+            const sign = delta >= 0 ? "+" : "−";
+            return [
+              `${plan1Label}: ${usd.format(plan1Total)}`,
+              `${plan2Label}: ${usd.format(plan2Total)}`,
+              `Δ: ${sign}${usd.format(Math.abs(delta))}`,
+            ];
           },
         },
       },
     },
     scales: {
-      x: { ticks: { color: "#94a3b8" }, grid: { display: false } },
+      x: { stacked: true, ticks: { color: "#94a3b8" }, grid: { display: false } },
       y: {
+        stacked: true,
         ticks: { color: "#94a3b8", callback: (v: number | string) => usd.format(Number(v)) },
         grid: { color: "rgba(148, 163, 184, 0.15)" },
       },
@@ -77,7 +110,7 @@ export function PortfolioOverlayChart({ plan1Years, plan2Years, plan1Label, plan
 
   return (
     <div className="h-72 w-full">
-      <Line data={data} options={options} />
+      <Bar data={data} options={options} />
     </div>
   );
 }
