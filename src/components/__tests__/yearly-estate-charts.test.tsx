@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { YearlyEstateCharts } from "../yearly-estate-charts";
 import type { YearlyEstateRow } from "@/lib/estate/yearly-estate-report";
-import type { YearlyBeneficiaryBreakdown } from "@/lib/estate/yearly-beneficiary-breakdown";
+import type { RecipientTotal } from "@/lib/estate/transfer-report";
 
 const rows: YearlyEstateRow[] = [
   {
@@ -34,61 +34,34 @@ const rows: YearlyEstateRow[] = [
   },
 ];
 
-const breakdown: YearlyBeneficiaryBreakdown = {
-  ordering: "primaryFirst",
-  beneficiaries: [
-    {
-      key: "family_member|c1",
-      recipientLabel: "Charlie",
-      recipientKind: "family_member",
-      lifetimeTotal: 1_500_000,
-    },
-    {
-      key: "external_beneficiary|red-cross",
-      recipientLabel: "Red Cross",
-      recipientKind: "external_beneficiary",
-      lifetimeTotal: 200_000,
-    },
-  ],
-  rows: [
-    {
-      year: 2026,
-      beneficiaries: [
-        {
-          key: "family_member|c1",
-          recipientLabel: "Charlie",
-          recipientKind: "family_member",
-          fromFirstDeath: 700_000,
-          fromSecondDeath: 0,
-        },
-      ],
-    },
-    {
-      year: 2027,
-      beneficiaries: [
-        {
-          key: "family_member|c1",
-          recipientLabel: "Charlie",
-          recipientKind: "family_member",
-          fromFirstDeath: 800_000,
-          fromSecondDeath: 0,
-        },
-        {
-          key: "external_beneficiary|red-cross",
-          recipientLabel: "Red Cross",
-          recipientKind: "external_beneficiary",
-          fromFirstDeath: 0,
-          fromSecondDeath: 200_000,
-        },
-      ],
-    },
-  ],
-};
+const recipients: RecipientTotal[] = [
+  {
+    key: "family_member|c1",
+    recipientLabel: "Charlie",
+    recipientKind: "family_member",
+    fromFirstDeath: 100_000,
+    fromSecondDeath: 1_400_000,
+    total: 1_500_000,
+  },
+  {
+    key: "external_beneficiary|red-cross",
+    recipientLabel: "Red Cross",
+    recipientKind: "external_beneficiary",
+    fromFirstDeath: 0,
+    fromSecondDeath: 200_000,
+    total: 200_000,
+  },
+];
 
 describe("YearlyEstateCharts", () => {
   it("renders both chart canvases for non-empty inputs", () => {
     const { container } = render(
-      <YearlyEstateCharts rows={rows} breakdown={breakdown} />,
+      <YearlyEstateCharts
+        rows={rows}
+        recipients={recipients}
+        firstDeathYear={2055}
+        secondDeathYear={2060}
+      />,
     );
     expect(container.querySelectorAll("canvas").length).toBe(2);
   });
@@ -97,20 +70,22 @@ describe("YearlyEstateCharts", () => {
     const { container } = render(
       <YearlyEstateCharts
         rows={[]}
-        breakdown={{ ordering: "primaryFirst", rows: [], beneficiaries: [] }}
+        recipients={[]}
+        firstDeathYear={null}
+        secondDeathYear={null}
       />,
     );
     expect(container.querySelector("canvas")).toBeNull();
   });
 
-  it("renders only the 'where' chart if breakdown has no beneficiaries", () => {
-    const emptyBreakdown: YearlyBeneficiaryBreakdown = {
-      ordering: "primaryFirst",
-      rows: rows.map((r) => ({ year: r.year, beneficiaries: [] })),
-      beneficiaries: [],
-    };
+  it("renders only the 'where' chart if there are no non-spouse recipients", () => {
     const { container } = render(
-      <YearlyEstateCharts rows={rows} breakdown={emptyBreakdown} />,
+      <YearlyEstateCharts
+        rows={rows}
+        recipients={[]}
+        firstDeathYear={2055}
+        secondDeathYear={2060}
+      />,
     );
     expect(container.querySelectorAll("canvas").length).toBe(1);
   });

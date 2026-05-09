@@ -2,32 +2,30 @@
 
 import { useMemo } from "react";
 import type { YearlyEstateRow } from "@/lib/estate/yearly-estate-report";
-import type { YearlyBeneficiaryBreakdown } from "@/lib/estate/yearly-beneficiary-breakdown";
+import type { RecipientTotal } from "@/lib/estate/transfer-report";
 import { assignRecipientColors } from "./estate-transfer-chart-colors";
 import { YearlyEstateWhereChart } from "./yearly-estate-where-chart";
 import { YearlyEstateBeneficiaryChart } from "./yearly-estate-beneficiary-chart";
-import type { RecipientTotal } from "@/lib/estate/transfer-report";
 
 interface Props {
   rows: YearlyEstateRow[];
-  breakdown: YearlyBeneficiaryBreakdown;
+  /** Non-spouse recipient totals from a split-mode call to
+   *  buildEstateTransferReportData (actual projected death years). */
+  recipients: RecipientTotal[];
+  firstDeathYear: number | null;
+  secondDeathYear: number | null;
 }
 
-export function YearlyEstateCharts({ rows, breakdown }: Props) {
-  // assignRecipientColors expects RecipientTotal[]; we only need a stable key
-  // and recipientKind to pick a palette slot. Adapt the breakdown's
-  // beneficiaries list to the minimum-viable RecipientTotal shape.
-  const colors = useMemo(() => {
-    const adapted: RecipientTotal[] = breakdown.beneficiaries.map((b) => ({
-      key: b.key,
-      recipientLabel: b.recipientLabel,
-      recipientKind: b.recipientKind,
-      fromFirstDeath: 0,
-      fromSecondDeath: 0,
-      total: b.lifetimeTotal,
-    }));
-    return assignRecipientColors(adapted);
-  }, [breakdown.beneficiaries]);
+export function YearlyEstateCharts({
+  rows,
+  recipients,
+  firstDeathYear,
+  secondDeathYear,
+}: Props) {
+  const colors = useMemo(
+    () => assignRecipientColors(recipients),
+    [recipients],
+  );
 
   if (rows.length === 0) return null;
 
@@ -52,9 +50,14 @@ export function YearlyEstateCharts({ rows, breakdown }: Props) {
         </div>
         <div>
           <p className="mb-2 text-[10px] uppercase tracking-[0.16em] text-indigo-300/70">
-            End beneficiaries — 1st vs 2nd death
+            End beneficiaries — at projected deaths
           </p>
-          <YearlyEstateBeneficiaryChart breakdown={breakdown} colors={colors} />
+          <YearlyEstateBeneficiaryChart
+            recipients={recipients}
+            colors={colors}
+            firstDeathYear={firstDeathYear}
+            secondDeathYear={secondDeathYear}
+          />
         </div>
       </div>
     </section>

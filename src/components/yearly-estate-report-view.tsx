@@ -13,7 +13,7 @@ import {
 } from "@/lib/estate/yearly-estate-report";
 import { YearlyEstateTable } from "./yearly-estate-table";
 import { YearlyEstateCharts } from "./yearly-estate-charts";
-import { buildYearlyBeneficiaryBreakdown } from "@/lib/estate/yearly-beneficiary-breakdown";
+import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import type { OwnerDobs } from "./report-controls/age-helpers";
 import { buildLifeEventsByYear } from "@/lib/life-event-markers";
 
@@ -91,14 +91,22 @@ export default function YearlyEstateReportView({
     [clientData],
   );
 
-  const beneficiaryBreakdown = useMemo(() => {
+  const splitChartsData = useMemo(() => {
     if (!projection || !clientData) return null;
-    return buildYearlyBeneficiaryBreakdown(
+    const data = buildEstateTransferReportData({
       projection,
+      asOf: { kind: "split" },
       ordering,
       clientData,
       ownerNames,
-    );
+    });
+    return {
+      recipients: data.aggregateRecipientTotals.filter(
+        (r) => r.recipientKind !== "spouse",
+      ),
+      firstDeathYear: data.firstDeath?.year ?? null,
+      secondDeathYear: data.secondDeath?.year ?? null,
+    };
   }, [projection, clientData, ordering, ownerNames]);
 
   if (loadError) {
@@ -150,10 +158,12 @@ export default function YearlyEstateReportView({
         </div>
       )}
 
-      {beneficiaryBreakdown && (
+      {splitChartsData && (
         <YearlyEstateCharts
           rows={report.rows}
-          breakdown={beneficiaryBreakdown}
+          recipients={splitChartsData.recipients}
+          firstDeathYear={splitChartsData.firstDeathYear}
+          secondDeathYear={splitChartsData.secondDeathYear}
         />
       )}
 

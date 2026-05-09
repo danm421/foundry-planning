@@ -10,7 +10,7 @@ import {
   Legend,
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
-import type { YearlyBeneficiaryBreakdown } from "@/lib/estate/yearly-beneficiary-breakdown";
+import type { RecipientTotal } from "@/lib/estate/transfer-report";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -31,61 +31,52 @@ function truncate(s: string, n: number): string {
 }
 
 interface Props {
-  breakdown: YearlyBeneficiaryBreakdown;
+  /** Non-spouse recipient totals from a split-mode (actual projected death
+   *  years) call to buildEstateTransferReportData. Each entry carries the
+   *  net amount routed to the beneficiary at first and second death. */
+  recipients: RecipientTotal[];
   colors: Record<string, string>;
+  firstDeathYear: number | null;
+  secondDeathYear: number | null;
 }
 
 /**
- * Renders the final-year hypothetical inheritance per non-spouse beneficiary
- * — one bar per beneficiary, stacked by 1st-death (lighter) and 2nd-death
- * (full color). Uses the last row of the breakdown as the "if both die at
- * end of plan" snapshot. Beneficiaries with zero in that final year are
- * still shown so the visual ordering matches the lifetime sort.
+ * Renders one bar per non-spouse beneficiary, stacked by from-1st-death
+ * (lighter shade) and from-2nd-death (full color). Sourced from split-mode
+ * aggregate totals so the deaths are at their actual projected years.
  */
-export function YearlyEstateBeneficiaryChart({ breakdown, colors }: Props) {
+export function YearlyEstateBeneficiaryChart({
+  recipients,
+  colors,
+  firstDeathYear,
+  secondDeathYear,
+}: Props) {
   const data = useMemo(() => {
-    if (breakdown.rows.length === 0 || breakdown.beneficiaries.length === 0) {
-      return null;
-    }
-    const finalRow = breakdown.rows[breakdown.rows.length - 1];
-    const finalShares = new Map(
-      finalRow.beneficiaries.map((b) => [b.key, b]),
-    );
-    const labels = breakdown.beneficiaries.map((b) =>
-      truncate(b.recipientLabel, 14),
-    );
-    const firstData = breakdown.beneficiaries.map(
-      (b) => finalShares.get(b.key)?.fromFirstDeath ?? 0,
-    );
-    const secondData = breakdown.beneficiaries.map(
-      (b) => finalShares.get(b.key)?.fromSecondDeath ?? 0,
-    );
+    if (recipients.length === 0) return null;
     return {
-      labels,
+      labels: recipients.map((r) => truncate(r.recipientLabel, 14)),
       datasets: [
         {
           label: "From 1st Death",
-          data: firstData,
-          backgroundColor: breakdown.beneficiaries.map((b) =>
-            withAlpha(colors[b.key] ?? "#6b7280", "a6"),
+          data: recipients.map((r) => r.fromFirstDeath),
+          backgroundColor: recipients.map((r) =>
+            withAlpha(colors[r.key] ?? "#6b7280", "a6"),
           ),
           stack: "main",
           borderWidth: 0,
         },
         {
           label: "From 2nd Death",
-          data: secondData,
-          backgroundColor: breakdown.beneficiaries.map(
-            (b) => colors[b.key] ?? "#6b7280",
+          data: recipients.map((r) => r.fromSecondDeath),
+          backgroundColor: recipients.map(
+            (r) => colors[r.key] ?? "#6b7280",
           ),
           stack: "main",
           borderWidth: 0,
         },
       ],
     };
-  }, [breakdown, colors]);
-
-  const finalYear = breakdown.rows[breakdown.rows.length - 1]?.year;
+  }, [recipients, colors]);
 
   const options = useMemo(
     () => ({
@@ -103,8 +94,7 @@ export function YearlyEstateBeneficiaryChart({ breakdown, colors }: Props) {
           bodyColor: "#d1d5db",
           callbacks: {
             title: (items: Array<{ dataIndex: number }>) =>
-              breakdown.beneficiaries[items[0]?.dataIndex]?.recipientLabel ??
-              "",
+              recipients[items[0]?.dataIndex]?.recipientLabel ?? "",
             label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
               `${ctx.dataset.label}: ${fmt.format(Number(ctx.raw))}`,
           },
@@ -126,21 +116,30 @@ export function YearlyEstateBeneficiaryChart({ breakdown, colors }: Props) {
         },
       },
     }),
-    [breakdown.beneficiaries],
+    [recipients],
   );
 
   if (!data) return null;
 
+  const caption = buildCaption(firstDeathYear, secondDeathYear);
+
   return (
     <div className="space-y-2">
-      {finalYear != null && (
-        <p className="text-[11px] text-gray-400">
-          If both deaths occur by end of {finalYear}
-        </p>
-      )}
+      {caption && <p className="text-[11px] text-gray-400">{caption}</p>}
       <div style={{ height: 280 }}>
         <Bar data={data} options={options} />
       </div>
     </div>
   );
+}
+
+function buildCaption(
+  firstDeathYear: number | null,
+  secondDeathYear: number | null,
+): string | null {
+  if (firstDeathYear == null && secondDeathYear == null) return null;
+  if (firstDeathYear != null && secondDeathYear != null) {
+    return `Actual projected deaths · 1st in ${firstDeathYear}, 2nd in ${secondDeathYear}`;
+  }
+  return `Actual projected death · ${firstDeathYear ?? secondDeathYear}`;
 }
