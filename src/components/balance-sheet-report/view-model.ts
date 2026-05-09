@@ -124,6 +124,11 @@ export interface AssetRow {
   /** True when this row represents a business-entity flat valuation rather
    *  than a real account. Renders distinctly. */
   isFlatBusinessValue: boolean;
+  /** True when the source account has ≥2 owners. Used by OwnerChip to keep
+   *  the percent label visible on multi-owner accounts even when a slice has
+   *  drifted to ~0% / ~100%. False for single-owner accounts and flat
+   *  business-value rows. */
+  accountHasMultipleOwners: boolean;
 }
 
 export interface AssetCategoryGroup {
@@ -281,6 +286,11 @@ interface SliceCommon {
   /** sliceValue = account_value × percent. */
   value: number;
   hasLinkedMortgage: boolean;
+  /** True when the source account has ≥2 owners. Drives the owner-percent
+   *  label visibility — multi-owner accounts always show the percent so that
+   *  drift to ~0% / ~100% in a given year remains visible. Single-owner
+   *  accounts hide the label (it's always 100% by definition). */
+  accountHasMultipleOwners: boolean;
 }
 
 interface FamilySlice extends SliceCommon {
@@ -425,6 +435,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         ownerLabel: "", // filled in below
         value: sliceValue,
         hasLinkedMortgage,
+        accountHasMultipleOwners: acct.owners.length > 1,
       };
 
       if (owner.kind === "family_member") {
@@ -574,6 +585,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
         value: flat,
         hasLinkedMortgage: false,
         isFlatBusinessValue: true,
+        accountHasMultipleOwners: false,
       });
       inEstateSlicesByCategory.set("business", list);
     } else {
@@ -599,6 +611,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
           value: sliceValue,
           hasLinkedMortgage: false,
           isFlatBusinessValue: true,
+          accountHasMultipleOwners: false,
         });
         inEstateSlicesByCategory.set("business", list);
       }
@@ -625,6 +638,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
           // just the standalone flat valuation. The panel uses this flag to
           // suppress the redundant entity-name chip on the row.
           isFlatBusinessValue: true,
+          accountHasMultipleOwners: false,
         });
         inEstateSlicesByCategory.set("business", list);
       }
@@ -640,6 +654,7 @@ export function buildViewModel(input: BuildViewModelInput): BalanceSheetViewMode
           value: agg.outOfEstate,
           hasLinkedMortgage: false,
           isFlatBusinessValue: true,
+          accountHasMultipleOwners: false,
         });
       }
     }
@@ -948,6 +963,7 @@ function sliceToRow(slice: Slice): AssetRow {
       value: slice.value,
       hasLinkedMortgage: slice.hasLinkedMortgage,
       isFlatBusinessValue: false,
+      accountHasMultipleOwners: slice.accountHasMultipleOwners,
     };
   }
   return {
@@ -961,6 +977,7 @@ function sliceToRow(slice: Slice): AssetRow {
     value: slice.value,
     hasLinkedMortgage: slice.hasLinkedMortgage,
     isFlatBusinessValue: false,
+    accountHasMultipleOwners: slice.accountHasMultipleOwners,
   };
 }
 
