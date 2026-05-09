@@ -306,13 +306,8 @@ export const investmentsArtifact: ReportArtifact<InvestmentsData, typeof options
   optionsSchema,
   defaultOptions: { drillDownClasses: [] },
 
-  fetchData: async ({ clientId, opts }) => {
-    // Use getOrgId (same as the page) — requireOrgId would also work but the
-    // page accepts userId-as-firmId for solo-advisor accounts.
-    const { getOrgId } = await import("@/lib/db-helpers");
-    const firmId = await getOrgId();
-    return fetchInvestmentsData(clientId, firmId, opts);
-  },
+  fetchData: ({ clientId, firmId, opts }) =>
+    fetchInvestmentsData(clientId, firmId, opts),
 
   renderPdf: ({ data, opts, variant, charts }) => {
     const showCharts = variant === "chart" || variant === "chart+data";

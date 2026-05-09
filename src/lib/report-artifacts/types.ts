@@ -33,6 +33,7 @@ export type RenderPdfInput<TData, TOpts> = {
 
 export type FetchDataInput<TOptsSchema extends z.ZodTypeAny> = {
   clientId: string;
+  firmId: string;
   opts: z.infer<TOptsSchema>;
 };
 
