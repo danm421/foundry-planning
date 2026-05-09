@@ -73,28 +73,12 @@ d("gifts tenant isolation", () => {
 
   async function cleanup() {
     const { db } = dbMod;
-    const {
-      clients,
-      familyMembers,
-      accounts,
-      scenarios,
-      entities,
-      gifts,
-    } = schema;
+    const { clients } = schema;
     const { inArray } = drizzleOrm;
-
-    const testClients = await db
-      .select({ id: clients.id })
-      .from(clients)
-      .where(inArray(clients.firmId, [FIRM_A, FIRM_B]));
-    const ids = testClients.map((c) => c.id);
-    if (ids.length === 0) return;
-
-    await db.delete(gifts).where(inArray(gifts.clientId, ids));
-    await db.delete(entities).where(inArray(entities.clientId, ids));
-    await db.delete(accounts).where(inArray(accounts.clientId, ids));
-    await db.delete(scenarios).where(inArray(scenarios.clientId, ids));
-    await db.delete(familyMembers).where(inArray(familyMembers.clientId, ids));
+    // Delete clients in a single statement so cascade flows
+    // accounts → account_owners atomically. Splitting deletes across
+    // statements lets the deferred sum-check trigger fire between them
+    // and raise on transient zero-owner state.
     await db.delete(clients).where(inArray(clients.firmId, [FIRM_A, FIRM_B]));
   }
 

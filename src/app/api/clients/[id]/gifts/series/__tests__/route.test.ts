@@ -82,28 +82,11 @@ d("gift_series CRUD", () => {
 
   async function cleanup() {
     const { db } = dbMod;
-    const { clients, scenarios, familyMembers, entities } = schema;
-
-    const testClients = await db
-      .select({ id: clients.id })
-      .from(clients)
-      .where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
-    const ids = testClients.map((c) => c.id);
-    if (ids.length === 0) return;
-
-    // Delete gift_series before scenarios (explicit, consistent with pattern)
-    await db
-      .delete(schema.giftSeries)
-      .where(drizzleOrm.inArray(schema.giftSeries.clientId, ids));
-    await db
-      .delete(entities)
-      .where(drizzleOrm.inArray(entities.clientId, ids));
-    await db
-      .delete(scenarios)
-      .where(drizzleOrm.inArray(scenarios.clientId, ids));
-    await db
-      .delete(familyMembers)
-      .where(drizzleOrm.inArray(familyMembers.clientId, ids));
+    const { clients } = schema;
+    // Delete clients in a single statement so cascade flows
+    // accounts → account_owners atomically. Splitting deletes across
+    // statements lets the deferred sum-check trigger fire between them
+    // and raise on transient zero-owner state.
     await db.delete(clients).where(drizzleOrm.eq(clients.firmId, TEST_FIRM));
   }
 
