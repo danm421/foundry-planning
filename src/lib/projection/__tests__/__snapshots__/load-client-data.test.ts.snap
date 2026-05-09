@@ -78,6 +78,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "growthSource": "custom",
       "id": "00000000-0000-0000-0000-000000000050",
       "inflationStartYear": undefined,
+      "isDefault": false,
       "name": "Living Expenses",
       "ownerEntityId": undefined,
       "scheduleOverrides": undefined,
