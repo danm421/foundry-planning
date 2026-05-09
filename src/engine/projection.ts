@@ -15,6 +15,7 @@ import type {
   HypotheticalEstateTax,
 } from "./types";
 import { computeEntityCashFlow, type EntityMetadata } from "./entity-cashflow";
+import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
 import { computeIncome } from "./income";
 import { computeExpenses } from "./expenses";
@@ -3466,6 +3467,30 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     incomes: currentIncomes,
     expenses: lastAllExpenses,
     entityFlowOverrides: data.entityFlowOverrides ?? [],
+  });
+
+  // Per-family-member locked-share ledger for jointly-held accounts. Only
+  // accounts with ≥2 distinct family-member owners get a per-member ledger.
+  const accountFamilyOwners = new Map<string, Array<{ familyMemberId: string; percent: number }>>();
+  for (const acct of data.accounts ?? []) {
+    const fmOwners = (acct.owners ?? [])
+      .filter(
+        (o): o is { kind: "family_member"; familyMemberId: string; percent: number } =>
+          o.kind === "family_member",
+      )
+      .map((o) => ({ familyMemberId: o.familyMemberId, percent: o.percent }));
+    if (fmOwners.length >= 2) {
+      accountFamilyOwners.set(acct.id, fmOwners);
+    }
+  }
+  computeFamilyAccountShares({
+    years,
+    accountFamilyOwners,
+    clientFamilyMemberId: clientFmId,
+    spouseFamilyMemberId: spouseFmId,
+    incomes: currentIncomes,
+    gifts: data.giftEvents ?? [],
+    familyMembers: data.familyMembers ?? [],
   });
 
   return years;
