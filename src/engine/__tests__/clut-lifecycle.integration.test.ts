@@ -38,7 +38,7 @@ describe("CLUT — full lifecycle integration", () => {
     const years = runProjection(data);
 
     it("auto-emits remainder-interest gift in source ClientData (non-zero amount)", () => {
-      const remainderGift = data.gifts.find(
+      const remainderGift = data.gifts?.find(
         (g) => g.eventKind === "clut_remainder_interest",
       );
       expect(remainderGift).toBeDefined();

@@ -49,8 +49,6 @@ const ALLOWLIST: Record<string, string> = {
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/balance-sheet-report/export-pdf/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
-  "src/app/api/clients/[id]/entities/[entityId]/flow-overrides/route.ts":
-    "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/liquidity-report/export-pdf/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/deductions/[deductionId]/route.ts":

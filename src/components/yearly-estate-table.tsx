@@ -147,22 +147,6 @@ export function YearlyEstateTable({
               );
             })}
           </tbody>
-          <tfoot className="border-t border-indigo-900/40">
-            <tr className="bg-indigo-950/30 text-sm font-semibold text-gray-50">
-              <td className="px-3 py-2" colSpan={2}>
-                Lifetime totals
-              </td>
-              {visibleCols.map((c) =>
-                c.total !== undefined ? (
-                  <FootCell key={c.key}>{fmt.format(c.total)}</FootCell>
-                ) : (
-                  <FootCell key={c.key} muted>
-                    —
-                  </FootCell>
-                ),
-              )}
-            </tr>
-          </tfoot>
         </table>
       </div>
     </section>
@@ -360,19 +344,6 @@ function Td({
   const className =
     "px-3 py-1.5 text-right font-mono tabular-nums " +
     (bold ? "font-semibold text-gray-50" : "text-gray-300");
-  return <td className={className}>{children}</td>;
-}
-
-function FootCell({
-  children,
-  muted,
-}: {
-  children: React.ReactNode;
-  muted?: boolean;
-}) {
-  const className =
-    "px-3 py-2 text-right font-mono tabular-nums " +
-    (muted ? "text-gray-500" : "");
   return <td className={className}>{children}</td>;
 }
 

@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
+import type { ProjectionResult } from "@/engine";
 import type {
   Account,
   ClientData,
   EntitySummary,
-  ProjectionResult,
   ProjectionYear,
   HypotheticalEstateTax,
   EstateTaxResult,
@@ -130,7 +130,7 @@ function htMarried(opts: {
       finalDeathTransfers: [],
       totals: { federal: 0, state: 0, admin: 0, total: 0 },
     },
-  } as HypotheticalEstateTax;
+  } as unknown as HypotheticalEstateTax;
 }
 
 describe("buildYearlyLiquidityReport — iteration", () => {

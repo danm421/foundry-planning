@@ -45,7 +45,7 @@ interface Props {
   rows: YearlyLiquidityReport["rows"];
   showPortfolio: boolean;
   /** Set by the view to grab a PNG of the canvas for the PDF export. */
-  chartRef?: Ref<ChartJS<"bar" | "line">>;
+  chartRef?: Ref<ChartJS<"bar" | "line"> | undefined>;
 }
 
 export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {

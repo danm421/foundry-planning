@@ -1,4 +1,5 @@
 import { ownersForYear } from "@/engine/ownership";
+import type { ProjectionResult } from "@/engine";
 import type {
   Account,
   ClientData,
@@ -7,7 +8,6 @@ import type {
   GiftEvent,
   HypotheticalEstateTax,
   HypotheticalEstateTaxOrdering,
-  ProjectionResult,
   ProjectionYear,
 } from "@/engine/types";
 import { inEstateWeight, outOfEstateWeight } from "./in-estate-weights";

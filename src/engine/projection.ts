@@ -2245,7 +2245,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         (o) => o.entityId === entity.id && o.year === year,
       );
       if (!ovr) continue;
-      const cashAccountId = resolveCashAccount(entity.id, null);
+      const cashAccountId = resolveCashAccount(entity.id);
       if (ovr.incomeAmount != null && ovr.incomeAmount !== 0) {
         creditCash(cashAccountId, ovr.incomeAmount, {
           category: "income",

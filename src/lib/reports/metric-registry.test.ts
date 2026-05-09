@@ -67,6 +67,7 @@ function makeYear(overrides: Partial<ProjectionYear> = {}): ProjectionYear {
     accountLedgers: {},
     accountBasisBoY: {},
     liabilityBalancesBoY: { mortgage: 200_000 },
+    charitableOutflows: 0,
     // The metric tests don't read this; satisfy the required type with a
     // typed stub instead of a full estate-tax tree.
     hypotheticalEstateTax: {} as unknown as HypotheticalEstateTax,

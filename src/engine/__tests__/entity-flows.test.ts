@@ -289,6 +289,7 @@ describe("flowMode = 'schedule' (custom-schedule mode)", () => {
     const entity: EntitySummary = {
       id: "e1",
       isGrantor: false,
+      includeInPortfolio: false,
       entityType: "llc",
       distributionPolicyPercent: 0.5,
       flowMode: "schedule",
@@ -300,6 +301,7 @@ describe("flowMode = 'schedule' (custom-schedule mode)", () => {
     const entity: EntitySummary = {
       id: "e1",
       isGrantor: false,
+      includeInPortfolio: false,
       entityType: "llc",
       distributionPolicyPercent: 0.5,
       flowMode: "schedule",

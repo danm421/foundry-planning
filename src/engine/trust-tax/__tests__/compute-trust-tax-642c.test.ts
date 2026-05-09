@@ -3,15 +3,15 @@ import { computeTrustTax } from "../compute-trust-tax";
 import type { BracketTier } from "@/lib/tax/types";
 
 const INCOME_BRACKETS: BracketTier[] = [
-  { min: 0, rate: 0.1 },
-  { min: 3_000, rate: 0.24 },
-  { min: 11_000, rate: 0.35 },
-  { min: 15_200, rate: 0.37 },
+  { from: 0, to: 3_000, rate: 0.1 },
+  { from: 3_000, to: 11_000, rate: 0.24 },
+  { from: 11_000, to: 15_200, rate: 0.35 },
+  { from: 15_200, to: null, rate: 0.37 },
 ];
 const CG_BRACKETS: BracketTier[] = [
-  { min: 0, rate: 0 },
-  { min: 3_150, rate: 0.15 },
-  { min: 15_450, rate: 0.2 },
+  { from: 0, to: 3_150, rate: 0 },
+  { from: 3_150, to: 15_450, rate: 0.15 },
+  { from: 15_450, to: null, rate: 0.2 },
 ];
 
 describe("computeTrustTax — §642(c) charitable deduction", () => {

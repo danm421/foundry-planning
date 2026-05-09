@@ -25,7 +25,7 @@ vi.mock("@/lib/report-artifacts/index", () => ({
   listArtifacts: () => [],
 }));
 
-const getRegisteredChartsMock = vi.fn(() => [] as unknown[]);
+const getRegisteredChartsMock = vi.fn<(...args: unknown[]) => unknown[]>(() => []);
 vi.mock("@/lib/report-artifacts/chart-capture", () => ({
   getRegisteredCharts: (...args: unknown[]) => getRegisteredChartsMock(...args),
 }));
