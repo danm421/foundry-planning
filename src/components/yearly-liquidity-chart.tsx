@@ -72,16 +72,7 @@ export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
     })[] = [];
 
     // Bar segments share order: 1 (drawn first, appear behind).
-    if (showPortfolio) {
-      datasets.push({
-        type: "bar",
-        label: "Total Portfolio Assets",
-        data: portfolio,
-        backgroundColor: "#3b82f6",
-        stack: "stack",
-        order: 1,
-      });
-    }
+    // Stack order (bottom → top): insurance segments, then portfolio assets.
     datasets.push(
       {
         type: "bar",
@@ -99,20 +90,30 @@ export function YearlyLiquidityChart({ rows, showPortfolio, chartRef }: Props) {
         stack: "stack",
         order: 1,
       },
-      {
-        type: "line",
-        label: "Total Transfer Cost",
-        data: transfer,
-        borderColor: "#ef4444",
-        backgroundColor: "#ef4444",
-        borderWidth: 4,
-        pointRadius: 3,
-        tension: 0,
-        fill: false,
-        // Lower order than the bars → drawn last → on top.
-        order: 0,
-      },
     );
+    if (showPortfolio) {
+      datasets.push({
+        type: "bar",
+        label: "Total Portfolio Assets",
+        data: portfolio,
+        backgroundColor: "#3b82f6",
+        stack: "stack",
+        order: 1,
+      });
+    }
+    datasets.push({
+      type: "line",
+      label: "Total Transfer Cost",
+      data: transfer,
+      borderColor: "#ef4444",
+      backgroundColor: "#ef4444",
+      borderWidth: 4,
+      pointRadius: 3,
+      tension: 0,
+      fill: false,
+      // Lower order than the bars → drawn last → on top.
+      order: 0,
+    });
 
     return { labels, datasets };
   }, [rows, showPortfolio]);
