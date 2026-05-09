@@ -257,6 +257,8 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     entities: prepared.entities,
     deceasedFmId,
     survivorFmId: null, // no survivor at final death
+    entityAccountSharesEoY: input.entityAccountSharesEoY,
+    familyAccountSharesEoY: input.familyAccountSharesEoY,
   });
 
   // Working state for the drain passes.
