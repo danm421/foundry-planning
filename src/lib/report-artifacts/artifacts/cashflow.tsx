@@ -9,6 +9,7 @@ import type { ReportArtifact, FetchDataResult, RenderPdfInput, CsvFile, ChartIma
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
 import type { ProjectionYear, ClientData } from "@/engine";
+import { serializeCsv } from "../csv";
 
 export const optionsSchema = z.object({
   scenarioId: z.string().nullable().default(null),
@@ -382,8 +383,35 @@ function renderCashflowPdf({ data, variant, charts }: RenderPdfInput<CashflowDat
   );
 }
 
-function cashflowToCsv(_data: CashflowData, _opts: CashflowOptions): CsvFile[] {
-  throw new Error("not implemented");
+function sectionToCsv(section: CashflowSection, ageByYear: Map<number, string>): string {
+  if (section.rows.length === 0) return "";
+  const headerLabels = section.headers.map((h) => h.label);
+  const bodyRows = section.rows.map((r) => {
+    return section.headers.map((h) => {
+      if (h.id === "year") return String(r.year);
+      if (h.id === "age") return r.age || (ageByYear.get(r.year) ?? "");
+      const v = r.cells[h.id];
+      return typeof v === "number" ? String(Math.round(v)) : "";
+    });
+  });
+  const totalsRow = section.headers.map((h, i) => {
+    if (i === 0) return "TOTAL";
+    if (h.id === "age") return "";
+    const v = section.totals[h.id];
+    return typeof v === "number" ? String(Math.round(v)) : "";
+  });
+  return serializeCsv([headerLabels, ...bodyRows, totalsRow]);
+}
+
+function cashflowToCsv(data: CashflowData, _opts: CashflowOptions): CsvFile[] {
+  const ageByYear = new Map(data.sections.base.rows.map((r) => [r.year, r.age]));
+  const out: CsvFile[] = [];
+  for (const id of SECTION_ORDER) {
+    const section = data.sections[id];
+    if (section.rows.length === 0) continue;
+    out.push({ name: `cashflow-${id}.csv`, contents: sectionToCsv(section, ageByYear) });
+  }
+  return out;
 }
 
 export const cashflowArtifact: ReportArtifact<CashflowData, typeof optionsSchema> = {

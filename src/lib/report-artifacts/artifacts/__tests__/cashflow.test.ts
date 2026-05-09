@@ -311,3 +311,53 @@ describe("cashflowArtifact.renderPdf", () => {
     expect(node).not.toBeNull();
   });
 });
+
+describe("cashflowArtifact.toCsv", () => {
+  const data: CashflowData = {
+    clientName: "Doe Family",
+    scenarioLabel: "Base Case",
+    yearRange: [2026, 2026],
+    sections: {
+      base: {
+        id: "base", title: "Cash Flow — Summary",
+        headers: [
+          { id: "year", label: "Year", align: "left" },
+          { id: "age", label: "Age(s)", align: "left" },
+          { id: "totalIncome", label: "Income", align: "right" },
+          { id: "totalExpenses", label: "Expenses", align: "right" },
+          { id: "netCashFlow", label: "Net Cash Flow", align: "right" },
+          { id: "portfolioTotal", label: "Portfolio", align: "right" },
+        ],
+        rows: [{ year: 2026, age: "60 / 58", cells: { totalIncome: 200_000, totalExpenses: 134_000, netCashFlow: 66_000, portfolioTotal: 500_000 } }],
+        totals: { totalIncome: 200_000, totalExpenses: 134_000, netCashFlow: 66_000, portfolioTotal: 500_000 },
+      },
+      income: { id: "income", title: "Income Detail",
+        headers: [{ id: "year", label: "Year", align: "left" }, { id: "salaries", label: "Salaries", align: "right" }, { id: "total", label: "Total", align: "right" }],
+        rows: [{ year: 2026, age: "", cells: { salaries: 100_000, total: 100_000 } }],
+        totals: { salaries: 100_000, total: 100_000 },
+      },
+      expenses: { id: "expenses", title: "Expenses Detail", headers: [], rows: [], totals: {} },
+      withdrawals: { id: "withdrawals", title: "Net Cash Flow Detail", headers: [], rows: [], totals: {} },
+      assets: { id: "assets", title: "Portfolio Detail", headers: [], rows: [], totals: {} },
+    },
+  };
+
+  it("returns one file per non-empty section", async () => {
+    const { cashflowArtifact: art } = await import("../cashflow");
+    const files = art.toCsv!(data, { scenarioId: null, yearStart: null, yearEnd: null });
+    const names = files.map((f) => f.name).sort();
+    expect(names).toContain("cashflow-base.csv");
+    expect(names).toContain("cashflow-income.csv");
+    expect(names).not.toContain("cashflow-expenses.csv");  // empty section omitted
+  });
+
+  it("base CSV has header row, body row, and totals row", async () => {
+    const { cashflowArtifact: art } = await import("../cashflow");
+    const files = art.toCsv!(data, { scenarioId: null, yearStart: null, yearEnd: null });
+    const base = files.find((f) => f.name === "cashflow-base.csv")!;
+    const lines = base.contents.trim().split("\r\n");
+    expect(lines[0]).toBe("Year,Age(s),Income,Expenses,Net Cash Flow,Portfolio");
+    expect(lines[1]).toBe("2026,60 / 58,200000,134000,66000,500000");
+    expect(lines[2]).toBe("TOTAL,,200000,134000,66000,500000");
+  });
+});
