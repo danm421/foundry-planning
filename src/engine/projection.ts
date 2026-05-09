@@ -15,6 +15,7 @@ import type {
   HypotheticalEstateTax,
 } from "./types";
 import { computeEntityCashFlow, type EntityMetadata } from "./entity-cashflow";
+import { accrueLockedEntityShare } from "./locked-shares";
 import { computeFamilyAccountShares } from "./family-cashflow";
 import { computeGiftLedger, type GiftLedgerYear } from "./gift-ledger";
 import { computeIncome } from "./income";
@@ -536,6 +537,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // original §7520 rate is subtracted from the original income-interest
   // deduction to compute recapture as ordinary income on the final 1040.
   const clutPaymentsByTrustId: Map<string, number[]> = new Map();
+
+  // Per-year locked-share carry for split-owned accounts. Mirrors
+  // computeEntityCashFlow's post-loop accounting so the in-loop death-event
+  // path sees the same locked entity shares the post-loop pass would have
+  // produced. Carry persists year-over-year; passive growth accrues
+  // proportionally, household flows do not erode it. Family-member locked
+  // shares are surfaced for parity with the post-loop family-cashflow pass
+  // even though computeGrossEstate doesn't yet consume them.
+  const lockedEntityShareCarry = new Map<string, Map<string, number>>();
+  const lockedFamilyShareCarry = new Map<string, Map<string, number>>();
 
   for (
     let year = planSettings.planStartYear;
@@ -3288,6 +3299,34 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         : {}),
     });
 
+    // Roll the locked-share carry forward for this year so the death-event
+    // call sites can pass an accurate entityAccountSharesEoY snapshot. We
+    // recompute it for every year (not just death years) so the carry stays
+    // monotonic — accrueLockedEntityShare relies on the prior EoY being
+    // present for every split-owned account. This is independent of the
+    // post-loop computeEntityCashFlow / computeFamilyAccountShares passes;
+    // both paths consume accrueLockedEntityShare and produce the same
+    // numbers.
+    const thisYearForCarry = years[years.length - 1];
+    for (const acct of workingAccounts) {
+      const ledger = thisYearForCarry.accountLedgers[acct.id];
+      if (!ledger) continue;
+      for (const o of acct.owners) {
+        if (o.kind !== "entity") continue;
+        if (o.percent >= 1) continue; // 100%-entity needs no carry — full ledger is the share
+        const carried = lockedEntityShareCarry.get(o.entityId)?.get(acct.id);
+        const acc = accrueLockedEntityShare({
+          carriedBoY: carried,
+          ledger: { beginningValue: ledger.beginningValue, growth: ledger.growth },
+          percent: o.percent,
+        });
+        if (!lockedEntityShareCarry.has(o.entityId)) {
+          lockedEntityShareCarry.set(o.entityId, new Map());
+        }
+        lockedEntityShareCarry.get(o.entityId)!.set(acct.id, acc.lockedEoY);
+      }
+    }
+
     // Death event (spec 4b) — fires exactly once at the first death year.
     if (
       firstDeathYear != null &&
@@ -3319,6 +3358,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         annualExclusionsByYear,
         dsueReceived: 0, // first decedent has no prior DSUE
         priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
+        entityAccountSharesEoY: lockedEntityShareCarry,
+        familyAccountSharesEoY: lockedFamilyShareCarry,
       });
 
       // Death-event creates synthetic accounts/liabilities mid-projection with
@@ -3383,6 +3424,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         annualExclusionsByYear,
         dsueReceived: stashedDSUE,
         priorTaxableGifts: data.planSettings.priorTaxableGifts ?? { client: 0, spouse: 0 },
+        entityAccountSharesEoY: lockedEntityShareCarry,
+        familyAccountSharesEoY: lockedFamilyShareCarry,
       });
 
       // Same normalization as first-death — keeps fractional reads consistent
