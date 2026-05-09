@@ -69,7 +69,12 @@ export function ExportModal({ reportId, open, onOpenChange, clientId: clientIdPr
         }),
       });
       if (!res.ok) {
-        setError(`Export failed (${res.status})`);
+        const body = await res.json().catch(() => null) as { error?: string; issues?: unknown } | null;
+        const detail = body?.error
+          ? `${body.error}${body.issues ? `: ${JSON.stringify(body.issues)}` : ""}`
+          : "";
+        console.error("Export failed", res.status, body);
+        setError(`Export failed (${res.status})${detail ? ` — ${detail}` : ""}`);
         return;
       }
       const blob = await res.blob();

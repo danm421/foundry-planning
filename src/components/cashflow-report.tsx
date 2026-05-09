@@ -2037,22 +2037,14 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   return (
     <div>
-      {/* Year-range slider + export */}
-      <div className="mb-4 flex items-center gap-3">
+      {/* Year-range slider */}
+      <div className="mb-4">
         <YearRangeSlider
           min={planStartYear}
           max={planEndYear}
           value={yearRange}
           onChange={setYearRange}
           clientRetirementYear={clientRetirementYear}
-        />
-        <ExportButton
-          reportId="cashflow"
-          optsOverride={{
-            scenarioId,
-            yearStart: yearRange[0],
-            yearEnd: yearRange[1],
-          }}
         />
       </div>
 
@@ -2089,12 +2081,15 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               </div>
             </div>
             <div style={{ height: 300 }}>
-              <div ref={portfolioChartRef} style={{ display: chartView === "portfolio" ? "block" : "none", height: "100%" }}>
-                <Bar data={portfolioChartData} options={portfolioChartOptions} />
-              </div>
-              <div ref={cashflowChartRef} style={{ display: chartView === "cashflow" ? "block" : "none", height: "100%" }}>
-                <Chart type="bar" data={cashflowChartData} options={cashflowChartOptions} />
-              </div>
+              {chartView === "portfolio" ? (
+                <div ref={portfolioChartRef} style={{ height: "100%" }}>
+                  <Bar data={portfolioChartData} options={portfolioChartOptions} />
+                </div>
+              ) : (
+                <div ref={cashflowChartRef} style={{ height: "100%" }}>
+                  <Chart type="bar" data={cashflowChartData} options={cashflowChartOptions} />
+                </div>
+              )}
             </div>
           </>
         ) : (
@@ -2206,6 +2201,17 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             })}
           </tbody>
         </table>
+      </div>
+
+      <div className="mt-3 flex justify-start">
+        <ExportButton
+          reportId="cashflow"
+          optsOverride={{
+            scenarioId,
+            yearStart: yearRange[0],
+            yearEnd: yearRange[1],
+          }}
+        />
       </div>
 
       {/* Account Ledger Modal */}
