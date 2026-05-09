@@ -33,6 +33,12 @@ function delta(a?: number, b?: number): number | undefined {
   if (a === undefined || b === undefined) return undefined;
   return b - a;
 }
+function combinedTotal(first?: EstateTaxResult, second?: EstateTaxResult): number | undefined {
+  const a = subtotal(first);
+  const b = subtotal(second);
+  if (a === undefined && b === undefined) return undefined;
+  return (a ?? 0) + (b ?? 0);
+}
 
 interface Props {
   plan1Result: ProjectionResult;
@@ -58,8 +64,8 @@ export function EstateTaxComparisonTable({ plan1Result, plan2Result, plan1Label,
     { label: "Subtotal", a: subtotal(s1), b: subtotal(s2), better: "lower" as const, bold: true },
     {
       label: "Combined total",
-      a: (subtotal(f1) ?? 0) + (subtotal(s1) ?? 0),
-      b: (subtotal(f2) ?? 0) + (subtotal(s2) ?? 0),
+      a: combinedTotal(f1, s1),
+      b: combinedTotal(f2, s2),
       better: "lower" as const,
       bold: true,
     },

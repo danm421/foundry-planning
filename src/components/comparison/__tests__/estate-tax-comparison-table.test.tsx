@@ -42,4 +42,19 @@ describe("EstateTaxComparisonTable", () => {
     );
     expect(container.textContent).toContain("—");
   });
+
+  it("shows '—' for combined total when a plan has zero death events", () => {
+    const { getByText } = render(
+      <EstateTaxComparisonTable
+        plan1Result={mkResult(undefined, undefined)}
+        plan2Result={mkResult(2050, 2055, 100, 0)}
+        plan1Label="Base"
+        plan2Label="Other"
+      />,
+    );
+    const combinedRow = getByText("Combined total").parentElement!;
+    // Plan 1 cell should be '—' (not '$0'), since plan 1 has no death events at all.
+    expect(combinedRow.textContent).toContain("—");
+    expect(combinedRow.textContent).not.toContain("$0");
+  });
 });
