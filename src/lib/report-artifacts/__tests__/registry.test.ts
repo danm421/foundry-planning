@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { z } from "zod";
 import { _resetRegistry, registerArtifact, getArtifact, listArtifacts } from "../registry";
 import type { ReportArtifact } from "../types";
@@ -37,5 +37,16 @@ describe("registry", () => {
     registerArtifact(fakeArtifact("b"));
     registerArtifact(fakeArtifact("c"));
     expect(listArtifacts().map((a) => a.id)).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("bootstrap (index.ts)", () => {
+  it("registers investmentsArtifact when index is imported", async () => {
+    _resetRegistry();
+    // Re-evaluate the bootstrap module so register runs against the fresh registry.
+    vi.resetModules();
+    await import("../index");
+    const { getArtifact } = await import("../registry");
+    expect(getArtifact("investments")?.id).toBe("investments");
   });
 });
