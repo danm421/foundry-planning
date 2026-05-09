@@ -1135,6 +1135,9 @@ export const expenses = pgTable("expenses", {
   ),
   deductionType: deductionTypeEnum("deduction_type"),
   source: sourceEnum("source").notNull().default("manual"),
+  // Marks the seeded living-expense rows that are auto-created for every client
+  // (current + retirement). Protected from deletion by API + UI.
+  isDefault: boolean("is_default").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

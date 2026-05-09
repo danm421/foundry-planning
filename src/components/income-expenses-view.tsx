@@ -83,6 +83,7 @@ interface Expense {
   startYearRef?: string | null;
   endYearRef?: string | null;
   deductionType?: string | null;
+  isDefault?: boolean;
 }
 
 interface SavingsRule {
@@ -1547,7 +1548,7 @@ export default function IncomeExpensesView({
                         key={expense.id}
                         onClick={() => !expenseEdit && setExpenseDialog({ open: true, editing: expense })}
                         editMode={expenseEdit}
-                        onDelete={() => setDeletingExpense(expense)}
+                        onDelete={expense.isDefault ? undefined : () => setDeletingExpense(expense)}
                         label={expense.name}
                         meta={[entityName ?? null]}
                         starts={yearsDescriptor(expense.startYear, expense.endYear, planStart, planEnd)}
@@ -1622,9 +1623,13 @@ export default function IncomeExpensesView({
             if (mode === "create") setExpenseList((prev) => [...prev, expense]);
             else setExpenseList((prev) => prev.map((e) => (e.id === expense.id ? expense : e)));
           }}
-          onRequestDelete={() => {
-            if (expenseDialog.editing) setDeletingExpense(expenseDialog.editing);
-          }}
+          onRequestDelete={
+            expenseDialog.editing && !expenseDialog.editing.isDefault
+              ? () => {
+                  if (expenseDialog.editing) setDeletingExpense(expenseDialog.editing);
+                }
+              : undefined
+          }
           schedule={expenseDialog.editing ? expenseSchedules[expenseDialog.editing.id] : undefined}
           resolvedInflationRate={resolvedInflationRate}
         />

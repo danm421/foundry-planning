@@ -93,6 +93,7 @@ export interface ExpenseView {
   startYearRef?: string | null;
   endYearRef?: string | null;
   deductionType?: string | null;
+  isDefault?: boolean;
 }
 
 export function expenseEngineToView(expense: EngineExpense): ExpenseView {
@@ -111,6 +112,7 @@ export function expenseEngineToView(expense: EngineExpense): ExpenseView {
     startYearRef: expense.startYearRef ?? null,
     endYearRef: expense.endYearRef ?? null,
     deductionType: expense.deductionType ?? null,
+    isDefault: expense.isDefault ?? false,
   };
 }
 

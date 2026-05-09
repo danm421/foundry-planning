@@ -216,6 +216,7 @@ export async function POST(request: NextRequest) {
         endYearRef: seed.endYearRef,
         growthRate: "0.03",
         inflationStartYear: seed.inflationStartYear,
+        isDefault: true,
       }))
     );
 

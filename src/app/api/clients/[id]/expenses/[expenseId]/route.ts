@@ -113,6 +113,18 @@ export async function DELETE(
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
+    // Protect the seeded current/retirement living-expense rows — every client needs them.
+    const [target] = await db
+      .select()
+      .from(expenses)
+      .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, id)));
+    if (target?.isDefault) {
+      return NextResponse.json(
+        { error: "Default living-expense rows cannot be deleted." },
+        { status: 400 }
+      );
+    }
+
     await db
       .delete(expenses)
       .where(and(eq(expenses.id, expenseId), eq(expenses.clientId, id)));

@@ -592,6 +592,8 @@ export interface Expense {
    *  this synthetic expense. Used by downstream consumers (cash routing, UI
    *  disambiguation, payout transform) to link the expense to its policy. */
   sourcePolicyAccountId?: string;
+  /** Marks the auto-seeded current/retirement living expenses; protected from deletion. */
+  isDefault?: boolean;
   // ── View-only metadata ─────────────────────────────────────────────
   // Carried through from the DB row so page-level adapters can render
   // milestone-relative editing UI. Engine math ignores these fields.

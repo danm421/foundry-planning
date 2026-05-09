@@ -232,6 +232,7 @@ type RawExpense = {
   startYearRef?: string | null;
   endYearRef?: string | null;
   scheduleOverrides?: Record<number, number>;
+  isDefault?: boolean | null;
 };
 
 export function resolveExpenseFromRaw(
@@ -256,6 +257,7 @@ export function resolveExpenseFromRaw(
     startYearRef: raw.startYearRef ?? null,
     endYearRef: raw.endYearRef ?? null,
     growthSource: raw.growthSource ?? null,
+    isDefault: raw.isDefault ?? false,
   };
 }
 

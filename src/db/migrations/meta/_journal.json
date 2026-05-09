@@ -582,6 +582,13 @@
       "when": 1778266895990,
       "tag": "0082_entity_value_growth_rate",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1778335747775,
+      "tag": "0083_cheerful_the_professor",
+      "breakpoints": true
     }
   ]
 }

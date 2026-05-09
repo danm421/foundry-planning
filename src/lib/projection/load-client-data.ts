@@ -598,6 +598,7 @@ export const loadClientDataWithContext = cache(
           startYearRef: e.startYearRef,
           endYearRef: e.endYearRef,
           scheduleOverrides: expenseOverrideMap.get(e.id),
+          isDefault: e.isDefault,
         },
         resolutionCtx,
       ),
