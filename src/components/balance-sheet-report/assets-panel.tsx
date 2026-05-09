@@ -30,7 +30,11 @@ function YoyBadge({ yoy }: { yoy: YoyResult | null }) {
 }
 
 function OwnerChip({ row }: { row: AssetRow }) {
-  const showPercent = row.ownerPercent < 0.9999;
+  // Show the percent on every multi-owner account — even if this slice has
+  // drifted to ~0% or ~100% in this projection year. Hiding it would mask
+  // exactly the drift this view is meant to surface. Single-owner accounts
+  // hide the label (always 100% by definition).
+  const showPercent = row.accountHasMultipleOwners;
   return (
     <span className="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-300">
       {row.ownerLabel}

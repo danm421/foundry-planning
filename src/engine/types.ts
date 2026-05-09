@@ -965,6 +965,14 @@ export interface ProjectionYear {
    *  this in place of `ledger.endingValue × ownerPercent` to keep the entity
    *  view consistent with the cash-flow report. */
   entityAccountSharesEoY?: Map<string, Map<string, number>>;
+  /** End-of-year locked share for jointly-held family-member accounts:
+   *  familyMemberId → accountId → that member's EoY dollar share. Populated
+   *  only for accounts with ≥2 distinct family-member owners. Attributed
+   *  income deposits and cash-gift outflows shift the share; passive growth
+   *  and pro-rata withdrawals preserve current proportions. Consumers
+   *  (balance sheet) should use this in place of `value × authored ownerPercent`
+   *  so projected percentages reflect drift from the original split. */
+  familyAccountSharesEoY?: Map<string, Map<string, number>>;
   /** Sum of estimated beneficiary-level tax on distributed DNI to out-of-household beneficiaries. */
   estimatedBeneficiaryTax?: number;
   /** Non-fatal warnings emitted by the trust annual pass. */
