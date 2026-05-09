@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
 import { DataTable } from "@/components/reports-pdf/widgets/data-table";
 import { ChartImage } from "@/components/reports-pdf/widgets/chart-image";
+import { PDF_THEME } from "@/components/reports-pdf/theme";
 import type { ReportArtifact, FetchDataResult, RenderPdfInput, CsvFile, ChartImage as ChartImageType } from "../types";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { runProjection } from "@/engine";
@@ -299,10 +300,11 @@ function buildAssetsSection(years: ProjectionYear[], c: ClientData): CashflowSec
 
 const pdfStyles = StyleSheet.create({
   sectionTitle: { fontSize: 13, fontWeight: 700, marginTop: 12, marginBottom: 4 },
-  scenarioLine: { fontSize: 10, color: "#6b7280", marginBottom: 8 },
+  scenarioLine: { fontSize: 10, color: PDF_THEME.ink2, marginBottom: 8 },
   break: { marginTop: 8 },
 });
 
+// 0 renders as em-dash in compact PDF context; on-screen tables show "$0".
 function fmtMoneyCompact(n: number): string {
   if (n === 0) return "—";
   const abs = Math.abs(n);
@@ -328,11 +330,10 @@ function renderSection(
   const section = data.sections[sectionId];
   if (section.rows.length === 0) return null;
 
-  const chartIdFor = (id: CashflowSectionId): string =>
-    id === "base" ? "base-cashflow" : id;
-  const baseChart = charts.find((c) => c.id === "base-cashflow")
-    ?? charts.find((c) => c.id === "base-portfolio");
-  const sectionChart = sectionId === "base" ? baseChart : charts.find((c) => c.id === chartIdFor(sectionId));
+  const sectionChart =
+    sectionId === "base"
+      ? (charts.find((c) => c.id === "base-cashflow") ?? charts.find((c) => c.id === "base-portfolio"))
+      : charts.find((c) => c.id === sectionId);
 
   const ageByYear = new Map(data.sections.base.rows.map((r) => [r.year, r.age]));
   const rowsWithAge = section.rows.map((r) => ({
@@ -351,13 +352,11 @@ function renderSection(
     },
   }));
 
-  const footerRow = section.rows.length > 0
-    ? {
-        year: 0,
-        age: "TOTAL",
-        cells: section.totals,
-      } as typeof rowsWithAge[number]
-    : undefined;
+  const footerRow: typeof rowsWithAge[number] = {
+    year: 0,
+    age: "TOTAL",
+    cells: section.totals,
+  };
 
   return (
     <View key={sectionId} break={!isFirst} style={isFirst ? undefined : pdfStyles.break}>
@@ -367,7 +366,7 @@ function renderSection(
           {data.scenarioLabel} · Years {data.yearRange[0]}–{data.yearRange[1]}
         </Text>
       )}
-      {showCharts && sectionChart && <ChartImage chart={sectionChart} maxWidth={520} />}
+      {showCharts && sectionChart && <ChartImage chart={sectionChart} maxWidth={480} />}
       {showData && (
         <DataTable columns={columns} rows={rowsWithAge} footerRow={footerRow} />
       )}
