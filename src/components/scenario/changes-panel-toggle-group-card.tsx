@@ -201,6 +201,7 @@ export function ToggleGroupCard({
                 clientId={clientId}
                 scenarioId={group.scenarioId}
                 change={c}
+                enabled={c.enabled}
                 targetName={targetNames?.[`${c.targetKind}:${c.targetId}`]}
               />
             ))

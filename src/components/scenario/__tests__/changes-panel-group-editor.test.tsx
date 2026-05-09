@@ -31,6 +31,7 @@ const change1: ChangesPanelChange = {
   payload: { annualAmount: 100000 },
   orderIndex: 0,
   updatedAt: new Date("2026-04-26"),
+  enabled: true,
 };
 
 // Future tasks will add async tests with `vi.waitFor`; do not add fake timers
@@ -99,6 +100,7 @@ const change2: ChangesPanelChange = {
   orderIndex: 0,
   payload: { annualAmount: 50000 },
   updatedAt: new Date("2026-04-26"),
+  enabled: true,
 };
 
 const change3: ChangesPanelChange = {
@@ -111,6 +113,7 @@ const change3: ChangesPanelChange = {
   orderIndex: 0,
   payload: {},
   updatedAt: new Date("2026-04-26"),
+  enabled: true,
 };
 
 describe("GroupEditor — membership", () => {

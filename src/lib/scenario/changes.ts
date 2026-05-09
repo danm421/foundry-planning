@@ -1,5 +1,5 @@
 // src/lib/scenario/changes.ts
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { scenarioChanges, scenarioToggleGroups } from "@/db/schema";
 import type {
@@ -8,13 +8,18 @@ import type {
   ToggleGroup,
 } from "@/engine/scenario/types";
 
+// Filters out rows where `enabled = false` so disabled changes never reach
+// the engine. The Changes panel's own queries fetch all rows directly so the
+// disabled rows still render with the toggle in the off position.
 export async function loadScenarioChanges(
   scenarioId: string,
 ): Promise<ScenarioChange[]> {
   const rows = await db
     .select()
     .from(scenarioChanges)
-    .where(eq(scenarioChanges.scenarioId, scenarioId));
+    .where(
+      and(eq(scenarioChanges.scenarioId, scenarioId), eq(scenarioChanges.enabled, true)),
+    );
 
   return rows.map((r) => ({
     id: r.id,

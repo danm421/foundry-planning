@@ -274,6 +274,100 @@ d("scenario change [cid] route (PATCH)", () => {
     expect(vi.mocked(recordAudit)).not.toHaveBeenCalled();
   });
 
+  it("PATCH { enabled: false } flips the flag and writes scenario_change.set_enabled audit", async () => {
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
+
+    const req = makeReq("http://test.local/changes/c", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    const res = await route.PATCH(req, {
+      params: Promise.resolve({
+        id: COOPER_CLIENT_ID,
+        sid: scenarioId,
+        cid: changeId,
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const { db } = dbMod;
+    const { scenarioChanges } = schema;
+    const { eq } = drizzleOrm;
+    const [row] = await db
+      .select()
+      .from(scenarioChanges)
+      .where(eq(scenarioChanges.id, changeId));
+    expect(row.enabled).toBe(false);
+
+    expect(vi.mocked(recordAudit)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "scenario_change.set_enabled",
+        resourceType: "scenario_change",
+        resourceId: changeId,
+        clientId: COOPER_CLIENT_ID,
+        firmId: COOPER_FIRM_ID,
+        metadata: expect.objectContaining({ scenarioId, enabled: false }),
+      }),
+    );
+  });
+
+  it("PATCH { enabled: true } re-enables and only fires the enabled audit (not move_change)", async () => {
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
+
+    // Park the row in disabled state first.
+    const { db } = dbMod;
+    const { scenarioChanges } = schema;
+    const { eq } = drizzleOrm;
+    await db
+      .update(scenarioChanges)
+      .set({ enabled: false })
+      .where(eq(scenarioChanges.id, changeId));
+
+    const req = makeReq("http://test.local/changes/c", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    const res = await route.PATCH(req, {
+      params: Promise.resolve({
+        id: COOPER_CLIENT_ID,
+        sid: scenarioId,
+        cid: changeId,
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const [row] = await db
+      .select()
+      .from(scenarioChanges)
+      .where(eq(scenarioChanges.id, changeId));
+    expect(row.enabled).toBe(true);
+
+    const audits = vi.mocked(recordAudit).mock.calls.map((c) => c[0].action);
+    expect(audits).toContain("scenario_change.set_enabled");
+    expect(audits).not.toContain("toggle_group.move_change");
+  });
+
+  it("PATCH with empty body returns 400", async () => {
+    vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
+
+    const req = makeReq("http://test.local/changes/c", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const res = await route.PATCH(req, {
+      params: Promise.resolve({
+        id: COOPER_CLIENT_ID,
+        sid: scenarioId,
+        cid: changeId,
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(vi.mocked(recordAudit)).not.toHaveBeenCalled();
+  });
+
   it("PATCH with a cid that doesn't belong to sid returns 404", async () => {
     vi.mocked(helpers.requireOrgId).mockResolvedValue(COOPER_FIRM_ID);
 

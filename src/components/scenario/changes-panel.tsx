@@ -27,12 +27,18 @@ import { CascadeWarningsChip } from "./changes-panel-cascade-warnings";
 import { GroupEditor } from "./changes-panel-group-editor";
 
 /**
- * The DB row carries `updatedAt`/`createdAt` timestamps that the engine type
- * intentionally drops (the engine works on the in-memory shape). The panel
- * sorts by `updatedAt desc` so the most recently touched change shows first,
- * so we accept the engine type widened with that one field.
+ * Panel-only widening of the engine's `ScenarioChange`. The DB row carries an
+ * `updatedAt` timestamp the engine type drops (the engine works on the
+ * in-memory shape; the panel sorts by updatedAt desc), and an `enabled` flag
+ * that is filtered out before the engine ever runs (`loadScenarioChanges`
+ * drops `enabled = false` rows at the SQL layer). Disabled rows still surface
+ * here because the panel queries the table directly so the toggle stays
+ * visible in its off position.
  */
-export type ChangesPanelChange = ScenarioChange & { updatedAt: Date | string };
+export type ChangesPanelChange = ScenarioChange & {
+  updatedAt: Date | string;
+  enabled: boolean;
+};
 
 export interface ChangesPanelProps {
   clientId: string;
@@ -201,6 +207,7 @@ function UngroupedSection({
           clientId={clientId}
           scenarioId={scenarioId}
           change={c}
+          enabled={c.enabled}
           targetName={targetNames?.[`${c.targetKind}:${c.targetId}`]}
         />
       ))}

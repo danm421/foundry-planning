@@ -122,6 +122,8 @@ export type AuditAction =
   // Reassign a single scenario_change row into (or out of) a toggle group.
   // Used by Plan 2 Task 20's retroactive-group action bar.
   | "toggle_group.move_change"
+  // Per-change enable/disable toggle on the comparison-page Changes drawer.
+  | "scenario_change.set_enabled"
   // Scenario snapshots (frozen comparisons; survive scenario deletion).
   | "snapshot.create"
   | "snapshot.delete"

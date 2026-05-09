@@ -13,7 +13,9 @@ import {
 } from "@/lib/comparison/kpi";
 import { buildYearlyEstateReport } from "@/lib/estate/yearly-estate-report";
 import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
+import { loadPanelData } from "@/lib/scenario/load-panel-data";
 import type { SnapshotOption } from "@/components/scenario/scenario-picker-dropdown";
+import type { ComparisonChangesDrawerPlan } from "./comparison-changes-drawer";
 import { ComparisonPickerBar } from "./comparison-picker-bar";
 import { ComparisonShell } from "./comparison-shell";
 
@@ -122,12 +124,44 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
     computeYearsPortfolioSurvives(plan2Load.result.years) -
     computeYearsPortfolioSurvives(plan1Load.result.years);
 
+  // Panel data for the changes drawer — fetched only for live scenario refs
+  // (base + snapshot refs have nothing editable). Done in parallel; both can
+  // independently resolve to null if the ref doesn't belong to this firm or
+  // points at the base case.
+  const drawerPlans: ComparisonChangesDrawerPlan[] = [];
+  const panelLoadable = (
+    ref: typeof left,
+    label: string,
+  ): Promise<ComparisonChangesDrawerPlan | null> | null => {
+    if (ref.kind !== "scenario" || ref.id === "base") return null;
+    return loadPanelData(clientId, ref.id, firmId).then((d) =>
+      d
+        ? {
+            scenarioId: d.scenarioId,
+            scenarioName: d.scenarioName,
+            label,
+            changes: d.changes,
+            toggleGroups: d.toggleGroups,
+            cascadeWarnings: d.cascadeWarnings,
+            targetNames: d.targetNames,
+          }
+        : null,
+    );
+  };
+  const [leftPanel, rightPanel] = await Promise.all([
+    panelLoadable(left, plan1Load.scenarioName),
+    panelLoadable(right, plan2Load.scenarioName),
+  ]);
+  if (leftPanel) drawerPlans.push(leftPanel);
+  if (rightPanel) drawerPlans.push(rightPanel);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
       <ComparisonPickerBar
         clientId={clientId}
         scenarios={scenarios}
         snapshots={snapshots as SnapshotOption[]}
+        drawerPlans={drawerPlans}
       />
       <ComparisonShell
         clientId={clientId}

@@ -1,13 +1,18 @@
 // src/app/api/clients/[id]/scenarios/[sid]/changes/[cid]/route.ts
 //
-// PATCH a single scenario_change row to reassign its `toggleGroupId`. Used by
-// the Changes-panel GroupEditor's stage-then-Done flow — toggling a row's
-// checkbox stages the membership change client-side, and Done fans out one
-// PATCH per staged change into this endpoint.
+// PATCH a single scenario_change row. Two independent operations share this
+// route:
+//   1. Reassign `toggleGroupId` — used by the Changes-panel GroupEditor's
+//      stage-then-Done flow (toggling a row's checkbox stages the membership
+//      change client-side, and Done fans out one PATCH per staged change).
+//   2. Flip `enabled` — used by the per-change toggle on each leaf row.
+//      Disabled rows are filtered out by `loadScenarioChanges` so they never
+//      reach the engine; the panel still shows them so the toggle is visible.
 //
-// Body shape:
+// Body shape (one or both fields, at least one required):
 //   { toggleGroupId: <uuid> }     // move into the group
 //   { toggleGroupId: null }       // clear group assignment (back to ungrouped)
+//   { enabled: boolean }          // flip the per-change enabled flag
 //
 // Auth model: same as the sibling /changes route — `requireOrgId` then
 // `assertScenarioRouteScope` (client-in-firm AND scenario-in-client). The
@@ -32,9 +37,15 @@ import { assertScenarioRouteScope } from "@/lib/scenario/route-scope";
 
 export const dynamic = "force-dynamic";
 
-const PATCH_BODY = z.object({
-  toggleGroupId: z.string().uuid().nullable(),
-});
+const PATCH_BODY = z
+  .object({
+    toggleGroupId: z.string().uuid().nullable().optional(),
+    enabled: z.boolean().optional(),
+  })
+  .refine(
+    (v) => v.toggleGroupId !== undefined || v.enabled !== undefined,
+    { message: "Must provide toggleGroupId or enabled" },
+  );
 
 type RouteCtx = {
   params: Promise<{ id: string; sid: string; cid: string }>;
@@ -97,19 +108,41 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx) {
       }
     }
 
+    const updates: Partial<typeof scenarioChanges.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+    if (body.toggleGroupId !== undefined) {
+      updates.toggleGroupId = body.toggleGroupId;
+    }
+    if (body.enabled !== undefined) {
+      updates.enabled = body.enabled;
+    }
+
     await db
       .update(scenarioChanges)
-      .set({ toggleGroupId: body.toggleGroupId, updatedAt: new Date() })
+      .set(updates)
       .where(eq(scenarioChanges.id, changeId));
 
-    await recordAudit({
-      action: "toggle_group.move_change",
-      resourceType: "scenario_change",
-      resourceId: changeId,
-      clientId,
-      firmId,
-      metadata: { scenarioId, toggleGroupId: body.toggleGroupId },
-    });
+    if (body.toggleGroupId !== undefined) {
+      await recordAudit({
+        action: "toggle_group.move_change",
+        resourceType: "scenario_change",
+        resourceId: changeId,
+        clientId,
+        firmId,
+        metadata: { scenarioId, toggleGroupId: body.toggleGroupId },
+      });
+    }
+    if (body.enabled !== undefined) {
+      await recordAudit({
+        action: "scenario_change.set_enabled",
+        resourceType: "scenario_change",
+        resourceId: changeId,
+        clientId,
+        firmId,
+        metadata: { scenarioId, enabled: body.enabled },
+      });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

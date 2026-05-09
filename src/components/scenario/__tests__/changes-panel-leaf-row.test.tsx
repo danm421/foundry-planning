@@ -37,6 +37,7 @@ describe("ChangesPanelLeafRow", () => {
       <ChangesPanelLeafRow
         clientId="c1"
         scenarioId="s1"
+        enabled={true}
         change={makeChange({ opType: "add" })}
       />,
     );
@@ -49,6 +50,7 @@ describe("ChangesPanelLeafRow", () => {
       <ChangesPanelLeafRow
         clientId="c1"
         scenarioId="s1"
+        enabled={true}
         change={makeChange({ opType: "remove", payload: null })}
       />,
     );
@@ -61,6 +63,7 @@ describe("ChangesPanelLeafRow", () => {
       <ChangesPanelLeafRow
         clientId="c1"
         scenarioId="s1"
+        enabled={true}
         change={makeChange({
           opType: "edit",
           payload: { annualAmount: { from: 100000, to: 250000 } },
@@ -81,7 +84,7 @@ describe("ChangesPanelLeafRow", () => {
       payload: { annualAmount: { from: 1, to: 2 } },
     });
     render(
-      <ChangesPanelLeafRow clientId="client-x" scenarioId="scenario-y" change={change} />,
+      <ChangesPanelLeafRow clientId="client-x" scenarioId="scenario-y" enabled={true} change={change} />,
     );
     fireEvent.click(screen.getByLabelText("Revert change"));
 
@@ -101,6 +104,7 @@ describe("ChangesPanelLeafRow", () => {
       <ChangesPanelLeafRow
         clientId="c1"
         scenarioId="s1"
+        enabled={true}
         targetName="Salary"
         change={makeChange({
           opType: "edit",
@@ -117,6 +121,7 @@ describe("ChangesPanelLeafRow", () => {
       <ChangesPanelLeafRow
         clientId="c1"
         scenarioId="s1"
+        enabled={true}
         change={makeChange({
           opType: "add",
           targetKind: "income",
@@ -132,6 +137,7 @@ describe("ChangesPanelLeafRow", () => {
       <ChangesPanelLeafRow
         clientId="c1"
         scenarioId="s1"
+        enabled={true}
         change={makeChange({
           opType: "edit",
           targetKind: "income",
@@ -141,6 +147,78 @@ describe("ChangesPanelLeafRow", () => {
       />,
     );
     expect(screen.getByText("Income — abcdef12")).toBeInTheDocument();
+  });
+
+  it("toggle PATCHes { enabled: false } when an enabled row is flipped off, then router.refresh()", async () => {
+    const change = makeChange({
+      id: "abc-123",
+      targetId: "00000000-aaaa-bbbb-cccc-000000000001",
+    });
+    render(
+      <ChangesPanelLeafRow
+        clientId="client-x"
+        scenarioId="scenario-y"
+        enabled={true}
+        change={change}
+      />,
+    );
+
+    const toggle = screen.getByLabelText("Disable change");
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+    const [url, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe(
+      "/api/clients/client-x/scenarios/scenario-y/changes/abc-123",
+    );
+    expect(init).toMatchObject({
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
+    // Optimistic state — the aria label should have flipped immediately.
+    expect(screen.getByLabelText("Enable change")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("rolls back optimistic state when the PATCH fails", async () => {
+    globalThis.fetch = vi.fn(async () => new Response("nope", { status: 500 })) as typeof fetch;
+    render(
+      <ChangesPanelLeafRow
+        clientId="c1"
+        scenarioId="s1"
+        enabled={true}
+        change={makeChange()}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Disable change"));
+    // After the failed response, the toggle should snap back to "on".
+    await waitFor(() => {
+      expect(screen.getByLabelText("Disable change")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+    expect(refreshMock).not.toHaveBeenCalled();
+  });
+
+  it("disabled row renders the toggle in the off position with 'Enable change' label", () => {
+    render(
+      <ChangesPanelLeafRow
+        clientId="c1"
+        scenarioId="s1"
+        enabled={false}
+        change={makeChange()}
+      />,
+    );
+    const toggle = screen.getByLabelText("Enable change");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
   });
 
 });

@@ -3,13 +3,21 @@
 // src/components/scenario/changes-panel-leaf-row.tsx
 //
 // Single change row inside <ChangesPanel>'s ungrouped (and, in Task 19,
-// toggle-group) sections. Shows op glyph + label + subtext + a hover-revealed
-// revert button. Reverting fires a DELETE on
+// toggle-group) sections. Shows op glyph + per-change toggle + label + subtext
+// + a hover-revealed revert button.
+//
+// The toggle PATCHes `{ enabled }` against
+// `/api/clients/[id]/scenarios/[sid]/changes/[cid]` and calls `router.refresh()`
+// — `loadScenarioChanges` drops disabled rows at the SQL layer so the engine
+// never sees them, while the panel's own loader keeps them visible so the
+// toggle is still operable. Local optimistic state keeps the UI snappy across
+// the round-trip.
+//
+// Reverting fires a DELETE on
 // `/api/clients/[id]/scenarios/[sid]/changes?kind=&target=&op=` — the same
-// route the writer hook uses for revert. After a successful delete we call
-// `router.refresh()` so the layout's server-side fetch re-runs and the panel
-// state stays in sync without a full reload.
+// route the writer hook uses for revert.
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { TrashIcon } from "@/components/icons";
 import type { ScenarioChange } from "@/engine/scenario/types";
@@ -24,6 +32,8 @@ export interface ChangesPanelLeafRowProps {
   clientId: string;
   scenarioId: string;
   change: ScenarioChange;
+  /** Whether this change is currently active. Disabled rows still render so the user can flip them back on. */
+  enabled: boolean;
   /**
    * Resolved display name for the change's target entity (e.g. "Salary" for
    * an income, "401(k)" for an account). Built in `loadPanelData` from the
@@ -37,10 +47,12 @@ export function ChangesPanelLeafRow({
   clientId,
   scenarioId,
   change,
+  enabled,
   targetName,
 }: ChangesPanelLeafRowProps) {
   const router = useRouter();
   const op = OP_ICON[change.opType];
+  const [enabledLocal, setEnabledLocal] = useState(enabled);
 
   async function handleRevert() {
     const params = new URLSearchParams({
@@ -57,11 +69,35 @@ export function ChangesPanelLeafRow({
     }
   }
 
+  async function handleToggleEnabled(next: boolean) {
+    setEnabledLocal(next);
+    const res = await fetch(
+      `/api/clients/${clientId}/scenarios/${scenarioId}/changes/${change.id}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      },
+    );
+    if (res.ok) {
+      router.refresh();
+    } else {
+      setEnabledLocal(!next);
+    }
+  }
+
   return (
     <div
       data-testid={`leaf-row-${change.id}`}
-      className="px-4 py-2 hover:bg-[#0b0c0f]/50 group flex items-start gap-2"
+      className={`px-4 py-2 hover:bg-[#0b0c0f]/50 group flex items-start gap-2 ${
+        enabledLocal ? "" : "opacity-50"
+      }`}
     >
+      <ToggleSwitch
+        on={enabledLocal}
+        onChange={(v) => void handleToggleEnabled(v)}
+        label={enabledLocal ? "Disable change" : "Enable change"}
+      />
       <span className={`font-mono w-3 ${op.color}`} aria-label={change.opType}>
         {op.glyph}
       </span>
@@ -79,6 +115,38 @@ export function ChangesPanelLeafRow({
         <TrashIcon width={14} height={14} aria-hidden="true" />
       </button>
     </div>
+  );
+}
+
+function ToggleSwitch({
+  on,
+  onChange,
+  label,
+}: {
+  on: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(!on);
+      }}
+      aria-pressed={on}
+      aria-label={label}
+      className={`mt-0.5 w-7 h-3.5 rounded-full border transition focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d4a04a] shrink-0 ${
+        on ? "bg-[#d4a04a] border-[#d4a04a]" : "bg-transparent border-[#1f2024]"
+      }`}
+    >
+      <span
+        className={`block w-2.5 h-2.5 rounded-full transition ${
+          on ? "bg-[#0b0c0f] ml-3.5" : "bg-[#6b6760] ml-0"
+        }`}
+        aria-hidden="true"
+      />
+    </button>
   );
 }
 
