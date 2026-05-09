@@ -44,7 +44,7 @@ describe("death-event integration — locked entity shares are honored at the de
       {
         id: LEGACY_FM_SPOUSE,
         role: "spouse",
-        relationship: "spouse",
+        relationship: "other",
         firstName: "Test",
         lastName: "Spouse",
         dateOfBirth: "1972-06-15",
@@ -128,7 +128,9 @@ describe("death-event integration — locked entity shares are honored at the de
     expect(ledger).toBeDefined();
     const familyPool = ledger.endingValue - entityLocked;
 
-    // Allow ±$1 tolerance for any non-mixed-account drains the engine layered on.
+    // Tight tolerance: the $1k checking account drains to $0 via expense flows
+    // before the death event and is excluded from gross estate (fmv ≤ 0), so
+    // the only contributor to grossEstate is the mixed account's family pool.
     expect(gross).toBeGreaterThan(familyPool - 1);
     expect(gross).toBeLessThan(familyPool + 1);
 

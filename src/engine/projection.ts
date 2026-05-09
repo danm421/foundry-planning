@@ -542,10 +542,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
   // computeEntityCashFlow's post-loop accounting so the in-loop death-event
   // path sees the same locked entity shares the post-loop pass would have
   // produced. Carry persists year-over-year; passive growth accrues
-  // proportionally, household flows do not erode it. Family-member locked
-  // shares are surfaced for parity with the post-loop family-cashflow pass
-  // even though computeGrossEstate doesn't yet consume them.
+  // proportionally, household flows do not erode it.
   const lockedEntityShareCarry = new Map<string, Map<string, number>>();
+  // Reserved for per-FM gross-estate attribution. Threaded through the
+  // death-event pipeline alongside the entity carry but not yet populated —
+  // computeGrossEstate doesn't consume the family-member side today.
   const lockedFamilyShareCarry = new Map<string, Map<string, number>>();
 
   for (
@@ -3307,9 +3308,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // post-loop computeEntityCashFlow / computeFamilyAccountShares passes;
     // both paths consume accrueLockedEntityShare and produce the same
     // numbers.
-    const thisYearForCarry = years[years.length - 1];
+    const thisYear = years[years.length - 1];
     for (const acct of workingAccounts) {
-      const ledger = thisYearForCarry.accountLedgers[acct.id];
+      const ledger = thisYear.accountLedgers[acct.id];
       if (!ledger) continue;
       for (const o of acct.owners) {
         if (o.kind !== "entity") continue;
