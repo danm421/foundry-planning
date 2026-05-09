@@ -24,6 +24,19 @@ describe("accrueLockedEntityShare", () => {
     expect(r.lockedEoY).toBeCloseTo(325_500, 6);
   });
 
+  it("carry of zero is honored as a real zero, not the year-0 fallback", () => {
+    // Distinguishes `0` (entity share fully drained from a prior year) from
+    // `undefined` (no carry yet). `??` is correct here; `||` would conflate.
+    const r = accrueLockedEntityShare({
+      carriedBoY: 0,
+      ledger: { beginningValue: 500_000, growth: 10_000 },
+      percent: 0.3,
+    });
+    expect(r.lockedBoY).toBe(0);
+    expect(r.lockedGrowth).toBeCloseTo(3_000, 6); // growth still accrues
+    expect(r.lockedEoY).toBeCloseTo(3_000, 6);
+  });
+
   it("zero growth preserves the carried share exactly", () => {
     const r = accrueLockedEntityShare({
       carriedBoY: 300_000,

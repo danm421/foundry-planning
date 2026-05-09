@@ -1098,8 +1098,10 @@ export interface DeathEventInput {
    *  `fmv × pct` per the existing computeGrossEstate logic. */
   entityAccountSharesEoY?: Map<string, Map<string, number>>;
   /** Engine-published locked family-member slice EoY for the death year
-   *  (fmId → accountId → dollars). Currently unused inside computeGrossEstate
-   *  but threaded for parity with the other locked-share consumers. */
+   *  (fmId → accountId → dollars). Currently unused inside computeGrossEstate;
+   *  reserved for future per-FM gross-estate attribution. The same data is
+   *  actively consumed by the balance sheet, in-estate-at-year, and the
+   *  yearly-liquidity report. */
   familyAccountSharesEoY?: Map<string, Map<string, number>>;
 }
 
