@@ -137,12 +137,12 @@ describe("POST /api/clients/[id]/exports/pdf", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 409 when a chart's dataVersion does not match the freshly fetched data", async () => {
+  it("silently drops stale chart captures whose dataVersion does not match", async () => {
     seedFetchData({ dataVersion: "v2" });
     const res = await POST(
       makeReq({
         reportId: "investments",
-        variant: "data",
+        variant: "chart",
         charts: [
           {
             id: "donut",
@@ -155,9 +155,11 @@ describe("POST /api/clients/[id]/exports/pdf", () => {
       }),
       { params },
     );
-    expect(res.status).toBe(409);
-    const payload = await res.json();
-    expect(payload.dataVersion).toBe("v2");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+    expect(renderPdfMock).toHaveBeenCalledOnce();
+    const callArgs = renderPdfMock.mock.calls[0][0] as { charts: unknown[] };
+    expect(callArgs.charts).toEqual([]);
   });
 
   it("returns 401 when requireOrgId throws UnauthorizedError", async () => {

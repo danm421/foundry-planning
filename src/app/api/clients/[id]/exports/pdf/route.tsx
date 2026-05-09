@@ -67,15 +67,12 @@ export async function POST(
 
     const { data, asOf, dataVersion } = await artifact.fetchData({ clientId, firmId, opts });
 
-    const charts: ChartImage[] = rawCharts ?? [];
-    for (const c of charts) {
-      if (c.dataVersion !== dataVersion) {
-        return NextResponse.json(
-          { error: "Stale chart capture", dataVersion },
-          { status: 409 },
-        );
-      }
-    }
+    // Soft drift detection in v1: stale chart captures get dropped silently
+    // and the PDF renders without that chart image. Strict server/client hash
+    // agreement is a known v2 problem (plan called this out as deferred).
+    const charts: ChartImage[] = (rawCharts ?? []).filter(
+      (c) => c.dataVersion === dataVersion,
+    );
 
     if (variant === "csv") {
       if (!artifact.toCsv) {
