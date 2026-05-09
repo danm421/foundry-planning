@@ -8,14 +8,9 @@ import {
   BarElement,
   Tooltip,
   Legend,
-  type ChartOptions,
-  type Chart,
-  type LegendItem,
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
-import type {
-  YearlyBeneficiaryBreakdown,
-} from "@/lib/estate/yearly-beneficiary-breakdown";
+import type { YearlyBeneficiaryBreakdown } from "@/lib/estate/yearly-beneficiary-breakdown";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -31,57 +26,68 @@ function withAlpha(hex: string, alphaByte: string): string {
   return `${hex}${alphaByte}`;
 }
 
+function truncate(s: string, n: number): string {
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+}
+
 interface Props {
   breakdown: YearlyBeneficiaryBreakdown;
   colors: Record<string, string>;
 }
 
+/**
+ * Renders the final-year hypothetical inheritance per non-spouse beneficiary
+ * — one bar per beneficiary, stacked by 1st-death (lighter) and 2nd-death
+ * (full color). Uses the last row of the breakdown as the "if both die at
+ * end of plan" snapshot. Beneficiaries with zero in that final year are
+ * still shown so the visual ordering matches the lifetime sort.
+ */
 export function YearlyEstateBeneficiaryChart({ breakdown, colors }: Props) {
   const data = useMemo(() => {
     if (breakdown.rows.length === 0 || breakdown.beneficiaries.length === 0) {
       return null;
     }
-    const labels = breakdown.rows.map((r) => String(r.year));
-    const yearCount = breakdown.rows.length;
-    // Two datasets per beneficiary: 1st-death (lighter) then 2nd-death (full).
-    // Both use `stack: "main"` so they pile together per year.
-    const datasets = breakdown.beneficiaries.flatMap((b) => {
-      const color = colors[b.key] ?? "#6b7280";
-      const firstData = new Array<number>(yearCount).fill(0);
-      const secondData = new Array<number>(yearCount).fill(0);
-      breakdown.rows.forEach((row, idx) => {
-        const share = row.beneficiaries.find((x) => x.key === b.key);
-        if (!share) return;
-        firstData[idx] = share.fromFirstDeath;
-        secondData[idx] = share.fromSecondDeath;
-      });
-      return [
+    const finalRow = breakdown.rows[breakdown.rows.length - 1];
+    const finalShares = new Map(
+      finalRow.beneficiaries.map((b) => [b.key, b]),
+    );
+    const labels = breakdown.beneficiaries.map((b) =>
+      truncate(b.recipientLabel, 14),
+    );
+    const firstData = breakdown.beneficiaries.map(
+      (b) => finalShares.get(b.key)?.fromFirstDeath ?? 0,
+    );
+    const secondData = breakdown.beneficiaries.map(
+      (b) => finalShares.get(b.key)?.fromSecondDeath ?? 0,
+    );
+    return {
+      labels,
+      datasets: [
         {
-          label: `${b.recipientLabel} — 1st death`,
+          label: "From 1st Death",
           data: firstData,
-          backgroundColor: withAlpha(color, "a6"),
+          backgroundColor: breakdown.beneficiaries.map((b) =>
+            withAlpha(colors[b.key] ?? "#6b7280", "a6"),
+          ),
           stack: "main",
           borderWidth: 0,
-          /** Hide the 1st-death entry from the legend; the 2nd-death entry
-           *  carries the recipient name. */
-          beneficiaryKey: b.key,
-          legendKind: "first" as const,
         },
         {
-          label: `${b.recipientLabel} — 2nd death`,
+          label: "From 2nd Death",
           data: secondData,
-          backgroundColor: color,
+          backgroundColor: breakdown.beneficiaries.map(
+            (b) => colors[b.key] ?? "#6b7280",
+          ),
           stack: "main",
           borderWidth: 0,
-          beneficiaryKey: b.key,
-          legendKind: "second" as const,
         },
-      ];
-    });
-    return { labels, datasets };
+      ],
+    };
   }, [breakdown, colors]);
 
-  const options = useMemo<ChartOptions<"bar">>(
+  const finalYear = breakdown.rows[breakdown.rows.length - 1]?.year;
+
+  const options = useMemo(
     () => ({
       responsive: true,
       maintainAspectRatio: false,
@@ -89,48 +95,16 @@ export function YearlyEstateBeneficiaryChart({ breakdown, colors }: Props) {
         legend: {
           display: true,
           position: "bottom" as const,
-          labels: {
-            color: "#d1d5db",
-            boxWidth: 12,
-            padding: 10,
-            // Show one entry per beneficiary (the 2nd-death dataset),
-            // with the label simplified to the recipient name.
-            generateLabels: (chart: Chart): LegendItem[] => {
-              // Datasets carry extra `legendKind` / `beneficiaryKey` fields
-              // we tagged in the data memo. Chart.js's stock dataset type
-              // doesn't know about them, so cast at the access site.
-              const datasets = chart.data.datasets as Array<{
-                label?: string;
-                backgroundColor?: string;
-                legendKind?: "first" | "second";
-                beneficiaryKey?: string;
-              }>;
-              const seen = new Set<string>();
-              const items: LegendItem[] = [];
-              datasets.forEach((ds, i) => {
-                if (ds.legendKind !== "second") return;
-                if (!ds.beneficiaryKey || seen.has(ds.beneficiaryKey)) return;
-                seen.add(ds.beneficiaryKey);
-                const label =
-                  ds.label?.replace(/ — 2nd death$/, "") ?? `Series ${i}`;
-                items.push({
-                  text: label,
-                  fillStyle: ds.backgroundColor ?? "#6b7280",
-                  hidden: false,
-                  datasetIndex: i,
-                });
-              });
-              return items;
-            },
-          },
+          labels: { color: "#d1d5db", boxWidth: 12, padding: 12 },
         },
         tooltip: {
-          mode: "index" as const,
-          intersect: false,
           backgroundColor: "#1f2937",
           titleColor: "#f3f4f6",
           bodyColor: "#d1d5db",
           callbacks: {
+            title: (items: Array<{ dataIndex: number }>) =>
+              breakdown.beneficiaries[items[0]?.dataIndex]?.recipientLabel ??
+              "",
             label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
               `${ctx.dataset.label}: ${fmt.format(Number(ctx.raw))}`,
           },
@@ -139,7 +113,7 @@ export function YearlyEstateBeneficiaryChart({ breakdown, colors }: Props) {
       scales: {
         x: {
           stacked: true,
-          ticks: { color: "#9ca3af" },
+          ticks: { color: "#9ca3af", maxRotation: 0, autoSkip: false },
           grid: { color: "#374151" },
         },
         y: {
@@ -152,14 +126,21 @@ export function YearlyEstateBeneficiaryChart({ breakdown, colors }: Props) {
         },
       },
     }),
-    [],
+    [breakdown.beneficiaries],
   );
 
   if (!data) return null;
 
   return (
-    <div style={{ height: 280 }}>
-      <Bar data={data} options={options} />
+    <div className="space-y-2">
+      {finalYear != null && (
+        <p className="text-[11px] text-gray-400">
+          If both deaths occur by end of {finalYear}
+        </p>
+      )}
+      <div style={{ height: 280 }}>
+        <Bar data={data} options={options} />
+      </div>
     </div>
   );
 }
