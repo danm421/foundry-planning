@@ -364,6 +364,40 @@ describe("computeGrossEstate", () => {
     expect(r.lines).toEqual([]);
   });
 
+  it("single-FM-with-entity at second death routes the lone FM at pct=1 (no deathOrder discrimination)", () => {
+    // Documents the invariant: the single-FM branch must NOT branch on
+    // deathOrder. The multi-FM joint branch does (0.5 → 1), but a sole
+    // family-pool owner is always at 100% regardless of which death this is.
+    const slat: EntitySummary = {
+      id: "slat",
+      includeInPortfolio: false,
+      isGrantor: false,
+      isIrrevocable: true,
+      grantor: "client",
+    };
+    const r = computeGrossEstate({
+      deceased: "client",
+      deathOrder: 2,
+      accounts: [acct("mixed", 1_000_000, {
+        owners: [
+          { kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 0.7 },
+          { kind: "entity", entityId: "slat", percent: 0.3 },
+        ],
+      })],
+      accountBalances: { mixed: 921_000 },
+      liabilities: [],
+      entities: [slat],
+      deceasedFmId: LEGACY_FM_CLIENT,
+      survivorFmId: null,
+      entityAccountSharesEoY: new Map([
+        ["slat", new Map([["mixed", 300_000]])],
+      ]),
+    });
+    expect(r.total).toBeCloseTo(621_000, 2);
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0].percentage).toBe(1);
+  });
+
   it("joint convention without locked shares falls back to existing fmv × pct (backward-compatible)", () => {
     // Pure-spouse joint, no entity, no locked shares passed — old behavior.
     const r = computeGrossEstate({
