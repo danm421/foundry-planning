@@ -29,7 +29,7 @@ export function MonteCarloComparisonSection({
 }: Props) {
   const successDelta = plan2Result.successRate - plan1Result.successRate;
   const p50Delta = plan2Summary.ending.p50 - plan1Summary.ending.p50;
-  const p10Delta = plan2Summary.ending.p20 - plan1Summary.ending.p20;
+  const p20Delta = plan2Summary.ending.p20 - plan1Summary.ending.p20;
 
   return (
     <section className="px-6 py-8">
@@ -52,7 +52,7 @@ export function MonteCarloComparisonSection({
             label: "Lower-tail (P20) ending",
             a: usd.format(plan1Summary.ending.p20),
             b: usd.format(plan2Summary.ending.p20),
-            d: fmtUsd(p10Delta),
+            d: fmtUsd(p20Delta),
           },
         ].map((row) => (
           <div key={row.label} className="bg-slate-950 p-3">
