@@ -8,6 +8,9 @@ import {
   BarElement,
   Tooltip,
   Legend,
+  type ChartOptions,
+  type Chart,
+  type LegendItem,
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import type {
@@ -78,7 +81,7 @@ export function YearlyEstateBeneficiaryChart({ breakdown, colors }: Props) {
     return { labels, datasets };
   }, [breakdown, colors]);
 
-  const options = useMemo(
+  const options = useMemo<ChartOptions<"bar">>(
     () => ({
       responsive: true,
       maintainAspectRatio: false,
@@ -92,25 +95,19 @@ export function YearlyEstateBeneficiaryChart({ breakdown, colors }: Props) {
             padding: 10,
             // Show one entry per beneficiary (the 2nd-death dataset),
             // with the label simplified to the recipient name.
-            generateLabels: (chart: unknown) => {
-              const typedChart = chart as {
-                data: {
-                  datasets: Array<{
-                    label?: string;
-                    backgroundColor?: string;
-                    legendKind?: "first" | "second";
-                    beneficiaryKey?: string;
-                  }>;
-                };
-              };
+            generateLabels: (chart: Chart): LegendItem[] => {
+              // Datasets carry extra `legendKind` / `beneficiaryKey` fields
+              // we tagged in the data memo. Chart.js's stock dataset type
+              // doesn't know about them, so cast at the access site.
+              const datasets = chart.data.datasets as Array<{
+                label?: string;
+                backgroundColor?: string;
+                legendKind?: "first" | "second";
+                beneficiaryKey?: string;
+              }>;
               const seen = new Set<string>();
-              const items: Array<{
-                text: string;
-                fillStyle: string;
-                hidden: boolean;
-                datasetIndex: number;
-              }> = [];
-              typedChart.data.datasets.forEach((ds, i) => {
+              const items: LegendItem[] = [];
+              datasets.forEach((ds, i) => {
                 if (ds.legendKind !== "second") return;
                 if (!ds.beneficiaryKey || seen.has(ds.beneficiaryKey)) return;
                 seen.add(ds.beneficiaryKey);
@@ -118,7 +115,7 @@ export function YearlyEstateBeneficiaryChart({ breakdown, colors }: Props) {
                   ds.label?.replace(/ — 2nd death$/, "") ?? `Series ${i}`;
                 items.push({
                   text: label,
-                  fillStyle: (ds.backgroundColor as string) ?? "#6b7280",
+                  fillStyle: ds.backgroundColor ?? "#6b7280",
                   hidden: false,
                   datasetIndex: i,
                 });
@@ -134,8 +131,8 @@ export function YearlyEstateBeneficiaryChart({ breakdown, colors }: Props) {
           titleColor: "#f3f4f6",
           bodyColor: "#d1d5db",
           callbacks: {
-            label: (ctx: unknown) =>
-              `${(ctx as { dataset: { label?: string } }).dataset.label}: ${fmt.format(Number((ctx as { raw: unknown }).raw))}`,
+            label: (ctx: { dataset: { label?: string }; raw: unknown }) =>
+              `${ctx.dataset.label}: ${fmt.format(Number(ctx.raw))}`,
           },
         },
       },
