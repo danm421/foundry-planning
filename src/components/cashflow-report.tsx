@@ -2071,6 +2071,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             clientData={clientData}
             accountNames={accountNames}
             accountSubTypes={accountSubTypes}
+            accountCategoryById={accountCategoryById}
           />
         )}
       </div>
