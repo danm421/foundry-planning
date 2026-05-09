@@ -19,6 +19,7 @@ import {
 import {
   computeHouseholdAllocation,
   computeDrift,
+  isInvestableAccount,
   resolveAccountAllocation,
   type InvestableAccount,
   type AccountLite,
@@ -224,8 +225,19 @@ async function fetchInvestmentsData(
 
   const driftRows = benchmark ? computeDrift(household.byAssetClass, benchmark, nameByClassId) : [];
 
-  // Build per-account allocation breakdown for the by-account CSV.
-  const perAccount = acctRows.map((a) => {
+  // Build per-account allocation breakdown — investable accounts only, matching
+  // the on-screen Holdings panel and the Investable Total in `household`.
+  // Non-investable categories (real estate, business interests, life insurance,
+  // etc.) and entity-owned accounts are reflected in the disclosure line on the
+  // page and surfaced via household.unallocatedValue / excludedNonInvestable.
+  const perAccount = acctRows
+    .filter((a) =>
+      isInvestableAccount({
+        category: a.category,
+        ownerEntityId: accountEntityOwner.get(a.id) ?? null,
+      }),
+    )
+    .map((a) => {
     const acctLite: AccountLite = {
       id: a.id,
       category: a.category,
@@ -338,11 +350,29 @@ export const investmentsArtifact: ReportArtifact<InvestmentsData, typeof options
 
     const styles = StyleSheet.create({
       sectionTitle: { fontSize: 13, fontWeight: 700, marginTop: 12, marginBottom: 4 },
+      totalBlock: { alignItems: "center", marginTop: 4, marginBottom: -4 },
+      totalLabel: {
+        fontSize: 9,
+        letterSpacing: 1,
+        textTransform: "uppercase",
+        color: "#6b7280",
+      },
+      totalValue: { fontSize: 18, fontWeight: 700, marginTop: 2 },
     });
 
     return (
       <View>
-        {showCharts && donut && <ChartImage chart={donut} maxWidth={420} />}
+        {showCharts && donut && (
+          <View>
+            <View style={styles.totalBlock}>
+              <Text style={styles.totalLabel}>Investable Total</Text>
+              <Text style={styles.totalValue}>
+                {fmtMoney(data.household.totalInvestableValue)}
+              </Text>
+            </View>
+            <ChartImage chart={donut} maxWidth={260} />
+          </View>
+        )}
         {showCharts && drift && <ChartImage chart={drift} maxWidth={480} />}
 
         {showData && (
