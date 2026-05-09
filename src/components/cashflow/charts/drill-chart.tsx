@@ -5,6 +5,7 @@ import { IncomeChart } from "./income-chart";
 import { ExpensesChart } from "./expenses-chart";
 import { SavingsChart } from "./savings-chart";
 import { WithdrawalsChart } from "./withdrawals-chart";
+import { PortfolioChart } from "./portfolio-chart";
 
 interface DrillChartProps {
   drillPath: string[];
@@ -21,5 +22,6 @@ export function DrillChart({ drillPath, years, accountSubTypes, accountCategoryB
   if (level === "expenses") return <ExpensesChart years={years} />;
   if (level === "savings") return <SavingsChart years={years} accountSubTypes={accountSubTypes} />;
   if (level === "cashflow") return <WithdrawalsChart years={years} accountCategoryById={accountCategoryById} />;
+  if (level === "portfolio") return <PortfolioChart years={years} />;
   return null;
 }
