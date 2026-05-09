@@ -40,8 +40,21 @@ export interface ComputeFamilyAccountSharesInput {
 
 /** Mutates input.years[].familyAccountSharesEoY in place. */
 export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInput): void {
-  const { years, accountFamilyOwners } = input;
+  const { years, accountFamilyOwners, incomes, clientFamilyMemberId, spouseFamilyMemberId } =
+    input;
   if (accountFamilyOwners.size === 0) return;
+
+  const incomeOwnerById = new Map<string, "client" | "spouse" | "joint">();
+  for (const inc of incomes) incomeOwnerById.set(inc.id, inc.owner);
+
+  // Resolve "client" | "spouse" → familyMemberId. Returns null if the role
+  // isn't present in the household (single-filer plans have no spouseFmId)
+  // or if the input is "joint" (caller falls back to pro-rata).
+  const resolveOwnerToFm = (owner: "client" | "spouse" | "joint"): string | null => {
+    if (owner === "client") return clientFamilyMemberId;
+    if (owner === "spouse") return spouseFamilyMemberId;
+    return null;
+  };
 
   // Per-member per-account locked EoY share, carried year-to-year.
   const lockedShareByMemberAccount = new Map<string, Map<string, number>>();
@@ -56,23 +69,47 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
     for (const [accountId, owners] of accountFamilyOwners) {
       const ledger = year.accountLedgers[accountId];
       if (!ledger) continue;
+      const ownerFmIds = new Set(owners.map((o) => o.familyMemberId));
 
-      // BoY share per owner: prior year's EoY, or seed from owner.percent on year 0.
+      // BoY shares: carried from prior year, or seeded from owner.percent on year 0.
       const shares: Record<string, number> = {};
       for (const o of owners) {
         const carried = getLocked(o.familyMemberId, accountId);
         shares[o.familyMemberId] = carried ?? ledger.beginningValue * o.percent;
       }
 
-      // Passive growth: pro-rata to current shares.
       const sumShares = () => owners.reduce((s, o) => s + shares[o.familyMemberId], 0);
-      if (ledger.growth) {
+      const distributeProRata = (amount: number) => {
         const total = sumShares();
-        if (total > 0) {
-          for (const o of owners) {
-            shares[o.familyMemberId] += ledger.growth * (shares[o.familyMemberId] / total);
-          }
+        if (total <= 0) return;
+        for (const o of owners) {
+          shares[o.familyMemberId] += amount * (shares[o.familyMemberId] / total);
         }
+      };
+
+      // Passive growth: pro-rata to current shares.
+      if (ledger.growth) distributeProRata(ledger.growth);
+
+      // Walk attributable entries. Income deposits with a known owner credit
+      // that owner's share; everything else flows pro-rata. Skip internal
+      // transfers and the growth category (already applied via ledger.growth).
+      for (const entry of ledger.entries ?? []) {
+        if (entry.isInternalTransfer) continue;
+        if (entry.category === "growth") continue;
+
+        const isIncomeDeposit =
+          entry.category === "income" && entry.amount > 0 && entry.sourceId;
+        if (isIncomeDeposit) {
+          const owner = incomeOwnerById.get(entry.sourceId!);
+          const fmId = owner ? resolveOwnerToFm(owner) : null;
+          if (fmId && ownerFmIds.has(fmId)) {
+            shares[fmId] += entry.amount;
+            continue;
+          }
+          // Owner unresolvable or not on this account → fall through to pro-rata.
+        }
+
+        distributeProRata(entry.amount);
       }
 
       // Publish.
