@@ -16,8 +16,18 @@ function mkAccount(
   category: AccountLite["category"],
   value: number,
   ownerEntityId: string | null = null,
+  ownerEntityInPortfolio: boolean = false,
 ): InvestableAccount {
-  return { id, name: id, category, growthSource: "custom", modelPortfolioId: null, value, ownerEntityId };
+  return {
+    id,
+    name: id,
+    category,
+    growthSource: "custom",
+    modelPortfolioId: null,
+    value,
+    ownerEntityId,
+    ownerEntityInPortfolio,
+  };
 }
 
 describe("computeHouseholdAllocation", () => {
@@ -87,10 +97,10 @@ describe("computeHouseholdAllocation", () => {
     expect(out.excludedNonInvestableValue).toBe(1_350_000);
   });
 
-  it("excludes OOE (ownerEntityId set) accounts and counts them in excludedNonInvestableValue", () => {
+  it("excludes out-of-estate entity-owned accounts (includeInPortfolio=false) and counts them in excludedNonInvestableValue", () => {
     const accounts = [
       mkAccount("a1", "taxable", 100_000),
-      mkAccount("trust-held", "taxable", 250_000, "entity-1"),
+      mkAccount("trust-held", "taxable", 250_000, "entity-1", false),
     ];
     const resolver = (): AccountAllocationResult => ({
       classified: [{ assetClassId: "ac-eq", weight: 1 }],
@@ -100,6 +110,23 @@ describe("computeHouseholdAllocation", () => {
 
     expect(out.totalInvestableValue).toBe(100_000);
     expect(out.excludedNonInvestableValue).toBe(250_000);
+  });
+
+  it("includes entity-owned accounts when the entity is flagged includeInPortfolio=true", () => {
+    const accounts = [
+      mkAccount("a1", "taxable", 100_000),
+      // Revocable trust / in-estate business: assets roll into the household view.
+      mkAccount("rev-trust", "taxable", 250_000, "entity-1", true),
+    ];
+    const resolver = (): AccountAllocationResult => ({
+      classified: [{ assetClassId: "ac-eq", weight: 1 }],
+    });
+
+    const out = computeHouseholdAllocation(accounts, resolver, ASSET_CLASSES);
+
+    expect(out.totalInvestableValue).toBe(350_000);
+    expect(out.excludedNonInvestableValue).toBe(0);
+    expect(out.byAssetClass.find((b) => b.id === "ac-eq")?.value).toBe(350_000);
   });
 
   it("drops asset classes with zero rolled value from byAssetClass", () => {

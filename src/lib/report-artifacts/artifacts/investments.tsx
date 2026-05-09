@@ -15,6 +15,7 @@ import {
   assetClasses as assetClassesTable,
   modelPortfolios,
   modelPortfolioAllocations,
+  entities as entitiesTable,
 } from "@/db/schema";
 import {
   computeHouseholdAllocation,
@@ -33,6 +34,11 @@ import { serializeCsv } from "../csv";
 
 export const optionsSchema = z.object({
   drillDownClasses: z.array(z.string()).default([]),
+  // When true, OOE entity-owned investable accounts (entity.includeInPortfolio
+  // = false) are folded into the household allocation. Defaults to false to
+  // match the on-screen default; the Investments view's "Include out-of-estate
+  // assets" toggle flips this on per-export.
+  includeOutOfEstate: z.boolean().default(false),
 });
 export type InvestmentsOptions = z.infer<typeof optionsSchema>;
 
@@ -74,7 +80,7 @@ export type InvestmentsData = {
 async function fetchInvestmentsData(
   clientId: string,
   firmId: string,
-  _opts: InvestmentsOptions,
+  opts: InvestmentsOptions,
 ): Promise<FetchDataResult<InvestmentsData>> {
   // Mirror src/app/(app)/clients/[id]/assets/investments/page.tsx exactly.
   // The screen and the PDF share the same data shape — that's the contract.
@@ -105,7 +111,7 @@ async function fetchInvestmentsData(
   // Firm scoping: account_asset_allocations and model_portfolio_allocations
   // have no firm_id. Firm-scope transitively: accounts by (clientId+scenarioId),
   // model_portfolios by firmId, then intersect allocations with those id sets.
-  const [acctRows, mixRows, classRows, portfolioRows, portfolioAllocRows] = await Promise.all([
+  const [acctRows, mixRows, classRows, portfolioRows, portfolioAllocRows, entityRows] = await Promise.all([
     db
       .select()
       .from(accountsTable)
@@ -119,7 +125,13 @@ async function fetchInvestmentsData(
     db.select().from(assetClassesTable).where(eq(assetClassesTable.firmId, firmId)),
     db.select().from(modelPortfolios).where(eq(modelPortfolios.firmId, firmId)),
     db.select().from(modelPortfolioAllocations),
+    db.select({ id: entitiesTable.id, includeInPortfolio: entitiesTable.includeInPortfolio })
+      .from(entitiesTable)
+      .where(eq(entitiesTable.clientId, clientId)),
   ]);
+
+  const entityIncludeInPortfolio = new Map<string, boolean>();
+  for (const e of entityRows) entityIncludeInPortfolio.set(e.id, e.includeInPortfolio);
 
   // Build entity ownership map from junction table.
   const accountEntityOwner = new Map<string, string>();
@@ -190,15 +202,22 @@ async function fetchInvestmentsData(
     assetType: c.assetType as AssetTypeId,
   }));
 
-  const investableAccounts: InvestableAccount[] = acctRows.map((a) => ({
-    id: a.id,
-    name: a.name,
-    category: a.category,
-    growthSource: a.growthSource,
-    modelPortfolioId: a.modelPortfolioId ?? null,
-    value: Number(a.value),
-    ownerEntityId: accountEntityOwner.get(a.id) ?? null,
-  }));
+  const investableAccounts: InvestableAccount[] = acctRows.map((a) => {
+    const entityId = accountEntityOwner.get(a.id) ?? null;
+    const entityInPortfolio = entityId !== null && (entityIncludeInPortfolio.get(entityId) ?? false);
+    return {
+      id: a.id,
+      name: a.name,
+      category: a.category,
+      growthSource: a.growthSource,
+      modelPortfolioId: a.modelPortfolioId ?? null,
+      value: Number(a.value),
+      ownerEntityId: entityId,
+      // Force entity-owned accounts past the in-portfolio gate when the caller
+      // asked for the OOE-included view.
+      ownerEntityInPortfolio: entityId !== null && (opts.includeOutOfEstate || entityInPortfolio),
+    };
+  });
 
   const household = computeHouseholdAllocation(
     investableAccounts,
@@ -231,12 +250,15 @@ async function fetchInvestmentsData(
   // etc.) and entity-owned accounts are reflected in the disclosure line on the
   // page and surfaced via household.unallocatedValue / excludedNonInvestable.
   const perAccount = acctRows
-    .filter((a) =>
-      isInvestableAccount({
+    .filter((a) => {
+      const entityId = accountEntityOwner.get(a.id) ?? null;
+      const entityInPortfolio = entityId !== null && (entityIncludeInPortfolio.get(entityId) ?? false);
+      return isInvestableAccount({
         category: a.category,
-        ownerEntityId: accountEntityOwner.get(a.id) ?? null,
-      }),
-    )
+        ownerEntityId: entityId,
+        ownerEntityInPortfolio: entityId !== null && (opts.includeOutOfEstate || entityInPortfolio),
+      });
+    })
     .map((a) => {
     const acctLite: AccountLite = {
       id: a.id,
@@ -316,7 +338,7 @@ export const investmentsArtifact: ReportArtifact<InvestmentsData, typeof options
   route: "/clients/[id]/assets/investments",
   variants: ["chart", "data", "chart+data", "csv"],
   optionsSchema,
-  defaultOptions: { drillDownClasses: [] },
+  defaultOptions: { drillDownClasses: [], includeOutOfEstate: false },
 
   fetchData: ({ clientId, firmId, opts }) =>
     fetchInvestmentsData(clientId, firmId, opts),

@@ -17,6 +17,7 @@ function mkAccount(
   category: AccountLite["category"],
   value: number,
   ownerEntityId: string | null = null,
+  ownerEntityInPortfolio: boolean = false,
 ): InvestableAccount {
   return {
     id,
@@ -26,6 +27,7 @@ function mkAccount(
     modelPortfolioId: null,
     value,
     ownerEntityId,
+    ownerEntityInPortfolio,
   };
 }
 

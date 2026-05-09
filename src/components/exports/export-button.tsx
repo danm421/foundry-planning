@@ -3,7 +3,15 @@
 import { useState } from "react";
 import { ExportModal } from "./export-modal";
 
-export function ExportButton({ reportId }: { reportId: string }) {
+interface Props {
+  reportId: string;
+  // Per-export option overrides merged into the artifact's defaultOptions
+  // before the request is sent. Used by report views (e.g. Investments'
+  // include-out-of-estate toggle) to pass UI state through to the PDF.
+  optsOverride?: Record<string, unknown>;
+}
+
+export function ExportButton({ reportId, optsOverride }: Props) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -18,6 +26,7 @@ export function ExportButton({ reportId }: { reportId: string }) {
         reportId={reportId}
         open={open}
         onOpenChange={setOpen}
+        optsOverride={optsOverride}
       />
     </>
   );

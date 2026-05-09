@@ -103,6 +103,10 @@ export interface InvestableAccount extends AccountLite {
   name: string;
   value: number;
   ownerEntityId: string | null;
+  // Whether the owning entity is flagged include_in_portfolio. Ignored when
+  // ownerEntityId is null. Entity-owned accounts are excluded from the
+  // investments view only when the entity is out-of-estate (false).
+  ownerEntityInPortfolio: boolean;
 }
 
 export interface AssetClassRollup {
@@ -159,8 +163,11 @@ const INVESTABLE_CATEGORIES: ReadonlySet<AccountCategory> = new Set([
 export function isInvestableAccount(acct: {
   category: AccountCategory;
   ownerEntityId: string | null;
+  ownerEntityInPortfolio: boolean;
 }): boolean {
-  return INVESTABLE_CATEGORIES.has(acct.category) && acct.ownerEntityId === null;
+  if (!INVESTABLE_CATEGORIES.has(acct.category)) return false;
+  if (acct.ownerEntityId === null) return true;
+  return acct.ownerEntityInPortfolio;
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   modelPortfolios,
   modelPortfolioAllocations,
   reportComments,
+  entities as entitiesTable,
 } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
@@ -57,7 +58,7 @@ export default async function InvestmentsPage({ params }: PageProps) {
   // have no firm_id columns of their own. We firm-scope transitively by filtering
   // accounts by (clientId + scenarioId) and model_portfolios by firmId, then
   // intersecting allocations with those id sets when we build the indexes below.
-  const [acctRows, mixRows, classRows, portfolioRows, portfolioAllocRows, commentRows] = await Promise.all([
+  const [acctRows, mixRows, classRows, portfolioRows, portfolioAllocRows, commentRows, entityRows] = await Promise.all([
     db.select().from(accountsTable).where(and(eq(accountsTable.clientId, clientId), eq(accountsTable.scenarioId, scenario.id))),
     db.select().from(accountAssetAllocations),
     db.select().from(assetClassesTable).where(eq(assetClassesTable.firmId, firmId)),
@@ -68,7 +69,13 @@ export default async function InvestmentsPage({ params }: PageProps) {
       eq(reportComments.scenarioId, scenario.id),
       eq(reportComments.reportKey, "investments_asset_allocation"),
     )),
+    db.select({ id: entitiesTable.id, includeInPortfolio: entitiesTable.includeInPortfolio })
+      .from(entitiesTable)
+      .where(eq(entitiesTable.clientId, clientId)),
   ]);
+
+  const entityIncludeInPortfolio = new Map<string, boolean>();
+  for (const e of entityRows) entityIncludeInPortfolio.set(e.id, e.includeInPortfolio);
 
   const existingCommentBody = commentRows[0]?.body ?? "";
 
@@ -114,15 +121,23 @@ export default async function InvestmentsPage({ params }: PageProps) {
     modelPortfolioIdRetirement: settings.modelPortfolioIdRetirement ?? null,
   };
 
-  const investableAccounts: InvestableAccount[] = acctRows.map((a) => ({
-    id: a.id,
-    name: a.name,
-    category: a.category,
-    growthSource: a.growthSource,
-    modelPortfolioId: a.modelPortfolioId ?? null,
-    value: Number(a.value),
-    ownerEntityId: accountEntityOwner.get(a.id) ?? null,
-  }));
+  const buildAccounts = (includeOutOfEstate: boolean): InvestableAccount[] =>
+    acctRows.map((a) => {
+      const entityId = accountEntityOwner.get(a.id) ?? null;
+      const entityInPortfolio = entityId !== null && (entityIncludeInPortfolio.get(entityId) ?? false);
+      return {
+        id: a.id,
+        name: a.name,
+        category: a.category,
+        growthSource: a.growthSource,
+        modelPortfolioId: a.modelPortfolioId ?? null,
+        value: Number(a.value),
+        ownerEntityId: entityId,
+        // When includeOutOfEstate is on, force entity-owned accounts to pass the
+        // filter regardless of the entity's includeInPortfolio flag.
+        ownerEntityInPortfolio: entityId !== null && (includeOutOfEstate || entityInPortfolio),
+      };
+    });
 
   const assetClassLites: AssetClassLite[] = classRows.map((c) => ({
     id: c.id,
@@ -133,12 +148,11 @@ export default async function InvestmentsPage({ params }: PageProps) {
 
   const cashAssetClassId = classRows.find((c) => c.slug === "cash")?.id ?? null;
 
-  const household = computeHouseholdAllocation(
-    investableAccounts,
-    (acct: AccountLite) =>
-      resolveAccountAllocation(acct, accountMixByAccountId, modelPortfolioAllocationsByPortfolioId, planLite, cashAssetClassId),
-    assetClassLites,
-  );
+  const resolver = (acct: AccountLite) =>
+    resolveAccountAllocation(acct, accountMixByAccountId, modelPortfolioAllocationsByPortfolioId, planLite, cashAssetClassId);
+
+  const householdInEstate = computeHouseholdAllocation(buildAccounts(false), resolver, assetClassLites);
+  const householdAll = computeHouseholdAllocation(buildAccounts(true), resolver, assetClassLites);
 
   const portfolioLites = portfolioRows.map((p) => ({ id: p.id, name: p.name }));
   const benchmark = resolveBenchmark(
@@ -149,13 +163,16 @@ export default async function InvestmentsPage({ params }: PageProps) {
 
   const nameByClassId: Record<string, string> = {};
   for (const c of classRows) nameByClassId[c.id] = c.name;
-  const drift = benchmark ? computeDrift(household.byAssetClass, benchmark, nameByClassId) : [];
+  const driftInEstate = benchmark ? computeDrift(householdInEstate.byAssetClass, benchmark, nameByClassId) : [];
+  const driftAll = benchmark ? computeDrift(householdAll.byAssetClass, benchmark, nameByClassId) : [];
 
   return (
     <InvestmentsClient
       clientId={clientId}
-      household={household}
-      drift={drift}
+      household={householdInEstate}
+      householdAll={householdAll}
+      drift={driftInEstate}
+      driftAll={driftAll}
       assetClasses={assetClassLites}
       modelPortfolios={portfolioLites}
       selectedBenchmarkPortfolioId={settings.selectedBenchmarkPortfolioId ?? null}

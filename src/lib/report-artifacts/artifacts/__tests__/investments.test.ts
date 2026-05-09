@@ -52,7 +52,7 @@ describe("investmentsArtifact.renderPdf", () => {
   it("returns non-null view-blocks for variant=data (no charts needed)", () => {
     const node = investmentsArtifact.renderPdf({
       data: baseData,
-      opts: { drillDownClasses: [] },
+      opts: { drillDownClasses: [], includeOutOfEstate: false },
       variant: "data",
       charts: [],
     });
@@ -62,7 +62,7 @@ describe("investmentsArtifact.renderPdf", () => {
   it("renders both donut and drift when variant=chart+data and charts present", () => {
     const node = investmentsArtifact.renderPdf({
       data: baseData,
-      opts: { drillDownClasses: [] },
+      opts: { drillDownClasses: [], includeOutOfEstate: false },
       variant: "chart+data",
       charts: [
         { id: "donut", dataUrl: "data:image/png;base64,xxx", width: 800, height: 500, dataVersion: "v" },
@@ -75,7 +75,7 @@ describe("investmentsArtifact.renderPdf", () => {
   it("returns non-null blocks even with missing chart for variant=chart", () => {
     const node = investmentsArtifact.renderPdf({
       data: baseData,
-      opts: { drillDownClasses: [] },
+      opts: { drillDownClasses: [], includeOutOfEstate: false },
       variant: "chart",
       charts: [],
     });
@@ -89,7 +89,7 @@ describe("investmentsArtifact.renderPdf", () => {
     };
     const node = investmentsArtifact.renderPdf({
       data: noBenchmark,
-      opts: { drillDownClasses: [] },
+      opts: { drillDownClasses: [], includeOutOfEstate: false },
       variant: "data",
       charts: [],
     });

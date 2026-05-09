@@ -19,9 +19,12 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   clientId?: string;
+  // Per-export option overrides merged into the artifact's defaultOptions before
+  // the API request. The server validates the merged object via optionsSchema.
+  optsOverride?: Record<string, unknown>;
 };
 
-export function ExportModal({ reportId, open, onOpenChange, clientId: clientIdProp }: Props) {
+export function ExportModal({ reportId, open, onOpenChange, clientId: clientIdProp, optsOverride }: Props) {
   const params = useParams();
   const clientId = clientIdProp ?? (params?.id as string | undefined) ?? "";
   const artifact = getArtifact(reportId);
@@ -61,7 +64,7 @@ export function ExportModal({ reportId, open, onOpenChange, clientId: clientIdPr
         body: JSON.stringify({
           reportId: artifact.id,
           variant,
-          opts: artifact.defaultOptions,
+          opts: { ...(artifact.defaultOptions as Record<string, unknown>), ...(optsOverride ?? {}) },
           charts,
         }),
       });

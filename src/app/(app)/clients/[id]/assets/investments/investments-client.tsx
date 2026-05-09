@@ -20,7 +20,9 @@ import "@/lib/report-artifacts/index";
 interface Props {
   clientId: string;
   household: HouseholdAllocation;
+  householdAll: HouseholdAllocation;
   drift: DriftRow[];
+  driftAll: DriftRow[];
   assetClasses: AssetClassLite[];
   modelPortfolios: { id: string; name: string }[];
   selectedBenchmarkPortfolioId: string | null;
@@ -36,8 +38,10 @@ function formatDollars(n: number) {
 
 export default function InvestmentsClient({
   clientId,
-  household,
-  drift,
+  household: householdInEstate,
+  householdAll,
+  drift: driftInEstate,
+  driftAll,
   assetClasses,
   modelPortfolios,
   selectedBenchmarkPortfolioId,
@@ -47,6 +51,14 @@ export default function InvestmentsClient({
   const [commentOpen, setCommentOpen] = useState(false);
   const [drilledRowId, setDrilledRowId] = useState<string | null>(null);
   const [view, setView] = useState<AllocationView>("detailed");
+  const [includeOutOfEstate, setIncludeOutOfEstate] = useState(false);
+
+  const household = includeOutOfEstate ? householdAll : householdInEstate;
+  const drift = includeOutOfEstate ? driftAll : driftInEstate;
+  // Difference between "all" and "in-estate" totals = OOE entity-owned investable
+  // dollars. Hide the toggle entirely when there are none — there's nothing to add.
+  const hasOutOfEstateInvestables =
+    householdAll.totalInvestableValue > householdInEstate.totalInvestableValue;
 
   const donutCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const handleDonutReady = useCallback((c: HTMLCanvasElement) => {
@@ -111,35 +123,51 @@ export default function InvestmentsClient({
             selectedBenchmarkPortfolioId={selectedBenchmarkPortfolioId}
           />
         </div>
-        <div
-          role="radiogroup"
-          aria-label="Allocation view"
-          className="inline-flex self-start rounded-md border border-gray-700 bg-gray-800/50 p-0.5 text-xs"
-        >
-          {(
-            [
-              { id: "high_level", label: "By Type" },
-              { id: "detailed",   label: "By Class" },
-              { id: "combined",   label: "Combined" },
-            ] as const
-          ).map((opt) => (
-            <button
-              key={opt.id}
-              role="radio"
-              aria-checked={view === opt.id}
-              onClick={() => {
-                setView(opt.id);
-                setDrilledRowId(null); // reset any open drill when switching modes
-              }}
-              className={`rounded px-3 py-1.5 font-medium transition-colors ${
-                view === opt.id
-                  ? "bg-gray-700 text-white"
-                  : "text-gray-300 hover:text-gray-200"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3">
+          <div
+            role="radiogroup"
+            aria-label="Allocation view"
+            className="inline-flex self-start rounded-md border border-gray-700 bg-gray-800/50 p-0.5 text-xs"
+          >
+            {(
+              [
+                { id: "high_level", label: "By Type" },
+                { id: "detailed",   label: "By Class" },
+                { id: "combined",   label: "Combined" },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                role="radio"
+                aria-checked={view === opt.id}
+                onClick={() => {
+                  setView(opt.id);
+                  setDrilledRowId(null); // reset any open drill when switching modes
+                }}
+                className={`rounded px-3 py-1.5 font-medium transition-colors ${
+                  view === opt.id
+                    ? "bg-gray-700 text-white"
+                    : "text-gray-300 hover:text-gray-200"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {hasOutOfEstateInvestables && (
+            <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-gray-300">
+              <input
+                type="checkbox"
+                checked={includeOutOfEstate}
+                onChange={(e) => {
+                  setIncludeOutOfEstate(e.target.checked);
+                  setDrilledRowId(null);
+                }}
+                className="h-3.5 w-3.5 rounded border-gray-600 bg-gray-800 accent-accent"
+              />
+              Include out-of-estate assets
+            </label>
+          )}
         </div>
       </header>
 
@@ -211,7 +239,10 @@ export default function InvestmentsClient({
 
       <div className="flex items-center justify-between border-t border-gray-800 pt-4">
         <div className="flex gap-2">
-          <ExportButton reportId="investments" />
+          <ExportButton
+            reportId="investments"
+            optsOverride={includeOutOfEstate ? { includeOutOfEstate: true } : undefined}
+          />
           <button
             onClick={() => setCommentOpen(true)}
             className="relative rounded border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
