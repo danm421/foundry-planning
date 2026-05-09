@@ -575,6 +575,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     },
   };
 
+  const cashflowChartOptions = {
+    ...chartOptionsWithMarkers,
+    interaction: { mode: "index" as const, intersect: false },
+  };
+
   const portfolioChartOptions = {
     ...chartOptionsWithMarkers,
     scales: {
@@ -2057,7 +2062,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           {chartView === "portfolio" ? (
             <Bar data={portfolioChartData} options={portfolioChartOptions} />
           ) : (
-            <Chart type="bar" data={cashflowChartData} options={chartOptionsWithMarkers} />
+            <Chart type="bar" data={cashflowChartData} options={cashflowChartOptions} />
           )}
         </div>
       </div>
