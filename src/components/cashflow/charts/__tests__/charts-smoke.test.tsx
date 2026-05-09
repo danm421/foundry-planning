@@ -13,8 +13,8 @@ import { incomeFixture } from "./fixtures";
 
 describe("chart smoke tests", () => {
   it.each([
-    ["IncomeChart", () => <IncomeChart years={incomeFixture} />],
-    ["ExpensesChart", () => <ExpensesChart years={incomeFixture} />],
+    ["IncomeChart", () => <IncomeChart years={incomeFixture} dataVersion="test" />],
+    ["ExpensesChart", () => <ExpensesChart years={incomeFixture} dataVersion="test" />],
     [
       "SavingsChart",
       () => {
@@ -32,10 +32,10 @@ describe("chart smoke tests", () => {
           ...y,
           withdrawals: { byAccount: { a1: 1000 }, total: 1000 },
         }));
-        return <WithdrawalsChart years={yearsWithWithdrawals} accountCategoryById={{ a1: "retirement" }} />;
+        return <WithdrawalsChart years={yearsWithWithdrawals} accountCategoryById={{ a1: "retirement" }} dataVersion="test" />;
       },
     ],
-    ["PortfolioChart", () => <PortfolioChart years={incomeFixture} />],
+    ["PortfolioChart", () => <PortfolioChart years={incomeFixture} dataVersion="test" />],
     ["TaxIncomeChart", () => <TaxIncomeChart years={incomeFixture} />],
     ["TaxFederalChart", () => <TaxFederalChart years={incomeFixture} />],
     ["TaxBracketChart", () => <TaxBracketChart years={incomeFixture} />],

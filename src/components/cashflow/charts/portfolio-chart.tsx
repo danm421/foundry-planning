@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -14,6 +14,7 @@ import {
 import { Line } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine";
 import type { StackedBarSeries } from "./stacked-bar-chart";
+import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Filler, Tooltip, Legend);
 
@@ -39,9 +40,15 @@ export function buildPortfolioDatasets(): StackedBarSeries[] {
 
 interface PortfolioChartProps {
   years: ProjectionYear[];
+  dataVersion: string;
 }
 
-export function PortfolioChart({ years }: PortfolioChartProps) {
+export function PortfolioChart({ years, dataVersion }: PortfolioChartProps) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useChartCapture(
+    { reportId: "cashflow", chartId: "assets", dataVersion },
+    useCallback(() => ref.current?.querySelector("canvas") ?? null, []),
+  );
   const series = buildPortfolioDatasets();
 
   const data = useMemo(() => {
@@ -95,8 +102,10 @@ export function PortfolioChart({ years }: PortfolioChartProps) {
 
   if (!data) return null;
   return (
-    <div style={{ height: 300 }}>
-      <Line data={data} options={options} />
+    <div ref={ref}>
+      <div style={{ height: 300 }}>
+        <Line data={data} options={options} />
+      </div>
     </div>
   );
 }

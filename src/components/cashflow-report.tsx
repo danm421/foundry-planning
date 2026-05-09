@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -39,6 +39,8 @@ import {
 import { QuickNavDropdown } from "@/components/cashflow/quick-nav-dropdown";
 import { DrillChart } from "@/components/cashflow/charts/drill-chart";
 import { buildLifeEventsByYear } from "@/lib/life-event-markers";
+import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
+import { ExportButton } from "@/components/exports/export-button";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
 
@@ -330,6 +332,23 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   // True when at least one visible year has structured SS detail (pia_at_fra mode).
   // When false, the SS row renders exactly as before — no expand affordance.
   const hasSocialSecurityDetail = visibleYears.some((y) => y.socialSecurityDetail != null);
+
+  // ── Chart capture ──────────────────────────────────────────────────────────
+
+  const scenarioId = searchParams?.get("scenario") ?? null;
+  const dataVersion = `${scenarioId ?? "base"}|${yearRange[0]}-${yearRange[1]}`;
+
+  const portfolioChartRef = useRef<HTMLDivElement | null>(null);
+  const cashflowChartRef = useRef<HTMLDivElement | null>(null);
+
+  useChartCapture(
+    { reportId: "cashflow", chartId: "base-portfolio", dataVersion },
+    useCallback(() => portfolioChartRef.current?.querySelector("canvas") ?? null, []),
+  );
+  useChartCapture(
+    { reportId: "cashflow", chartId: "base-cashflow", dataVersion },
+    useCallback(() => cashflowChartRef.current?.querySelector("canvas") ?? null, []),
+  );
 
   // ── Data loading ───────────────────────────────────────────────────────────
 
@@ -2063,9 +2082,13 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             </div>
             <div style={{ height: 300 }}>
               {chartView === "portfolio" ? (
-                <Bar data={portfolioChartData} options={portfolioChartOptions} />
+                <div ref={portfolioChartRef} style={{ height: "100%" }}>
+                  <Bar data={portfolioChartData} options={portfolioChartOptions} />
+                </div>
               ) : (
-                <Chart type="bar" data={cashflowChartData} options={cashflowChartOptions} />
+                <div ref={cashflowChartRef} style={{ height: "100%" }}>
+                  <Chart type="bar" data={cashflowChartData} options={cashflowChartOptions} />
+                </div>
               )}
             </div>
           </>
@@ -2077,6 +2100,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             accountNames={accountNames}
             accountSubTypes={accountSubTypes}
             accountCategoryById={accountCategoryById}
+            dataVersion={dataVersion}
           />
         )}
       </div>
@@ -2177,6 +2201,17 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             })}
           </tbody>
         </table>
+      </div>
+
+      <div className="mt-3 flex justify-start">
+        <ExportButton
+          reportId="cashflow"
+          optsOverride={{
+            scenarioId,
+            yearStart: yearRange[0],
+            yearEnd: yearRange[1],
+          }}
+        />
       </div>
 
       {/* Account Ledger Modal */}

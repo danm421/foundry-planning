@@ -1,7 +1,9 @@
 "use client";
 
+import { useCallback, useRef } from "react";
 import type { ProjectionYear } from "@/engine";
 import { StackedBarChart, type StackedBarSeries } from "./stacked-bar-chart";
+import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 
 export function buildIncomeDatasets(): StackedBarSeries[] {
   return [
@@ -17,8 +19,18 @@ export function buildIncomeDatasets(): StackedBarSeries[] {
 
 interface IncomeChartProps {
   years: ProjectionYear[];
+  dataVersion: string;
 }
 
-export function IncomeChart({ years }: IncomeChartProps) {
-  return <StackedBarChart years={years} series={buildIncomeDatasets()} title="Income by source" />;
+export function IncomeChart({ years, dataVersion }: IncomeChartProps) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useChartCapture(
+    { reportId: "cashflow", chartId: "income", dataVersion },
+    useCallback(() => ref.current?.querySelector("canvas") ?? null, []),
+  );
+  return (
+    <div ref={ref}>
+      <StackedBarChart years={years} series={buildIncomeDatasets()} title="Income by source" />
+    </div>
+  );
 }

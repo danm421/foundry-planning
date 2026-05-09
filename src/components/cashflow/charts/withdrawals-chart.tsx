@@ -1,7 +1,9 @@
 "use client";
 
+import { useCallback, useRef } from "react";
 import type { ProjectionYear } from "@/engine";
 import { StackedBarChart, type StackedBarSeries } from "./stacked-bar-chart";
+import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 
 const CATEGORY_LABELS: Record<string, string> = {
   taxable: "Taxable",
@@ -60,14 +62,22 @@ export function buildWithdrawalsDatasets(
 interface WithdrawalsChartProps {
   years: ProjectionYear[];
   accountCategoryById: Record<string, string>;
+  dataVersion: string;
 }
 
-export function WithdrawalsChart({ years, accountCategoryById }: WithdrawalsChartProps) {
+export function WithdrawalsChart({ years, accountCategoryById, dataVersion }: WithdrawalsChartProps) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useChartCapture(
+    { reportId: "cashflow", chartId: "withdrawals", dataVersion },
+    useCallback(() => ref.current?.querySelector("canvas") ?? null, []),
+  );
   return (
-    <StackedBarChart
-      years={years}
-      series={buildWithdrawalsDatasets(years, accountCategoryById)}
-      title="Withdrawals by category"
-    />
+    <div ref={ref}>
+      <StackedBarChart
+        years={years}
+        series={buildWithdrawalsDatasets(years, accountCategoryById)}
+        title="Withdrawals by category"
+      />
+    </div>
   );
 }
