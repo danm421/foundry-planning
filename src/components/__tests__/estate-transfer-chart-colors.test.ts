@@ -40,12 +40,31 @@ describe("assignRecipientColors", () => {
     expect(assignRecipientColors(totals)).toEqual(assignRecipientColors(totals));
   });
 
-  it("uses distinct palette families per recipientKind (no color collision across kinds)", () => {
+  it("never produces duplicate colors across kinds, even at last palette slots", () => {
+    // Exercise the deepest palette slot of each multi-color kind alongside spouse and system_default.
     const totals = [
       make("spouse|s1", "spouse"),
+      // family_member has 7 colors — push to slot index 6
       make("family|c1", "family_member"),
-      make("ext|charity1", "external_beneficiary"),
-      make("entity|trust1", "entity"),
+      make("family|c2", "family_member"),
+      make("family|c3", "family_member"),
+      make("family|c4", "family_member"),
+      make("family|c5", "family_member"),
+      make("family|c6", "family_member"),
+      make("family|c7", "family_member"),
+      // external_beneficiary has 6 colors — push to slot index 5
+      make("ext|c1", "external_beneficiary"),
+      make("ext|c2", "external_beneficiary"),
+      make("ext|c3", "external_beneficiary"),
+      make("ext|c4", "external_beneficiary"),
+      make("ext|c5", "external_beneficiary"),
+      make("ext|c6", "external_beneficiary"),
+      // entity has 4 colors — push to slot index 3
+      make("entity|t1", "entity"),
+      make("entity|t2", "entity"),
+      make("entity|t3", "entity"),
+      make("entity|t4", "entity"),
+      make("system|residual", "system_default"),
     ];
     const colors = assignRecipientColors(totals);
     const all = Object.values(colors);
@@ -65,5 +84,11 @@ describe("assignRecipientColors", () => {
       colors["family|c3"],
     ];
     expect(new Set(fams).size).toBe(3);
+  });
+
+  it("returns a color for system_default recipients", () => {
+    const totals = [make("system|residual", "system_default")];
+    const colors = assignRecipientColors(totals);
+    expect(colors["system|residual"]).toMatch(/^#[0-9a-f]{6}$/i);
   });
 });

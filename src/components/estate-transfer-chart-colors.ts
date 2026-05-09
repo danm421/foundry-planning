@@ -19,13 +19,7 @@ const PALETTES: Record<RecipientTotal["recipientKind"], readonly string[]> = {
     "#fb7185",
     "#facc15",
   ],
-  entity: [
-    "#9333ea",
-    "#a855f7",
-    "#7c3aed",
-    "#c084fc",
-    "#6b7280",
-  ],
+  entity: ["#9333ea", "#a855f7", "#7c3aed", "#c084fc"],
   system_default: ["#6b7280"],
 };
 
