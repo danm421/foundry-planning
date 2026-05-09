@@ -39,6 +39,52 @@ export interface ComputeFamilyAccountSharesInput {
 }
 
 /** Mutates input.years[].familyAccountSharesEoY in place. */
-export function computeFamilyAccountShares(_input: ComputeFamilyAccountSharesInput): void {
-  // Stub. Implemented incrementally in subsequent tasks.
+export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInput): void {
+  const { years, accountFamilyOwners } = input;
+  if (accountFamilyOwners.size === 0) return;
+
+  // Per-member per-account locked EoY share, carried year-to-year.
+  const lockedShareByMemberAccount = new Map<string, Map<string, number>>();
+  const setLocked = (fmId: string, aid: string, value: number) => {
+    if (!lockedShareByMemberAccount.has(fmId)) lockedShareByMemberAccount.set(fmId, new Map());
+    lockedShareByMemberAccount.get(fmId)!.set(aid, value);
+  };
+  const getLocked = (fmId: string, aid: string) =>
+    lockedShareByMemberAccount.get(fmId)?.get(aid);
+
+  for (const year of years) {
+    for (const [accountId, owners] of accountFamilyOwners) {
+      const ledger = year.accountLedgers[accountId];
+      if (!ledger) continue;
+
+      // BoY share per owner: prior year's EoY, or seed from owner.percent on year 0.
+      const shares: Record<string, number> = {};
+      for (const o of owners) {
+        const carried = getLocked(o.familyMemberId, accountId);
+        shares[o.familyMemberId] = carried ?? ledger.beginningValue * o.percent;
+      }
+
+      // Passive growth: pro-rata to current shares.
+      const sumShares = () => owners.reduce((s, o) => s + shares[o.familyMemberId], 0);
+      if (ledger.growth) {
+        const total = sumShares();
+        if (total > 0) {
+          for (const o of owners) {
+            shares[o.familyMemberId] += ledger.growth * (shares[o.familyMemberId] / total);
+          }
+        }
+      }
+
+      // Publish.
+      if (!year.familyAccountSharesEoY) year.familyAccountSharesEoY = new Map();
+      for (const o of owners) {
+        const v = shares[o.familyMemberId];
+        setLocked(o.familyMemberId, accountId, v);
+        if (!year.familyAccountSharesEoY.has(o.familyMemberId)) {
+          year.familyAccountSharesEoY.set(o.familyMemberId, new Map());
+        }
+        year.familyAccountSharesEoY.get(o.familyMemberId)!.set(accountId, v);
+      }
+    }
+  }
 }
