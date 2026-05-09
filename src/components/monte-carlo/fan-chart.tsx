@@ -11,6 +11,7 @@ import {
   Legend,
   Filler,
   type ChartOptions,
+  type Plugin,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 import type { MonteCarloSummary } from "@/engine";
@@ -29,26 +30,29 @@ interface TerminalCalloutOptions {
 
 // Renders p5 / p50 / p95 dollar labels just inside the right edge of the
 // chart at the three terminal-age values. Visual parity with the mockup.
-const terminalCalloutsPlugin = {
+const terminalCalloutsPlugin: Plugin<"line", Partial<TerminalCalloutOptions>> = {
   id: "terminalCallouts",
-  afterDatasetsDraw(
-    chart: {
-      ctx: CanvasRenderingContext2D;
-      chartArea: { top: number; bottom: number; left: number; right: number };
-      scales: { x: { getPixelForValue(v: number): number }; y: { getPixelForValue(v: number): number } };
-      data: { labels: (string | number)[] };
-    },
-    _args: unknown,
-    options: TerminalCalloutOptions,
-  ) {
-    if (!options) return;
+  afterDatasetsDraw(chart, _args, options) {
+    if (
+      !options ||
+      !Number.isFinite(options.p80) ||
+      !Number.isFinite(options.p50) ||
+      !Number.isFinite(options.p20)
+    ) {
+      return;
+    }
     const { ctx, scales, data } = chart;
-    const lastIdx = data.labels.length - 1;
-    const x = scales.x.getPixelForValue(lastIdx);
+    const xScale = scales.x;
+    const yScale = scales.y;
+    if (!xScale || !yScale) return;
+    const labels = data.labels ?? [];
+    const lastIdx = labels.length - 1;
+    if (lastIdx < 0) return;
+    const x = xScale.getPixelForValue(lastIdx);
     const entries: Array<{ y: number; label: string; color: string }> = [
-      { y: scales.y.getPixelForValue(options.p80), label: formatShortCurrency(options.p80), color: "rgb(52, 211, 153)" },
-      { y: scales.y.getPixelForValue(options.p50), label: formatShortCurrency(options.p50), color: "rgb(110, 231, 183)" },
-      { y: scales.y.getPixelForValue(options.p20), label: formatShortCurrency(options.p20), color: "rgb(251, 113, 133)" },
+      { y: yScale.getPixelForValue(options.p80!), label: formatShortCurrency(options.p80!), color: "rgb(52, 211, 153)" },
+      { y: yScale.getPixelForValue(options.p50!), label: formatShortCurrency(options.p50!), color: "rgb(110, 231, 183)" },
+      { y: yScale.getPixelForValue(options.p20!), label: formatShortCurrency(options.p20!), color: "rgb(251, 113, 133)" },
     ];
     ctx.save();
     ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
@@ -68,26 +72,19 @@ interface AgeMarker {
   color: string;
 }
 
-const ageMarkersPlugin = {
+const ageMarkersPlugin: Plugin<"line", { markers?: AgeMarker[] }> = {
   id: "ageMarkers",
-  afterDatasetsDraw(
-    chart: {
-      ctx: CanvasRenderingContext2D;
-      chartArea: { top: number; bottom: number; left: number; right: number };
-      scales: { x: { getPixelForValue(v: number): number } };
-      data: { labels: (string | number)[] };
-    },
-    _args: unknown,
-    options: { markers?: AgeMarker[] },
-  ) {
+  afterDatasetsDraw(chart, _args, options) {
     const markers = options?.markers ?? [];
     if (markers.length === 0) return;
     const { ctx, chartArea, scales, data } = chart;
+    const xScale = scales.x;
+    if (!xScale) return;
     ctx.save();
     for (const m of markers) {
-      const idx = (data.labels as number[]).indexOf(m.age);
+      const idx = (data.labels as number[] | undefined)?.indexOf(m.age) ?? -1;
       if (idx < 0) continue;
-      const x = scales.x.getPixelForValue(idx);
+      const x = xScale.getPixelForValue(idx);
       ctx.strokeStyle = m.color;
       ctx.setLineDash([4, 4]);
       ctx.lineWidth = 1.5;
@@ -108,8 +105,6 @@ const ageMarkersPlugin = {
     ctx.restore();
   },
 };
-
-ChartJS.register(terminalCalloutsPlugin, ageMarkersPlugin);
 
 interface FanChartProps {
   summary: MonteCarloSummary;
@@ -154,6 +149,9 @@ export function FanChart({
         borderColor: "rgb(30, 41, 59)",
         borderWidth: 1,
         padding: 10,
+        boxWidth: 20,
+        boxHeight: 10,
+        boxPadding: 8,
         itemSort: (
           a: { dataset: { label?: string } },
           b: { dataset: { label?: string } },
@@ -174,6 +172,29 @@ export function FanChart({
             const name = ctx.dataset.label ?? "";
             const y = ctx.parsed.y;
             return `${name}: ${formatShortCurrency(y ?? 0)}`;
+          },
+          // Render each swatch using the dataset's line color (not the faint band fill).
+          // Dashed-line datasets render as a transparent box with a dashed border so the
+          // swatch visually mirrors the line on the chart. Cast through `unknown` because
+          // chart.js types `borderColor`/`borderDash` as scriptable arrays, but our
+          // datasets always store plain string/number[] values.
+          labelColor: (ctx) => {
+            const ds = ctx.dataset as unknown as { borderColor?: string; borderDash?: number[] };
+            const color = ds.borderColor ?? "rgb(148, 163, 184)";
+            const dash = ds.borderDash;
+            if (Array.isArray(dash) && dash.length >= 2) {
+              return {
+                backgroundColor: "transparent",
+                borderColor: color,
+                borderWidth: 2,
+                borderDash: [dash[0], dash[1]] as [number, number],
+              };
+            }
+            return {
+              backgroundColor: color,
+              borderColor: color,
+              borderWidth: 2,
+            };
           },
         },
       },
@@ -242,7 +263,11 @@ export function FanChart({
         {isCompact && onPromote && <PromoteButton onPromote={onPromote} />}
       </div>
       <div className={isCompact ? "relative h-[220px]" : "relative h-[400px]"}>
-        <Line data={data} options={options} />
+        <Line
+          data={data}
+          options={options}
+          plugins={[terminalCalloutsPlugin, ageMarkersPlugin]}
+        />
       </div>
     </div>
   );
