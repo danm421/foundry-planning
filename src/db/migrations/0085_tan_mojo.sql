@@ -1,0 +1,2 @@
+ALTER TABLE "life_insurance_policies" ADD COLUMN "post_payout_model_portfolio_id" uuid;--> statement-breakpoint
+ALTER TABLE "life_insurance_policies" ADD CONSTRAINT "life_insurance_policies_post_payout_model_portfolio_id_model_portfolios_id_fk" FOREIGN KEY ("post_payout_model_portfolio_id") REFERENCES "public"."model_portfolios"("id") ON DELETE set null ON UPDATE no action;

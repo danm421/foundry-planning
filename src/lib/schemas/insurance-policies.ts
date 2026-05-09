@@ -20,6 +20,7 @@ const base = {
   cashValueGrowthMode: z.enum(["basic", "free_form"]).default("basic"),
   postPayoutMergeAccountId: uuidSchema.nullable().optional(),
   postPayoutGrowthRate: z.number().gte(0).lte(1).default(0.06),
+  postPayoutModelPortfolioId: uuidSchema.nullable().optional(),
   cashValueSchedule: z.array(
     z.object({
       year: z.number().int().gte(1900).lte(2200),

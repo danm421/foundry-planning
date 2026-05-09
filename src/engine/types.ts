@@ -480,6 +480,19 @@ export interface LifeInsurancePolicy {
   cashValueGrowthMode: "basic" | "free_form";
   postPayoutMergeAccountId: string | null;
   postPayoutGrowthRate: number;
+  /** Model portfolio driving the standalone-mode payout's growth and
+   *  realization mix. The loader resolves it into `postPayoutGrowthRate` and
+   *  `postPayoutRealization`; the engine reads only the resolved values. */
+  postPayoutModelPortfolioId?: string | null;
+  /** Resolved tax-realization mix for standalone-mode payouts. When set, the
+   *  transformed account is `taxable` (not `cash`) and inherits this mix. */
+  postPayoutRealization?: {
+    pctOrdinaryIncome: number;
+    pctLtCapitalGains: number;
+    pctQualifiedDividends: number;
+    pctTaxExempt: number;
+    turnoverPct: number;
+  };
   cashValueSchedule: LifeInsuranceCashValueScheduleRow[];
 }
 

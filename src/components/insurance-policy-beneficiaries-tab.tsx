@@ -12,6 +12,8 @@ import { redistribute, splitEvenly } from "./forms/auto-split-percentages";
 
 interface InsurancePolicyBeneficiariesTabProps {
   clientId: string;
+  clientFirstName: string;
+  spouseFirstName: string | null;
   mode: "create" | "edit";
   policyId?: string;
   members: FamilyMember[];
@@ -35,12 +37,16 @@ function normalize(rows: DesignationRow[]): Designation[] {
 function AccountBeneficiaryEditor({
   clientId,
   accountId,
+  clientFirstName,
+  spouseFirstName,
   members,
   externals,
   initial,
 }: {
   clientId: string;
   accountId: string;
+  clientFirstName: string;
+  spouseFirstName: string | null;
   members: FamilyMember[];
   externals: ExternalBeneficiary[];
   initial: Designation[];
@@ -76,6 +82,7 @@ function AccountBeneficiaryEditor({
         percentage: r.percentage,
         familyMemberId: r.familyMemberId ?? undefined,
         externalBeneficiaryId: r.externalBeneficiaryId ?? undefined,
+        householdRole: r.householdRole ?? undefined,
         sortOrder: r.sortOrder,
       }));
       const res = await fetch(url, {
@@ -154,7 +161,15 @@ function AccountBeneficiaryEditor({
     });
   }
 
-  const children = members.filter((m) => m.relationship === "child");
+  // Family-only beneficiaries — exclude household principals (client/spouse).
+  // Without a `role`, fall back to the legacy behavior of including the row.
+  const familyMembers = members.filter(
+    (m) => m.role !== "client" && m.role !== "spouse",
+  );
+  // "Children" for the split-among-children helper. Legacy data may set the
+  // client/spouse with relationship="child" (the schema default), so also
+  // filter by role here to avoid splitting onto the household principals.
+  const children = familyMembers.filter((m) => m.relationship === "child");
 
   function splitAmongChildren(tier: Tier) {
     if (children.length === 0) return;
@@ -200,27 +215,54 @@ function AccountBeneficiaryEditor({
             <li key={r.id} className="flex items-center gap-2">
               <select
                 value={
-                  r.familyMemberId
-                    ? `fm:${r.familyMemberId}`
-                    : r.externalBeneficiaryId
-                      ? `ext:${r.externalBeneficiaryId}`
-                      : ""
+                  r.householdRole
+                    ? `hh:${r.householdRole}`
+                    : r.familyMemberId
+                      ? `fm:${r.familyMemberId}`
+                      : r.externalBeneficiaryId
+                        ? `ext:${r.externalBeneficiaryId}`
+                        : ""
                 }
                 onChange={(e) => {
                   const v = e.target.value;
-                  if (v.startsWith("fm:")) {
-                    updateRow(r.id, { familyMemberId: v.slice(3), externalBeneficiaryId: null });
+                  if (v.startsWith("hh:")) {
+                    const role = v.slice(3) as "client" | "spouse";
+                    updateRow(r.id, {
+                      householdRole: role,
+                      familyMemberId: null,
+                      externalBeneficiaryId: null,
+                    });
+                  } else if (v.startsWith("fm:")) {
+                    updateRow(r.id, {
+                      familyMemberId: v.slice(3),
+                      externalBeneficiaryId: null,
+                      householdRole: null,
+                    });
                   } else if (v.startsWith("ext:")) {
-                    updateRow(r.id, { externalBeneficiaryId: v.slice(4), familyMemberId: null });
+                    updateRow(r.id, {
+                      externalBeneficiaryId: v.slice(4),
+                      familyMemberId: null,
+                      householdRole: null,
+                    });
                   } else {
-                    updateRow(r.id, { familyMemberId: null, externalBeneficiaryId: null });
+                    updateRow(r.id, {
+                      familyMemberId: null,
+                      externalBeneficiaryId: null,
+                      householdRole: null,
+                    });
                   }
                 }}
                 className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
               >
                 <option value="">— select beneficiary —</option>
+                <optgroup label="Household">
+                  <option value="hh:client">{clientFirstName} (client)</option>
+                  {spouseFirstName && (
+                    <option value="hh:spouse">{spouseFirstName} (spouse)</option>
+                  )}
+                </optgroup>
                 <optgroup label="Family">
-                  {members.map((m) => (
+                  {familyMembers.map((m) => (
                     <option key={m.id} value={`fm:${m.id}`}>
                       {m.firstName} {m.lastName ?? ""} ({m.relationship})
                     </option>
@@ -296,6 +338,8 @@ function AccountBeneficiaryEditor({
 
 export default function InsurancePolicyBeneficiariesTab({
   clientId,
+  clientFirstName,
+  spouseFirstName,
   mode,
   policyId,
   members,
@@ -376,6 +420,8 @@ export default function InsurancePolicyBeneficiariesTab({
     <AccountBeneficiaryEditor
       clientId={clientId}
       accountId={policyId!}
+      clientFirstName={clientFirstName}
+      spouseFirstName={spouseFirstName}
       members={members}
       externals={externals}
       initial={designations}

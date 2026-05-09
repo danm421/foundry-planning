@@ -27,6 +27,8 @@ export interface FamilyMember {
   firstName: string;
   lastName: string | null;
   relationship: Relationship;
+  /** Household role. Present on rows loaded from `family_members.role`. */
+  role?: "client" | "spouse" | "child" | "other";
   dateOfBirth: string | null;
   notes: string | null;
 }

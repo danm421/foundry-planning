@@ -5,6 +5,7 @@ import { CurrencyInput } from "./currency-input";
 import type {
   InsurancePanelAccount,
   InsurancePanelEntity,
+  InsurancePanelModelPortfolio,
 } from "./insurance-panel";
 import type { PolicyFormState } from "./insurance-policy-dialog";
 import {
@@ -18,6 +19,7 @@ interface InsurancePolicyDetailsTabProps {
   onChange: (patch: Partial<PolicyFormState>) => void;
   accounts: InsurancePanelAccount[];
   entities: InsurancePanelEntity[];
+  modelPortfolios: InsurancePanelModelPortfolio[];
   /** For edit mode — excludes self from the postPayoutMergeAccountId options. */
   policyId?: string;
   mode: "create" | "edit";
@@ -48,6 +50,7 @@ export default function InsurancePolicyDetailsTab({
   onChange,
   accounts,
   entities,
+  modelPortfolios,
   policyId,
   mode,
   clientFirstName,
@@ -291,18 +294,50 @@ export default function InsurancePolicyDetailsTab({
             <span className={fieldLabelClassName}>Merge into account</span>
             <select
               value={state.postPayoutMergeAccountId ?? ""}
-              onChange={(e) =>
-                onChange({ postPayoutMergeAccountId: e.target.value || null })
-              }
+              onChange={(e) => {
+                const v = e.target.value || null;
+                onChange({
+                  postPayoutMergeAccountId: v,
+                  // Merging supersedes the standalone-mode portfolio choice;
+                  // proceeds inherit the target account's growth + tax model.
+                  postPayoutModelPortfolioId: v ? null : state.postPayoutModelPortfolioId,
+                });
+              }}
               className={selectClassName}
             >
-              <option value="">Grow at rate below</option>
+              <option value="">Standalone (grow at rate / portfolio below)</option>
               {postPayoutOptions.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
                 </option>
               ))}
             </select>
+          </label>
+          <label className="block">
+            <span className={fieldLabelClassName}>Model portfolio</span>
+            <select
+              value={state.postPayoutModelPortfolioId ?? ""}
+              disabled={
+                state.postPayoutMergeAccountId !== null ||
+                modelPortfolios.length === 0
+              }
+              onChange={(e) =>
+                onChange({ postPayoutModelPortfolioId: e.target.value || null })
+              }
+              className={selectClassName}
+            >
+              <option value="">Use flat growth rate</option>
+              {modelPortfolios.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <p className={helpCls}>
+              {modelPortfolios.length === 0
+                ? "No model portfolios configured for this firm."
+                : "Resulting account uses this portfolio's CMA for growth and tax realization."}
+            </p>
           </label>
           <label className="block">
             <span className={fieldLabelClassName}>Growth rate</span>
@@ -312,7 +347,10 @@ export default function InsurancePolicyDetailsTab({
               max={1}
               step={0.001}
               value={state.postPayoutGrowthRate}
-              disabled={state.postPayoutMergeAccountId !== null}
+              disabled={
+                state.postPayoutMergeAccountId !== null ||
+                state.postPayoutModelPortfolioId !== null
+              }
               onChange={(e) =>
                 onChange({ postPayoutGrowthRate: toNumber(e.target.value) })
               }

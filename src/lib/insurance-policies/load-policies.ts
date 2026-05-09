@@ -59,6 +59,7 @@ export async function loadPoliciesByAccountIds(
       cashValueGrowthMode: p.cashValueGrowthMode,
       postPayoutMergeAccountId: p.postPayoutMergeAccountId,
       postPayoutGrowthRate: Number(p.postPayoutGrowthRate),
+      postPayoutModelPortfolioId: p.postPayoutModelPortfolioId,
       cashValueSchedule: scheduleByPolicy.get(p.accountId) ?? [],
     };
   }

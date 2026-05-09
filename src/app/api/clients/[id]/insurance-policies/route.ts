@@ -202,6 +202,7 @@ export async function POST(
         cashValueGrowthMode: input.cashValueGrowthMode,
         postPayoutMergeAccountId: input.postPayoutMergeAccountId ?? null,
         postPayoutGrowthRate: String(input.postPayoutGrowthRate),
+        postPayoutModelPortfolioId: input.postPayoutModelPortfolioId ?? null,
       });
 
       if (input.cashValueSchedule.length > 0) {

@@ -84,17 +84,26 @@ export function prepareLifeInsurancePayouts(
       retiredPolicyIds.push(policyId);
       // Policy account is NOT pushed to resultAccounts (dropped).
     } else {
-      // Standalone mode: transform the account into a cash-equivalent.
+      // Standalone mode. Default: cash-equivalent at the policy's flat growth
+      // rate. Model-portfolio path: when the loader resolved a model portfolio
+      // for this policy, the policy carries `postPayoutRealization` and a
+      // portfolio-derived `postPayoutGrowthRate` — we transform into a taxable
+      // account so realization (OI / LTCG / QDiv / tax-exempt) flows through
+      // the projection's tax engine instead of being treated as interest.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { lifeInsurance, insuredPerson, ...rest } = account;
+      const useTaxable = policy.postPayoutRealization != null;
       const transformed: Account = {
         ...rest,
-        category: "cash",
+        category: useTaxable ? "taxable" : "cash",
         subType: "life_insurance_proceeds",
         value: faceValue,
         basis: faceValue,
         growthRate: postPayoutGrowthRate,
         rmdEnabled: false,
+        ...(useTaxable
+          ? { realization: policy.postPayoutRealization }
+          : {}),
       };
       resultAccounts.push(transformed);
 
