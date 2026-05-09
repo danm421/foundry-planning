@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeFamilyAccountShares } from "../family-cashflow";
-import type { ProjectionYear, AccountLedger, Income } from "../types";
+import type { ProjectionYear, AccountLedger, Income, GiftEvent } from "../types";
 
 function makeYear(year: number, accountLedgers: Record<string, Partial<AccountLedger>>): ProjectionYear {
   // Cast — tests only consume fields the pass actually reads.
@@ -181,5 +181,99 @@ describe("computeFamilyAccountShares — year-0 init + passive growth", () => {
     });
 
     expect(year0.familyAccountSharesEoY).toBeUndefined();
+  });
+});
+
+describe("computeFamilyAccountShares — cash gift attribution", () => {
+  it("draws cash gift from the grantor's share first", () => {
+    const year0 = makeYear(2026, {
+      acctA: {
+        beginningValue: 200_000,
+        endingValue: 180_000,
+        growth: 0,
+        entries: [
+          // Engine writes sourceId = recipientEntityId on gift outflows.
+          { category: "gift", label: "Cash gift", amount: -20_000, sourceId: "ent-1" },
+        ] as never,
+      },
+    });
+    const gifts: GiftEvent[] = [
+      {
+        kind: "cash",
+        year: 2026,
+        amount: 20_000,
+        grantor: "client",
+        recipientEntityId: "ent-1",
+        sourceAccountId: "acctA",
+        useCrummeyPowers: false,
+      },
+    ];
+    computeFamilyAccountShares({
+      years: [year0],
+      accountFamilyOwners: new Map([
+        [
+          "acctA",
+          [
+            { familyMemberId: "fm-client", percent: 0.5 },
+            { familyMemberId: "fm-spouse", percent: 0.5 },
+          ],
+        ],
+      ]),
+      clientFamilyMemberId: "fm-client",
+      spouseFamilyMemberId: "fm-spouse",
+      incomes: [],
+      gifts,
+      familyMembers: [],
+    });
+
+    // BoY 100k/100k. Gift -20k entirely from client.
+    expect(year0.familyAccountSharesEoY!.get("fm-client")!.get("acctA")!).toBeCloseTo(80_000);
+    expect(year0.familyAccountSharesEoY!.get("fm-spouse")!.get("acctA")!).toBeCloseTo(100_000);
+  });
+
+  it("clamps grantor's share at 0 and pulls remainder pro-rata from co-owners", () => {
+    const year0 = makeYear(2026, {
+      acctA: {
+        beginningValue: 100_000,
+        endingValue: 70_000,
+        growth: 0,
+        entries: [
+          { category: "gift", label: "Cash gift", amount: -30_000, sourceId: "ent-1" },
+        ] as never,
+      },
+    });
+    const gifts: GiftEvent[] = [
+      {
+        kind: "cash",
+        year: 2026,
+        amount: 30_000,
+        grantor: "spouse",
+        recipientEntityId: "ent-1",
+        sourceAccountId: "acctA",
+        useCrummeyPowers: false,
+      },
+    ];
+    computeFamilyAccountShares({
+      years: [year0],
+      accountFamilyOwners: new Map([
+        [
+          "acctA",
+          [
+            { familyMemberId: "fm-client", percent: 0.8 },
+            { familyMemberId: "fm-spouse", percent: 0.2 },
+          ],
+        ],
+      ]),
+      clientFamilyMemberId: "fm-client",
+      spouseFamilyMemberId: "fm-spouse",
+      incomes: [],
+      gifts,
+      familyMembers: [],
+    });
+
+    // BoY: client=80k, spouse=20k. Gift -30k from spouse: spouse goes to 0 (-10k overdraw),
+    // remaining 10k pulls from client.
+    expect(year0.familyAccountSharesEoY!.get("fm-spouse")!.get("acctA")!).toBeCloseTo(0);
+    expect(year0.familyAccountSharesEoY!.get("fm-client")!.get("acctA")!).toBeCloseTo(70_000);
   });
 });

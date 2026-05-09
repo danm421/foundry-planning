@@ -40,12 +40,34 @@ export interface ComputeFamilyAccountSharesInput {
 
 /** Mutates input.years[].familyAccountSharesEoY in place. */
 export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInput): void {
-  const { years, accountFamilyOwners, incomes, clientFamilyMemberId, spouseFamilyMemberId } =
-    input;
+  const {
+    years,
+    accountFamilyOwners,
+    incomes,
+    gifts,
+    clientFamilyMemberId,
+    spouseFamilyMemberId,
+  } = input;
   if (accountFamilyOwners.size === 0) return;
 
   const incomeOwnerById = new Map<string, "client" | "spouse" | "joint">();
   for (const inc of incomes) incomeOwnerById.set(inc.id, inc.owner);
+
+  // Index cash gifts by (sourceAccountId, year) so per-year attribution can
+  // sum amounts by grantor without re-scanning the full gift list. Engine
+  // writes ledger entries with sourceId = recipientEntityId, not the gift
+  // event id, so we can't join on entry.sourceId — keying by (account, year)
+  // instead.
+  const cashGiftsByAccountYear = new Map<string, Array<{ grantor: "client" | "spouse"; amount: number }>>();
+  const giftKey = (accountId: string, year: number) => `${accountId}|${year}`;
+  for (const g of gifts) {
+    if (g.kind !== "cash") continue;
+    if (!g.sourceAccountId) continue;
+    const k = giftKey(g.sourceAccountId, g.year);
+    const list = cashGiftsByAccountYear.get(k) ?? [];
+    list.push({ grantor: g.grantor, amount: g.amount });
+    cashGiftsByAccountYear.set(k, list);
+  }
 
   // Resolve "client" | "spouse" → familyMemberId. Returns null if the role
   // isn't present in the household (single-filer plans have no spouseFmId)
@@ -92,10 +114,12 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
 
       // Walk attributable entries. Income deposits with a known owner credit
       // that owner's share; everything else flows pro-rata. Skip internal
-      // transfers and the growth category (already applied via ledger.growth).
+      // transfers, growth (already applied), and gift entries (handled below
+      // via the (account, year) gift index so we can resolve grantor).
       for (const entry of ledger.entries ?? []) {
         if (entry.isInternalTransfer) continue;
         if (entry.category === "growth") continue;
+        if (entry.category === "gift") continue;
 
         const isIncomeDeposit =
           entry.category === "income" && entry.amount > 0 && entry.sourceId;
@@ -110,6 +134,36 @@ export function computeFamilyAccountShares(input: ComputeFamilyAccountSharesInpu
         }
 
         distributeProRata(entry.amount);
+      }
+
+      // Apply cash gifts targeting this account this year. Draw from grantor's
+      // share first; if exhausted, pull remainder pro-rata from co-owners.
+      const giftsThisYear = cashGiftsByAccountYear.get(giftKey(accountId, year.year)) ?? [];
+      for (const g of giftsThisYear) {
+        const grantorFmId = resolveOwnerToFm(g.grantor);
+        if (!grantorFmId || !ownerFmIds.has(grantorFmId)) {
+          // Grantor isn't on this account — apply pro-rata.
+          distributeProRata(-g.amount);
+          continue;
+        }
+        const want = g.amount;
+        const available = Math.max(0, shares[grantorFmId]);
+        const fromGrantor = Math.min(want, available);
+        shares[grantorFmId] -= fromGrantor;
+        const remainder = want - fromGrantor;
+        if (remainder > 0) {
+          const coOwners = owners.filter((o) => o.familyMemberId !== grantorFmId);
+          const coTotal = coOwners.reduce(
+            (s, o) => s + Math.max(0, shares[o.familyMemberId]),
+            0,
+          );
+          if (coTotal > 0) {
+            for (const o of coOwners) {
+              shares[o.familyMemberId] -=
+                remainder * (Math.max(0, shares[o.familyMemberId]) / coTotal);
+            }
+          }
+        }
       }
 
       // Publish.
