@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { ProjectionYear } from "@/engine";
 import { buildTaxFederalDatasets } from "../tax-federal-chart";
 import { makeYear } from "./fixtures";
 
@@ -29,7 +30,7 @@ describe("buildTaxFederalDatasets", () => {
           niit: 1_140,
           amtAdditional: 500,
         },
-      } as any,
+      } as unknown as ProjectionYear["taxResult"],
     });
     const series = buildTaxFederalDatasets();
     expect(series.find((s) => s.label === "Ordinary (Bracket)")!.valueFor(y)).toBe(25_000);

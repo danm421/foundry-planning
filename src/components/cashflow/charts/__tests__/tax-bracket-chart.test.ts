@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
+import type { ProjectionYear } from "@/engine";
 import { buildTaxBracketSeries } from "../tax-bracket-chart";
 import { makeYear } from "./fixtures";
+
+type StubTaxResult = ProjectionYear["taxResult"];
 
 describe("buildTaxBracketSeries", () => {
   it("returns zero rates when taxResult is absent", () => {
@@ -18,13 +21,13 @@ describe("buildTaxBracketSeries", () => {
         year: 2026,
         taxResult: {
           diag: { effectiveFederalRate: 0.18, marginalFederalRate: 0.22 },
-        } as any,
+        } as unknown as StubTaxResult,
       }),
       makeYear({
         year: 2027,
         taxResult: {
           diag: { effectiveFederalRate: 0.2, marginalFederalRate: 0.24 },
-        } as any,
+        } as unknown as StubTaxResult,
       }),
     ];
     const result = buildTaxBracketSeries(years);
