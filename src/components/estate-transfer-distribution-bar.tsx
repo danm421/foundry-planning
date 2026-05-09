@@ -94,7 +94,9 @@ export function EstateTransferDistributionBar({ totals, colors }: Props) {
                 className="inline-block h-2 w-2 rounded-sm"
                 style={{ backgroundColor: colors[t.key] ?? "#6b7280" }}
               />
-              <span className="text-gray-200">{t.recipientLabel}</span>
+              <span data-testid="recipient-label" className="text-gray-200">
+                {t.recipientLabel}
+              </span>
               <span className="font-mono tabular-nums text-gray-400">
                 {pct.toFixed(1)}%
               </span>

@@ -49,7 +49,9 @@ describe("EstateTransferCharts", () => {
     const { container } = render(<EstateTransferCharts totals={totals} />);
     // The legend strip in the distribution bar renders recipient names in
     // panel-sort order; assert the first label is the spouse.
-    const labels = Array.from(container.querySelectorAll("li span.text-gray-200"));
+    const labels = Array.from(
+      container.querySelectorAll('[data-testid="recipient-label"]'),
+    );
     expect(labels[0]?.textContent).toBe("Sarah");
   });
 });
