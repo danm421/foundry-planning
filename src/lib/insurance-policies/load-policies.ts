@@ -57,7 +57,6 @@ export async function loadPoliciesByAccountIds(
       termLengthYears: p.termLengthYears,
       endsAtInsuredRetirement: p.endsAtInsuredRetirement,
       cashValueGrowthMode: p.cashValueGrowthMode,
-      postPayoutMergeAccountId: p.postPayoutMergeAccountId,
       postPayoutGrowthRate: Number(p.postPayoutGrowthRate),
       postPayoutModelPortfolioId: p.postPayoutModelPortfolioId,
       cashValueSchedule: scheduleByPolicy.get(p.accountId) ?? [],

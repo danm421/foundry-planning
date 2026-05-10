@@ -184,10 +184,6 @@ function buildPayload(state: PolicyFormState): Record<string, unknown> {
     termLengthYears: state.termLengthYears,
     endsAtInsuredRetirement: state.endsAtInsuredRetirement,
     cashValueGrowthMode: state.cashValueGrowthMode,
-    // Always create a standalone proceeds account — merge-into-existing was
-    // removed from the UI. Send null on every write so legacy rows clear out
-    // as advisors edit policies.
-    postPayoutMergeAccountId: null,
     postPayoutGrowthRate: state.postPayoutGrowthRate,
     postPayoutModelPortfolioId:
       state.postPayoutGrowthSource === "model_portfolio"

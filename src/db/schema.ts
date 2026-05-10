@@ -1036,10 +1036,6 @@ export const lifeInsurancePolicies = pgTable("life_insurance_policies", {
   cashValueGrowthMode: cashValueGrowthModeEnum("cash_value_growth_mode")
     .notNull()
     .default("basic"),
-  postPayoutMergeAccountId: uuid("post_payout_merge_account_id").references(
-    () => accounts.id,
-    { onDelete: "set null" },
-  ),
   postPayoutGrowthRate: decimal("post_payout_growth_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.06"),
@@ -1683,9 +1679,6 @@ export const accountsRelations = relations(accounts, ({ one, many }) => ({
     references: [lifeInsurancePolicies.accountId],
     relationName: "policyAccount",
   }),
-  mergingPolicies: many(lifeInsurancePolicies, {
-    relationName: "mergeTargetAccount",
-  }),
 }));
 
 export const lifeInsurancePoliciesRelations = relations(lifeInsurancePolicies, ({ one, many }) => ({
@@ -1693,11 +1686,6 @@ export const lifeInsurancePoliciesRelations = relations(lifeInsurancePolicies, (
     fields: [lifeInsurancePolicies.accountId],
     references: [accounts.id],
     relationName: "policyAccount",
-  }),
-  mergeTargetAccount: one(accounts, {
-    fields: [lifeInsurancePolicies.postPayoutMergeAccountId],
-    references: [accounts.id],
-    relationName: "mergeTargetAccount",
   }),
   cashValueSchedule: many(lifeInsuranceCashValueSchedule),
 }));

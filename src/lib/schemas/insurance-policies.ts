@@ -18,7 +18,6 @@ const base = {
   termLengthYears: z.number().int().positive().nullable().optional(),
   endsAtInsuredRetirement: z.boolean().optional().default(false),
   cashValueGrowthMode: z.enum(["basic", "free_form"]).default("basic"),
-  postPayoutMergeAccountId: uuidSchema.nullable().optional(),
   postPayoutGrowthRate: z.number().gte(0).lte(1).default(0.06),
   postPayoutModelPortfolioId: uuidSchema.nullable().optional(),
   cashValueSchedule: z.array(

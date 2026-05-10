@@ -610,6 +610,13 @@
       "when": 1778444953640,
       "tag": "0086_thin_echo",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1778452893413,
+      "tag": "0087_classy_proteus",
+      "breakpoints": true
     }
   ]
 }

@@ -251,7 +251,6 @@ function whole(opts: {
       termLengthYears: null,
       endsAtInsuredRetirement: false,
       cashValueGrowthMode: "basic",
-      postPayoutMergeAccountId: null,
       postPayoutGrowthRate: 0,
       cashValueSchedule: [],
     },

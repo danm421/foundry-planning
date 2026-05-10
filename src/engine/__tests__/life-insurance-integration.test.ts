@@ -60,7 +60,6 @@ function mkPolicyAccount(
     termLengthYears: null,
     endsAtInsuredRetirement: false,
     cashValueGrowthMode: "basic",
-    postPayoutMergeAccountId: null,
     postPayoutGrowthRate: 0.04,
     cashValueSchedule: [],
     ...policyOver,

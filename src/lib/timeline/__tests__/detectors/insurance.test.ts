@@ -53,7 +53,6 @@ describe("detectInsuranceEvents", () => {
       termLengthYears: 20, // in-force through 2044; expires in 2045
       endsAtInsuredRetirement: false,
       cashValueGrowthMode: "basic",
-      postPayoutMergeAccountId: null,
       postPayoutGrowthRate: 0.06,
       cashValueSchedule: [],
     };

@@ -95,7 +95,6 @@ export async function PATCH(
       termLengthYears: number | null;
       endsAtInsuredRetirement: boolean;
       cashValueGrowthMode: "basic" | "free_form";
-      postPayoutMergeAccountId: string | null;
       postPayoutGrowthRate: number;
       postPayoutModelPortfolioId: string | null;
       cashValueSchedule: { year: number; cashValue: number }[];
@@ -154,9 +153,6 @@ export async function PATCH(
       }
       if (input.cashValueGrowthMode !== undefined) {
         policyUpdates.cashValueGrowthMode = input.cashValueGrowthMode;
-      }
-      if (input.postPayoutMergeAccountId !== undefined) {
-        policyUpdates.postPayoutMergeAccountId = input.postPayoutMergeAccountId ?? null;
       }
       if (input.postPayoutGrowthRate !== undefined) {
         policyUpdates.postPayoutGrowthRate = String(input.postPayoutGrowthRate);
