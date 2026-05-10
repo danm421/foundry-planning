@@ -89,8 +89,11 @@ export function resolveAnnualBenefit(input: ResolveAnnualBenefitInput): Resolved
     otherLifeExpectancy = input.row.owner === "client"
       ? input.client.spouseLifeExpectancy ?? 95
       : input.client.lifeExpectancy; // client.lifeExpectancy is NOT NULL in DB schema — no fallback needed
-    // Death year = otherBy + otherLifeExpectancy. Survivor benefits begin in the death year.
-    otherIsDead = otherLifeExpectancy != null && input.year >= otherBy + otherLifeExpectancy;
+    // Death year = otherBy + otherLifeExpectancy is the last alive year (matches
+    // applyIncomeTermination and effectiveFilingStatus conventions). Survivor
+    // benefits begin the year AFTER the death year; the death year itself still
+    // pays the deceased's own benefit via their own SS row.
+    otherIsDead = otherLifeExpectancy != null && input.year > otherBy + otherLifeExpectancy;
     const otherClaimAgeMonths = resolveClaimAgeMonths(otherRow, input.client);
     const otherAgeMonthsThisYear = (input.year - otherBy) * 12;
     otherHasClaimed = otherClaimAgeMonths != null && otherAgeMonthsThisYear >= otherClaimAgeMonths;

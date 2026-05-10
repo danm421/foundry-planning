@@ -1611,13 +1611,13 @@ describe("projection — survivor transition", () => {
   it("switches to survivor benefit after spouse death", () => {
     // Client born 1960-01-01 (FRA 67), PIA $2000/mo → claims year 2027
     // Spouse born 1960-01-01 (FRA 67), PIA $2000/mo → claims year 2027
-    // Spouse lifeExpectancy = 75 → death year = 1960 + 75 = 2035
-    // otherIsDead = year >= 2035, so from 2035 onward spouse is dead
+    // Spouse lifeExpectancy = 75 → death year = 1960 + 75 = 2035 (last alive year).
+    // otherIsDead = year > 2035, so survivor benefits begin in 2036.
     //
-    // Years 2027-2034 (both alive, both claimed):
+    // Years 2027-2035 (both alive, both claimed; 2035 is spouse's last year):
     //   Each gets own $2000/mo = $24,000/yr → household = $48,000/yr
     //
-    // Year 2035+ (spouse dead):
+    // Year 2036+ (spouse dead):
     //   Deceased filed at FRA (claimingAge 67 == FRA 67) → Case B: survivor max = deceased PIA = $2000/mo
     //   Client's own $2000/mo == survivor $2000/mo → no net top-up; all in retirement bucket
     //   Household SS = $24,000/yr (client's own only)
@@ -1692,33 +1692,39 @@ describe("projection — survivor transition", () => {
     expect(year2034).toBeDefined();
     expect(year2034.income.socialSecurity).toBeCloseTo(48640, 0);
 
-    // 2035: spouse dies (year >= 1960 + 75 = 2035) → only client's benefit
-    // Client own = $2,026.67/mo (with DRC), survivor ceiling = $2,026.67/mo (own ≥ survivor)
-    // → net top-up = 0; all in retirement bucket; household SS = $24,320/yr
+    // 2035: spouse's last alive year (deathYear = 1960 + 75) → still full couple SS.
     const year2035 = result.find((py) => py.year === 2035)!;
     expect(year2035).toBeDefined();
-    expect(year2035.income.socialSecurity).toBeCloseTo(24320, 0);
-    // Spouse row stops contributing (suppressed by income.ts dead-spouse check)
-    expect(year2035.socialSecurityDetail!.spouse).toBeUndefined();
-    // Client gets own retirement only (no survivor top-up needed; own ≥ survivor)
-    expect(year2035.socialSecurityDetail!.client.retirement).toBeCloseTo(24320, 0);
-    expect(year2035.socialSecurityDetail!.client.survivor).toBe(0);
+    expect(year2035.income.socialSecurity).toBeCloseTo(48640, 0);
+    expect(year2035.socialSecurityDetail!.spouse!.retirement).toBeCloseTo(24320, 0);
 
-    // 2036: same pattern continues → $24,320
+    // 2036: spouse dead (year > 2035) → only client's benefit
+    // Client own = $2,026.67/mo (with DRC), survivor ceiling = $2,026.67/mo (own ≥ survivor)
+    // → net top-up = 0; all in retirement bucket; household SS = $24,320/yr
     const year2036 = result.find((py) => py.year === 2036)!;
     expect(year2036).toBeDefined();
     expect(year2036.income.socialSecurity).toBeCloseTo(24320, 0);
+    // Spouse row stops contributing (suppressed by income.ts dead-spouse check)
+    expect(year2036.socialSecurityDetail!.spouse).toBeUndefined();
+    // Client gets own retirement only (no survivor top-up needed; own ≥ survivor)
+    expect(year2036.socialSecurityDetail!.client.retirement).toBeCloseTo(24320, 0);
+    expect(year2036.socialSecurityDetail!.client.survivor).toBe(0);
+
+    // 2037: same pattern continues → $24,320
+    const year2037 = result.find((py) => py.year === 2037)!;
+    expect(year2037).toBeDefined();
+    expect(year2037.income.socialSecurity).toBeCloseTo(24320, 0);
   });
 
   it("no double-count when spouseLifeExpectancy is null (defaults to 95)", () => {
     // Regression for: orchestrator defaults null spouseLifeExpectancy to 95 but income.ts
-    // previously required != null, leaving the spouse row alive → double-count from year 2055+.
+    // previously required != null, leaving the spouse row alive → double-count after death.
     //
     // Setup: client born 1960-01-01, PIA $2000, claims at 67.
     //        spouse born 1960-01-01, PIA $2000, claims at 67, spouseLifeExpectancy: null.
-    // Effective spouse LE = 95 → spouse dies in 1960+95 = 2055.
-    // Year 2056: income.ts must suppress the spouse row (year >= 2055).
-    // Orchestrator triggers survivor math from the client row.
+    // Effective spouse LE = 95 → spouse dies in 1960+95 = 2055 (last alive year).
+    // Year 2056+: income.ts must suppress the spouse row (year > 2055).
+    // Orchestrator triggers survivor math from the client row beginning 2056.
     // Client own = $2,026.67/mo (DRC: born Jan-1 → FRA lookup uses 1959 → 66y10m = 802mo;
     //   claiming 67y0m = 804mo → +2 DRC mo → $2000 × (1 + 2×2/300) = ~$2026.67/mo = ~$24,320/yr).
     // Survivor ceiling = deceased PIA $2000/mo = $24,000/yr < client own → no top-up.
@@ -1781,13 +1787,15 @@ describe("projection — survivor transition", () => {
     expect(year2054).toBeDefined();
     expect(year2054.income.socialSecurity).toBeCloseTo(48640, 0);
 
-    // 2055: spouse death year (1960 + 95 = 2055) → spouse row suppressed from this year on.
-    // Client row triggers survivor math; own >= survivor → no top-up.
+    // 2055: spouse's last alive year (1960 + 95) → still full couple SS.
     const year2055 = result.find((py) => py.year === 2055)!;
     expect(year2055).toBeDefined();
-    expect(year2055.income.socialSecurity).toBeCloseTo(24320, 0);
+    expect(year2055.income.socialSecurity).toBeCloseTo(48640, 0);
+    expect(year2055.socialSecurityDetail!.spouse!.retirement).toBeCloseTo(24320, 0);
 
-    // 2056: must NOT be double-counted ($48,640 would indicate the bug is present)
+    // 2056: spouse dead (year > 2055) → spouse row suppressed; client row triggers
+    //       survivor math; own >= survivor → no top-up. Must NOT be double-counted
+    //       ($48,640 would indicate the regression).
     const year2056 = result.find((py) => py.year === 2056)!;
     expect(year2056).toBeDefined();
     expect(year2056.income.socialSecurity).toBeCloseTo(24320, 0);

@@ -103,15 +103,17 @@ describe("resolveAnnualBenefit — survivor scenarios", () => {
   it("survivor past age 60 but before own claim: pays survivor only", () => {
     const client = ssIncome({ id: "c", owner: "client", claimingAge: 67, piaMonthly: 2000 });
     const spouse = ssIncome({ id: "s", owner: "spouse", claimingAge: 67, piaMonthly: 3000 });
-    // Spouse dies at lifeExpectancy 63 → year 2025. Client born 1960, in 2025 age 65 (past 60, before own claim 67)
+    // Spouse dies at lifeExpectancy 63 → death year 2025 (= last alive year).
+    // Survivor benefits begin year AFTER death → 2026. Client born 1960, in
+    // 2026 age 66 (past 60, before own claim 67).
     const earlyDeath: ClientInfo = { ...baseClient, spouseLifeExpectancy: 63 };
-    const out = resolveAnnualBenefit({ row: client, spouseRow: spouse, client: earlyDeath, year: 2025 });
+    const out = resolveAnnualBenefit({ row: client, spouseRow: spouse, client: earlyDeath, year: 2026 });
     expect(out.retirement).toBe(0);
     expect(out.spousal).toBe(0);
-    // Survivor gets 3000/mo max, reduced for early claim (age 65 vs survivor-FRA 67)
-    // survivor FRA 67y (born 1960), 24 months early, reduction 24 × 0.285/84 ≈ 0.0814
-    // → 3000 × (1 - 0.0814) ≈ 2755.71/mo → 33068.57/yr
-    expect(out.survivor).toBeGreaterThan(30000);
+    // Survivor gets 3000/mo max, reduced for early claim (age 66 vs survivor-FRA 67)
+    // survivor FRA 67y (born 1960), 12 months early, reduction 12 × 0.285/84 ≈ 0.0407
+    // → 3000 × (1 - 0.0407) ≈ 2877.86/mo → 34534.29/yr
+    expect(out.survivor).toBeGreaterThan(33000);
     expect(out.survivor).toBeLessThan(36000);
     expect(out.total).toBeCloseTo(out.survivor, 2);
   });

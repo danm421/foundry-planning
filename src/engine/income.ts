@@ -61,24 +61,25 @@ export function computeIncome(
       const birthYear = parseInt(ownerDob.slice(0, 4), 10);
       if (year * 12 < birthYear * 12 + claimAgeMonths) continue;
 
-      // Suppress the spouse's SS row when the spouse has died.
-      // spouseLifeExpectancy on ClientInfo controls this: deathYear = spouseBirthYear + spouseLifeExpectancy.
-      // The orchestrator handles the survivor top-up from the CLIENT's row; the spouse row must
-      // stop contributing to avoid double-counting.
-      // Use ?? 95 to match the orchestrator's default when spouseLifeExpectancy is null — without
-      // this fallback, a null spouseLifeExpectancy would leave the spouse row live while the
-      // orchestrator triggers survivor math at birthYear+95, causing double-counting.
+      // Suppress the spouse's SS row after the spouse has died. The death year
+      // itself runs to completion (matches applyIncomeTermination's convention
+      // and effectiveFilingStatus, where the death year is the last alive year),
+      // so suppression begins the year AFTER birthYear+lifeExpectancy.
+      // The orchestrator handles the survivor top-up from the CLIENT's row; the
+      // spouse row must stop contributing once the spouse is dead to avoid
+      // double-counting. Use ?? 95 to match the orchestrator's default when
+      // spouseLifeExpectancy is null.
       if (inc.owner === "spouse" && client.spouseDob) {
         const spouseBy = parseInt(client.spouseDob.slice(0, 4), 10);
         const effectiveSpouseLE = client.spouseLifeExpectancy ?? 95;
-        if (year >= spouseBy + effectiveSpouseLE) continue;
+        if (year > spouseBy + effectiveSpouseLE) continue;
       }
 
-      // Suppress the client's SS row when the client has died.
-      // lifeExpectancy on ClientInfo controls this: deathYear = clientBirthYear + lifeExpectancy.
+      // Suppress the client's SS row after the client has died. Same convention:
+      // death year (clientBirthYear + lifeExpectancy) is the last paid year.
       if (inc.owner === "client" && client.lifeExpectancy != null && client.dateOfBirth) {
         const clientBy = parseInt(client.dateOfBirth.slice(0, 4), 10);
-        if (year >= clientBy + client.lifeExpectancy) continue;
+        if (year > clientBy + client.lifeExpectancy) continue;
       }
 
       // pia_at_fra mode → delegate to orchestrator (handles own, spousal, survivor)
