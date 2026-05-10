@@ -20,6 +20,7 @@ describe("resolveSourceLabel", () => {
     expect(resolveSourceLabel("acc_1:qdiv", ctx)).toBe("Joint Brokerage — Qual Div");
     expect(resolveSourceLabel("acc_2:rmd", ctx)).toBe("401k — RMD");
     expect(resolveSourceLabel("acc_1:stcg", ctx)).toBe("Joint Brokerage — ST CG");
+    expect(resolveSourceLabel("acc_1:ltcg", ctx)).toBe("Joint Brokerage — LTCG");
   });
 
   it("handles withdrawal:<acctId> drill keys", () => {
