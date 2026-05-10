@@ -13,7 +13,6 @@ const mkPolicy = (over: Partial<LifeInsurancePolicy> = {}): LifeInsurancePolicy 
   termLengthYears: null,
   endsAtInsuredRetirement: false,
   cashValueGrowthMode: "basic",
-  postPayoutMergeAccountId: null,
   postPayoutGrowthRate: 0.06,
   cashValueSchedule: [],
   ...over,
@@ -114,31 +113,6 @@ describe("prepareLifeInsurancePayouts", () => {
     expect(result.basisMap["pol-1"]).toBe(1_000_000);
   });
 
-  it("merge-target mode moves faceValue into target and removes the policy account", () => {
-    const acct = mkAccount({
-      lifeInsurance: mkPolicy({ postPayoutMergeAccountId: "spouse-brokerage" }),
-    });
-    const spouseBrokerage: Account = {
-      id: "spouse-brokerage", name: "Spouse brokerage", category: "taxable",
-      subType: "brokerage", value: 500_000, basis: 400_000,
-      growthRate: 0.06, rmdEnabled: false,
-      owners: [{ kind: "entity", entityId: "ilit-1", percent: 1 }],
-    };
-    const result = prepareLifeInsurancePayouts({
-      year: 2040, deceased: "client", eventKind: "first_death",
-      accounts: [acct, spouseBrokerage],
-      accountBalances: { "pol-1": 50_000, "spouse-brokerage": 500_000 },
-      basisMap: { "pol-1": 0, "spouse-brokerage": 400_000 },
-      entities: [],
-    });
-    expect(result.accounts.find((a) => a.id === "pol-1")).toBeUndefined();
-    expect(result.accountBalances["pol-1"]).toBeUndefined();
-    expect(result.basisMap["pol-1"]).toBeUndefined();
-    expect(result.accountBalances["spouse-brokerage"]).toBe(1_500_000);
-    expect(result.basisMap["spouse-brokerage"]).toBe(1_400_000);
-    expect(result.retiredPolicyIds).toEqual(["pol-1"]);
-  });
-
   it("standalone-mode with model-portfolio realization → taxable account with realization mix", () => {
     const acct = mkAccount({
       lifeInsurance: mkPolicy({
@@ -189,22 +163,6 @@ describe("prepareLifeInsurancePayouts", () => {
     expect(transformed?.category).toBe("cash");
     expect(transformed?.realization).toBeUndefined();
     expect(transformed?.growthRate).toBeCloseTo(0.05, 6);
-  });
-
-  it("merge-target falls back to standalone when target id does not exist", () => {
-    const acct = mkAccount({
-      lifeInsurance: mkPolicy({ postPayoutMergeAccountId: "does-not-exist" }),
-    });
-    const result = prepareLifeInsurancePayouts({
-      year: 2040, deceased: "client", eventKind: "first_death",
-      accounts: [acct],
-      accountBalances: { "pol-1": 50_000 },
-      basisMap: { "pol-1": 0 },
-      entities: [],
-    });
-    expect(result.accounts[0].id).toBe("pol-1");
-    expect(result.accounts[0].category).toBe("cash");
-    expect(result.accountBalances["pol-1"]).toBe(1_000_000);
   });
 
   it("emits no-beneficiaries warning when policy has no primary beneficiaries", () => {

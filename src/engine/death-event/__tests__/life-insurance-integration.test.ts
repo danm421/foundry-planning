@@ -117,30 +117,11 @@ function mkPolicyAccount(
       termLengthYears: null,
       endsAtInsuredRetirement: false,
       cashValueGrowthMode: "basic",
-      postPayoutMergeAccountId: null,
       postPayoutGrowthRate: 0.04,
       cashValueSchedule: [],
       ...policyOver,
     },
     ...accountOver,
-  };
-}
-
-/** Build a minimal cash/savings account. */
-function mkCashAccount(
-  id: string,
-  value: number,
-): Account {
-  return {
-    id,
-    name: `Cash ${id}`,
-    category: "cash",
-    subType: "savings",
-    value,
-    basis: value,
-    growthRate: 0.02,
-    rmdEnabled: false,
-    owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
   };
 }
 
@@ -471,73 +452,6 @@ describe("life-insurance §2042 inclusion + chain routing — integration", () =
     expect(geLine).toBeDefined();
     expect(geLine!.amount).toBeCloseTo(1_000_000, 0);
     expect(geLine!.percentage).toBe(1);
-  });
-
-  it("merge-target mode consolidates proceeds into target and routes per target's owner", () => {
-    /**
-     * Scenario 9: Discovery test.
-     *
-     * The policy has postPayoutMergeAccountId → "sp-broker". In Phase 0,
-     * prepareLifeInsurancePayouts removes the policy from the accounts list and
-     * credits faceValue (1_000_000) directly into sp-broker's balance. The policy
-     * account no longer exists when computeGrossEstate runs.
-     *
-     * Observed behavior:
-     *   - sp-broker is owned by "spouse", and the deceased is "client".
-     *   - computeGrossEstate skips sp-broker because owner !== "client" and it's
-     *     not a joint account.
-     *   - Therefore, the $1M face value contribution is NOT attributed to any
-     *     gross-estate line. The merged proceeds are invisible to §2042.
-     *
-     * This is a design gap: the merge path bypasses §2042 attribution entirely.
-     * The proceeds land in a spouse-owned account (no §2042 inclusion for the
-     * client's policy) — which may actually be tax-favorable for life insurance
-     * payable to a spouse, but it means §2042 estate-inclusion is silently skipped
-     * for non-spousal merge targets as well. See future-work/engine.md for the
-     * full tracking item.
-     */
-    const policy = mkPolicyAccount("pol-9", {
-      insuredPerson: "client",
-      value: 50_000,
-      policyOver: {
-        faceValue: 1_000_000,
-        postPayoutMergeAccountId: "sp-broker",
-        postPayoutGrowthRate: 0.05,
-      },
-    });
-    const spBroker = { ...mkCashAccount("sp-broker", 500_000), owners: [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_SPOUSE, percent: 1 }] };
-
-    const input = mkInput({
-      deceased: "client",
-      accounts: [policy, spBroker],
-    });
-
-    const result = applyFirstDeath(input);
-
-    // Policy account is removed from result.accounts (merged into sp-broker)
-    const policyAcct = result.accounts.find((a) => a.id === "pol-9");
-    expect(policyAcct).toBeUndefined();
-
-    // sp-broker balance = original 500k + faceValue 1M = 1.5M
-    expect(result.accountBalances["sp-broker"]).toBeCloseTo(1_500_000, 0);
-
-    // §2042 discovery: the face value is NOT captured in any gross-estate line.
-    // sp-broker is spouse-owned → computeGrossEstate skips it (owner !== deceased).
-    // The pol-9 account is gone from prepared.accounts before computeGrossEstate runs.
-    // Result: zero §2042 inclusion for the merged 1M.
-    //
-    // This is the observed behavior. We assert it as-is to lock in the current
-    // contract. If future work adds a §2042 credit for retired merge-target policies,
-    // this assertion will need to be updated.
-    const polGeLine = result.estateTax.grossEstateLines.find((l) => l.accountId === "pol-9");
-    expect(polGeLine).toBeUndefined();
-
-    const spBrokerGeLine = result.estateTax.grossEstateLines.find((l) => l.accountId === "sp-broker");
-    // sp-broker is spouse-owned → excluded from client's gross estate
-    expect(spBrokerGeLine).toBeUndefined();
-
-    // Total gross estate is effectively 0 (no client-owned assets remain after merge)
-    expect(result.estateTax.grossEstate).toBeCloseTo(0, 0);
   });
 
 });

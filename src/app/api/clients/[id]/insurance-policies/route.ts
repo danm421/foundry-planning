@@ -200,7 +200,6 @@ export async function POST(
         termLengthYears: input.termLengthYears ?? null,
         endsAtInsuredRetirement: input.endsAtInsuredRetirement,
         cashValueGrowthMode: input.cashValueGrowthMode,
-        postPayoutMergeAccountId: input.postPayoutMergeAccountId ?? null,
         postPayoutGrowthRate: String(input.postPayoutGrowthRate),
         postPayoutModelPortfolioId: input.postPayoutModelPortfolioId ?? null,
       });

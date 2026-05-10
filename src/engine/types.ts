@@ -484,7 +484,6 @@ export interface LifeInsurancePolicy {
   termLengthYears: number | null;
   endsAtInsuredRetirement: boolean;
   cashValueGrowthMode: "basic" | "free_form";
-  postPayoutMergeAccountId: string | null;
   postPayoutGrowthRate: number;
   /** Model portfolio driving the standalone-mode payout's growth and
    *  realization mix. The loader resolves it into `postPayoutGrowthRate` and
