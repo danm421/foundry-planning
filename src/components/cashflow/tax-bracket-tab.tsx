@@ -6,6 +6,7 @@ import { buildTaxBracketRows } from "@/lib/reports/tax-bracket";
 
 interface TaxBracketTabProps {
   years: ProjectionYear[];
+  onCellClick: (year: number, columnKey: "conversionGross" | "conversionTaxable" | "intoBracket") => void;
 }
 
 function fmtUsd(n: number): string {
@@ -18,7 +19,28 @@ function fmtAges(client: number, spouse: number | null): string {
   return spouse == null ? `${client}` : `${client}/${spouse}`;
 }
 
-export function TaxBracketTab({ years }: TaxBracketTabProps) {
+function ClickableCell({
+  onClick,
+  ariaLabel,
+  children,
+}: {
+  onClick: () => void;
+  ariaLabel: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className="block w-full cursor-pointer text-right hover:text-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+    >
+      {children}
+    </button>
+  );
+}
+
+export function TaxBracketTab({ years, onCellClick }: TaxBracketTabProps) {
   const rows = useMemo(() => buildTaxBracketRows(years), [years]);
 
   return (
@@ -81,12 +103,31 @@ export function TaxBracketTab({ years }: TaxBracketTabProps) {
                 <td className="px-3 py-3">{r.year}</td>
                 <td className="px-3 py-3">{fmtAges(r.clientAge, r.spouseAge)}</td>
                 <td className="border-l border-amber-200/30 px-3 py-3 text-right">
-                  {fmtUsd(r.conversionGross)}
+                  <ClickableCell
+                    onClick={() => onCellClick(r.year, "conversionGross")}
+                    ariaLabel={`Roth conversion ${r.year} value ${fmtUsd(r.conversionGross)}`}
+                  >
+                    {fmtUsd(r.conversionGross)}
+                  </ClickableCell>
                 </td>
-                <td className="px-3 py-3 text-right">{fmtUsd(r.conversionTaxable)}</td>
+                <td className="px-3 py-3 text-right">
+                  <ClickableCell
+                    onClick={() => onCellClick(r.year, "conversionTaxable")}
+                    ariaLabel={`Taxable portion ${r.year} value ${fmtUsd(r.conversionTaxable)}`}
+                  >
+                    {fmtUsd(r.conversionTaxable)}
+                  </ClickableCell>
+                </td>
                 <td className="px-3 py-3 text-right">{fmtUsd(r.incomeTaxBase)}</td>
                 <td className="px-3 py-3 text-right">{Math.round(r.marginalRate * 100)}%</td>
-                <td className="px-3 py-3 text-right">{fmtUsd(r.intoBracket)}</td>
+                <td className="px-3 py-3 text-right">
+                  <ClickableCell
+                    onClick={() => onCellClick(r.year, "intoBracket")}
+                    ariaLabel={`Amount into bracket ${r.year} value ${fmtUsd(r.intoBracket)}`}
+                  >
+                    {fmtUsd(r.intoBracket)}
+                  </ClickableCell>
+                </td>
                 <td className="px-3 py-3 text-right">
                   {r.remainingInBracket == null ? "—" : fmtUsd(r.remainingInBracket)}
                 </td>
