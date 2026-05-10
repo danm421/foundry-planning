@@ -132,11 +132,35 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-function formatRetirement(age: number | null | undefined, month: number | null | undefined): string {
+function birthYear(dob: string | null | undefined): number | null {
+  if (!dob) return null;
+  const d = new Date(dob);
+  if (isNaN(d.getTime())) return null;
+  return d.getFullYear();
+}
+
+function formatRetirement(
+  age: number | null | undefined,
+  month: number | null | undefined,
+  dob: string | null | undefined,
+): string {
   if (age == null) return "—";
   const m = month ?? 1;
-  if (m === 1) return String(age);
-  return `${age} (${MONTH_NAMES[m - 1]})`;
+  const by = birthYear(dob);
+  const year = by != null ? by + age : null;
+  const monthLabel = MONTH_NAMES[m - 1];
+  if (year == null) return m === 1 ? String(age) : `${age} (${monthLabel})`;
+  return `${age} (${monthLabel} ${year})`;
+}
+
+function formatLifeExpectancy(
+  age: number | null | undefined,
+  dob: string | null | undefined,
+): string {
+  if (age == null) return "—";
+  const by = birthYear(dob);
+  if (by == null) return String(age);
+  return `${age} (${by + age})`;
 }
 
 interface FamilyViewProps {
@@ -315,8 +339,8 @@ export default function FamilyView({
             badge="Client"
             fields={[
               ["Date of Birth", primary.dateOfBirth ? `${new Date(primary.dateOfBirth).toLocaleDateString()} (age ${primaryAge})` : "—"],
-              ["Retirement", formatRetirement(primary.retirementAge, primary.retirementMonth)],
-              ["Life Expectancy", String(primary.lifeExpectancy)],
+              ["Retirement", formatRetirement(primary.retirementAge, primary.retirementMonth, primary.dateOfBirth)],
+              ["Life Expectancy", formatLifeExpectancy(primary.lifeExpectancy, primary.dateOfBirth)],
             ]}
           />
           {primary.spouseName ? (
@@ -325,8 +349,8 @@ export default function FamilyView({
               badge="Spouse"
               fields={[
                 ["Date of Birth", primary.spouseDob ? `${new Date(primary.spouseDob).toLocaleDateString()} (age ${spouseAge})` : "—"],
-                ["Retirement", formatRetirement(primary.spouseRetirementAge, primary.spouseRetirementMonth)],
-                ["Life Expectancy", primary.spouseLifeExpectancy != null ? String(primary.spouseLifeExpectancy) : "—"],
+                ["Retirement", formatRetirement(primary.spouseRetirementAge, primary.spouseRetirementMonth, primary.spouseDob)],
+                ["Life Expectancy", formatLifeExpectancy(primary.spouseLifeExpectancy, primary.spouseDob)],
               ]}
             />
           ) : (
