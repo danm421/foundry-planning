@@ -134,11 +134,11 @@ function SplitInterestPanel({
         <dt className="text-[var(--color-ink-3)]">Charity</dt>
         <dd className="text-[var(--color-ink-2)]">{si.charityName ?? "—"}</dd>
         <dt className="text-[var(--color-ink-3)]">Income interest (deduction)</dt>
-        <dd className="font-mono tabular-nums text-[var(--color-ink-2)]">
+        <dd className="tabular-nums text-[var(--color-ink-2)]">
           ${Math.round(si.originalIncomeInterest).toLocaleString("en-US")}
         </dd>
         <dt className="text-[var(--color-ink-3)]">Remainder interest (gift)</dt>
-        <dd className="font-mono tabular-nums text-[var(--color-ink-2)]">
+        <dd className="tabular-nums text-[var(--color-ink-2)]">
           ${Math.round(si.originalRemainderInterest).toLocaleString("en-US")}
         </dd>
       </dl>

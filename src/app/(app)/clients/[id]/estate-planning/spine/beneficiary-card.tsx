@@ -52,7 +52,7 @@ export function BeneficiaryCard({
         </div>
         <MoneyText
           value={detail.total}
-          className={`whitespace-nowrap text-[15px] font-mono ${
+          className={`whitespace-nowrap text-[15px] tabular-nums ${
             isTrustRemainder ? "text-ink-2" : "text-accent-ink"
           }`}
         />
@@ -68,7 +68,7 @@ export function BeneficiaryCard({
           {detail.inTrust.length > 0 && <TrustSection inTrust={detail.inTrust} />}
           <div className="flex items-center justify-between border-t border-hair pt-2 text-[13px] font-semibold">
             <span className="uppercase tracking-wider text-[11px]">Total</span>
-            <MoneyText value={detail.total} className="font-mono tabular-nums text-ink" />
+            <MoneyText value={detail.total} className="tabular-nums text-ink" />
           </div>
         </div>
       )}
@@ -81,7 +81,7 @@ function DeathSection({ label, slice }: { label: string; slice: DeathSlice }) {
     <div>
       <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-ink-3 border-b border-hair pb-0.5">
         <span>{label}</span>
-        <MoneyText value={slice.net} className="font-mono tabular-nums" />
+        <MoneyText value={slice.net} className="tabular-nums" />
       </div>
       <ul className="mt-1 space-y-0.5">
         {slice.transfers.map((t, i) => (
@@ -94,7 +94,7 @@ function DeathSection({ label, slice }: { label: string; slice: DeathSlice }) {
                 via {t.via.replace(/_/g, " ")}
               </span>
             </span>
-            <MoneyText value={t.amount} className="font-mono tabular-nums text-ink" />
+            <MoneyText value={t.amount} className="tabular-nums text-ink" />
           </li>
         ))}
       </ul>
@@ -105,7 +105,7 @@ function DeathSection({ label, slice }: { label: string; slice: DeathSlice }) {
           return (
             <div key={kind} className="flex items-center justify-between pl-3 text-ink-3">
               <span>{DRAIN_LABEL[kind]}</span>
-              <span className="font-mono tabular-nums">
+              <span className="tabular-nums">
                 ({Math.round(v).toLocaleString()})
               </span>
             </div>
@@ -114,7 +114,7 @@ function DeathSection({ label, slice }: { label: string; slice: DeathSlice }) {
       )}
       <div className="flex items-center justify-between pl-3 border-t border-hair mt-1 pt-0.5 font-semibold text-ink-2">
         <span>— Net from {label.toLowerCase()}</span>
-        <MoneyText value={slice.net} className="font-mono tabular-nums" />
+        <MoneyText value={slice.net} className="tabular-nums" />
       </div>
     </div>
   );
@@ -130,7 +130,7 @@ function TrustSection({ inTrust }: { inTrust: BeneficiaryDetail["inTrust"] }) {
         <span>In trust (pro-rata estimate)</span>
         <MoneyText
           value={inTrust.reduce((s, t) => s + t.amount, 0)}
-          className="font-mono tabular-nums"
+          className="tabular-nums"
         />
       </div>
       <ul className="mt-1 space-y-0.5">
@@ -139,7 +139,7 @@ function TrustSection({ inTrust }: { inTrust: BeneficiaryDetail["inTrust"] }) {
             <span className="text-ink-2">
               {p.trustName} ({p.primaryPercentage}% beneficiary)
             </span>
-            <MoneyText value={p.amount} className="font-mono tabular-nums text-ink" />
+            <MoneyText value={p.amount} className="tabular-nums text-ink" />
           </li>
         ))}
       </ul>

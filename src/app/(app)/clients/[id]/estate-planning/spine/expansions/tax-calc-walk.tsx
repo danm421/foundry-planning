@@ -29,7 +29,7 @@ export function TaxCalcWalk({
     { label: "Admin expenses (paid)", value: breakdown.estateAdminExpenses },
   ];
   return (
-    <ul className="space-y-1 font-mono text-[12px]">
+    <ul className="space-y-1 text-[12px] tabular-nums">
       {lines.map((l, i) => (
         <li
           key={i}

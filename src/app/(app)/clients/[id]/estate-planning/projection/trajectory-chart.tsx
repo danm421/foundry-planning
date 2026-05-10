@@ -148,7 +148,7 @@ export function TrajectoryChart({
                 fontSize={10}
                 textAnchor="end"
                 fill="var(--color-ink-3)"
-                className="font-mono"
+                className="tabular-nums"
               >
                 ${((series.yMax * f) / 1_000_000).toFixed(0)}M
               </text>
@@ -241,7 +241,7 @@ export function TrajectoryChart({
             fontSize={10}
             textAnchor="middle"
             fill="var(--color-ink-3)"
-            className="font-mono"
+            className="tabular-nums"
           >
             {y}
           </text>
@@ -291,7 +291,7 @@ export function TrajectoryChart({
                 fontSize={11}
                 fill="var(--color-ink)"
                 fontWeight={600}
-                className="font-mono"
+                className="tabular-nums"
               >
                 {hoverYear}
               </text>
@@ -306,7 +306,7 @@ export function TrajectoryChart({
                 fontSize={11}
                 textAnchor="end"
                 fill="var(--color-ink)"
-                className="font-mono"
+                className="tabular-nums"
               >
                 {tooltipFmt.format(hoverRight)}
               </text>
@@ -321,7 +321,7 @@ export function TrajectoryChart({
                 fontSize={11}
                 textAnchor="end"
                 fill="var(--color-ink)"
-                className="font-mono"
+                className="tabular-nums"
               >
                 {tooltipFmt.format(hoverLeft)}
               </text>

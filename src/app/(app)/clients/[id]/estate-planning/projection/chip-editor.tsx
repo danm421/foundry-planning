@@ -59,7 +59,7 @@ export function ChipEditor({ label, currentValue, format, onSave, onCancel }: Pr
           setValue(parseFloat(e.target.value));
           if (error) setError(null);
         }}
-        className="w-24 rounded border border-hair bg-card px-2 py-1 font-mono tabular-nums text-ink"
+        className="w-24 rounded border border-hair bg-card px-2 py-1 tabular-nums text-ink"
       />
       <button
         type="submit"

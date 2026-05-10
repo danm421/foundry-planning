@@ -63,7 +63,7 @@ export function ChipBar({ clientId, planSettings, onOpenAssumptions }: Props) {
                 className="rounded border border-hair bg-card-2 px-2 py-1 text-[12px] text-ink hover:bg-card-hover"
               >
                 {c.label}:{" "}
-                <span className="font-mono tabular-nums text-ink">
+                <span className="tabular-nums text-ink">
                   {formatChip(numeric, c.format)}
                 </span>
               </button>

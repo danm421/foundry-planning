@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { YearScrubber } from "../year-scrubber";
 
 describe("YearScrubber", () => {
-  it("renders the active year in the header with font-mono class", () => {
+  it("renders the active year in the header with tabular-nums", () => {
     render(
       <YearScrubber
         currentYear={2026}
@@ -18,7 +18,7 @@ describe("YearScrubber", () => {
     // The active-year header is the first occurrence (tick row may also show
     // a sibling "2030" if it lands on a tick, so scope to the first match).
     const matches = screen.getAllByText("2030");
-    expect(matches[0]).toHaveClass("font-mono");
+    expect(matches[0]).toHaveClass("tabular-nums");
   });
 
   it("preset buttons snap to the right year", async () => {

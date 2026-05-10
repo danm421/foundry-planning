@@ -75,7 +75,7 @@ export function TrustFundingRows({
                 </span>
               )}
             </span>
-            <MoneyText value={row.amount} className="font-mono tabular-nums text-ink" />
+            <MoneyText value={row.amount} className="tabular-nums text-ink" />
           </li>
         );
       })}

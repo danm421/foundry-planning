@@ -63,14 +63,14 @@ export function ComparisonCellView({
         {cell.headlineLabel}
       </div>
       {cell.variant === "delta" ? (
-        <div className="text-[30px] font-mono tabular-nums">
+        <div className="text-[30px] tabular-nums">
           {formatSignedM(cell.bigNumber)}
         </div>
       ) : (
         <MoneyText
           value={cell.bigNumber}
           format="currency"
-          className="text-[30px] font-mono tabular-nums"
+          className="text-[30px] tabular-nums"
         />
       )}
       <div className="mb-3 text-[11px] text-ink-3">{cell.subLine}</div>
@@ -82,7 +82,7 @@ export function ComparisonCellView({
               aria-hidden="true"
             />
             <span className="flex-1">{r.label}</span>
-            <span className="font-mono tabular-nums">{r.valueText}</span>
+            <span className="tabular-nums">{r.valueText}</span>
           </li>
         ))}
       </ul>

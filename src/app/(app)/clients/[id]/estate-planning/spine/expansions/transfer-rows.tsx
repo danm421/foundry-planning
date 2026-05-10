@@ -47,7 +47,7 @@ export function TransferRows({
         <div key={recipient}>
           <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-ink-3 border-b border-hair pb-0.5">
             <span>{recipient}</span>
-            <span className="font-mono tabular-nums">
+            <span className="tabular-nums">
               <MoneyText value={ts.reduce((s, t) => s + t.amount, 0)} />
             </span>
           </div>
@@ -62,7 +62,7 @@ export function TransferRows({
                     {MECH_LABEL[t.via]}
                   </span>
                 </span>
-                <MoneyText value={t.amount} className="font-mono tabular-nums text-ink" />
+                <MoneyText value={t.amount} className="tabular-nums text-ink" />
               </li>
             ))}
           </ul>

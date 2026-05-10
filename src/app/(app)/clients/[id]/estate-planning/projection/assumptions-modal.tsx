@@ -147,7 +147,7 @@ export function AssumptionsModal({ open, clientId, planSettings, onClose }: Prop
               value={form[f.key]}
               aria-label={f.label}
               onChange={(e) => update(f.key, e.target.value)}
-              className="rounded border border-hair bg-card-2 px-2 py-1 font-mono tabular-nums text-ink"
+              className="rounded border border-hair bg-card-2 px-2 py-1 tabular-nums text-ink"
             />
           </label>
         ))}

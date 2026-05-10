@@ -51,7 +51,7 @@ export function YearScrubber({
   return (
     <div className="space-y-2">
       <div className="flex items-baseline gap-3">
-        <span className="text-[32px] font-mono tabular-nums text-ink">{value}</span>
+        <span className="text-[32px] tabular-nums text-ink">{value}</span>
         <span className="text-[11px] text-ink-3">+{yearsFromNow} years from now</span>
         {activeEvent && (
           <span
@@ -153,7 +153,7 @@ export function YearScrubber({
         />
       </div>
 
-      <div className="flex justify-between font-mono text-[10.5px] text-ink-3">
+      <div className="flex justify-between tabular-nums text-[10.5px] text-ink-3">
         {ticks(min, max).map((y) => (
           <span key={y}>{y}</span>
         ))}

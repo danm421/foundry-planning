@@ -41,7 +41,7 @@ export function StageBand({
       >
         <span className="text-[12px] uppercase tracking-wider">{label}</span>
         <span className="flex items-center gap-2">
-          <MoneyText value={value} className="font-mono tabular-nums" />
+          <MoneyText value={value} className="tabular-nums" />
           {isExpandable && (
             <span aria-hidden className={`transition-transform text-xs ${open ? "rotate-90" : ""}`}>
               ▸

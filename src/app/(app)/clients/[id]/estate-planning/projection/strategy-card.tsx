@@ -34,7 +34,7 @@ export function StrategyCard({ data }: { data: StrategyCardData }) {
       <MoneyText
         value={data.primaryAmount}
         format="currency"
-        className={`block text-[30px] font-mono tabular-nums ${
+        className={`block text-[30px] tabular-nums ${
           isNeg ? "text-crit" : "text-accent-ink"
         }`}
       />
