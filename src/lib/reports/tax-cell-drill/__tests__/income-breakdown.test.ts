@@ -138,3 +138,41 @@ describe("buildIncomeCellDrill — direct columns", () => {
     expect(props.groups[0].rows).toEqual([]);
   });
 });
+
+describe("buildIncomeCellDrill — Taxable Social Security", () => {
+  it("splits taxable SS proportionally across SS income sources", () => {
+    // Household: SS gross 20,000 (12k client + 8k spouse), taxable 17,000.
+    // taxable fraction = 0.85. Per-source: client 10,200 / spouse 6,800.
+    const props = buildIncomeCellDrill({ year: makeYear(), columnKey: "taxableSocialSecurity", ctx });
+    expect(props.title).toBe("Taxable Social Security — 2030");
+    expect(props.total).toBe(17_000);
+    const rows = props.groups[0].rows;
+    expect(rows).toHaveLength(2);
+    // Sorted desc by taxable amount.
+    expect(rows[0]).toMatchObject({ id: "inc_ss_c", label: "Client SS", amount: 10_200 });
+    expect(rows[1]).toMatchObject({ id: "inc_ss_s", label: "Spouse SS", amount: 6_800 });
+    // Sum reconciles exactly with the cell value.
+    const sum = rows.reduce((s, r) => s + r.amount, 0);
+    expect(sum).toBe(17_000);
+  });
+
+  it("returns empty rows when SS gross is 0 (avoids divide-by-zero)", () => {
+    const year = makeYear({
+      income: {
+        salaries: 100_000, socialSecurity: 0,
+        business: 0, trust: 0, deferred: 0, capitalGains: 0, other: 0,
+        total: 100_000, bySource: { inc_w: 100_000 },
+      } as never,
+      taxResult: {
+        income: { earnedIncome: 100_000, taxableSocialSecurity: 0, ordinaryIncome: 0,
+          dividends: 0, capitalGains: 0, shortCapitalGains: 0,
+          totalIncome: 100_000, nonTaxableIncome: 0, grossTotalIncome: 100_000 },
+        flow: { incomeTaxBase: 100_000 },
+        diag: { marginalFederalRate: 0.22, marginalBracketTier: { from: 94300, to: 201050, rate: 0.22 } },
+      } as never,
+    });
+    const props = buildIncomeCellDrill({ year, columnKey: "taxableSocialSecurity", ctx });
+    expect(props.total).toBe(0);
+    expect(props.groups[0].rows).toEqual([]);
+  });
+});

@@ -43,10 +43,46 @@ export function buildIncomeCellDrill(args: IncomeCellDrillArgs): CellDrillProps 
     return { title, total, groups: [{ rows }] };
   }
 
-  // taxableSocialSecurity / nonTaxableIncome / totalIncome / grossTotalIncome
-  // — implemented in subsequent tasks. Stub: empty group with header.
+  if (columnKey === "taxableSocialSecurity") {
+    const total = year.taxResult?.income.taxableSocialSecurity ?? 0;
+    return { title, total, groups: [{ rows: socialSecurityRows(year, ctx, "taxable") }] };
+  }
+
+  // nonTaxableIncome / totalIncome / grossTotalIncome — later tasks.
   const total = year.taxResult?.income[columnKey] ?? 0;
   return { title, total, groups: [{ rows: [] }] };
+}
+
+function socialSecurityRows(
+  year: IncomeCellDrillArgs["year"],
+  ctx: IncomeCellDrillArgs["ctx"],
+  portion: "taxable" | "non_taxable",
+): CellDrillRow[] {
+  const grossHousehold = year.income.socialSecurity ?? 0;
+  if (grossHousehold <= 0) return [];
+  const taxable = year.taxResult?.income.taxableSocialSecurity ?? 0;
+  const fraction =
+    portion === "taxable"
+      ? Math.min(1, taxable / grossHousehold)
+      : Math.max(0, 1 - taxable / grossHousehold);
+
+  const ssIncomes = ctx.incomes.filter((i) => i.type === "social_security");
+  const incomeBySource = year.income.bySource ?? {};
+  return ssIncomes
+    .map((inc) => {
+      const gross = incomeBySource[inc.id] ?? 0;
+      return {
+        id: inc.id,
+        label: inc.name,
+        amount: Math.round(gross * fraction),
+        meta:
+          portion === "taxable"
+            ? `${Math.round(fraction * 100)}% of $${Math.round(gross).toLocaleString()} gross taxable`
+            : `${Math.round(fraction * 100)}% of $${Math.round(gross).toLocaleString()} gross excluded`,
+      };
+    })
+    .filter((r) => r.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
 }
 
 function directRows(
