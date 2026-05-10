@@ -2,16 +2,7 @@
 
 import { useState } from "react";
 import type { ClientData, ProjectionYear } from "@/engine";
-
-const fmt = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
-
-function fmtNum(v: number) {
-  return fmt.format(v);
-}
+import { resolveSourceLabel, formatCurrency } from "@/lib/reports/tax-cell-drill/_shared";
 
 interface TaxDrillDownModalProps {
   year: number;
@@ -63,21 +54,11 @@ export function TaxDrillDownModal({
               const isExpanded = expanded.has(row.key);
               const sources = Object.entries(detail.bySource)
                 .filter(([, v]) => v.type === row.taxType)
-                .map(([sourceId, v]) => {
-                  if (sourceId.includes(":")) {
-                    const [acctId, kind] = sourceId.split(":");
-                    const suffix =
-                      kind === "oi" ? "OI"
-                      : kind === "qdiv" ? "Qual Div"
-                      : kind === "stcg" ? "ST CG"
-                      : kind === "rmd" ? "RMD"
-                      : kind;
-                    const name = accountNames[acctId] ?? acctId;
-                    return { id: sourceId, label: `${name} — ${suffix}`, amount: v.amount };
-                  }
-                  const inc = incomes.find((i) => i.id === sourceId);
-                  return { id: sourceId, label: inc?.name ?? sourceId, amount: v.amount };
-                })
+                .map(([sourceId, v]) => ({
+                  id: sourceId,
+                  label: resolveSourceLabel(sourceId, { accountNames, incomes, accounts: [] }),
+                  amount: v.amount,
+                }))
                 .sort((a, b) => b.amount - a.amount);
 
               return (
@@ -99,14 +80,14 @@ export function TaxDrillDownModal({
                       <span className="text-xs text-gray-400">{sources.length > 0 ? (isExpanded ? "▾" : "▸") : " "}</span>
                       <span className="font-medium text-gray-200">{row.label}</span>
                     </span>
-                    <span className="tabular-nums text-gray-300">{fmtNum(detail[row.key])}</span>
+                    <span className="tabular-nums text-gray-300">{formatCurrency(detail[row.key])}</span>
                   </button>
                   {isExpanded && sources.length > 0 && (
                     <ul className="divide-y divide-gray-800 border-t border-gray-800">
                       {sources.map((s) => (
                         <li key={s.id} className="flex items-center justify-between px-3 py-1.5 pl-8 text-xs">
                           <span className="truncate text-gray-300">{s.label}</span>
-                          <span className="tabular-nums text-gray-300">{fmtNum(s.amount)}</span>
+                          <span className="tabular-nums text-gray-300">{formatCurrency(s.amount)}</span>
                         </li>
                       ))}
                     </ul>
@@ -118,7 +99,7 @@ export function TaxDrillDownModal({
 
         <div className="mt-4 flex justify-between border-t border-gray-700 pt-3 text-sm font-semibold text-gray-100">
           <span>Total Taxes</span>
-          <span className="tabular-nums">{fmtNum(totalTaxes)}</span>
+          <span className="tabular-nums">{formatCurrency(totalTaxes)}</span>
         </div>
       </div>
     </div>

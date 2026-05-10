@@ -5,6 +5,10 @@ import { TaxDetailIncomeTable } from "./tax-detail-income-table";
 import { TaxDetailFlowTable } from "./tax-detail-flow-table";
 import { TaxBracketTab } from "./tax-bracket-tab";
 import { YearRangeSlider } from "./year-range-slider";
+import type {
+  IncomeColumnKey,
+  BracketColumnKey,
+} from "@/lib/reports/tax-cell-drill/types";
 
 export type TaxDetailTabId = "income" | "federal" | "bracket";
 
@@ -18,6 +22,8 @@ interface TaxDetailViewProps {
   activeTab: TaxDetailTabId;
   years: ProjectionYear[];
   onYearClick: (year: ProjectionYear) => void;
+  onIncomeCellClick: (year: ProjectionYear, columnKey: IncomeColumnKey) => void;
+  onBracketCellClick: (year: number, columnKey: BracketColumnKey) => void;
   yearRange: [number, number];
   onYearRangeChange: (next: [number, number]) => void;
   planStartYear: number;
@@ -31,6 +37,8 @@ export function TaxDetailView({
   activeTab,
   years,
   onYearClick,
+  onIncomeCellClick,
+  onBracketCellClick,
   yearRange,
   onYearRangeChange,
   planStartYear,
@@ -59,6 +67,7 @@ export function TaxDetailView({
         <TaxDetailIncomeTable
           years={years}
           onYearClick={onYearClick}
+          onCellClick={onIncomeCellClick}
           clientLifeExpectancy={clientLifeExpectancy}
           spouseLifeExpectancy={spouseLifeExpectancy}
         />
@@ -71,7 +80,9 @@ export function TaxDetailView({
           spouseLifeExpectancy={spouseLifeExpectancy}
         />
       )}
-      {activeTab === "bracket" && <TaxBracketTab years={years} />}
+      {activeTab === "bracket" && (
+        <TaxBracketTab years={years} onCellClick={onBracketCellClick} />
+      )}
     </>
   );
 }

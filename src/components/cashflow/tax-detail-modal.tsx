@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ProjectionYear } from "@/engine";
 import {
   TAX_DETAIL_TABS,
@@ -8,6 +8,16 @@ import {
   type TaxDetailTabId,
 } from "./tax-detail-view";
 import DialogShell from "@/components/dialog-shell";
+import { TaxCellDrillDownModal } from "./tax-cell-drill-down-modal";
+import { buildIncomeCellDrill } from "@/lib/reports/tax-cell-drill/income-breakdown";
+import { buildConversionCellDrill } from "@/lib/reports/tax-cell-drill/bracket-conversions";
+import { buildBracketStackCellDrill } from "@/lib/reports/tax-cell-drill/bracket-stacking";
+import type {
+  IncomeColumnKey,
+  BracketColumnKey,
+  CellDrillContext,
+} from "@/lib/reports/tax-cell-drill/types";
+import type { Income, Account } from "@/engine/types";
 
 interface TaxDetailModalProps {
   years: ProjectionYear[];
@@ -21,45 +31,79 @@ interface TaxDetailModalProps {
   clientRetirementYear: number | null;
   clientLifeExpectancy?: number;
   spouseLifeExpectancy?: number | null;
+  clientData: { incomes: Income[]; accounts: Account[] };
 }
 
-export function TaxDetailModal({
-  years,
-  onClose,
-  onYearClick,
-  yearRange,
-  onYearRangeChange,
-  planStartYear,
-  planEndYear,
-  clientRetirementYear,
-  clientLifeExpectancy,
-  spouseLifeExpectancy,
-}: TaxDetailModalProps) {
+type CellDrill =
+  | { source: "income"; year: ProjectionYear; columnKey: IncomeColumnKey }
+  | { source: "bracket"; year: ProjectionYear; columnKey: BracketColumnKey };
+
+export function TaxDetailModal(props: TaxDetailModalProps) {
+  const {
+    years, onClose, onYearClick,
+    yearRange, onYearRangeChange,
+    planStartYear, planEndYear,
+    clientRetirementYear, clientLifeExpectancy, spouseLifeExpectancy,
+    clientData,
+  } = props;
   const [activeTab, setActiveTab] = useState<TaxDetailTabId>("income");
+  const [cellDrill, setCellDrill] = useState<CellDrill | null>(null);
+
+  const ctx: CellDrillContext = useMemo(
+    () => ({
+      accountNames: Object.fromEntries(clientData.accounts.map((a) => [a.id, a.name])),
+      incomes: clientData.incomes,
+      accounts: clientData.accounts,
+    }),
+    [clientData.accounts, clientData.incomes],
+  );
+
+  const drillProps = useMemo(() => {
+    if (!cellDrill) return null;
+    if (cellDrill.source === "income") {
+      return buildIncomeCellDrill({ year: cellDrill.year, columnKey: cellDrill.columnKey, ctx });
+    }
+    if (cellDrill.columnKey === "intoBracket") {
+      return buildBracketStackCellDrill({ year: cellDrill.year, columnKey: cellDrill.columnKey, ctx });
+    }
+    return buildConversionCellDrill({ year: cellDrill.year, columnKey: cellDrill.columnKey, ctx });
+  }, [cellDrill, ctx]);
 
   return (
-    <DialogShell
-      open={true}
-      onOpenChange={(open) => { if (!open) onClose(); }}
-      title="Tax Detail — All Years"
-      size="xl"
-      tabs={TAX_DETAIL_TABS}
-      activeTab={activeTab}
-      onTabChange={(id) => setActiveTab(id as TaxDetailTabId)}
-      secondaryAction={{ label: "Close", onClick: onClose }}
-    >
-      <TaxDetailView
+    <>
+      <DialogShell
+        open={true}
+        onOpenChange={(open) => { if (!open) onClose(); }}
+        title="Tax Detail — All Years"
+        size="xl"
+        tabs={TAX_DETAIL_TABS}
         activeTab={activeTab}
-        years={years}
-        onYearClick={onYearClick}
-        yearRange={yearRange}
-        onYearRangeChange={onYearRangeChange}
-        planStartYear={planStartYear}
-        planEndYear={planEndYear}
-        clientRetirementYear={clientRetirementYear}
-        clientLifeExpectancy={clientLifeExpectancy}
-        spouseLifeExpectancy={spouseLifeExpectancy}
-      />
-    </DialogShell>
+        onTabChange={(id) => setActiveTab(id as TaxDetailTabId)}
+        secondaryAction={{ label: "Close", onClick: onClose }}
+      >
+        <TaxDetailView
+          activeTab={activeTab}
+          years={years}
+          onYearClick={onYearClick}
+          onIncomeCellClick={(year, columnKey) =>
+            setCellDrill({ source: "income", year, columnKey })}
+          onBracketCellClick={(yr, columnKey) => {
+            const year = years.find((y) => y.year === yr);
+            if (year) setCellDrill({ source: "bracket", year, columnKey });
+          }}
+          yearRange={yearRange}
+          onYearRangeChange={onYearRangeChange}
+          planStartYear={planStartYear}
+          planEndYear={planEndYear}
+          clientRetirementYear={clientRetirementYear}
+          clientLifeExpectancy={clientLifeExpectancy}
+          spouseLifeExpectancy={spouseLifeExpectancy}
+        />
+      </DialogShell>
+
+      {drillProps && (
+        <TaxCellDrillDownModal {...drillProps} onClose={() => setCellDrill(null)} />
+      )}
+    </>
   );
 }
