@@ -33,7 +33,7 @@ const baseProps = {
   clientId: "client-1",
   entityId: "ent-1",
   entityType: "llc" as const,
-  scenarioId: "scenario-1",
+  scenarioId: "scenario-1" as string | null,
   planStartYear: 2026,
   planEndYear: 2028,
   primaryClientBirthYear: 1964, // Age 62 in 2026
