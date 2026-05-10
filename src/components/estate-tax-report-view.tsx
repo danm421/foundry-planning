@@ -332,7 +332,7 @@ function LineRow({
         (muted ? "text-gray-500" : "text-gray-300")
       }
     >
-      <span className="truncate">
+      <span className="min-w-0 break-words">
         {label}
         {hint && <span className="ml-2 text-xs text-gray-500">{hint}</span>}
       </span>
@@ -442,7 +442,7 @@ function DecedentBreakdown({
         </div>
       )}
 
-      <div className="divide-y divide-gray-800/70">
+      <div className="divide-y divide-gray-800/70 md:max-w-[50%]">
         {/* Gross Estate */}
         <Section
           title="Gross Estate"
@@ -564,13 +564,15 @@ function DecedentBreakdown({
       </div>
 
       {showDsueGenerated && tax.dsueGenerated > 0 && (
-        <div className="flex items-baseline justify-between gap-4 border-t border-indigo-900/40 bg-indigo-950/20 px-5 py-2">
-          <span className="text-xs uppercase tracking-wider text-indigo-300">
-            DSUE generated · ported to survivor
-          </span>
-          <span className="text-sm font-semibold tabular-nums text-indigo-200">
-            {fmt.format(tax.dsueGenerated)}
-          </span>
+        <div className="border-t border-indigo-900/40 bg-indigo-950/20 px-5 py-2 md:max-w-[50%]">
+          <div className="flex items-baseline justify-between gap-4">
+            <span className="text-xs uppercase tracking-wider text-indigo-300">
+              DSUE generated · ported to survivor
+            </span>
+            <span className="text-sm font-semibold tabular-nums text-indigo-200">
+              {fmt.format(tax.dsueGenerated)}
+            </span>
+          </div>
         </div>
       )}
     </section>
@@ -601,18 +603,20 @@ function TotalsCard({
           <h2 className="text-base font-semibold text-gray-50">{heading}</h2>
         </div>
       </header>
-      <div className="px-5 py-3">
+      <div className="px-5 py-3 md:max-w-[50%]">
         <LineRow label="Total federal estate tax" amount={federal} />
         <LineRow label="Total state estate tax" amount={state} hideIfZero />
         <LineRow label="Total admin expenses" amount={admin} hideIfZero />
       </div>
-      <div className="flex items-baseline justify-between gap-4 border-t border-indigo-900/40 bg-indigo-950/30 px-5 py-3">
-        <span className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-100">
-          Grand total · taxes &amp; expenses
-        </span>
-        <span className={"text-xl font-semibold tabular-nums " + accent}>
-          {fmt.format(total)}
-        </span>
+      <div className="border-t border-indigo-900/40 bg-indigo-950/30 px-5 py-3 md:max-w-[50%]">
+        <div className="flex items-baseline justify-between gap-4">
+          <span className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-100">
+            Grand total · taxes &amp; expenses
+          </span>
+          <span className={"text-xl font-semibold tabular-nums " + accent}>
+            {fmt.format(total)}
+          </span>
+        </div>
       </div>
     </section>
   );
