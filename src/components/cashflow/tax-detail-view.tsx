@@ -18,6 +18,7 @@ interface TaxDetailViewProps {
   activeTab: TaxDetailTabId;
   years: ProjectionYear[];
   onYearClick: (year: ProjectionYear) => void;
+  onCellClick?: (year: ProjectionYear, columnKey: string) => void;
   yearRange: [number, number];
   onYearRangeChange: (next: [number, number]) => void;
   planStartYear: number;
@@ -31,6 +32,7 @@ export function TaxDetailView({
   activeTab,
   years,
   onYearClick,
+  onCellClick,
   yearRange,
   onYearRangeChange,
   planStartYear,
@@ -59,6 +61,7 @@ export function TaxDetailView({
         <TaxDetailIncomeTable
           years={years}
           onYearClick={onYearClick}
+          onCellClick={onCellClick ?? (() => {})}
           clientLifeExpectancy={clientLifeExpectancy}
           spouseLifeExpectancy={spouseLifeExpectancy}
         />

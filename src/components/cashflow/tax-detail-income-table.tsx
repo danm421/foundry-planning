@@ -13,6 +13,7 @@ import type { TransitionType } from "./tax-regime-indicators";
 interface TaxDetailIncomeTableProps {
   years: ProjectionYear[];
   onYearClick: (year: ProjectionYear) => void;
+  onCellClick: (year: ProjectionYear, columnKey: string) => void;
   clientLifeExpectancy?: number;
   spouseLifeExpectancy?: number | null;
 }
@@ -111,6 +112,7 @@ const COLUMNS: Column[] = [
 export function TaxDetailIncomeTable({
   years,
   onYearClick,
+  onCellClick,
   clientLifeExpectancy,
   spouseLifeExpectancy,
 }: TaxDetailIncomeTableProps) {
@@ -172,9 +174,16 @@ export function TaxDetailIncomeTable({
                   return (
                     <td
                       key={col.key}
-                      className={`border-b border-gray-800 bg-gray-900 px-3 py-2 text-right tabular-nums group-hover:bg-gray-800/40 ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
+                      className={`border-b border-gray-800 bg-gray-900 px-0 py-0 text-right tabular-nums group-hover:bg-gray-800/40 ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
                     >
-                      {formatCell(v)}
+                      <button
+                        type="button"
+                        onClick={() => onCellClick(y, col.key)}
+                        aria-label={`${col.label} value ${formatCell(v).replace(/^\$/, "")}`}
+                        className="block w-full cursor-pointer px-3 py-2 text-right hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      >
+                        {formatCell(v)}
+                      </button>
                     </td>
                   );
                 })}
