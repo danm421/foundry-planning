@@ -9,11 +9,12 @@ import {
   pickBorderTransition,
 } from "./tax-regime-indicators";
 import type { TransitionType } from "./tax-regime-indicators";
+import type { IncomeColumnKey } from "@/lib/reports/tax-cell-drill/types";
 
 interface TaxDetailIncomeTableProps {
   years: ProjectionYear[];
   onYearClick: (year: ProjectionYear) => void;
-  onCellClick: (year: ProjectionYear, columnKey: string) => void;
+  onCellClick: (year: ProjectionYear, columnKey: IncomeColumnKey) => void;
   clientLifeExpectancy?: number;
   spouseLifeExpectancy?: number | null;
 }
@@ -42,7 +43,7 @@ function formatAge(
 }
 
 interface Column {
-  key: string;
+  key: IncomeColumnKey;
   label: string;
   tooltip?: string;
   value: (y: ProjectionYear) => number;

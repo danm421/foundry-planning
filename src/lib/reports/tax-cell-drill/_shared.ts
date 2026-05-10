@@ -1,5 +1,4 @@
-// src/lib/reports/tax-cell-drill/_shared.ts
-import type { CellDrillContext } from "./types";
+import type { CellDrillContext, CellDrillRow } from "./types";
 
 const COMPOUND_KIND_LABEL: Record<string, string> = {
   oi: "OI",
@@ -8,8 +7,7 @@ const COMPOUND_KIND_LABEL: Record<string, string> = {
   rmd: "RMD",
 };
 
-/** Resolve a `taxDetail.bySource` key to a display label. Mirrors and replaces
- *  the inline logic that used to live in tax-drill-down-modal.tsx. */
+/** Resolve a `taxDetail.bySource` key to a display label. */
 export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): string {
   if (sourceId.startsWith("withdrawal:")) {
     const acctId = sourceId.slice("withdrawal:".length);
@@ -54,4 +52,23 @@ const usdFmt = new Intl.NumberFormat("en-US", {
 
 export function formatCurrency(n: number): string {
   return usdFmt.format(n);
+}
+
+type BySource = Record<string, { type: string; amount: number }>;
+
+/** Build descending-by-amount drill rows from a `taxDetail.bySource` map,
+ *  filtered by one type or a set of types. */
+export function bySourceRows(
+  bySource: BySource,
+  match: string | ReadonlySet<string>,
+  ctx: CellDrillContext,
+): CellDrillRow[] {
+  const matches =
+    typeof match === "string"
+      ? (t: string) => t === match
+      : (t: string) => match.has(t);
+  return Object.entries(bySource)
+    .filter(([, v]) => matches(v.type))
+    .map(([id, v]) => ({ id, label: resolveSourceLabel(id, ctx), amount: v.amount }))
+    .sort((a, b) => b.amount - a.amount);
 }

@@ -3,7 +3,7 @@ import type {
   CellDrillProps,
   CellDrillRow,
 } from "./types";
-import { formatCurrency, resolveSourceLabel } from "./_shared";
+import { bySourceRows, formatCurrency } from "./_shared";
 
 const ORDINARY_STACK_TYPES = new Set(["earned_income", "ordinary_income", "stcg"]);
 
@@ -24,11 +24,11 @@ export function buildBracketStackCellDrill(args: BracketCellDrillArgs): CellDril
     return { title, total, groups: [{ rows: [] }] };
   }
 
-  const bySource = year.taxDetail?.bySource ?? {};
-  const rows: CellDrillRow[] = Object.entries(bySource)
-    .filter(([, v]) => ORDINARY_STACK_TYPES.has(v.type))
-    .map(([id, v]) => ({ id, label: resolveSourceLabel(id, ctx), amount: v.amount }))
-    .sort((a, b) => b.amount - a.amount);
+  const rows: CellDrillRow[] = bySourceRows(
+    year.taxDetail?.bySource ?? {},
+    ORDINARY_STACK_TYPES,
+    ctx,
+  );
 
   // Find boundary: first index where running total > tier.from.
   let running = 0;

@@ -1,11 +1,10 @@
-// src/lib/reports/tax-cell-drill/income-breakdown.ts
 import type {
   CellDrillProps,
   CellDrillRow,
   IncomeCellDrillArgs,
   IncomeColumnKey,
 } from "./types";
-import { resolveSourceLabel } from "./_shared";
+import { bySourceRows, resolveSourceLabel } from "./_shared";
 
 const COLUMN_LABEL: Record<IncomeColumnKey, string> = {
   earnedIncome: "Earned Income",
@@ -64,7 +63,6 @@ export function buildIncomeCellDrill(args: IncomeCellDrillArgs): CellDrillProps 
     return { title, total, groups: [...totalIncomeGroups(year, ctx), ...nonTaxableGroups(year, ctx)] };
   }
 
-  // Unreachable — every IncomeColumnKey is handled above.
   return { title, total: year.taxResult?.income[columnKey] ?? 0, groups: [] };
 }
 
@@ -141,9 +139,5 @@ function directRows(
   type: string,
   ctx: IncomeCellDrillArgs["ctx"],
 ): CellDrillRow[] {
-  const bySource = year.taxDetail?.bySource ?? {};
-  return Object.entries(bySource)
-    .filter(([, v]) => v.type === type)
-    .map(([id, v]) => ({ id, label: resolveSourceLabel(id, ctx), amount: v.amount }))
-    .sort((a, b) => b.amount - a.amount);
+  return bySourceRows(year.taxDetail?.bySource ?? {}, type, ctx);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ProjectionYear } from "@/engine";
 import {
   TAX_DETAIL_TABS,
@@ -49,13 +49,16 @@ export function TaxDetailModal(props: TaxDetailModalProps) {
   const [activeTab, setActiveTab] = useState<TaxDetailTabId>("income");
   const [cellDrill, setCellDrill] = useState<CellDrill | null>(null);
 
-  const ctx: CellDrillContext = {
-    accountNames: Object.fromEntries(clientData.accounts.map((a) => [a.id, a.name])),
-    incomes: clientData.incomes,
-    accounts: clientData.accounts,
-  };
+  const ctx: CellDrillContext = useMemo(
+    () => ({
+      accountNames: Object.fromEntries(clientData.accounts.map((a) => [a.id, a.name])),
+      incomes: clientData.incomes,
+      accounts: clientData.accounts,
+    }),
+    [clientData.accounts, clientData.incomes],
+  );
 
-  const drillProps = (() => {
+  const drillProps = useMemo(() => {
     if (!cellDrill) return null;
     if (cellDrill.source === "income") {
       return buildIncomeCellDrill({ year: cellDrill.year, columnKey: cellDrill.columnKey, ctx });
@@ -64,7 +67,7 @@ export function TaxDetailModal(props: TaxDetailModalProps) {
       return buildBracketStackCellDrill({ year: cellDrill.year, columnKey: cellDrill.columnKey, ctx });
     }
     return buildConversionCellDrill({ year: cellDrill.year, columnKey: cellDrill.columnKey, ctx });
-  })();
+  }, [cellDrill, ctx]);
 
   return (
     <>
@@ -83,7 +86,7 @@ export function TaxDetailModal(props: TaxDetailModalProps) {
           years={years}
           onYearClick={onYearClick}
           onIncomeCellClick={(year, columnKey) =>
-            setCellDrill({ source: "income", year, columnKey: columnKey as IncomeColumnKey })}
+            setCellDrill({ source: "income", year, columnKey })}
           onBracketCellClick={(yr, columnKey) => {
             const year = years.find((y) => y.year === yr);
             if (year) setCellDrill({ source: "bracket", year, columnKey });

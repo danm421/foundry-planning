@@ -183,11 +183,7 @@ export default function IncomeTaxReport({ clientId }: Props) {
               }
             }}
             onIncomeCellClick={(year, columnKey) =>
-              setCellDrill({
-                source: "income",
-                year,
-                columnKey: columnKey as IncomeColumnKey,
-              })
+              setCellDrill({ source: "income", year, columnKey })
             }
             onBracketCellClick={(yr, columnKey) => {
               const year = years.find((y) => y.year === yr);

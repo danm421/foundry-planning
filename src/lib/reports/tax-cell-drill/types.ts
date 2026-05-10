@@ -1,4 +1,3 @@
-// src/lib/reports/tax-cell-drill/types.ts
 import type { Account, ClientData, ProjectionYear } from "@/engine/types";
 
 /** Income Breakdown tab column keys — must match the `key` fields in

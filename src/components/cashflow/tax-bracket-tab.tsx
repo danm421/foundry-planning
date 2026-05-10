@@ -3,10 +3,11 @@
 import { useMemo } from "react";
 import type { ProjectionYear } from "@/engine";
 import { buildTaxBracketRows } from "@/lib/reports/tax-bracket";
+import type { BracketColumnKey } from "@/lib/reports/tax-cell-drill/types";
 
 interface TaxBracketTabProps {
   years: ProjectionYear[];
-  onCellClick: (year: number, columnKey: "conversionGross" | "conversionTaxable" | "intoBracket") => void;
+  onCellClick: (year: number, columnKey: BracketColumnKey) => void;
 }
 
 function fmtUsd(n: number): string {
