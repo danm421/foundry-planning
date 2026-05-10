@@ -1,9 +1,15 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
 import { fillFlat, fillGrowth, type ScheduleEntry } from "@/lib/schedule-utils";
+
+/** Exposed to parent so the dialog footer can drive the save action. */
+export interface ScheduleSaveBinding {
+  save: () => Promise<void>;
+  saving: boolean;
+}
 
 type EntityType =
   | "trust"
@@ -41,6 +47,8 @@ export interface FlowScheduleGridProps {
   income: BaseFlow | null;
   expense: BaseFlow | null;
   initialOverrides: FlowScheduleGridOverride[];
+  /** Lifts save + saving state to the parent so the dialog footer can render the button. */
+  onSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
 }
 
 const isBusinessType = (t: EntityType) => t !== "trust" && t !== "foundation";
@@ -177,17 +185,38 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
     }
   }
 
+  // Stable callback for the parent: invokes the latest handleSave via ref so we
+  // don't re-fire the registration effect on every keystroke.
+  const handleSaveRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  handleSaveRef.current = handleSave;
+  const stableSave = useCallback(() => handleSaveRef.current(), []);
+
+  const onSaveBindingChange = props.onSaveBindingChange;
+  useEffect(() => {
+    onSaveBindingChange?.({ save: stableSave, saving });
+  }, [onSaveBindingChange, stableSave, saving]);
+  useEffect(
+    () => () => onSaveBindingChange?.(null),
+    [onSaveBindingChange],
+  );
+
   const qfLabelClass = "flex flex-col gap-0.5 text-[11px] font-semibold text-ink";
   const qfNumberInputClass =
     "rounded border border-hair bg-card-2 px-2 py-1 text-xs text-ink";
-  const thClass = "py-2 text-right text-[13px] font-semibold text-ink";
+  const thClass =
+    "sticky top-0 z-10 border-b border-hair bg-card-2 py-2 text-right text-[13px] font-semibold text-ink";
   const distSetButtonClass =
     "rounded border border-hair bg-card-2 px-1.5 py-0.5 text-[10px] font-semibold text-ink hover:bg-card";
 
   return (
-    <section className="space-y-3 rounded-md border border-hair bg-card-2 p-4">
+    <section className="space-y-2 rounded-md border border-hair bg-card-2 p-4">
       <p className="text-xs text-ink-3">
         Override individual years. Blank cells resolve to $0 in schedule mode.
+        {savedAt && !saving && (
+          <span className="ml-2 text-ink-2">
+            · Saved at {savedAt.toLocaleTimeString()}
+          </span>
+        )}
       </p>
 
       {/* Quick fill */}
@@ -250,8 +279,8 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
 
       <div className="max-h-[60vh] overflow-y-auto">
         <table className="w-full border-collapse text-xs">
-          <thead className="sticky top-0 bg-card-2">
-            <tr className="border-b border-hair">
+          <thead>
+            <tr>
               <th className={thClass + " text-left"}>Year (Age)</th>
               <th className={thClass}>Income</th>
               <th className={thClass}>Expense</th>
@@ -320,21 +349,6 @@ export default function FlowScheduleGrid(props: FlowScheduleGridProps) {
           </table>
         </div>
 
-      <div className="flex items-center justify-end gap-3">
-        {savedAt && !saving && (
-          <span className="text-[11px] text-ink-3">
-            Saved at {savedAt.toLocaleTimeString()}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-on disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Save schedule"}
-        </button>
-      </div>
     </section>
   );
 }

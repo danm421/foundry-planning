@@ -16,7 +16,11 @@ import AssetsTab, {
   type AssetsTabExpense,
   type AssetsTabFamilyMember,
 } from "../forms/assets-tab";
-import FlowsTab, { type FlowsTabIncome, type FlowsTabExpense } from "../forms/flows-tab";
+import FlowsTab, {
+  type FlowsTabIncome,
+  type FlowsTabExpense,
+  type ScheduleSaveBinding,
+} from "../forms/flows-tab";
 import { applyAssetTabOp, type AssetTabOp } from "../forms/asset-tab-ops";
 
 type BusinessEntityType = "llc" | "s_corp" | "c_corp" | "partnership" | "other";
@@ -50,6 +54,8 @@ interface BusinessFormProps extends EntityFormCommonProps {
     distributionPercent: number | null;
   }>;
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
+  /** Forwarded to FlowsTab → FlowScheduleGrid so the dialog footer can render a Save button. */
+  onScheduleSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
 }
 
 function defaultOwners(members: AssetsTabFamilyMember[]): AccountOwner[] {
@@ -76,6 +82,7 @@ export default function BusinessForm({
   primaryClientBirthYear,
   initialFlowOverrides,
   onSubmitStateChange,
+  onScheduleSaveBindingChange,
 }: BusinessFormProps) {
   const writer = useScenarioWriter(clientId);
   const [loading, setLoading] = useState(false);
@@ -420,6 +427,7 @@ export default function BusinessForm({
             planEndYear={planEndYear ?? new Date().getFullYear() + 30}
             primaryClientBirthYear={primaryClientBirthYear ?? new Date().getFullYear() - 55}
             initialFlowOverrides={initialFlowOverrides ?? []}
+            onScheduleSaveBindingChange={onScheduleSaveBindingChange}
           />
         ) : (
           <p className="text-[13px] text-ink-3 text-center py-6">

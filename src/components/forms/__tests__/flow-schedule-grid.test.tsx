@@ -1,7 +1,33 @@
 // @vitest-environment jsdom
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import FlowScheduleGrid from "../flow-schedule-grid";
+import FlowScheduleGrid, { type ScheduleSaveBinding } from "../flow-schedule-grid";
+
+/**
+ * Renders the grid and exposes a `save()` helper. The grid no longer owns its
+ * Save button — the dialog footer does — so tests drive saves through the
+ * binding the grid registers with its parent.
+ */
+function renderWithSave(overrideProps: Partial<typeof baseProps> = {}) {
+  const ref: { current: ScheduleSaveBinding | null } = { current: null };
+  render(
+    <FlowScheduleGrid
+      {...baseProps}
+      {...overrideProps}
+      onSaveBindingChange={(b) => {
+        ref.current = b;
+      }}
+    />,
+  );
+  return {
+    async save() {
+      if (!ref.current) throw new Error("save binding was never registered");
+      await act(async () => {
+        await ref.current!.save();
+      });
+    },
+  };
+}
 
 const baseProps = {
   clientId: "client-1",
@@ -56,11 +82,11 @@ describe("FlowScheduleGrid", () => {
     QUICK_FILL_TEXTBOXES_BUSINESS + yearOffset * (distColumn ? 3 : 2);
 
   it("Save sends a PUT with the typed values", async () => {
-    render(<FlowScheduleGrid {...baseProps} />);
+    const { save } = renderWithSave();
     const inputs = screen.getAllByRole("textbox");
     // Year 2026 income (first per-year row, first column after the quick-fill panel).
     fireEvent.change(inputs[incomeInputForYearIndex(0)], { target: { value: "250000" } });
-    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await save();
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(call[0]).toContain("/flow-overrides?scenarioId=scenario-1");
@@ -71,10 +97,10 @@ describe("FlowScheduleGrid", () => {
   });
 
   it("Save in base mode (scenarioId=null) omits the scenarioId query param", async () => {
-    render(<FlowScheduleGrid {...baseProps} scenarioId={null} />);
+    const { save } = renderWithSave({ scenarioId: null });
     const inputs = screen.getAllByRole("textbox");
     fireEvent.change(inputs[incomeInputForYearIndex(0)], { target: { value: "175000" } });
-    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await save();
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(call[0]).toContain("/flow-overrides");
@@ -85,7 +111,7 @@ describe("FlowScheduleGrid", () => {
   });
 
   it("Quick-fill applies income with growth across the year range", async () => {
-    render(<FlowScheduleGrid {...baseProps} />);
+    const { save } = renderWithSave();
     // Quick-fill panel order: Start year (number), End year (number),
     // Income, Expense, Distribution %, Growth %.
     const numbers = screen.getAllByRole("spinbutton"); // type=number inputs
@@ -102,7 +128,7 @@ describe("FlowScheduleGrid", () => {
     fireEvent.change(qfGrowthInput, { target: { value: "10" } });
 
     fireEvent.click(screen.getByRole("button", { name: /apply/i }));
-    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await save();
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const body = JSON.parse(
@@ -117,9 +143,9 @@ describe("FlowScheduleGrid", () => {
   });
 
   it("Distribution 100% button fills every year with 1.0", async () => {
-    render(<FlowScheduleGrid {...baseProps} />);
+    const { save } = renderWithSave();
     fireEvent.click(screen.getByRole("button", { name: "100%" }));
-    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await save();
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const body = JSON.parse(
       (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]?.body as string,
@@ -131,9 +157,9 @@ describe("FlowScheduleGrid", () => {
   });
 
   it("Distribution 0% button fills every year with 0", async () => {
-    render(<FlowScheduleGrid {...baseProps} />);
+    const { save } = renderWithSave();
     fireEvent.click(screen.getByRole("button", { name: "0%" }));
-    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await save();
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const body = JSON.parse(
       (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]?.body as string,

@@ -7,7 +7,7 @@ import BusinessForm from "./business-form";
 import { getEntityKind, type EntityKind } from "./types";
 import type { Entity, FamilyMember, ExternalBeneficiary, Designation } from "../family-view";
 import type { AssetsTabAccount, AssetsTabLiability, AssetsTabIncome, AssetsTabExpense, AssetsTabFamilyMember } from "../forms/assets-tab";
-import type { FlowsTabIncome, FlowsTabExpense } from "../forms/flows-tab";
+import type { FlowsTabIncome, FlowsTabExpense, ScheduleSaveBinding } from "../forms/flows-tab";
 import DialogShell from "../dialog-shell";
 
 export interface EntityDialogProps {
@@ -101,6 +101,10 @@ export default function EntityDialog({
     distributionPercent: number | null;
   }>>([]);
 
+  // FlowScheduleGrid registers its save handler here so the dialog footer can drive it.
+  const [scheduleSaveBinding, setScheduleSaveBinding] =
+    useState<ScheduleSaveBinding | null>(null);
+
   const scenarioId = searchParams.get("scenario");
 
   useEffect(() => {
@@ -147,10 +151,16 @@ export default function EntityDialog({
     else setBusinessTab(tab as BusinessTab);
   };
 
-  // Tabs that don't own a primary form action (Assets / Transfers / Flows manage their own data inline).
+  // Tabs that don't own a primary form action (Assets / Transfers manage their own data inline).
+  // Flows is special: when in custom-schedule mode the grid registers a save binding,
+  // which we surface as the primary action below. Annual mode has no primary action.
+  const onFlowsTab =
+    (kind === "trust" && trustTab === "flows") ||
+    (kind === "business" && businessTab === "flows");
   const noPrimaryAction =
-    (kind === "trust" && (trustTab === "assets" || trustTab === "transfers" || trustTab === "flows")) ||
-    (kind === "business" && (businessTab === "assets" || businessTab === "flows"));
+    (kind === "trust" && (trustTab === "assets" || trustTab === "transfers")) ||
+    (kind === "business" && businessTab === "assets") ||
+    (onFlowsTab && !scheduleSaveBinding);
 
   // Find the entity-owned income + expense for THIS entity to feed the FlowsTab.
   const entityIncome: FlowsTabIncome | null = editing
@@ -172,6 +182,14 @@ export default function EntityDialog({
       primaryAction={
         noPrimaryAction
           ? undefined
+          : onFlowsTab && scheduleSaveBinding
+          ? {
+              label: "Save schedule",
+              onClick: () => {
+                void scheduleSaveBinding.save();
+              },
+              loading: scheduleSaveBinding.saving,
+            }
           : {
               label: isEdit ? "Save Changes" : kind === "trust" ? "Add Trust" : "Add Business",
               form: kind === "trust" ? "add-trust-form" : "entity-business-form",
@@ -208,6 +226,7 @@ export default function EntityDialog({
           onSaved={onSaved}
           onClose={() => onOpenChange(false)}
           onSubmitStateChange={setSubmitState}
+          onScheduleSaveBindingChange={setScheduleSaveBinding}
         />
       ) : (
         <BusinessForm
@@ -228,6 +247,7 @@ export default function EntityDialog({
           onSaved={onSaved}
           onClose={() => onOpenChange(false)}
           onSubmitStateChange={setSubmitState}
+          onScheduleSaveBindingChange={setScheduleSaveBinding}
         />
       )}
     </DialogShell>

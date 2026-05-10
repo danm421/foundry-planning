@@ -7,7 +7,9 @@ import type { EntityFlowMode } from "@/engine/types";
 import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
 import { inputClassName, fieldLabelClassName } from "./input-styles";
-import FlowScheduleGrid from "./flow-schedule-grid";
+import FlowScheduleGrid, { type ScheduleSaveBinding } from "./flow-schedule-grid";
+
+export type { ScheduleSaveBinding };
 
 type EntityType =
   | "trust"
@@ -51,6 +53,8 @@ export interface FlowsTabProps {
     expenseAmount: number | null;
     distributionPercent: number | null;
   }>;
+  /** Bubbles the custom-schedule save handler up to the dialog footer. */
+  onScheduleSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
 }
 
 const isBusinessType = (t: EntityType) => t !== "trust" && t !== "foundation";
@@ -105,6 +109,15 @@ export default function FlowsTab(props: FlowsTabProps) {
   }
 
   const isSchedule = mode === "schedule";
+
+  // Clear the binding when leaving schedule mode — FlowScheduleGrid's unmount
+  // effect also does this, but switching modes happens before unmount.
+  const onScheduleSaveBindingChange = props.onScheduleSaveBindingChange;
+  useEffect(() => {
+    if (!isSchedule || !props.entityId) {
+      onScheduleSaveBindingChange?.(null);
+    }
+  }, [isSchedule, props.entityId, onScheduleSaveBindingChange]);
 
   return (
     <div className="space-y-6">
@@ -173,6 +186,7 @@ export default function FlowsTab(props: FlowsTabProps) {
               : null
           }
           initialOverrides={props.initialFlowOverrides}
+          onSaveBindingChange={props.onScheduleSaveBindingChange}
         />
       ) : (
         <>

@@ -82,13 +82,13 @@ describe("FlowsTab", () => {
   it("Annual mode shows the income/expense/distribution forms (no inline grid)", () => {
     render(<FlowsTab {...baseProps} />);
     expect(screen.getByRole("button", { name: /add income/i })).toBeInTheDocument();
-    // The schedule grid's Save button is the canonical inline-grid marker.
-    expect(screen.queryByRole("button", { name: /save schedule/i })).not.toBeInTheDocument();
+    // Quick fill panel only exists inside FlowScheduleGrid (schedule mode).
+    expect(screen.queryByText(/quick fill/i)).not.toBeInTheDocument();
   });
 
   it("Schedule mode renders the inline grid in place of the income/expense forms", () => {
     render(<FlowsTab {...baseProps} flowMode="schedule" />);
-    expect(screen.getByRole("button", { name: /save schedule/i })).toBeInTheDocument();
+    expect(screen.getByText(/quick fill/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /add income/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/distribution policy/i)).not.toBeInTheDocument();
   });

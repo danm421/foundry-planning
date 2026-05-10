@@ -10,7 +10,11 @@ import { CurrencyInput } from "../currency-input";
 import { PercentInput } from "../percent-input";
 import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName } from "./input-styles";
 import AssetsTab, { type AssetsTabAccount, type AssetsTabLiability, type AssetsTabIncome, type AssetsTabExpense, type AssetsTabFamilyMember } from "./assets-tab";
-import FlowsTab, { type FlowsTabIncome, type FlowsTabExpense } from "./flows-tab";
+import FlowsTab, {
+  type FlowsTabIncome,
+  type FlowsTabExpense,
+  type ScheduleSaveBinding,
+} from "./flows-tab";
 import { applyAssetTabOp } from "./asset-tab-ops";
 import type { AssetTabOp } from "./asset-tab-ops";
 import TransfersTab, { type TransferEvent, type TransferSeries } from "./transfers-tab";
@@ -57,6 +61,8 @@ interface AddTrustFormProps {
   onSaved: (entity: Entity, mode: "create" | "edit") => void;
   onClose: () => void;
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
+  /** Forwarded to FlowsTab → FlowScheduleGrid so the dialog footer can render a Save button. */
+  onScheduleSaveBindingChange?: (binding: ScheduleSaveBinding | null) => void;
 }
 
 // ── Fetch helper ─────────────────────────────────────────────────────────────
@@ -106,6 +112,7 @@ export default function AddTrustForm({
   primaryClientBirthYear,
   initialFlowOverrides,
   onSaved, onClose, onSubmitStateChange,
+  onScheduleSaveBindingChange,
 }: AddTrustFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -725,6 +732,7 @@ export default function AddTrustForm({
             planEndYear={planEndYear ?? new Date().getFullYear() + 30}
             primaryClientBirthYear={primaryClientBirthYear ?? new Date().getFullYear() - 55}
             initialFlowOverrides={initialFlowOverrides ?? []}
+            onScheduleSaveBindingChange={onScheduleSaveBindingChange}
           />
         ) : (
           <p className="text-[13px] text-ink-3 text-center py-6">
