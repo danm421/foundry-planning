@@ -11,13 +11,26 @@ import {
   type TaxDetailTabId,
 } from "@/components/cashflow/tax-detail-view";
 import { TaxDrillDownModal } from "@/components/cashflow/tax-drill-down-modal";
+import { TaxCellDrillDownModal } from "@/components/cashflow/tax-cell-drill-down-modal";
 import { TaxTabChart } from "@/components/cashflow/charts/tax-tab-chart";
+import { buildIncomeCellDrill } from "@/lib/reports/tax-cell-drill/income-breakdown";
+import { buildConversionCellDrill } from "@/lib/reports/tax-cell-drill/bracket-conversions";
+import { buildBracketStackCellDrill } from "@/lib/reports/tax-cell-drill/bracket-stacking";
+import type {
+  IncomeColumnKey,
+  BracketColumnKey,
+  CellDrillContext,
+} from "@/lib/reports/tax-cell-drill/types";
 
 interface TaxDrillState {
   year: number;
   detail: NonNullable<ProjectionYear["taxDetail"]>;
   totalTaxes: number;
 }
+
+type CellDrill =
+  | { source: "income"; year: ProjectionYear; columnKey: IncomeColumnKey }
+  | { source: "bracket"; year: ProjectionYear; columnKey: BracketColumnKey };
 
 interface Props {
   clientId: string;
@@ -34,6 +47,39 @@ export default function IncomeTaxReport({ clientId }: Props) {
 
   const [activeTab, setActiveTab] = useState<TaxDetailTabId>("income");
   const [taxDrill, setTaxDrill] = useState<TaxDrillState | null>(null);
+  const [cellDrill, setCellDrill] = useState<CellDrill | null>(null);
+
+  const ctx: CellDrillContext = useMemo(
+    () => ({
+      accountNames,
+      incomes: clientData?.incomes ?? [],
+      accounts: clientData?.accounts ?? [],
+    }),
+    [accountNames, clientData],
+  );
+
+  const drillProps = useMemo(() => {
+    if (!cellDrill) return null;
+    if (cellDrill.source === "income") {
+      return buildIncomeCellDrill({
+        year: cellDrill.year,
+        columnKey: cellDrill.columnKey,
+        ctx,
+      });
+    }
+    if (cellDrill.columnKey === "intoBracket") {
+      return buildBracketStackCellDrill({
+        year: cellDrill.year,
+        columnKey: cellDrill.columnKey,
+        ctx,
+      });
+    }
+    return buildConversionCellDrill({
+      year: cellDrill.year,
+      columnKey: cellDrill.columnKey,
+      ctx,
+    });
+  }, [cellDrill, ctx]);
 
   const planStartYear =
     clientData?.planSettings.planStartYear ?? new Date().getFullYear();
@@ -136,8 +182,17 @@ export default function IncomeTaxReport({ clientId }: Props) {
                 });
               }
             }}
-            onIncomeCellClick={() => {}}
-            onBracketCellClick={() => {}}
+            onIncomeCellClick={(year, columnKey) =>
+              setCellDrill({
+                source: "income",
+                year,
+                columnKey: columnKey as IncomeColumnKey,
+              })
+            }
+            onBracketCellClick={(yr, columnKey) => {
+              const year = years.find((y) => y.year === yr);
+              if (year) setCellDrill({ source: "bracket", year, columnKey });
+            }}
             yearRange={yearRange}
             onYearRangeChange={setYearRange}
             planStartYear={planStartYear}
@@ -157,6 +212,13 @@ export default function IncomeTaxReport({ clientId }: Props) {
           accountNames={accountNames}
           incomes={clientData?.incomes ?? []}
           onClose={() => setTaxDrill(null)}
+        />
+      )}
+
+      {drillProps && (
+        <TaxCellDrillDownModal
+          {...drillProps}
+          onClose={() => setCellDrill(null)}
         />
       )}
     </div>
