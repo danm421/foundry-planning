@@ -280,6 +280,52 @@ describe("Phase 3: business entity distribution flow", () => {
   });
 });
 
+describe("Phase 3: grantor business distribution + display", () => {
+  it("grantor LLC: 100% distribution flows to household checking (regression: was skipped)", () => {
+    // Regression: previously `if (entity.isGrantor) continue;` killed the
+    // distribution loop for grantor businesses, leaving cash stranded in
+    // entity checking despite a 100% distribution policy. Tax pass-through
+    // (grantorIncome → household taxableIncome) is orthogonal to cash flow.
+    const data = mkData({
+      entity: { isGrantor: true, distributionPolicyPercent: 1.0 },
+    });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    const hhEntries = y0.accountLedgers["hh-checking"].entries;
+    const distEntry = hhEntries.find((e) => e.category === "entity_distribution");
+    expect(distEntry).toBeDefined();
+    expect(distEntry!.amount).toBeCloseTo(100_000, 0);
+
+    // Entity checking should be drained (started 0, +$100k income, -$100k dist).
+    expect(y0.accountLedgers["llc1-checking"].endingValue).toBeCloseTo(0, 0);
+  });
+
+  it("grantor LLC: gross business income surfaces on year.income.business for cashflow display", () => {
+    // Regression: previously `year.income` came from the household-only
+    // computeIncome filter, so a grantor entity's $100k of business income
+    // didn't appear under the cashflow report's "Business" column even
+    // though it was the household's pass-through income.
+    const data = mkData({ entity: { isGrantor: true } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    expect(y0.income.business).toBeCloseTo(100_000, 0);
+    expect(y0.income.bySource["i1"]).toBeCloseTo(100_000, 0);
+  });
+
+  it("non-grantor LLC: business income still excluded from year.income.business (unchanged)", () => {
+    // Non-grantor entities keep current behavior — the entity is its own
+    // taxpayer; the distribution arrives on household as `entity_distribution`,
+    // not as household business income.
+    const data = mkData({ entity: { isGrantor: false } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    expect(y0.income.business).toBeCloseTo(0, 0);
+  });
+});
+
 describe("Phase 3: trust regression — taxTreatment ignored", () => {
   it("trust with taxTreatment set does not trigger Phase 3 incidence or distribution", () => {
     // Build a non-grantor irrevocable trust with taxTreatment set (which the

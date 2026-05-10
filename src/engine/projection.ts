@@ -2266,6 +2266,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // After income/expense crediting on entity checking, sweep net income to
     // household checking per the entity's distributionPolicyPercent. Trusts
     // skipped (they keep the existing distribution-policy mechanic).
+    //
+    // Grantor businesses are included: tax pass-through (handled separately
+    // via grantorIncome → household taxableIncome) is orthogonal to cash
+    // pass-through. Without this, cash earned by a grantor entity would
+    // strand in entity checking forever even when the user sets a 100%
+    // distribution policy.
+    //
     // Per spec § Phase 3 decisions:
     //   P3-3: skip when entityType === 'trust'
     //   P3-4: same year, audit category "entity_distribution"
@@ -2274,10 +2281,6 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     //   P3-8: losses → no distribution (skip net ≤ 0)
     for (const entity of currentEntities) {
       if (entity.entityType === "trust") continue;
-      // Grantor business entities already flow through the household path
-      // (computeIncome's grantor filter + the household-tax loop above include
-      // them in taxDetail/taxableIncome). Skipping here prevents double-counting.
-      if (entity.isGrantor) continue;
       const netIncome = computeBusinessEntityNetIncome(
         entity.id,
         currentIncomes,
@@ -3162,7 +3165,26 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       interestByLiability: liabResult.interestByLiability,
     };
 
-    const totalIncome = income.total + householdRmdIncome;
+    // Roll grantor-entity income into the displayed household income buckets.
+    // Tax was already attributed to the household via grantorIncome; this
+    // makes the gross income visible on the cashflow report (the prior
+    // behavior hid grantor business income entirely, even though the
+    // distribution credit landed on household checking).
+    const displayIncome = {
+      salaries: income.salaries + grantorIncome.salaries,
+      socialSecurity: income.socialSecurity + grantorIncome.socialSecurity,
+      business: income.business + grantorIncome.business,
+      trust: income.trust + grantorIncome.trust,
+      deferred: income.deferred + grantorIncome.deferred,
+      capitalGains: income.capitalGains + grantorIncome.capitalGains,
+      other: income.other + grantorIncome.other,
+      total: income.total + grantorIncome.total,
+      bySource: { ...income.bySource, ...grantorIncome.bySource },
+      ...(income.socialSecurityDetail
+        ? { socialSecurityDetail: income.socialSecurityDetail }
+        : {}),
+    };
+    const totalIncome = displayIncome.total + householdRmdIncome;
     const totalExpenses = expenses.total + savings.total;
     const netCashFlow = totalIncome - totalExpenses;
 
@@ -3212,7 +3234,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     years.push({
       year,
       ages,
-      income,
+      income: displayIncome,
       ...(income.socialSecurityDetail ? { socialSecurityDetail: income.socialSecurityDetail } : {}),
       taxDetail: finalTaxDetail,
       taxResult: finalTaxResult,

@@ -416,6 +416,129 @@ describe("computeEntityCashFlow", () => {
     expect(row.endingBasis).toBe(1_000_000);
   });
 
+  it("aggregates BoY basis from entity-owned accounts (full + split ownership)", () => {
+    // Entity owns 100% of biz-cash ($50k basis) and 20% of a shared
+    // investment account ($100k basis → entity's share = $20k). Both should
+    // roll into beginningBasis alongside the entity's standalone initialBasis.
+    const llc = {
+      id: "llc-1",
+      name: "Smith Holdings",
+      entityType: "llc" as const,
+      trustSubType: null,
+      isGrantor: false,
+      initialValue: 0,
+      initialBasis: 10_000,
+    };
+    const y = makeYear(2026);
+    y.accountLedgers = {
+      "biz-cash": { beginningValue: 0, endingValue: 0, growth: 0, contributions: 0, distributions: 0, internalContributions: 0, internalDistributions: 0, rmdAmount: 0, fees: 0, entries: [] } as never,
+      "shared-inv": { beginningValue: 100_000, endingValue: 100_000, growth: 0, contributions: 0, distributions: 0, internalContributions: 0, internalDistributions: 0, rmdAmount: 0, fees: 0, entries: [] } as never,
+    };
+    y.accountBasisBoY = { "biz-cash": 50_000, "shared-inv": 100_000 };
+    computeEntityCashFlow({
+      years: [y],
+      entitiesById: new Map([["llc-1", llc]]),
+      accountEntityOwners: new Map([
+        ["biz-cash", { entityId: "llc-1", percent: 1 }],
+        ["shared-inv", { entityId: "llc-1", percent: 0.2 }],
+      ]),
+      giftsByEntityYear: new Map(),
+      incomes: [],
+      expenses: [],
+      entityFlowOverrides: [],
+    });
+    const row = y.entityCashFlow.get("llc-1")!;
+    if (row.kind !== "business") throw new Error("expected business row");
+    // 10k initialBasis + 50k (full) + 20k (20% × 100k) = 80k
+    expect(row.beginningBasis).toBe(80_000);
+  });
+
+  it("pass-through entity: retained earnings increase endingBasis (already taxed at owner)", () => {
+    // Grantor LLC keeps 30% of net income (70% distributed). The retained
+    // $24,000 ($80k income − $20k expense − 70% × $60k = $42k distribution)
+    // is post-tax money that increases the owner's outside basis.
+    //
+    // Wait — math: 80k income - 20k expense = 60k net; distribution 70% = 42k
+    // (we feed this as the entity_distribution debit in the ledger);
+    // retained = 60k - 42k = 18k. So expected basis delta = 18k.
+    const llc = {
+      id: "llc-1",
+      name: "Grantor LLC",
+      entityType: "llc" as const,
+      trustSubType: null,
+      isGrantor: true,
+      initialValue: 0,
+      initialBasis: 5_000,
+    };
+    const y = makeYear(2026);
+    y.accountLedgers = {
+      "biz-cash": { beginningValue: 0, endingValue: 18_000, growth: 0, contributions: 80_000, distributions: 62_000, internalContributions: 0, internalDistributions: 0, rmdAmount: 0, fees: 0, entries: [
+        { category: "income",              label: "Income",        amount:  80_000, sourceId: "biz-inc" },
+        { category: "expense",             label: "Expense",       amount: -20_000, sourceId: "biz-exp" },
+        { category: "entity_distribution", label: "Distribution",  amount: -42_000, sourceId: "llc-1"   },
+      ] } as never,
+    };
+    const incomes: Income[] = [
+      { id: "biz-inc", type: "business", name: "Op", annualAmount: 80_000, startYear: 2026, endYear: 2055, growthRate: 0, owner: "client", ownerEntityId: "llc-1" } as never,
+    ];
+    const expenses: Expense[] = [
+      { id: "biz-exp", type: "other", name: "Op", annualAmount: 20_000, startYear: 2026, endYear: 2055, growthRate: 0, ownerEntityId: "llc-1" } as never,
+    ];
+    computeEntityCashFlow({
+      years: [y],
+      entitiesById: new Map([["llc-1", llc]]),
+      accountEntityOwners: new Map([["biz-cash", { entityId: "llc-1", percent: 1 }]]),
+      giftsByEntityYear: new Map(),
+      incomes,
+      expenses,
+      entityFlowOverrides: [],
+    });
+    const row = y.entityCashFlow.get("llc-1")!;
+    if (row.kind !== "business") throw new Error("expected business row");
+    expect(row.retainedEarnings).toBe(18_000);
+    expect(row.beginningBasis).toBe(5_000);
+    expect(row.endingBasis).toBe(23_000); // 5k + 18k retained
+  });
+
+  it("C-corp: retained earnings do NOT increase endingBasis (corp-level retention)", () => {
+    const ccorp = {
+      id: "cc-1",
+      name: "BigCo",
+      entityType: "c_corp" as const,
+      trustSubType: null,
+      isGrantor: false,
+      initialValue: 0,
+      initialBasis: 5_000,
+    };
+    const y = makeYear(2026);
+    y.accountLedgers = {
+      "cc-cash": { beginningValue: 0, endingValue: 60_000, growth: 0, contributions: 80_000, distributions: 20_000, internalContributions: 0, internalDistributions: 0, rmdAmount: 0, fees: 0, entries: [
+        { category: "income",  label: "Income",  amount:  80_000, sourceId: "biz-inc" },
+        { category: "expense", label: "Expense", amount: -20_000, sourceId: "biz-exp" },
+      ] } as never,
+    };
+    const incomes: Income[] = [
+      { id: "biz-inc", type: "business", name: "Op", annualAmount: 80_000, startYear: 2026, endYear: 2055, growthRate: 0, owner: "client", ownerEntityId: "cc-1" } as never,
+    ];
+    const expenses: Expense[] = [
+      { id: "biz-exp", type: "other", name: "Op", annualAmount: 20_000, startYear: 2026, endYear: 2055, growthRate: 0, ownerEntityId: "cc-1" } as never,
+    ];
+    computeEntityCashFlow({
+      years: [y],
+      entitiesById: new Map([["cc-1", ccorp]]),
+      accountEntityOwners: new Map([["cc-cash", { entityId: "cc-1", percent: 1 }]]),
+      giftsByEntityYear: new Map(),
+      incomes,
+      expenses,
+      entityFlowOverrides: [],
+    });
+    const row = y.entityCashFlow.get("cc-1")!;
+    if (row.kind !== "business") throw new Error("expected business row");
+    expect(row.retainedEarnings).toBe(60_000);
+    expect(row.beginningBasis).toBe(5_000);
+    expect(row.endingBasis).toBe(5_000); // flat — C-corp retention doesn't flow to shareholder basis
+  });
+
   it("compounds business flat value at valueGrowthRate starting in year 1", () => {
     const llc = {
       id: "llc-1",

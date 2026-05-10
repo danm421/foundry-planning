@@ -129,11 +129,16 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
       let growth = 0;
       let income = 0;
       let expenses = 0;
+      // Sum of (account basis × ownership share) for entity-owned accounts.
+      // Each owned account contributes its BoY basis (from year.accountBasisBoY)
+      // scaled by the entity's ownership percent.
+      let accountBasis = 0;
       for (const aid of accountIds) {
         const ledger = year.accountLedgers[aid];
         if (!ledger) continue;
         const owner = accountEntityOwners.get(aid);
         const share = owner?.percent ?? 1;
+        accountBasis += (year.accountBasisBoY?.[aid] ?? 0) * share;
         if (share === 1) {
           // Fully entity-owned — the account's full activity belongs to the entity.
           beginningBalance += ledger.beginningValue;
@@ -254,7 +259,18 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
         const netIncome = bizIncome - bizExpenses;
         const retainedEarnings = netIncome - annualDistribution;
         const endingTotalValue = beginningTotalValue + totalGrowth + retainedEarnings;
-        const beginningBasis = entity.initialBasis;
+        // Outside basis = entity-level basis + owner's share of owned-account basis.
+        const beginningBasis = entity.initialBasis + accountBasis;
+        // Pass-through entities (grantor / S-corp / partnership): retained
+        // earnings have already been taxed at the owner level, so they
+        // increase basis. C-corp / foundation / other: retained earnings
+        // sit at the entity level untaxed-to-owner, so basis stays flat.
+        const isPassThrough =
+          entity.isGrantor === true ||
+          entity.entityType === "s_corp" ||
+          entity.entityType === "partnership";
+        const basisDelta = isPassThrough ? retainedEarnings : 0;
+        const endingBasis = beginningBasis + basisDelta;
 
         year.entityCashFlow.set(entityId, {
           kind: "business",
@@ -271,7 +287,7 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           annualDistribution,
           retainedEarnings,
           endingTotalValue,
-          endingBasis: beginningBasis, // basis-altering events out-of-scope for v1
+          endingBasis,
         });
       }
     }
