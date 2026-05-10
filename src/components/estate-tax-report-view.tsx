@@ -419,19 +419,21 @@ function DecedentBreakdown({
 
   return (
     <section className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900/40">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-800 px-5 py-3">
-        <h2 className="text-base font-semibold text-gray-50">{heading}</h2>
-        <div className="flex items-baseline gap-2">
-          <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
-            Total Taxes &amp; Expenses
-          </span>
-          <span
-            className={
-              "text-xl font-semibold tabular-nums " + headlineColor
-            }
-          >
-            {fmt.format(totalTaxesAndExpenses)}
-          </span>
+      <header className="border-b border-gray-800 px-5 py-3 md:max-w-[50%]">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h2 className="text-base font-semibold text-gray-50">{heading}</h2>
+          <div className="flex items-baseline gap-2">
+            <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
+              Total Taxes &amp; Expenses
+            </span>
+            <span
+              className={
+                "text-xl font-semibold tabular-nums " + headlineColor
+              }
+            >
+              {fmt.format(totalTaxesAndExpenses)}
+            </span>
+          </div>
         </div>
       </header>
 
