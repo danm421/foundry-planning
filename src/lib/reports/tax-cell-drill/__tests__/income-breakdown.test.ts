@@ -229,3 +229,59 @@ describe("buildIncomeCellDrill — Non-Taxable Income", () => {
     expect(props.groups).toHaveLength(0);
   });
 });
+
+describe("buildIncomeCellDrill — Total Income", () => {
+  it("renders one group per non-empty taxable category", () => {
+    const props = buildIncomeCellDrill({ year: makeYear(), columnKey: "totalIncome", ctx });
+    expect(props.total).toBe(133_000);
+    const labels = props.groups.map((g) => g.label);
+    expect(labels).toEqual([
+      "Earned Income",
+      "Taxable Social Security",
+      "Ordinary Income",
+      "Dividends",
+      "LT Capital Gains",
+      "ST Capital Gains",
+    ]);
+    // Sum of all rows reconciles to total ± $1.
+    const sum = props.groups.flatMap((g) => g.rows).reduce((s, r) => s + r.amount, 0);
+    expect(Math.abs(sum - 133_000)).toBeLessThanOrEqual(1);
+  });
+
+  it("omits empty categories", () => {
+    const year = makeYear({
+      taxResult: {
+        income: { earnedIncome: 100_000, taxableSocialSecurity: 0, ordinaryIncome: 0,
+          dividends: 0, capitalGains: 0, shortCapitalGains: 0,
+          totalIncome: 100_000, nonTaxableIncome: 0, grossTotalIncome: 100_000 },
+        flow: { incomeTaxBase: 100_000 },
+        diag: { marginalFederalRate: 0.22, marginalBracketTier: { from: 94300, to: 201050, rate: 0.22 } },
+      } as never,
+      income: {
+        salaries: 100_000, socialSecurity: 0,
+        business: 0, trust: 0, deferred: 0, capitalGains: 0, other: 0,
+        total: 100_000, bySource: { inc_w: 100_000 },
+      } as never,
+      taxDetail: {
+        earnedIncome: 100_000, ordinaryIncome: 0, dividends: 0,
+        capitalGains: 0, stCapitalGains: 0, qbi: 0, taxExempt: 0,
+        bySource: { inc_w: { type: "earned_income", amount: 100_000 } },
+      } as never,
+    });
+    const props = buildIncomeCellDrill({ year, columnKey: "totalIncome", ctx });
+    expect(props.groups.map((g) => g.label)).toEqual(["Earned Income"]);
+  });
+});
+
+describe("buildIncomeCellDrill — Gross Total Income", () => {
+  it("renders Total Income groups + Non-Taxable groups", () => {
+    const props = buildIncomeCellDrill({ year: makeYear(), columnKey: "grossTotalIncome", ctx });
+    expect(props.total).toBe(137_500);
+    const labels = props.groups.map((g) => g.label);
+    expect(labels).toContain("Earned Income");
+    expect(labels).toContain("Tax-Exempt Income");
+    expect(labels).toContain("Non-Taxable Social Security");
+    const sum = props.groups.flatMap((g) => g.rows).reduce((s, r) => s + r.amount, 0);
+    expect(Math.abs(sum - 137_500)).toBeLessThanOrEqual(1);
+  });
+});

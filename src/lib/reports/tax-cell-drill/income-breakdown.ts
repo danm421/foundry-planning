@@ -54,9 +54,35 @@ export function buildIncomeCellDrill(args: IncomeCellDrillArgs): CellDrillProps 
     return { title, total, groups };
   }
 
-  // totalIncome / grossTotalIncome — later tasks.
-  const total = year.taxResult?.income[columnKey] ?? 0;
-  return { title, total, groups: [{ rows: [] }] };
+  if (columnKey === "totalIncome") {
+    const total = year.taxResult?.income.totalIncome ?? 0;
+    return { title, total, groups: totalIncomeGroups(year, ctx) };
+  }
+
+  if (columnKey === "grossTotalIncome") {
+    const total = year.taxResult?.income.grossTotalIncome ?? 0;
+    return { title, total, groups: [...totalIncomeGroups(year, ctx), ...nonTaxableGroups(year, ctx)] };
+  }
+
+  // Unreachable — every IncomeColumnKey is handled above.
+  return { title, total: year.taxResult?.income[columnKey] ?? 0, groups: [] };
+}
+
+function totalIncomeGroups(
+  year: IncomeCellDrillArgs["year"],
+  ctx: IncomeCellDrillArgs["ctx"],
+): CellDrillProps["groups"] {
+  const groups: CellDrillProps["groups"] = [];
+  const push = (label: string, rows: CellDrillRow[]) => {
+    if (rows.length > 0) groups.push({ label, rows });
+  };
+  push("Earned Income", directRows(year, "earned_income", ctx));
+  push("Taxable Social Security", socialSecurityRows(year, ctx, "taxable"));
+  push("Ordinary Income", directRows(year, "ordinary_income", ctx));
+  push("Dividends", directRows(year, "dividends", ctx));
+  push("LT Capital Gains", directRows(year, "capital_gains", ctx));
+  push("ST Capital Gains", directRows(year, "stcg", ctx));
+  return groups;
 }
 
 function nonTaxableGroups(
