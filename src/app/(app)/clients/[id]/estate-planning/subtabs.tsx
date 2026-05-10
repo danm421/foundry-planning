@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactElement } from "react";
 import { useScenarioPreservingHref } from "@/hooks/use-scenario-preserving-href";
+import { useScrolledPast } from "@/hooks/use-scrolled-past";
 
 interface EstatePlanningSubtabsProps {
   clientId: string;
@@ -14,6 +15,7 @@ export default function EstatePlanningSubtabs({
 }: EstatePlanningSubtabsProps): ReactElement {
   const pathname = usePathname();
   const withScenario = useScenarioPreservingHref();
+  const scrolled = useScrolledPast(40);
 
   const root = `/clients/${clientId}/estate-planning`;
   const tabs: { label: string; href: string; exact?: true }[] = [
@@ -28,7 +30,9 @@ export default function EstatePlanningSubtabs({
     <nav
       role="tablist"
       aria-label="Estate Planning sections"
-      className="sticky top-14 z-10 -mt-6 -mb-4 flex h-9 items-center justify-center gap-1 border-b border-hair bg-paper px-[var(--pad-card)]"
+      className={`sticky z-30 -mt-6 -mb-4 flex h-9 items-center justify-center gap-1 border-b border-hair bg-paper px-[var(--pad-card)] transition-[top] duration-200 ease-out ${
+        scrolled ? "top-[100px]" : "top-[156px]"
+      }`}
     >
       {tabs.map((tab) => {
         const active = tab.exact

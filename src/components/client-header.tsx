@@ -1,4 +1,7 @@
+"use client";
+
 import type { ReactElement, ReactNode } from "react";
+import { useScrolledPast } from "@/hooks/use-scrolled-past";
 
 interface ClientLike {
   id: string;
@@ -64,24 +67,43 @@ export default function ClientHeader({
   const spouseAge = client.spouseDob ? ageFromDob(client.spouseDob) : null;
   const ages =
     spouseAge !== null ? `Ages ${clientAge} & ${spouseAge}` : `Age ${clientAge}`;
+  const scrolled = useScrolledPast(40);
 
   return (
-    <div className="sticky top-14 z-10 flex h-[100px] items-center gap-4 px-[var(--pad-card)] border-b border-hair bg-paper">
+    <div
+      className={`sticky top-14 z-30 flex items-center gap-3 px-[var(--pad-card)] border-b border-hair bg-paper transition-[height,padding] duration-200 ease-out ${
+        scrolled ? "h-[44px]" : "h-[100px] gap-4"
+      }`}
+    >
       <div
         data-testid="client-portrait"
-        className={`flex h-[52px] w-[52px] items-center justify-center rounded-full bg-gradient-to-br ${gradient} text-[18px] font-semibold text-ink`}
+        className={`flex items-center justify-center rounded-full bg-gradient-to-br ${gradient} font-semibold text-ink shrink-0 transition-[height,width,font-size] duration-200 ease-out ${
+          scrolled
+            ? "h-7 w-7 text-[11px]"
+            : "h-[52px] w-[52px] text-[18px]"
+        }`}
       >
         {initialsOf(client)}
       </div>
-      <div className="min-w-0">
-        <h1 className="text-[22px] font-semibold tracking-tight text-ink">
+      <div className="min-w-0 flex items-center gap-2 flex-wrap">
+        <h1
+          className={`font-semibold tracking-tight text-ink transition-[font-size] duration-200 ease-out ${
+            scrolled ? "text-[14px] leading-none" : "text-[22px]"
+          }`}
+        >
           {householdTitle(client)}
         </h1>
-        <div className="mt-1 flex items-center gap-2 text-[13px] text-ink-3">
-          <span>{ages}</span>
-          <span>·</span>
-          <span>Lead advisor: {advisorName}</span>
-        </div>
+        {scrolled ? (
+          <span className="text-[12px] text-ink-3 leading-none">
+            · {ages}
+          </span>
+        ) : (
+          <div className="basis-full mt-1 flex items-center gap-2 text-[13px] text-ink-3">
+            <span>{ages}</span>
+            <span>·</span>
+            <span>Lead advisor: {advisorName}</span>
+          </div>
+        )}
       </div>
       {rightSlot ? <div className="ml-auto">{rightSlot}</div> : null}
     </div>
