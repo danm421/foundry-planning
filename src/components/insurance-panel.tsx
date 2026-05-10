@@ -52,6 +52,7 @@ export interface InsurancePanelExternal {
 export interface InsurancePanelModelPortfolio {
   id: string;
   name: string;
+  blendedReturn: number;
 }
 
 export interface InsurancePanelProps {
@@ -64,6 +65,7 @@ export interface InsurancePanelProps {
   familyMembers: InsurancePanelFamilyMember[];
   externalBeneficiaries: InsurancePanelExternal[];
   modelPortfolios: InsurancePanelModelPortfolio[];
+  resolvedInflationRate: number;
 }
 
 const POLICY_TYPE_GROUPS = [
@@ -226,6 +228,7 @@ export default function InsurancePanel(props: InsurancePanelProps) {
           familyMembers={props.familyMembers}
           externalBeneficiaries={props.externalBeneficiaries}
           modelPortfolios={props.modelPortfolios}
+          resolvedInflationRate={props.resolvedInflationRate}
           mode={dialogState.mode}
           policyId={dialogState.mode === "edit" ? dialogState.policyId : undefined}
           onClose={() => setDialogState(null)}

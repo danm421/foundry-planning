@@ -3,7 +3,6 @@
 import { useEffect, useRef } from "react";
 import { CurrencyInput } from "./currency-input";
 import type {
-  InsurancePanelAccount,
   InsurancePanelEntity,
   InsurancePanelModelPortfolio,
 } from "./insurance-panel";
@@ -17,11 +16,9 @@ import {
 interface InsurancePolicyDetailsTabProps {
   state: PolicyFormState;
   onChange: (patch: Partial<PolicyFormState>) => void;
-  accounts: InsurancePanelAccount[];
   entities: InsurancePanelEntity[];
   modelPortfolios: InsurancePanelModelPortfolio[];
-  /** For edit mode — excludes self from the postPayoutMergeAccountId options. */
-  policyId?: string;
+  resolvedInflationRate: number;
   mode: "create" | "edit";
   clientFirstName: string;
   spouseFirstName: string | null;
@@ -48,10 +45,9 @@ const gridTwoCls = "grid grid-cols-1 gap-3 sm:grid-cols-2";
 export default function InsurancePolicyDetailsTab({
   state,
   onChange,
-  accounts,
   entities,
   modelPortfolios,
-  policyId,
+  resolvedInflationRate,
   mode,
   clientFirstName,
   spouseFirstName,
@@ -71,10 +67,36 @@ export default function InsurancePolicyDetailsTab({
     el.select();
   }, [mode]);
 
-  // Post-payout options exclude life_insurance accounts and the policy itself.
-  const postPayoutOptions = accounts.filter(
-    (a) => a.category !== "life_insurance" && a.id !== policyId,
-  );
+  // Growth-source dropdown value: "mp:<id>" for portfolios, otherwise "inflation" / "custom".
+  const growthSelectValue =
+    state.postPayoutGrowthSource === "model_portfolio" && state.postPayoutModelPortfolioId
+      ? `mp:${state.postPayoutModelPortfolioId}`
+      : state.postPayoutGrowthSource;
+
+  function handleGrowthSourceChange(value: string) {
+    if (value.startsWith("mp:")) {
+      const id = value.slice(3);
+      const portfolio = modelPortfolios.find((p) => p.id === id);
+      onChange({
+        postPayoutGrowthSource: "model_portfolio",
+        postPayoutModelPortfolioId: id,
+        // Keep growthRate aligned with portfolio's blended return so the
+        // standalone fallback (if a portfolio is later removed) is sensible.
+        postPayoutGrowthRate: portfolio?.blendedReturn ?? state.postPayoutGrowthRate,
+      });
+    } else if (value === "inflation") {
+      onChange({
+        postPayoutGrowthSource: "inflation",
+        postPayoutModelPortfolioId: null,
+        postPayoutGrowthRate: resolvedInflationRate,
+      });
+    } else {
+      onChange({
+        postPayoutGrowthSource: "custom",
+        postPayoutModelPortfolioId: null,
+      });
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4 py-4">
@@ -284,82 +306,60 @@ export default function InsurancePolicyDetailsTab({
 
       {/* ── Post-payout routing ────────────────────────────────────── */}
       <section className={sectionCls}>
-        <h3 className={sectionTitleCls}>Post-payout routing</h3>
+        <h3 className={sectionTitleCls}>Post-payout proceeds account</h3>
         <p className="mb-3 text-xs text-ink-3">
           When the policy pays out (death benefit for term, full surrender for
-          permanent), cash flows here.
+          permanent), proceeds land in a new standalone account that grows at
+          the rate selected here.
         </p>
         <div className={gridTwoCls}>
           <label className="block">
-            <span className={fieldLabelClassName}>Merge into account</span>
-            <select
-              value={state.postPayoutMergeAccountId ?? ""}
-              onChange={(e) => {
-                const v = e.target.value || null;
-                onChange({
-                  postPayoutMergeAccountId: v,
-                  // Merging supersedes the standalone-mode portfolio choice;
-                  // proceeds inherit the target account's growth + tax model.
-                  postPayoutModelPortfolioId: v ? null : state.postPayoutModelPortfolioId,
-                });
-              }}
-              className={selectClassName}
-            >
-              <option value="">Standalone (grow at rate / portfolio below)</option>
-              {postPayoutOptions.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className={fieldLabelClassName}>Model portfolio</span>
-            <select
-              value={state.postPayoutModelPortfolioId ?? ""}
-              disabled={
-                state.postPayoutMergeAccountId !== null ||
-                modelPortfolios.length === 0
-              }
-              onChange={(e) =>
-                onChange({ postPayoutModelPortfolioId: e.target.value || null })
-              }
-              className={selectClassName}
-            >
-              <option value="">Use flat growth rate</option>
-              {modelPortfolios.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <p className={helpCls}>
-              {modelPortfolios.length === 0
-                ? "No model portfolios configured for this firm."
-                : "Resulting account uses this portfolio's CMA for growth and tax realization."}
-            </p>
-          </label>
-          <label className="block">
             <span className={fieldLabelClassName}>Growth rate</span>
-            <input
-              type="number"
-              min={0}
-              max={1}
-              step={0.001}
-              value={state.postPayoutGrowthRate}
-              disabled={
-                state.postPayoutMergeAccountId !== null ||
-                state.postPayoutModelPortfolioId !== null
-              }
-              onChange={(e) =>
-                onChange({ postPayoutGrowthRate: toNumber(e.target.value) })
-              }
-              className={inputClassName}
-            />
-            <p className={helpCls}>
-              Growth rate (as a decimal — 0.06 = 6%).
-            </p>
+            <select
+              value={growthSelectValue}
+              onChange={(e) => handleGrowthSourceChange(e.target.value)}
+              className={selectClassName}
+            >
+              {modelPortfolios.map((p) => (
+                <option key={p.id} value={`mp:${p.id}`}>
+                  {(p.blendedReturn * 100).toFixed(2)}% — {p.name}
+                </option>
+              ))}
+              <option value="inflation">
+                {(resolvedInflationRate * 100).toFixed(2)}% — Inflation rate
+              </option>
+              <option value="custom">Custom %</option>
+            </select>
+            {state.postPayoutGrowthSource === "model_portfolio" && (
+              <p className={helpCls}>
+                Proceeds account uses this portfolio&apos;s CMA for growth and tax
+                realization.
+              </p>
+            )}
+            {state.postPayoutGrowthSource === "inflation" && (
+              <p className={helpCls}>
+                Tracks plan inflation rate at save time:{" "}
+                {(resolvedInflationRate * 100).toFixed(2)}%.
+              </p>
+            )}
           </label>
+          {state.postPayoutGrowthSource === "custom" && (
+            <label className="block">
+              <span className={fieldLabelClassName}>Custom rate</span>
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.001}
+                value={state.postPayoutGrowthRate}
+                onChange={(e) =>
+                  onChange({ postPayoutGrowthRate: toNumber(e.target.value) })
+                }
+                className={inputClassName}
+              />
+              <p className={helpCls}>As a decimal — 0.06 = 6%.</p>
+            </label>
+          )}
         </div>
       </section>
     </div>

@@ -7,10 +7,15 @@ import {
   entities,
   externalBeneficiaries,
   modelPortfolios,
+  modelPortfolioAllocations,
+  assetClasses,
+  clientCmaOverrides,
+  planSettings,
 } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getOrgId } from "@/lib/db-helpers";
 import { loadPoliciesByAccountIds } from "@/lib/insurance-policies/load-policies";
+import { resolveInflationRate } from "@/lib/inflation";
 import InsurancePanel, {
   type InsurancePanelAccount,
   type InsurancePanelFamilyMember,
@@ -53,7 +58,16 @@ export default async function InsurancePage({ params, searchParams }: PageProps)
     );
   }
 
-  const [familyRows, entityRows, externalRows, portfolioRows, { effectiveTree }] = await Promise.all([
+  const [
+    familyRows,
+    entityRows,
+    externalRows,
+    portfolioRows,
+    allocationRows,
+    assetClassRows,
+    settingsRows,
+    { effectiveTree },
+  ] = await Promise.all([
     db
       .select()
       .from(familyMembers)
@@ -74,8 +88,48 @@ export default async function InsurancePage({ params, searchParams }: PageProps)
       .from(modelPortfolios)
       .where(eq(modelPortfolios.firmId, firmId))
       .orderBy(asc(modelPortfolios.name)),
+    db.select().from(modelPortfolioAllocations),
+    db.select().from(assetClasses).where(eq(assetClasses.firmId, firmId)),
+    db
+      .select()
+      .from(planSettings)
+      .where(and(eq(planSettings.clientId, id), eq(planSettings.scenarioId, scenario.id))),
     loadEffectiveTree(id, firmId, sp.scenario ?? "base", {}),
   ]);
+
+  const acMap = new Map(assetClassRows.map((ac) => [ac.id, ac]));
+  const blendedByPortfolio = new Map<string, number>();
+  for (const p of portfolioRows) {
+    const allocs = allocationRows.filter((a) => a.modelPortfolioId === p.id);
+    let blended = 0;
+    for (const alloc of allocs) {
+      const ac = acMap.get(alloc.assetClassId);
+      if (ac) blended += parseFloat(alloc.weight) * parseFloat(ac.geometricReturn);
+    }
+    blendedByPortfolio.set(p.id, blended);
+  }
+
+  const settings = settingsRows[0];
+  const firmInflationAc = assetClassRows.find((ac) => ac.slug === "inflation") ?? null;
+  let clientInflationOverride: { geometricReturn: string } | null = null;
+  if (settings?.useCustomCma && firmInflationAc) {
+    const [override] = await db
+      .select({ geometricReturn: clientCmaOverrides.geometricReturn })
+      .from(clientCmaOverrides)
+      .where(and(
+        eq(clientCmaOverrides.clientId, id),
+        eq(clientCmaOverrides.sourceAssetClassId, firmInflationAc.id),
+      ));
+    if (override) clientInflationOverride = override;
+  }
+  const resolvedInflationRate = resolveInflationRate(
+    {
+      inflationRateSource: settings?.inflationRateSource ?? "custom",
+      inflationRate: settings?.inflationRate ?? "0",
+    },
+    firmInflationAc ? { geometricReturn: firmInflationAc.geometricReturn } : null,
+    clientInflationOverride,
+  );
 
   const accountRows = [...effectiveTree.accounts].sort((a, b) => a.name.localeCompare(b.name));
   const lifeAccountIds = accountRows
@@ -125,6 +179,7 @@ export default async function InsurancePage({ params, searchParams }: PageProps)
   const portfolios: InsurancePanelModelPortfolio[] = portfolioRows.map((p) => ({
     id: p.id,
     name: p.name,
+    blendedReturn: blendedByPortfolio.get(p.id) ?? 0,
   }));
 
   return (
@@ -139,6 +194,7 @@ export default async function InsurancePage({ params, searchParams }: PageProps)
         familyMembers={fams}
         externalBeneficiaries={exts}
         modelPortfolios={portfolios}
+        resolvedInflationRate={resolvedInflationRate}
       />
     </ClientDataPageShell>
   );

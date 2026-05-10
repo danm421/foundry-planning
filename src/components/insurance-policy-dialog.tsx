@@ -9,11 +9,14 @@ import type {
   InsurancePanelEntity,
   InsurancePanelFamilyMember,
   InsurancePanelExternal,
+  InsurancePanelModelPortfolio,
 } from "./insurance-panel";
 import InsurancePolicyDetailsTab from "./insurance-policy-details-tab";
 import InsurancePolicyBeneficiariesTab from "./insurance-policy-beneficiaries-tab";
 import InsurancePolicyCashValueTab from "./insurance-policy-cash-value-tab";
 import DialogShell from "./dialog-shell";
+
+export type PostPayoutGrowthSource = "model_portfolio" | "inflation" | "custom";
 
 export interface PolicyFormState {
   name: string;
@@ -30,15 +33,12 @@ export interface PolicyFormState {
   termLengthYears: number | null;
   endsAtInsuredRetirement: boolean;
   cashValueGrowthMode: "basic" | "free_form";
-  postPayoutMergeAccountId: string | null;
   postPayoutGrowthRate: number;
   postPayoutModelPortfolioId: string | null;
+  /** UI-only: drives the post-payout growth-rate dropdown. Not persisted directly;
+   *  derived back into postPayoutGrowthRate / postPayoutModelPortfolioId on save. */
+  postPayoutGrowthSource: PostPayoutGrowthSource;
   cashValueSchedule: { year: number; cashValue: number }[];
-}
-
-export interface InsurancePanelModelPortfolio {
-  id: string;
-  name: string;
 }
 
 export interface InsurancePolicyDialogProps {
@@ -51,6 +51,7 @@ export interface InsurancePolicyDialogProps {
   familyMembers: InsurancePanelFamilyMember[];
   externalBeneficiaries: InsurancePanelExternal[];
   modelPortfolios: InsurancePanelModelPortfolio[];
+  resolvedInflationRate: number;
   mode: "create" | "edit";
   policyId?: string;
   onClose: () => void;
@@ -95,9 +96,9 @@ const DEFAULT_STATE: PolicyFormState = {
   termLengthYears: null,
   endsAtInsuredRetirement: false,
   cashValueGrowthMode: "basic",
-  postPayoutMergeAccountId: null,
   postPayoutGrowthRate: 0.06,
   postPayoutModelPortfolioId: null,
+  postPayoutGrowthSource: "custom",
   cashValueSchedule: [],
 };
 
@@ -120,9 +121,11 @@ function seedStateFromRecord(
     termLengthYears: policy.termLengthYears,
     endsAtInsuredRetirement: policy.endsAtInsuredRetirement,
     cashValueGrowthMode: policy.cashValueGrowthMode,
-    postPayoutMergeAccountId: policy.postPayoutMergeAccountId,
     postPayoutGrowthRate: policy.postPayoutGrowthRate,
     postPayoutModelPortfolioId: policy.postPayoutModelPortfolioId ?? null,
+    postPayoutGrowthSource: policy.postPayoutModelPortfolioId
+      ? "model_portfolio"
+      : "custom",
     cashValueSchedule: policy.cashValueSchedule ?? [],
   };
 }
@@ -181,9 +184,15 @@ function buildPayload(state: PolicyFormState): Record<string, unknown> {
     termLengthYears: state.termLengthYears,
     endsAtInsuredRetirement: state.endsAtInsuredRetirement,
     cashValueGrowthMode: state.cashValueGrowthMode,
-    postPayoutMergeAccountId: state.postPayoutMergeAccountId,
+    // Always create a standalone proceeds account — merge-into-existing was
+    // removed from the UI. Send null on every write so legacy rows clear out
+    // as advisors edit policies.
+    postPayoutMergeAccountId: null,
     postPayoutGrowthRate: state.postPayoutGrowthRate,
-    postPayoutModelPortfolioId: state.postPayoutModelPortfolioId,
+    postPayoutModelPortfolioId:
+      state.postPayoutGrowthSource === "model_portfolio"
+        ? state.postPayoutModelPortfolioId
+        : null,
     // Only persist the schedule when the user has opted into free-form mode.
     // Sending `[]` in basic mode wipes any previously-persisted rows on
     // PATCH (full-replacement semantics), which is what we want — otherwise
@@ -367,10 +376,9 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
             <InsurancePolicyDetailsTab
               state={state}
               onChange={handlePatch}
-              accounts={props.accounts}
               entities={props.entities}
               modelPortfolios={props.modelPortfolios}
-              policyId={policyId}
+              resolvedInflationRate={props.resolvedInflationRate}
               mode={mode}
               clientFirstName={clientFirstName}
               spouseFirstName={spouseFirstName}
