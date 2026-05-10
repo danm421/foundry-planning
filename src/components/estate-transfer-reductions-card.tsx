@@ -27,7 +27,7 @@ export function EstateTransferReductionsCard({
         <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-rose-200">
           Reductions
         </h3>
-        <span className="font-mono text-sm font-semibold tabular-nums text-rose-200">
+        <span className="text-sm font-semibold tabular-nums text-rose-200">
           {fmt.format(total)}
         </span>
       </div>
@@ -38,7 +38,7 @@ export function EstateTransferReductionsCard({
             title="Form 706 taxable estate — gross estate minus marital, charitable, and admin-expense deductions. This is the amount actually subject to federal estate tax."
           >
             <span>Taxable estate (Form 706)</span>
-            <span className="font-mono tabular-nums">{fmt.format(taxableEstate)}</span>
+            <span className="tabular-nums">{fmt.format(taxableEstate)}</span>
           </div>
         )}
         {reductions.map((r) => (
@@ -47,7 +47,7 @@ export function EstateTransferReductionsCard({
             className="flex items-baseline justify-between gap-4 py-1 text-sm text-rose-100/90"
           >
             <span>{r.label}</span>
-            <span className="font-mono tabular-nums">{fmt.format(r.amount)}</span>
+            <span className="tabular-nums">{fmt.format(r.amount)}</span>
           </div>
         ))}
       </div>

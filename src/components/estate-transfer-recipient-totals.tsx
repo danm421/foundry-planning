@@ -37,13 +37,13 @@ export function EstateTransferRecipientTotals({
             {totals.map((t) => (
               <tr key={t.key}>
                 <td className="py-1 text-gray-200">{t.recipientLabel}</td>
-                <td className="py-1 text-right font-mono tabular-nums text-gray-300">
+                <td className="py-1 text-right tabular-nums text-gray-300">
                   {fmt.format(t.fromFirstDeath)}
                 </td>
-                <td className="py-1 text-right font-mono tabular-nums text-gray-300">
+                <td className="py-1 text-right tabular-nums text-gray-300">
                   {fmt.format(t.fromSecondDeath)}
                 </td>
-                <td className="py-1 text-right font-mono tabular-nums font-semibold text-gray-50">
+                <td className="py-1 text-right tabular-nums font-semibold text-gray-50">
                   {fmt.format(t.total)}
                 </td>
               </tr>

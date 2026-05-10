@@ -35,7 +35,7 @@ export function EstateTransferDeathSection({
           <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-gray-500">
             Estate at death
           </span>
-          <span className="font-mono text-xl font-semibold tabular-nums text-gray-50">
+          <span className="text-xl font-semibold tabular-nums text-gray-50">
             {fmt.format(estateValue)}
           </span>
         </div>
@@ -65,7 +65,7 @@ export function EstateTransferDeathSection({
                 <> · {fmt.format(reductionsTotal)} drained for taxes &amp; expenses</>
               )}
             </span>
-            <span className="font-mono tabular-nums text-gray-400">
+            <span className="tabular-nums text-gray-400">
               Net to recipients {fmt.format(section.reconciliation.sumRecipients)}
             </span>
           </div>

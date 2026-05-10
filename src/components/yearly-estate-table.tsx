@@ -212,7 +212,7 @@ function SummaryRow({
                   aria-expanded={isOpen}
                   aria-controls={`yearly-detail-${row.year}`}
                   className={
-                    "inline-flex items-center gap-1.5 rounded font-mono tabular-nums " +
+                    "inline-flex items-center gap-1.5 rounded tabular-nums " +
                     "underline decoration-indigo-500/60 decoration-dotted underline-offset-4 " +
                     "hover:text-indigo-200 hover:decoration-indigo-300 " +
                     "focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-400 " +
@@ -342,7 +342,7 @@ function Td({
   bold?: boolean;
 }) {
   const className =
-    "px-3 py-1.5 text-right font-mono tabular-nums " +
+    "px-3 py-1.5 text-right tabular-nums " +
     (bold ? "font-semibold text-gray-50" : "text-gray-300");
   return <td className={className}>{children}</td>;
 }

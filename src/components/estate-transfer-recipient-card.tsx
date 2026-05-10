@@ -55,7 +55,7 @@ export function EstateTransferRecipientCard({
               Net
             </span>
           )}
-          <span className="font-mono text-base font-semibold tabular-nums text-gray-50">
+          <span className="text-base font-semibold tabular-nums text-gray-50">
             {fmt.format(group.netTotal)}
           </span>
         </div>
@@ -66,7 +66,7 @@ export function EstateTransferRecipientCard({
           <div key={mech.mechanism}>
             <div className="flex items-baseline justify-between gap-4 border-b border-gray-800/40 pb-0.5 text-[11px] uppercase tracking-wider text-gray-400">
               <span>{mech.mechanismLabel}</span>
-              <span className="font-mono tabular-nums">
+              <span className="tabular-nums">
                 {fmt.format(mech.total)}
               </span>
             </div>
@@ -87,7 +87,7 @@ export function EstateTransferRecipientCard({
                       </span>
                     )}
                   </span>
-                  <span className="font-mono tabular-nums text-gray-200">
+                  <span className="tabular-nums text-gray-200">
                     {fmt.format(a.amount)}
                   </span>
                 </div>
@@ -105,7 +105,7 @@ export function EstateTransferRecipientCard({
               − reductions {fmt.format(totalDrains)}
             </span>
           </span>
-          <span className="font-mono tabular-nums text-gray-300">
+          <span className="tabular-nums text-gray-300">
             {fmt.format(group.netTotal)}
           </span>
         </div>

@@ -338,7 +338,7 @@ function LineRow({
       </span>
       <span
         className={
-          "shrink-0 font-mono tabular-nums " +
+          "shrink-0 tabular-nums " +
           (negative ? "text-rose-300/90" : muted ? "text-gray-500" : "text-gray-200")
         }
       >
@@ -381,7 +381,7 @@ function Section({
         </span>
         <span
           className={
-            "font-mono text-base font-semibold tabular-nums " + accentClass
+            "text-base font-semibold tabular-nums " + accentClass
           }
         >
           {formatAmount(subtotal)}
@@ -427,7 +427,7 @@ function DecedentBreakdown({
           </span>
           <span
             className={
-              "font-mono text-xl font-semibold tabular-nums " + headlineColor
+              "text-xl font-semibold tabular-nums " + headlineColor
             }
           >
             {fmt.format(totalTaxesAndExpenses)}
@@ -568,7 +568,7 @@ function DecedentBreakdown({
           <span className="text-xs uppercase tracking-wider text-indigo-300">
             DSUE generated · ported to survivor
           </span>
-          <span className="font-mono text-sm font-semibold tabular-nums text-indigo-200">
+          <span className="text-sm font-semibold tabular-nums text-indigo-200">
             {fmt.format(tax.dsueGenerated)}
           </span>
         </div>
@@ -610,7 +610,7 @@ function TotalsCard({
         <span className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-100">
           Grand total · taxes &amp; expenses
         </span>
-        <span className={"font-mono text-xl font-semibold tabular-nums " + accent}>
+        <span className={"text-xl font-semibold tabular-nums " + accent}>
           {fmt.format(total)}
         </span>
       </div>
