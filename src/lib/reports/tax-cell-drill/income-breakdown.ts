@@ -48,9 +48,34 @@ export function buildIncomeCellDrill(args: IncomeCellDrillArgs): CellDrillProps 
     return { title, total, groups: [{ rows: socialSecurityRows(year, ctx, "taxable") }] };
   }
 
-  // nonTaxableIncome / totalIncome / grossTotalIncome — later tasks.
+  if (columnKey === "nonTaxableIncome") {
+    const total = year.taxResult?.income.nonTaxableIncome ?? 0;
+    const groups = nonTaxableGroups(year, ctx);
+    return { title, total, groups };
+  }
+
+  // totalIncome / grossTotalIncome — later tasks.
   const total = year.taxResult?.income[columnKey] ?? 0;
   return { title, total, groups: [{ rows: [] }] };
+}
+
+function nonTaxableGroups(
+  year: IncomeCellDrillArgs["year"],
+  ctx: IncomeCellDrillArgs["ctx"],
+): CellDrillProps["groups"] {
+  const groups: CellDrillProps["groups"] = [];
+
+  const exemptRows = directRows(year, "tax_exempt", ctx);
+  if (exemptRows.length > 0) {
+    groups.push({ label: "Tax-Exempt Income", rows: exemptRows });
+  }
+
+  const ssRows = socialSecurityRows(year, ctx, "non_taxable");
+  if (ssRows.length > 0) {
+    groups.push({ label: "Non-Taxable Social Security", rows: ssRows });
+  }
+
+  return groups;
 }
 
 function socialSecurityRows(

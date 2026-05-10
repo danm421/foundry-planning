@@ -176,3 +176,56 @@ describe("buildIncomeCellDrill — Taxable Social Security", () => {
     expect(props.groups[0].rows).toEqual([]);
   });
 });
+
+describe("buildIncomeCellDrill — Non-Taxable Income", () => {
+  it("renders two groups: tax-exempt + non-taxable SS", () => {
+    // Tax-exempt: 1,500 (acc_3:te). Non-taxable SS: 20,000 - 17,000 = 3,000.
+    // Per-source split (gross client 12k / spouse 8k, fraction 0.15):
+    //   client = 1,800, spouse = 1,200.
+    const props = buildIncomeCellDrill({ year: makeYear(), columnKey: "nonTaxableIncome", ctx });
+    expect(props.total).toBe(4_500);
+    expect(props.groups).toHaveLength(2);
+
+    const exempt = props.groups[0];
+    expect(exempt.label).toBe("Tax-Exempt Income");
+    expect(exempt.rows).toEqual([
+      { id: "acc_3:te", label: "Roth IRA — TE", amount: 1_500 },
+    ]);
+
+    const ss = props.groups[1];
+    expect(ss.label).toBe("Non-Taxable Social Security");
+    expect(ss.rows).toHaveLength(2);
+    expect(ss.rows[0]).toMatchObject({ id: "inc_ss_c", amount: 1_800 });
+    expect(ss.rows[1]).toMatchObject({ id: "inc_ss_s", amount: 1_200 });
+
+    // Reconciliation: sum across both groups equals the cell.
+    const sum = props.groups.flatMap((g) => g.rows).reduce((s, r) => s + r.amount, 0);
+    expect(Math.abs(sum - 4_500)).toBeLessThanOrEqual(1);
+  });
+
+  it("omits a group when it has no rows", () => {
+    // No tax-exempt items, no SS.
+    const year = makeYear({
+      income: {
+        salaries: 100_000, socialSecurity: 0,
+        business: 0, trust: 0, deferred: 0, capitalGains: 0, other: 0,
+        total: 100_000, bySource: { inc_w: 100_000 },
+      } as never,
+      taxResult: {
+        income: { earnedIncome: 100_000, taxableSocialSecurity: 0, ordinaryIncome: 0,
+          dividends: 0, capitalGains: 0, shortCapitalGains: 0,
+          totalIncome: 100_000, nonTaxableIncome: 0, grossTotalIncome: 100_000 },
+        flow: { incomeTaxBase: 100_000 },
+        diag: { marginalFederalRate: 0.22, marginalBracketTier: { from: 94300, to: 201050, rate: 0.22 } },
+      } as never,
+      taxDetail: {
+        earnedIncome: 100_000, ordinaryIncome: 0, dividends: 0,
+        capitalGains: 0, stCapitalGains: 0, qbi: 0, taxExempt: 0,
+        bySource: { inc_w: { type: "earned_income", amount: 100_000 } },
+      } as never,
+    });
+    const props = buildIncomeCellDrill({ year, columnKey: "nonTaxableIncome", ctx });
+    expect(props.total).toBe(0);
+    expect(props.groups).toHaveLength(0);
+  });
+});
