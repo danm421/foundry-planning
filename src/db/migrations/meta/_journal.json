@@ -603,6 +603,13 @@
       "when": 1778364789347,
       "tag": "0085_tan_mojo",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1778444953640,
+      "tag": "0086_thin_echo",
+      "breakpoints": true
     }
   ]
 }

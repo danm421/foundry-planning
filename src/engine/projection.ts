@@ -40,6 +40,7 @@ import {
   saltCap,
 } from "../lib/tax/derive-deductions";
 import { applySavingsRules, computeEmployerMatch, resolveContributionAmount } from "./savings";
+import { itemProrationGate } from "./retirement-proration";
 import { applyContributionLimits, computeMaxContribution, resolveAgeInYear } from "./contribution-limits";
 import { executeWithdrawals, planSupplementalWithdrawal } from "./withdrawal";
 import { calculateRMD } from "./rmd";
@@ -603,6 +604,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     const expenseBreakdown = computeExpenses(
       data.expenses,
       year,
+      data.client,
       (exp) => exp.ownerEntityId == null
     );
 
@@ -1214,11 +1216,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // legacy mapping did, via legacyTaxType("social_security") → ordinary)
     // double-counted it for every retiree in bracket mode.
     for (const inc of currentIncomes) {
-      if (year < inc.startYear || year > inc.endYear) continue;
+      const incGate = itemProrationGate(inc, year, data.client);
+      if (!incGate.include) continue;
       if (inc.ownerEntityId != null && !isGrantorEntity(inc.ownerEntityId)) continue;
       if (inc.type === "social_security") continue;
       const inflateFrom = inc.inflationStartYear ?? inc.startYear;
-      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
+      const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom) * incGate.factor;
       const tt = inc.taxType ?? legacyTaxType(inc.type);
       switch (tt) {
         case "earned_income": taxDetail.earnedIncome += amount; break;
@@ -1259,6 +1262,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         year,
         data.entityFlowOverrides ?? [],
         entity.flowMode ?? "annual",
+        data.client,
       );
       if (netIncome <= 0) continue;
       const treatment = entity.taxTreatment ?? "ordinary";
@@ -1789,10 +1793,18 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       spouse: 0,
       joint: 0,
     };
+    // Salary base for contribution rules and employer match: use the FULL
+    // annual salary (NOT prorated for retirement month). Contribution rules
+    // expressed as "10% of salary" are evaluated on full-year salary; the
+    // proration to the partial retirement year is applied inside
+    // applySavingsRules via itemProrationGate, so re-applying it here would
+    // double-discount. The tax-side salary number (`income.salaries`) IS
+    // prorated — that comes from computeIncome and is used for tax/cashflow.
     for (const inc of currentIncomes) {
       if (inc.type !== "salary") continue;
       if (inc.ownerEntityId != null) continue;
-      if (year < inc.startYear || year > inc.endYear) continue;
+      const salaryGate = itemProrationGate(inc, year, data.client);
+      if (!salaryGate.include) continue;
       const inflateFrom = inc.inflationStartYear ?? inc.startYear;
       const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
       salaryByOwner[inc.owner] += amount;
@@ -1829,7 +1841,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Rules outside their year range are left out entirely (keys absent).
     const resolvedByRuleId: Record<string, number> = {};
     for (const rule of data.savingsRules) {
-      if (year < rule.startYear || year > rule.endYear) continue;
+      // Inclusion only — DO NOT multiply by gate.factor here. The pre-cap
+      // resolution feeds into applyContributionLimits + applySavingsRules,
+      // and proration is applied at the application step. Including a rule
+      // with a partial retirement year here keeps it eligible for the cap
+      // logic; the eventual contribution gets prorated in applySavingsRules.
+      if (!itemProrationGate(rule, year, data.client).include) continue;
       const override = rule.scheduleOverrides?.[year];
       if (override != null) {
         resolvedByRuleId[rule.id] = override;
@@ -1972,9 +1989,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       for (const exp of allExpenses) {
         if (!exp.deductionType || exp.deductionType === "above_line" || exp.deductionType === "property_tax") continue;
-        if (year < exp.startYear || year > exp.endYear) continue;
+        const expGate = itemProrationGate(exp, year, data.client);
+        if (!expGate.include) continue;
         const inflateFrom = exp.inflationStartYear ?? exp.startYear;
-        const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, year - inflateFrom);
+        const amount = exp.annualAmount * Math.pow(1 + exp.growthRate, year - inflateFrom) * expGate.factor;
         if (exp.deductionType === "charitable") {
           charitable += amount;
           belowLineBySource[exp.id] = { label: `Expense: ${exp.name}`, amount };
@@ -2004,13 +2022,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
       const aboveLineBySource: Record<string, { label: string; amount: number }> = {};
       for (const rule of data.savingsRules) {
-        if (year < rule.startYear || year > rule.endYear) continue;
+        const ruleGate = itemProrationGate(rule, year, data.client);
+        if (!ruleGate.include) continue;
         const acct = data.accounts.find((a) => a.id === rule.accountId);
         if (!acct) continue;
         const subType = acct.subType ?? "";
         if (subType !== "traditional_ira" && subType !== "401k") continue;
         if (controllingEntity(acct) != null && !isGrantorEntity(controllingEntity(acct)!)) continue;
-        aboveLineBySource[rule.id] = { label: acct.name, amount: rule.annualAmount };
+        aboveLineBySource[rule.id] = { label: acct.name, amount: rule.annualAmount * ruleGate.factor };
       }
 
       const stdDed = resolved!.params.stdDeduction[filingStatus];
@@ -2045,11 +2064,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     let seEarnings = 0;
     for (const inc of currentIncomes) {
       if (!inc.isSelfEmployment) continue;
-      if (year < inc.startYear || year > inc.endYear) continue;
+      const seGate = itemProrationGate(inc, year, data.client);
+      if (!seGate.include) continue;
       if (inc.ownerEntityId != null && !isGrantorEntity(inc.ownerEntityId)) continue;
       let amount: number;
       if (inc.ownerEntityId != null) {
         // Phase 2: grantor-entity SE income uses entity overrides.
+        // Per-cell overrides bypass retirement-month proration (the override
+        // grid is authoritative); the no-override growth-mode fallback IS
+        // prorated — passing `data.client` enables that inside
+        // resolveEntityFlowAmount.
         amount = resolveEntityFlowAmount(
           inc,
           inc.ownerEntityId,
@@ -2057,12 +2081,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           year,
           data.entityFlowOverrides ?? [],
           entityMap[inc.ownerEntityId]?.flowMode ?? "annual",
+          data.client,
         );
       } else if (inc.scheduleOverrides) {
         amount = inc.scheduleOverrides[year] ?? 0;
       } else {
         const inflateFrom = inc.inflationStartYear ?? inc.startYear;
-        amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
+        amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom) * seGate.factor;
       }
       seEarnings += amount;
     }
@@ -2154,7 +2179,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // than `socialSecurityGross` fed into the tax calc), producing three
     // different SS numbers per row.
     for (const inc of currentIncomes) {
-      if (year < inc.startYear || year > inc.endYear) continue;
+      const incRouteGate = itemProrationGate(inc, year, data.client);
+      if (!incRouteGate.include) continue;
       // Schedule-mode entities are handled in a dedicated loop below — the
       // schedule grid is the source of truth, so base income rows are not
       // routed here (would double-count or, worse, miss override-only cells
@@ -2168,6 +2194,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       const resolved = income.bySource[inc.id] ?? grantorIncome.bySource[inc.id];
       let amount: number;
       if (resolved != null) {
+        // computeIncome (or its grantor-flow analogue) has already applied
+        // proration via itemProrationGate, so do NOT multiply by gate.factor
+        // again here.
         amount = resolved;
       } else {
         // Non-grantor entity incomes (and anything else computeIncome filtered
@@ -2180,11 +2209,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           if (year < birthYear + inc.claimingAge) continue;
         }
         const inflateFrom = inc.inflationStartYear ?? inc.startYear;
-        amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom);
+        amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom) * incRouteGate.factor;
       }
       // Phase 2: for entity-owned rows, apply year-overrides (P2-3 — overrides
       // win over base+growth; per-row scheduleOverrides on entity rows is no
-      // longer consulted).
+      // longer consulted). Passing `data.client` so the no-override
+      // growth-mode fallback is retirement-month-prorated.
       if (inc.ownerEntityId != null) {
         amount = resolveEntityFlowAmount(
           inc,
@@ -2193,6 +2223,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           year,
           data.entityFlowOverrides ?? [],
           entityMap[inc.ownerEntityId]?.flowMode ?? "annual",
+          data.client,
         );
       }
       creditCash(resolveCashAccount(inc.ownerEntityId, inc.cashAccountId), amount, {
@@ -2204,7 +2235,8 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
 
     // 7. Route each expense as an outflow from its cash account.
     for (const exp of allExpenses) {
-      if (year < exp.startYear || year > exp.endYear) continue;
+      const expRouteGate = itemProrationGate(exp, year, data.client);
+      if (!expRouteGate.include) continue;
       // Schedule-mode entities are handled below.
       if (
         exp.ownerEntityId != null &&
@@ -2213,8 +2245,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         continue;
       }
       const inflateFrom = exp.inflationStartYear ?? exp.startYear;
-      let amount = exp.annualAmount * Math.pow(1 + exp.growthRate, year - inflateFrom);
+      let amount = exp.annualAmount * Math.pow(1 + exp.growthRate, year - inflateFrom) * expRouteGate.factor;
       // Phase 2: for entity-owned rows, apply year-overrides.
+      // `data.client` enables retirement-month proration on the no-override
+      // growth-mode fallback inside resolveEntityFlowAmount.
       if (exp.ownerEntityId != null) {
         amount = resolveEntityFlowAmount(
           exp,
@@ -2223,6 +2257,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           year,
           data.entityFlowOverrides ?? [],
           entityMap[exp.ownerEntityId]?.flowMode ?? "annual",
+          data.client,
         );
       }
       creditCash(resolveCashAccount(exp.ownerEntityId, exp.cashAccountId), -amount, {
@@ -2288,6 +2323,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         year,
         data.entityFlowOverrides ?? [],
         entity.flowMode ?? "annual",
+        data.client,
       );
       if (netIncome <= 0) continue;
       const distPercent = resolveDistributionPercent(
@@ -2365,6 +2401,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           data.savingsRules,
           year,
           income.salaries,
+          data.client,
           undefined,
           salaryByRuleId,
           cappedByRuleId
@@ -2373,6 +2410,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           data.savingsRules,
           year,
           income.salaries,
+          data.client,
           Math.max(0, surplusBeforeSavings),
           salaryByRuleId,
           cappedByRuleId
@@ -2405,10 +2443,15 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // spouse's salary can't ground the other spouse's 401k match. Joint-owned or
     // orphaned-rule accounts get no match (no individual salary to base it on).
     for (const rule of data.savingsRules) {
-      if (year < rule.startYear || year > rule.endYear) continue;
+      const matchGate = itemProrationGate(rule, year, data.client);
+      if (!matchGate.include) continue;
       const acct = data.accounts.find((a) => a.id === rule.accountId);
       const ownerSalary = acct ? (salaryByRuleId[rule.id] ?? 0) : 0;
-      const match = computeEmployerMatch(rule, ownerSalary);
+      // salaryByRuleId carries unprorated full-year salary, so a percentage
+      // match comes back at the full annual level. Apply gate.factor here to
+      // shrink it to the partial retirement year. (Flat-amount matches use
+      // rule.employerMatchAmount and need the same treatment.)
+      const match = computeEmployerMatch(rule, ownerSalary) * matchGate.factor;
       if (match === 0) continue;
       accountBalances[rule.accountId] = (accountBalances[rule.accountId] ?? 0) + match;
       if (accountLedgers[rule.accountId]) {
@@ -3533,6 +3576,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     incomes: currentIncomes,
     expenses: lastAllExpenses,
     entityFlowOverrides: data.entityFlowOverrides ?? [],
+    client: data.client,
   });
 
   // Per-family-member locked-share ledger for jointly-held accounts. Only

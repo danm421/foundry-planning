@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { computeExpenses } from "../expenses";
 import { applySavingsRules } from "../savings";
 import type { Expense, SavingsRule } from "../types";
+import { baseClient } from "./fixtures";
 
 describe("expense schedule overrides", () => {
   const expense: Expense = {
@@ -21,18 +22,18 @@ describe("expense schedule overrides", () => {
   };
 
   it("uses override amount for years with overrides", () => {
-    const result = computeExpenses([expense], 2031);
+    const result = computeExpenses([expense], 2031, baseClient);
     expect(result.other).toBe(57000);
   });
 
   it("uses $0 for years within range but without override", () => {
-    const result = computeExpenses([expense], 2034);
+    const result = computeExpenses([expense], 2034, baseClient);
     expect(result.other).toBe(0);
   });
 
   it("uses growth-rate logic when no overrides exist", () => {
     const noOverride: Expense = { ...expense, scheduleOverrides: undefined };
-    const result = computeExpenses([noOverride], 2031);
+    const result = computeExpenses([noOverride], 2031, baseClient);
     expect(result.other).toBeCloseTo(61800, 0);
   });
 });
@@ -55,18 +56,18 @@ describe("savings rule schedule overrides", () => {
   };
 
   it("uses override amount instead of annualAmount", () => {
-    const result = applySavingsRules([rule], 2028, 150000);
+    const result = applySavingsRules([rule], 2028, 150000, baseClient);
     expect(result.byAccount["acct-401k"]).toBe(10000);
   });
 
   it("uses $0 for years without override", () => {
-    const result = applySavingsRules([rule], 2030, 150000);
+    const result = applySavingsRules([rule], 2030, 150000, baseClient);
     expect(result.byAccount["acct-401k"]).toBeUndefined();
     expect(result.total).toBe(0);
   });
 
   it("still applies employer match on override amount", () => {
-    const result = applySavingsRules([rule], 2026, 150000);
+    const result = applySavingsRules([rule], 2026, 150000, baseClient);
     expect(result.byAccount["acct-401k"]).toBe(23500);
     expect(result.employerTotal).toBe(4500);
   });

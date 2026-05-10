@@ -1,4 +1,5 @@
-import type { SavingsRule } from "./types";
+import type { SavingsRule, ClientInfo } from "./types";
+import { itemProrationGate } from "./retirement-proration";
 
 interface SavingsResult {
   byAccount: Record<string, number>;
@@ -48,6 +49,7 @@ export function applySavingsRules(
   rules: SavingsRule[],
   year: number,
   totalSalaryIncome: number,
+  client: ClientInfo,
   // Optional cap used only by the legacy path (no default checking account defined).
   availableSurplus?: number,
   // Optional per-rule salary base for percent-mode contributions. Keyed by rule id.
@@ -67,7 +69,8 @@ export function applySavingsRules(
   let remaining = legacyCap != null ? Math.max(0, legacyCap) : Number.POSITIVE_INFINITY;
 
   for (const rule of rules) {
-    if (year < rule.startYear || year > rule.endYear) continue;
+    const gate = itemProrationGate(rule, year, client);
+    if (!gate.include) continue;
     if (remaining <= 0) break;
 
     const ruleSalary = salaryByRuleId?.[rule.id] ?? totalSalaryIncome;
@@ -79,7 +82,8 @@ export function applySavingsRules(
           ? (rule.scheduleOverrides[year] ?? 0)
           : resolveContributionAmount(rule, ruleSalary);
     if (baseAmount === 0) continue;
-    const contribution = Math.min(baseAmount, remaining);
+    const proratedBase = baseAmount * gate.factor;
+    const contribution = Math.min(proratedBase, remaining);
 
     byAccount[rule.accountId] = (byAccount[rule.accountId] ?? 0) + contribution;
     total += contribution;
@@ -89,7 +93,14 @@ export function applySavingsRules(
     // deposited directly into the account. For the running total here we use the full
     // salary base; the projection engine recomputes per-rule matches using the
     // account-owner's salary slice for accurate deposits.
-    employerTotal += computeEmployerMatch(rule, totalSalaryIncome);
+    // The percentage paths use the (already-prorated) salary, so re-applying
+    // gate.factor here would double-prorate. Flat-dollar matches are prorated
+    // explicitly so the total mirrors the salary-driven cases in retirement year.
+    if (rule.employerMatchAmount != null && rule.employerMatchAmount > 0) {
+      employerTotal += rule.employerMatchAmount * gate.factor;
+    } else {
+      employerTotal += computeEmployerMatch(rule, totalSalaryIncome);
+    }
   }
 
   return { byAccount, total, employerTotal };

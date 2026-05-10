@@ -1,4 +1,12 @@
-import type { Income, Expense, EntityFlowOverride, EntityFlowMode, EntitySummary } from "./types";
+import type {
+  Income,
+  Expense,
+  EntityFlowOverride,
+  EntityFlowMode,
+  EntitySummary,
+  ClientInfo,
+} from "./types";
+import { itemProrationGate } from "./retirement-proration";
 
 interface BaseRow {
   annualAmount: number;
@@ -6,6 +14,8 @@ interface BaseRow {
   startYear: number;
   endYear: number;
   inflationStartYear?: number;
+  startYearRef?: string | null;
+  endYearRef?: string | null;
 }
 
 /** Resolve an entity-owned income or expense row to its year amount.
@@ -14,8 +24,13 @@ interface BaseRow {
  *    Use the override cell value or 0. Base+growth is NOT consulted.
  *
  *  When the entity is in 'annual' mode (flowMode === 'annual', the default):
- *    1. Override cell wins if non-null (sparse override semantics).
- *    2. Otherwise base+growth within [startYear, endYear].
+ *    1. Override cell wins if non-null (sparse override semantics) — the
+ *       override grid is authoritative; retirement-month proration is NOT
+ *       applied on top.
+ *    2. Otherwise base+growth within the row's [startYear, endYear] window,
+ *       prorated by `itemProrationGate(row, year, client)` when a `client`
+ *       is supplied. Without `client`, falls back to the bare year-window
+ *       check (used by tests that don't exercise retirement refs).
  *    3. 0 outside the row's window.
  *
  *  Per-row scheduleOverrides on entity-owned rows is intentionally NOT consulted
@@ -28,14 +43,22 @@ export function resolveEntityFlowAmount(
   year: number,
   overrides: EntityFlowOverride[],
   flowMode: EntityFlowMode = "annual",
+  client?: ClientInfo,
 ): number {
   const ovr = overrides.find((o) => o.entityId === entityId && o.year === year);
   const ovrAmount = field === "income" ? ovr?.incomeAmount : ovr?.expenseAmount;
   if (flowMode === "schedule") return ovrAmount ?? 0;
   if (ovrAmount != null) return ovrAmount;
-  if (year < row.startYear || year > row.endYear) return 0;
+  let factor = 1;
+  if (client) {
+    const gate = itemProrationGate(row, year, client);
+    if (!gate.include) return 0;
+    factor = gate.factor;
+  } else {
+    if (year < row.startYear || year > row.endYear) return 0;
+  }
   const inflateFrom = row.inflationStartYear ?? row.startYear;
-  return row.annualAmount * Math.pow(1 + row.growthRate, year - inflateFrom);
+  return row.annualAmount * Math.pow(1 + row.growthRate, year - inflateFrom) * factor;
 }
 
 /** Resolve the distribution percent for a business entity in a given year.
@@ -81,6 +104,7 @@ function resolveEntityFlowsDetail(
   year: number,
   overrides: EntityFlowOverride[],
   flowMode: EntityFlowMode,
+  client?: ClientInfo,
 ): EntityFlowDetail {
   if (flowMode === "schedule") {
     const ovr = overrides.find((o) => o.entityId === entityId && o.year === year);
@@ -109,7 +133,7 @@ function resolveEntityFlowsDetail(
   const incomeRows: EntityFlowDetailRow[] = [];
   for (const inc of incomes) {
     if (inc.ownerEntityId !== entityId) continue;
-    const amount = resolveEntityFlowAmount(inc, entityId, "income", year, overrides, flowMode);
+    const amount = resolveEntityFlowAmount(inc, entityId, "income", year, overrides, flowMode, client);
     incomeRows.push({
       id: inc.id,
       name: inc.name,
@@ -120,7 +144,7 @@ function resolveEntityFlowsDetail(
   const expenseRows: EntityFlowDetailRow[] = [];
   for (const exp of expenses) {
     if (exp.ownerEntityId !== entityId) continue;
-    const amount = resolveEntityFlowAmount(exp, entityId, "expense", year, overrides, flowMode);
+    const amount = resolveEntityFlowAmount(exp, entityId, "expense", year, overrides, flowMode, client);
     expenseRows.push({
       id: exp.id,
       name: exp.name,
@@ -152,6 +176,7 @@ export function resolveEntityFlows(
   year: number,
   overrides: EntityFlowOverride[] = [],
   flowMode: EntityFlowMode = "annual",
+  client?: ClientInfo,
 ): { income: number; expense: number } {
   if (flowMode === "schedule") {
     const ovr = overrides.find((o) => o.entityId === entityId && o.year === year);
@@ -163,12 +188,12 @@ export function resolveEntityFlows(
   let income = 0;
   for (const inc of incomes) {
     if (inc.ownerEntityId !== entityId) continue;
-    income += resolveEntityFlowAmount(inc, entityId, "income", year, overrides, flowMode);
+    income += resolveEntityFlowAmount(inc, entityId, "income", year, overrides, flowMode, client);
   }
   let expense = 0;
   for (const exp of expenses) {
     if (exp.ownerEntityId !== entityId) continue;
-    expense += resolveEntityFlowAmount(exp, entityId, "expense", year, overrides, flowMode);
+    expense += resolveEntityFlowAmount(exp, entityId, "expense", year, overrides, flowMode, client);
   }
   return { income, expense };
 }
@@ -183,6 +208,7 @@ resolveEntityFlows.withDetail = function withDetail(
   year: number,
   overrides: EntityFlowOverride[] = [],
   flowMode: EntityFlowMode = "annual",
+  client?: ClientInfo,
 ): EntityFlowDetail {
   return resolveEntityFlowsDetail(
     entityId,
@@ -191,6 +217,7 @@ resolveEntityFlows.withDetail = function withDetail(
     year,
     overrides,
     flowMode,
+    client,
   );
 };
 
@@ -204,6 +231,7 @@ export function computeBusinessEntityNetIncome(
   year: number,
   overrides: EntityFlowOverride[] = [],
   flowMode: EntityFlowMode = "annual",
+  client?: ClientInfo,
 ): number {
   const { income, expense } = resolveEntityFlows(
     entityId,
@@ -212,6 +240,7 @@ export function computeBusinessEntityNetIncome(
     year,
     overrides,
     flowMode,
+    client,
   );
   return income - expense;
 }

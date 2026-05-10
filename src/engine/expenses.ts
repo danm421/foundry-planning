@@ -1,4 +1,5 @@
-import type { Expense } from "./types";
+import type { Expense, ClientInfo } from "./types";
+import { itemProrationGate } from "./retirement-proration";
 
 interface ExpenseBreakdown {
   living: number;
@@ -12,6 +13,7 @@ interface ExpenseBreakdown {
 export function computeExpenses(
   expenses: Expense[],
   year: number,
+  client: ClientInfo,
   filter?: (exp: Expense) => boolean
 ): ExpenseBreakdown {
   const result: ExpenseBreakdown = {
@@ -24,7 +26,8 @@ export function computeExpenses(
   };
 
   for (const exp of expenses) {
-    if (year < exp.startYear || year > exp.endYear) continue;
+    const gate = itemProrationGate(exp, year, client);
+    if (!gate.include) continue;
     if (filter && !filter(exp)) continue;
 
     let amount: number;
@@ -37,6 +40,7 @@ export function computeExpenses(
       const yearsElapsed = year - inflateFrom;
       amount = exp.annualAmount * Math.pow(1 + exp.growthRate, yearsElapsed);
     }
+    amount *= gate.factor;
     result[exp.type] += amount;
     result.bySource[exp.id] = amount;
   }

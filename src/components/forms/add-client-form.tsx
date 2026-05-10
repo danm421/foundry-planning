@@ -11,6 +11,7 @@ export interface ClientFormInitial {
   lastName: string;
   dateOfBirth: string;
   retirementAge: number;
+  retirementMonth?: number | null;
   lifeExpectancy: number;
   filingStatus: string;
   /** Spouse first name. Stored in the legacy `spouseName` DB column. */
@@ -18,12 +19,28 @@ export interface ClientFormInitial {
   spouseLastName?: string | null;
   spouseDob?: string | null;
   spouseRetirementAge?: number | null;
+  spouseRetirementMonth?: number | null;
   spouseLifeExpectancy?: number | null;
   email?: string | null;
   address?: string | null;
   spouseEmail?: string | null;
   spouseAddress?: string | null;
 }
+
+const MONTH_OPTIONS: { value: number; label: string }[] = [
+  { value: 1, label: "January" },
+  { value: 2, label: "February" },
+  { value: 3, label: "March" },
+  { value: 4, label: "April" },
+  { value: 5, label: "May" },
+  { value: 6, label: "June" },
+  { value: 7, label: "July" },
+  { value: 8, label: "August" },
+  { value: 9, label: "September" },
+  { value: 10, label: "October" },
+  { value: 11, label: "November" },
+  { value: 12, label: "December" },
+];
 
 type FormTab = "details" | "contact";
 
@@ -73,6 +90,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onS
       lastName: data.get("lastName") as string,
       dateOfBirth: data.get("dateOfBirth") as string,
       retirementAge: Number(data.get("retirementAge")),
+      retirementMonth: Number(data.get("retirementMonth") ?? 1),
       lifeExpectancy: Number(data.get("lifeExpectancy")),
       filingStatus: data.get("filingStatus") as string,
       email: (data.get("email") as string) || null,
@@ -84,6 +102,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onS
       const spouseLastName = data.get("spouseLastName") as string;
       const spouseDob = data.get("spouseDob") as string;
       const spouseRetirementAge = data.get("spouseRetirementAge") as string;
+      const spouseRetirementMonth = data.get("spouseRetirementMonth") as string;
       const spouseLifeExpectancy = data.get("spouseLifeExpectancy") as string;
       const spouseEmail = data.get("spouseEmail") as string;
       const spouseAddress = data.get("spouseAddress") as string;
@@ -92,6 +111,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onS
       body.spouseLastName = spouseLastName || null;
       body.spouseDob = spouseDob || null;
       body.spouseRetirementAge = spouseRetirementAge ? Number(spouseRetirementAge) : null;
+      body.spouseRetirementMonth = spouseRetirementMonth ? Number(spouseRetirementMonth) : null;
       body.spouseLifeExpectancy = spouseLifeExpectancy ? Number(spouseLifeExpectancy) : null;
       body.spouseEmail = spouseEmail || null;
       body.spouseAddress = spouseAddress || null;
@@ -100,6 +120,7 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onS
       body.spouseLastName = null;
       body.spouseDob = null;
       body.spouseRetirementAge = null;
+      body.spouseRetirementMonth = null;
       body.spouseLifeExpectancy = null;
       body.spouseEmail = null;
       body.spouseAddress = null;
@@ -237,6 +258,27 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onS
         </div>
 
         <div>
+          <label className={fieldLabelClassName} htmlFor="retirementMonth">
+            Retirement Month
+          </label>
+          <select
+            id="retirementMonth"
+            name="retirementMonth"
+            defaultValue={initial?.retirementMonth ?? 1}
+            className={`mt-1 ${selectClassName}`}
+          >
+            {MONTH_OPTIONS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-gray-400">
+            Income/expenses linked to retirement are pro-rated for this month in the retirement year.
+          </p>
+        </div>
+
+        <div>
           <label className={fieldLabelClassName} htmlFor="lifeExpectancy">
             Life Expectancy <span className="text-red-500">*</span>
           </label>
@@ -323,6 +365,24 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onS
                 defaultValue={initial?.spouseRetirementAge ?? ""}
                 className={`mt-1 ${inputClassName}`}
               />
+            </div>
+
+            <div>
+              <label className={fieldLabelClassName} htmlFor="spouseRetirementMonth">
+                Spouse Retirement Month
+              </label>
+              <select
+                id="spouseRetirementMonth"
+                name="spouseRetirementMonth"
+                defaultValue={initial?.spouseRetirementMonth ?? 1}
+                className={`mt-1 ${selectClassName}`}
+              >
+                {MONTH_OPTIONS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>

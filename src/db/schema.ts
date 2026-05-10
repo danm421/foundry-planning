@@ -326,6 +326,11 @@ export const clients = pgTable("clients", {
   lastName: text("last_name").notNull(),
   dateOfBirth: date("date_of_birth").notNull(),
   retirementAge: integer("retirement_age").notNull(),
+  // Calendar month (1-12) within the retirement year when retirement starts.
+  // Income/expenses linked to the retirement transition are pro-rated for this
+  // month: end-at-retirement items run Jan..(month-1), start-at-retirement items
+  // run month..Dec. Defaults to 1 (January) — matches legacy whole-year behavior.
+  retirementMonth: integer("retirement_month").notNull().default(1),
   planEndAge: integer("plan_end_age").notNull(),
   // Life expectancies are the source of truth for the plan horizon; plan_end_age
   // is derived (= max(death year across client + spouse) - clientBirthYear).
@@ -334,6 +339,7 @@ export const clients = pgTable("clients", {
   spouseLastName: text("spouse_last_name"),
   spouseDob: date("spouse_dob"),
   spouseRetirementAge: integer("spouse_retirement_age"),
+  spouseRetirementMonth: integer("spouse_retirement_month"),
   spouseLifeExpectancy: integer("spouse_life_expectancy"),
   filingStatus: filingStatusEnum("filing_status").notNull().default("single"),
   email: text("email"),

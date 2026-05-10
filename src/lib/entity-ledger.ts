@@ -13,6 +13,7 @@ import type {
   Income,
   Expense,
   EntityFlowOverride,
+  ClientInfo,
 } from "@/engine/types";
 import { flatBusinessValueAt, type EntityMetadata } from "@/engine/entity-cashflow";
 import { resolveEntityFlows } from "@/engine/entity-flows";
@@ -57,6 +58,10 @@ export interface EntityLedgerContext {
   incomes: Income[];
   expenses: Expense[];
   entityFlowOverrides: EntityFlowOverride[];
+  /** Optional. Enables retirement-month proration on the no-override
+   *  growth-mode fallback inside resolveEntityFlowAmount, matching the
+   *  engine's per-row crediting in the projection. */
+  client?: ClientInfo;
 }
 
 export function getEntityLedger(
@@ -110,6 +115,7 @@ export function getEntityLedger(
       ctx.year.year,
       ctx.entityFlowOverrides,
       entity.flowMode ?? "annual",
+      ctx.client,
     );
   }
 

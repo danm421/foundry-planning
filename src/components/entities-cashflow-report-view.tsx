@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { runProjection } from "@/engine/projection";
-import type { ProjectionYear, Income, Expense, EntityFlowOverride } from "@/engine/types";
+import type { ProjectionYear, Income, Expense, EntityFlowOverride, ClientInfo } from "@/engine/types";
 import HeaderControls, { type EntityOption } from "./entities-cashflow-report/header-controls";
 import TrustTable from "./entities-cashflow-report/trust-table";
 import BusinessTable from "./entities-cashflow-report/business-table";
@@ -44,6 +44,7 @@ interface ApiData {
   incomes: Income[];
   expenses: Expense[];
   entityFlowOverrides?: EntityFlowOverride[];
+  client?: ClientInfo;
 }
 
 export default function EntitiesCashFlowReportView({ clientId, entities }: Props) {
@@ -153,6 +154,7 @@ export default function EntitiesCashFlowReportView({ clientId, entities }: Props
       incomes: apiData.incomes,
       expenses: apiData.expenses,
       entityFlowOverrides: apiData.entityFlowOverrides ?? [],
+      client: apiData.client,
     });
   }, [openLedger, apiData, ledgerLookups, years]);
 

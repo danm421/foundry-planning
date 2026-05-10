@@ -996,11 +996,13 @@ export const loadClientDataWithContext = cache(
       lastName: client.lastName,
       dateOfBirth: client.dateOfBirth,
       retirementAge: client.retirementAge,
+      retirementMonth: client.retirementMonth ?? 1,
       planEndAge: client.planEndAge,
       lifeExpectancy: client.lifeExpectancy,
       spouseName: client.spouseName ?? undefined,
       spouseDob: client.spouseDob ?? undefined,
       spouseRetirementAge: client.spouseRetirementAge ?? undefined,
+      spouseRetirementMonth: client.spouseRetirementMonth ?? undefined,
       spouseLifeExpectancy: client.spouseLifeExpectancy ?? null,
       filingStatus: client.filingStatus,
     };

@@ -280,11 +280,13 @@ export interface ClientView {
   lastName: string;
   dateOfBirth: string;
   retirementAge: number;
+  retirementMonth: number;
   planEndAge: number;
   lifeExpectancy: number | null;
   spouseName: string | null;
   spouseDob: string | null;
   spouseRetirementAge: number | null;
+  spouseRetirementMonth: number | null;
   spouseLifeExpectancy: number | null;
   filingStatus: ClientInfo["filingStatus"];
 }
@@ -295,11 +297,13 @@ export function clientEngineToView(client: ClientInfo): ClientView {
     lastName: client.lastName,
     dateOfBirth: client.dateOfBirth,
     retirementAge: client.retirementAge,
+    retirementMonth: client.retirementMonth ?? 1,
     planEndAge: client.planEndAge,
     lifeExpectancy: client.lifeExpectancy ?? null,
     spouseName: client.spouseName ?? null,
     spouseDob: client.spouseDob ?? null,
     spouseRetirementAge: client.spouseRetirementAge ?? null,
+    spouseRetirementMonth: client.spouseRetirementMonth ?? null,
     spouseLifeExpectancy: client.spouseLifeExpectancy ?? null,
     filingStatus: client.filingStatus,
   };

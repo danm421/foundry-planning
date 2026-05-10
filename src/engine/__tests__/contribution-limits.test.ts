@@ -371,4 +371,47 @@ describe("applyContributionLimits", () => {
     });
     expect(cappedByRuleId.r1).toBe(34_750);
   });
+
+  it("aggregates end-at-retirement and start-at-retirement rules in the same bucket during the retirement year (mid-year retirement)", () => {
+    // Pre-fix the bare `year > rule.endYear` check excluded rules A and B
+    // from the deferral bucket in the retirement year, so the IRS limit was
+    // applied only to rule C — letting the household over-contribute by
+    // continuing to fund A and B at full rate. With itemProrationGate, all
+    // three end up in the same bucket and the cap is enforced correctly.
+    const client: ClientInfo = {
+      ...clientInfoAge40,
+      // birthYear 1990 + retirementAge 40 → retirementYear 2030.
+      dateOfBirth: "1990-01-01",
+      retirementAge: 40,
+      retirementMonth: 7,
+    };
+    const accounts = [
+      acct("a1", "401k"),
+      acct("a2", "401k"),
+      acct("a3", "401k"),
+    ];
+    const rules: SavingsRule[] = [
+      // A & B end at client retirement (endYear = retirementYear - 1 = 2029)
+      { ...rule("rA", "a1"), startYear: 2020, endYear: 2029, endYearRef: "client_retirement" },
+      { ...rule("rB", "a2"), startYear: 2020, endYear: 2029, endYearRef: "client_retirement" },
+      // C starts at client retirement (startYear = retirementYear = 2030)
+      { ...rule("rC", "a3"), startYear: 2030, endYear: 2050, startYearRef: "client_retirement" },
+    ];
+    const { cappedByRuleId } = applyContributionLimits({
+      year: 2030,
+      rules,
+      accounts,
+      client,
+      taxYearParams: PARAMS_2025,
+      resolvedByRuleId: { rA: 30_000, rB: 30_000, rC: 30_000 },
+    });
+    // Combined deferral bucket = 90k > 23.5k limit. Scale = 23_500 / 90_000.
+    // After scaling, each rule's capped contribution is proportional, and
+    // the household total stays at the IRS limit.
+    const total = cappedByRuleId.rA + cappedByRuleId.rB + cappedByRuleId.rC;
+    expect(total).toBeCloseTo(23_500, 2);
+    expect(cappedByRuleId.rA).toBeCloseTo(30_000 * (23_500 / 90_000), 2);
+    expect(cappedByRuleId.rB).toBeCloseTo(30_000 * (23_500 / 90_000), 2);
+    expect(cappedByRuleId.rC).toBeCloseTo(30_000 * (23_500 / 90_000), 2);
+  });
 });

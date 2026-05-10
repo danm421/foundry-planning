@@ -116,13 +116,27 @@ export interface PrimaryInfo {
   lastName: string;
   dateOfBirth: string;
   retirementAge: number;
+  retirementMonth?: number | null;
   lifeExpectancy: number;
   filingStatus: string;
   spouseName: string | null;
   spouseLastName: string | null;
   spouseDob: string | null;
   spouseRetirementAge: number | null;
+  spouseRetirementMonth?: number | null;
   spouseLifeExpectancy: number | null;
+}
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function formatRetirement(age: number | null | undefined, month: number | null | undefined): string {
+  if (age == null) return "—";
+  const m = month ?? 1;
+  if (m === 1) return String(age);
+  return `${age} (${MONTH_NAMES[m - 1]})`;
 }
 
 interface FamilyViewProps {
@@ -257,12 +271,14 @@ export default function FamilyView({
     lastName: primary.lastName,
     dateOfBirth: primary.dateOfBirth,
     retirementAge: primary.retirementAge,
+    retirementMonth: primary.retirementMonth ?? 1,
     lifeExpectancy: primary.lifeExpectancy,
     filingStatus: primary.filingStatus,
     spouseName: primary.spouseName,
     spouseLastName: primary.spouseLastName,
     spouseDob: primary.spouseDob,
     spouseRetirementAge: primary.spouseRetirementAge,
+    spouseRetirementMonth: primary.spouseRetirementMonth ?? null,
     spouseLifeExpectancy: primary.spouseLifeExpectancy,
   };
 
@@ -299,7 +315,7 @@ export default function FamilyView({
             badge="Client"
             fields={[
               ["Date of Birth", primary.dateOfBirth ? `${new Date(primary.dateOfBirth).toLocaleDateString()} (age ${primaryAge})` : "—"],
-              ["Retirement Age", String(primary.retirementAge)],
+              ["Retirement", formatRetirement(primary.retirementAge, primary.retirementMonth)],
               ["Life Expectancy", String(primary.lifeExpectancy)],
             ]}
           />
@@ -309,7 +325,7 @@ export default function FamilyView({
               badge="Spouse"
               fields={[
                 ["Date of Birth", primary.spouseDob ? `${new Date(primary.spouseDob).toLocaleDateString()} (age ${spouseAge})` : "—"],
-                ["Retirement Age", primary.spouseRetirementAge ? String(primary.spouseRetirementAge) : "—"],
+                ["Retirement", formatRetirement(primary.spouseRetirementAge, primary.spouseRetirementMonth)],
                 ["Life Expectancy", primary.spouseLifeExpectancy != null ? String(primary.spouseLifeExpectancy) : "—"],
               ]}
             />

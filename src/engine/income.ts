@@ -1,6 +1,7 @@
 import type { Income, ClientInfo } from "./types";
 import { resolveAnnualBenefit } from "./socialSecurity/orchestrator";
 import { resolveClaimAgeMonths } from "./socialSecurity/claimAge";
+import { itemProrationGate } from "./retirement-proration";
 
 interface IncomeBreakdown {
   salaries: number;
@@ -48,7 +49,8 @@ export function computeIncome(
   };
 
   for (const inc of incomes) {
-    if (year < inc.startYear || year > inc.endYear) continue;
+    const gate = itemProrationGate(inc, year, client);
+    if (!gate.include) continue;
     if (filter && !filter(inc)) continue;
 
     // Social Security: delay until claiming age
@@ -91,17 +93,18 @@ export function computeIncome(
         ) ?? null;
 
         const resolved = resolveAnnualBenefit({ row: inc, spouseRow, client, year });
-        result.socialSecurity += resolved.total;
-        result.bySource[inc.id] = resolved.total;
+        const proratedTotal = resolved.total * gate.factor;
+        result.socialSecurity += proratedTotal;
+        result.bySource[inc.id] = proratedTotal;
 
         // Accumulate per-spouse breakdown
         result.socialSecurityDetail ??= { client: { retirement: 0, spousal: 0, survivor: 0 } };
         const bucket = inc.owner === "spouse"
           ? (result.socialSecurityDetail.spouse ??= { retirement: 0, spousal: 0, survivor: 0 })
           : result.socialSecurityDetail.client;
-        bucket.retirement += resolved.retirement;
-        bucket.spousal    += resolved.spousal;
-        bucket.survivor   += resolved.survivor;
+        bucket.retirement += resolved.retirement * gate.factor;
+        bucket.spousal    += resolved.spousal    * gate.factor;
+        bucket.survivor   += resolved.survivor   * gate.factor;
 
         continue;
       }
@@ -117,6 +120,7 @@ export function computeIncome(
       const yearsElapsed = year - inflateFrom;
       amount = inc.annualAmount * Math.pow(1 + inc.growthRate, yearsElapsed);
     }
+    amount *= gate.factor;
     const key = incomeTypeToKey[inc.type];
     result[key] += amount;
     result.bySource[inc.id] = amount;

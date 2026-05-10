@@ -1,5 +1,6 @@
 import type { Account, ClientInfo, FamilyMember, SavingsRule } from "./types";
 import { controllingFamilyMember } from "./ownership";
+import { itemProrationGate } from "./retirement-proration";
 import type { TaxYearParameters } from "../lib/tax/types";
 
 /** 401(k) / 403(b) family of payroll-deduction retirement accounts. The IRS
@@ -151,7 +152,12 @@ export function applyContributionLimits(input: ApplyLimitsInput): ApplyLimitsRes
   }
   const buckets = new Map<string, Bucket>();
   for (const rule of rules) {
-    if (year < rule.startYear || year > rule.endYear) continue;
+    // Inclusion (not factor): proration of the contribution itself happens in
+    // applySavingsRules. Here we only need end-at-retirement rules to remain
+    // in their bucket during the retirement year so a same-bucket pair (one
+    // ending at retirement, one starting at retirement) doesn't over-cap.
+    const gate = itemProrationGate(rule, year, client);
+    if (!gate.include) continue;
     if (rule.applyContributionLimit === false) continue;
     const acct = accountById.get(rule.accountId);
     if (!acct) continue;

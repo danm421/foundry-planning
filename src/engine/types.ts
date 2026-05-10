@@ -445,11 +445,17 @@ export interface ClientInfo {
   lastName: string;
   dateOfBirth: string;
   retirementAge: number;
+  /** Calendar month (1-12) of retirement start. Used to pro-rate
+   *  retirement-linked income/expense items in the retirement year.
+   *  Default 1 (January) → no proration, legacy whole-year behavior. */
+  retirementMonth?: number;
   planEndAge: number;
   lifeExpectancy?: number;
   spouseName?: string;
   spouseDob?: string;
   spouseRetirementAge?: number;
+  /** Spouse equivalent of retirementMonth. */
+  spouseRetirementMonth?: number;
   spouseLifeExpectancy?: number | null;
   filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household";
 }

@@ -227,12 +227,14 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
     lastName: effectiveClient.lastName,
     dateOfBirth: effectiveClient.dateOfBirth,
     retirementAge: effectiveClient.retirementAge,
+    retirementMonth: client.retirementMonth ?? 1,
     lifeExpectancy: effectiveClient.lifeExpectancy ?? client.lifeExpectancy,
     filingStatus: effectiveClient.filingStatus,
     spouseName: effectiveClient.spouseName ?? null,
     spouseLastName: client.spouseLastName ?? null,
     spouseDob: effectiveClient.spouseDob ?? null,
     spouseRetirementAge: effectiveClient.spouseRetirementAge ?? null,
+    spouseRetirementMonth: client.spouseRetirementMonth ?? null,
     spouseLifeExpectancy: effectiveClient.spouseLifeExpectancy ?? null,
   };
 

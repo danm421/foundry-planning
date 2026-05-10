@@ -1,5 +1,5 @@
 // src/engine/entity-cashflow.ts
-import type { ProjectionYear, Income, Expense, EntityFlowMode, EntityFlowOverride } from "./types";
+import type { ProjectionYear, Income, Expense, EntityFlowMode, EntityFlowOverride, ClientInfo } from "./types";
 import { resolveEntityFlows } from "./entity-flows";
 import { accrueLockedEntityShare } from "./locked-shares";
 import type { trustSubTypeEnum } from "@/db/schema";
@@ -94,6 +94,10 @@ export interface ComputeEntityCashFlowInput {
    *  Pass-through to resolveEntityFlowAmount so the business branch picks
    *  up Schedule-grid edits the same way the engine does. */
   entityFlowOverrides: EntityFlowOverride[];
+  /** Optional. When supplied, the no-override growth-mode fallback in
+   *  resolveEntityFlowAmount applies retirement-month proration so the
+   *  cashflow report matches the engine's per-row crediting. */
+  client?: ClientInfo;
 }
 
 /**
@@ -241,6 +245,7 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
           year.year,
           input.entityFlowOverrides,
           flowMode,
+          input.client,
         );
 
         // Annual distribution = sum of |entity_distribution| debits on entity-owned
