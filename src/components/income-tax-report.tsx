@@ -136,6 +136,8 @@ export default function IncomeTaxReport({ clientId }: Props) {
                 });
               }
             }}
+            onIncomeCellClick={() => {}}
+            onBracketCellClick={() => {}}
             yearRange={yearRange}
             onYearRangeChange={setYearRange}
             planStartYear={planStartYear}

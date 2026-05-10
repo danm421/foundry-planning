@@ -18,8 +18,8 @@ interface TaxDetailViewProps {
   activeTab: TaxDetailTabId;
   years: ProjectionYear[];
   onYearClick: (year: ProjectionYear) => void;
-  onCellClick?: (year: ProjectionYear, columnKey: string) => void;
-  onBracketCellClick?: (year: number, columnKey: "conversionGross" | "conversionTaxable" | "intoBracket") => void;
+  onIncomeCellClick: (year: ProjectionYear, columnKey: string) => void;
+  onBracketCellClick: (year: number, columnKey: "conversionGross" | "conversionTaxable" | "intoBracket") => void;
   yearRange: [number, number];
   onYearRangeChange: (next: [number, number]) => void;
   planStartYear: number;
@@ -33,7 +33,7 @@ export function TaxDetailView({
   activeTab,
   years,
   onYearClick,
-  onCellClick,
+  onIncomeCellClick,
   onBracketCellClick,
   yearRange,
   onYearRangeChange,
@@ -63,7 +63,7 @@ export function TaxDetailView({
         <TaxDetailIncomeTable
           years={years}
           onYearClick={onYearClick}
-          onCellClick={onCellClick ?? (() => {})}
+          onCellClick={onIncomeCellClick}
           clientLifeExpectancy={clientLifeExpectancy}
           spouseLifeExpectancy={spouseLifeExpectancy}
         />
@@ -77,7 +77,7 @@ export function TaxDetailView({
         />
       )}
       {activeTab === "bracket" && (
-        <TaxBracketTab years={years} onCellClick={onBracketCellClick ?? (() => {})} />
+        <TaxBracketTab years={years} onCellClick={onBracketCellClick} />
       )}
     </>
   );
