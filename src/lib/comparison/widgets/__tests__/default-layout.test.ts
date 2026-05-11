@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { getDefaultLayout } from "../default-layout";
 
 describe("getDefaultLayout", () => {
-  it("returns the 11 canonical kinds in canonical order", () => {
+  it("returns the 19 canonical kinds in canonical order", () => {
     const layout = getDefaultLayout();
     expect(layout.version).toBe(3);
     expect(layout.items.map((i) => i.kind)).toEqual([
@@ -17,6 +17,14 @@ describe("getDefaultLayout", () => {
       "income-expense",
       "withdrawal-source",
       "year-by-year",
+      "ss-income",
+      "allocation-drift",
+      "tax-bracket-fill",
+      "roth-ladder",
+      "rmd-schedule",
+      "charitable-impact",
+      "decade-summary",
+      "cash-flow-gap",
     ]);
   });
 

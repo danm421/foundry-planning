@@ -28,7 +28,7 @@ describe("loadLayout", () => {
     mockSelect([]);
     const layout = await loadLayout("client-1", "firm-1");
     expect(layout.version).toBe(3);
-    expect(layout.items.length).toBe(11);
+    expect(layout.items.length).toBe(19);
   });
 
   it("loads a v1 layout as v3 with yearRange: null (legacy passthrough, hidden dropped)", async () => {
@@ -101,7 +101,7 @@ describe("loadLayout", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     mockSelect([{ layout: { version: 1, items: [{ kind: "not-a-real-kind" }] } }]);
     const layout = await loadLayout("client-1", "firm-1");
-    expect(layout.items.length).toBe(11);
+    expect(layout.items.length).toBe(19);
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });

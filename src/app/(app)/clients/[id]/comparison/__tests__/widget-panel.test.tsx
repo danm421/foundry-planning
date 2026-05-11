@@ -51,6 +51,14 @@ vi.mock("@/lib/comparison/widgets/registry", () => {
       "income-expense": make("income-expense", "Income vs Expense"),
       "withdrawal-source": make("withdrawal-source", "Withdrawal Source"),
       "year-by-year": make("year-by-year", "Year-by-year"),
+      "ss-income": make("ss-income", "Social Security Income"),
+      "allocation-drift": make("allocation-drift", "Asset Allocation Drift"),
+      "tax-bracket-fill": make("tax-bracket-fill", "Tax Bracket Fill"),
+      "roth-ladder": make("roth-ladder", "Roth Conversion Ladder"),
+      "rmd-schedule": make("rmd-schedule", "RMD Schedule"),
+      "charitable-impact": make("charitable-impact", "Charitable Impact"),
+      "decade-summary": make("decade-summary", "Decade Summary"),
+      "cash-flow-gap": make("cash-flow-gap", "Cash-Flow Gap Years"),
     },
   };
 });
@@ -75,12 +83,12 @@ describe("WidgetPanel", () => {
     const available = Array.from(
       container.querySelectorAll("[data-available-kind]"),
     ).map((el) => el.getAttribute("data-available-kind"));
-    // 12 kinds total; 3 in layout (portfolio, monte-carlo, text); text is never in Available.
+    // 20 kinds total; 3 in layout (portfolio, monte-carlo, text); text is never in Available.
     expect(available).toContain("kpi-strip");
     expect(available).toContain("longevity");
     expect(available).not.toContain("portfolio");
     expect(available).not.toContain("text");
-    expect(available).toHaveLength(9);
+    expect(available).toHaveLength(17);
   });
 
   it("clicking an available row calls api.add(kind)", () => {

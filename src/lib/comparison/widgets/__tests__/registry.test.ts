@@ -26,5 +26,13 @@ describe("COMPARISON_WIDGETS registry", () => {
     expect(COMPARISON_WIDGETS["income-expense"].needsMc).toBe(false);
     expect(COMPARISON_WIDGETS["withdrawal-source"].needsMc).toBe(false);
     expect(COMPARISON_WIDGETS["year-by-year"].needsMc).toBe(false);
+    expect(COMPARISON_WIDGETS["ss-income"].needsMc).toBe(false);
+    expect(COMPARISON_WIDGETS["allocation-drift"].needsMc).toBe(false);
+    expect(COMPARISON_WIDGETS["tax-bracket-fill"].needsMc).toBe(false);
+    expect(COMPARISON_WIDGETS["roth-ladder"].needsMc).toBe(false);
+    expect(COMPARISON_WIDGETS["rmd-schedule"].needsMc).toBe(false);
+    expect(COMPARISON_WIDGETS["charitable-impact"].needsMc).toBe(false);
+    expect(COMPARISON_WIDGETS["decade-summary"].needsMc).toBe(false);
+    expect(COMPARISON_WIDGETS["cash-flow-gap"].needsMc).toBe(false);
   });
 });

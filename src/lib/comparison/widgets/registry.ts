@@ -12,6 +12,14 @@ import { textWidget } from "./text";
 import { incomeExpenseWidget } from "./income-expense";
 import { withdrawalSourceWidget } from "./withdrawal-source";
 import { yearByYearWidget } from "./year-by-year";
+import { ssIncomeWidget } from "./ss-income";
+import { allocationDriftWidget } from "./allocation-drift";
+import { taxBracketFillWidget } from "./tax-bracket-fill";
+import { rothLadderWidget } from "./roth-ladder";
+import { rmdScheduleWidget } from "./rmd-schedule";
+import { charitableImpactWidget } from "./charitable-impact";
+import { decadeSummaryWidget } from "./decade-summary";
+import { cashFlowGapWidget } from "./cash-flow-gap";
 
 export const COMPARISON_WIDGETS: Record<
   ComparisonWidgetKind,
@@ -29,4 +37,12 @@ export const COMPARISON_WIDGETS: Record<
   "income-expense": incomeExpenseWidget,
   "withdrawal-source": withdrawalSourceWidget,
   "year-by-year": yearByYearWidget,
+  "ss-income": ssIncomeWidget,
+  "allocation-drift": allocationDriftWidget,
+  "tax-bracket-fill": taxBracketFillWidget,
+  "roth-ladder": rothLadderWidget,
+  "rmd-schedule": rmdScheduleWidget,
+  "charitable-impact": charitableImpactWidget,
+  "decade-summary": decadeSummaryWidget,
+  "cash-flow-gap": cashFlowGapWidget,
 };

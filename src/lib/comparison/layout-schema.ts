@@ -13,6 +13,14 @@ export const WIDGET_KINDS = [
   "income-expense",
   "withdrawal-source",
   "year-by-year",
+  "ss-income",
+  "allocation-drift",
+  "tax-bracket-fill",
+  "roth-ladder",
+  "rmd-schedule",
+  "charitable-impact",
+  "decade-summary",
+  "cash-flow-gap",
 ] as const;
 export type ComparisonWidgetKind = (typeof WIDGET_KINDS)[number];
 
