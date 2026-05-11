@@ -24,6 +24,8 @@ export interface CellDrillContext {
   accountNames: Record<string, string>;
   incomes: ClientData["incomes"];
   accounts: Account[];
+  /** Optional entity-id → display-name map for `entity_passthrough:<id>` keys. */
+  entityNames?: Record<string, string>;
 }
 
 export interface CellDrillRow {

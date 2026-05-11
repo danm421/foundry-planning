@@ -257,6 +257,72 @@ describe("Non-trust business entity-account realization → household tax detail
   });
 });
 
+describe("Grantor non-trust entity: schedule-mode tax uses net income, not raw base row", () => {
+  // Regression: a grantor LLC in flowMode "schedule" with an outdated
+  // inc.annualAmount used to leak that raw amount into household
+  // taxDetail.ordinaryIncome (because the household-tax loop bypassed
+  // resolveEntityFlowAmount). Grantor non-trust entities now route through
+  // the Phase 3 K-1 incidence block, which uses resolveEntityFlows and
+  // therefore respects the schedule grid + subtracts entity expenses.
+  it("uses (gross − expense) from schedule grid, not inc.annualAmount", () => {
+    const grantorLlc: EntitySummary = {
+      id: "llc-g",
+      name: "Grantor LLC",
+      includeInPortfolio: true,
+      isGrantor: true,
+      entityType: "llc",
+      taxTreatment: "ordinary",
+      flowMode: "schedule",
+      distributionPolicyPercent: 0,
+      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const grantorChecking: Account = {
+      id: "llc-g-checking",
+      name: "Grantor LLC Checking",
+      category: "cash",
+      subType: "checking",
+      value: 0,
+      basis: 0,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "llc-g", percent: 1 }],
+    };
+    // The base row's annualAmount is stale ($39,999) — it should be ignored
+    // in schedule mode. The schedule grid drives the calculation.
+    const staleBaseRow: Income = {
+      id: "stale",
+      type: "business",
+      name: "Old base row",
+      annualAmount: 39_999,
+      startYear: 2026,
+      endYear: 2050,
+      growthRate: 0.03,
+      owner: "client",
+      ownerEntityId: "llc-g",
+    };
+    const data: ClientData = {
+      ...mkData(),
+      accounts: [hhChecking, grantorChecking],
+      incomes: [staleBaseRow],
+      entities: [grantorLlc],
+      entityFlowOverrides: [
+        { entityId: "llc-g", year: 2026, incomeAmount: 10_000, expenseAmount: 1_000, distributionPercent: 0 },
+      ],
+    };
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // Net = $10k − $1k = $9k. Must NOT pick up the stale $39,999.
+    expect(y0.taxDetail!.ordinaryIncome).toBeCloseTo(9_000, 0);
+    expect(y0.taxDetail!.bySource["entity_passthrough:llc-g"]).toEqual({
+      type: "ordinary_income",
+      amount: 9_000,
+    });
+    // The stale base row id must NOT have leaked into bySource.
+    expect(y0.taxDetail!.bySource["stale"]).toBeUndefined();
+  });
+});
+
 describe("LLC outside-basis bump on retained earnings (Section C)", () => {
   it("non-grantor LLC with $50k net income retained: endingBasis bumps by $50k", () => {
     // 0% distribution → $50k retained. Outside basis must increase by the

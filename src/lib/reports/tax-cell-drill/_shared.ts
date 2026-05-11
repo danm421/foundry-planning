@@ -28,7 +28,8 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
   }
   if (sourceId.startsWith("entity_passthrough:")) {
     const e = sourceId.slice("entity_passthrough:".length);
-    return `Entity pass-through (${e})`;
+    const name = ctx.entityNames?.[e];
+    return name ? `${name} — K-1` : `Entity pass-through (${e})`;
   }
   if (sourceId.startsWith("clut_recapture:")) {
     return `CLUT recapture (${sourceId.slice("clut_recapture:".length)})`;

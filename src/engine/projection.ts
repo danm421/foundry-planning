@@ -609,6 +609,13 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // 1. Compute income breakdowns. Household and grantor-trust streams are kept
     // separate because grantor income flows to the entity checking but is still
     // taxable at the household rate.
+    //
+    // Grantor BUSINESS entities (non-trust) are NOT in grantorIncome: their
+    // K-1 incidence is computed by the Phase 3 block below from net income
+    // (gross − entity expenses) via resolveEntityFlows, which is the only
+    // path that respects schedule-mode flowMode overrides and matches the
+    // entity-cashflow display. Including them here would double-count and
+    // use raw inc.annualAmount (ignoring the schedule grid).
     const income = computeIncome(
       currentIncomes,
       year,
@@ -619,7 +626,11 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       currentIncomes,
       year,
       client,
-      (inc) => inc.ownerEntityId != null && isGrantorEntity(inc.ownerEntityId)
+      (inc) => {
+        if (inc.ownerEntityId == null) return false;
+        if (!isGrantorEntity(inc.ownerEntityId)) return false;
+        return entityMap[inc.ownerEntityId]?.entityType === "trust";
+      }
     );
 
     // 2. Household expenses (entity-owned expenses are paid by the entity).
@@ -1261,7 +1272,14 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     for (const inc of currentIncomes) {
       const incGate = itemProrationGate(inc, year, data.client);
       if (!incGate.include) continue;
-      if (inc.ownerEntityId != null && !isGrantorEntity(inc.ownerEntityId)) continue;
+      if (inc.ownerEntityId != null) {
+        // Non-grantor entity rows → handled below (Phase 3 K-1 incidence for
+        // non-trust; trust-tax pass for trust). Grantor BUSINESS entity rows
+        // also flow through Phase 3 K-1 below — only grantor trust rows fall
+        // through to the household 1040 here.
+        if (!isGrantorEntity(inc.ownerEntityId)) continue;
+        if (entityMap[inc.ownerEntityId]?.entityType !== "trust") continue;
+      }
       if (inc.type === "social_security") continue;
       const inflateFrom = inc.inflationStartYear ?? inc.startYear;
       const amount = inc.annualAmount * Math.pow(1 + inc.growthRate, year - inflateFrom) * incGate.factor;
@@ -1294,10 +1312,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Bracket mode reads taxDetail directly, so both modes are covered.
     for (const entity of currentEntities) {
       if (entity.entityType === "trust") continue;
-      // Grantor business entities already flow through the household path
-      // (computeIncome's grantor filter + the household-tax loop above include
-      // them in taxDetail/taxableIncome). Skipping here prevents double-counting.
-      if (entity.isGrantor) continue;
+      // Grantor and non-grantor non-trust entities both flow through here:
+      // net income (gross − entity expenses) is the K-1 amount, which is
+      // the only correct value when an entity is in schedule mode (the
+      // raw inc.annualAmount on a base income row is no longer authoritative
+      // once entityFlowOverrides supply per-year cells). The grantorIncome
+      // filter above excludes non-trust entities for the same reason.
       const netIncome = computeBusinessEntityNetIncome(
         entity.id,
         currentIncomes,

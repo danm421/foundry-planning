@@ -207,6 +207,13 @@ export default function IncomeTaxReport({ clientId }: Props) {
           totalTaxes={taxDrill.totalTaxes}
           accountNames={accountNames}
           incomes={clientData?.incomes ?? []}
+          entityNames={(clientData?.entities ?? []).reduce<Record<string, string>>(
+            (acc, e) => {
+              if (e.name) acc[e.id] = e.name;
+              return acc;
+            },
+            {},
+          )}
           onClose={() => setTaxDrill(null)}
         />
       )}

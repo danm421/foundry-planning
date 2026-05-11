@@ -10,6 +10,7 @@ interface TaxDrillDownModalProps {
   totalTaxes: number;
   accountNames: Record<string, string>;
   incomes: ClientData["incomes"];
+  entityNames?: Record<string, string>;
   onClose: () => void;
 }
 
@@ -19,6 +20,7 @@ export function TaxDrillDownModal({
   totalTaxes,
   accountNames,
   incomes,
+  entityNames,
   onClose,
 }: TaxDrillDownModalProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -56,7 +58,7 @@ export function TaxDrillDownModal({
                 .filter(([, v]) => v.type === row.taxType)
                 .map(([sourceId, v]) => ({
                   id: sourceId,
-                  label: resolveSourceLabel(sourceId, { accountNames, incomes, accounts: [] }),
+                  label: resolveSourceLabel(sourceId, { accountNames, incomes, accounts: [], entityNames }),
                   amount: v.amount,
                 }))
                 .sort((a, b) => b.amount - a.amount);

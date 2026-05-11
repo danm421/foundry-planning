@@ -395,11 +395,13 @@ describe("Phase 3: trust regression — taxTreatment ignored", () => {
 });
 
 describe("Phase 3: isGrantor=true business entity regression", () => {
-  it("isGrantor=true LLC: Phase 3 does not fire (uses grantor path instead)", () => {
+  it("isGrantor=true LLC: Phase 3 K-1 incidence fires (single-pass tax)", () => {
     // The "Pass-through taxation" checkbox on business-form.tsx sets isGrantor=true.
-    // The existing grantor pipeline already adds the entity's income to
-    // taxDetail/taxableIncome via computeIncome's grantor filter. Phase 3 must
-    // skip such entities to avoid double-counting.
+    // Grantor non-trust entities now flow through Phase 3 K-1 (same path as
+    // non-grantor) so the household 1040 sees net income (income − expenses)
+    // resolved via resolveEntityFlows — which is the only path that respects
+    // entity flowMode "schedule" overrides. The grantorIncome filter excludes
+    // non-trust entities to prevent double-counting.
     const data = mkData({ entity: { isGrantor: true } });
     const noIncomeData = mkData({ entity: { isGrantor: true }, incomes: [] });
 
@@ -412,9 +414,12 @@ describe("Phase 3: isGrantor=true business entity regression", () => {
     expect(taxDelta).toBeGreaterThan(20_000);
     expect(taxDelta).toBeLessThan(40_000);
 
-    // Phase 3 bySource entry should be ABSENT (Phase 3 skipped this entity).
+    // Phase 3 K-1 bySource entry is now PRESENT for grantor LLCs too.
     const y0 = runProjection(data)[0];
-    expect(y0.taxDetail!.bySource["entity_passthrough:llc1"]).toBeUndefined();
+    expect(y0.taxDetail!.bySource["entity_passthrough:llc1"]).toEqual({
+      type: "ordinary_income",
+      amount: 100_000,
+    });
   });
 });
 
