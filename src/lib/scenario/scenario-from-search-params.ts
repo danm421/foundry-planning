@@ -11,6 +11,7 @@
 //   - toggles=g1,g2     → toggle group ids; only honored on the right side
 import type { ScenarioRef } from "@/lib/scenario/loader";
 import type { ToggleState } from "@/engine/scenario/types";
+import { MAX_PLANS } from "@/lib/comparison/series-palette";
 
 export function parseCompareSearchParams(
   sp: Record<string, string | undefined>,
@@ -92,4 +93,46 @@ export function refFromString(
     id: side,
     toggleState: which === "right" ? toggleState : {},
   };
+}
+
+/**
+ * Parse the multi-scenario URL param `?plans=<ref0>,<ref1>,...`.
+ *
+ * - Each entry uses the same token grammar as `parseCompareSearchParams`:
+ *   `base` | `<scenarioId>` | `snap:<snapshotId>`.
+ * - Result is clamped to at most `MAX_PLANS` (4) entries.
+ * - Result is padded to at least 2 entries by appending the base case.
+ * - Toggles are not yet wired into multi-scenario; toggleState is `{}` per entry.
+ * - If `plans` is missing, falls back to the legacy `?left=&right=` shape.
+ * - If neither is present, returns `[base, base]`.
+ */
+export function parsePlansSearchParam(
+  sp: Record<string, string | undefined>,
+): ScenarioRef[] {
+  const raw = sp.plans;
+  let tokens: string[];
+  if (raw && raw.length > 0) {
+    tokens = raw.split(",").map((t) => t.trim()).filter(Boolean);
+  } else if (sp.left !== undefined || sp.right !== undefined) {
+    tokens = [sp.left ?? "base", sp.right ?? "base"];
+  } else {
+    tokens = ["base", "base"];
+  }
+  // Clamp upper bound, pad lower bound.
+  if (tokens.length > MAX_PLANS) tokens = tokens.slice(0, MAX_PLANS);
+  while (tokens.length < 2) tokens.push("base");
+  return tokens.map((tok) => parsePlansToken(tok));
+}
+
+function parsePlansToken(tok: string): ScenarioRef {
+  if (!tok || tok === "base") {
+    return { kind: "scenario", id: "base", toggleState: {} };
+  }
+  if (tok.startsWith("snap:")) {
+    // `side` is part of the snapshot ref shape; multi-scenario does not have
+    // a meaningful left/right axis, so default to "left" — the snapshot loader
+    // uses this only as a tie-breaker for parallel-snapshot scenarios.
+    return { kind: "snapshot", id: tok.slice("snap:".length), side: "left" };
+  }
+  return { kind: "scenario", id: tok, toggleState: {} };
 }

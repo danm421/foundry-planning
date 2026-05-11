@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseCompareSearchParams,
   parseEstateCompareSearchParams,
+  parsePlansSearchParam,
 } from "../scenario-from-search-params";
 
 describe("parseCompareSearchParams", () => {
@@ -71,5 +72,65 @@ describe("parseEstateCompareSearchParams", () => {
     });
     expect(left).toEqual({ kind: "snapshot", id: "s1", side: "left" });
     expect(right).toEqual({ kind: "scenario", id: "base", toggleState: {} });
+  });
+});
+
+describe("parsePlansSearchParam", () => {
+  it("defaults to [base, base] when neither plans nor legacy params are present", () => {
+    const refs = parsePlansSearchParam({});
+    expect(refs).toHaveLength(2);
+    expect(refs[0]).toEqual({ kind: "scenario", id: "base", toggleState: {} });
+    expect(refs[1]).toEqual({ kind: "scenario", id: "base", toggleState: {} });
+  });
+
+  it("parses a 4-entry plans param in order", () => {
+    const refs = parsePlansSearchParam({ plans: "base,sid_a,snap:s_b,sid_c" });
+    expect(refs).toHaveLength(4);
+    expect(refs[0]).toMatchObject({ kind: "scenario", id: "base" });
+    expect(refs[1]).toMatchObject({ kind: "scenario", id: "sid_a" });
+    expect(refs[2]).toMatchObject({ kind: "snapshot", id: "s_b" });
+    expect(refs[3]).toMatchObject({ kind: "scenario", id: "sid_c" });
+  });
+
+  it("clamps plans with 5+ entries to the first 4", () => {
+    const refs = parsePlansSearchParam({ plans: "base,a,b,c,d,e" });
+    expect(refs).toHaveLength(4);
+    expect(refs.map((r) => (r.kind === "scenario" ? r.id : `snap:${r.id}`))).toEqual([
+      "base",
+      "a",
+      "b",
+      "c",
+    ]);
+  });
+
+  it("pads a 1-entry plans param up to 2 by appending base", () => {
+    const refs = parsePlansSearchParam({ plans: "sid_a" });
+    expect(refs).toHaveLength(2);
+    expect(refs[0]).toMatchObject({ kind: "scenario", id: "sid_a" });
+    expect(refs[1]).toMatchObject({ kind: "scenario", id: "base" });
+  });
+
+  it("migrates legacy ?left=&right= when plans is absent", () => {
+    const refs = parsePlansSearchParam({ left: "base", right: "sid_x" });
+    expect(refs).toHaveLength(2);
+    expect(refs[0]).toMatchObject({ kind: "scenario", id: "base" });
+    expect(refs[1]).toMatchObject({ kind: "scenario", id: "sid_x" });
+  });
+
+  it("prefers plans over legacy when both are present", () => {
+    const refs = parsePlansSearchParam({
+      plans: "base,sid_a,sid_b",
+      left: "ignored",
+      right: "ignored",
+    });
+    expect(refs).toHaveLength(3);
+    expect(refs[1]).toMatchObject({ kind: "scenario", id: "sid_a" });
+    expect(refs[2]).toMatchObject({ kind: "scenario", id: "sid_b" });
+  });
+
+  it("ignores empty tokens in the plans list", () => {
+    const refs = parsePlansSearchParam({ plans: "base,,sid_a" });
+    expect(refs).toHaveLength(2);
+    expect(refs[1]).toMatchObject({ kind: "scenario", id: "sid_a" });
   });
 });
