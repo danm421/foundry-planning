@@ -1,5 +1,6 @@
 import type { ProjectionResult } from "@/engine";
 import type {
+  Account,
   ClientData,
   DrainAttribution,
   EstateTaxResult,
@@ -12,6 +13,7 @@ import {
   computeInEstateAtYear,
   computeOutOfEstateAtYear,
 } from "@/lib/estate/in-estate-at-year";
+import { isPolicyInForce } from "./insurance-in-force";
 
 export type Ordering = "primaryFirst" | "spouseFirst";
 
@@ -87,6 +89,15 @@ export function buildYearlyEstateReport(
   const charityIds = collectCharityExternalBeneficiaryIds(clientData);
   const giftEvents = clientData.giftEvents ?? [];
 
+  const clientRetirementYear =
+    clientBirthYear != null
+      ? clientBirthYear + clientData.client.retirementAge
+      : null;
+  const spouseRetirementYear =
+    spouseBirthYear != null && clientData.client.spouseRetirementAge != null
+      ? spouseBirthYear + clientData.client.spouseRetirementAge
+      : null;
+
   const rows: YearlyEstateRow[] = [];
   for (const yearRow of projection.years) {
     const ht = yearRow.hypotheticalEstateTax;
@@ -104,6 +115,8 @@ export function buildYearlyEstateReport(
         ageClient: clientBirthYear ? yearRow.year - clientBirthYear : null,
         ageSpouse: spouseBirthYear ? yearRow.year - spouseBirthYear : null,
         ownerNames,
+        clientRetirementYear,
+        spouseRetirementYear,
       }),
     );
   }
@@ -141,6 +154,8 @@ interface RowBuilderArgs {
   ageClient: number | null;
   ageSpouse: number | null;
   ownerNames: { clientName: string; spouseName: string | null };
+  clientRetirementYear: number | null;
+  spouseRetirementYear: number | null;
 }
 
 function buildYearlyRow(args: RowBuilderArgs): YearlyEstateRow {
@@ -155,9 +170,23 @@ function buildYearlyRow(args: RowBuilderArgs): YearlyEstateRow {
     ageClient,
     ageSpouse,
     ownerNames,
+    clientRetirementYear,
+    spouseRetirementYear,
   } = args;
 
+  // Substitute face value for cash surrender value on in-force life-insurance
+  // policies so the hypothetical year-N gross estate matches the Estate Tax
+  // report (which sees face value via prepareLifeInsurancePayouts in the
+  // death-event flow). Ownership weights still apply, so ILIT-held policies
+  // continue to land in heirsAssets rather than gross estate.
   const accountBalances = pyAccountBalances(yearRow);
+  applyLifeInsuranceFaceValue({
+    accountBalances,
+    accounts: clientData.accounts,
+    year: yearRow.year,
+    clientRetirementYear,
+    spouseRetirementYear,
+  });
   const balanceArgs = {
     tree: clientData,
     giftEvents,
@@ -266,6 +295,50 @@ function pyAccountBalances(py: ProjectionYear): Map<string, number> {
     balances.set(accountId, ledger.endingValue);
   }
   return balances;
+}
+
+/** Mutate `accountBalances` in place: for every life-insurance policy that
+ *  would pay out if the insured died in `year`, replace its cash-surrender
+ *  value with its face value. Mirrors the engine's prepareLifeInsurancePayouts
+ *  so the row's gross estate matches what the Estate Tax sub-report shows. */
+function applyLifeInsuranceFaceValue(args: {
+  accountBalances: Map<string, number>;
+  accounts: Account[];
+  year: number;
+  clientRetirementYear: number | null;
+  spouseRetirementYear: number | null;
+}): void {
+  const { accountBalances, accounts, year, clientRetirementYear, spouseRetirementYear } = args;
+  for (const account of accounts) {
+    if (account.category !== "life_insurance" || !account.lifeInsurance) continue;
+    const insuredRetirementYear = resolveInsuredRetirementYear(
+      account,
+      clientRetirementYear,
+      spouseRetirementYear,
+    );
+    if (!isPolicyInForce(account, year, insuredRetirementYear)) continue;
+    accountBalances.set(account.id, account.lifeInsurance.faceValue);
+  }
+}
+
+function resolveInsuredRetirementYear(
+  account: Account,
+  clientRetirementYear: number | null,
+  spouseRetirementYear: number | null,
+): number | null {
+  switch (account.insuredPerson) {
+    case "client":
+      return clientRetirementYear;
+    case "spouse":
+      return spouseRetirementYear;
+    case "joint":
+      // Policy lapses only when BOTH have retired, so use the later year.
+      if (clientRetirementYear == null) return spouseRetirementYear;
+      if (spouseRetirementYear == null) return clientRetirementYear;
+      return Math.max(clientRetirementYear, spouseRetirementYear);
+    default:
+      return null;
+  }
 }
 
 function collectCharityExternalBeneficiaryIds(tree: ClientData): Set<string> {

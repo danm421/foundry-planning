@@ -1,5 +1,6 @@
-import type { ClientData } from "@/engine/types";
+import type { Account, ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine";
+import { isPolicyInForce } from "@/lib/estate/insurance-in-force";
 
 export type BalanceMode = "boy" | "eoy";
 
@@ -31,10 +32,12 @@ export function treeAsOfYear(
   mode: BalanceMode = "eoy",
 ): ClientData {
   const planStartYear = tree.planSettings.planStartYear;
-  if (mode === "boy" && year === planStartYear) return tree;
+  if (mode === "boy" && year === planStartYear) {
+    return overlayLifeInsuranceFaceValue(tree, year);
+  }
 
   const yearRow = withResult.years.find((y) => y.year === year);
-  if (!yearRow) return tree;
+  if (!yearRow) return overlayLifeInsuranceFaceValue(tree, year);
 
   const accounts = tree.accounts.map((a) => {
     const ledger = yearRow.accountLedgers[a.id];
@@ -99,5 +102,63 @@ export function treeAsOfYear(
     return sameYearBoY != null ? { ...l, balance: sameYearBoY } : l;
   });
 
-  return { ...tree, accounts, liabilities };
+  return overlayLifeInsuranceFaceValue({ ...tree, accounts, liabilities }, year);
+}
+
+/** For every in-force life-insurance policy, swap the account's cash-surrender
+ *  value for its face value. Mirrors `prepareLifeInsurancePayouts` in the
+ *  engine so the canvas's IN ESTATE / OUT OF ESTATE columns and the spine's
+ *  per-principal net worth reflect the death benefit — which is what shows up
+ *  in the gross estate on the Estate Tax report. */
+function overlayLifeInsuranceFaceValue(tree: ClientData, year: number): ClientData {
+  const clientRetirementYear = retirementYearFor(
+    tree.client.dateOfBirth,
+    tree.client.retirementAge,
+  );
+  const spouseRetirementYear = retirementYearFor(
+    tree.client.spouseDob,
+    tree.client.spouseRetirementAge,
+  );
+
+  let touched = false;
+  const accounts = tree.accounts.map((a) => {
+    if (a.category !== "life_insurance" || !a.lifeInsurance) return a;
+    const insuredRetirementYear = resolveInsuredRetirementYear(
+      a,
+      clientRetirementYear,
+      spouseRetirementYear,
+    );
+    if (!isPolicyInForce(a, year, insuredRetirementYear)) return a;
+    touched = true;
+    return { ...a, value: a.lifeInsurance.faceValue };
+  });
+  return touched ? { ...tree, accounts } : tree;
+}
+
+function retirementYearFor(
+  dob: string | null | undefined,
+  retirementAge: number | null | undefined,
+): number | null {
+  if (!dob || retirementAge == null) return null;
+  const birthYear = parseInt(dob.slice(0, 4), 10);
+  return Number.isFinite(birthYear) ? birthYear + retirementAge : null;
+}
+
+function resolveInsuredRetirementYear(
+  account: Account,
+  clientRetirementYear: number | null,
+  spouseRetirementYear: number | null,
+): number | null {
+  switch (account.insuredPerson) {
+    case "client":
+      return clientRetirementYear;
+    case "spouse":
+      return spouseRetirementYear;
+    case "joint":
+      if (clientRetirementYear == null) return spouseRetirementYear;
+      if (spouseRetirementYear == null) return clientRetirementYear;
+      return Math.max(clientRetirementYear, spouseRetirementYear);
+    default:
+      return null;
+  }
 }
