@@ -35,7 +35,8 @@ const makePlan = (id: string): ComparisonPlan =>
     liquidityRows: [],
     finalEstate: null,
     panelData: null,
-  }) as ComparisonPlan;
+    ref: { kind: "scenario", id, toggleState: {} } as never,
+  }) as unknown as ComparisonPlan;
 
 describe("useSharedMcRun", () => {
   it("does not fetch when enabled=false", async () => {
