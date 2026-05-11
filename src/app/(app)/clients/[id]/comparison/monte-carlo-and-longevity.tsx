@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ClientData, MonteCarloResult, MonteCarloSummary } from "@/engine";
 import {
   runMonteCarlo,
   summarizeMonteCarlo,
   createReturnEngine,
 } from "@/engine";
 import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
-import { MonteCarloComparisonSection } from "@/components/comparison/monte-carlo-comparison-section";
+import {
+  MonteCarloComparisonSection,
+  type PlanMcData,
+} from "@/components/comparison/monte-carlo-comparison-section";
 import { LongevityComparisonSection } from "@/components/comparison/longevity-comparison-section";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 
@@ -18,31 +20,27 @@ interface Props {
   onMcSuccess?: (planIndex: number, successRate: number) => void;
 }
 
-interface RunPair {
-  plan1Result: MonteCarloResult;
-  plan2Result: MonteCarloResult;
-  plan1Summary: MonteCarloSummary;
-  plan2Summary: MonteCarloSummary;
-  threshold: number;
-}
-
 export function MonteCarloAndLongevity({
   clientId,
   plans,
   onMcSuccess,
 }: Props) {
-  const plan1 = plans[0];
-  const plan2 = plans[1] ?? plans[0];
-  const plan1Tree = plan1.tree;
-  const plan2Tree = plan2.tree;
-  const plan1Label = plan1.label;
-  const plan2Label = plan2.label;
-  const plan1Years = plan1.result.years.map((y) => ({ year: y.year }));
   const [state, setState] = useState<
-    | { status: "loading"; phase: "fetching" | "running"; done: number; total: number }
-    | { status: "ready"; data: RunPair }
+    | {
+        status: "loading";
+        phase: "fetching" | "running";
+        done: number;
+        total: number;
+      }
+    | {
+        status: "ready";
+        data: { perPlan: PlanMcData[]; threshold: number };
+      }
     | { status: "error"; message: string }
   >({ status: "loading", phase: "fetching", done: 0, total: 0 });
+
+  // Build a stable key so the effect doesn't re-run on every parent render.
+  const plansKey = plans.map((p) => p.id).join(",");
 
   useEffect(() => {
     let cancelled = false;
@@ -57,18 +55,20 @@ export function MonteCarloAndLongevity({
           correlation: payload.correlation,
           seed: payload.seed,
         });
-        const accountMixes = new Map(payload.accountMixes.map((a) => [a.accountId, a.mix]));
+        const accountMixes = new Map(
+          payload.accountMixes.map((a) => [a.accountId, a.mix]),
+        );
         const trials = 1000;
-        setState({ status: "loading", phase: "running", done: 0, total: trials * 2 });
-        let plan1Done = 0;
-        let plan2Done = 0;
+        const total = trials * plans.length;
+        setState({ status: "loading", phase: "running", done: 0, total });
+        const dones = new Array(plans.length).fill(0);
         const onTick = () => {
           if (cancelled) return;
           setState({
             status: "loading",
             phase: "running",
-            done: plan1Done + plan2Done,
-            total: trials * 2,
+            done: dones.reduce((a, b) => a + b, 0),
+            total,
           });
         };
         const inputCommon = {
@@ -77,41 +77,34 @@ export function MonteCarloAndLongevity({
           trials,
           requiredMinimumAssetLevel: payload.requiredMinimumAssetLevel,
         };
-        const [plan1Result, plan2Result] = await Promise.all([
-          runMonteCarlo({
-            data: plan1Tree,
-            ...inputCommon,
-            onProgress: (done) => {
-              plan1Done = done;
-              onTick();
-            },
-          }),
-          runMonteCarlo({
-            data: plan2Tree,
-            ...inputCommon,
-            onProgress: (done) => {
-              plan2Done = done;
-              onTick();
-            },
-          }),
-        ]);
+        const results = await Promise.all(
+          plans.map((plan, i) =>
+            runMonteCarlo({
+              data: plan.tree,
+              ...inputCommon,
+              onProgress: (done) => {
+                dones[i] = done;
+                onTick();
+              },
+            }),
+          ),
+        );
         if (cancelled) return;
-        const summarize = (r: MonteCarloResult, tree: ClientData) =>
-          summarizeMonteCarlo(r, {
-            client: tree.client,
-            planSettings: tree.planSettings,
+        const perPlan: PlanMcData[] = results.map((r, i) => ({
+          label: plans[i].label,
+          successRate: r.successRate,
+          result: r,
+          summary: summarizeMonteCarlo(r, {
+            client: plans[i].tree.client,
+            planSettings: plans[i].tree.planSettings,
             startingLiquidBalance: payload.startingLiquidBalance,
-          });
-        const data: RunPair = {
-          plan1Result,
-          plan2Result,
-          plan1Summary: summarize(plan1Result, plan1Tree),
-          plan2Summary: summarize(plan2Result, plan2Tree),
-          threshold: payload.requiredMinimumAssetLevel,
-        };
-        setState({ status: "ready", data });
-        onMcSuccess?.(0, plan1Result.successRate);
-        onMcSuccess?.(1, plan2Result.successRate);
+          }),
+        }));
+        setState({
+          status: "ready",
+          data: { perPlan, threshold: payload.requiredMinimumAssetLevel },
+        });
+        results.forEach((r, i) => onMcSuccess?.(i, r.successRate));
       } catch (e) {
         if (!cancelled) {
           setState({
@@ -124,7 +117,10 @@ export function MonteCarloAndLongevity({
     return () => {
       cancelled = true;
     };
-  }, [clientId, plan1Tree, plan2Tree, onMcSuccess]);
+    // plansKey captures the identity of the plans array by id; onMcSuccess is
+    // referenced inside but a callback identity change shouldn't re-run MC.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, plansKey]);
 
   if (state.status === "loading") {
     return (
@@ -133,6 +129,7 @@ export function MonteCarloAndLongevity({
           phase={state.phase}
           done={state.done}
           total={state.total}
+          planCount={plans.length}
         />
         <SectionSkeleton title="Longevity" />
       </>
@@ -145,28 +142,25 @@ export function MonteCarloAndLongevity({
       </div>
     );
   }
+  const perPlan = state.data.perPlan;
+  const plan1 = perPlan[0];
+  const plan2 = perPlan[1] ?? perPlan[0];
+  const planStartYear =
+    plans[0]?.result.years[0]?.year ?? new Date().getFullYear();
+  const clientBirthYear = plans[0]?.tree.client.dateOfBirth
+    ? parseInt(plans[0].tree.client.dateOfBirth.slice(0, 4), 10) || undefined
+    : undefined;
   return (
     <>
-      <MonteCarloComparisonSection
-        plan1Result={state.data.plan1Result}
-        plan2Result={state.data.plan2Result}
-        plan1Summary={state.data.plan1Summary}
-        plan2Summary={state.data.plan2Summary}
-        plan1Label={plan1Label}
-        plan2Label={plan2Label}
-      />
+      <MonteCarloComparisonSection plansMc={perPlan} />
       <LongevityComparisonSection
-        plan1Matrix={state.data.plan1Result.byYearLiquidAssetsPerTrial}
-        plan2Matrix={state.data.plan2Result.byYearLiquidAssetsPerTrial}
+        plan1Matrix={plan1.result.byYearLiquidAssetsPerTrial}
+        plan2Matrix={plan2.result.byYearLiquidAssetsPerTrial}
         threshold={state.data.threshold}
-        planStartYear={plan1Years[0]?.year ?? new Date().getFullYear()}
-        plan1Label={plan1Label}
-        plan2Label={plan2Label}
-        clientBirthYear={
-          plan1Tree.client.dateOfBirth
-            ? parseInt(plan1Tree.client.dateOfBirth.slice(0, 4), 10) || undefined
-            : undefined
-        }
+        planStartYear={planStartYear}
+        plan1Label={plan1.label}
+        plan2Label={plan2.label}
+        clientBirthYear={clientBirthYear}
       />
     </>
   );
@@ -185,10 +179,12 @@ function MonteCarloLoadingPanel({
   phase,
   done,
   total,
+  planCount,
 }: {
   phase: "fetching" | "running";
   done: number;
   total: number;
+  planCount: number;
 }) {
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
   const trialFmt = new Intl.NumberFormat("en-US");
@@ -206,7 +202,7 @@ function MonteCarloLoadingPanel({
           <div className="mt-1 text-xs text-slate-400">
             {phase === "fetching"
               ? "Fetching return assumptions and account mixes."
-              : `Simulating ${trialFmt.format(total)} trials across both plans. This can take a moment.`}
+              : `Simulating ${trialFmt.format(total)} trials across ${planCount} plan${planCount === 1 ? "" : "s"}. This can take a moment.`}
           </div>
         </div>
         {phase === "running" && total > 0 ? (
