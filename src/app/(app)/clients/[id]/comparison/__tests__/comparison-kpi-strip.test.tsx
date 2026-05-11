@@ -1,113 +1,111 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { ComparisonKpiStrip } from "../comparison-kpi-strip";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 
-function makePlan(opts: {
-  endingNW: number;
-  lifetimeTotal: number;
-  fedEstateTax: number;
-  estateAdmin: number;
-  toHeirs: number;
-  yearsSurvives: number;
-}): ComparisonPlan {
-  // Years all positive so computeYearsPortfolioSurvives counts every one of
-  // them. The final year's portfolioAssets.total is what computeEndingNetWorth
-  // returns. Length therefore equals desired yearsSurvives.
-  const years = Array.from({ length: opts.yearsSurvives }, () => ({
-    year: 2025,
-    portfolioAssets: { total: opts.endingNW || 1 },
-  }));
-  if (years.length > 0) {
-    years[years.length - 1] = {
-      year: 2025,
-      portfolioAssets: { total: opts.endingNW },
-    };
-  }
+function fakePlan(
+  index: number,
+  label: string,
+  overrides: {
+    endingNW?: number;
+    lifetimeTax?: number;
+    toHeirs?: number;
+    estateTax?: number;
+    yearsSurvives?: number;
+  } = {},
+): ComparisonPlan {
+  const years = Array.from(
+    { length: overrides.yearsSurvives ?? 30 },
+    (_, i) => ({ year: 2026 + i, portfolioAssets: { total: 1 } }),
+  );
+  years.push({
+    year: 2026 + (overrides.yearsSurvives ?? 30),
+    portfolioAssets: { total: overrides.endingNW ?? 1_000_000 },
+  });
   return {
-    index: 0,
-    isBaseline: false,
-    ref: { kind: "scenario", id: "x", toggleState: {} },
-    id: "x",
-    label: "X",
-    tree: { client: { firstName: "F", lastName: "L", dateOfBirth: "1970-01-01" } } as never,
+    index,
+    isBaseline: index === 0,
+    ref: { kind: "scenario", id: index === 0 ? "base" : `sid_${index}`, toggleState: {} },
+    id: index === 0 ? "base" : `sid_${index}`,
+    label,
+    tree: {} as never,
     result: {
       years: years as never,
       firstDeathEvent: {
-        federalEstateTax: opts.fedEstateTax,
+        federalEstateTax: overrides.estateTax ?? 0,
         stateEstateTax: 0,
-        estateAdminExpenses: opts.estateAdmin,
+        estateAdminExpenses: 0,
       },
       secondDeathEvent: undefined,
     } as never,
-    lifetime: {
-      total: opts.lifetimeTotal,
-      byBucket: {
-        regularFederalIncomeTax: 0,
-        capitalGainsTax: 0,
-        amtAdditional: 0,
-        niit: 0,
-        additionalMedicare: 0,
-        fica: 0,
-        stateTax: 0,
-      },
-    },
+    lifetime: { total: overrides.lifetimeTax ?? 0, byBucket: {} as never },
     liquidityRows: [],
-    finalEstate: {
-      year: 2050,
-      totalToHeirs: opts.toHeirs,
-      taxesAndExpenses: 0,
-      charity: 0,
-    } as never,
+    finalEstate: { totalToHeirs: overrides.toHeirs ?? 0 } as never,
     panelData: null,
   };
 }
 
-describe("ComparisonKpiStrip", () => {
-  it("renders six tiles with deltas computed from the plans array", () => {
-    const p1 = makePlan({
-      endingNW: 0,
-      lifetimeTotal: 340_000,
-      fedEstateTax: 520_000,
-      estateAdmin: 0,
-      toHeirs: 0,
-      yearsSurvives: 0,
-    });
-    const p2 = makePlan({
-      endingNW: 2_400_000,
-      lifetimeTotal: 0,
-      fedEstateTax: 0,
-      estateAdmin: 0,
-      toHeirs: 1_800_000,
-      yearsSurvives: 5,
-    });
-    const { container } = render(
-      <ComparisonKpiStrip plans={[p1, p2]} mcSuccessByIndex={{ 0: 0.5, 1: 0.62 }} />,
+describe("ComparisonKpiStrip (grid)", () => {
+  it("renders one column per plan at N=2", () => {
+    render(
+      <ComparisonKpiStrip
+        plans={[
+          fakePlan(0, "Base", { endingNW: 1_000_000 }),
+          fakePlan(1, "Roth", { endingNW: 1_200_000 }),
+        ]}
+        mcSuccessByIndex={{}}
+      />,
     );
-    expect(container.textContent).toContain("Ending NW");
-    expect(container.textContent).toContain("MC Success");
-    expect(container.textContent).toContain("Lifetime Tax");
-    expect(container.textContent).toContain("To Heirs");
-    expect(container.textContent).toContain("Estate Tax");
-    expect(container.textContent).toContain("Years Survives");
-    expect(container.textContent).toContain("+$2,400,000");
-    expect(container.textContent).toContain("+12 pts");
-    expect(container.textContent).toContain("−$340,000");
+    expect(screen.getAllByRole("columnheader")).toHaveLength(2);
+    expect(screen.getByText(/^base$/i)).toBeInTheDocument();
+    expect(screen.getByText(/roth/i)).toBeInTheDocument();
   });
 
-  it("shows '…' for the MC tile when no MC success rates have been recorded", () => {
-    const plan = makePlan({
-      endingNW: 0,
-      lifetimeTotal: 0,
-      fedEstateTax: 0,
-      estateAdmin: 0,
-      toHeirs: 0,
-      yearsSurvives: 0,
-    });
-    const { container } = render(
-      <ComparisonKpiStrip plans={[plan, plan]} mcSuccessByIndex={{}} />,
+  it("renders 4 columns at N=4", () => {
+    render(
+      <ComparisonKpiStrip
+        plans={[
+          fakePlan(0, "Base"),
+          fakePlan(1, "A"),
+          fakePlan(2, "B"),
+          fakePlan(3, "C"),
+        ]}
+        mcSuccessByIndex={{}}
+      />,
     );
-    expect(container.textContent).toContain("…");
+    expect(screen.getAllByRole("columnheader")).toHaveLength(4);
+  });
+
+  it("baseline column shows absolute Ending NW; other columns show ±delta", () => {
+    render(
+      <ComparisonKpiStrip
+        plans={[
+          fakePlan(0, "Base", { endingNW: 1_000_000 }),
+          fakePlan(1, "Roth", { endingNW: 1_200_000 }),
+        ]}
+        mcSuccessByIndex={{}}
+      />,
+    );
+    const baselineCol = screen.getByTestId("kpi-col-0");
+    const compareCol = screen.getByTestId("kpi-col-1");
+    expect(within(baselineCol).getByText(/\$1,000,000/)).toBeInTheDocument();
+    expect(within(compareCol).getByText(/\+\$200,000/)).toBeInTheDocument();
+  });
+
+  it("colors delta green when better, rose when worse (per-KPI direction)", () => {
+    render(
+      <ComparisonKpiStrip
+        plans={[
+          fakePlan(0, "Base", { lifetimeTax: 100_000 }),
+          fakePlan(1, "B", { lifetimeTax: 80_000 }),
+        ]}
+        mcSuccessByIndex={{}}
+      />,
+    );
+    // Lower lifetime tax is better → delta of -20k should render in emerald.
+    const compareCol = screen.getByTestId("kpi-col-1");
+    const lifetimeRow = within(compareCol).getByText(/\$20,000/);
+    expect(lifetimeRow.className).toMatch(/emerald/);
   });
 });
