@@ -301,28 +301,30 @@ describe("Phase 3: grantor business distribution + display", () => {
     expect(y0.accountLedgers["llc1-checking"].endingValue).toBeCloseTo(0, 0);
   });
 
-  it("grantor LLC: gross business income surfaces on year.income.business for cashflow display", () => {
-    // Regression: previously `year.income` came from the household-only
-    // computeIncome filter, so a grantor entity's $100k of business income
-    // didn't appear under the cashflow report's "Business" column even
-    // though it was the household's pass-through income.
+  it("grantor LLC: distribution amount (not gross) surfaces on year.income.business for cashflow display", () => {
+    // Cash Flow > Income shows actual cash received from entity distributions,
+    // not gross. Grantor entities default to 100% distributionPolicyPercent
+    // in mkData, so distribution = net income = $100k.
     const data = mkData({ entity: { isGrantor: true } });
     const years = runProjection(data);
     const y0 = years[0];
 
     expect(y0.income.business).toBeCloseTo(100_000, 0);
-    expect(y0.income.bySource["i1"]).toBeCloseTo(100_000, 0);
+    // bySource is keyed by entity id (not income row id) for entity rows.
+    expect(y0.income.bySource["llc1"]).toBeCloseTo(100_000, 0);
+    // Income row id should not appear in bySource for entity-owned rows.
+    expect(y0.income.bySource["i1"]).toBeUndefined();
   });
 
-  it("non-grantor LLC: business income still excluded from year.income.business (unchanged)", () => {
-    // Non-grantor entities keep current behavior — the entity is its own
-    // taxpayer; the distribution arrives on household as `entity_distribution`,
-    // not as household business income.
+  it("non-grantor LLC with 100% distribution: distribution amount surfaces on year.income.business", () => {
+    // Cash Flow display now reflects actual cash received. mkData defaults to
+    // distributionPolicyPercent: 1.0, so distribution = net income = $100k.
     const data = mkData({ entity: { isGrantor: false } });
     const years = runProjection(data);
     const y0 = years[0];
 
-    expect(y0.income.business).toBeCloseTo(0, 0);
+    expect(y0.income.business).toBeCloseTo(100_000, 0);
+    expect(y0.income.bySource["llc1"]).toBeCloseTo(100_000, 0);
   });
 });
 
@@ -505,6 +507,47 @@ describe("Phase 2: per-year distribution % override", () => {
   });
 });
 
+describe("Display: Business column reflects entity distributions", () => {
+  it("non-grantor LLC with 100% distribution: y.income.business equals distribution", () => {
+    // Distribution = net income × 1.0 = $100k. The Business column on Cash Flow >
+    // Income now shows actual cash received by the household, not gross.
+    const data = mkData({ entity: { isGrantor: false, distributionPolicyPercent: 1.0 } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    expect(y0.income.business).toBeCloseTo(100_000, 0);
+  });
+
+  it("non-grantor LLC with 0% distribution: y.income.business is 0", () => {
+    // No distribution → no cash received → Business column shows 0 even though
+    // taxDetail.ordinaryIncome picks up the K-1 net income separately.
+    const data = mkData({ entity: { isGrantor: false, distributionPolicyPercent: 0 } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    expect(y0.income.business).toBeCloseTo(0, 0);
+  });
+
+  it("grantor LLC with 100% distribution: y.income.business equals distribution (not gross)", () => {
+    // Previously grantor-entity gross flowed to display; now display shows the
+    // actual distribution. Gross still flows through grantorIncome for tax.
+    const data = mkData({ entity: { isGrantor: true, distributionPolicyPercent: 1.0 } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    expect(y0.income.business).toBeCloseTo(100_000, 0);
+  });
+
+  it("grantor LLC with 50% distribution: Business column shows distribution only, not gross", () => {
+    const data = mkData({ entity: { isGrantor: true, distributionPolicyPercent: 0.5 } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // Gross is $100k; distribution is 50% of net = $50k. Display shows $50k.
+    expect(y0.income.business).toBeCloseTo(50_000, 0);
+  });
+});
+
 describe("Phase 3: distribution routes to owner's default cash account", () => {
   it("routes to the primary owner's account when multiple household checkings exist", () => {
     // Two non-entity isDefaultChecking accounts. The legacy logic picked the
@@ -563,5 +606,72 @@ describe("Phase 3: distribution routes to owner's default cash account", () => {
     const distEntry = hhEntries.find((e) => e.category === "entity_distribution");
     expect(distEntry).toBeDefined();
     expect(distEntry!.amount).toBeCloseTo(100_000, 0);
+  });
+});
+
+describe("Display: multi-entity Business column aggregation", () => {
+  it("sums distributions from multiple entities plus a household business income row", () => {
+    const llc2: EntitySummary = {
+      id: "llc2",
+      name: "Second LLC",
+      includeInPortfolio: true,
+      isGrantor: false,
+      entityType: "llc",
+      taxTreatment: "ordinary",
+      distributionPolicyPercent: 1.0,
+      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const llc2Income: Income = {
+      id: "i2",
+      type: "business",
+      name: "LLC2 Revenue",
+      annualAmount: 30_000,
+      startYear: 2026,
+      endYear: 2050,
+      growthRate: 0,
+      owner: "client",
+      ownerEntityId: "llc2",
+    };
+    const llc2Checking: Account = {
+      id: "llc2-checking",
+      name: "LLC2 Checking",
+      category: "cash",
+      subType: "checking",
+      value: 0,
+      basis: 0,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "llc2", percent: 1 }],
+      isDefaultChecking: true,
+    };
+    const householdBiz: Income = {
+      id: "i3",
+      type: "business",
+      name: "Sole-Prop Consulting",
+      annualAmount: 25_000,
+      startYear: 2026,
+      endYear: 2050,
+      growthRate: 0,
+      owner: "client",
+      // no ownerEntityId — pure household income
+    };
+
+    const data = mkData();
+    data.accounts = [hhChecking, entityChecking("llc1"), llc2Checking];
+    data.incomes = [llcIncome, llc2Income, householdBiz];
+    data.entities = [llcEntity, llc2];
+
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // llc1 distributes $100k, llc2 distributes $30k, household $25k → $155k.
+    expect(y0.income.business).toBeCloseTo(155_000, 0);
+    // bySource: entity ids for the two entities; income row id for household.
+    expect(y0.income.bySource["llc1"]).toBeCloseTo(100_000, 0);
+    expect(y0.income.bySource["llc2"]).toBeCloseTo(30_000, 0);
+    expect(y0.income.bySource["i3"]).toBeCloseTo(25_000, 0);
+    // Entity income row ids must NOT be in bySource.
+    expect(y0.income.bySource["i1"]).toBeUndefined();
+    expect(y0.income.bySource["i2"]).toBeUndefined();
   });
 });
