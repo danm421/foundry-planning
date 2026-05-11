@@ -1,44 +1,32 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { LiquidityComparisonCharts } from "../liquidity-comparison-charts";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
-import type { YearlyLiquidityRow } from "@/lib/estate/yearly-liquidity-report";
 
-vi.mock("react-chartjs-2", () => ({
-  Chart: ({ data }: { data: { labels: string[] } }) => (
-    <pre data-testid="chart">{JSON.stringify(data.labels)}</pre>
-  ),
+vi.mock("@/components/yearly-liquidity-chart", () => ({
+  YearlyLiquidityChart: () => <div data-testid="liquidity-chart" />,
 }));
-
-const row = (year: number): YearlyLiquidityRow => ({
-  year,
-  ageClient: null,
-  ageSpouse: null,
-  insuranceInEstate: 100,
-  insuranceOutOfEstate: 0,
-  totalInsuranceBenefit: 100,
-  totalPortfolioAssets: 1000,
-  totalTransferCost: 50,
-  surplusDeficitWithPortfolio: 1050,
-  surplusDeficitInsuranceOnly: 50,
-});
 
 function fakePlan(label: string): ComparisonPlan {
   return {
+    index: 0,
+    isBaseline: false,
+    ref: { kind: "scenario", id: "x", toggleState: {} },
+    id: "x",
     label,
-    liquidityRows: [row(2025), row(2026)],
+    tree: {} as never,
+    result: { years: [] } as never,
+    lifetime: { total: 0, byBucket: {} as never },
+    liquidityRows: [],
+    finalEstate: null,
+    panelData: null,
   } as unknown as ComparisonPlan;
 }
 
 describe("LiquidityComparisonCharts", () => {
-  it("renders both plan labels and two charts", () => {
-    const { getByText, getAllByTestId } = render(
-      <LiquidityComparisonCharts plans={[fakePlan("Base"), fakePlan("Proposed")]} />,
-    );
-    expect(getByText("Estate Liquidity")).toBeTruthy();
-    expect(getByText("Base")).toBeTruthy();
-    expect(getByText("Proposed")).toBeTruthy();
-    expect(getAllByTestId("chart")).toHaveLength(2);
+  it("renders one chart per plan", () => {
+    render(<LiquidityComparisonCharts plans={[fakePlan("a"), fakePlan("b"), fakePlan("c")]} />);
+    expect(screen.getAllByTestId("liquidity-chart")).toHaveLength(3);
   });
 });
