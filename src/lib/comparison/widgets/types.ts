@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 import type { z } from "zod";
-import type { ComparisonWidgetKind, YearRange } from "../layout-schema";
+import type { ComparisonWidgetKindV4, YearRange } from "../layout-schema";
 import type { ComparisonPlan } from "../build-comparison-plans";
 import type { PlanMcData } from "@/components/comparison/monte-carlo-comparison-section";
 
-export type { ComparisonWidgetKind };
+/** Re-exported under the legacy name so callers don't need to change imports. */
+export type ComparisonWidgetKind = ComparisonWidgetKindV4;
 
 /** Shared MC fetch + run result, populated by useSharedMcRun.
  *  `null` while loading or when nothing demands MC. */

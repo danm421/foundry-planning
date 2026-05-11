@@ -53,7 +53,8 @@ export type ComparisonLayout = z.infer<typeof ComparisonLayoutSchema>;
 // ---------- v4 ----------
 
 export const WIDGET_KINDS_V4 = [
-  "kpi", // NEW — single-metric tile; replaces kpi-strip in v4 layouts
+  "kpi",        // NEW v4 — single-metric tile
+  "kpi-strip",  // LEGACY — kept for migration; no new v4 layouts should reference it
   "portfolio",
   "monte-carlo",
   "longevity",
