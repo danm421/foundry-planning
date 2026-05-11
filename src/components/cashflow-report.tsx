@@ -2351,7 +2351,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                       { label: "Ordinary Income", amount: ledgerModal.ledger.growthDetail.ordinaryIncome, note: "taxed, +basis" },
                       { label: "Qualified Dividends", amount: ledgerModal.ledger.growthDetail.qualifiedDividends, note: "taxed, +basis" },
                       { label: "ST Capital Gains", amount: ledgerModal.ledger.growthDetail.stCapitalGains, note: "taxed, +basis" },
-                      { label: "LT Capital Gains", amount: ledgerModal.ledger.growthDetail.ltCapitalGains, note: "+value only" },
+                      { label: "LT Capital Gains", amount: ledgerModal.ledger.growthDetail.ltCapitalGains, note: "embedded, +value only" },
                       { label: "Tax-Exempt", amount: ledgerModal.ledger.growthDetail.taxExempt, note: "+basis" },
                     ].filter((r) => r.amount > 0).map((r) => (
                       <div key={r.label} className="flex justify-between">
@@ -2362,6 +2362,31 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                     <div className="flex justify-between border-t border-gray-700 pt-1">
                       <span className="text-gray-300">Basis increase</span>
                       <span className="tabular-nums font-medium text-gray-200">{fmtNum(ledgerModal.ledger.growthDetail.basisIncrease)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {ledgerModal.ledger.withdrawalDetail &&
+                (ledgerModal.ledger.withdrawalDetail.realizedLtcg + ledgerModal.ledger.withdrawalDetail.basisReturn) > 0 && (
+                <div className="rounded-md border border-gray-800 bg-gray-800/30 px-3 py-2">
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                    Withdrawal Tax Treatment
+                  </p>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-300">
+                        Return of basis <span className="text-gray-600 text-xs">(high-basis lots first)</span>
+                      </span>
+                      <span className="tabular-nums text-gray-300">
+                        {fmtNum(ledgerModal.ledger.withdrawalDetail.basisReturn)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-300">Realized LT Capital Gains</span>
+                      <span className="tabular-nums text-gray-300">
+                        {fmtNum(ledgerModal.ledger.withdrawalDetail.realizedLtcg)}
+                      </span>
                     </div>
                   </div>
                 </div>
