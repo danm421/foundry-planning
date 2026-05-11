@@ -23,6 +23,9 @@ vi.mock("@/lib/comparison/widgets/registry", () => {
       "estate-impact": make("estate-impact"),
       "estate-tax": make("estate-tax"),
       text: make("text"),
+      "income-expense": make("income-expense"),
+      "withdrawal-source": make("withdrawal-source"),
+      "year-by-year": make("year-by-year"),
     },
   };
 });
@@ -42,6 +45,7 @@ describe("Comparison page parity", () => {
         initialLayout={getDefaultLayout()}
         customizing={false}
         onExitCustomize={() => {}}
+        yearRange={null}
       />,
     );
 
@@ -57,6 +61,9 @@ describe("Comparison page parity", () => {
       "liquidity",
       "estate-impact",
       "estate-tax",
+      "income-expense",
+      "withdrawal-source",
+      "year-by-year",
     ]);
   });
 });

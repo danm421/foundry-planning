@@ -43,8 +43,8 @@ describe("GET /api/clients/[id]/comparison-layout", () => {
     const res = await GET(new NextRequest("http://localhost/x"), makeParams());
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.layout.version).toBe(1);
-    expect(json.layout.items.length).toBe(8);
+    expect(json.layout.version).toBe(3);
+    expect(json.layout.items.length).toBe(11);
   });
 
   it("404s when the client doesn't belong to the firm", async () => {
@@ -72,7 +72,8 @@ describe("GET /api/clients/[id]/comparison-layout", () => {
 describe("PUT /api/clients/[id]/comparison-layout", () => {
   it("upserts a valid layout", async () => {
     const body = {
-      version: 1,
+      version: 3,
+      yearRange: null,
       items: [
         { instanceId: "11111111-1111-4111-8111-111111111111", kind: "portfolio" },
       ],
@@ -94,7 +95,7 @@ describe("PUT /api/clients/[id]/comparison-layout", () => {
     const res = await PUT(
       new NextRequest("http://localhost/x", {
         method: "PUT",
-        body: JSON.stringify({ version: 1, items: [{ kind: "bogus" }] }),
+        body: JSON.stringify({ version: 3, yearRange: null, items: [{ kind: "bogus" }] }),
       }),
       makeParams(),
     );
@@ -103,11 +104,13 @@ describe("PUT /api/clients/[id]/comparison-layout", () => {
 
   it("replaces an existing layout on second PUT", async () => {
     const body1 = {
-      version: 1,
+      version: 3,
+      yearRange: null,
       items: [{ instanceId: "11111111-1111-4111-8111-111111111111", kind: "portfolio" }],
     };
     const body2 = {
-      version: 1,
+      version: 3,
+      yearRange: null,
       items: [{ instanceId: "22222222-2222-4222-8222-222222222222", kind: "estate-tax" }],
     };
     await PUT(

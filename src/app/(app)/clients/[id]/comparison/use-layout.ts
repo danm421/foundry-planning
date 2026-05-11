@@ -1,22 +1,45 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { arrayMove } from "@dnd-kit/sortable";
 import type {
   ComparisonLayout,
   ComparisonLayoutItem,
+  ComparisonWidgetKind,
+  YearRange,
 } from "@/lib/comparison/layout-schema";
 import { getDefaultLayout } from "@/lib/comparison/widgets/default-layout";
 
 export interface UseLayoutApi {
   layout: ComparisonLayout;
   move: (fromIndex: number, toIndex: number) => void;
-  toggleHidden: (instanceId: string) => void;
-  toggleCollapsed: (instanceId: string) => void;
+  add: (kind: ComparisonWidgetKind, atIndex?: number) => void;
+  remove: (instanceId: string) => void;
+  insertTextAt: (index: number) => void;
   addTextBlock: () => void;
   updateTextMarkdown: (instanceId: string, markdown: string) => void;
+  setYearRange: (next: YearRange | null) => void;
   reset: () => void;
   save: () => Promise<void>;
   saving: boolean;
+}
+
+function makeItem(
+  kind: ComparisonWidgetKind,
+  extra?: Partial<ComparisonLayoutItem>,
+): ComparisonLayoutItem {
+  return {
+    instanceId: crypto.randomUUID(),
+    kind,
+    ...(extra ?? {}),
+  };
+}
+
+function insertAt<T>(arr: T[], index: number, item: T): T[] {
+  const clamped = Math.max(0, Math.min(arr.length, index));
+  const next = [...arr];
+  next.splice(clamped, 0, item);
+  return next;
 }
 
 export function useLayout(initial: ComparisonLayout, clientId: string): UseLayoutApi {
@@ -26,66 +49,69 @@ export function useLayout(initial: ComparisonLayout, clientId: string): UseLayou
   const move = useCallback((fromIndex: number, toIndex: number) => {
     setLayout((prev) => {
       if (fromIndex === toIndex) return prev;
-      const items = [...prev.items];
-      const [moved] = items.splice(fromIndex, 1);
-      items.splice(toIndex, 0, moved);
-      return { ...prev, items };
+      return { ...prev, items: arrayMove(prev.items, fromIndex, toIndex) };
     });
   }, []);
 
-  const updateItem = useCallback(
-    (instanceId: string, patch: Partial<ComparisonLayoutItem>) => {
-      setLayout((prev) => ({
-        ...prev,
-        items: prev.items.map((i) =>
-          i.instanceId === instanceId ? { ...i, ...patch } : i,
-        ),
-      }));
+  const add = useCallback(
+    (kind: ComparisonWidgetKind, atIndex?: number) => {
+      setLayout((prev) => {
+        const item = makeItem(kind);
+        const idx = atIndex ?? prev.items.length;
+        return { ...prev, items: insertAt(prev.items, idx, item) };
+      });
     },
     [],
   );
 
-  const toggleHidden = useCallback(
-    (instanceId: string) =>
-      setLayout((prev) => ({
-        ...prev,
-        items: prev.items.map((i) =>
-          i.instanceId === instanceId ? { ...i, hidden: !i.hidden } : i,
-        ),
-      })),
-    [],
-  );
-
-  const toggleCollapsed = useCallback(
-    (instanceId: string) =>
-      setLayout((prev) => ({
-        ...prev,
-        items: prev.items.map((i) =>
-          i.instanceId === instanceId ? { ...i, collapsed: !i.collapsed } : i,
-        ),
-      })),
-    [],
-  );
-
-  const addTextBlock = useCallback(() => {
+  const remove = useCallback((instanceId: string) => {
     setLayout((prev) => ({
       ...prev,
-      items: [
-        ...prev.items,
-        {
-          instanceId: crypto.randomUUID(),
-          kind: "text",
-          hidden: false,
-          collapsed: false,
-          config: { markdown: "" },
-        },
-      ],
+      items: prev.items.filter((i) => i.instanceId !== instanceId),
     }));
   }, []);
 
+  const insertTextAt = useCallback((index: number) => {
+    setLayout((prev) => {
+      const item = makeItem("text", { config: { markdown: "" } });
+      return { ...prev, items: insertAt(prev.items, index, item) };
+    });
+  }, []);
+
+  const addTextBlock = useCallback(() => {
+    setLayout((prev) => {
+      const item = makeItem("text", { config: { markdown: "" } });
+      return { ...prev, items: insertAt(prev.items, prev.items.length, item) };
+    });
+  }, []);
+
   const updateTextMarkdown = useCallback((instanceId: string, markdown: string) => {
-    updateItem(instanceId, { config: { markdown } });
-  }, [updateItem]);
+    setLayout((prev) => ({
+      ...prev,
+      items: prev.items.map((i) =>
+        i.instanceId === instanceId ? { ...i, config: { markdown } } : i,
+      ),
+    }));
+  }, []);
+
+  const setYearRange = useCallback(
+    (next: YearRange | null) =>
+      setLayout((prev) => {
+        // Same-reference (and same-value for null) bail-out so callers don't
+        // trigger downstream re-renders when nothing changed.
+        if (prev.yearRange === next) return prev;
+        if (
+          prev.yearRange &&
+          next &&
+          prev.yearRange.start === next.start &&
+          prev.yearRange.end === next.end
+        ) {
+          return prev;
+        }
+        return { ...prev, yearRange: next };
+      }),
+    [],
+  );
 
   const reset = useCallback(() => {
     setLayout(getDefaultLayout());
@@ -115,15 +141,32 @@ export function useLayout(initial: ComparisonLayout, clientId: string): UseLayou
     }
   }, [clientId, layout]);
 
-  return {
-    layout,
-    move,
-    toggleHidden,
-    toggleCollapsed,
-    addTextBlock,
-    updateTextMarkdown,
-    reset,
-    save,
-    saving,
-  };
+  return useMemo(
+    () => ({
+      layout,
+      move,
+      add,
+      remove,
+      insertTextAt,
+      addTextBlock,
+      updateTextMarkdown,
+      setYearRange,
+      reset,
+      save,
+      saving,
+    }),
+    [
+      layout,
+      move,
+      add,
+      remove,
+      insertTextAt,
+      addTextBlock,
+      updateTextMarkdown,
+      setYearRange,
+      reset,
+      save,
+      saving,
+    ],
+  );
 }

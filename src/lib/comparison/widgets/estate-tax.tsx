@@ -6,8 +6,7 @@ export const estateTaxWidget: ComparisonWidgetDefinition = {
   kind: "estate-tax",
   title: "Estate Tax",
   needsMc: false,
-  render: ({ plans, clientId, collapsed }) => {
-    if (collapsed) return null;
+  render: ({ plans, clientId }) => {
     return (
       <section className="space-y-4 px-6 py-8">
         <div className="flex flex-wrap items-center justify-between gap-2">

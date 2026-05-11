@@ -1,41 +1,57 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
-import { render } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, fireEvent } from "@testing-library/react";
 import { textWidget } from "../text";
 import type { ComparisonPlan } from "../../build-comparison-plans";
 
-const ctx = (config: unknown) => ({
+const noPlans: ComparisonPlan[] = [];
+const baseCtx = {
+  instanceId: "11111111-1111-4111-8111-111111111111",
   clientId: "c",
-  plans: [] as ComparisonPlan[],
+  plans: noPlans,
   mc: null,
-  collapsed: false,
-  config,
-});
+  yearRange: null,
+};
 
 describe("textWidget", () => {
-  it("renders markdown with bold + lists", () => {
+  it("renders markdown when editing=false", () => {
     const { container } = render(
-      <>{textWidget.render(ctx({ markdown: "Hello **world**\n\n- item 1\n- item 2" }))}</>,
+      <>{textWidget.render({
+        ...baseCtx,
+        editing: false,
+        config: { markdown: "# Heading\n\nBody **bold**" },
+      })}</>,
     );
-    expect(container.querySelector("strong")?.textContent).toBe("world");
-    expect(container.querySelectorAll("li")).toHaveLength(2);
+    expect(container.querySelector("h1")?.textContent).toBe("Heading");
+    expect(container.querySelector("strong")?.textContent).toBe("bold");
   });
 
-  it("renders an empty state when config is missing", () => {
-    const { container } = render(<>{textWidget.render(ctx(undefined))}</>);
-    expect(container.textContent).toContain("Empty text block");
-  });
-
-  it("renders an empty state when markdown is whitespace-only", () => {
-    const { container } = render(
-      <>{textWidget.render(ctx({ markdown: "   \n  " }))}</>,
+  it("shows an empty-state hint when editing=false and markdown is empty", () => {
+    const { getByText } = render(
+      <>{textWidget.render({
+        ...baseCtx,
+        editing: false,
+        config: { markdown: "" },
+      })}</>,
     );
-    expect(container.textContent).toContain("Empty text block");
+    expect(getByText(/Empty text block/i)).toBeTruthy();
   });
 
-  it("returns null when collapsed", () => {
-    const ctxCollapsed = { ...ctx({ markdown: "hi" }), collapsed: true };
-    const { container } = render(<>{textWidget.render(ctxCollapsed)}</>);
-    expect(container.textContent).toBe("");
+  it("renders a textarea when editing=true and calls onTextChange", () => {
+    const onTextChange = vi.fn();
+    const { getByPlaceholderText } = render(
+      <>{textWidget.render({
+        ...baseCtx,
+        editing: true,
+        config: { markdown: "" },
+        onTextChange,
+      })}</>,
+    );
+    const ta = getByPlaceholderText(/markdown/i) as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: "hello" } });
+    expect(onTextChange).toHaveBeenCalledWith(
+      "11111111-1111-4111-8111-111111111111",
+      "hello",
+    );
   });
 });

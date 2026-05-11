@@ -23,5 +23,8 @@ describe("COMPARISON_WIDGETS registry", () => {
     expect(COMPARISON_WIDGETS["estate-impact"].needsMc).toBe(false);
     expect(COMPARISON_WIDGETS["estate-tax"].needsMc).toBe(false);
     expect(COMPARISON_WIDGETS["text"].needsMc).toBe(false);
+    expect(COMPARISON_WIDGETS["income-expense"].needsMc).toBe(false);
+    expect(COMPARISON_WIDGETS["withdrawal-source"].needsMc).toBe(false);
+    expect(COMPARISON_WIDGETS["year-by-year"].needsMc).toBe(false);
   });
 });

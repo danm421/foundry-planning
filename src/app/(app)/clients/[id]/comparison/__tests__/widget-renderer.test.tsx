@@ -11,8 +11,9 @@ vi.mock("@/lib/comparison/widgets/registry", () => {
     kind,
     title: kind,
     needsMc: false,
-    render: ({ collapsed }: { collapsed: boolean }) =>
-      collapsed ? <div data-widget={kind}>collapsed</div> : <div data-widget={kind}>visible</div>,
+    render: ({ editing }: { editing: boolean }) => (
+      <div data-widget={kind} data-editing={String(editing)}>{kind}</div>
+    ),
   });
   return {
     COMPARISON_WIDGETS: {
@@ -25,6 +26,9 @@ vi.mock("@/lib/comparison/widgets/registry", () => {
       "estate-impact": make("estate-impact"),
       "estate-tax": make("estate-tax"),
       text: make("text"),
+      "income-expense": make("income-expense"),
+      "withdrawal-source": make("withdrawal-source"),
+      "year-by-year": make("year-by-year"),
     },
   };
 });
@@ -32,12 +36,13 @@ vi.mock("@/lib/comparison/widgets/registry", () => {
 const id = (n: number) => `0000000${n}-0000-4000-8000-000000000000`;
 
 describe("WidgetRenderer", () => {
-  it("renders all non-hidden widgets in layout order", () => {
+  it("renders all widgets in layout order", () => {
     const layout: ComparisonLayout = {
-      version: 1,
+      version: 3,
+      yearRange: null,
       items: [
-        { instanceId: id(1), kind: "portfolio", hidden: false, collapsed: false },
-        { instanceId: id(2), kind: "estate-tax", hidden: false, collapsed: false },
+        { instanceId: id(1), kind: "portfolio" },
+        { instanceId: id(2), kind: "estate-tax" },
       ],
     };
     const { container } = render(
@@ -46,6 +51,8 @@ describe("WidgetRenderer", () => {
         clientId="c"
         plans={[] as ComparisonPlan[]}
         mc={null}
+        yearRange={null}
+        editing={false}
       />,
     );
     const widgets = container.querySelectorAll("[data-widget]");
@@ -54,40 +61,39 @@ describe("WidgetRenderer", () => {
     expect(widgets[1].getAttribute("data-widget")).toBe("estate-tax");
   });
 
-  it("skips hidden widgets", () => {
+  it("passes editing=true through to each widget when set", () => {
     const layout: ComparisonLayout = {
-      version: 1,
-      items: [
-        { instanceId: id(1), kind: "portfolio", hidden: true, collapsed: false },
-        { instanceId: id(2), kind: "estate-tax", hidden: false, collapsed: false },
-      ],
+      version: 3,
+      yearRange: null,
+      items: [{ instanceId: id(1), kind: "portfolio" }],
     };
     const { container } = render(
-      <WidgetRenderer layout={layout} clientId="c" plans={[]} mc={null} />,
+      <WidgetRenderer
+        layout={layout}
+        clientId="c"
+        plans={[]}
+        mc={null}
+        yearRange={null}
+        editing={true}
+      />,
     );
-    expect(container.querySelectorAll("[data-widget]")).toHaveLength(1);
+    expect(
+      container.querySelector("[data-widget='portfolio']")?.getAttribute("data-editing"),
+    ).toBe("true");
   });
 
-  it("forwards collapsed=true to the widget render fn", () => {
-    const layout: ComparisonLayout = {
-      version: 1,
-      items: [
-        { instanceId: id(1), kind: "portfolio", hidden: false, collapsed: true },
-      ],
-    };
+  it("renders empty-state when the layout has zero items", () => {
+    const layout: ComparisonLayout = { version: 3, yearRange: null, items: [] };
     const { container } = render(
-      <WidgetRenderer layout={layout} clientId="c" plans={[]} mc={null} />,
+      <WidgetRenderer
+        layout={layout}
+        clientId="c"
+        plans={[]}
+        mc={null}
+        yearRange={null}
+        editing={false}
+      />,
     );
-    expect(container.querySelector("[data-widget='portfolio']")?.textContent).toBe(
-      "collapsed",
-    );
-  });
-
-  it("renders empty-state when nothing is visible", () => {
-    const layout: ComparisonLayout = { version: 1, items: [] };
-    const { container } = render(
-      <WidgetRenderer layout={layout} clientId="c" plans={[]} mc={null} />,
-    );
-    expect(container.textContent).toContain("No widgets visible");
+    expect(container.textContent).toContain("No widgets");
   });
 });

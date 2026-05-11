@@ -12,19 +12,36 @@ export const textWidget: ComparisonWidgetDefinition<TextConfig> = {
   needsMc: false,
   configSchema: TextConfigSchema,
   defaultConfig: { markdown: "" },
-  render: ({ config, collapsed }) => {
-    if (collapsed) return null;
+  render: ({ instanceId, config, editing, onTextChange }) => {
     const parsed = TextConfigSchema.safeParse(config);
     const body = parsed.success ? parsed.data.markdown : "";
+
+    if (editing) {
+      return (
+        <section className="px-6 py-3">
+          <textarea
+            className="w-full rounded border border-slate-800 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-200"
+            rows={4}
+            value={body}
+            onChange={(e) => onTextChange?.(instanceId, e.target.value)}
+            placeholder="Type markdown… **bold**, *italic*, - list items"
+            data-text-editor-instance={instanceId}
+            autoFocus={body === ""}
+          />
+        </section>
+      );
+    }
+
     if (body.trim() === "") {
       return (
         <section className="px-6 py-4">
           <div className="rounded border border-dashed border-slate-800 px-4 py-3 text-xs italic text-slate-500">
-            Empty text block — open Customize to add content.
+            Empty text block — open the Widget panel to add content.
           </div>
         </section>
       );
     }
+
     return (
       <section className="prose prose-invert prose-sm max-w-none px-6 py-4">
         <ReactMarkdown

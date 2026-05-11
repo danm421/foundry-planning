@@ -10,6 +10,8 @@ import type {
 import type { ComparisonChangesDrawerPlan } from "./comparison-changes-drawer";
 import { ComparisonPickerBar } from "./comparison-picker-bar";
 import { ComparisonShell } from "./comparison-shell";
+import { YearRangeBar } from "./year-range-bar";
+import { useYearRange } from "./use-year-range";
 
 interface Props {
   clientId: string;
@@ -20,6 +22,12 @@ interface Props {
   drawerPlans: ComparisonChangesDrawerPlan[];
 }
 
+function parseBirthYear(dateOfBirth: string | undefined): number | undefined {
+  if (!dateOfBirth) return undefined;
+  const yr = parseInt(dateOfBirth.slice(0, 4), 10);
+  return Number.isFinite(yr) ? yr : undefined;
+}
+
 export function ComparisonPageClient({
   clientId,
   plans,
@@ -28,7 +36,15 @@ export function ComparisonPageClient({
   snapshots,
   drawerPlans,
 }: Props) {
-  const [customizing, setCustomizing] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+
+  const yr = useYearRange({
+    plans,
+    initialYearRange: initialLayout.yearRange,
+  });
+
+  const clientBirthYear = parseBirthYear(plans[0]?.tree.client?.dateOfBirth);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
       <ComparisonPickerBar
@@ -36,15 +52,24 @@ export function ComparisonPageClient({
         scenarios={scenarios}
         snapshots={snapshots}
         drawerPlans={drawerPlans}
-        customizing={customizing}
-        onToggleCustomize={() => setCustomizing((v) => !v)}
+        customizing={panelOpen}
+        onToggleCustomize={() => setPanelOpen((v) => !v)}
+      />
+      <YearRangeBar
+        yearRange={yr.yearRange}
+        min={yr.min}
+        max={yr.max}
+        clientBirthYear={clientBirthYear}
+        onChange={yr.setYearRange}
+        onReset={yr.reset}
       />
       <ComparisonShell
         clientId={clientId}
         plans={plans}
         initialLayout={initialLayout}
-        customizing={customizing}
-        onExitCustomize={() => setCustomizing(false)}
+        panelOpen={panelOpen}
+        onClosePanel={() => setPanelOpen(false)}
+        yearRange={yr.yearRange}
       />
     </div>
   );

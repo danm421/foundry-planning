@@ -5,6 +5,5 @@ export const portfolioWidget: ComparisonWidgetDefinition = {
   kind: "portfolio",
   title: "Portfolio Assets",
   needsMc: false,
-  render: ({ plans, collapsed }) =>
-    collapsed ? null : <PortfolioComparisonSection plans={plans} />,
+  render: ({ plans }) => <PortfolioComparisonSection plans={plans} />,
 };

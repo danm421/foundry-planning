@@ -5,8 +5,7 @@ export const estateImpactWidget: ComparisonWidgetDefinition = {
   kind: "estate-impact",
   title: "Impact vs Base",
   needsMc: false,
-  render: ({ plans, collapsed }) => {
-    if (collapsed) return null;
+  render: ({ plans }) => {
     const allHaveFinalEstate = plans.every((p) => p.finalEstate !== null);
     const impactYear = plans.find((p) => p.finalEstate)?.finalEstate?.year ?? null;
     if (!allHaveFinalEstate || impactYear === null) return null;

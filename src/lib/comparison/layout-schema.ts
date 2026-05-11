@@ -10,6 +10,9 @@ export const WIDGET_KINDS = [
   "estate-impact",
   "estate-tax",
   "text",
+  "income-expense",
+  "withdrawal-source",
+  "year-by-year",
 ] as const;
 export type ComparisonWidgetKind = (typeof WIDGET_KINDS)[number];
 
@@ -18,14 +21,23 @@ export const ComparisonWidgetKindSchema = z.enum(WIDGET_KINDS);
 export const ComparisonLayoutItemSchema = z.object({
   instanceId: z.string().uuid(),
   kind: ComparisonWidgetKindSchema,
-  hidden: z.boolean().default(false),
-  collapsed: z.boolean().default(false),
   config: z.unknown().optional(),
 });
 export type ComparisonLayoutItem = z.infer<typeof ComparisonLayoutItemSchema>;
 
+export const YearRangeSchema = z
+  .object({
+    start: z.number().int(),
+    end: z.number().int(),
+  })
+  .refine((r) => r.start <= r.end, {
+    message: "yearRange.start must be ≤ yearRange.end",
+  });
+export type YearRange = z.infer<typeof YearRangeSchema>;
+
 export const ComparisonLayoutSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(3),
+  yearRange: YearRangeSchema.nullable(),
   items: z.array(ComparisonLayoutItemSchema),
 });
 export type ComparisonLayout = z.infer<typeof ComparisonLayoutSchema>;

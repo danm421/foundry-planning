@@ -5,8 +5,7 @@ export const longevityWidget: ComparisonWidgetDefinition = {
   kind: "longevity",
   title: "Longevity",
   needsMc: true,
-  render: ({ mc, collapsed }) => {
-    if (collapsed) return null;
+  render: ({ mc }) => {
     if (!mc) {
       return (
         <section className="px-6 py-8">

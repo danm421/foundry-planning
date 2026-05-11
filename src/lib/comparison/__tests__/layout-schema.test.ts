@@ -5,24 +5,26 @@ import {
 } from "../layout-schema";
 
 describe("ComparisonLayoutItemSchema", () => {
-  it("accepts a valid item with all fields", () => {
+  it("accepts a v3 item (no hidden/collapsed fields)", () => {
     const parsed = ComparisonLayoutItemSchema.parse({
       instanceId: "11111111-1111-4111-8111-111111111111",
       kind: "portfolio",
-      hidden: false,
-      collapsed: false,
     });
     expect(parsed.kind).toBe("portfolio");
-    expect(parsed.hidden).toBe(false);
+    // hidden/collapsed must not be on the parsed shape
+    expect("hidden" in parsed).toBe(false);
+    expect("collapsed" in parsed).toBe(false);
   });
 
-  it("defaults hidden + collapsed when omitted", () => {
+  it("strips unknown legacy fields like hidden/collapsed", () => {
     const parsed = ComparisonLayoutItemSchema.parse({
       instanceId: "11111111-1111-4111-8111-111111111111",
-      kind: "kpi-strip",
+      kind: "portfolio",
+      hidden: true,
+      collapsed: true,
     });
-    expect(parsed.hidden).toBe(false);
-    expect(parsed.collapsed).toBe(false);
+    expect("hidden" in parsed).toBe(false);
+    expect("collapsed" in parsed).toBe(false);
   });
 
   it("rejects unknown kinds", () => {
@@ -51,11 +53,38 @@ describe("ComparisonLayoutItemSchema", () => {
 });
 
 describe("ComparisonLayoutSchema", () => {
-  it("requires version: 1", () => {
-    expect(() => ComparisonLayoutSchema.parse({ version: 2, items: [] })).toThrow();
+  it("requires version: 3", () => {
+    expect(() =>
+      ComparisonLayoutSchema.parse({ version: 2, yearRange: null, items: [] }),
+    ).toThrow();
   });
 
-  it("accepts an empty items array", () => {
-    expect(ComparisonLayoutSchema.parse({ version: 1, items: [] }).items).toEqual([]);
+  it("accepts an empty items array with null yearRange", () => {
+    const parsed = ComparisonLayoutSchema.parse({
+      version: 3,
+      yearRange: null,
+      items: [],
+    });
+    expect(parsed.items).toEqual([]);
+    expect(parsed.yearRange).toBeNull();
+  });
+
+  it("accepts a valid yearRange", () => {
+    const parsed = ComparisonLayoutSchema.parse({
+      version: 3,
+      yearRange: { start: 2030, end: 2055 },
+      items: [],
+    });
+    expect(parsed.yearRange).toEqual({ start: 2030, end: 2055 });
+  });
+
+  it("rejects yearRange where start > end", () => {
+    expect(() =>
+      ComparisonLayoutSchema.parse({
+        version: 3,
+        yearRange: { start: 2055, end: 2030 },
+        items: [],
+      }),
+    ).toThrow();
   });
 });

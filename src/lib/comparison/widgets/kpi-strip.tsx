@@ -5,8 +5,7 @@ export const kpiStripWidget: ComparisonWidgetDefinition = {
   kind: "kpi-strip",
   title: "Key metrics",
   needsMc: true,
-  render: ({ plans, mc, collapsed }) => {
-    if (collapsed) return null;
+  render: ({ plans, mc }) => {
     return (
       <ComparisonKpiStrip plans={plans} mcSuccessByIndex={mc?.successByIndex ?? {}} />
     );

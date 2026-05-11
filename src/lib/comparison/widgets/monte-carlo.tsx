@@ -5,8 +5,7 @@ export const monteCarloWidget: ComparisonWidgetDefinition = {
   kind: "monte-carlo",
   title: "Monte Carlo",
   needsMc: true,
-  render: ({ mc, collapsed }) => {
-    if (collapsed) return null;
+  render: ({ mc }) => {
     if (!mc) {
       return (
         <section className="px-6 py-8">

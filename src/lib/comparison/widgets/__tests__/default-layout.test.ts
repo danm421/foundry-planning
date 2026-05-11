@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { getDefaultLayout } from "../default-layout";
 
 describe("getDefaultLayout", () => {
-  it("returns the 8 canonical kinds in canonical order", () => {
+  it("returns the 11 canonical kinds in canonical order", () => {
     const layout = getDefaultLayout();
-    expect(layout.version).toBe(1);
+    expect(layout.version).toBe(3);
     expect(layout.items.map((i) => i.kind)).toEqual([
       "kpi-strip",
       "portfolio",
@@ -14,7 +14,14 @@ describe("getDefaultLayout", () => {
       "liquidity",
       "estate-impact",
       "estate-tax",
+      "income-expense",
+      "withdrawal-source",
+      "year-by-year",
     ]);
+  });
+
+  it("defaults yearRange to null", () => {
+    expect(getDefaultLayout().yearRange).toBeNull();
   });
 
   it("each item has all-fresh instanceIds (UUIDs)", () => {
@@ -26,12 +33,6 @@ describe("getDefaultLayout", () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
       );
     }
-  });
-
-  it("all items default to visible + expanded", () => {
-    const layout = getDefaultLayout();
-    expect(layout.items.every((i) => i.hidden === false)).toBe(true);
-    expect(layout.items.every((i) => i.collapsed === false)).toBe(true);
   });
 
   it("returns a new array on each call (fresh instanceIds)", () => {

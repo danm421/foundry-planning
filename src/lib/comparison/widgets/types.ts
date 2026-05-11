@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { z } from "zod";
-import type { ComparisonWidgetKind } from "../layout-schema";
+import type { ComparisonWidgetKind, YearRange } from "../layout-schema";
 import type { ComparisonPlan } from "../build-comparison-plans";
 import type { PlanMcData } from "@/components/comparison/monte-carlo-comparison-section";
 
@@ -17,11 +17,19 @@ export interface McSharedResult {
 }
 
 export interface ComparisonWidgetContext {
+  instanceId: string;
   clientId: string;
   plans: ComparisonPlan[];
   mc: McSharedResult | null;
-  collapsed: boolean;
   config?: unknown;
+  /** Page-level year-range clip. `null` = show all years. Widgets that show
+   *  per-year data should filter years by start/end inclusive. */
+  yearRange: YearRange | null;
+  /** True when the Widget panel is open. Widgets may render an editor variant. */
+  editing: boolean;
+  /** Updates a text widget's markdown in the parent layout state.
+   *  Only meaningful for the `text` widget. */
+  onTextChange?: (instanceId: string, markdown: string) => void;
 }
 
 export interface ComparisonWidgetDefinition<TConfig = unknown> {

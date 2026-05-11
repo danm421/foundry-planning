@@ -9,6 +9,9 @@ import { liquidityWidget } from "./liquidity";
 import { estateImpactWidget } from "./estate-impact";
 import { estateTaxWidget } from "./estate-tax";
 import { textWidget } from "./text";
+import { incomeExpenseWidget } from "./income-expense";
+import { withdrawalSourceWidget } from "./withdrawal-source";
+import { yearByYearWidget } from "./year-by-year";
 
 export const COMPARISON_WIDGETS: Record<
   ComparisonWidgetKind,
@@ -23,4 +26,7 @@ export const COMPARISON_WIDGETS: Record<
   "estate-impact": estateImpactWidget,
   "estate-tax": estateTaxWidget,
   text: textWidget,
+  "income-expense": incomeExpenseWidget,
+  "withdrawal-source": withdrawalSourceWidget,
+  "year-by-year": yearByYearWidget,
 };
