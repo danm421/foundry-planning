@@ -911,6 +911,52 @@ describe("4d integration — state estate tax", () => {
     expect(result.estateTax.federalEstateTax).toBe(0);
     expect(result.estateTax.totalEstateTax).toBeCloseTo(160_000, 0);
   });
+
+  it("residenceState=MA on $4.25M taxable: stateEstateTax=$179,040 (anti-cliff brackets)", () => {
+    const accounts: Account[] = [
+      {
+        id: "brokerage", name: "Client Brokerage",
+        category: "taxable", subType: "brokerage",
+        value: 4_250_000, basis: 3_000_000,
+        growthRate: 0, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      },
+    ];
+    const input = mkFinalDeathInput({
+      accounts,
+      familyMembers: [kidA],
+      planSettings: { ...basePlanSettings, residenceState: "MA" },
+    });
+    const result = applyFinalDeath(input);
+
+    expect(result.estateTax.taxableEstate).toBeCloseTo(4_250_000, 0);
+    expect(result.estateTax.stateEstateTaxDetail.state).toBe("MA");
+    expect(result.estateTax.stateEstateTaxDetail.antiCliffCreditApplied).toBe(true);
+    expect(result.estateTax.stateEstateTaxDetail.bracketLines).toHaveLength(4);
+    expect(result.estateTax.stateEstateTax).toBeCloseTo(179_040, 0);
+  });
+
+  it("back-compat: residenceState=null + flatStateEstateRate=0.08 still applies fallback", () => {
+    const accounts: Account[] = [
+      {
+        id: "brokerage", name: "Client Brokerage",
+        category: "taxable", subType: "brokerage",
+        value: 1_000_000, basis: 750_000,
+        growthRate: 0, rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      },
+    ];
+    const input = mkFinalDeathInput({
+      accounts,
+      familyMembers: [kidA],
+      planSettings: { ...basePlanSettings, residenceState: null, flatStateEstateRate: 0.08 },
+    });
+    const result = applyFinalDeath(input);
+
+    expect(result.estateTax.taxableEstate).toBeCloseTo(1_000_000, 0);
+    expect(result.estateTax.stateEstateTaxDetail.fallbackUsed).toBe(true);
+    expect(result.estateTax.stateEstateTax).toBeCloseTo(80_000, 0);
+  });
 });
 
 // ── Describe block 4: 4e integration — liability bequests at final death ─────
