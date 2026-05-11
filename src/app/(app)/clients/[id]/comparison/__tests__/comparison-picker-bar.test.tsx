@@ -114,4 +114,26 @@ describe("ComparisonPickerBar (dynamic chips)", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /make baseline/i }));
     expect(pushSpy).toHaveBeenLastCalledWith(`${PATH}?plans=sid_b%2Cbase%2Csid_a`);
   });
+
+  it("calls onToggleCustomize when ⚙ button clicked", () => {
+    pushSpy = vi.fn();
+    vi.mocked(useRouter).mockReturnValue({ push: pushSpy, replace: vi.fn() } as never);
+    vi.mocked(usePathname).mockReturnValue(PATH);
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams("plans=base,sid_a") as never,
+    );
+    const onToggleCustomize = vi.fn();
+    render(
+      <ComparisonPickerBar
+        clientId={CLIENT_ID}
+        scenarios={SCENARIOS}
+        snapshots={[]}
+        drawerPlans={[]}
+        customizing={false}
+        onToggleCustomize={onToggleCustomize}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Customize layout"));
+    expect(onToggleCustomize).toHaveBeenCalled();
+  });
 });
