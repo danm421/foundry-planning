@@ -26,6 +26,8 @@ export interface CellDrillContext {
   accounts: Account[];
   /** Optional entity-id → display-name map for `entity_passthrough:<id>` keys. */
   entityNames?: Record<string, string>;
+  /** Optional roth-conversion-id → display-name map for `roth_conversion:<id>` keys. */
+  rothConversionNames?: Record<string, string>;
 }
 
 export interface CellDrillRow {

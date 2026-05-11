@@ -54,6 +54,20 @@ export default function IncomeTaxReport({ clientId }: Props) {
       accountNames,
       incomes: clientData?.incomes ?? [],
       accounts: clientData?.accounts ?? [],
+      entityNames: (clientData?.entities ?? []).reduce<Record<string, string>>(
+        (acc, e) => {
+          if (e.name) acc[e.id] = e.name;
+          return acc;
+        },
+        {},
+      ),
+      rothConversionNames: (clientData?.rothConversions ?? []).reduce<Record<string, string>>(
+        (acc, r) => {
+          if (r.name) acc[r.id] = r.name;
+          return acc;
+        },
+        {},
+      ),
     }),
     [accountNames, clientData],
   );

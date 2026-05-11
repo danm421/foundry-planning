@@ -16,7 +16,8 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
   }
   if (sourceId.startsWith("roth_conversion:")) {
     const cid = sourceId.slice("roth_conversion:".length);
-    return `Roth conversion (${cid})`;
+    const name = ctx.rothConversionNames?.[cid];
+    return name ? `${name} — Roth Conversion` : "Roth Conversion";
   }
   if (sourceId.startsWith("sale:")) {
     const tx = sourceId.slice("sale:".length);
@@ -29,7 +30,7 @@ export function resolveSourceLabel(sourceId: string, ctx: CellDrillContext): str
   if (sourceId.startsWith("entity_passthrough:")) {
     const e = sourceId.slice("entity_passthrough:".length);
     const name = ctx.entityNames?.[e];
-    return name ? `${name} — K-1` : `Entity pass-through (${e})`;
+    return name ? `${name} — K-1` : "Entity Pass-Through";
   }
   if (sourceId.startsWith("clut_recapture:")) {
     return `CLUT recapture (${sourceId.slice("clut_recapture:".length)})`;

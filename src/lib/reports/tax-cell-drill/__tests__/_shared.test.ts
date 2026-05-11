@@ -27,8 +27,17 @@ describe("resolveSourceLabel", () => {
     expect(resolveSourceLabel("withdrawal:acc_2", ctx)).toBe("401k — Withdrawal");
   });
 
-  it("handles roth_conversion:<id> with a fallback name", () => {
-    expect(resolveSourceLabel("roth_conversion:cv_4", ctx)).toBe("Roth conversion (cv_4)");
+  it("resolves roth_conversion:<id> to '<name> — Roth Conversion' when names are provided", () => {
+    expect(
+      resolveSourceLabel("roth_conversion:cv_4", {
+        ...ctx,
+        rothConversionNames: { cv_4: "Fill 24% Bracket" },
+      }),
+    ).toBe("Fill 24% Bracket — Roth Conversion");
+  });
+
+  it("falls back to 'Roth Conversion' when no name map is provided", () => {
+    expect(resolveSourceLabel("roth_conversion:cv_4", ctx)).toBe("Roth Conversion");
   });
 
   it("handles sale:<txId>", () => {

@@ -17,7 +17,7 @@ import type {
   BracketColumnKey,
   CellDrillContext,
 } from "@/lib/reports/tax-cell-drill/types";
-import type { Income, Account } from "@/engine/types";
+import type { Income, Account, EntitySummary, RothConversion } from "@/engine/types";
 
 interface TaxDetailModalProps {
   years: ProjectionYear[];
@@ -31,7 +31,12 @@ interface TaxDetailModalProps {
   clientRetirementYear: number | null;
   clientLifeExpectancy?: number;
   spouseLifeExpectancy?: number | null;
-  clientData: { incomes: Income[]; accounts: Account[] };
+  clientData: {
+    incomes: Income[];
+    accounts: Account[];
+    entities?: EntitySummary[];
+    rothConversions?: RothConversion[];
+  };
 }
 
 type CellDrill =
@@ -54,8 +59,22 @@ export function TaxDetailModal(props: TaxDetailModalProps) {
       accountNames: Object.fromEntries(clientData.accounts.map((a) => [a.id, a.name])),
       incomes: clientData.incomes,
       accounts: clientData.accounts,
+      entityNames: (clientData.entities ?? []).reduce<Record<string, string>>(
+        (acc, e) => {
+          if (e.name) acc[e.id] = e.name;
+          return acc;
+        },
+        {},
+      ),
+      rothConversionNames: (clientData.rothConversions ?? []).reduce<Record<string, string>>(
+        (acc, r) => {
+          if (r.name) acc[r.id] = r.name;
+          return acc;
+        },
+        {},
+      ),
     }),
-    [clientData.accounts, clientData.incomes],
+    [clientData.accounts, clientData.incomes, clientData.entities, clientData.rothConversions],
   );
 
   const drillProps = useMemo(() => {

@@ -2477,7 +2477,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
           clientRetirementYear={clientRetirementYear}
           clientLifeExpectancy={clientData?.client.lifeExpectancy}
           spouseLifeExpectancy={clientData?.client.spouseLifeExpectancy}
-          clientData={{ incomes: clientData?.incomes ?? [], accounts: clientData?.accounts ?? [] }}
+          clientData={{
+            incomes: clientData?.incomes ?? [],
+            accounts: clientData?.accounts ?? [],
+            entities: clientData?.entities ?? [],
+            rothConversions: clientData?.rothConversions ?? [],
+          }}
         />
       )}
 
