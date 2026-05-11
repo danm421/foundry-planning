@@ -102,6 +102,7 @@ export type Row = z.infer<typeof RowSchema>;
 
 export const ComparisonLayoutV4Schema = z.object({
   version: z.literal(4),
+  title: z.string(),
   rows: z.array(RowSchema),
 });
 export type ComparisonLayoutV4 = z.infer<typeof ComparisonLayoutV4Schema>;

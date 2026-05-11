@@ -7,6 +7,7 @@ import {
 
 const validLayout: ComparisonLayoutV4 = {
   version: 4,
+  title: "Test Layout",
   rows: [
     {
       id: "row-1",
@@ -74,6 +75,7 @@ describe("ComparisonLayoutV4Schema", () => {
   it("accepts an optional yearRange per widget", () => {
     const layout: ComparisonLayoutV4 = {
       version: 4,
+      title: "Test Layout",
       rows: [
         {
           id: "row-1",
@@ -119,5 +121,39 @@ describe("ComparisonLayoutV4Schema", () => {
 
   it("includes 'kpi' in WIDGET_KINDS_V4", () => {
     expect(WIDGET_KINDS_V4).toContain("kpi");
+  });
+
+  it("requires a string title", () => {
+    const noTitle = {
+      version: 4,
+      rows: [
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          cells: [
+            {
+              id: "00000000-0000-0000-0000-000000000002",
+              widget: {
+                id: "00000000-0000-0000-0000-000000000003",
+                kind: "portfolio",
+                planIds: ["plan-base"],
+              },
+            },
+          ],
+        },
+      ],
+    };
+    expect(ComparisonLayoutV4Schema.safeParse(noTitle).success).toBe(false);
+
+    const withTitle = { ...noTitle, title: "My Report" };
+    expect(ComparisonLayoutV4Schema.safeParse(withTitle).success).toBe(true);
+  });
+
+  it("rejects a non-string title", () => {
+    const bad = {
+      version: 4,
+      title: 42,
+      rows: [],
+    };
+    expect(ComparisonLayoutV4Schema.safeParse(bad).success).toBe(false);
   });
 });

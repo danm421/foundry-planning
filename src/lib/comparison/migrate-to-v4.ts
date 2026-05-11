@@ -14,6 +14,8 @@ export interface MigrationContext {
   /** Plans from the page-level `?plans=` query param at the time of migration.
    *  When non-null and non-empty, becomes the default planIds for every multi-plan widget. */
   urlPlanIds: string[] | null;
+  /** Optional human title for the migrated layout. Falls back to "Comparison Report". */
+  defaultTitle?: string;
 }
 
 const DEFAULT_KPI_METRICS = [
@@ -93,5 +95,9 @@ export function migrateV3ToV4(
     const widget = buildWidget(item, ctx, v3.yearRange);
     return rowOf([cellOf(widget)]);
   });
-  return { version: 4, rows };
+  return {
+    version: 4,
+    title: ctx.defaultTitle ?? "Comparison Report",
+    rows,
+  };
 }

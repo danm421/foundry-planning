@@ -171,6 +171,25 @@ describe("migrateV3ToV4", () => {
       ]),
       ctx,
     );
+    expect(typeof out.title).toBe("string");
     expect(ComparisonLayoutV4Schema.safeParse(out).success).toBe(true);
+  });
+});
+
+describe("migrateV3ToV4 — title", () => {
+  it("uses ctx.defaultTitle when provided", () => {
+    const out = migrateV3ToV4(
+      v3([{ instanceId: "00000000-0000-0000-0000-00000000ff01", kind: "portfolio" }]),
+      { ...ctx, defaultTitle: "Smith Family Plan" },
+    );
+    expect(out.title).toBe("Smith Family Plan");
+  });
+
+  it("falls back to 'Comparison Report' when ctx.defaultTitle is not provided", () => {
+    const out = migrateV3ToV4(
+      v3([{ instanceId: "00000000-0000-0000-0000-00000000ff02", kind: "portfolio" }]),
+      ctx,
+    );
+    expect(out.title).toBe("Comparison Report");
   });
 });
