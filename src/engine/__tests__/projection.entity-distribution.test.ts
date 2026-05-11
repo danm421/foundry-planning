@@ -301,28 +301,30 @@ describe("Phase 3: grantor business distribution + display", () => {
     expect(y0.accountLedgers["llc1-checking"].endingValue).toBeCloseTo(0, 0);
   });
 
-  it("grantor LLC: gross business income surfaces on year.income.business for cashflow display", () => {
-    // Regression: previously `year.income` came from the household-only
-    // computeIncome filter, so a grantor entity's $100k of business income
-    // didn't appear under the cashflow report's "Business" column even
-    // though it was the household's pass-through income.
+  it("grantor LLC: distribution amount (not gross) surfaces on year.income.business for cashflow display", () => {
+    // Cash Flow > Income shows actual cash received from entity distributions,
+    // not gross. Grantor entities default to 100% distributionPolicyPercent
+    // in mkData, so distribution = net income = $100k.
     const data = mkData({ entity: { isGrantor: true } });
     const years = runProjection(data);
     const y0 = years[0];
 
     expect(y0.income.business).toBeCloseTo(100_000, 0);
-    expect(y0.income.bySource["i1"]).toBeCloseTo(100_000, 0);
+    // bySource is keyed by entity id (not income row id) for entity rows.
+    expect(y0.income.bySource["llc1"]).toBeCloseTo(100_000, 0);
+    // Income row id should not appear in bySource for entity-owned rows.
+    expect(y0.income.bySource["i1"]).toBeUndefined();
   });
 
-  it("non-grantor LLC: business income still excluded from year.income.business (unchanged)", () => {
-    // Non-grantor entities keep current behavior — the entity is its own
-    // taxpayer; the distribution arrives on household as `entity_distribution`,
-    // not as household business income.
+  it("non-grantor LLC with 100% distribution: distribution amount surfaces on year.income.business", () => {
+    // Cash Flow display now reflects actual cash received. mkData defaults to
+    // distributionPolicyPercent: 1.0, so distribution = net income = $100k.
     const data = mkData({ entity: { isGrantor: false } });
     const years = runProjection(data);
     const y0 = years[0];
 
-    expect(y0.income.business).toBeCloseTo(0, 0);
+    expect(y0.income.business).toBeCloseTo(100_000, 0);
+    expect(y0.income.bySource["llc1"]).toBeCloseTo(100_000, 0);
   });
 });
 
@@ -502,6 +504,47 @@ describe("Phase 2: per-year distribution % override", () => {
     const distEntry = hhEntries.find((e) => e.category === "entity_distribution");
     expect(distEntry).toBeDefined();
     expect(distEntry!.amount).toBeCloseTo(250_000, 0);
+  });
+});
+
+describe("Display: Business column reflects entity distributions", () => {
+  it("non-grantor LLC with 100% distribution: y.income.business equals distribution", () => {
+    // Distribution = net income × 1.0 = $100k. The Business column on Cash Flow >
+    // Income now shows actual cash received by the household, not gross.
+    const data = mkData({ entity: { isGrantor: false, distributionPolicyPercent: 1.0 } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    expect(y0.income.business).toBeCloseTo(100_000, 0);
+  });
+
+  it("non-grantor LLC with 0% distribution: y.income.business is 0", () => {
+    // No distribution → no cash received → Business column shows 0 even though
+    // taxDetail.ordinaryIncome picks up the K-1 net income separately.
+    const data = mkData({ entity: { isGrantor: false, distributionPolicyPercent: 0 } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    expect(y0.income.business).toBeCloseTo(0, 0);
+  });
+
+  it("grantor LLC with 100% distribution: y.income.business equals distribution (not gross)", () => {
+    // Previously grantor-entity gross flowed to display; now display shows the
+    // actual distribution. Gross still flows through grantorIncome for tax.
+    const data = mkData({ entity: { isGrantor: true, distributionPolicyPercent: 1.0 } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    expect(y0.income.business).toBeCloseTo(100_000, 0);
+  });
+
+  it("grantor LLC with 50% distribution: Business column shows distribution only, not gross", () => {
+    const data = mkData({ entity: { isGrantor: true, distributionPolicyPercent: 0.5 } });
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // Gross is $100k; distribution is 50% of net = $50k. Display shows $50k.
+    expect(y0.income.business).toBeCloseTo(50_000, 0);
   });
 });
 

@@ -3244,25 +3244,64 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       interestByLiability: liabResult.interestByLiability,
     };
 
-    // Roll grantor-entity income into the displayed household income buckets.
-    // Tax was already attributed to the household via grantorIncome; this
-    // makes the gross income visible on the cashflow report (the prior
-    // behavior hid grantor business income entirely, even though the
-    // distribution credit landed on household checking).
+    // Cash Flow > Income, Business column: show actual cash received by the
+    // household from entity distributions, not gross entity income. Sum every
+    // positive (= credit) entity_distribution ledger entry — only destination
+    // accounts (household / family-member checking) get a positive entry; the
+    // entity-side debit is negative and excluded by the > 0 filter. Per-entity
+    // bySource is keyed by entity.id so the drill-down can label rows by
+    // entity name.
+    let businessDistributions = 0;
+    const businessDistributionsBySource: Record<string, number> = {};
+    for (const acct of workingAccounts) {
+      const ledger = accountLedgers[acct.id];
+      if (!ledger) continue;
+      for (const entry of ledger.entries) {
+        if (entry.category !== "entity_distribution") continue;
+        if (entry.amount <= 0) continue;
+        businessDistributions += entry.amount;
+        if (entry.sourceId) {
+          businessDistributionsBySource[entry.sourceId] =
+            (businessDistributionsBySource[entry.sourceId] ?? 0) + entry.amount;
+        }
+      }
+    }
+
+    // Roll household-only and grantor-entity NON-business streams into the
+    // displayed income buckets. Business is special: it shows distributions
+    // (cash received), not the gross entity income that grantorIncome.business
+    // contains. See spec 2026-05-11-business-distribution-passthrough-design.
     const displayIncome = {
       salaries: income.salaries + grantorIncome.salaries,
       socialSecurity: income.socialSecurity + grantorIncome.socialSecurity,
-      business: income.business + grantorIncome.business,
+      business: income.business + businessDistributions,
       trust: income.trust + grantorIncome.trust,
       deferred: income.deferred + grantorIncome.deferred,
       capitalGains: income.capitalGains + grantorIncome.capitalGains,
       other: income.other + grantorIncome.other,
-      total: income.total + grantorIncome.total,
-      bySource: { ...income.bySource, ...grantorIncome.bySource },
+      total:
+        income.total
+        + grantorIncome.total
+        - grantorIncome.business // subtract gross to avoid double-count with businessDistributions
+        + businessDistributions,
+      bySource: {
+        ...income.bySource,
+        ...grantorIncome.bySource,
+        ...businessDistributionsBySource, // entity-id keys for the Business drill-down
+      },
       ...(income.socialSecurityDetail
         ? { socialSecurityDetail: income.socialSecurityDetail }
         : {}),
     };
+    // Strip grantor-entity business gross from bySource — these were keyed by
+    // income row id (not entity id), and they no longer represent what shows
+    // in the Business column. Leave them out so the drill-down sums match.
+    for (const inc of currentIncomes) {
+      if (inc.type !== "business") continue;
+      if (inc.ownerEntityId == null) continue; // household business — keep
+      if (!isGrantorEntity(inc.ownerEntityId)) continue; // non-grantor: never in bySource here
+      delete displayIncome.bySource[inc.id];
+    }
     const totalIncome = displayIncome.total + householdRmdIncome;
     const totalExpenses = expenses.total + savings.total;
     const netCashFlow = totalIncome - totalExpenses;
