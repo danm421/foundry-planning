@@ -172,11 +172,11 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
     expect(sec.totals.total).toBe(134_000);
   });
 
-  it("returns withdrawals section with growth, additions, distributions, netCashFlow", async () => {
+  it("returns withdrawals section with category, total, BoY, and withdrawal-% columns", async () => {
     const { runProjection } = await import("@/engine") as unknown as { runProjection: ReturnType<typeof vi.fn> };
     runProjection.mockReturnValue([
       fixtureYear({
-        netCashFlow: 66_000,
+        withdrawals: { byAccount: { acct1: 12_000 }, total: 12_000 },
       }),
     ]);
     const { cashflowArtifact: art } = await import("../cashflow");
@@ -185,11 +185,13 @@ describe("cashflowArtifact.fetchData (with mocked DB + projection)", () => {
       opts: { scenarioId: null, yearStart: null, yearEnd: null },
     });
     const sec = data.sections.withdrawals;
-    expect(sec.headers.map((h) => h.id)).toEqual([
-      "year", "age", "growth", "additions", "distributions", "netCashFlow",
-    ]);
-    expect(sec.rows[0].cells.growth).toBe(40_000);
-    expect(sec.rows[0].cells.netCashFlow).toBe(66_000);
+    expect(sec.title).toBe("Withdrawals");
+    // Without ClientData.accounts the category map can't classify acct1, so
+    // no per-category columns appear — but the fixed summary trio always does.
+    expect(sec.headers.map((h) => h.id)).toContain("totalWithdrawals");
+    expect(sec.headers.map((h) => h.id)).toContain("portfolioBoY");
+    expect(sec.headers.map((h) => h.id)).toContain("withdrawalPct");
+    expect(sec.rows[0].cells.totalWithdrawals).toBe(12_000);
   });
 
   it("returns assets section with portfolio category columns", async () => {

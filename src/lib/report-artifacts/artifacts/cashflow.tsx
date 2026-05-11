@@ -23,7 +23,7 @@ export type CashflowSectionId = "base" | "income" | "expenses" | "withdrawals" |
 export type CashflowSection = {
   id: CashflowSectionId;
   title: string;
-  headers: { id: string; label: string; align: "left" | "right" }[];
+  headers: { id: string; label: string; align: "left" | "right"; format?: "money" | "percent" }[];
   rows: CashflowRow[];
   totals: Record<string, number>;
 };
@@ -98,30 +98,64 @@ function liquidPortfolioTotal(y: ProjectionYear): number {
 }
 
 function buildBaseSection(years: ProjectionYear[], c: ClientData): CashflowSection {
+  // Mirrors the Level-0 columns of the on-screen cashflow table — see
+  // cashflow-report.tsx around the `if (!level)` branch.
+  const techniqueIncomeIds = (c.assetTransactions ?? [])
+    .filter((t) => t.type === "sell")
+    .map((t) => `technique-proceeds:${t.id}`);
+
+  const rmdsTotal = (y: ProjectionYear) =>
+    Object.values(y.accountLedgers).reduce((s, l) => s + l.rmdAmount, 0);
+  const otherInflowsTotal = (y: ProjectionYear) =>
+    techniqueIncomeIds.reduce((s, id) => s + (y.income.bySource[id] ?? 0), 0);
+
   const headers: CashflowSection["headers"] = [
     { id: "year", label: "Year", align: "left" },
     { id: "age", label: "Age(s)", align: "left" },
-    { id: "totalIncome", label: "Income", align: "right" },
-    { id: "totalExpenses", label: "Expenses", align: "right" },
+    { id: "income", label: "Income", align: "right" },
+    { id: "rmds", label: "RMDs", align: "right" },
+    { id: "otherInflows", label: "Other Inflows", align: "right" },
+    { id: "totalIncome", label: "Total Income", align: "right" },
+    { id: "expenses", label: "Expenses", align: "right" },
+    { id: "savings", label: "Savings", align: "right" },
+    { id: "totalExpenses", label: "Total Expenses", align: "right" },
     { id: "netCashFlow", label: "Net Cash Flow", align: "right" },
-    { id: "portfolioTotal", label: "Portfolio", align: "right" },
+    { id: "portfolioGrowth", label: "Portfolio Growth", align: "right" },
+    { id: "portfolioActivity", label: "Portfolio Activity", align: "right" },
+    { id: "portfolioAssets", label: "Portfolio Assets", align: "right" },
   ];
   const rows: CashflowRow[] = years.map((y) => ({
     year: y.year,
     age: ageString(y, c),
     cells: {
+      income: y.income.total,
+      rmds: rmdsTotal(y),
+      otherInflows: otherInflowsTotal(y),
       totalIncome: y.totalIncome,
+      expenses: y.expenses.total,
+      savings: y.savings.total,
       totalExpenses: y.totalExpenses,
       netCashFlow: y.netCashFlow,
-      portfolioTotal: liquidPortfolioTotal(y),
+      portfolioGrowth: portfolioGrowthTotal(y),
+      portfolioActivity: additionsTotal(y) - distributionsTotal(y),
+      portfolioAssets: liquidPortfolioTotal(y),
     },
   }));
   const last = years[years.length - 1];
+  const sum = (key: string) => rows.reduce((s, r) => s + (r.cells[key] ?? 0), 0);
   const totals: Record<string, number> = {
-    totalIncome: years.reduce((s, y) => s + y.totalIncome, 0),
-    totalExpenses: years.reduce((s, y) => s + y.totalExpenses, 0),
-    netCashFlow: years.reduce((s, y) => s + y.netCashFlow, 0),
-    portfolioTotal: last ? liquidPortfolioTotal(last) : 0,
+    income: sum("income"),
+    rmds: sum("rmds"),
+    otherInflows: sum("otherInflows"),
+    totalIncome: sum("totalIncome"),
+    expenses: sum("expenses"),
+    savings: sum("savings"),
+    totalExpenses: sum("totalExpenses"),
+    netCashFlow: sum("netCashFlow"),
+    portfolioGrowth: sum("portfolioGrowth"),
+    portfolioActivity: sum("portfolioActivity"),
+    // Portfolio Assets is a balance, not a flow — end-of-period value.
+    portfolioAssets: last ? liquidPortfolioTotal(last) : 0,
   };
   return { id: "base", title: "Cash Flow — Summary", headers, rows, totals };
 }
@@ -227,32 +261,112 @@ function distributionsTotal(r: ProjectionYear): number {
   return sum;
 }
 
+// Mirrors the on-screen Net Cash Flow drill-down (cashflow-report.tsx, the
+// `level === "cashflow"` branch). Per-category withdrawal columns appear only
+// for categories that actually had a household-supplemental withdrawal across
+// the visible range, then a Total / BoY portfolio / withdrawal-% summary.
+const WITHDRAWAL_CATEGORIES: { key: string; label: string }[] = [
+  { key: "cash", label: "Cash Assets" },
+  { key: "taxable", label: "Taxable Assets" },
+  { key: "retirement", label: "Retirement" },
+  { key: "real_estate", label: "Real Estate" },
+  { key: "business", label: "Business" },
+  { key: "life_insurance", label: "Life Insurance" },
+];
+
+const PORTFOLIO_BUCKET_TO_CATEGORY: Record<string, string> = {
+  taxable: "taxable",
+  cash: "cash",
+  retirement: "retirement",
+  realEstate: "real_estate",
+  business: "business",
+  lifeInsurance: "life_insurance",
+};
+
+function buildAccountCategoryMap(
+  years: ProjectionYear[],
+  c: ClientData,
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const acc of c.accounts ?? []) map[acc.id] = acc.category;
+  // Synthetic accounts minted by the engine (asset-purchase techniques) aren't
+  // in ClientData.accounts — recover their categories from portfolio buckets.
+  for (const y of years) {
+    for (const [bucket, category] of Object.entries(PORTFOLIO_BUCKET_TO_CATEGORY)) {
+      const buckets = y.portfolioAssets as unknown as Record<string, Record<string, number> | undefined>;
+      const byAcct = buckets[bucket];
+      if (!byAcct) continue;
+      for (const id of Object.keys(byAcct)) if (!(id in map)) map[id] = category;
+    }
+  }
+  return map;
+}
+
+function portfolioBoy(year: ProjectionYear, years: ProjectionYear[]): number {
+  const prev = years.find((y) => y.year === year.year - 1);
+  if (prev) return prev.portfolioAssets.total;
+  return Object.values(year.accountLedgers).reduce(
+    (s, l) => s + (l?.beginningValue ?? 0),
+    0,
+  );
+}
+
 function buildWithdrawalsSection(years: ProjectionYear[], c: ClientData): CashflowSection {
+  const accountCategoryById = buildAccountCategoryMap(years, c);
+  const withdrawalCategoriesUsed = new Set<string>();
+  for (const y of years) {
+    for (const id of Object.keys(y.withdrawals.byAccount)) {
+      const cat = accountCategoryById[id];
+      if (cat) withdrawalCategoriesUsed.add(cat);
+    }
+  }
+  const usedCategories = WITHDRAWAL_CATEGORIES.filter((c) => withdrawalCategoriesUsed.has(c.key));
+
   const headers: CashflowSection["headers"] = [
     { id: "year", label: "Year", align: "left" },
     { id: "age", label: "Age(s)", align: "left" },
-    { id: "growth", label: "Portfolio Growth", align: "right" },
-    { id: "additions", label: "Additions", align: "right" },
-    { id: "distributions", label: "Distributions", align: "right" },
-    { id: "netCashFlow", label: "Net Cash Flow", align: "right" },
+    ...usedCategories.map((c) => ({
+      id: c.key,
+      label: c.label,
+      align: "right" as const,
+    })),
+    { id: "totalWithdrawals", label: "Total Withdrawals", align: "right" },
+    { id: "portfolioBoY", label: "Portfolio (BoY)", align: "right" },
+    { id: "withdrawalPct", label: "Withdrawal %", align: "right", format: "percent" },
   ];
-  const rows: CashflowRow[] = years.map((y) => ({
-    year: y.year,
-    age: ageString(y, c),
-    cells: {
-      growth: portfolioGrowthTotal(y),
-      additions: additionsTotal(y),
-      distributions: distributionsTotal(y),
-      netCashFlow: y.netCashFlow,
-    },
-  }));
-  const totals: Record<string, number> = {
-    growth: rows.reduce((s, r) => s + r.cells.growth, 0),
-    additions: rows.reduce((s, r) => s + r.cells.additions, 0),
-    distributions: rows.reduce((s, r) => s + r.cells.distributions, 0),
-    netCashFlow: rows.reduce((s, r) => s + r.cells.netCashFlow, 0),
+
+  const withdrawalByCategory = (r: ProjectionYear, category: string): number => {
+    let sum = 0;
+    for (const [id, amt] of Object.entries(r.withdrawals.byAccount)) {
+      if (accountCategoryById[id] === category) sum += amt;
+    }
+    return sum;
   };
-  return { id: "withdrawals", title: "Net Cash Flow Detail", headers, rows, totals };
+
+  const rows: CashflowRow[] = years.map((y) => {
+    const boy = portfolioBoy(y, years);
+    const rmdTotal = Object.values(y.accountLedgers ?? {}).reduce(
+      (s, l) => s + (l?.rmdAmount ?? 0),
+      0,
+    );
+    const cells: Record<string, number> = {};
+    for (const c of usedCategories) cells[c.key] = withdrawalByCategory(y, c.key);
+    cells.totalWithdrawals = y.withdrawals.total;
+    cells.portfolioBoY = boy;
+    // RMDs ride in the numerator alongside supplemental withdrawals — matches
+    // the on-screen "Withdrawal %" column (cashflow-report.tsx:1738).
+    cells.withdrawalPct = boy > 0 ? (y.withdrawals.total + rmdTotal) / boy : 0;
+    return { year: y.year, age: ageString(y, c), cells };
+  });
+
+  // Totals: sums for money flows; BoY and Withdrawal % don't aggregate cleanly,
+  // so they're omitted (the row accessor renders missing keys as blank).
+  const totals: Record<string, number> = {};
+  for (const cat of usedCategories) {
+    totals[cat.key] = rows.reduce((s, r) => s + (r.cells[cat.key] ?? 0), 0);
+  }
+  totals.totalWithdrawals = rows.reduce((s, r) => s + r.cells.totalWithdrawals, 0);
+  return { id: "withdrawals", title: "Withdrawals", headers, rows, totals };
 }
 
 function buildAssetsSection(years: ProjectionYear[], c: ClientData): CashflowSection {
@@ -342,14 +456,28 @@ function renderSection(
     age: r.age || (ageByYear.get(r.year) ?? ""),
   }));
 
+  // Year / age headers don't need an equal share of the row — pinning them to
+  // narrow fixed widths frees up space for the money columns so wider headers
+  // (Social Security, Trusts/Businesses, Real Estate) stop wrapping awkwardly.
+  const FIXED_WIDTHS: Record<string, number> = { year: 7, age: 10 };
+  const fixedTotal = section.headers.reduce(
+    (sum, h) => sum + (FIXED_WIDTHS[h.id] ?? 0),
+    0,
+  );
+  const flexCount = section.headers.filter((h) => !FIXED_WIDTHS[h.id]).length;
+  const flexWidth = flexCount > 0 ? (100 - fixedTotal) / flexCount : 0;
+
   const columns = section.headers.map((h) => ({
     header: h.label,
     align: h.align,
+    width: `${FIXED_WIDTHS[h.id] ?? flexWidth}%`,
     accessor: (row: typeof rowsWithAge[number]) => {
       if (h.id === "year") return String(row.year);
       if (h.id === "age") return row.age;
       const v = row.cells[h.id];
-      return typeof v === "number" ? fmtMoneyCompact(v) : "";
+      if (typeof v !== "number") return "";
+      if (h.format === "percent") return `${(v * 100).toFixed(2)}%`;
+      return fmtMoneyCompact(v);
     },
   }));
 
@@ -369,7 +497,12 @@ function renderSection(
       )}
       {showCharts && sectionChart && <ChartImage chart={sectionChart} maxWidth={480} />}
       {showData && (
-        <DataTable columns={columns} rows={rowsWithAge} footerRow={footerRow} />
+        <DataTable
+          columns={columns}
+          rows={rowsWithAge}
+          footerRow={footerRow}
+          compact={section.headers.length >= 10}
+        />
       )}
     </View>
   );
@@ -383,6 +516,11 @@ function renderCashflowPdf({ data, variant, charts }: RenderPdfInput<CashflowDat
   );
 }
 
+function fmtCsvCell(v: number, format?: "money" | "percent"): string {
+  if (format === "percent") return v.toFixed(4);
+  return String(Math.round(v));
+}
+
 function sectionToCsv(section: CashflowSection, ageByYear: Map<number, string>): string {
   if (section.rows.length === 0) return "";
   const headerLabels = section.headers.map((h) => h.label);
@@ -391,14 +529,14 @@ function sectionToCsv(section: CashflowSection, ageByYear: Map<number, string>):
       if (h.id === "year") return String(r.year);
       if (h.id === "age") return r.age || (ageByYear.get(r.year) ?? "");
       const v = r.cells[h.id];
-      return typeof v === "number" ? String(Math.round(v)) : "";
+      return typeof v === "number" ? fmtCsvCell(v, h.format) : "";
     });
   });
   const totalsRow = section.headers.map((h, i) => {
     if (i === 0) return "TOTAL";
     if (h.id === "age") return "";
     const v = section.totals[h.id];
-    return typeof v === "number" ? String(Math.round(v)) : "";
+    return typeof v === "number" ? fmtCsvCell(v, h.format) : "";
   });
   return serializeCsv([headerLabels, ...bodyRows, totalsRow]);
 }
