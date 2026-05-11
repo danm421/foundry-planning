@@ -143,8 +143,6 @@ export function MonteCarloAndLongevity({
     );
   }
   const perPlan = state.data.perPlan;
-  const plan1 = perPlan[0];
-  const plan2 = perPlan[1] ?? perPlan[0];
   const planStartYear =
     plans[0]?.result.years[0]?.year ?? new Date().getFullYear();
   const clientBirthYear = plans[0]?.tree.client.dateOfBirth
@@ -154,12 +152,12 @@ export function MonteCarloAndLongevity({
     <>
       <MonteCarloComparisonSection plansMc={perPlan} />
       <LongevityComparisonSection
-        plan1Matrix={plan1.result.byYearLiquidAssetsPerTrial}
-        plan2Matrix={plan2.result.byYearLiquidAssetsPerTrial}
+        plans={perPlan.map((mc) => ({
+          label: mc.label,
+          matrix: mc.result.byYearLiquidAssetsPerTrial,
+        }))}
         threshold={state.data.threshold}
         planStartYear={planStartYear}
-        plan1Label={plan1.label}
-        plan2Label={plan2.label}
         clientBirthYear={clientBirthYear}
       />
     </>

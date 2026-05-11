@@ -2,6 +2,7 @@
 
 import { LongevityChart } from "@/components/monte-carlo/longevity-chart";
 import { successByYear } from "@/lib/comparison/success-by-year";
+import { seriesColor } from "@/lib/comparison/series-palette";
 
 function lastYearAtThreshold(
   rates: number[],
@@ -14,54 +15,77 @@ function lastYearAtThreshold(
   return undefined;
 }
 
+export interface PlanLongevity {
+  label: string;
+  matrix: number[][];
+}
+
 interface Props {
-  plan1Matrix: number[][];
-  plan2Matrix: number[][];
+  plans: PlanLongevity[];
   threshold: number;
   planStartYear: number;
-  plan1Label: string;
-  plan2Label: string;
   clientBirthYear?: number;
 }
 
-export function LongevityComparisonSection(props: Props) {
-  const r1 = successByYear(props.plan1Matrix, props.threshold);
-  const r2 = successByYear(props.plan2Matrix, props.threshold);
-  const last90Plan1 = lastYearAtThreshold(r1, 0.9, props.planStartYear);
-  const last90Plan2 = lastYearAtThreshold(r2, 0.9, props.planStartYear);
+export function LongevityComparisonSection({
+  plans,
+  threshold,
+  planStartYear,
+  clientBirthYear,
+}: Props) {
+  const perPlan = plans.map((p) => ({
+    label: p.label,
+    matrix: p.matrix,
+    last90: lastYearAtThreshold(
+      successByYear(p.matrix, threshold),
+      0.9,
+      planStartYear,
+    ),
+  }));
 
   return (
     <section className="px-6 py-8">
       <h2 className="mb-2 text-lg font-semibold text-slate-100">Longevity</h2>
-      <div className="mb-4 text-sm text-slate-400">
-        {props.plan1Label} stays ≥ 90% through {last90Plan1 ?? "—"} ·{" "}
-        {props.plan2Label} stays ≥ 90% through {last90Plan2 ?? "—"}
+      <div
+        className="mb-4 grid gap-2 text-sm text-slate-400"
+        style={{
+          gridTemplateColumns: `repeat(${plans.length}, minmax(0, 1fr))`,
+        }}
+      >
+        {perPlan.map((p, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: seriesColor(i) }}
+              aria-hidden
+            />
+            <span>
+              <span className="text-slate-200">{p.label}</span> stays ≥ 90%
+              through {p.last90 ?? "—"}
+            </span>
+          </div>
+        ))}
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div>
-          <div className="mb-2 text-xs uppercase tracking-wide text-slate-400">
-            {props.plan1Label}
+      <div
+        className="grid gap-4"
+        style={{
+          gridTemplateColumns: `repeat(${Math.min(plans.length, 2)}, minmax(0, 1fr))`,
+        }}
+      >
+        {perPlan.map((p, i) => (
+          <div key={i}>
+            <div className="mb-2 text-xs uppercase tracking-wide text-slate-400">
+              {p.label}
+            </div>
+            <LongevityChart
+              byYearLiquidAssetsPerTrial={p.matrix}
+              requiredMinimumAssetLevel={threshold}
+              planStartYear={planStartYear}
+              clientBirthYear={clientBirthYear}
+              variant="compact"
+            />
           </div>
-          <LongevityChart
-            byYearLiquidAssetsPerTrial={props.plan1Matrix}
-            requiredMinimumAssetLevel={props.threshold}
-            planStartYear={props.planStartYear}
-            clientBirthYear={props.clientBirthYear}
-            variant="compact"
-          />
-        </div>
-        <div>
-          <div className="mb-2 text-xs uppercase tracking-wide text-slate-400">
-            {props.plan2Label}
-          </div>
-          <LongevityChart
-            byYearLiquidAssetsPerTrial={props.plan2Matrix}
-            requiredMinimumAssetLevel={props.threshold}
-            planStartYear={props.planStartYear}
-            clientBirthYear={props.clientBirthYear}
-            variant="compact"
-          />
-        </div>
+        ))}
       </div>
     </section>
   );
