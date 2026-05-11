@@ -1,5 +1,5 @@
 import { STATE_ESTATE_TAX } from "./data";
-import { applyMaxCombinedCap } from "./special-rules";
+import { applyCliff, applyMaxCombinedCap } from "./special-rules";
 import type { Bracket, BracketLine, GiftAddback as GiftAddbackRule, StateCode, StateEstateTaxResult } from "./types";
 
 export interface ComputeStateEstateTaxInput {
@@ -36,9 +36,30 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
 
   const giftAddback = computeGiftAddback(rule.giftAddback, input.adjustedTaxableGifts);
   const baseForTax = input.taxableEstate + giftAddback;
-  const amountOverExemption = Math.max(0, baseForTax - rule.exemption);
 
-  const bracketLines = applyBrackets(rule.brackets, baseForTax);
+  const cliffApp = applyCliff(rule, baseForTax);
+  const cliff = rule.cliffPct != null
+    ? { applied: cliffApp.applied, threshold: cliffApp.threshold }
+    : undefined;
+
+  // For cliff states, brackets start at $0 and a credit zeros out tax below the
+  // exemption. Above the cliff the credit vanishes, so the whole estate is taxable.
+  const isCliffState = rule.cliffPct != null;
+  let bracketLines: BracketLine[];
+  let amountOverExemption: number;
+  if (isCliffState && !cliffApp.applied) {
+    bracketLines = applyBrackets(
+      shiftBracketsAboveExemption(rule.brackets, rule.exemption),
+      baseForTax,
+    );
+    amountOverExemption = Math.max(0, baseForTax - rule.exemption);
+  } else if (isCliffState && cliffApp.applied) {
+    bracketLines = applyBrackets(rule.brackets, baseForTax);
+    amountOverExemption = baseForTax;
+  } else {
+    bracketLines = applyBrackets(rule.brackets, baseForTax);
+    amountOverExemption = Math.max(0, baseForTax - rule.exemption);
+  }
   const preCapTax = bracketLines.reduce((s, l) => s + l.tax, 0);
 
   const notes: string[] = [];
@@ -47,6 +68,12 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
   const antiCliffCreditApplied = rule.antiCliff === true;
   if (antiCliffCreditApplied) {
     notes.push(`MA anti-cliff exclusion applied: first $${rule.exemption.toLocaleString()} not taxed.`);
+  }
+  if (isCliffState && cliffApp.applied) {
+    notes.push(
+      `NY 105% cliff applied: taxable estate exceeds ${(rule.cliffPct! * 100).toFixed(0)}% of exemption ` +
+      `($${cliffApp.threshold.toLocaleString()}). Entire estate is taxable.`,
+    );
   }
   if (giftAddback > 0 && rule.giftAddback) {
     if (rule.giftAddback.years === Infinity) {
@@ -83,6 +110,7 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
     bracketLines,
     preCapTax,
     ...(cap !== undefined ? { cap } : {}),
+    ...(cliff !== undefined ? { cliff } : {}),
     ...(rule.antiCliff ? { antiCliffCreditApplied: true } : {}),
     stateEstateTax: Math.max(0, finalTax),
     notes,
@@ -133,4 +161,15 @@ function computeGiftAddback(rule: GiftAddbackRule | null, adjustedTaxableGifts: 
   // finite-year windows both apply the full adjustedTaxableGifts. Narrow-window
   // resolution is Phase 3.
   return Math.max(0, adjustedTaxableGifts);
+}
+
+/** Shift bracket lower bounds up by the exemption to display only above-exemption bands. */
+function shiftBracketsAboveExemption(brackets: Bracket[], exemption: number): Bracket[] {
+  return brackets
+    .map((b) => ({
+      from: Math.max(b.from, exemption),
+      to: b.to,
+      rate: b.rate,
+    }))
+    .filter((b) => b.to == null || b.from < b.to);
 }

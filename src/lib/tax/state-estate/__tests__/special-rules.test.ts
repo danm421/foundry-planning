@@ -59,3 +59,29 @@ describe("Massachusetts — anti-cliff credit", () => {
     expect(r.bracketLines).toHaveLength(4);
   });
 });
+
+describe("New York — 105% cliff", () => {
+  it("just under 105% of exemption → only excess taxed (credit absorbs all tax below exemption)", () => {
+    const r = computeStateEstateTax({
+      state: "NY",
+      deathYear: 2026,
+      taxableEstate: 7_510_000,
+      adjustedTaxableGifts: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.cliff?.applied).toBe(false);
+  });
+
+  it("above 105% of exemption → entire estate taxed (no exemption credit)", () => {
+    const r = computeStateEstateTax({
+      state: "NY",
+      deathYear: 2026,
+      taxableEstate: 8_000_000,
+      adjustedTaxableGifts: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.cliff?.applied).toBe(true);
+    expect(r.baseForTax).toBe(8_000_000);
+    expect(r.stateEstateTax).toBeCloseTo(773_200, 0);
+  });
+});
