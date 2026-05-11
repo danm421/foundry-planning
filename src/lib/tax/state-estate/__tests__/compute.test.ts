@@ -49,3 +49,32 @@ describe("computeStateEstateTax — vanilla brackets", () => {
     expect(r.bracketLines).toHaveLength(10);
   });
 });
+
+describe("computeStateEstateTax — fallback flat-rate path (back-compat)", () => {
+  it("returns zero when state is null and fallback rate is zero", () => {
+    const r = computeStateEstateTax({
+      state: null,
+      deathYear: 2026,
+      taxableEstate: 5_000_000,
+      adjustedTaxableGifts: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.fallbackUsed).toBe(false);
+    expect(r.stateEstateTax).toBe(0);
+    expect(r.bracketLines).toHaveLength(0);
+  });
+
+  it("applies flat fallback rate when state is null and rate is positive", () => {
+    const r = computeStateEstateTax({
+      state: null,
+      deathYear: 2026,
+      taxableEstate: 5_000_000,
+      adjustedTaxableGifts: 0,
+      fallbackFlatRate: 0.08,
+    });
+    expect(r.fallbackUsed).toBe(true);
+    expect(r.fallbackRate).toBe(0.08);
+    expect(r.stateEstateTax).toBe(400_000);
+    expect(r.notes[0]).toMatch(/8\.00%/);
+  });
+});
