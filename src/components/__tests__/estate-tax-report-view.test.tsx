@@ -55,8 +55,23 @@ function makeEstateTaxResult(
     applicableExclusion: 0,
     unifiedCredit: 0,
     federalEstateTax: 0,
+    residenceState: null,
     stateEstateTaxRate: 0,
     stateEstateTax: 0,
+    stateEstateTaxDetail: {
+      state: null,
+      fallbackUsed: false,
+      fallbackRate: 0,
+      exemption: 0,
+      exemptionYear: 0,
+      giftAddback: 0,
+      baseForTax: 0,
+      amountOverExemption: 0,
+      bracketLines: [],
+      preCapTax: 0,
+      stateEstateTax: 0,
+      notes: [],
+    },
     totalEstateTax: 0,
     totalTaxesAndExpenses: 0,
     dsueGenerated: 0,
@@ -378,5 +393,239 @@ describe("EstateTaxReportView", () => {
     // Assert that dollar values swap: $456,000 (Linda's) now appears, $123,000 (Tom's) is hidden.
     await waitFor(() => expect(screen.getAllByText("$456,000").length).toBeGreaterThan(0));
     expect(screen.queryByText("$123,000")).toBeNull();
+  });
+});
+
+// ── State estate tax breakdown — special-rule states ────────────────────────
+
+describe("EstateTaxReportView — state estate tax breakdown", () => {
+  it("MA anti-cliff: renders bracket lines + anti-cliff note", async () => {
+    const hypo = makeHypothetical(2040, false, {
+      primary: {
+        first: null as unknown as Partial<EstateTaxResult>,
+        final: {
+          residenceState: "MA",
+          stateEstateTax: 179_040,
+          stateEstateTaxDetail: {
+            state: "MA",
+            fallbackUsed: false,
+            fallbackRate: 0,
+            exemption: 2_000_000,
+            exemptionYear: 2023,
+            baseForTax: 4_250_000,
+            amountOverExemption: 2_250_000,
+            giftAddback: 0,
+            bracketLines: [
+              { from: 2_000_000, to: 3_040_000, rate: 0.072, amountTaxed: 1_040_000, tax: 74_880 },
+              { from: 3_040_000, to: 3_540_000, rate: 0.080, amountTaxed: 500_000, tax: 40_000 },
+              { from: 3_540_000, to: 4_040_000, rate: 0.088, amountTaxed: 500_000, tax: 44_000 },
+              { from: 4_040_000, to: 5_040_000, rate: 0.096, amountTaxed: 210_000, tax: 20_160 },
+            ],
+            preCapTax: 179_040,
+            stateEstateTax: 179_040,
+            antiCliffCreditApplied: true,
+            notes: [
+              "Citation: MGL c.65C as amended Oct 2023 (anti-cliff exclusion; tax on excess above $2M).",
+              "MA anti-cliff exclusion applied: first $2,000,000 not taxed.",
+            ],
+          },
+        },
+      },
+    });
+    // first-only single-decedent fixture: use the primary.final as the only death
+    const primaryFirst = makeOrdering("client", hypo.primaryFirst.firstDeath, null);
+    primaryFirst.finalDeath = undefined;
+    const finalAsFirst = makeOrdering("client", {
+      ...hypo.primaryFirst.firstDeath,
+      deathOrder: 1,
+    }, null);
+    finalAsFirst.firstDeath = makeEstateTaxResult({
+      year: 2040,
+      deathOrder: 1,
+      deceased: "client",
+      residenceState: "MA",
+      stateEstateTax: 179_040,
+      stateEstateTaxDetail: {
+        state: "MA",
+        fallbackUsed: false,
+        fallbackRate: 0,
+        exemption: 2_000_000,
+        exemptionYear: 2023,
+        baseForTax: 4_250_000,
+        amountOverExemption: 2_250_000,
+        giftAddback: 0,
+        bracketLines: [
+          { from: 2_000_000, to: 3_040_000, rate: 0.072, amountTaxed: 1_040_000, tax: 74_880 },
+          { from: 3_040_000, to: 3_540_000, rate: 0.080, amountTaxed: 500_000, tax: 40_000 },
+          { from: 3_540_000, to: 4_040_000, rate: 0.088, amountTaxed: 500_000, tax: 44_000 },
+          { from: 4_040_000, to: 5_040_000, rate: 0.096, amountTaxed: 210_000, tax: 20_160 },
+        ],
+        preCapTax: 179_040,
+        stateEstateTax: 179_040,
+        antiCliffCreditApplied: true,
+        notes: [
+          "Citation: MGL c.65C as amended Oct 2023.",
+          "MA anti-cliff exclusion applied: first $2,000,000 not taxed.",
+        ],
+      },
+    });
+    const fixture: HypotheticalEstateTax = {
+      year: 2040,
+      primaryFirst: finalAsFirst,
+    };
+    setProjectionFixture([makeProjectionYear(fixture)]);
+    render(
+      <EstateTaxReportView
+        clientId="c1"
+        isMarried={false}
+        ownerNames={OWNERS}
+        ownerDobs={SINGLE_DOBS}
+        retirementYear={RETIREMENT_YEAR}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText(/State Estate Tax \(Massachusetts\)/)).toBeDefined());
+    expect(screen.getByText(/MA anti-cliff exclusion applied/)).toBeDefined();
+    // Bracket line: from $2.00M – $3.04M × 7.20%
+    expect(screen.getByText(/\$2\.00M.*\$3\.04M.*7\.20%/)).toBeDefined();
+    // Subtotal
+    expect(screen.getAllByText("$179,040").length).toBeGreaterThan(0);
+  });
+
+  it("CT cap: renders combined-cap deduction note", async () => {
+    const hypo = makeHypothetical(2040, false, {
+      primary: { first: {}, final: null },
+    });
+    const detail = {
+      state: "CT" as const,
+      fallbackUsed: false,
+      fallbackRate: 0,
+      exemption: 15_000_000,
+      exemptionYear: 2026,
+      baseForTax: 200_000_000,
+      amountOverExemption: 185_000_000,
+      giftAddback: 0,
+      bracketLines: [
+        { from: 15_000_000, to: 200_000_000, rate: 0.12, amountTaxed: 185_000_000, tax: 22_200_000 },
+      ],
+      preCapTax: 22_200_000,
+      cap: { applied: true, cap: 15_000_000, reduction: 7_200_000 },
+      stateEstateTax: 15_000_000,
+      notes: [
+        "Citation: CT Gen. Stat. §12-391.",
+        "Max combined estate+gift tax cap of $15,000,000 applied; pre-cap tax was $22,200,000.",
+      ],
+    };
+    hypo.primaryFirst.firstDeath = makeEstateTaxResult({
+      year: 2040,
+      deathOrder: 1,
+      deceased: "client",
+      residenceState: "CT",
+      stateEstateTax: 15_000_000,
+      stateEstateTaxDetail: detail,
+    });
+    setProjectionFixture([makeProjectionYear(hypo)]);
+    render(
+      <EstateTaxReportView
+        clientId="c1"
+        isMarried={false}
+        ownerNames={OWNERS}
+        ownerDobs={SINGLE_DOBS}
+        retirementYear={RETIREMENT_YEAR}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText(/State Estate Tax \(Connecticut\)/)).toBeDefined());
+    expect(screen.getByText(/Max combined cap/)).toBeDefined();
+    expect(screen.getAllByText("$15,000,000").length).toBeGreaterThan(0);
+  });
+
+  it("NY cliff applied: shows full-estate base + cliff note", async () => {
+    const hypo = makeHypothetical(2040, false, {
+      primary: { first: {}, final: null },
+    });
+    hypo.primaryFirst.firstDeath = makeEstateTaxResult({
+      year: 2040,
+      deathOrder: 1,
+      deceased: "client",
+      residenceState: "NY",
+      stateEstateTax: 773_200,
+      stateEstateTaxDetail: {
+        state: "NY",
+        fallbackUsed: false,
+        fallbackRate: 0,
+        exemption: 7_160_000,
+        exemptionYear: 2025,
+        baseForTax: 8_000_000,
+        amountOverExemption: 8_000_000,
+        giftAddback: 0,
+        bracketLines: [
+          { from: 0, to: 500_000, rate: 0.0306, amountTaxed: 500_000, tax: 15_300 },
+        ],
+        preCapTax: 773_200,
+        cliff: { applied: true, threshold: 7_518_000 },
+        stateEstateTax: 773_200,
+        notes: [
+          "Citation: NY Tax Law §952.",
+          "NY 105% cliff applied: taxable estate exceeds 105% of exemption ($7,518,000). Entire estate is taxable.",
+        ],
+      },
+    });
+    setProjectionFixture([makeProjectionYear(hypo)]);
+    render(
+      <EstateTaxReportView
+        clientId="c1"
+        isMarried={false}
+        ownerNames={OWNERS}
+        ownerDobs={SINGLE_DOBS}
+        retirementYear={RETIREMENT_YEAR}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText(/State Estate Tax \(New York\)/)).toBeDefined());
+    expect(screen.getByText(/NY 105% cliff applied/)).toBeDefined();
+    expect(screen.getAllByText("$773,200").length).toBeGreaterThan(0);
+  });
+
+  it("Custom override (fallback) renders legacy two-line layout", async () => {
+    const hypo = makeHypothetical(2040, false, {
+      primary: { first: {}, final: null },
+    });
+    hypo.primaryFirst.firstDeath = makeEstateTaxResult({
+      year: 2040,
+      deathOrder: 1,
+      deceased: "client",
+      residenceState: null,
+      taxableEstate: 1_000_000,
+      stateEstateTax: 80_000,
+      stateEstateTaxRate: 0.08,
+      stateEstateTaxDetail: {
+        state: null,
+        fallbackUsed: true,
+        fallbackRate: 0.08,
+        exemption: 0,
+        exemptionYear: 0,
+        giftAddback: 0,
+        baseForTax: 1_000_000,
+        amountOverExemption: 0,
+        bracketLines: [],
+        preCapTax: 80_000,
+        stateEstateTax: 80_000,
+        notes: ["Custom flat rate of 8.00% applied."],
+      },
+    });
+    setProjectionFixture([makeProjectionYear(hypo)]);
+    render(
+      <EstateTaxReportView
+        clientId="c1"
+        isMarried={false}
+        ownerNames={OWNERS}
+        ownerDobs={SINGLE_DOBS}
+        retirementYear={RETIREMENT_YEAR}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText(/State Estate Tax \(Custom Override\)/)).toBeDefined());
+    expect(screen.getByText(/Taxable Estate × 8\.00%/)).toBeDefined();
   });
 });

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PercentInput } from "@/components/percent-input";
+import { STATE_ESTATE_TAX, type StateCode, type Bracket } from "@/lib/tax/state-estate";
 
 interface TaxRatesFormProps {
   clientId: string;
@@ -10,6 +11,7 @@ interface TaxRatesFormProps {
   flatStateRate: string;
   estateAdminExpenses: string;
   flatStateEstateRate: string;
+  residenceState: StateCode | null;
   irdTaxRate: string;
   outOfHouseholdDniRate: string;
   priorTaxableGiftsClient: string;
@@ -22,12 +24,33 @@ interface TaxRatesFormProps {
 
 const pct = (v: string) => (Number(v) * 100).toFixed(2);
 
+const STATE_FULL_NAME: Record<StateCode, string> = {
+  CT: "Connecticut", DC: "District of Columbia", HI: "Hawaii",
+  IL: "Illinois", ME: "Maine", MD: "Maryland", MA: "Massachusetts",
+  MN: "Minnesota", NY: "New York", OR: "Oregon",
+  RI: "Rhode Island", VT: "Vermont", WA: "Washington",
+};
+
+function topRate(brackets: Bracket[]): number {
+  return brackets.reduce((m, b) => Math.max(m, b.rate), 0);
+}
+
+const STATE_OPTIONS = Object.values(STATE_ESTATE_TAX)
+  .map((rule) => ({
+    code: rule.state,
+    label: STATE_FULL_NAME[rule.state],
+    exemption: rule.exemption,
+    top: topRate(rule.brackets),
+  }))
+  .sort((a, b) => a.label.localeCompare(b.label));
+
 export default function TaxRatesForm({
   clientId,
   flatFederalRate,
   flatStateRate,
   estateAdminExpenses,
   flatStateEstateRate,
+  residenceState,
   irdTaxRate,
   outOfHouseholdDniRate,
   priorTaxableGiftsClient,
@@ -52,11 +75,16 @@ export default function TaxRatesForm({
     const data = new FormData(e.currentTarget);
     const toDec = (name: string) => String(Number(data.get(name) as string) / 100);
 
-    const body: Record<string, string | undefined> = {
+    const rawResidence = data.get("residenceState");
+    const residence = typeof rawResidence === "string" && rawResidence.length === 2
+      ? rawResidence
+      : null;
+    const body: Record<string, string | null | undefined> = {
       flatStateRate: toDec("flatStateRate"),
       taxEngineMode: mode,
       estateAdminExpenses: String(Number(data.get("estateAdminExpenses") ?? "0")),
       flatStateEstateRate: String(Number(data.get("flatStateEstateRate") ?? "0") / 100),
+      residenceState: residence,
       irdTaxRate: String(Number(data.get("irdTaxRate") ?? "0") / 100),
       outOfHouseholdDniRate: String(Number(data.get("outOfHouseholdDniRate") ?? "0") / 100),
       priorTaxableGiftsClient: String(Number(data.get("priorTaxableGiftsClient") ?? "0")),
@@ -153,8 +181,34 @@ export default function TaxRatesForm({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-300" htmlFor="flatStateEstateRate">State estate tax rate</label>
-          <PercentInput id="flatStateEstateRate" name="flatStateEstateRate" defaultValue={pct(flatStateEstateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent" />
+          <label className="block text-xs font-medium text-gray-300" htmlFor="residenceState">State of residence (for estate tax)</label>
+          <select
+            id="residenceState"
+            name="residenceState"
+            defaultValue={residenceState ?? ""}
+            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            <option value="">— No state estate tax —</option>
+            {STATE_OPTIONS.map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.label} — ${(s.exemption / 1_000_000).toFixed(2)}M exemption · top {Math.round(s.top * 100)}%
+              </option>
+            ))}
+          </select>
+          <details className="mt-2 text-xs text-gray-400">
+            <summary className="cursor-pointer">Custom flat rate (override)</summary>
+            <div className="mt-2">
+              <label className="block text-xs font-medium text-gray-300" htmlFor="flatStateEstateRate">
+                Override rate (applied when no state is selected)
+              </label>
+              <PercentInput
+                id="flatStateEstateRate"
+                name="flatStateEstateRate"
+                defaultValue={pct(flatStateEstateRate)}
+                className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </div>
+          </details>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-300" htmlFor="irdTaxRate">IRD tax rate</label>

@@ -76,6 +76,7 @@ export async function PUT(
       flatStateRate,
       estateAdminExpenses,
       flatStateEstateRate,
+      residenceState,
       irdTaxRate,
       outOfHouseholdDniRate,
       priorTaxableGiftsClient,
@@ -146,6 +147,16 @@ export async function PUT(
       );
     }
 
+    if (residenceState !== undefined && residenceState !== null) {
+      const VALID = new Set(["CT","DC","HI","IL","ME","MD","MA","MN","NY","OR","RI","VT","WA"]);
+      if (typeof residenceState !== "string" || !VALID.has(residenceState)) {
+        return NextResponse.json(
+          { error: "residenceState must be a valid USPS code for a state estate tax jurisdiction (or null)" },
+          { status: 400 },
+        );
+      }
+    }
+
     if (typeof irdTaxRate === "number" &&
         (irdTaxRate < 0 || irdTaxRate > 1)) {
       return NextResponse.json(
@@ -182,6 +193,7 @@ export async function PUT(
         flatStateRate: flatStateRate != null ? String(flatStateRate) : undefined,
         estateAdminExpenses: estateAdminExpenses != null ? String(estateAdminExpenses) : undefined,
         flatStateEstateRate: flatStateEstateRate != null ? String(flatStateEstateRate) : undefined,
+        residenceState: "residenceState" in body ? (residenceState ?? null) : undefined,
         irdTaxRate: irdTaxRate != null ? String(irdTaxRate) : undefined,
         outOfHouseholdDniRate: outOfHouseholdDniRate != null ? String(outOfHouseholdDniRate) : undefined,
         priorTaxableGiftsClient: priorTaxableGiftsClient != null ? String(priorTaxableGiftsClient) : undefined,

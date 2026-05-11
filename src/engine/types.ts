@@ -176,8 +176,13 @@ export interface EstateTaxResult {
   federalEstateTax: number;
 
   // State Tax
+  /** USPS two-letter code; null when no residence state is set. */
+  residenceState: import("@/lib/tax/state-estate").StateCode | null;
+  /** Effective marginal rate used in fallback mode; otherwise weighted-average bracket rate. */
   stateEstateTaxRate: number;
   stateEstateTax: number;
+  /** Full per-state detail for the audit report. Always present. */
+  stateEstateTaxDetail: import("@/lib/tax/state-estate").StateEstateTaxResult;
 
   // Totals
   totalEstateTax: number;            // federal + state
@@ -797,7 +802,10 @@ export interface PlanSettings {
   ssWageGrowthRate?: number | null;
   /** Lump-sum estate administration expenses (funerals, executor fees, etc.). */
   estateAdminExpenses?: number;
-  /** Flat state estate tax rate applied on top of federal estate tax. 0 disables. */
+  /** USPS 2-letter code; null = no estate-tax state (fallback rate may still apply). */
+  residenceState?: import("@/lib/tax/state-estate").StateCode | null;
+  /** Flat state estate tax rate applied on top of federal estate tax. 0 disables.
+   *  Used only when `residenceState` is null/absent. */
   flatStateEstateRate?: number;
   /** Effective tax rate applied to DNI distributed to out-of-household beneficiaries.
    *  Defaults to 0.37 (top federal bracket) when absent. */

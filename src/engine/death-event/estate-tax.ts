@@ -3,6 +3,7 @@ import type {
   EstateTaxResult, Liability, PlanSettings,
 } from "../types";
 import { applyUnifiedRateSchedule } from "@/lib/tax/estate";
+import { computeStateEstateTax, type StateCode } from "@/lib/tax/state-estate";
 import type { ExternalBeneficiarySummary } from "./shared";
 import { controllingEntity, ownedByHousehold, controllingFamilyMember } from "../ownership";
 
@@ -342,7 +343,8 @@ export function buildEstateTaxResult(input: {
   lifetimeGiftTaxAdjustment: number;
   beaAtDeathYear: number;
   dsueReceived: number;
-  stateEstateTaxRate: number;
+  residenceState: StateCode | null;
+  stateEstateTaxFallbackRate: number;
   estateTaxDebits: Array<{ accountId: string; amount: number }>;
   creditorPayoffDebits: Array<{ accountId: string; amount: number }>;
   creditorPayoffResidual: number;
@@ -361,7 +363,17 @@ export function buildEstateTaxResult(input: {
     dsueReceived: input.dsueReceived,
   });
 
-  const stateEstateTax = Math.max(0, taxableEstate * input.stateEstateTaxRate);
+  const stateEstateTaxDetail = computeStateEstateTax({
+    state: input.residenceState,
+    deathYear: input.year,
+    taxableEstate,
+    adjustedTaxableGifts: input.adjustedTaxableGifts,
+    fallbackFlatRate: input.stateEstateTaxFallbackRate,
+  });
+  const stateEstateTax = stateEstateTaxDetail.stateEstateTax;
+  const stateEstateTaxRate = stateEstateTaxDetail.fallbackUsed
+    ? stateEstateTaxDetail.fallbackRate
+    : (taxableEstate > 0 ? stateEstateTax / taxableEstate : 0);
   const totalEstateTax = fed.federalEstateTax + stateEstateTax;
   const totalTaxesAndExpenses = totalEstateTax + input.deductions.estateAdminExpenses;
 
@@ -387,8 +399,10 @@ export function buildEstateTaxResult(input: {
     applicableExclusion: fed.applicableExclusion,
     unifiedCredit: fed.unifiedCredit,
     federalEstateTax: fed.federalEstateTax,
-    stateEstateTaxRate: input.stateEstateTaxRate,
+    residenceState: input.residenceState,
+    stateEstateTaxRate,
     stateEstateTax,
+    stateEstateTaxDetail,
     totalEstateTax,
     totalTaxesAndExpenses,
     dsueGenerated,

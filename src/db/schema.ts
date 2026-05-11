@@ -460,6 +460,7 @@ export const planSettings = pgTable("plan_settings", {
   flatStateEstateRate: decimal("flat_state_estate_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0"),
+  residenceState: text("residence_state"),
   irdTaxRate: decimal("ird_tax_rate", { precision: 5, scale: 4 })
     .notNull()
     .default("0.0000"),
