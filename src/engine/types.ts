@@ -802,7 +802,10 @@ export interface PlanSettings {
   ssWageGrowthRate?: number | null;
   /** Lump-sum estate administration expenses (funerals, executor fees, etc.). */
   estateAdminExpenses?: number;
-  /** Flat state estate tax rate applied on top of federal estate tax. 0 disables. */
+  /** USPS 2-letter code; null = no estate-tax state (fallback rate may still apply). */
+  residenceState?: import("@/lib/tax/state-estate").StateCode | null;
+  /** Flat state estate tax rate applied on top of federal estate tax. 0 disables.
+   *  Used only when `residenceState` is null/absent. */
   flatStateEstateRate?: number;
   /** Effective tax rate applied to DNI distributed to out-of-household beneficiaries.
    *  Defaults to 0.37 (top federal bracket) when absent. */
