@@ -1182,50 +1182,17 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
-    // ── Apply Roth Conversions (technique) ──────────────────────────────────
-    // Runs after RMDs so fill-up-bracket math sees the year's required RMD
-    // income, and so Trad → Roth pro-rata is computed on post-RMD balances.
+    // ── Roth Conversions (technique) — deferred application ────────────────
+    // We initialize an empty result here so downstream taxableIncome / taxDetail
+    // construction can reference it as a placeholder. The actual conversion
+    // runs later in the year, AFTER aboveLine + itemized deductions are known,
+    // so the `fill_up_bracket` strategy can use a real `incomeTaxBase`-aware
+    // closure (accurate against taxable SS, QBI, above-line, itemized > std).
     let rothConversionResult = {
       taxableOrdinaryIncome: 0,
       earlyWithdrawalPenalty: 0,
       byConversion: {} as Record<string, { gross: number; taxable: number; bySource: Record<string, number> }>,
     };
-    if (data.rothConversions && data.rothConversions.length > 0) {
-      const convFilingStatus = effectiveFilingStatus(
-        (client.filingStatus ?? "single") as FilingStatus,
-        firstDeathYear,
-        year,
-      );
-      const convResolved = taxResolver ? taxResolver.getYear(year) : null;
-      const convBrackets = convResolved?.params.incomeBrackets[convFilingStatus];
-      const convStdDeduction = convResolved?.params.stdDeduction[convFilingStatus] ?? 0;
-      // Pre-conversion ordinary-income tax base: earned + STCG + ordinary divs +
-      // transfer-induced OI + RMDs. Excludes qual-div / LTCG (they stack above
-      // the OI bracket) and SS taxable portion (approximation — Fill-Up-Bracket
-      // is most useful in pre-SS years).
-      const preConversionOrdinaryIncome =
-        income.salaries + income.business + income.deferred + income.trust +
-        grantorIncome.salaries + grantorIncome.business + grantorIncome.deferred + grantorIncome.trust +
-        realizationOI + realizationSTCG +
-        transferResult.taxableOrdinaryIncome +
-        householdRmdIncome + grantorRmdTaxable;
-
-      rothConversionResult = applyRothConversions({
-        conversions: data.rothConversions,
-        accounts: workingAccounts,
-        accountBalances,
-        basisMap,
-        rothValueMap,
-        accountLedgers,
-        year,
-        ownerAges: { client: ages.client, spouse: ages.spouse },
-        spouseFamilyMemberId: spouseFmId,
-        preConversionOrdinaryIncome,
-        filingStatus: convFilingStatus,
-        ordinaryBrackets: convBrackets,
-        taxDeduction: convStdDeduction,
-      });
-    }
 
     // 5. Compute taxable income total and per-category tax detail.
     // Declared `let` so the Phase 3 entity-passthrough block can add its
@@ -2204,6 +2171,85 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // (IRC §1411) can see investment interest while still excluding RMDs,
     // IRA distributions, and SE earnings which ride in ordinaryIncome.
     const interestIncomeForTax = realizationOI;
+
+    // ── Roth Conversions (deferred application) ──────────────────────────────
+    // Run conversions HERE — after aboveLine/itemized are computed — so the
+    // `fill_up_bracket` strategy can use an accurate `incomeTaxBase` closure
+    // that accounts for SS taxability stack-up, QBI, above-line, and
+    // itemized-vs-std. The legacy proxy ignored all of these.
+    if (data.rothConversions && data.rothConversions.length > 0) {
+      const convFilingStatus = effectiveFilingStatus(
+        (client.filingStatus ?? "single") as FilingStatus,
+        firstDeathYear,
+        year,
+      );
+      const convResolved = taxResolver ? taxResolver.getYear(year) : null;
+      const convBrackets = convResolved?.params.incomeBrackets[convFilingStatus];
+
+      // Closure: returns the year's `incomeTaxBase` if Roth taxable income were
+      // `r`. Used only by the `fill_up_bracket` strategy; called up to 6× to
+      // converge a bracket fill that exactly matches the bracket ceiling.
+      const computeIncomeTaxBaseWithRothTaxable = (r: number): number => {
+        if (!useBracket || !resolved) {
+          return Math.max(0, taxableIncome + r);
+        }
+        const trial = computeTaxForYear({
+          taxDetail: {
+            ...taxDetail,
+            ordinaryIncome: taxDetail.ordinaryIncome + r,
+            bySource: { ...taxDetail.bySource },
+          },
+          socialSecurityGross: income.socialSecurity,
+          totalIncome: income.total + r,
+          taxableIncome: taxableIncome + r,
+          filingStatus,
+          year,
+          planSettings,
+          resolved,
+          useBracket,
+          aboveLineDeductions,
+          itemizedDeductions,
+          charityCarryforwardIn: charityCarryforward,
+          charityGiftsThisYear,
+          secaResult,
+          transferEarlyWithdrawalPenalty: 0,
+          interestIncomeForTax,
+          deductionBreakdownIn: deductionBreakdownResult ?? null,
+        });
+        return trial.taxResult.flow.incomeTaxBase;
+      };
+
+      rothConversionResult = applyRothConversions({
+        conversions: data.rothConversions,
+        accounts: workingAccounts,
+        accountBalances,
+        basisMap,
+        rothValueMap,
+        accountLedgers,
+        year,
+        ownerAges: { client: ages.client, spouse: ages.spouse },
+        spouseFamilyMemberId: spouseFmId,
+        ordinaryBrackets: convBrackets,
+        computeIncomeTaxBaseWithRothTaxable,
+      });
+
+      // Fold the conversion's taxable income into the year's tax inputs so
+      // the final tax calc sees it. The empty-placeholder `rothConversionResult`
+      // already contributed 0 to `taxableIncome` (line 1252) and `taxDetail`
+      // (lines 1381 / 1397) earlier in this year loop.
+      if (rothConversionResult.taxableOrdinaryIncome > 0) {
+        taxableIncome += rothConversionResult.taxableOrdinaryIncome;
+        taxDetail.ordinaryIncome += rothConversionResult.taxableOrdinaryIncome;
+        for (const [cid, info] of Object.entries(rothConversionResult.byConversion)) {
+          if (info.taxable > 0) {
+            taxDetail.bySource[`roth_conversion:${cid}`] = {
+              type: "ordinary_income",
+              amount: info.taxable,
+            };
+          }
+        }
+      }
+    }
 
     const taxOut = computeTaxForYear({
       taxDetail,

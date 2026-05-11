@@ -178,6 +178,129 @@ describe("applyRothConversions", () => {
     expect(s.accountBalances["ira-a"]).toBe(400000);
   });
 
+  it("fill_up_bracket via computeBase: tops out a bracket exactly given a base() closure", () => {
+    // Two-pass strategy: caller passes a closure that returns the year's
+    // incomeTaxBase given a hypothetical Roth-conversion taxable amount.
+    // The strategy iterates the closure to converge incomeTaxBase = tier.to.
+    const conv: RothConversion = {
+      id: "rc9", name: "Fill 22%", destinationAccountId: "roth-1",
+      sourceAccountIds: ["ira-a"], conversionType: "fill_up_bracket",
+      fixedAmount: 0, fillUpBracket: 0.22, startYear: 2026, endYear: 2030,
+      indexingRate: 0,
+    };
+    const ordinaryBrackets: BracketTier[] = [
+      { from: 0,      to: 23200,  rate: 0.10 },
+      { from: 23200,  to: 94300,  rate: 0.12 },
+      { from: 94300,  to: 201050, rate: 0.22 },
+      { from: 201050, to: 383900, rate: 0.24 },
+      { from: 383900, to: null,   rate: 0.37 },
+    ];
+    // Baseline (no conversion) incomeTaxBase = 100000. Linear-in-roth.
+    const computeBase = (rothTaxable: number) => 100000 + rothTaxable;
+    const s = freshState();
+    const r = applyRothConversions({
+      conversions: [conv], ...s, year: 2026, ownerAges: { client: 60 },
+      ordinaryBrackets,
+      computeIncomeTaxBaseWithRothTaxable: computeBase,
+    });
+    // Should converge to tier.to = 201050. Conversion = 201050 - 100000 = 101050.
+    expect(r.taxableOrdinaryIncome).toBeCloseTo(101050, 0);
+  });
+
+  it("fill_up_bracket via computeBase: handles SS-taxability phase-in (overshoot bug)", () => {
+    // Mimics the production bug: in years where Social Security is in the
+    // 50%→85% phase-in zone, increasing the conversion pushes more SS into
+    // taxable income. The simple proxy ignored this and overshot the bracket
+    // by the taxable-SS amount. The two-pass loop must converge.
+    const conv: RothConversion = {
+      id: "rc10", name: "Fill 22%", destinationAccountId: "roth-1",
+      sourceAccountIds: ["ira-a"], conversionType: "fill_up_bracket",
+      fixedAmount: 0, fillUpBracket: 0.22, startYear: 2026, endYear: 2030,
+      indexingRate: 0,
+    };
+    const ordinaryBrackets: BracketTier[] = [
+      { from: 0,      to: 23200,  rate: 0.10 },
+      { from: 23200,  to: 94300,  rate: 0.12 },
+      { from: 94300,  to: 201050, rate: 0.22 },
+      { from: 201050, to: null,   rate: 0.24 },
+    ];
+    // Baseline = 80000 of non-SS taxable + 0.85 * rothTaxable extra (the SS
+    // becomes 85% taxable once provisional crosses the higher threshold,
+    // adding 0.85 of each additional ordinary-income dollar up to the SS cap).
+    // Use a simple linear approximation: each $1 of conversion adds $1 directly
+    // plus pushes ~$0.85 of additional SS into taxable, until the SS cap.
+    const ssGrossTaxableMax = 17000;
+    const computeBase = (rothTaxable: number) => {
+      const extraSS = Math.min(ssGrossTaxableMax, 0.85 * rothTaxable);
+      return 80000 + rothTaxable + extraSS;
+    };
+    const s = freshState();
+    const r = applyRothConversions({
+      conversions: [conv], ...s, year: 2026, ownerAges: { client: 70 },
+      ordinaryBrackets,
+      computeIncomeTaxBaseWithRothTaxable: computeBase,
+    });
+    // Must land on tier.to without overshoot.
+    const finalBase = computeBase(r.taxableOrdinaryIncome);
+    expect(finalBase).toBeGreaterThanOrEqual(201050 - 1);
+    expect(finalBase).toBeLessThanOrEqual(201050 + 1);
+  });
+
+  it("fill_up_bracket via computeBase: handles above-line deductions (undershoot bug)", () => {
+    // 401k pre-tax / HSA contributions are subtracted in the real tax calc
+    // but were NOT subtracted in the simple proxy — that caused the proxy to
+    // overstate pre-conv income and undershoot the bracket. The computeBase
+    // closure naturally handles this: it returns the true incomeTaxBase after
+    // all deductions.
+    const conv: RothConversion = {
+      id: "rc11", name: "Fill 22%", destinationAccountId: "roth-1",
+      sourceAccountIds: ["ira-a"], conversionType: "fill_up_bracket",
+      fixedAmount: 0, fillUpBracket: 0.22, startYear: 2026, endYear: 2030,
+      indexingRate: 0,
+    };
+    const ordinaryBrackets: BracketTier[] = [
+      { from: 0,      to: 94300,  rate: 0.12 },
+      { from: 94300,  to: 201050, rate: 0.22 },
+      { from: 201050, to: null,   rate: 0.24 },
+    ];
+    // Simulates: gross income 150k - aboveLine 25k - std 30k = 95k baseline.
+    // Without proper accounting, the proxy treated baseline as 150k - 30k = 120k
+    // and undershot by 25k. With computeBase, the answer is exact.
+    const computeBase = (rothTaxable: number) => 95000 + rothTaxable;
+    const s = freshState();
+    const r = applyRothConversions({
+      conversions: [conv], ...s, year: 2026, ownerAges: { client: 60 },
+      ordinaryBrackets,
+      computeIncomeTaxBaseWithRothTaxable: computeBase,
+    });
+    // 201050 - 95000 = 106050.
+    expect(r.taxableOrdinaryIncome).toBeCloseTo(106050, 0);
+  });
+
+  it("fill_up_bracket via computeBase: returns 0 when baseline already exceeds bracket", () => {
+    const conv: RothConversion = {
+      id: "rc12", name: "Fill 22%", destinationAccountId: "roth-1",
+      sourceAccountIds: ["ira-a"], conversionType: "fill_up_bracket",
+      fixedAmount: 0, fillUpBracket: 0.22, startYear: 2026, endYear: 2030,
+      indexingRate: 0,
+    };
+    const ordinaryBrackets: BracketTier[] = [
+      { from: 0,      to: 94300,  rate: 0.12 },
+      { from: 94300,  to: 201050, rate: 0.22 },
+      { from: 201050, to: null,   rate: 0.24 },
+    ];
+    // Baseline 250k > tier.to 201050 → conversion must be 0.
+    const computeBase = (rothTaxable: number) => 250000 + rothTaxable;
+    const s = freshState();
+    const r = applyRothConversions({
+      conversions: [conv], ...s, year: 2026, ownerAges: { client: 60 },
+      ordinaryBrackets,
+      computeIncomeTaxBaseWithRothTaxable: computeBase,
+    });
+    expect(r.taxableOrdinaryIncome).toBe(0);
+    expect(s.accountBalances["ira-a"]).toBe(400000);
+  });
+
   it("byConversion: gross and taxable diverge when Trad-IRA pool has after-tax basis", () => {
     // Form 8606 pro-rata aggregates ALL Trad IRAs. Pool = 600k (ira-a + ira-b).
     // Set 150k of basis on ira-a → 25% basis fraction across the pool →
