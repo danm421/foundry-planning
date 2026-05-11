@@ -1,9 +1,13 @@
 import { LifetimeTaxComparisonChart } from "@/components/comparison/lifetime-tax-comparison-chart";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
+import { seriesColor } from "@/lib/comparison/series-palette";
 
-const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-
-function fmtDelta(v: number): string {
+const usd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+function fmtUsdDelta(v: number): string {
   if (v === 0) return "$0";
   return `${v < 0 ? "−" : "+"}${usd.format(Math.abs(v))}`;
 }
@@ -11,35 +15,44 @@ function fmtDelta(v: number): string {
 interface Props { plans: ComparisonPlan[]; }
 
 export function LifetimeTaxComparisonSection({ plans }: Props) {
-  const plan1 = plans[0];
-  const plan2 = plans[1] ?? plans[0];
-  const delta = plan2.lifetime.total - plan1.lifetime.total;
-  const pctChange = plan1.lifetime.total === 0 ? 0 : (delta / plan1.lifetime.total) * 100;
-  const deltaCls = delta < 0 ? "text-emerald-400" : delta > 0 ? "text-rose-400" : "text-slate-300";
+  const base = plans[0];
   return (
     <section className="px-6 py-8">
       <h2 className="mb-4 text-lg font-semibold text-slate-100">Total Income Taxes Paid</h2>
-      <div className="mb-6 grid grid-cols-3 gap-4 rounded border border-slate-800 bg-slate-950 p-4">
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-400">{plan1.label}</div>
-          <div className="mt-1 text-2xl font-semibold text-slate-100">{usd.format(plan1.lifetime.total)}</div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-400">{plan2.label}</div>
-          <div className="mt-1 text-2xl font-semibold text-slate-100">{usd.format(plan2.lifetime.total)}</div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-400">Δ</div>
-          <div className={`mt-1 text-2xl font-semibold ${deltaCls}`}>
-            {fmtDelta(delta)} <span className="text-sm font-normal text-slate-400">({pctChange.toFixed(1)}%)</span>
-          </div>
-        </div>
+      <div
+        className="mb-6 grid gap-4 rounded border border-slate-800 bg-slate-950 p-4"
+        style={{ gridTemplateColumns: `repeat(${plans.length}, minmax(0, 1fr))` }}
+      >
+        {plans.map((p, i) => {
+          const delta = i === 0 ? 0 : p.lifetime.total - base.lifetime.total;
+          const cls = i === 0
+            ? "text-slate-100"
+            : delta < 0 ? "text-emerald-400"
+            : delta > 0 ? "text-rose-400" : "text-slate-300";
+          return (
+            <div key={i}>
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: seriesColor(i) }}
+                  aria-hidden
+                />
+                <span className="text-xs uppercase tracking-wide text-slate-400">{p.label}</span>
+              </div>
+              <div className="mt-1 text-2xl font-semibold text-slate-100">
+                {usd.format(p.lifetime.total)}
+              </div>
+              {i !== 0 && (
+                <div className={`mt-1 text-xs font-semibold ${cls}`}>
+                  {fmtUsdDelta(delta)} vs baseline
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
       <LifetimeTaxComparisonChart
-        plan1Buckets={plan1.lifetime.byBucket}
-        plan2Buckets={plan2.lifetime.byBucket}
-        plan1Label={plan1.label}
-        plan2Label={plan2.label}
+        plans={plans.map((p) => ({ label: p.label, buckets: p.lifetime.byBucket }))}
       />
     </section>
   );
