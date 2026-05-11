@@ -608,3 +608,70 @@ describe("Phase 3: distribution routes to owner's default cash account", () => {
     expect(distEntry!.amount).toBeCloseTo(100_000, 0);
   });
 });
+
+describe("Display: multi-entity Business column aggregation", () => {
+  it("sums distributions from multiple entities plus a household business income row", () => {
+    const llc2: EntitySummary = {
+      id: "llc2",
+      name: "Second LLC",
+      includeInPortfolio: true,
+      isGrantor: false,
+      entityType: "llc",
+      taxTreatment: "ordinary",
+      distributionPolicyPercent: 1.0,
+      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const llc2Income: Income = {
+      id: "i2",
+      type: "business",
+      name: "LLC2 Revenue",
+      annualAmount: 30_000,
+      startYear: 2026,
+      endYear: 2050,
+      growthRate: 0,
+      owner: "client",
+      ownerEntityId: "llc2",
+    };
+    const llc2Checking: Account = {
+      id: "llc2-checking",
+      name: "LLC2 Checking",
+      category: "cash",
+      subType: "checking",
+      value: 0,
+      basis: 0,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "llc2", percent: 1 }],
+      isDefaultChecking: true,
+    };
+    const householdBiz: Income = {
+      id: "i3",
+      type: "business",
+      name: "Sole-Prop Consulting",
+      annualAmount: 25_000,
+      startYear: 2026,
+      endYear: 2050,
+      growthRate: 0,
+      owner: "client",
+      // no ownerEntityId — pure household income
+    };
+
+    const data = mkData();
+    data.accounts = [hhChecking, entityChecking("llc1"), llc2Checking];
+    data.incomes = [llcIncome, llc2Income, householdBiz];
+    data.entities = [llcEntity, llc2];
+
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // llc1 distributes $100k, llc2 distributes $30k, household $25k → $155k.
+    expect(y0.income.business).toBeCloseTo(155_000, 0);
+    // bySource: entity ids for the two entities; income row id for household.
+    expect(y0.income.bySource["llc1"]).toBeCloseTo(100_000, 0);
+    expect(y0.income.bySource["llc2"]).toBeCloseTo(30_000, 0);
+    expect(y0.income.bySource["i3"]).toBeCloseTo(25_000, 0);
+    // Entity income row ids must NOT be in bySource.
+    expect(y0.income.bySource["i1"]).toBeUndefined();
+    expect(y0.income.bySource["i2"]).toBeUndefined();
+  });
+});
