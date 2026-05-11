@@ -631,6 +631,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         data: visibleYears.map((y) => y.income.socialSecurity),
         backgroundColor: "#2563eb",
         stack: "inflows",
+        order: 1,
       },
       {
         type: "bar" as const,
@@ -638,6 +639,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         data: visibleYears.map((y) => y.income.salaries),
         backgroundColor: "#16a34a",
         stack: "inflows",
+        order: 1,
       },
       {
         type: "bar" as const,
@@ -645,6 +647,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         data: visibleYears.map(otherIncomeForYear),
         backgroundColor: "#99f6e4",
         stack: "inflows",
+        order: 1,
       },
       {
         type: "bar" as const,
@@ -652,6 +655,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         data: visibleYears.map(rmdForYear),
         backgroundColor: "#f97316",
         stack: "inflows",
+        order: 1,
       },
       {
         type: "bar" as const,
@@ -659,11 +663,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         data: visibleYears.map((y) => y.withdrawals.total),
         backgroundColor: "#ef4444",
         stack: "inflows",
+        order: 1,
       },
       {
         type: "line" as const,
         label: "Total Expenses",
-        data: visibleYears.map((y) => y.expenses.total),
+        data: visibleYears.map((y) => y.totalExpenses),
         borderColor: "#ffffff",
         backgroundColor: "transparent",
         borderWidth: 2,
@@ -671,6 +676,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         pointHoverRadius: 4,
         tension: 0.3,
         fill: false,
+        order: 0,
       },
     ],
   };
