@@ -128,4 +128,13 @@ describe("useCompareState (array shape)", () => {
     const { result } = renderHook(() => useCompareState(CLIENT_ID));
     expect(result.current.plans).toEqual(["base", "sid_legacy"]);
   });
+
+  it("on first render reads and deletes legacy compare:<clientId>:left and :right keys", () => {
+    setUrl("");
+    window.localStorage.setItem(`compare:${CLIENT_ID}:left`, "base");
+    window.localStorage.setItem(`compare:${CLIENT_ID}:right`, "sid_legacy");
+    renderHook(() => useCompareState(CLIENT_ID));
+    expect(window.localStorage.getItem(`compare:${CLIENT_ID}:left`)).toBeNull();
+    expect(window.localStorage.getItem(`compare:${CLIENT_ID}:right`)).toBeNull();
+  });
 });

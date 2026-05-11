@@ -52,6 +52,23 @@ export function useCompareState(clientId: string): UseCompareStateResult {
   const pathname = usePathname();
   const params = useSearchParams();
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const leftKey = `compare:${clientId}:left`;
+    const rightKey = `compare:${clientId}:right`;
+    const left = window.localStorage.getItem(leftKey);
+    const right = window.localStorage.getItem(rightKey);
+    if (left === null && right === null) return;
+    // One-shot migration: copy into the new key only if it isn't set, then
+    // delete the old keys. URL is authoritative — this is just breadcrumb cleanup.
+    const newKey = `compare:${clientId}:plans`;
+    if (window.localStorage.getItem(newKey) === null && (left || right)) {
+      window.localStorage.setItem(newKey, `${left ?? "base"},${right ?? "base"}`);
+    }
+    window.localStorage.removeItem(leftKey);
+    window.localStorage.removeItem(rightKey);
+  }, [clientId]);
+
   const plans = useMemo(() => readPlans(params), [params]);
   const togglesStr = params.get("toggles") ?? "";
   const toggleSet = useMemo(
