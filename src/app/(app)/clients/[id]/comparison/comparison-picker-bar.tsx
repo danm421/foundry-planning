@@ -12,6 +12,7 @@ import {
   ComparisonChangesDrawer,
   type ComparisonChangesDrawerPlan,
 } from "./comparison-changes-drawer";
+import { useLegacyUrlMigration } from "./use-legacy-url-migration";
 
 interface Props {
   clientId: string;
@@ -28,6 +29,7 @@ export function ComparisonPickerBar({
   snapshots,
   drawerPlans = [],
 }: Props) {
+  useLegacyUrlMigration();
   const { plans, setPlanAt, addPlan, removePlanAt, makeBaseline } =
     useCompareState(clientId);
   const [drawerOpen, setDrawerOpen] = useState(false);
