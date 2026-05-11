@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { ImpactVsBasePanel } from "../impact-vs-base-panel";
+import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 
 vi.mock("react-chartjs-2", () => ({
   Bar: ({
@@ -11,20 +12,32 @@ vi.mock("react-chartjs-2", () => ({
   }) => <pre data-testid="chart">{JSON.stringify(data)}</pre>,
 }));
 
+function plan(
+  label: string,
+  heirs: number,
+  taxes: number,
+  charity: number,
+): ComparisonPlan {
+  return {
+    label,
+    finalEstate: { totalToHeirs: heirs, taxesAndExpenses: taxes, charity },
+  } as unknown as ComparisonPlan;
+}
+
 describe("ImpactVsBasePanel", () => {
   it("renders deltas with correct sign and includes year and labels", () => {
     const { getByText, getByTestId } = render(
       <ImpactVsBasePanel
         year={2055}
-        plan1Label="Base"
-        plan2Label="Proposed"
-        plan1={{ totalToHeirs: 164_000_000, taxesAndExpenses: 53_000_000, totalToCharities: 0 }}
-        plan2={{ totalToHeirs: 187_000_000, taxesAndExpenses: 34_000_000, totalToCharities: 0 }}
+        plans={[
+          plan("Base", 164_000_000, 53_000_000, 0),
+          plan("Proposed", 187_000_000, 34_000_000, 0),
+        ]}
       />,
     );
     expect(getByText("Impact vs Base (2055)")).toBeTruthy();
     expect(getByText("+$23,000,000")).toBeTruthy();
-    expect(getByText("-$19,000,000")).toBeTruthy();
+    expect(getByText("−$19,000,000")).toBeTruthy();
     expect(getByText("+$0")).toBeTruthy();
 
     const data = JSON.parse(getByTestId("chart").textContent ?? "{}");
@@ -39,10 +52,7 @@ describe("ImpactVsBasePanel", () => {
     const { container } = render(
       <ImpactVsBasePanel
         year={2055}
-        plan1Label="Base"
-        plan2Label="Proposed"
-        plan1={{ totalToHeirs: 100, taxesAndExpenses: 100, totalToCharities: 100 }}
-        plan2={{ totalToHeirs: 200, taxesAndExpenses: 50, totalToCharities: 200 }}
+        plans={[plan("Base", 100, 100, 100), plan("Proposed", 200, 50, 200)]}
       />,
     );
     const greens = container.querySelectorAll(".text-emerald-400");
@@ -53,13 +63,26 @@ describe("ImpactVsBasePanel", () => {
     const { container } = render(
       <ImpactVsBasePanel
         year={2055}
-        plan1Label="Base"
-        plan2Label="Proposed"
-        plan1={{ totalToHeirs: 200, taxesAndExpenses: 50, totalToCharities: 200 }}
-        plan2={{ totalToHeirs: 100, taxesAndExpenses: 100, totalToCharities: 100 }}
+        plans={[plan("Base", 200, 50, 200), plan("Proposed", 100, 100, 100)]}
       />,
     );
     const reds = container.querySelectorAll(".text-rose-400");
     expect(reds.length).toBe(3);
+  });
+
+  it("renders deltas per non-baseline plan at N=3", () => {
+    const { container } = render(
+      <ImpactVsBasePanel
+        year={2055}
+        plans={[
+          plan("Base", 100, 100, 0),
+          plan("A", 200, 50, 0),
+          plan("B", 300, 25, 0),
+        ]}
+      />,
+    );
+    // 2 non-baseline plans → 2 delta rows each for 3 metrics = should at minimum show plans labels
+    expect(container.textContent).toContain("A");
+    expect(container.textContent).toContain("B");
   });
 });

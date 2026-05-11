@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { LiquidityComparisonCharts } from "../liquidity-comparison-charts";
+import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { YearlyLiquidityRow } from "@/lib/estate/yearly-liquidity-report";
 
 vi.mock("react-chartjs-2", () => ({
@@ -23,15 +24,17 @@ const row = (year: number): YearlyLiquidityRow => ({
   surplusDeficitInsuranceOnly: 50,
 });
 
+function fakePlan(label: string): ComparisonPlan {
+  return {
+    label,
+    liquidityRows: [row(2025), row(2026)],
+  } as unknown as ComparisonPlan;
+}
+
 describe("LiquidityComparisonCharts", () => {
   it("renders both plan labels and two charts", () => {
     const { getByText, getAllByTestId } = render(
-      <LiquidityComparisonCharts
-        plan1Label="Base"
-        plan2Label="Proposed"
-        plan1Rows={[row(2025), row(2026)]}
-        plan2Rows={[row(2025), row(2026)]}
-      />,
+      <LiquidityComparisonCharts plans={[fakePlan("Base"), fakePlan("Proposed")]} />,
     );
     expect(getByText("Estate Liquidity")).toBeTruthy();
     expect(getByText("Base")).toBeTruthy();

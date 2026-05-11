@@ -1,36 +1,34 @@
 "use client";
 
 import { YearlyLiquidityChart } from "@/components/yearly-liquidity-chart";
-import type { YearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
+import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 
 interface Props {
-  plan1Label: string;
-  plan2Label: string;
-  plan1Rows: YearlyLiquidityReport["rows"];
-  plan2Rows: YearlyLiquidityReport["rows"];
+  plans: ComparisonPlan[];
 }
 
-export function LiquidityComparisonCharts({
-  plan1Label,
-  plan2Label,
-  plan1Rows,
-  plan2Rows,
-}: Props) {
+// Transitional 2-up rendering — Task 14 rebuilds this visually for N plans.
+// We keep the prop surface aligned with the post-Task-13 estate section so the
+// build stays green; visually we still only show the first two plans here.
+export function LiquidityComparisonCharts({ plans }: Props) {
+  const plan1 = plans[0];
+  const plan2 = plans[1] ?? plans[0];
+
   return (
     <div className="space-y-4">
       <h3 className="text-base font-semibold text-slate-100">Estate Liquidity</h3>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
           <div className="mb-2 text-center text-sm font-semibold text-slate-100">
-            {plan1Label}
+            {plan1.label}
           </div>
-          <YearlyLiquidityChart rows={plan1Rows} showPortfolio />
+          <YearlyLiquidityChart rows={plan1.liquidityRows} showPortfolio />
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
           <div className="mb-2 text-center text-sm font-semibold text-slate-100">
-            {plan2Label}
+            {plan2.label}
           </div>
-          <YearlyLiquidityChart rows={plan2Rows} showPortfolio />
+          <YearlyLiquidityChart rows={plan2.liquidityRows} showPortfolio />
         </div>
       </div>
     </div>

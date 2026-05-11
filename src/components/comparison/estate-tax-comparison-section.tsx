@@ -4,60 +4,42 @@ import { LiquidityComparisonCharts } from "@/components/comparison/liquidity-com
 import { ImpactVsBasePanel } from "@/components/comparison/impact-vs-base-panel";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 
-interface Props { clientId: string; plans: ComparisonPlan[]; }
+interface Props {
+  clientId: string;
+  plans: ComparisonPlan[];
+}
 
 export function EstateTaxComparisonSection({ clientId, plans }: Props) {
-  const plan1 = plans[0];
-  const plan2 = plans[1] ?? plans[0];
-  const showImpactPanel = plan1.finalEstate !== null && plan2.finalEstate !== null;
-  const impactYear = plan1.finalEstate?.year ?? plan2.finalEstate?.year ?? null;
+  const allHaveFinalEstate = plans.every((p) => p.finalEstate !== null);
+  const impactYear = plans.find((p) => p.finalEstate)?.finalEstate?.year ?? null;
 
   return (
     <section className="space-y-6 px-6 py-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-slate-100">Estate</h2>
-        <div className="space-x-3 text-xs text-slate-400">
-          <Link href={`/clients/${clientId}/estate-planning/estate-tax?scenario=${plan1.id}`} className="hover:text-slate-200">
-            View {plan1.label} →
-          </Link>
-          <Link href={`/clients/${clientId}/estate-planning/estate-tax?scenario=${plan2.id}`} className="hover:text-slate-200">
-            View {plan2.label} →
-          </Link>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
+          {plans.map((p) => (
+            <Link
+              key={p.index}
+              href={`/clients/${clientId}/estate-planning/estate-tax?scenario=${p.id}`}
+              className="hover:text-slate-200"
+            >
+              View {p.label} →
+            </Link>
+          ))}
         </div>
       </div>
 
-      <LiquidityComparisonCharts
-        plan1Label={plan1.label}
-        plan2Label={plan2.label}
-        plan1Rows={plan1.liquidityRows}
-        plan2Rows={plan2.liquidityRows}
-      />
+      <LiquidityComparisonCharts plans={plans} />
 
-      {showImpactPanel && impactYear !== null && plan1.finalEstate && plan2.finalEstate && (
-        <ImpactVsBasePanel
-          year={impactYear}
-          plan1Label={plan1.label}
-          plan2Label={plan2.label}
-          plan1={{
-            totalToHeirs: plan1.finalEstate.totalToHeirs,
-            taxesAndExpenses: plan1.finalEstate.taxesAndExpenses,
-            totalToCharities: plan1.finalEstate.charity,
-          }}
-          plan2={{
-            totalToHeirs: plan2.finalEstate.totalToHeirs,
-            taxesAndExpenses: plan2.finalEstate.taxesAndExpenses,
-            totalToCharities: plan2.finalEstate.charity,
-          }}
-        />
+      {allHaveFinalEstate && impactYear !== null && (
+        <ImpactVsBasePanel year={impactYear} plans={plans} />
       )}
 
       <div className="space-y-4">
         <h3 className="text-base font-semibold text-slate-100">Estate Tax Breakdown</h3>
         <EstateTaxComparisonTable
-          plan1Result={plan1.result}
-          plan2Result={plan2.result}
-          plan1Label={plan1.label}
-          plan2Label={plan2.label}
+          plans={plans.map((p) => ({ label: p.label, result: p.result }))}
         />
       </div>
     </section>
