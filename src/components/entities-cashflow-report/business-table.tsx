@@ -35,7 +35,7 @@ export default function BusinessTable({ rows, currentYear, onCellClick }: Props)
             return (
               <tr
                 key={r.year}
-                className={`border-b border-gray-800/60 last:border-b-0 ${
+                className={`border-b border-gray-800/60 last:border-b-0 hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff] ${
                   isCurrent ? "bg-gray-800/40 font-semibold" : ""
                 }`}
               >

@@ -181,9 +181,8 @@ function SummaryRow({
     <>
       <tr
         className={
-          isOpen
-            ? "bg-indigo-900/20 text-gray-100"
-            : "text-gray-200 hover:bg-indigo-900/10"
+          (isOpen ? "bg-indigo-900/20 text-gray-100" : "text-gray-200") +
+          " hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]"
         }
       >
         <td className="px-3 py-1.5">
@@ -280,7 +279,7 @@ function DeathDetail({
                 ? (ownerNames.spouseName ?? "Spouse")
                 : ownerNames.clientName;
             return (
-              <tr key={d.deathOrder} className="text-gray-200">
+              <tr key={d.deathOrder} className="text-gray-200 hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
                 <td className="px-3 py-1.5">
                   <span className="font-medium text-gray-100">
                     {d.decedentName}

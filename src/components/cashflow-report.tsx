@@ -2173,9 +2173,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
               // Per-cell bg is required because position:sticky cells create
               // their own stacking context and won't inherit the row bg.
               const baseBg = isNegative ? "bg-red-950/40" : "bg-gray-900";
-              const hoverBg = isNegative
-                ? "group-hover:bg-red-950/60"
-                : "group-hover:bg-gray-800";
+              // Inset top + bottom white lines render per-cell but butt up to
+              // form a continuous horizontal stroke across the row. Layout-
+              // stable (no border-width shift) and visible over any base bg,
+              // including sticky cells.
+              const hoverHighlight =
+                "group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]";
               return (
                 <tr
                   key={row.id}
@@ -2190,7 +2193,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
                     return (
                       <td
                         key={cell.id}
-                        className={`whitespace-nowrap border-b border-gray-800 px-3 py-2 first:pl-4 last:pr-4 tabular-nums text-gray-100 ${baseBg} ${hoverBg} ${sticky} ${groupBorder}`}
+                        className={`whitespace-nowrap border-b border-gray-800 px-3 py-2 first:pl-4 last:pr-4 tabular-nums text-gray-100 ${baseBg} ${hoverHighlight} ${sticky} ${groupBorder}`}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>

@@ -38,7 +38,7 @@ export function YearlyBreakdown({ summary }: YearlyBreakdownProps) {
                   ? `${y.age.client} / ${y.age.spouse}`
                   : `${y.age.client}`;
               return (
-                <tr key={y.year} className="hover:bg-slate-800/40">
+                <tr key={y.year} className="hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
                   <td className="px-4 py-2 text-slate-200">{y.year}</td>
                   <td className="px-4 py-2 text-slate-300">{age}</td>
                   <td className="px-4 py-2 text-right text-slate-300 tabular-nums">

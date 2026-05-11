@@ -66,7 +66,7 @@ export function CashflowTableRender(p: WidgetRenderProps<"cashflowTable">) {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.year} className="border-t border-hair">
+            <tr key={r.year} className="border-t border-hair hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
               <td>{r.year}</td>
               <td>{FMT.format(totalIncome(r))}</td>
               <td>{FMT.format(r.expenses)}</td>

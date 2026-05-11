@@ -35,7 +35,7 @@ export function EstateTransferRecipientTotals({
           </thead>
           <tbody className="divide-y divide-indigo-900/20">
             {totals.map((t) => (
-              <tr key={t.key}>
+              <tr key={t.key} className="hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
                 <td className="py-1 text-gray-200">{t.recipientLabel}</td>
                 <td className="py-1 text-right tabular-nums text-gray-300">
                   {fmt.format(t.fromFirstDeath)}

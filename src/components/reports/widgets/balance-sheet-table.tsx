@@ -48,7 +48,7 @@ export function BalanceSheetTableRender(
         <caption className="sr-only">{p.props.title}</caption>
         <tbody>
           {vm.assetCategories.map((cat) => (
-            <tr key={cat.key} className="border-t border-hair">
+            <tr key={cat.key} className="border-t border-hair hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
               <td className="py-1">{cat.label}</td>
               <td className="text-right">{FMT.format(cat.total)}</td>
             </tr>

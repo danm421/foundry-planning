@@ -60,10 +60,10 @@ export function YearlyLiquidityTable({ rows, showPortfolio }: Props) {
                   : (r.ageClient ?? r.ageSpouse ?? "—").toString();
               return (
                 <tr key={r.year} className="group">
-                  <td className="whitespace-nowrap border-b border-gray-800 bg-gray-900 px-3 py-2 first:pl-4 tabular-nums text-gray-100 group-hover:bg-gray-800">
+                  <td className="whitespace-nowrap border-b border-gray-800 bg-gray-900 px-3 py-2 first:pl-4 tabular-nums text-gray-100 group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
                     {r.year}
                   </td>
-                  <td className="whitespace-nowrap border-b border-gray-800 bg-gray-900 px-3 py-2 tabular-nums text-gray-400 group-hover:bg-gray-800">
+                  <td className="whitespace-nowrap border-b border-gray-800 bg-gray-900 px-3 py-2 tabular-nums text-gray-400 group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
                     {ageLabel}
                   </td>
                   <Td>{fmt.format(r.insuranceInEstate)}</Td>
@@ -106,7 +106,7 @@ function Th({
 
 function Td({ children }: { children: React.ReactNode }) {
   return (
-    <td className="whitespace-nowrap border-b border-gray-800 bg-gray-900 px-3 py-2 text-right tabular-nums text-gray-100 group-hover:bg-gray-800">
+    <td className="whitespace-nowrap border-b border-gray-800 bg-gray-900 px-3 py-2 text-right tabular-nums text-gray-100 group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
       {children}
     </td>
   );
@@ -115,7 +115,7 @@ function Td({ children }: { children: React.ReactNode }) {
 function SurplusCell({ value }: { value: number }) {
   const negative = value < 0;
   const className =
-    "whitespace-nowrap border-b border-gray-800 bg-gray-900 px-3 py-2 last:pr-4 text-right tabular-nums font-semibold group-hover:bg-gray-800 " +
+    "whitespace-nowrap border-b border-gray-800 bg-gray-900 px-3 py-2 last:pr-4 text-right tabular-nums font-semibold group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff] " +
     (negative ? "text-red-400" : "text-emerald-400");
   return <td className={className}>{negative ? `(${fmt.format(-value)})` : fmt.format(value)}</td>;
 }

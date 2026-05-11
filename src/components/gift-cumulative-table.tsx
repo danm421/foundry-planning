@@ -96,7 +96,7 @@ export function GiftCumulativeTable({
             <Fragment key={row.year}>
               <tr
                 data-testid={`gift-row-${row.year}`}
-                className={`border-b border-hair cursor-pointer hover:bg-card-2 ${
+                className={`border-b border-hair cursor-pointer hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff] ${
                   tinted ? "bg-card-2/40" : ""
                 }`}
                 onClick={() => onToggleYear(row.year)}

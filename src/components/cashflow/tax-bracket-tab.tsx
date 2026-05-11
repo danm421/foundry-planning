@@ -100,7 +100,7 @@ export function TaxBracketTab({ years, onCellClick }: TaxBracketTabProps) {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.year} className="border-t border-amber-200/10">
+              <tr key={r.year} className="border-t border-amber-200/10 hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
                 <td className="px-3 py-3">{r.year}</td>
                 <td className="px-3 py-3">{fmtAges(r.clientAge, r.spouseAge)}</td>
                 <td className="border-l border-amber-200/30 px-3 py-3 text-right">

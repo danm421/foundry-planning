@@ -159,7 +159,7 @@ export function EstateTaxComparisonTable({ plan1Result, plan2Result, plan1Label,
           const d = delta(row.a, row.b);
           const cellCls = `text-right py-1 ${row.bold ? "font-semibold text-slate-100" : "text-slate-200"}`;
           return (
-            <tr key={i}>
+            <tr key={i} className="hover:[&>td]:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
               <td className={`py-1 ${row.bold ? "font-semibold text-slate-100" : "text-slate-300"}`}>{row.label}</td>
               <td className={cellCls}>{fmt(row.a)}</td>
               <td className={cellCls}>{fmt(row.b)}</td>

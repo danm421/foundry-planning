@@ -160,13 +160,13 @@ export function TaxDetailIncomeTable({
             return (
               <tr key={y.year} className="group">
                 <td
-                  className={`sticky left-0 z-10 cursor-pointer border-b border-gray-800 bg-gray-900 px-3 py-2 text-left hover:text-accent group-hover:bg-gray-800/40 ${borderClass}`}
+                  className={`sticky left-0 z-10 cursor-pointer border-b border-gray-800 bg-gray-900 px-3 py-2 text-left hover:text-accent group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff] ${borderClass}`}
                   onClick={() => onYearClick(y)}
                   title={tooltip ?? `View per-source breakdown for ${y.year}`}
                 >
                   {y.year}
                 </td>
-                <td className="sticky left-20 z-10 border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left text-gray-300 group-hover:bg-gray-800/40">
+                <td className="sticky left-20 z-10 border-b border-r border-gray-800 bg-gray-900 px-3 py-2 text-left text-gray-300 group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff]">
                   {formatAge(y.ages, clientLifeExpectancy, spouseLifeExpectancy)}
                 </td>
                 {COLUMNS.map((col, idx) => {
@@ -175,7 +175,7 @@ export function TaxDetailIncomeTable({
                   return (
                     <td
                       key={col.key}
-                      className={`border-b border-gray-800 bg-gray-900 px-0 py-0 text-right tabular-nums group-hover:bg-gray-800/40 ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
+                      className={`border-b border-gray-800 bg-gray-900 px-0 py-0 text-right tabular-nums group-hover:shadow-[inset_0_1px_0_#fff,inset_0_-1px_0_#fff] ${isLast ? "sticky right-0 z-10 border-l" : ""}`}
                     >
                       <button
                         type="button"
