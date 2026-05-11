@@ -26,16 +26,19 @@ export interface RothConversionsInput {
   spouseFamilyMemberId?: string | null;
 
   // ── Inputs needed for "fill_up_bracket" only ──────────────────────────────
-  /** Pre-conversion ordinary-income tax base for this year — earned income +
-   *  ordinary dividends + interest + projected RMDs + scheduled distributions
-   *  from already-applied transfers. Withdrawal-driven income that hasn't been
-   *  computed yet is approximated as zero (acceptable since fill-up-bracket
-   *  is most useful in low-income early-retirement years). */
-  preConversionOrdinaryIncome?: number;
-  filingStatus?: FilingStatus;
   /** Bracket tiers for this year (already inflation-adjusted by caller). */
   ordinaryBrackets?: BracketTier[];
-  /** Standard or itemized deduction the household will use this year. */
+  /** Preferred: closure returning the year's `incomeTaxBase` given a
+   *  hypothetical Roth-conversion taxable amount. The strategy iterates the
+   *  closure to converge `incomeTaxBase ≈ tier.to`, which correctly accounts
+   *  for Social-Security taxability stack-up, above-line deductions, QBI, and
+   *  itemized-vs-standard — all of which the legacy proxy ignored. */
+  computeIncomeTaxBaseWithRothTaxable?: (rothTaxable: number) => number;
+  /** Legacy fallback — only consulted when `computeIncomeTaxBaseWithRothTaxable`
+   *  is not provided. Pre-conversion ordinary-income tax base for this year. */
+  preConversionOrdinaryIncome?: number;
+  filingStatus?: FilingStatus;
+  /** Legacy fallback: standard or itemized deduction the household will use. */
   taxDeduction?: number;
 }
 
@@ -232,29 +235,54 @@ function _resolveTargetAmount(
 
     case "fill_up_bracket": {
       const {
-        preConversionOrdinaryIncome,
         ordinaryBrackets,
+        computeIncomeTaxBaseWithRothTaxable,
+        preConversionOrdinaryIncome,
         taxDeduction,
       } = input;
-      if (
-        preConversionOrdinaryIncome == null ||
-        ordinaryBrackets == null ||
-        conv.fillUpBracket == null
-      ) {
-        return 0;
-      }
-      // Headroom = (top of selected bracket) − (taxable income before conversion).
-      // taxable income before conversion ≈ ordinary income − deduction
-      // (qualified div / LTCG sit on top of OI in the stacking order, so they
-      // don't consume OI bracket space).
-      const tier = ordinaryBrackets.find((t) => Math.abs(t.rate - conv.fillUpBracket!) < 1e-9);
+      if (ordinaryBrackets == null || conv.fillUpBracket == null) return 0;
+      const tier = ordinaryBrackets.find(
+        (t) => Math.abs(t.rate - conv.fillUpBracket!) < 1e-9,
+      );
       if (!tier || tier.to == null) return 0;
+
+      // Preferred path: caller supplied a `computeIncomeTaxBaseWithRothTaxable`
+      // closure that returns the year's true `incomeTaxBase` for any hypothetical
+      // Roth-conversion taxable amount. Iterate to converge `incomeTaxBase ≈ tier.to`.
+      //
+      // Two-pass with bounded fixed-point iteration handles non-linearities like:
+      //   - SS taxability phase-in (50%/85% thresholds bend the curve)
+      //   - QBI deduction phase-in
+      //   - any other piecewise-linear deduction that depends on AGI
+      //
+      // For trad IRAs with after-tax basis the gross conversion will be larger
+      // than the taxable amount we solve for; the per-slice loop in the main
+      // function caps the gross to source-pool balance, which is the right
+      // behavior (we never want to over-convert). The taxable result will be
+      // a bit shy of tier.to in basis-heavy cases — acceptable.
+      if (computeIncomeTaxBaseWithRothTaxable) {
+        const baseAt0 = computeIncomeTaxBaseWithRothTaxable(0);
+        if (baseAt0 >= tier.to) return 0;
+        let target = tier.to - baseAt0; // initial guess assumes linear
+        for (let i = 0; i < 6; i++) {
+          const baseAtTarget = computeIncomeTaxBaseWithRothTaxable(target);
+          const delta = tier.to - baseAtTarget;
+          if (Math.abs(delta) < 1) break;
+          // Conservative update: never let target go negative; if SS or other
+          // stack-up made the previous guess overshoot, pull it back.
+          target = Math.max(0, target + delta);
+        }
+        return Math.max(0, target);
+      }
+
+      // Legacy fallback (kept for callers that haven't migrated). Known issues:
+      // ignores taxable-SS, above-line deductions, QBI, and itemized > std.
+      if (preConversionOrdinaryIncome == null) return 0;
       const taxableBeforeConv = Math.max(
         0,
         preConversionOrdinaryIncome - (taxDeduction ?? 0),
       );
-      const headroom = tier.to - taxableBeforeConv;
-      return Math.max(0, headroom);
+      return Math.max(0, tier.to - taxableBeforeConv);
     }
 
     default:
