@@ -32,3 +32,30 @@ describe("Connecticut — flat 12% above exemption + $15M combined cap", () => {
     expect(r.notes.some(n => n.includes("cap"))).toBe(true);
   });
 });
+
+describe("Massachusetts — anti-cliff credit", () => {
+  it("tax of $0 just below the $2M exemption", () => {
+    const r = computeStateEstateTax({
+      state: "MA",
+      deathYear: 2026,
+      taxableEstate: 1_999_999,
+      adjustedTaxableGifts: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.stateEstateTax).toBe(0);
+    expect(r.antiCliffCreditApplied).toBe(true);
+  });
+
+  it("graduated brackets only apply to amount above $2M (not from $0)", () => {
+    const r = computeStateEstateTax({
+      state: "MA",
+      deathYear: 2026,
+      taxableEstate: 4_250_000,
+      adjustedTaxableGifts: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.antiCliffCreditApplied).toBe(true);
+    expect(r.stateEstateTax).toBeCloseTo(179_040, 0);
+    expect(r.bracketLines).toHaveLength(4);
+  });
+});

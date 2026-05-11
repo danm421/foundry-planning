@@ -44,6 +44,10 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
   const notes: string[] = [];
   notes.push(`Citation: ${rule.citation}`);
   if (rule.indexed) notes.push(`Exemption is indexed (Phase 1 hard-codes ${rule.effectiveYear} value).`);
+  const antiCliffCreditApplied = rule.antiCliff === true;
+  if (antiCliffCreditApplied) {
+    notes.push(`MA anti-cliff exclusion applied: first $${rule.exemption.toLocaleString()} not taxed.`);
+  }
   if (giftAddback > 0 && rule.giftAddback) {
     if (rule.giftAddback.years === Infinity) {
       notes.push(`Gift addback: all federal taxable gifts ($${giftAddback.toLocaleString()}).`);
@@ -79,6 +83,7 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
     bracketLines,
     preCapTax,
     ...(cap !== undefined ? { cap } : {}),
+    ...(rule.antiCliff ? { antiCliffCreditApplied: true } : {}),
     stateEstateTax: Math.max(0, finalTax),
     notes,
   };
