@@ -54,19 +54,24 @@ export function useCompareState(clientId: string): UseCompareStateResult {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const storage = window.localStorage;
+    // jsdom in this project's vitest config ships a stub `localStorage` whose
+    // methods aren't functions; guard so the migration silently no-ops in tests
+    // that don't install the shim.
+    if (!storage || typeof storage.getItem !== "function") return;
     const leftKey = `compare:${clientId}:left`;
     const rightKey = `compare:${clientId}:right`;
-    const left = window.localStorage.getItem(leftKey);
-    const right = window.localStorage.getItem(rightKey);
+    const left = storage.getItem(leftKey);
+    const right = storage.getItem(rightKey);
     if (left === null && right === null) return;
     // One-shot migration: copy into the new key only if it isn't set, then
     // delete the old keys. URL is authoritative — this is just breadcrumb cleanup.
     const newKey = `compare:${clientId}:plans`;
-    if (window.localStorage.getItem(newKey) === null && (left || right)) {
-      window.localStorage.setItem(newKey, `${left ?? "base"},${right ?? "base"}`);
+    if (storage.getItem(newKey) === null && (left || right)) {
+      storage.setItem(newKey, `${left ?? "base"},${right ?? "base"}`);
     }
-    window.localStorage.removeItem(leftKey);
-    window.localStorage.removeItem(rightKey);
+    storage.removeItem(leftKey);
+    storage.removeItem(rightKey);
   }, [clientId]);
 
   const plans = useMemo(() => readPlans(params), [params]);
