@@ -700,6 +700,11 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const techniqueExpenseIds: string[] = [];
   if (clientData) {
     for (const inc of clientData.incomes) {
+      // Skip entity-owned business incomes from the household drill-down — the
+      // Business column now shows entity distributions (keyed by entity id), not
+      // gross income (keyed by income row id). Including these would create
+      // duplicate, always-zero columns in the drill-down.
+      if (inc.type === "business" && inc.ownerEntityId != null) continue;
       incomeNames[inc.id] = inc.name;
       // Find the segment key for this income type
       const segmentKey = Object.entries(INCOME_SEGMENT_TO_TYPE).find(
@@ -709,6 +714,15 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
         if (!incomesByType[segmentKey]) incomesByType[segmentKey] = [];
         incomesByType[segmentKey].push(inc.id);
       }
+    }
+    // Add non-trust business entities as drill-down sources for the Business
+    // column. The projection engine emits `bySource[entity.id] = distribution
+    // amount` for these; here we register the column with the entity's name.
+    for (const entity of clientData.entities ?? []) {
+      if (entity.entityType === "trust") continue;
+      incomeNames[entity.id] = entity.name;
+      if (!incomesByType["business_income"]) incomesByType["business_income"] = [];
+      incomesByType["business_income"].push(entity.id);
     }
   }
 
