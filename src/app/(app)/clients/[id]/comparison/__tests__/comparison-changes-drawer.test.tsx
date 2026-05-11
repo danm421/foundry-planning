@@ -184,4 +184,42 @@ describe("ComparisonChangesDrawer", () => {
     const tabs = screen.getAllByRole("tab");
     expect(tabs[tabs.length - 1]).toHaveAttribute("aria-selected", "true");
   });
+
+  it("renders 4 tabs when 4 drawer plans are passed", () => {
+    render(
+      <ComparisonChangesDrawer
+        clientId="c-1"
+        open={true}
+        onClose={() => {}}
+        activeTab={0}
+        onTabChange={() => {}}
+        plans={[
+          makePlan({ scenarioId: "s-a", label: "Plan A", scenarioName: "Scenario A" }),
+          makePlan({ scenarioId: "s-b", label: "Plan B", scenarioName: "Scenario B" }),
+          makePlan({ scenarioId: "s-c", label: "Plan C", scenarioName: "Scenario C" }),
+          makePlan({ scenarioId: "s-d", label: "Plan D", scenarioName: "Scenario D" }),
+        ]}
+      />,
+    );
+    expect(screen.getAllByRole("tab")).toHaveLength(4);
+  });
+
+  it("shows a palette color dot beside each tab label", () => {
+    render(
+      <ComparisonChangesDrawer
+        clientId="c-1"
+        open={true}
+        onClose={() => {}}
+        activeTab={0}
+        onTabChange={() => {}}
+        plans={[
+          makePlan({ scenarioId: "s-a", label: "Plan A", scenarioName: "Scenario A" }),
+          makePlan({ scenarioId: "s-b", label: "Plan B", scenarioName: "Scenario B" }),
+        ]}
+      />,
+    );
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[0].querySelector("[data-testid='tab-dot']")).toBeInTheDocument();
+    expect(tabs[1].querySelector("[data-testid='tab-dot']")).toBeInTheDocument();
+  });
 });

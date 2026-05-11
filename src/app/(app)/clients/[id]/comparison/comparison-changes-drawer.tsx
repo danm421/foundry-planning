@@ -28,6 +28,7 @@ import type {
   CascadeWarning,
   ToggleGroup,
 } from "@/engine/scenario/types";
+import { seriesColor } from "@/lib/comparison/series-palette";
 
 export interface ComparisonChangesDrawerPlan {
   scenarioId: string;
@@ -95,7 +96,7 @@ export function ComparisonChangesDrawer({
           <div
             role="tablist"
             aria-label="Plan changes"
-            className="flex items-center gap-1"
+            className="flex items-center gap-1 overflow-x-auto"
           >
             {plans.map((p, i) => (
               <button
@@ -106,12 +107,18 @@ export function ComparisonChangesDrawer({
                 aria-controls={`drawer-tabpanel-${i}`}
                 id={`drawer-tab-${i}`}
                 onClick={() => onTabChange(i)}
-                className={`px-3 h-7 rounded-full text-[12px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a04a] ${
+                className={`flex items-center gap-2 px-3 h-7 rounded-full text-[12px] font-medium whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a04a] ${
                   i === safeTab
                     ? "bg-[#d4a04a] text-[#0b0c0f]"
                     : "text-[#a09c92] hover:text-[#e7e6e2]"
                 }`}
               >
+                <span
+                  data-testid="tab-dot"
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: seriesColor(i) }}
+                  aria-hidden
+                />
                 {p.label}
               </button>
             ))}
