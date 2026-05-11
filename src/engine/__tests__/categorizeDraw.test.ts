@@ -116,3 +116,78 @@ describe("categorizeDraw", () => {
     expect(draw.earlyWithdrawalPenalty).toBe(0);
   });
 });
+
+describe("categorizeDraw taxable — fresh-basis-first (spec 2026-05-11)", () => {
+  const taxable = baseAccount({ id: "tx", category: "taxable", subType: "brokerage" });
+
+  it("back-compat: freshBasisRemaining=0 (or undefined) matches pro-rata", () => {
+    const draw = categorizeDraw({
+      account: taxable, amount: 100, balance: 1000,
+      basisMap: { tx: 400 }, ownerAge: 50,
+    });
+    // gainRatio = 1 - 400/1000 = 0.6
+    expect(draw.capitalGains).toBeCloseTo(60, 2);
+    expect(draw.basisReturn).toBeCloseTo(40, 2);
+  });
+
+  it("fully covered by fresh pool: 0 LTCG, 100% basisReturn", () => {
+    const draw = categorizeDraw({
+      account: taxable, amount: 50, balance: 1000,
+      basisMap: { tx: 400 }, freshBasisRemaining: 100, ownerAge: 50,
+    });
+    expect(draw.capitalGains).toBe(0);
+    expect(draw.basisReturn).toBe(50);
+  });
+
+  it("exactly equals fresh pool: 0 LTCG, all basisReturn", () => {
+    const draw = categorizeDraw({
+      account: taxable, amount: 100, balance: 1000,
+      basisMap: { tx: 400 }, freshBasisRemaining: 100, ownerAge: 50,
+    });
+    expect(draw.capitalGains).toBe(0);
+    expect(draw.basisReturn).toBe(100);
+  });
+
+  it("straddles fresh + legacy: legacy slice uses pre-fresh ratio", () => {
+    // balance 1000, basis 400, freshBasisRemaining 100 → legacy 900/300
+    // legacyGainRatio = 1 - 300/900 = 0.6667
+    // amount 250: fresh 100 (0 LTCG), legacy 150 × 0.6667 = 100 LTCG
+    const draw = categorizeDraw({
+      account: taxable, amount: 250, balance: 1000,
+      basisMap: { tx: 400 }, freshBasisRemaining: 100, ownerAge: 50,
+    });
+    expect(draw.capitalGains).toBeCloseTo(100, 2);
+    expect(draw.basisReturn).toBeCloseTo(150, 2);
+  });
+
+  it("loss position: legacyBasis ≥ legacyValue clamps gain to 0", () => {
+    // basis 1200 > balance 1000 (loss). freshBasisRemaining 50.
+    // legacy: value 950, basis 1150 → gainRatio clamps to 0
+    const draw = categorizeDraw({
+      account: taxable, amount: 200, balance: 1000,
+      basisMap: { tx: 1200 }, freshBasisRemaining: 50, ownerAge: 50,
+    });
+    expect(draw.capitalGains).toBe(0);
+    expect(draw.basisReturn).toBe(200);
+  });
+
+  it("degenerate balance ≤ 0 falls back to all-gain", () => {
+    const draw = categorizeDraw({
+      account: taxable, amount: 100, balance: 0,
+      basisMap: { tx: 0 }, freshBasisRemaining: 0, ownerAge: 50,
+    });
+    expect(draw.capitalGains).toBe(100);
+    expect(draw.basisReturn).toBe(0);
+  });
+
+  it("screenshot fixture: $284,651 draw from $1,484,063/$1,013,607 with $38,630 fresh", () => {
+    const draw = categorizeDraw({
+      account: taxable, amount: 284_651, balance: 1_484_063,
+      basisMap: { tx: 1_013_607 }, freshBasisRemaining: 38_630, ownerAge: 65,
+    });
+    // Expected per spec: realized LTCG ≈ $80,071, basisReturn ≈ $204,580
+    expect(draw.capitalGains).toBeCloseTo(80_071, -1); // ±$10 tolerance
+    expect(draw.basisReturn).toBeCloseTo(204_580, -1);
+    expect(draw.capitalGains + draw.basisReturn).toBeCloseTo(284_651, 0);
+  });
+});
