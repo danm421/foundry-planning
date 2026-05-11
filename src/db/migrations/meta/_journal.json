@@ -617,6 +617,13 @@
       "when": 1778452893413,
       "tag": "0087_classy_proteus",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1778507896700,
+      "tag": "0088_client_comparison_layouts",
+      "breakpoints": true
     }
   ]
 }
