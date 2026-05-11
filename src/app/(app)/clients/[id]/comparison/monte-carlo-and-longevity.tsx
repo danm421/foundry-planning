@@ -10,15 +10,12 @@ import {
 import type { MonteCarloPayload } from "@/lib/projection/load-monte-carlo-data";
 import { MonteCarloComparisonSection } from "@/components/comparison/monte-carlo-comparison-section";
 import { LongevityComparisonSection } from "@/components/comparison/longevity-comparison-section";
+import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 
 interface Props {
   clientId: string;
-  plan1Tree: ClientData;
-  plan2Tree: ClientData;
-  plan1Label: string;
-  plan2Label: string;
-  plan1Years: { year: number }[];
-  onMcSuccessDelta?: (delta: number) => void;
+  plans: ComparisonPlan[];
+  onMcSuccess?: (planIndex: number, successRate: number) => void;
 }
 
 interface RunPair {
@@ -31,13 +28,16 @@ interface RunPair {
 
 export function MonteCarloAndLongevity({
   clientId,
-  plan1Tree,
-  plan2Tree,
-  plan1Label,
-  plan2Label,
-  plan1Years,
-  onMcSuccessDelta,
+  plans,
+  onMcSuccess,
 }: Props) {
+  const plan1 = plans[0];
+  const plan2 = plans[1] ?? plans[0];
+  const plan1Tree = plan1.tree;
+  const plan2Tree = plan2.tree;
+  const plan1Label = plan1.label;
+  const plan2Label = plan2.label;
+  const plan1Years = plan1.result.years.map((y) => ({ year: y.year }));
   const [state, setState] = useState<
     | { status: "loading"; phase: "fetching" | "running"; done: number; total: number }
     | { status: "ready"; data: RunPair }
@@ -110,7 +110,8 @@ export function MonteCarloAndLongevity({
           threshold: payload.requiredMinimumAssetLevel,
         };
         setState({ status: "ready", data });
-        onMcSuccessDelta?.(plan2Result.successRate - plan1Result.successRate);
+        onMcSuccess?.(0, plan1Result.successRate);
+        onMcSuccess?.(1, plan2Result.successRate);
       } catch (e) {
         if (!cancelled) {
           setState({
@@ -123,7 +124,7 @@ export function MonteCarloAndLongevity({
     return () => {
       cancelled = true;
     };
-  }, [clientId, plan1Tree, plan2Tree, onMcSuccessDelta]);
+  }, [clientId, plan1Tree, plan2Tree, onMcSuccess]);
 
   if (state.status === "loading") {
     return (

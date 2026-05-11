@@ -1,27 +1,19 @@
+import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import { PortfolioOverlayChart } from "@/components/cashflow/charts/portfolio-overlay-chart";
-import type { ProjectionYear } from "@/engine/types";
 
-interface Props {
-  plan1Years: ProjectionYear[];
-  plan2Years: ProjectionYear[];
-  plan1Label: string;
-  plan2Label: string;
-}
+interface Props { plans: ComparisonPlan[]; }
 
-export function PortfolioComparisonSection({
-  plan1Years,
-  plan2Years,
-  plan1Label,
-  plan2Label,
-}: Props) {
+export function PortfolioComparisonSection({ plans }: Props) {
+  const plan1 = plans[0];
+  const plan2 = plans[1] ?? plans[0];
   return (
     <section className="px-6 py-8">
       <h2 className="mb-4 text-lg font-semibold text-slate-100">Portfolio Assets</h2>
       <PortfolioOverlayChart
-        plan1Years={plan1Years}
-        plan2Years={plan2Years}
-        plan1Label={plan1Label}
-        plan2Label={plan2Label}
+        plan1Years={plan1.result.years}
+        plan2Years={plan2.result.years}
+        plan1Label={plan1.label}
+        plan2Label={plan2.label}
       />
     </section>
   );
