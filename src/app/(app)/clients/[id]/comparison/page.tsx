@@ -10,9 +10,9 @@ import { buildYearlyEstateReport } from "@/lib/estate/yearly-estate-report";
 import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
 import { loadPanelData } from "@/lib/scenario/load-panel-data";
 import { buildComparisonPlans } from "@/lib/comparison/build-comparison-plans";
+import { loadLayout } from "@/lib/comparison/load-layout";
 import type { SnapshotOption } from "@/components/scenario/scenario-picker-dropdown";
-import { ComparisonPickerBar } from "./comparison-picker-bar";
-import { ComparisonShell } from "./comparison-shell";
+import { ComparisonPageClient } from "./comparison-page-client";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -26,7 +26,7 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
 
   const refs = parsePlansSearchParam(sp);
 
-  const [scenarios, snapshots, plans] = await Promise.all([
+  const [scenarios, snapshots, plans, initialLayout] = await Promise.all([
     db
       .select({
         id: scenariosTable.id,
@@ -98,19 +98,19 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
         });
       },
     }),
+    loadLayout(clientId, firmId),
   ]);
 
   const drawerPlans = plans.map((p) => p.panelData).filter((p) => p !== null);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
-      <ComparisonPickerBar
-        clientId={clientId}
-        scenarios={scenarios}
-        snapshots={snapshots as SnapshotOption[]}
-        drawerPlans={drawerPlans}
-      />
-      <ComparisonShell clientId={clientId} plans={plans} />
-    </div>
+    <ComparisonPageClient
+      clientId={clientId}
+      plans={plans}
+      initialLayout={initialLayout}
+      scenarios={scenarios}
+      snapshots={snapshots as SnapshotOption[]}
+      drawerPlans={drawerPlans}
+    />
   );
 }

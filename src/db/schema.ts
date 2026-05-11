@@ -22,6 +22,7 @@ import { relations, sql, type InferSelectModel, type InferInsertModel } from "dr
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { BracketTier } from "@/lib/tax/types";
 import type { ReportPagesPersisted } from "@/lib/reports/types";
+import type { ComparisonLayout } from "@/lib/comparison/layout-schema";
 
 const inet = customType<{ data: string; driverData: string }>({
   dataType() {
@@ -2414,3 +2415,28 @@ export const reconciliationRuns = pgTable(
   },
   (t) => [index("reconciliation_runs_started_idx").on(t.startedAt)],
 );
+
+// ─────────────────────────────────────────────────────────────────
+// Comparison layouts — per-client widget arrangement for /comparison
+// ─────────────────────────────────────────────────────────────────
+
+export const clientComparisonLayouts = pgTable(
+  "client_comparison_layouts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" })
+      .unique(),
+    layout: jsonb("layout").notNull().$type<ComparisonLayout>(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("client_comparison_layouts_client_idx").on(t.clientId),
+    index("client_comparison_layouts_firm_idx").on(t.firmId),
+  ],
+);
+
+export type ClientComparisonLayoutRow = InferSelectModel<typeof clientComparisonLayouts>;
+export type NewClientComparisonLayoutRow = InferInsertModel<typeof clientComparisonLayouts>;

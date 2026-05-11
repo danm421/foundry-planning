@@ -82,6 +82,7 @@ export type AuditAction =
   | "report.rename"
   | "report.delete"
   | "report.ai_generate"
+  | "comparison_layout.upsert"
   // Document extraction (LLM call)
   | "client.extract"
   // Life insurance

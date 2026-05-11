@@ -21,6 +21,8 @@ interface Props {
   /** Per-plan panel data for the slide-out Changes drawer. Empty when neither
    *  side resolves to a live scenario (base/snapshot have nothing editable). */
   drawerPlans?: ComparisonChangesDrawerPlan[];
+  customizing?: boolean;
+  onToggleCustomize?: () => void;
 }
 
 export function ComparisonPickerBar({
@@ -28,6 +30,8 @@ export function ComparisonPickerBar({
   scenarios,
   snapshots,
   drawerPlans = [],
+  customizing = false,
+  onToggleCustomize,
 }: Props) {
   useLegacyUrlMigration();
   const { plans, setPlanAt, addPlan, removePlanAt, makeBaseline } =
@@ -71,6 +75,20 @@ export function ComparisonPickerBar({
         >
           <span>Changes</span>
           <span className="font-mono text-[#d4a04a]">{totalChanges}</span>
+        </button>
+      )}
+      {onToggleCustomize && (
+        <button
+          type="button"
+          aria-label={customizing ? "Exit customize mode" : "Customize layout"}
+          onClick={onToggleCustomize}
+          className={`rounded px-2 py-1 text-sm ${
+            customizing
+              ? "bg-accent text-slate-950"
+              : "text-slate-300 hover:bg-slate-800"
+          }`}
+        >
+          ⚙
         </button>
       )}
       <ComparisonChangesDrawer
