@@ -395,6 +395,30 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     return defaultChecking?.id;
   };
 
+  // Best cash destination for a given family member. Used to route entity
+  // distributions to the actual owner's account rather than to whichever
+  // isDefaultChecking account .find() returns first. Scoring: isDefaultChecking
+  // dominates, then cash category, then ownership share — so a singly-owned
+  // account beats a joint one when both are flagged default.
+  const resolveFamilyMemberDefaultCash = (fmId: string): string | undefined => {
+    let best: { id: string; score: number } | null = null;
+    for (const a of data.accounts) {
+      if (isFullyEntityOwned(a)) continue;
+      const myOwnership = a.owners.find(
+        (o) => o.kind === "family_member" && o.familyMemberId === fmId,
+      );
+      if (!myOwnership) continue;
+      const score =
+        (a.isDefaultChecking ? 1000 : 0) +
+        (a.category === "cash" ? 100 : 0) +
+        myOwnership.percent;
+      if (!best || score > best.score) {
+        best = { id: a.id, score };
+      }
+    }
+    return best?.id;
+  };
+
   // Mutable state that carries across years
   const accountBalances: Record<string, number> = {};
   for (const acct of data.accounts) {
@@ -2335,14 +2359,26 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       if (distAmount === 0) continue;
       const entityCheckingId = entityCheckingByEntityId[entity.id];
       if (!entityCheckingId) continue; // entity has no cash account → cannot distribute
+      // Destination: primary owner's default cash account. Falls back to the
+      // household defaultChecking when the entity has no defined owners or the
+      // owner has no associated cash account. Previously this always credited
+      // defaultChecking, which could route the cash to the wrong account (or
+      // nowhere) when the grantor's actual cash lived in an account that wasn't
+      // the first .find(isDefaultChecking) match.
+      const primaryOwner = (entity.owners ?? [])
+        .slice()
+        .sort((x, y) => y.percent - x.percent)[0];
+      const destinationId =
+        (primaryOwner ? resolveFamilyMemberDefaultCash(primaryOwner.familyMemberId) : undefined)
+        ?? defaultChecking?.id;
       // Debit entity checking
       creditCash(entityCheckingId, -distAmount, {
         category: "entity_distribution",
         label: `Distribution from ${entity.name ?? entity.id}`,
         sourceId: entity.id,
       });
-      // Credit household checking
-      creditCash(defaultChecking?.id, distAmount, {
+      // Credit owner's default cash account
+      creditCash(destinationId, distAmount, {
         category: "entity_distribution",
         label: `Distribution from ${entity.name ?? entity.id}`,
         sourceId: entity.id,

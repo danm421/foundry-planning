@@ -504,3 +504,64 @@ describe("Phase 2: per-year distribution % override", () => {
     expect(distEntry!.amount).toBeCloseTo(250_000, 0);
   });
 });
+
+describe("Phase 3: distribution routes to owner's default cash account", () => {
+  it("routes to the primary owner's account when multiple household checkings exist", () => {
+    // Two non-entity isDefaultChecking accounts. The legacy logic picked the
+    // first .find() match (the joint hh-checking) regardless of who owned the
+    // entity. With the owner-aware fix, a 100%-client LLC's distribution lands
+    // in the client-only checking instead of the joint one.
+    const clientOnlyChecking: Account = {
+      id: "client-checking",
+      name: "Client Checking",
+      category: "cash",
+      subType: "checking",
+      value: 0,
+      basis: 0,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+      isDefaultChecking: true,
+    };
+    const data: ClientData = {
+      ...mkData(),
+      // hh-checking is listed first to confirm the routing is not order-dependent
+      accounts: [hhChecking, clientOnlyChecking, entityChecking("llc1")],
+    };
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // Distribution should land in the client-only account (better ownership match)
+    const clientEntries = y0.accountLedgers["client-checking"].entries;
+    const distOnClient = clientEntries.find((e) => e.category === "entity_distribution");
+    expect(distOnClient).toBeDefined();
+    expect(distOnClient!.amount).toBeCloseTo(100_000, 0);
+
+    // And NOT on the joint hh-checking
+    const hhEntries = y0.accountLedgers["hh-checking"].entries;
+    expect(hhEntries.find((e) => e.category === "entity_distribution")).toBeUndefined();
+  });
+
+  it("falls back to a non-default cash account where the owner has ownership when no household isDefaultChecking exists", () => {
+    // Regression for the user-reported bug: entity has its own
+    // isDefaultChecking, but the household's cash account is NOT marked
+    // isDefaultChecking. Previously the distribution credit went to
+    // defaultChecking?.id which was undefined → cash vanished. The fix routes
+    // by entity owners' ownership, so the household account still receives it.
+    const hhCashNotDefault: Account = { ...hhChecking, isDefaultChecking: false };
+    // Each salary needs explicit routing since defaultChecking is undefined,
+    // but the entity distribution test doesn't depend on salaries. We just
+    // assert the distribution lands somewhere reasonable.
+    const data: ClientData = {
+      ...mkData(),
+      accounts: [hhCashNotDefault, entityChecking("llc1")],
+    };
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    const hhEntries = y0.accountLedgers["hh-checking"].entries;
+    const distEntry = hhEntries.find((e) => e.category === "entity_distribution");
+    expect(distEntry).toBeDefined();
+    expect(distEntry!.amount).toBeCloseTo(100_000, 0);
+  });
+});
