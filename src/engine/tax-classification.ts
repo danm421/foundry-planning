@@ -116,9 +116,11 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
     return { taxableOrdinaryIncome, capitalGain: 0, basisReturn: 0, earlyWithdrawalPenalty, label };
   }
 
-  // ── Taxable / Cash / Other → Any (proportional capital gains) ────────────
-  const capitalGain = _calcProportionalGain(amount, sourceAccountValue, sourceAccountBasis);
-  return { taxableOrdinaryIncome: 0, capitalGain, basisReturn: 0, earlyWithdrawalPenalty: 0, label: "taxable_liquidation" };
+  // ── Taxable / Cash / Other → Any (high-basis-first ordering) ─────────────
+  const { capitalGain, basisReturn } = _calcLotOrderedRealization(
+    amount, sourceAccountValue, sourceAccountBasis, input.sourceFreshBasis ?? 0,
+  );
+  return { taxableOrdinaryIncome: 0, capitalGain, basisReturn, earlyWithdrawalPenalty: 0, label: "taxable_liquidation" };
 }
 
 // ── Private helpers ──────────────────────────────────────────────────────────
@@ -207,15 +209,32 @@ function _classifyRothDistribution(
 }
 
 /**
- * Calculates the proportional capital gain when liquidating a portion of an account.
+ * High-basis-first realization on a taxable-source liquidation.
+ * See spec 2026-05-11-fresh-basis-withdrawal-ordering-design.
  *
- * gainRatio = (accountValue - basis) / accountValue
- * capitalGain = amount * gainRatio
+ * - Up to `sourceFreshBasis` dollars come out 100% basis (0 gain).
+ * - The remainder is gained pro-rata against the *legacy* pool:
+ *     legacyValue = sourceAccountValue − sourceFreshBasis
+ *     legacyBasis = sourceAccountBasis − sourceFreshBasis
+ *     gainRatio   = clamp(0,1, 1 − legacyBasis / legacyValue)
  */
-function _calcProportionalGain(amount: number, accountValue: number, accountBasis: number): number {
-  if (accountValue <= 0) return 0;
-  const totalGain = accountValue - accountBasis;
-  if (totalGain <= 0) return 0;
-  const gainRatio = totalGain / accountValue;
-  return amount * gainRatio;
+function _calcLotOrderedRealization(
+  amount: number,
+  sourceAccountValue: number,
+  sourceAccountBasis: number,
+  sourceFreshBasis: number,
+): { capitalGain: number; basisReturn: number } {
+  if (sourceAccountValue <= 0) return { capitalGain: amount, basisReturn: 0 };
+  const fresh = Math.max(0, sourceFreshBasis);
+  const freshDraw = Math.min(amount, fresh);
+  const legacyDraw = amount - freshDraw;
+  const legacyValue = sourceAccountValue - fresh;
+  const legacyBasis = sourceAccountBasis - fresh;
+  let gainRatio = 0;
+  if (legacyValue > 0) {
+    gainRatio = Math.max(0, Math.min(1, 1 - legacyBasis / legacyValue));
+  }
+  const capitalGain = legacyDraw * gainRatio;
+  const basisReturn = freshDraw + legacyDraw * (1 - gainRatio);
+  return { capitalGain, basisReturn };
 }
