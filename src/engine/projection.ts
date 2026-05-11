@@ -993,19 +993,38 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             }
           }
 
-          // Per non-grantor-entity owner: emit a per-account realization entry
-          // scaled by the entity's share of this account.
+          // Per non-grantor-entity owner: split routing by entityType.
+          //   trust         → emit to yearRealizations[] for the trust-tax pass (unchanged).
+          //   non-trust biz → roll the entity's pro-rata share into household
+          //                   tax detail with character preserved (LLC, S-corp,
+          //                   partnership, c_corp, foundation, other are all
+          //                   treated as pass-through under the current spec).
+          //                   See spec 2026-05-11-business-distribution-passthrough-design.
           for (const owner of yearOwners) {
             if (owner.kind !== "entity") continue;
             if (isGrantorEntity(owner.entityId)) continue;
-            yearRealizations.push({
-              accountId: acct.id,
-              ownerEntityId: owner.entityId,
-              ordinary: oi * owner.percent,
-              dividends: qdiv * owner.percent,
-              taxExempt: taxExempt * owner.percent,
-              capGains: stcg * owner.percent, // ambient — collect-trust-income ignores this per convention
-            });
+            const ownerEntity = entityMap[owner.entityId];
+            const isTrust = ownerEntity?.entityType === "trust";
+            if (isTrust) {
+              yearRealizations.push({
+                accountId: acct.id,
+                ownerEntityId: owner.entityId,
+                ordinary: oi * owner.percent,
+                dividends: qdiv * owner.percent,
+                taxExempt: taxExempt * owner.percent,
+                capGains: stcg * owner.percent, // ambient — collect-trust-income ignores this per convention
+              });
+            } else {
+              const oiE = oi * owner.percent;
+              const qdivE = qdiv * owner.percent;
+              const stcgE = stcg * owner.percent;
+              realizationOI += oiE;
+              realizationQDiv += qdivE;
+              realizationSTCG += stcgE;
+              if (oiE > 0) realizationBySource[`${acct.id}:oi:${owner.entityId}`] = { type: "ordinary_income", amount: oiE };
+              if (qdivE > 0) realizationBySource[`${acct.id}:qdiv:${owner.entityId}`] = { type: "dividends", amount: qdivE };
+              if (stcgE > 0) realizationBySource[`${acct.id}:stcg:${owner.entityId}`] = { type: "stcg", amount: stcgE };
+            }
           }
         }
       }

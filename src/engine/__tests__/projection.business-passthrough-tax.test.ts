@@ -118,3 +118,141 @@ describe("Non-grantor business entity: net income → household tax (regression)
     });
   });
 });
+
+import type { RealizationModel } from "../types";
+
+const realization100PctOI: RealizationModel = {
+  pctOrdinaryIncome: 1.0,
+  pctQualifiedDividends: 0,
+  pctLtCapitalGains: 0,
+  pctTaxExempt: 0,
+  turnoverPct: 0,
+};
+
+const realizationMixed: RealizationModel = {
+  // 40% OI, 30% QDIV, 30% raw LTCG with 50% turnover → 15% STCG, 15% LTCG.
+  pctOrdinaryIncome: 0.4,
+  pctQualifiedDividends: 0.3,
+  pctLtCapitalGains: 0.3,
+  pctTaxExempt: 0,
+  turnoverPct: 0.5,
+};
+
+function entityTaxableAcct(opts: {
+  id: string;
+  entityId: string;
+  value: number;
+  growthRate: number;
+  realization: RealizationModel;
+}): Account {
+  return {
+    id: opts.id,
+    name: `${opts.entityId} Brokerage`,
+    category: "taxable",
+    subType: "brokerage",
+    value: opts.value,
+    basis: opts.value,
+    growthRate: opts.growthRate,
+    rmdEnabled: false,
+    owners: [{ kind: "entity", entityId: opts.entityId, percent: 1 }],
+    realization: opts.realization,
+  };
+}
+
+describe("Non-trust business entity-account realization → household tax detail (B.2)", () => {
+  it("non-grantor LLC's taxable-account OI flows to taxDetail.ordinaryIncome", () => {
+    // $100k account, 10% growth, 100% OI realization → $10k OI per year.
+    const acct = entityTaxableAcct({
+      id: "llc1-brokerage",
+      entityId: "llc1",
+      value: 100_000,
+      growthRate: 0.10,
+      realization: realization100PctOI,
+    });
+    const data: ClientData = {
+      ...mkData(),
+      accounts: [hhChecking, llcChecking, acct],
+      incomes: [], // no operating revenue — isolate the realization
+    };
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // Net business income = 0 (no operating income, no expenses), so K-1
+    // incidence contributes 0. The $10k must come purely from the entity-
+    // account realization passthrough.
+    expect(y0.taxDetail!.ordinaryIncome).toBeCloseTo(10_000, 0);
+  });
+
+  it("mixed-character realization preserves OI / QDIV / STCG buckets on household 1040", () => {
+    // $100k account, 10% growth = $10k. Realization: 40% OI, 30% QDIV, 15% STCG, 15% LTCG.
+    // Household tax detail should pick up: $4k OI, $3k QDIV, $1.5k STCG.
+    // LTCG ($1.5k) is unrealized appreciation, not added at this point.
+    const acct = entityTaxableAcct({
+      id: "llc1-brokerage",
+      entityId: "llc1",
+      value: 100_000,
+      growthRate: 0.10,
+      realization: realizationMixed,
+    });
+    const data: ClientData = {
+      ...mkData(),
+      accounts: [hhChecking, llcChecking, acct],
+      incomes: [],
+    };
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    expect(y0.taxDetail!.ordinaryIncome).toBeCloseTo(4_000, 0);
+    expect(y0.taxDetail!.dividends).toBeCloseTo(3_000, 0);
+    expect(y0.taxDetail!.stCapitalGains).toBeCloseTo(1_500, 0);
+  });
+
+  it("non-grantor TRUST-owned account realization stays in yearRealizations[] (regression)", () => {
+    // Trust path is unchanged: realization should NOT appear in household
+    // taxDetail.ordinaryIncome via this code path.
+    const trustEntity: EntitySummary = {
+      id: "trust1",
+      name: "Test Trust",
+      includeInPortfolio: true,
+      isGrantor: false,
+      entityType: "trust",
+      isIrrevocable: true,
+      distributionPolicyPercent: 0,
+      distributionMode: null,
+      owners: [{ familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const trustChecking: Account = {
+      id: "trust1-checking",
+      name: "Trust Checking",
+      category: "cash",
+      subType: "checking",
+      value: 0,
+      basis: 0,
+      growthRate: 0,
+      rmdEnabled: false,
+      owners: [{ kind: "entity", entityId: "trust1", percent: 1 }],
+      isDefaultChecking: true,
+    };
+    const trustAcct = entityTaxableAcct({
+      id: "trust1-brokerage",
+      entityId: "trust1",
+      value: 100_000,
+      growthRate: 0.10,
+      realization: realization100PctOI,
+    });
+    const data: ClientData = {
+      ...mkData(),
+      accounts: [hhChecking, trustChecking, trustAcct],
+      entities: [trustEntity],
+      incomes: [],
+    };
+    const years = runProjection(data);
+    const y0 = years[0];
+
+    // The $10k of OI should NOT show up in household taxDetail via the
+    // entity-account passthrough. (It may end up there via the trust-tax pass
+    // depending on DNI, but the precondition here — distributionPolicyPercent: 0
+    // and no distribution mode — keeps it inside the trust.)
+    expect(y0.taxDetail!.ordinaryIncome).toBeCloseTo(0, 0);
+  });
+});
