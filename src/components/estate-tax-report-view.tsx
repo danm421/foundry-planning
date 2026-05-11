@@ -7,6 +7,7 @@ import type {
   EstateTaxResult,
   HypotheticalEstateTaxOrdering,
 } from "@/engine/types";
+import type { StateCode, StateEstateTaxResult } from "@/lib/tax/state-estate";
 import { AsOfDropdown, type AsOfValue } from "./report-controls/as-of-dropdown";
 import { TimePeriodButtons } from "./report-controls/time-period-buttons";
 import type { OwnerDobs } from "./report-controls/age-helpers";
@@ -412,7 +413,8 @@ function DecedentBreakdown({
   const headlineColor =
     totalTaxesAndExpenses > 0 ? "text-rose-200" : "text-emerald-200";
 
-  const showState = tax.stateEstateTaxRate > 0 || tax.stateEstateTax > 0;
+  const stateDetail = tax.stateEstateTaxDetail;
+  const showState = stateDetail.stateEstateTax > 0 || stateDetail.fallbackUsed || stateDetail.state != null;
   const showTentativeBase =
     tax.adjustedTaxableGifts > 0 || tax.lifetimeGiftTaxAdjustment > 0;
   const unifiedCreditHint = `(${fmt.format(tax.beaAtDeathYear)} Basic Exclusion + ${fmt.format(tax.dsueReceived)} DSUE)`;
@@ -524,19 +526,7 @@ function DecedentBreakdown({
         </Section>
 
         {/* State Estate Tax — only when applicable */}
-        {showState && (
-          <Section
-            title="State Estate Tax"
-            subtotal={tax.stateEstateTax}
-            subtotalLabel="State Estate Tax"
-            subtotalAccent="tax"
-          >
-            <LineRow
-              label={`Taxable Estate × ${pct.format(tax.stateEstateTaxRate)}`}
-              amount={tax.stateEstateTax}
-            />
-          </Section>
-        )}
+        {showState && <StateEstateTaxSection detail={stateDetail} />}
 
         {/* Total Taxes & Expenses */}
         <Section
@@ -645,5 +635,86 @@ function SplitTotals({ first, second }: { first: EstateTaxResult; second: Estate
       admin={first.estateAdminExpenses + second.estateAdminExpenses}
       total={first.totalTaxesAndExpenses + second.totalTaxesAndExpenses}
     />
+  );
+}
+
+const STATE_FULL_NAME: Record<StateCode, string> = {
+  CT: "Connecticut", DC: "District of Columbia", HI: "Hawaii",
+  IL: "Illinois", ME: "Maine", MD: "Maryland", MA: "Massachusetts",
+  MN: "Minnesota", NY: "New York", OR: "Oregon",
+  RI: "Rhode Island", VT: "Vermont", WA: "Washington",
+};
+
+function stateFullName(code: StateCode | null): string {
+  if (code == null) return "—";
+  return STATE_FULL_NAME[code];
+}
+
+function fmtBound(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
+  return n.toLocaleString();
+}
+
+function StateEstateTaxSection({ detail }: { detail: StateEstateTaxResult }) {
+  if (detail.fallbackUsed) {
+    return (
+      <Section
+        title="State Estate Tax (Custom Override)"
+        subtotal={detail.stateEstateTax}
+        subtotalLabel="State Estate Tax"
+        subtotalAccent="tax"
+      >
+        <LineRow
+          label={`Taxable Estate × ${(detail.fallbackRate * 100).toFixed(2)}%`}
+          amount={detail.stateEstateTax}
+        />
+      </Section>
+    );
+  }
+
+  return (
+    <Section
+      title={`State Estate Tax (${stateFullName(detail.state)})`}
+      subtotal={detail.stateEstateTax}
+      subtotalLabel="State Estate Tax"
+      subtotalAccent="tax"
+    >
+      <LineRow label="Taxable Estate (from above)" amount={detail.baseForTax - detail.giftAddback} />
+      {detail.giftAddback > 0 && (
+        <LineRow label="State gift addback" amount={detail.giftAddback} />
+      )}
+      <LineRow label="Base for State Tax" amount={detail.baseForTax} />
+      <LineRow
+        label={`Exemption (${detail.exemptionYear})`}
+        amount={detail.exemption}
+        showAsDeduction
+      />
+      <LineRow label="Amount Over Exemption" amount={detail.amountOverExemption} />
+
+      {detail.bracketLines.map((b, i) => (
+        <LineRow
+          key={i}
+          label={`$${fmtBound(b.from)} – ${b.to === null ? "no limit" : `$${fmtBound(b.to)}`} × ${(b.rate * 100).toFixed(2)}%`}
+          amount={b.tax}
+        />
+      ))}
+
+      {detail.cap?.applied && (
+        <LineRow
+          label={`Max combined cap ($${fmtBound(detail.cap.cap)})`}
+          amount={detail.cap.reduction}
+          showAsDeduction
+        />
+      )}
+
+      {detail.notes.length > 0 && (
+        <div className="mt-3 space-y-1 pb-1 text-xs text-gray-400">
+          {detail.notes.map((n, i) => (
+            <div key={i}>• {n}</div>
+          ))}
+        </div>
+      )}
+    </Section>
   );
 }
