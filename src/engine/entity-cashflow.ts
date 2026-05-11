@@ -270,10 +270,15 @@ export function computeEntityCashFlow(input: ComputeEntityCashFlowInput): void {
         // earnings have already been taxed at the owner level, so they
         // increase basis. C-corp / foundation / other: retained earnings
         // sit at the entity level untaxed-to-owner, so basis stays flat.
+        // LLCs default to partnership taxation (multi-member) or disregarded
+        // (single-member); both pass income through to the owner's 1040 each
+        // year, so retained earnings bump outside basis. See spec
+        // 2026-05-11-business-distribution-passthrough-design § Section C.
         const isPassThrough =
           entity.isGrantor === true ||
           entity.entityType === "s_corp" ||
-          entity.entityType === "partnership";
+          entity.entityType === "partnership" ||
+          entity.entityType === "llc";
         const basisDelta = isPassThrough ? retainedEarnings : 0;
         const endingBasis = beginningBasis + basisDelta;
 

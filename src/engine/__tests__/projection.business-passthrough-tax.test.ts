@@ -256,3 +256,22 @@ describe("Non-trust business entity-account realization → household tax detail
     expect(y0.taxDetail!.ordinaryIncome).toBeCloseTo(0, 0);
   });
 });
+
+describe("LLC outside-basis bump on retained earnings (Section C)", () => {
+  it("non-grantor LLC with $50k net income retained: endingBasis bumps by $50k", () => {
+    // 0% distribution → $50k retained. Outside basis must increase by the
+    // retained earnings to mirror partnership/S-corp basis tracking.
+    const data = mkData(); // mkData defaults to llcEntity with distributionPolicyPercent: 0
+    const years = runProjection(data);
+    const y0 = years[0];
+    const llcRow = y0.entityCashFlow.get("llc1");
+
+    expect(llcRow).toBeDefined();
+    expect(llcRow!.kind).toBe("business");
+    if (llcRow!.kind !== "business") throw new Error("type narrow");
+
+    // beginningBasis: account basis ($0) + entity initialBasis (default 0) = 0.
+    // Retained earnings $50k → endingBasis = $50k.
+    expect(llcRow.endingBasis).toBeCloseTo(50_000, 0);
+  });
+});
