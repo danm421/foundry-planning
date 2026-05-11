@@ -436,6 +436,12 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     basisMap[acct.id] = acct.basis;
   }
 
+  // Per-year, per-account unspent basisIncrease pool. Reset at top of each
+  // projection year; drained as taxable-account withdrawals/transfers consume
+  // current-year-recognized investment income. See spec
+  // 2026-05-11-fresh-basis-withdrawal-ordering-design.
+  const freshBasisMap: Record<string, number> = {};
+
   // Roth value tracking for 401k/403b accounts. Mirrors basisMap shape so
   // every account has an entry (0 for non-401k/403b). Grows alongside the
   // account each year and decrements pro-rata on withdrawals / Roth
@@ -579,6 +585,10 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     year <= planSettings.planEndYear;
     year++
   ) {
+    // Fresh-basis pool resets every year: prior-year reinvested income
+    // ages into the legacy pool. Spec 2026-05-11.
+    for (const key of Object.keys(freshBasisMap)) delete freshBasisMap[key];
+
     const ages = {
       client: year - clientBirthYear,
       spouse: spouseBirthYear != null ? year - spouseBirthYear : undefined,
@@ -956,6 +966,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         // not realization, so they stay flat here. (Audit F1.)
         if ((acct.category === "taxable" || acct.category === "cash") && basisIncrease > 0) {
           basisMap[acct.id] = (basisMap[acct.id] ?? 0) + basisIncrease;
+          freshBasisMap[acct.id] = (freshBasisMap[acct.id] ?? 0) + basisIncrease;
         }
 
         // Only taxable accounts generate current-year tax from realization.
@@ -1091,6 +1102,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
         accounts: workingAccounts,
         accountBalances,
         basisMap,
+        freshBasisMap,
         rothValueMap,
         accountLedgers,
         year,
@@ -2765,6 +2777,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           strategy: effectiveWithdrawalStrategy,
           householdBalances: householdWithdrawBalances,
           basisMap,
+          freshBasisMap,
           rothValueMap,
           accounts: workingAccounts,
           ages: { client: ages.client, spouse: ages.spouse ?? null },
@@ -2876,17 +2889,27 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
           });
         }
 
-        // Pro-rata basis reduction for taxable accounts. Mirrors the entity
-        // gap-fill block below so subsequent years see basis tracking the
-        // shrinking balance — without this, basis stays inflated and the
-        // gain ratio collapses on every later draw from the same account.
+        // Basis reduction for taxable/cash accounts uses the actual basisReturn
+        // from categorizeDraw (fresh-basis-first ordering per spec 2026-05-11),
+        // not pure pro-rata. freshBasisMap drains by the consumed fresh portion,
+        // and the source ledger accumulates withdrawalDetail.
         const drawAccount = accountById.get(draw.accountId);
-        if (drawAccount?.category === "taxable" && preBalance > 0) {
-          const fraction = Math.min(1, draw.amount / preBalance);
+        if ((drawAccount?.category === "taxable" || drawAccount?.category === "cash") && preBalance > 0) {
           basisMap[draw.accountId] = Math.max(
             0,
-            (basisMap[draw.accountId] ?? 0) * (1 - fraction),
+            (basisMap[draw.accountId] ?? 0) - draw.basisReturn,
           );
+          const freshBefore = freshBasisMap[draw.accountId] ?? 0;
+          const consumed = Math.min(freshBefore, draw.amount);
+          freshBasisMap[draw.accountId] = Math.max(0, freshBefore - consumed);
+
+          if (accountLedgers[draw.accountId]) {
+            const existing = accountLedgers[draw.accountId].withdrawalDetail ?? { realizedLtcg: 0, basisReturn: 0 };
+            accountLedgers[draw.accountId].withdrawalDetail = {
+              realizedLtcg: existing.realizedLtcg + draw.capitalGains,
+              basisReturn: existing.basisReturn + draw.basisReturn,
+            };
+          }
         }
 
         // Pro-rata Roth-value reduction for 401k/403b sources. The tax-free
