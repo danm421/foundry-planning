@@ -145,6 +145,7 @@ describe("ExportModal", () => {
       ok: false,
       status: 500,
       blob: vi.fn(),
+      json: vi.fn().mockResolvedValue({}),
       headers: new Headers(),
     });
     const { onOpenChange } = renderModal();
