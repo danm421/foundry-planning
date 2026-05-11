@@ -78,3 +78,31 @@ describe("computeStateEstateTax — fallback flat-rate path (back-compat)", () =
     expect(r.notes[0]).toMatch(/8\.00%/);
   });
 });
+
+describe("computeStateEstateTax — gift addback", () => {
+  it("Hawaii: addback adds federal taxable gifts to base, increasing bracket usage", () => {
+    const r = computeStateEstateTax({
+      state: "HI",
+      deathYear: 2026,
+      taxableEstate: 5_000_000,
+      adjustedTaxableGifts: 2_000_000,
+      fallbackFlatRate: 0,
+    });
+    expect(r.giftAddback).toBe(2_000_000);
+    expect(r.baseForTax).toBe(7_000_000);
+    expect(r.stateEstateTax).toBeCloseTo(156_100, 0);
+  });
+
+  it("Maryland: no addback rule → gifts ignored", () => {
+    const r = computeStateEstateTax({
+      state: "MD",
+      deathYear: 2026,
+      taxableEstate: 6_000_000,
+      adjustedTaxableGifts: 5_000_000,
+      fallbackFlatRate: 0,
+    });
+    expect(r.giftAddback).toBe(0);
+    expect(r.baseForTax).toBe(6_000_000);
+    expect(r.stateEstateTax).toBe(160_000);
+  });
+});

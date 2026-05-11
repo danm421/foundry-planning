@@ -1,5 +1,5 @@
 import { STATE_ESTATE_TAX } from "./data";
-import type { Bracket, BracketLine, StateCode, StateEstateTaxResult } from "./types";
+import type { Bracket, BracketLine, GiftAddback as GiftAddbackRule, StateCode, StateEstateTaxResult } from "./types";
 
 export interface ComputeStateEstateTaxInput {
   state: StateCode | null;
@@ -33,7 +33,7 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
   }
   const rule = STATE_ESTATE_TAX[input.state];
 
-  const giftAddback = 0;
+  const giftAddback = computeGiftAddback(rule.giftAddback, input.adjustedTaxableGifts);
   const baseForTax = input.taxableEstate + giftAddback;
   const amountOverExemption = Math.max(0, baseForTax - rule.exemption);
 
@@ -43,6 +43,16 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
   const notes: string[] = [];
   notes.push(`Citation: ${rule.citation}`);
   if (rule.indexed) notes.push(`Exemption is indexed (Phase 1 hard-codes ${rule.effectiveYear} value).`);
+  if (giftAddback > 0 && rule.giftAddback) {
+    if (rule.giftAddback.years === Infinity) {
+      notes.push(`Gift addback: all federal taxable gifts ($${giftAddback.toLocaleString()}).`);
+    } else {
+      notes.push(
+        `Gift addback: federal taxable gifts within ${rule.giftAddback.years} year(s) of death ` +
+        `(Phase 1 uses full $${giftAddback.toLocaleString()}; lookback narrowing is Phase 3).`,
+      );
+    }
+  }
 
   return {
     state: input.state,
@@ -96,4 +106,12 @@ export function applyBrackets(brackets: Bracket[], baseForTax: number): BracketL
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+function computeGiftAddback(rule: GiftAddbackRule | null, adjustedTaxableGifts: number): number {
+  if (rule == null) return 0;
+  // Phase 1: no per-year gift ledger is threaded through, so years:Infinity and
+  // finite-year windows both apply the full adjustedTaxableGifts. Narrow-window
+  // resolution is Phase 3.
+  return Math.max(0, adjustedTaxableGifts);
 }
