@@ -17,11 +17,18 @@ export interface TransferTaxInput {
    * non-401k/403b sources.
    */
   sourceRothValue?: number;
+  /** Unspent portion of this year's basisIncrease on the source account
+   *  (taxable/cash sources only). 0/undefined preserves today's pro-rata
+   *  behavior. */
+  sourceFreshBasis?: number;
 }
 
 export interface TransferTaxResult {
   taxableOrdinaryIncome: number;
   capitalGain: number;
+  /** Portion of `amount` that came out of basis (no tax). For taxable/cash
+   *  source liquidations only; 0 for retirement-source transfers. */
+  basisReturn: number;
   earlyWithdrawalPenalty: number;
   label: "tax_free_rollover" | "roth_conversion" | "taxable_distribution" | "early_distribution" | "taxable_liquidation";
 }
@@ -65,7 +72,7 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
 
     // Roth → Roth: no tax event
     if (sourceIsRoth && targetIsRoth) {
-      return { taxableOrdinaryIncome: 0, capitalGain: 0, earlyWithdrawalPenalty: 0, label: "tax_free_rollover" };
+      return { taxableOrdinaryIncome: 0, capitalGain: 0, basisReturn: 0, earlyWithdrawalPenalty: 0, label: "tax_free_rollover" };
     }
 
     // Tax-deferred → Roth: Roth conversion (taxable, no penalty).
@@ -78,14 +85,14 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
     if (sourceIsTaxDeferred && targetIsRoth) {
       if (sourceIs401kOr403b) {
         const taxableOrdinaryIncome = _calc401kToRothIncome(amount, sourceAccountValue, sourceRothValue);
-        return { taxableOrdinaryIncome, capitalGain: 0, earlyWithdrawalPenalty: 0, label: "roth_conversion" };
+        return { taxableOrdinaryIncome, capitalGain: 0, basisReturn: 0, earlyWithdrawalPenalty: 0, label: "roth_conversion" };
       }
       const taxableOrdinaryIncome = _calcTaxDeferredToRothIncome(amount, allTraditionalIraBasis, allTraditionalIraBalance);
-      return { taxableOrdinaryIncome, capitalGain: 0, earlyWithdrawalPenalty: 0, label: "roth_conversion" };
+      return { taxableOrdinaryIncome, capitalGain: 0, basisReturn: 0, earlyWithdrawalPenalty: 0, label: "roth_conversion" };
     }
 
     // All other retirement → retirement: tax-free rollover
-    return { taxableOrdinaryIncome: 0, capitalGain: 0, earlyWithdrawalPenalty: 0, label: "tax_free_rollover" };
+    return { taxableOrdinaryIncome: 0, capitalGain: 0, basisReturn: 0, earlyWithdrawalPenalty: 0, label: "tax_free_rollover" };
   }
 
   // ── Retirement → Non-Retirement (distribution) ───────────────────────────
@@ -106,12 +113,12 @@ export function classifyTransferTax(input: TransferTaxInput): TransferTaxResult 
     const taxableOrdinaryIncome = amount;
     const earlyWithdrawalPenalty = isEarly ? amount * EARLY_WITHDRAWAL_PENALTY_RATE : 0;
     const label = isEarly ? "early_distribution" : "taxable_distribution";
-    return { taxableOrdinaryIncome, capitalGain: 0, earlyWithdrawalPenalty, label };
+    return { taxableOrdinaryIncome, capitalGain: 0, basisReturn: 0, earlyWithdrawalPenalty, label };
   }
 
   // ── Taxable / Cash / Other → Any (proportional capital gains) ────────────
   const capitalGain = _calcProportionalGain(amount, sourceAccountValue, sourceAccountBasis);
-  return { taxableOrdinaryIncome: 0, capitalGain, earlyWithdrawalPenalty: 0, label: "taxable_liquidation" };
+  return { taxableOrdinaryIncome: 0, capitalGain, basisReturn: 0, earlyWithdrawalPenalty: 0, label: "taxable_liquidation" };
 }
 
 // ── Private helpers ──────────────────────────────────────────────────────────
@@ -164,6 +171,7 @@ function _classify401kDistribution(
     return {
       taxableOrdinaryIncome: amount,
       capitalGain: 0,
+      basisReturn: 0,
       earlyWithdrawalPenalty: earlyPen,
       label: isEarly ? "early_distribution" : "taxable_distribution",
     };
@@ -174,7 +182,7 @@ function _classify401kDistribution(
     ? taxableOrdinaryIncome * EARLY_WITHDRAWAL_PENALTY_RATE
     : 0;
   const label = isEarly && taxableOrdinaryIncome > 0 ? "early_distribution" : "taxable_distribution";
-  return { taxableOrdinaryIncome, capitalGain: 0, earlyWithdrawalPenalty, label };
+  return { taxableOrdinaryIncome, capitalGain: 0, basisReturn: 0, earlyWithdrawalPenalty, label };
 }
 
 /**
@@ -195,7 +203,7 @@ function _classifyRothDistribution(
   const earlyWithdrawalPenalty = isEarly ? earningsWithdrawn * EARLY_WITHDRAWAL_PENALTY_RATE : 0;
   const label = isEarly && earningsWithdrawn > 0 ? "early_distribution" : "taxable_distribution";
 
-  return { taxableOrdinaryIncome, capitalGain: 0, earlyWithdrawalPenalty, label };
+  return { taxableOrdinaryIncome, capitalGain: 0, basisReturn: 0, earlyWithdrawalPenalty, label };
 }
 
 /**

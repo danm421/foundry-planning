@@ -20,7 +20,8 @@ describe("categorizeDraw", () => {
   it("cash → no recognized income, no penalty", () => {
     const acct = baseAccount({ category: "cash", subType: "savings" });
     const draw = categorizeDraw({ account: acct, amount: 10_000, balance: 100_000, basisMap: { a1: 10_000 }, ownerAge: 50 });
-    expect(draw).toEqual({ accountId: "a1", amount: 10_000, ordinaryIncome: 0, capitalGains: 0, earlyWithdrawalPenalty: 0 });
+    // spec 2026-05-11: shape now includes basisReturn; cash draws return 100% basis
+    expect(draw).toEqual({ accountId: "a1", amount: 10_000, ordinaryIncome: 0, capitalGains: 0, basisReturn: 10_000, earlyWithdrawalPenalty: 0 });
   });
 
   it("taxable: pro-rata gain → LTCG only on gain portion", () => {

@@ -10,6 +10,10 @@ export interface SupplementalDraw {
   amount: number;                 // gross amount drawn from this account
   ordinaryIncome: number;         // contribution to taxDetail.ordinaryIncome
   capitalGains: number;           // contribution to taxDetail.capitalGains (LTCG)
+  /** Portion of `amount` that was return-of-basis (no tax). For taxable
+   *  sources only; 0 for retirement/cash/etc. Source-side basisMap should
+   *  be reduced by this amount. */
+  basisReturn: number;
   earlyWithdrawalPenalty: number; // 10% on Trad pre-59.5 / Roth earnings pre-59.5
 }
 
@@ -32,6 +36,10 @@ export interface CategorizeDrawInput {
    *  callers must pass the current balance from their ledger. */
   balance: number;
   basisMap: Record<string, number>;
+  /** Unspent portion of this year's basisIncrease for taxable/cash accounts.
+   *  When > 0, dollars up to this amount are drawn from the fresh pool first
+   *  (0 LTCG, 100% basisReturn). Caller manages the running counter. */
+  freshBasisRemaining?: number;
   /** Live pre-draw Roth-designated portion for 401k/403b sources. Optional;
    *  callers that don't track rothValue can omit it (treated as 0). */
   rothValueMap?: Record<string, number>;
@@ -41,12 +49,12 @@ export interface CategorizeDrawInput {
 export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
   const { account, amount, balance, basisMap, rothValueMap, ownerAge } = input;
   const accountId = account.id;
-  const empty: SupplementalDraw = { accountId, amount, ordinaryIncome: 0, capitalGains: 0, earlyWithdrawalPenalty: 0 };
+  const empty: SupplementalDraw = { accountId, amount, ordinaryIncome: 0, capitalGains: 0, basisReturn: 0, earlyWithdrawalPenalty: 0 };
 
   if (amount <= 0) return empty;
 
-  // Cash: 0% tax, no penalty
-  if (account.category === "cash") return empty;
+  // Cash: 0% tax, no penalty. Entire draw is return of principal (basis).
+  if (account.category === "cash") return { ...empty, basisReturn: amount };
 
   // Taxable brokerage: pro-rata gain = (1 - basis/balance) * amount
   if (account.category === "taxable") {
@@ -54,7 +62,7 @@ export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
     if (balance <= 0) return { ...empty, capitalGains: amount };
     const gainRatio = Math.max(0, Math.min(1, 1 - basis / balance));
     const capGain = amount * gainRatio;
-    return { ...empty, capitalGains: capGain };
+    return { ...empty, capitalGains: capGain, basisReturn: amount - capGain };
   }
 
   // Retirement: traditional vs Roth vs HSA
