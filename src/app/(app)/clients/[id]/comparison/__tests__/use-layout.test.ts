@@ -82,7 +82,7 @@ describe("useLayout", () => {
   it("reset() replaces working copy with default and does not save", async () => {
     const { result } = renderHook(() => useLayout(initial, "client-1"));
     act(() => result.current.reset());
-    expect(result.current.layout.items.length).toBe(11);
+    expect(result.current.layout.items.length).toBe(19);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

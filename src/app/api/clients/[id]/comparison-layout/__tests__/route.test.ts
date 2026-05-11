@@ -44,7 +44,7 @@ describe("GET /api/clients/[id]/comparison-layout", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.layout.version).toBe(3);
-    expect(json.layout.items.length).toBe(11);
+    expect(json.layout.items.length).toBe(19);
   });
 
   it("404s when the client doesn't belong to the firm", async () => {

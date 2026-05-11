@@ -42,13 +42,12 @@ interface Props {
 function PlanCard({ plan, yearRange, index }: { plan: ComparisonPlan; yearRange: YearRange | null; index: number }) {
   const years = useMemo(() => clip(plan.result.years, yearRange), [plan.result.years, yearRange]);
   const accountIds = useMemo(() => accountIdsWithRmds(years), [years]);
-  const accountName = (id: string) => plan.tree.accounts?.find((a) => a.id === id)?.name ?? id;
 
   const data = useMemo(
     () => ({
       labels: years.map((y) => String(y.year)),
       datasets: accountIds.map((id, di) => ({
-        label: accountName(id),
+        label: plan.tree.accounts?.find((a) => a.id === id)?.name ?? id,
         data: years.map((y) => y.accountLedgers?.[id]?.rmdAmount ?? 0),
         backgroundColor: STACK_COLORS[di % STACK_COLORS.length],
         stack: "rmd",

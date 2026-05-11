@@ -26,6 +26,14 @@ vi.mock("@/lib/comparison/widgets/registry", () => {
       "income-expense": make("income-expense"),
       "withdrawal-source": make("withdrawal-source"),
       "year-by-year": make("year-by-year"),
+      "ss-income": make("ss-income"),
+      "allocation-drift": make("allocation-drift"),
+      "tax-bracket-fill": make("tax-bracket-fill"),
+      "roth-ladder": make("roth-ladder"),
+      "rmd-schedule": make("rmd-schedule"),
+      "charitable-impact": make("charitable-impact"),
+      "decade-summary": make("decade-summary"),
+      "cash-flow-gap": make("cash-flow-gap"),
     },
   };
 });
@@ -64,6 +72,14 @@ describe("Comparison page parity", () => {
       "income-expense",
       "withdrawal-source",
       "year-by-year",
+      "ss-income",
+      "allocation-drift",
+      "tax-bracket-fill",
+      "roth-ladder",
+      "rmd-schedule",
+      "charitable-impact",
+      "decade-summary",
+      "cash-flow-gap",
     ]);
   });
 });
