@@ -61,7 +61,7 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
   const [dismissedTab, setDismissedTab] = useState<string | null>(null);
 
   return (
-    <header className="sticky top-0 z-20 grid h-14 grid-cols-[1fr_auto_1fr] items-center border-b border-hair bg-paper px-[var(--pad-card)]">
+    <header className="sticky top-0 z-40 grid h-14 grid-cols-[1fr_auto_1fr] items-center border-b border-hair bg-paper px-[var(--pad-card)]">
       <div className="justify-self-start">
         <Breadcrumb clientHouseholdTitle={clientHouseholdTitle} />
       </div>
@@ -80,6 +80,12 @@ export default function Topbar({ clientHouseholdTitle }: TopbarProps): ReactElem
                 aria-selected={active || undefined}
                 aria-haspopup={tab.subTabs ? "menu" : undefined}
                 className={className}
+                onClick={(e) => {
+                  if (tab.subTabs) {
+                    setDismissedTab(tab.href);
+                    e.currentTarget.blur();
+                  }
+                }}
               >
                 {tab.label}
               </Link>

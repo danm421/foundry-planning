@@ -81,6 +81,14 @@
 /* Body                                                                */
 /* ------------------------------------------------------------------ */
 
+html,
+body {
+  /* The sticky client-header collapses on scroll. With default scroll
+     anchoring, the in-flow shrink mid-transition repeatedly nudges scrollY
+     across the threshold and the header oscillates between states. */
+  overflow-anchor: none;
+}
+
 body {
   background: var(--color-paper);
   color: var(--color-ink);

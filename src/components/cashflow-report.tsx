@@ -2037,19 +2037,8 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
 
   return (
     <div>
-      {/* Year-range slider */}
-      <div className="mb-4">
-        <YearRangeSlider
-          min={planStartYear}
-          max={planEndYear}
-          value={yearRange}
-          onChange={setYearRange}
-          clientRetirementYear={clientRetirementYear}
-        />
-      </div>
-
       {/* Chart selector + chart */}
-      <div className="mb-6 rounded-lg border border-gray-700 bg-gray-900 p-4">
+      <div className="mb-4 rounded-lg border border-gray-700 bg-gray-900 p-4">
         {drillPath.length === 0 ? (
           <>
             <div className="mb-3 flex items-center justify-between">
@@ -2103,6 +2092,17 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             dataVersion={dataVersion}
           />
         )}
+      </div>
+
+      {/* Year-range slider */}
+      <div className="mb-4">
+        <YearRangeSlider
+          min={planStartYear}
+          max={planEndYear}
+          value={yearRange}
+          onChange={setYearRange}
+          clientRetirementYear={clientRetirementYear}
+        />
       </div>
 
       <div className="mb-3 flex items-center gap-4 flex-wrap">
