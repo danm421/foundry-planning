@@ -166,6 +166,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "client": 0,
       "spouse": 0,
     },
+    "residenceState": null,
     "ssWageGrowthRate": null,
     "taxEngineMode": "bracket",
     "taxInflationRate": null,
