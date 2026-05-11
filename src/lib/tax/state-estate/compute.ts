@@ -1,4 +1,5 @@
 import { STATE_ESTATE_TAX } from "./data";
+import { applyMaxCombinedCap } from "./special-rules";
 import type { Bracket, BracketLine, GiftAddback as GiftAddbackRule, StateCode, StateEstateTaxResult } from "./types";
 
 export interface ComputeStateEstateTaxInput {
@@ -54,6 +55,18 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
     }
   }
 
+  const capApp = applyMaxCombinedCap(rule, preCapTax);
+  const finalTax = capApp.finalTax;
+  const cap = rule.capCombined != null
+    ? { applied: capApp.applied, cap: capApp.cap, reduction: capApp.reduction }
+    : undefined;
+  if (capApp.applied) {
+    notes.push(
+      `Max combined estate+gift tax cap of $${capApp.cap.toLocaleString()} applied; ` +
+      `pre-cap tax was $${preCapTax.toLocaleString()}.`,
+    );
+  }
+
   return {
     state: input.state,
     fallbackUsed: false,
@@ -65,7 +78,8 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
     amountOverExemption,
     bracketLines,
     preCapTax,
-    stateEstateTax: Math.max(0, preCapTax),
+    ...(cap !== undefined ? { cap } : {}),
+    stateEstateTax: Math.max(0, finalTax),
     notes,
   };
 }
