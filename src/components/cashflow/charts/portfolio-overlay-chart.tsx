@@ -1,118 +1,123 @@
 "use client";
 
-import { Bar } from "react-chartjs-2";
 import {
-  Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend,
+  CategoryScale,
+  Chart as ChartJS,
+  Filler,
+  Legend,
+  LinearScale,
+  LineElement,
+  PointElement,
+  Tooltip,
 } from "chart.js";
-import type { TooltipItem } from "chart.js";
+import { Line } from "react-chartjs-2";
 import type { ProjectionYear } from "@/engine/types";
+import { seriesColor, seriesDash } from "@/lib/comparison/series-palette";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend,
+  Filler,
+);
 
-const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const usd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
 
-// Investable portfolio total — matches the cashflow report's `liquidPortfolioTotal`.
-// Excludes real estate, business, and out-of-estate trust assets so the chart
-// reflects what advisors mean by "portfolio" in the cashflow context.
-function liquidPortfolioTotal(y: ProjectionYear): number {
+// Pull the portfolio total for a year. Prefers `portfolioAssets.total` (the
+// engine emits this on every projected year); falls back to summing the four
+// liquid subtotals so leaner test fixtures (or older shapes) still render.
+function portfolioTotalForYear(y: ProjectionYear): number {
+  const pa = y.portfolioAssets as unknown as {
+    total?: number;
+    taxableTotal?: number;
+    cashTotal?: number;
+    retirementTotal?: number;
+    lifeInsuranceTotal?: number;
+  };
+  if (typeof pa?.total === "number") return pa.total;
   return (
-    y.portfolioAssets.taxableTotal +
-    y.portfolioAssets.cashTotal +
-    y.portfolioAssets.retirementTotal +
-    y.portfolioAssets.lifeInsuranceTotal
+    (pa?.taxableTotal ?? 0) +
+    (pa?.cashTotal ?? 0) +
+    (pa?.retirementTotal ?? 0) +
+    (pa?.lifeInsuranceTotal ?? 0)
   );
 }
 
-interface Props {
-  plan1Years: ProjectionYear[];
-  plan2Years: ProjectionYear[];
-  plan1Label: string;
-  plan2Label: string;
+export interface PortfolioOverlaySeries {
+  label: string;
+  years: ProjectionYear[];
 }
 
-export function PortfolioOverlayChart({ plan1Years, plan2Years, plan1Label, plan2Label }: Props) {
-  const labels = plan2Years.map((y) => y.year);
+interface Props {
+  plans: PortfolioOverlaySeries[];
+}
 
-  const plan1ByYear = new Map<number, number>();
-  for (const y of plan1Years) plan1ByYear.set(y.year, liquidPortfolioTotal(y));
+export function PortfolioOverlayChart({ plans }: Props) {
+  // Union of all years across plans (sorted). Plans may diverge in horizon
+  // (different retirement ages, longevity assumptions); span the union so each
+  // series shows its own end-state instead of being truncated to the shortest.
+  const allYears = Array.from(
+    new Set(plans.flatMap((p) => p.years.map((y) => y.year))),
+  ).sort((a, b) => a - b);
 
-  const floor: number[] = [];
-  const plan2Ahead: number[] = [];
-  const plan1Ahead: number[] = [];
-  for (const y of plan2Years) {
-    const plan2 = liquidPortfolioTotal(y);
-    const plan1 = plan1ByYear.get(y.year) ?? plan2;
-    floor.push(Math.min(plan1, plan2));
-    plan2Ahead.push(Math.max(0, plan2 - plan1));
-    plan1Ahead.push(Math.max(0, plan1 - plan2));
-  }
-
-  const data = {
-    labels,
-    datasets: [
-      {
-        label: `Common floor (vs ${plan1Label})`,
-        data: floor,
-        backgroundColor: "#2563eb",
-        stack: "portfolio",
-      },
-      {
-        label: `${plan2Label} ahead of ${plan1Label}`,
-        data: plan2Ahead,
-        backgroundColor: "#059669",
-        stack: "portfolio",
-      },
-      {
-        label: `${plan1Label} ahead of ${plan2Label}`,
-        data: plan1Ahead,
-        backgroundColor: "#9ca3af",
-        stack: "portfolio",
-      },
-    ],
-  };
-
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { mode: "index" as const, intersect: false },
-    plugins: {
-      legend: { position: "top" as const, labels: { color: "#cbd5e1" } },
-      tooltip: {
-        displayColors: false,
-        filter: (item: TooltipItem<"bar">) => item.datasetIndex === 0,
-        callbacks: {
-          label: (ctx: TooltipItem<"bar">) => {
-            const ds = ctx.chart.data.datasets;
-            const i = ctx.dataIndex;
-            const f = (ds[0]?.data[i] as number | undefined) ?? 0;
-            const ahead = (ds[1]?.data[i] as number | undefined) ?? 0;
-            const behind = (ds[2]?.data[i] as number | undefined) ?? 0;
-            const plan1Total = f + behind;
-            const plan2Total = f + ahead;
-            const delta = plan2Total - plan1Total;
-            const sign = delta >= 0 ? "+" : "−";
-            return [
-              `${plan1Label}: ${usd.format(plan1Total)}`,
-              `${plan2Label}: ${usd.format(plan2Total)}`,
-              `Δ: ${sign}${usd.format(Math.abs(delta))}`,
-            ];
-          },
-        },
-      },
-    },
-    scales: {
-      x: { stacked: true, ticks: { color: "#94a3b8" }, grid: { display: false } },
-      y: {
-        stacked: true,
-        ticks: { color: "#94a3b8", callback: (v: number | string) => usd.format(Number(v)) },
-        grid: { color: "rgba(148, 163, 184, 0.15)" },
-      },
-    },
-  };
+  const datasets = plans.map((p, i) => {
+    const byYear = new Map<number, number>(
+      p.years.map((y) => [y.year, portfolioTotalForYear(y)]),
+    );
+    const color = seriesColor(i) ?? "#cbd5e1";
+    return {
+      label: p.label,
+      data: allYears.map((yr) => byYear.get(yr) ?? null),
+      borderColor: color,
+      backgroundColor: color,
+      borderDash: [...(seriesDash(i) ?? [])],
+      fill: false,
+      pointRadius: 0,
+      borderWidth: 2,
+      tension: 0.2,
+      spanGaps: true,
+    };
+  });
 
   return (
     <div className="h-72 w-full">
-      <Bar data={data} options={options} />
+      <Line
+        data={{ labels: allYears, datasets }}
+        options={{
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { position: "top", labels: { color: "#cbd5e1" } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) =>
+                  `${ctx.dataset.label}: ${usd.format((ctx.parsed.y as number) ?? 0)}`,
+              },
+            },
+          },
+          scales: {
+            x: {
+              ticks: { color: "#94a3b8" },
+              grid: { color: "rgba(148,163,184,0.15)" },
+            },
+            y: {
+              ticks: {
+                color: "#94a3b8",
+                callback: (v) => usd.format(Number(v)),
+              },
+              grid: { color: "rgba(148,163,184,0.15)" },
+            },
+          },
+        }}
+      />
     </div>
   );
 }
