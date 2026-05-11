@@ -24,7 +24,9 @@ export function ComparisonPickerBar({
   snapshots,
   drawerPlans = [],
 }: Props) {
-  const { left, right, setSide } = useCompareState(clientId);
+  const { plans, setPlanAt } = useCompareState(clientId);
+  const left = plans[0] ?? "base";
+  const right = plans[1] ?? "base";
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
 
@@ -36,7 +38,7 @@ export function ComparisonPickerBar({
         <span className="text-xs uppercase tracking-wide text-slate-400">Plan 1</span>
         <ScenarioPickerDropdown
           value={left}
-          onChange={(v) => setSide("left", v)}
+          onChange={(v) => setPlanAt(0, v)}
           scenarios={scenarios}
           snapshots={snapshots}
           ariaLabel="Plan 1"
@@ -47,7 +49,7 @@ export function ComparisonPickerBar({
         <span className="text-xs uppercase tracking-wide text-slate-400">Plan 2</span>
         <ScenarioPickerDropdown
           value={right}
-          onChange={(v) => setSide("right", v)}
+          onChange={(v) => setPlanAt(1, v)}
           scenarios={scenarios}
           snapshots={snapshots}
           ariaLabel="Plan 2"

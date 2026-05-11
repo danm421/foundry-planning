@@ -3,9 +3,23 @@ import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import { ComparisonPickerBar } from "../comparison-picker-bar";
 
-const setSide = vi.fn();
+const setPlanAt = vi.fn();
 vi.mock("@/hooks/use-compare-state", () => ({
-  useCompareState: () => ({ left: "base", right: "scen-1", setSide }),
+  useCompareState: () => ({
+    plans: ["base", "scen-1"],
+    baselineIndex: 0,
+    setPlanAt,
+    addPlan: vi.fn(),
+    removePlanAt: vi.fn(),
+    makeBaseline: vi.fn(),
+    toggleSet: new Set<string>(),
+    setToggle: vi.fn(),
+    // Legacy shims still exposed by the hook; kept here so the mock matches
+    // the public type until Task 7 rewrites this test file.
+    left: "base",
+    right: "scen-1",
+    setSide: vi.fn(),
+  }),
 }));
 
 describe("ComparisonPickerBar", () => {
@@ -26,7 +40,7 @@ describe("ComparisonPickerBar", () => {
     expect((selects[1] as HTMLSelectElement).value).toBe("scen-1");
   });
 
-  it("calls setSide with new value when picker changes", () => {
+  it("calls setPlanAt with new value when picker changes", () => {
     const { getAllByRole } = render(
       <ComparisonPickerBar
         clientId="client-1"
@@ -38,6 +52,6 @@ describe("ComparisonPickerBar", () => {
       />,
     );
     fireEvent.change(getAllByRole("combobox")[1], { target: { value: "base" } });
-    expect(setSide).toHaveBeenCalledWith("right", "base");
+    expect(setPlanAt).toHaveBeenCalledWith(1, "base");
   });
 });
