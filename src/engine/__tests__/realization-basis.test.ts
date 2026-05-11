@@ -81,4 +81,42 @@ describe("F1: realized growth feeds cost basis", () => {
       expect(years[i + 1].accountBasisBoY["acct-ira"]).toBe(years[i].accountBasisBoY["acct-ira"]);
     }
   });
+
+  // Spec 2026-05-11: extends the identity to include withdrawalDetail.basisReturn.
+  // basisEoY[n] == basisBoY[n] + basisIncrease[n] − basisReturn[n]
+  // basisBoY[n+1] == basisEoY[n]
+  it("basis identity includes withdrawalDetail.basisReturn under fresh-basis ordering", () => {
+    const checking = {
+      id: "chk", name: "Checking", category: "cash" as const, subType: "checking",
+      value: 0, basis: 0, growthRate: 0, rmdEnabled: false,
+      isDefaultChecking: true,
+      owners: [{ kind: "family_member" as const, familyMemberId: LEGACY_FM_CLIENT, percent: 1 }],
+    };
+    const bigExpense = {
+      id: "exp", type: "living" as const, name: "Living",
+      annualAmount: 80_000, startYear: 2026, endYear: 2030, growthRate: 0,
+    };
+    const data = buildClientData({
+      accounts: [checking, taxableWithRealization],
+      incomes: [], expenses: [bigExpense], liabilities: [], savingsRules: [],
+      withdrawalStrategy: [
+        { accountId: "acct-brokerage", priorityOrder: 1, startYear: 2026, endYear: 2030 },
+      ],
+      planSettings: { ...basePlanSettings, planStartYear: 2026, planEndYear: 2030 },
+    });
+    const years = runProjection(data);
+
+    for (let i = 0; i < years.length; i++) {
+      const ledger = years[i].accountLedgers["acct-brokerage"];
+      const basisBoY = ledger.basisBoY ?? 0;
+      const basisIncrease = ledger.growthDetail?.basisIncrease ?? 0;
+      const basisReturn = ledger.withdrawalDetail?.basisReturn ?? 0;
+      const basisEoY = ledger.basisEoY ?? 0;
+      expect(basisEoY).toBeCloseTo(basisBoY + basisIncrease - basisReturn, 0);
+      if (i + 1 < years.length) {
+        const nextBoY = years[i + 1].accountLedgers["acct-brokerage"].basisBoY ?? 0;
+        expect(nextBoY).toBeCloseTo(basisEoY, 0);
+      }
+    }
+  });
 });

@@ -197,3 +197,44 @@ describe("classifyTransferTax", () => {
     expect(result.label).toBe("roth_conversion");
   });
 });
+
+describe("classifyTransferTax taxable source — fresh-basis-first (spec 2026-05-11)", () => {
+  const base = {
+    sourceCategory: "taxable" as const,
+    sourceSubType: "brokerage",
+    targetCategory: "cash" as const,
+    targetSubType: "checking",
+    allTraditionalIraBasis: 0,
+    allTraditionalIraBalance: 0,
+    ownerAge: 50,
+    rothBasis: 0,
+  };
+
+  it("back-compat: sourceFreshBasis=0 (or undefined) matches pro-rata", () => {
+    const r = classifyTransferTax({
+      ...base, amount: 100, sourceAccountValue: 1000, sourceAccountBasis: 400,
+    });
+    expect(r.capitalGain).toBeCloseTo(60, 2);
+    expect(r.basisReturn).toBeCloseTo(40, 2);
+  });
+
+  it("fully covered by fresh: 0 cap gain, full basisReturn", () => {
+    const r = classifyTransferTax({
+      ...base, amount: 50, sourceAccountValue: 1000, sourceAccountBasis: 400,
+      sourceFreshBasis: 100,
+    });
+    expect(r.capitalGain).toBe(0);
+    expect(r.basisReturn).toBe(50);
+  });
+
+  it("straddles fresh + legacy: legacy ratio used for overflow", () => {
+    // legacy: value 900, basis 300 → gain ratio 0.6667
+    // amount 250 → fresh 100 + legacy 150 × 0.6667 = 100 gain
+    const r = classifyTransferTax({
+      ...base, amount: 250, sourceAccountValue: 1000, sourceAccountBasis: 400,
+      sourceFreshBasis: 100,
+    });
+    expect(r.capitalGain).toBeCloseTo(100, 2);
+    expect(r.basisReturn).toBeCloseTo(150, 2);
+  });
+});

@@ -11,6 +11,9 @@ export interface TransfersInput {
   accounts: Account[];
   accountBalances: Record<string, number>;
   basisMap: Record<string, number>;
+  /** Per-account unspent fresh-basis pool. Drained per transfer when the
+   *  source is a taxable/cash account. */
+  freshBasisMap?: Record<string, number>;
   /** Mutable. For 401k/403b sources the Roth-designated portion of the
    *  source decrements pro-rata; if the target is also 401k/403b that share
    *  carries over. Roth IRA destinations gain after-tax basis on Roth
@@ -49,7 +52,7 @@ export interface TransfersResult {
  * Transfers occur after annual growth has been applied but before RMDs.
  */
 export function applyTransfers(input: TransfersInput): TransfersResult {
-  const { transfers, accounts, accountBalances, basisMap, rothValueMap, accountLedgers, year, ownerAges, spouseFamilyMemberId } = input;
+  const { transfers, accounts, accountBalances, basisMap, freshBasisMap, rothValueMap, accountLedgers, year, ownerAges, spouseFamilyMemberId } = input;
 
   const result: TransfersResult = {
     taxableOrdinaryIncome: 0,
@@ -85,6 +88,7 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
     const ownerAge = _resolveOwnerAge(isSpouseOwned ? "spouse" : "client", ownerAges);
 
     // Classify tax treatment
+    const sourceFresh = freshBasisMap?.[transfer.sourceAccountId] ?? 0;
     const taxResult = classifyTransferTax({
       sourceCategory: sourceAccount.category,
       sourceSubType: sourceAccount.subType,
@@ -94,6 +98,7 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
       sourceAccountValue: sourceBalance,
       sourceAccountBasis: basisMap[transfer.sourceAccountId] ?? 0,
       sourceRothValue: rothValueMap?.[transfer.sourceAccountId] ?? 0,
+      sourceFreshBasis: sourceFresh,
       allTraditionalIraBasis,
       allTraditionalIraBalance,
       ownerAge,
@@ -104,8 +109,22 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
     accountBalances[transfer.sourceAccountId] = sourceBalance - actualAmount;
     accountBalances[transfer.targetAccountId] = (accountBalances[transfer.targetAccountId] ?? 0) + actualAmount;
 
-    // ── Update basis map (proportional basis moves with the transfer) ────────
-    _updateBasis(transfer.sourceAccountId, transfer.targetAccountId, actualAmount, sourceBalance, basisMap);
+    // ── Update basis map ─────────────────────────────────────────────────────
+    // Taxable/cash source: lose basisReturn (the un-recognized portion of the
+    // transfer); target gains the same amount (basis conserved across the move).
+    // Spec 2026-05-11. Retirement-source transfers have basisReturn=0 — preserve
+    // their existing proportional basis movement.
+    if (sourceAccount.category === "taxable" || sourceAccount.category === "cash") {
+      const srcBasisBefore = basisMap[transfer.sourceAccountId] ?? 0;
+      basisMap[transfer.sourceAccountId] = Math.max(0, srcBasisBefore - taxResult.basisReturn);
+      basisMap[transfer.targetAccountId] = (basisMap[transfer.targetAccountId] ?? 0) + taxResult.basisReturn;
+      if (freshBasisMap) {
+        const consumed = Math.min(sourceFresh, actualAmount);
+        freshBasisMap[transfer.sourceAccountId] = Math.max(0, sourceFresh - consumed);
+      }
+    } else {
+      _updateBasis(transfer.sourceAccountId, transfer.targetAccountId, actualAmount, sourceBalance, basisMap);
+    }
 
     // ── Update rothValue map ─────────────────────────────────────────────────
     // Pro-rata Roth slice leaves a 401k/403b source. If the target is also
@@ -125,6 +144,18 @@ export function applyTransfers(input: TransfersInput): TransfersResult {
 
     // ── Update ledgers ───────────────────────────────────────────────────────
     _updateLedgers(transfer, actualAmount, taxResult.label, accountLedgers);
+
+    // ── Accumulate withdrawalDetail on the source ledger (spec 2026-05-11) ──
+    if (sourceAccount.category === "taxable" || sourceAccount.category === "cash") {
+      const srcLedger = accountLedgers[transfer.sourceAccountId];
+      if (srcLedger) {
+        const existing = srcLedger.withdrawalDetail ?? { realizedLtcg: 0, basisReturn: 0 };
+        srcLedger.withdrawalDetail = {
+          realizedLtcg: existing.realizedLtcg + taxResult.capitalGain,
+          basisReturn: existing.basisReturn + taxResult.basisReturn,
+        };
+      }
+    }
 
     // ── Accumulate tax results ───────────────────────────────────────────────
     result.taxableOrdinaryIncome += taxResult.taxableOrdinaryIncome;

@@ -1079,6 +1079,17 @@ export interface AccountLedger {
     taxExempt: number;
     basisIncrease: number;
   };
+  /**
+   * Per-year realization detail from withdrawals/transfers that left this
+   * taxable or cash account. Distinct from `growthDetail.ltCapitalGains`,
+   * which is *embedded* appreciation eligible for LTCG when sold;
+   * `withdrawalDetail.realizedLtcg` is what was *actually recognized* this
+   * year against the 1040.
+   */
+  withdrawalDetail?: {
+    realizedLtcg: number;
+    basisReturn: number;
+  };
 }
 
 export interface AccountLedgerEntry {

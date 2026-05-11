@@ -10,6 +10,10 @@ export interface SupplementalDraw {
   amount: number;                 // gross amount drawn from this account
   ordinaryIncome: number;         // contribution to taxDetail.ordinaryIncome
   capitalGains: number;           // contribution to taxDetail.capitalGains (LTCG)
+  /** Portion of `amount` that was return-of-basis (no tax). For taxable
+   *  sources only; 0 for retirement/cash/etc. Source-side basisMap should
+   *  be reduced by this amount. */
+  basisReturn: number;
   earlyWithdrawalPenalty: number; // 10% on Trad pre-59.5 / Roth earnings pre-59.5
 }
 
@@ -32,6 +36,10 @@ export interface CategorizeDrawInput {
    *  callers must pass the current balance from their ledger. */
   balance: number;
   basisMap: Record<string, number>;
+  /** Unspent portion of this year's basisIncrease for taxable/cash accounts.
+   *  When > 0, dollars up to this amount are drawn from the fresh pool first
+   *  (0 LTCG, 100% basisReturn). Caller manages the running counter. */
+  freshBasisRemaining?: number;
   /** Live pre-draw Roth-designated portion for 401k/403b sources. Optional;
    *  callers that don't track rothValue can omit it (treated as 0). */
   rothValueMap?: Record<string, number>;
@@ -41,20 +49,38 @@ export interface CategorizeDrawInput {
 export function categorizeDraw(input: CategorizeDrawInput): SupplementalDraw {
   const { account, amount, balance, basisMap, rothValueMap, ownerAge } = input;
   const accountId = account.id;
-  const empty: SupplementalDraw = { accountId, amount, ordinaryIncome: 0, capitalGains: 0, earlyWithdrawalPenalty: 0 };
+  const empty: SupplementalDraw = { accountId, amount, ordinaryIncome: 0, capitalGains: 0, basisReturn: 0, earlyWithdrawalPenalty: 0 };
 
   if (amount <= 0) return empty;
 
-  // Cash: 0% tax, no penalty
-  if (account.category === "cash") return empty;
+  // Cash: 0% tax, no penalty. Entire draw is return of principal (basis).
+  if (account.category === "cash") return { ...empty, basisReturn: amount };
 
-  // Taxable brokerage: pro-rata gain = (1 - basis/balance) * amount
+  // Taxable brokerage: high-basis-first ordering (spec 2026-05-11).
+  // Current-year basisIncrease (passed in as freshBasisRemaining) has 100%
+  // basis; draw from it before the legacy pool. The legacy slice uses the
+  // pre-fresh basis ratio.
   if (account.category === "taxable") {
     const basis = basisMap[accountId] ?? 0;
-    if (balance <= 0) return { ...empty, capitalGains: amount };
-    const gainRatio = Math.max(0, Math.min(1, 1 - basis / balance));
-    const capGain = amount * gainRatio;
-    return { ...empty, capitalGains: capGain };
+    const fresh = Math.max(0, input.freshBasisRemaining ?? 0);
+    if (balance <= 0) {
+      return { ...empty, capitalGains: amount, basisReturn: 0 };
+    }
+
+    const freshDraw = Math.min(amount, fresh);
+    const legacyDraw = amount - freshDraw;
+    const legacyValue = balance - fresh;
+    const legacyBasis = basis - fresh;
+
+    let legacyGainRatio = 0;
+    if (legacyValue > 0) {
+      const raw = 1 - legacyBasis / legacyValue;
+      legacyGainRatio = Math.max(0, Math.min(1, raw));
+    }
+
+    const capitalGains = legacyDraw * legacyGainRatio;
+    const basisReturn = freshDraw + legacyDraw * (1 - legacyGainRatio);
+    return { ...empty, capitalGains, basisReturn };
   }
 
   // Retirement: traditional vs Roth vs HSA
@@ -102,6 +128,10 @@ export interface PlanSupplementalWithdrawalInput {
   strategy: WithdrawalPriority[];
   householdBalances: Record<string, number>;
   basisMap: Record<string, number>;
+  /** Per-account unspent fresh-basis pool (current-year basisIncrease that
+   *  hasn't been consumed by an earlier in-year withdrawal/transfer).
+   *  Caller is responsible for decrementing after the plan applies. */
+  freshBasisMap?: Record<string, number>;
   rothValueMap?: Record<string, number>;
   accounts: Account[];
   ages: { client: number; spouse: number | null };
@@ -110,7 +140,7 @@ export interface PlanSupplementalWithdrawalInput {
 }
 
 export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInput): SupplementalWithdrawalPlan {
-  const { shortfall, strategy, householdBalances, basisMap, rothValueMap, accounts, ages, isSpouseAccount, year } = input;
+  const { shortfall, strategy, householdBalances, basisMap, freshBasisMap, rothValueMap, accounts, ages, isSpouseAccount, year } = input;
 
   const empty: SupplementalWithdrawalPlan = {
     byAccount: {}, total: 0, draws: [],
@@ -122,6 +152,10 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
   const sorted = [...strategy]
     .filter((s) => year >= s.startYear && year <= s.endYear)
     .sort((a, b) => a.priorityOrder - b.priorityOrder);
+
+  // Local copy so we can decrement as we plan across multiple accounts and
+  // a second draw from the same account in the same plan sees the depleted pool.
+  const localFresh: Record<string, number> = { ...(freshBasisMap ?? {}) };
 
   const draws: SupplementalDraw[] = [];
   const byAccount: Record<string, number> = {};
@@ -140,7 +174,16 @@ export function planSupplementalWithdrawal(input: PlanSupplementalWithdrawalInpu
 
     const drawAmount = Math.min(remaining, available);
     const ownerAge = isSpouseAccount(account) && ages.spouse != null ? ages.spouse : ages.client;
-    const draw = categorizeDraw({ account, amount: drawAmount, balance: available, basisMap, rothValueMap, ownerAge });
+    const draw = categorizeDraw({
+      account, amount: drawAmount, balance: available,
+      basisMap, rothValueMap, ownerAge,
+      freshBasisRemaining: localFresh[account.id] ?? 0,
+    });
+
+    if (account.category === "taxable") {
+      const consumed = Math.min(localFresh[account.id] ?? 0, drawAmount);
+      localFresh[account.id] = Math.max(0, (localFresh[account.id] ?? 0) - consumed);
+    }
 
     draws.push(draw);
     byAccount[entry.accountId] = drawAmount;
