@@ -35,7 +35,7 @@ describe("widget contract — category + scenarios + defaultPlanCount", () => {
 
   it("specific categorizations from spec", () => {
     // KPIs
-    // (kpi added in Task 3)
+    expect(COMPARISON_WIDGETS["kpi"].category).toBe("kpis");
 
     // Cash Flow
     expect(COMPARISON_WIDGETS["income-expense"].category).toBe("cashflow");

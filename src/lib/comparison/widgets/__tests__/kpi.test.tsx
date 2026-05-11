@@ -15,8 +15,8 @@ const mockPlan = (
     label,
     result: {
       years: [
-        { year: 2026, age: 65, totalNetWorth: 1_000_000 },
-        { year: 2065, age: 104, totalNetWorth: 5_000_000 },
+        { year: 2026, ages: { client: 65 }, totalNetWorth: 1_000_000 },
+        { year: 2065, ages: { client: 104 }, totalNetWorth: 5_000_000 },
       ],
       summary: { lifetimeTax: 2_000_000, netToHeirs: 3_500_000 },
       ...resultOverrides,
@@ -93,13 +93,23 @@ describe("kpi widget", () => {
     expect(screen.getByText(/Success/i)).toBeInTheDocument();
   });
 
+  it("renders Longevity Age from the final projection year", () => {
+    const ctx = mockCtx(
+      [mockPlan("plan-base", "Base")],
+      { metric: "longevityAge" },
+    );
+    render(<>{kpiWidget.render(ctx)}</>);
+    expect(screen.getByText("104")).toBeInTheDocument();
+    expect(screen.getByText(/Longevity Age/i)).toBeInTheDocument();
+  });
+
   it("renders an empty/dash state when bound to zero plans", () => {
     const ctx = mockCtx([], { metric: "endNetWorth" });
     render(<>{kpiWidget.render(ctx)}</>);
     expect(screen.getByText(/—|N\/A/)).toBeInTheDocument();
   });
 
-  it("flags needsMc=true only when metric === successProbability", () => {
+  it("declares needsMc=true at the definition level (page-level MC fetch is gated per-instance by config.metric)", () => {
     expect(kpiWidget.needsMc).toBe(true);
   });
 });
