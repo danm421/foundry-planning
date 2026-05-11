@@ -176,8 +176,13 @@ export interface EstateTaxResult {
   federalEstateTax: number;
 
   // State Tax
+  /** USPS two-letter code; null when no residence state is set. */
+  residenceState: import("@/lib/tax/state-estate").StateCode | null;
+  /** Effective marginal rate used in fallback mode; otherwise weighted-average bracket rate. */
   stateEstateTaxRate: number;
   stateEstateTax: number;
+  /** Full per-state detail for the audit report. Always present. */
+  stateEstateTaxDetail: import("@/lib/tax/state-estate").StateEstateTaxResult;
 
   // Totals
   totalEstateTax: number;            // federal + state
