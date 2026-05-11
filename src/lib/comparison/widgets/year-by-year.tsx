@@ -4,6 +4,8 @@ import type { ComparisonWidgetDefinition } from "./types";
 export const yearByYearWidget: ComparisonWidgetDefinition = {
   kind: "year-by-year",
   title: "Year-by-year detail",
+  category: "cashflow",
+  scenarios: "many-only",
   needsMc: false,
   render: ({ plans, yearRange }) => (
     <YearByYearComparisonSection plans={plans} yearRange={yearRange} />

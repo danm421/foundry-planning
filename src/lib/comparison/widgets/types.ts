@@ -32,9 +32,30 @@ export interface ComparisonWidgetContext {
   onTextChange?: (instanceId: string, markdown: string) => void;
 }
 
+export type ComparisonWidgetCategory =
+  | "kpis"
+  | "cashflow"
+  | "investments"
+  | "monte-carlo"
+  | "retirement-income"
+  | "tax"
+  | "estate"
+  | "text";
+
+export type ComparisonWidgetScenarios =
+  | "none"
+  | "one"
+  | "one-or-many"
+  | "many-only";
+
 export interface ComparisonWidgetDefinition<TConfig = unknown> {
   kind: ComparisonWidgetKind;
   title: string;
+  category: ComparisonWidgetCategory;
+  scenarios: ComparisonWidgetScenarios;
+  /** Default number of plans bound when widget is added from the panel.
+   *  Defaults to scenarios-implied minimum (none→0, one→1, many-only→2, one-or-many→1). */
+  defaultPlanCount?: number;
   needsMc: boolean;
   configSchema?: z.ZodType<TConfig>;
   defaultConfig?: TConfig;

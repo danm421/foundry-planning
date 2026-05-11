@@ -4,6 +4,8 @@ import type { ComparisonWidgetDefinition } from "./types";
 export const monteCarloWidget: ComparisonWidgetDefinition = {
   kind: "monte-carlo",
   title: "Monte Carlo",
+  category: "monte-carlo",
+  scenarios: "one-or-many",
   needsMc: true,
   render: ({ mc }) => {
     if (!mc) {

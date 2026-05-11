@@ -4,6 +4,8 @@ import type { ComparisonWidgetDefinition } from "./types";
 export const withdrawalSourceWidget: ComparisonWidgetDefinition = {
   kind: "withdrawal-source",
   title: "Withdrawal Source",
+  category: "cashflow",
+  scenarios: "one-or-many",
   needsMc: false,
   render: ({ plans, yearRange }) => (
     <WithdrawalSourceComparisonSection plans={plans} yearRange={yearRange} />
