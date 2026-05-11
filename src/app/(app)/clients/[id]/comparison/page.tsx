@@ -102,8 +102,6 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
     ownerNames,
     ownerDobs,
   });
-  const toHeirsDelta = heirs2.totals.totalToHeirs - heirs1.totals.totalToHeirs;
-
   const liquidity1 = buildYearlyLiquidityReport({
     projection: plan1Load.result,
     clientData: plan1Load.tree,
@@ -119,6 +117,9 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
 
   const finalEstate1 = heirs1.rows[heirs1.rows.length - 1] ?? null;
   const finalEstate2 = heirs2.rows[heirs2.rows.length - 1] ?? null;
+
+  const toHeirsDelta =
+    (finalEstate2?.totalToHeirs ?? 0) - (finalEstate1?.totalToHeirs ?? 0);
 
   const yearsSurvivesDelta =
     computeYearsPortfolioSurvives(plan2Load.result.years) -

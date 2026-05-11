@@ -78,13 +78,15 @@ export function PortfolioOverlayChart({ plan1Years, plan2Years, plan1Label, plan
     plugins: {
       legend: { position: "top" as const, labels: { color: "#cbd5e1" } },
       tooltip: {
+        displayColors: false,
+        filter: (item: TooltipItem<"bar">) => item.datasetIndex === 0,
         callbacks: {
-          label: (ctx: TooltipItem<"bar">) =>
-            `${ctx.dataset.label}: ${usd.format(ctx.parsed.y ?? 0)}`,
-          footer: (items: TooltipItem<"bar">[]) => {
-            const f = items[0]?.parsed.y ?? 0;
-            const ahead = items[1]?.parsed.y ?? 0;
-            const behind = items[2]?.parsed.y ?? 0;
+          label: (ctx: TooltipItem<"bar">) => {
+            const ds = ctx.chart.data.datasets;
+            const i = ctx.dataIndex;
+            const f = (ds[0]?.data[i] as number | undefined) ?? 0;
+            const ahead = (ds[1]?.data[i] as number | undefined) ?? 0;
+            const behind = (ds[2]?.data[i] as number | undefined) ?? 0;
             const plan1Total = f + behind;
             const plan2Total = f + ahead;
             const delta = plan2Total - plan1Total;
