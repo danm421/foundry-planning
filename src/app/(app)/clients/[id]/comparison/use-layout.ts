@@ -2,108 +2,68 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type {
-  Cell,
-  ComparisonLayoutV4,
-  ComparisonWidgetKindV4,
-  Row,
+  CellSpan,
+  CellV5,
+  ComparisonLayoutV5,
+  Group,
   WidgetInstance,
   YearRange,
 } from "@/lib/comparison/layout-schema";
-import { COMPARISON_WIDGETS } from "@/lib/comparison/widgets/registry";
-import { getDefaultLayoutV4 } from "@/lib/comparison/widgets/default-layout-v4";
+import { findEndOfVisualRowIndex } from "@/lib/comparison/v5-grid";
 
-const newId = (): string => crypto.randomUUID();
-
-const MAX_CELLS_PER_ROW = 5;
-
-export interface AddRowResult {
-  rowId: string;
-  placeholderCellId: string;
-}
+const newId = (): string => globalThis.crypto.randomUUID();
 
 export interface UseLayoutApi {
-  layout: ComparisonLayoutV4;
+  layout: ComparisonLayoutV5;
   setTitle: (title: string) => void;
-  addRow: () => AddRowResult;
-  removeRow: (rowId: string) => void;
-  moveRow: (fromIndex: number, toIndex: number) => void;
-  addCell: (rowId: string, kind: ComparisonWidgetKindV4) => void;
-  removeCell: (rowId: string, cellId: string) => void;
-  moveCell: (
-    fromRowId: string, fromIndex: number,
-    toRowId: string, toIndex: number,
-  ) => void;
-  duplicateCell: (rowId: string, cellId: string) => void;
+
+  addGroup: () => { groupId: string; cellId: string };
+  removeGroup: (groupId: string) => void;
+  setGroupTitle: (groupId: string, title: string) => void;
+  moveGroup: (fromIndex: number, toIndex: number) => void;
+
+  addEmptyCellRight: (groupId: string, afterCellId: string) => string;
+  addEmptyCellDown: (groupId: string, afterCellId: string) => string;
+  removeCell: (groupId: string, cellId: string) => void;
+  setCellSpan: (cellId: string, span: CellSpan) => void;
+  setCellWidget: (cellId: string, widget: WidgetInstance) => void;
+  duplicateCell: (groupId: string, cellId: string) => void;
+  moveCell: (fromGroupId: string, fromIndex: number, toGroupId: string, toIndex: number) => void;
+
   updateWidgetPlanIds: (cellId: string, planIds: string[]) => void;
   updateWidgetYearRange: (cellId: string, yearRange: YearRange | undefined) => void;
   updateWidgetConfig: (cellId: string, config: unknown) => void;
   updateTextMarkdown: (cellId: string, markdown: string) => void;
-  reset: (primaryScenarioId: string) => void;
+
   save: () => Promise<void>;
   saving: boolean;
   dirty: boolean;
 }
 
-function defaultPlanIdsFor(
-  kind: ComparisonWidgetKindV4,
-  primary: string,
-): string[] {
-  const def = COMPARISON_WIDGETS[kind];
-  switch (def.scenarios) {
-    case "none":
-      return [];
-    case "one":
-      return [primary];
-    case "one-or-many":
-      return [primary];
-    case "many-only":
-      return [primary, primary]; // advisor must pick a second scenario before save
-  }
+function makeEmptyCell(span: CellSpan = 5): CellV5 {
+  return { id: newId(), span, widget: null };
 }
 
-function buildWidget(
-  kind: ComparisonWidgetKindV4,
-  primary: string,
-): WidgetInstance {
-  const def = COMPARISON_WIDGETS[kind];
-  const widget: WidgetInstance = {
-    id: newId(),
-    kind,
-    planIds: defaultPlanIdsFor(kind, primary),
-  };
-  if (def.defaultConfig !== undefined) widget.config = def.defaultConfig;
-  if (kind === "text" && widget.config === undefined) widget.config = { markdown: "" };
-  return widget;
+function makeGroup(cells: CellV5[]): Group {
+  return { id: newId(), title: "", cells };
 }
 
-function makeCell(widget: WidgetInstance): Cell {
-  return { id: newId(), widget };
+function mapGroup(layout: ComparisonLayoutV5, groupId: string, f: (g: Group) => Group): ComparisonLayoutV5 {
+  return { ...layout, groups: layout.groups.map((g) => (g.id === groupId ? f(g) : g)) };
 }
 
-function makeRow(cells: Cell[]): Row {
-  return { id: newId(), cells };
-}
-
-function mapRow(layout: ComparisonLayoutV4, rowId: string, f: (r: Row) => Row): ComparisonLayoutV4 {
-  return { ...layout, rows: layout.rows.map((r) => (r.id === rowId ? f(r) : r)) };
-}
-
-function mapCellById(
-  layout: ComparisonLayoutV4,
-  cellId: string,
-  f: (c: Cell) => Cell,
-): ComparisonLayoutV4 {
+function mapCellById(layout: ComparisonLayoutV5, cellId: string, f: (c: CellV5) => CellV5): ComparisonLayoutV5 {
   return {
     ...layout,
-    rows: layout.rows.map((r) => ({
-      ...r,
-      cells: r.cells.map((c) => (c.id === cellId ? f(c) : c)),
+    groups: layout.groups.map((g) => ({
+      ...g,
+      cells: g.cells.map((c) => (c.id === cellId ? f(c) : c)),
     })),
   };
 }
 
-export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLayoutApi {
-  const [layout, setLayout] = useState<ComparisonLayoutV4>(initial);
+export function useLayout(initial: ComparisonLayoutV5, clientId: string): UseLayoutApi {
+  const [layout, setLayout] = useState<ComparisonLayoutV5>(initial);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
@@ -112,138 +72,154 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
     setDirty(true);
   }, []);
 
-  const addRow = useCallback((): AddRowResult => {
-    const placeholder = makeCell({
-      id: newId(),
-      kind: "text",
-      planIds: [],
-      config: { markdown: "" },
-    });
-    const row = makeRow([placeholder]);
-    setLayout((p) => ({ ...p, rows: [...p.rows, row] }));
+  const addGroup = useCallback(() => {
+    const cell = makeEmptyCell(5);
+    const group = makeGroup([cell]);
+    setLayout((p) => ({ ...p, groups: [...p.groups, group] }));
     setDirty(true);
-    return { rowId: row.id, placeholderCellId: placeholder.id };
+    return { groupId: group.id, cellId: cell.id };
   }, []);
 
-  const removeRow = useCallback((rowId: string) => {
-    setLayout((p) => ({ ...p, rows: p.rows.filter((r) => r.id !== rowId) }));
+  const removeGroup = useCallback((groupId: string) => {
+    setLayout((p) => ({ ...p, groups: p.groups.filter((g) => g.id !== groupId) }));
     setDirty(true);
   }, []);
 
-  const moveRow = useCallback((fromIndex: number, toIndex: number) => {
+  const setGroupTitle = useCallback((groupId: string, title: string) => {
+    setLayout((p) => mapGroup(p, groupId, (g) => (g.title === title ? g : { ...g, title })));
+    setDirty(true);
+  }, []);
+
+  const moveGroup = useCallback((fromIndex: number, toIndex: number) => {
     setLayout((p) => {
       if (fromIndex === toIndex) return p;
-      const rows = [...p.rows];
-      const [m] = rows.splice(fromIndex, 1);
-      rows.splice(toIndex, 0, m);
-      return { ...p, rows };
+      const groups = [...p.groups];
+      const [m] = groups.splice(fromIndex, 1);
+      groups.splice(toIndex, 0, m);
+      return { ...p, groups };
     });
     setDirty(true);
   }, []);
 
-  const addCell = useCallback(
-    (rowId: string, kind: ComparisonWidgetKindV4) => {
-      setLayout((p) => {
-        const target = p.rows.find((r) => r.id === rowId);
-        if (!target || target.cells.length >= MAX_CELLS_PER_ROW) return p;
-        // Primary scenario is the first planId of the first widget in the layout
-        // (falls back to "base" when the layout is empty / has only text widgets).
-        const firstWidgetPlan =
-          p.rows
-            .flatMap((r) => r.cells.map((c) => c.widget))
-            .find((w) => w.planIds.length > 0)?.planIds[0] ?? "base";
-        const cell = makeCell(buildWidget(kind, firstWidgetPlan));
-        return mapRow(p, rowId, (r) => ({ ...r, cells: [...r.cells, cell] }));
-      });
-      setDirty(true);
-    },
-    [],
-  );
+  const addEmptyCellRight = useCallback((groupId: string, afterCellId: string): string => {
+    const cell = makeEmptyCell(1);
+    setLayout((p) =>
+      mapGroup(p, groupId, (g) => {
+        const i = g.cells.findIndex((c) => c.id === afterCellId);
+        if (i < 0) return g;
+        const cells = [...g.cells.slice(0, i + 1), cell, ...g.cells.slice(i + 1)];
+        return { ...g, cells };
+      }),
+    );
+    setDirty(true);
+    return cell.id;
+  }, []);
 
-  const removeCell = useCallback((rowId: string, cellId: string) => {
-    setLayout((p) => {
-      const row = p.rows.find((r) => r.id === rowId);
-      if (!row) return p;
-      const remaining = row.cells.filter((c) => c.id !== cellId);
-      if (remaining.length === 0) {
-        return { ...p, rows: p.rows.filter((r) => r.id !== rowId) };
-      }
-      return mapRow(p, rowId, (r) => ({ ...r, cells: remaining }));
-    });
+  const addEmptyCellDown = useCallback((groupId: string, afterCellId: string): string => {
+    const cell = makeEmptyCell(5);
+    setLayout((p) =>
+      mapGroup(p, groupId, (g) => {
+        const i = g.cells.findIndex((c) => c.id === afterCellId);
+        if (i < 0) return g;
+        const insertAt = findEndOfVisualRowIndex(g.cells, i);
+        const cells = [...g.cells.slice(0, insertAt), cell, ...g.cells.slice(insertAt)];
+        return { ...g, cells };
+      }),
+    );
+    setDirty(true);
+    return cell.id;
+  }, []);
+
+  const removeCell = useCallback((groupId: string, cellId: string) => {
+    setLayout((p) =>
+      mapGroup(p, groupId, (g) => {
+        const target = g.cells.find((c) => c.id === cellId);
+        if (!target) return g;
+        if (target.widget !== null) {
+          // Replace populated cell with an empty placeholder, preserving span.
+          return {
+            ...g,
+            cells: g.cells.map((c) => (c.id === cellId ? { ...c, widget: null } : c)),
+          };
+        }
+        return { ...g, cells: g.cells.filter((c) => c.id !== cellId) };
+      }),
+    );
+    setDirty(true);
+  }, []);
+
+  const setCellSpan = useCallback((cellId: string, span: CellSpan) => {
+    setLayout((p) => mapCellById(p, cellId, (c) => ({ ...c, span })));
+    setDirty(true);
+  }, []);
+
+  const setCellWidget = useCallback((cellId: string, widget: WidgetInstance) => {
+    setLayout((p) => mapCellById(p, cellId, (c) => ({ ...c, widget })));
+    setDirty(true);
+  }, []);
+
+  const duplicateCell = useCallback((groupId: string, cellId: string) => {
+    setLayout((p) =>
+      mapGroup(p, groupId, (g) => {
+        const i = g.cells.findIndex((c) => c.id === cellId);
+        if (i < 0) return g;
+        const src = g.cells[i];
+        if (!src.widget) return g;
+        const cloneWidget: WidgetInstance = {
+          ...src.widget,
+          id: newId(),
+          planIds: [...src.widget.planIds],
+        };
+        if (src.widget.yearRange) cloneWidget.yearRange = { ...src.widget.yearRange };
+        if (src.widget.config !== undefined) {
+          cloneWidget.config = JSON.parse(JSON.stringify(src.widget.config));
+        }
+        const clone: CellV5 = { id: newId(), span: src.span, widget: cloneWidget };
+        return { ...g, cells: [...g.cells.slice(0, i + 1), clone, ...g.cells.slice(i + 1)] };
+      }),
+    );
     setDirty(true);
   }, []);
 
   const moveCell = useCallback(
-    (fromRowId: string, fromIndex: number, toRowId: string, toIndex: number) => {
+    (fromGroupId: string, fromIndex: number, toGroupId: string, toIndex: number) => {
       setLayout((p) => {
-        const fromRow = p.rows.find((r) => r.id === fromRowId);
-        if (!fromRow) return p;
-        const cell = fromRow.cells[fromIndex];
+        const fromGroup = p.groups.find((g) => g.id === fromGroupId);
+        if (!fromGroup) return p;
+        const cell = fromGroup.cells[fromIndex];
         if (!cell) return p;
 
-        if (fromRowId === toRowId) {
+        if (fromGroupId === toGroupId) {
           if (fromIndex === toIndex) return p;
-          const cells = [...fromRow.cells];
+          const cells = [...fromGroup.cells];
           const [m] = cells.splice(fromIndex, 1);
           cells.splice(Math.min(toIndex, cells.length), 0, m);
-          return mapRow(p, fromRowId, (r) => ({ ...r, cells }));
+          return mapGroup(p, fromGroupId, (g) => ({ ...g, cells }));
         }
 
-        const toRow = p.rows.find((r) => r.id === toRowId);
-        if (!toRow || toRow.cells.length >= MAX_CELLS_PER_ROW) return p;
-        const fromCells = fromRow.cells.filter((c) => c.id !== cell.id);
-        const toCells = [...toRow.cells];
+        const toGroup = p.groups.find((g) => g.id === toGroupId);
+        if (!toGroup) return p;
+        const fromCells = fromGroup.cells.filter((c) => c.id !== cell.id);
+        const toCells = [...toGroup.cells];
         toCells.splice(Math.min(toIndex, toCells.length), 0, cell);
-        let rows = p.rows.map((r) => {
-          if (r.id === fromRowId) return { ...r, cells: fromCells };
-          if (r.id === toRowId) return { ...r, cells: toCells };
-          return r;
+        let groups = p.groups.map((g) => {
+          if (g.id === fromGroupId) return { ...g, cells: fromCells };
+          if (g.id === toGroupId) return { ...g, cells: toCells };
+          return g;
         });
-        // Auto-delete the source row if it's now empty.
-        rows = rows.filter((r) => r.cells.length > 0);
-        return { ...p, rows };
+        groups = groups.filter((g) => g.cells.length > 0);
+        return { ...p, groups };
       });
       setDirty(true);
     },
     [],
   );
 
-  const duplicateCell = useCallback((rowId: string, cellId: string) => {
-    setLayout((p) => {
-      const rowIdx = p.rows.findIndex((r) => r.id === rowId);
-      if (rowIdx < 0) return p;
-      const row = p.rows[rowIdx];
-      const cellIdx = row.cells.findIndex((c) => c.id === cellId);
-      if (cellIdx < 0) return p;
-      const src = row.cells[cellIdx];
-      const cloneWidget: WidgetInstance = {
-        ...src.widget,
-        id: newId(),
-        planIds: [...src.widget.planIds],
-      };
-      if (src.widget.yearRange) cloneWidget.yearRange = { ...src.widget.yearRange };
-      if (src.widget.config !== undefined) {
-        cloneWidget.config = JSON.parse(JSON.stringify(src.widget.config));
-      }
-      const clone: Cell = { id: newId(), widget: cloneWidget };
-
-      if (row.cells.length < MAX_CELLS_PER_ROW) {
-        const cells = [
-          ...row.cells.slice(0, cellIdx + 1),
-          clone,
-          ...row.cells.slice(cellIdx + 1),
-        ];
-        return mapRow(p, rowId, (r) => ({ ...r, cells }));
-      }
-      // Source row is full — append a new row with the clone alone.
-      return { ...p, rows: [...p.rows, makeRow([clone])] };
-    });
-    setDirty(true);
-  }, []);
-
   const updateWidgetPlanIds = useCallback((cellId: string, planIds: string[]) => {
     setLayout((p) =>
-      mapCellById(p, cellId, (c) => ({ ...c, widget: { ...c.widget, planIds } })),
+      mapCellById(p, cellId, (c) =>
+        c.widget ? { ...c, widget: { ...c.widget, planIds } } : c,
+      ),
     );
     setDirty(true);
   }, []);
@@ -252,6 +228,7 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
     (cellId: string, yearRange: YearRange | undefined) => {
       setLayout((p) =>
         mapCellById(p, cellId, (c) => {
+          if (!c.widget) return c;
           const w = { ...c.widget };
           if (yearRange === undefined) delete w.yearRange;
           else w.yearRange = yearRange;
@@ -265,44 +242,29 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
 
   const updateWidgetConfig = useCallback((cellId: string, config: unknown) => {
     setLayout((p) =>
-      mapCellById(p, cellId, (c) => ({ ...c, widget: { ...c.widget, config } })),
+      mapCellById(p, cellId, (c) =>
+        c.widget ? { ...c, widget: { ...c.widget, config } } : c,
+      ),
     );
     setDirty(true);
   }, []);
 
   const updateTextMarkdown = useCallback((cellId: string, markdown: string) => {
     setLayout((p) =>
-      mapCellById(p, cellId, (c) => ({
-        ...c,
-        widget: { ...c.widget, config: { markdown } },
-      })),
+      mapCellById(p, cellId, (c) =>
+        c.widget ? { ...c, widget: { ...c.widget, config: { markdown } } } : c,
+      ),
     );
-    setDirty(true);
-  }, []);
-
-  const reset = useCallback((primaryScenarioId: string) => {
-    setLayout(getDefaultLayoutV4({ primaryScenarioId }));
     setDirty(true);
   }, []);
 
   const save = useCallback(async () => {
     setSaving(true);
     try {
-      const rows = layout.rows
-        .map((r) => ({
-          ...r,
-          cells: r.cells.filter((c) => {
-            if (c.widget.kind !== "text") return true;
-            const md = (c.widget.config as { markdown?: string } | undefined)?.markdown ?? "";
-            return md.trim() !== "";
-          }),
-        }))
-        .filter((r) => r.cells.length > 0);
-      const trimmed: ComparisonLayoutV4 = { ...layout, rows };
       const res = await fetch(`/api/clients/${clientId}/comparison-layout`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(trimmed),
+        body: JSON.stringify(layout),
       });
       if (!res.ok) throw new Error(`Layout save failed: ${res.status}`);
       setDirty(false);
@@ -315,16 +277,16 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
     () => ({
       layout,
       setTitle,
-      addRow, removeRow, moveRow,
-      addCell, removeCell, moveCell, duplicateCell,
-      updateWidgetPlanIds, updateWidgetYearRange, updateWidgetConfig,
-      updateTextMarkdown,
-      reset, save, saving, dirty,
+      addGroup, removeGroup, setGroupTitle, moveGroup,
+      addEmptyCellRight, addEmptyCellDown, removeCell, setCellSpan, setCellWidget, duplicateCell, moveCell,
+      updateWidgetPlanIds, updateWidgetYearRange, updateWidgetConfig, updateTextMarkdown,
+      save, saving, dirty,
     }),
     [
-      layout, setTitle, addRow, removeRow, moveRow, addCell, removeCell, moveCell, duplicateCell,
-      updateWidgetPlanIds, updateWidgetYearRange, updateWidgetConfig,
-      updateTextMarkdown, reset, save, saving, dirty,
+      layout, setTitle, addGroup, removeGroup, setGroupTitle, moveGroup,
+      addEmptyCellRight, addEmptyCellDown, removeCell, setCellSpan, setCellWidget, duplicateCell, moveCell,
+      updateWidgetPlanIds, updateWidgetYearRange, updateWidgetConfig, updateTextMarkdown,
+      save, saving, dirty,
     ],
   );
 }

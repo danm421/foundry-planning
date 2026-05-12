@@ -106,3 +106,35 @@ export const ComparisonLayoutV4Schema = z.object({
   rows: z.array(RowSchema),
 });
 export type ComparisonLayoutV4 = z.infer<typeof ComparisonLayoutV4Schema>;
+
+// ---------- v5 ----------
+
+export const CellSpanSchema = z.union([
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5),
+]);
+export type CellSpan = z.infer<typeof CellSpanSchema>;
+
+export const CellV5Schema = z.object({
+  id: z.string(),
+  span: CellSpanSchema,
+  widget: WidgetInstanceSchema.nullable(),
+});
+export type CellV5 = z.infer<typeof CellV5Schema>;
+
+export const GroupSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  cells: z.array(CellV5Schema),
+});
+export type Group = z.infer<typeof GroupSchema>;
+
+export const ComparisonLayoutV5Schema = z.object({
+  version: z.literal(5),
+  title: z.string(),
+  groups: z.array(GroupSchema),
+});
+export type ComparisonLayoutV5 = z.infer<typeof ComparisonLayoutV5Schema>;

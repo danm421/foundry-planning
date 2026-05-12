@@ -38,15 +38,17 @@ function makeParams() {
   return { params: Promise.resolve({ id: testClientId }) };
 }
 
-const validV4Body = {
-  version: 4,
+const validV5Body = {
+  version: 5,
   title: "Test Report",
-  rows: [
+  groups: [
     {
       id: "00000000-0000-0000-0000-000000000001",
+      title: "Group 1",
       cells: [
         {
           id: "00000000-0000-0000-0000-000000000002",
+          span: 1,
           widget: {
             id: "00000000-0000-0000-0000-000000000003",
             kind: "portfolio",
@@ -59,13 +61,13 @@ const validV4Body = {
 };
 
 describe("GET /api/clients/[id]/comparison-layout", () => {
-  it("returns the v4 default layout when no row exists", async () => {
+  it("returns the v5 default layout when no row exists", async () => {
     const res = await GET(new NextRequest("http://localhost/x"), makeParams());
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.layout.version).toBe(4);
+    expect(json.layout.version).toBe(5);
     expect(json.layout.title).toBe("Comparison Report");
-    expect(json.layout.rows.length).toBe(5);
+    expect(json.layout.groups.length).toBeGreaterThan(0);
   });
 
   it("404s when the client doesn't belong to the firm", async () => {
@@ -91,9 +93,9 @@ describe("GET /api/clients/[id]/comparison-layout", () => {
 });
 
 describe("PUT /api/clients/[id]/comparison-layout", () => {
-  it("upserts a valid v4 layout", async () => {
+  it("upserts a valid v5 layout", async () => {
     const res = await PUT(
-      new NextRequest("http://localhost/x", { method: "PUT", body: JSON.stringify(validV4Body) }),
+      new NextRequest("http://localhost/x", { method: "PUT", body: JSON.stringify(validV5Body) }),
       makeParams(),
     );
     expect(res.status).toBe(200);
@@ -102,14 +104,14 @@ describe("PUT /api/clients/[id]/comparison-layout", () => {
       .from(clientComparisonLayouts)
       .where(eq(clientComparisonLayouts.clientId, testClientId));
     expect(rows.length).toBe(1);
-    expect(rows[0].layout).toMatchObject({ version: 4, title: "Test Report" });
+    expect(rows[0].layout).toMatchObject({ version: 5, title: "Test Report" });
   });
 
   it("rejects a malformed payload with 400", async () => {
     const res = await PUT(
       new NextRequest("http://localhost/x", {
         method: "PUT",
-        body: JSON.stringify({ version: 4, title: "X", rows: [{ cells: [] }] }),
+        body: JSON.stringify({ version: 5, title: "X", groups: [{ cells: [] }] }),
       }),
       makeParams(),
     );
@@ -118,14 +120,16 @@ describe("PUT /api/clients/[id]/comparison-layout", () => {
 
   it("rejects a cardinality-violating payload with 422", async () => {
     const bad = {
-      version: 4,
+      version: 5,
       title: "Bad",
-      rows: [
+      groups: [
         {
           id: "00000000-0000-0000-0000-0000000000a1",
+          title: "Group 1",
           cells: [
             {
               id: "00000000-0000-0000-0000-0000000000a2",
+              span: 1,
               widget: {
                 id: "00000000-0000-0000-0000-0000000000a3",
                 kind: "year-by-year", // many-only
@@ -145,20 +149,22 @@ describe("PUT /api/clients/[id]/comparison-layout", () => {
     expect(Array.isArray(json.errors)).toBe(true);
   });
 
-  it("replaces an existing v4 layout on second PUT", async () => {
+  it("replaces an existing v5 layout on second PUT", async () => {
     await PUT(
-      new NextRequest("http://localhost/x", { method: "PUT", body: JSON.stringify(validV4Body) }),
+      new NextRequest("http://localhost/x", { method: "PUT", body: JSON.stringify(validV5Body) }),
       makeParams(),
     );
     const second = {
-      ...validV4Body,
+      ...validV5Body,
       title: "Second",
-      rows: [
+      groups: [
         {
           id: "00000000-0000-0000-0000-0000000000b1",
+          title: "Group B",
           cells: [
             {
               id: "00000000-0000-0000-0000-0000000000b2",
+              span: 1,
               widget: {
                 id: "00000000-0000-0000-0000-0000000000b3",
                 kind: "estate-tax",

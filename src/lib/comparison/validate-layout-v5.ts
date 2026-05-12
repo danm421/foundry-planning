@@ -1,15 +1,16 @@
-import type { ComparisonLayoutV4 } from "./layout-schema";
+import type { ComparisonLayoutV5 } from "./layout-schema";
 import { COMPARISON_WIDGETS } from "./widgets/registry";
 
 export type ValidationResult =
   | { ok: true }
   | { ok: false; errors: string[] };
 
-export function validateLayoutV4(layout: ComparisonLayoutV4): ValidationResult {
+export function validateLayoutV5(layout: ComparisonLayoutV5): ValidationResult {
   const errors: string[] = [];
 
-  for (const row of layout.rows) {
-    for (const cell of row.cells) {
+  for (const group of layout.groups) {
+    for (const cell of group.cells) {
+      if (cell.widget === null) continue;
       const def = COMPARISON_WIDGETS[cell.widget.kind];
       if (!def) {
         errors.push(`unknown widget kind: ${cell.widget.kind}`);

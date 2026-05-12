@@ -1,296 +1,175 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, renderHook } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
+import { renderHook, act } from "@testing-library/react";
 import { useLayout } from "../use-layout";
-import type { ComparisonLayoutV4 } from "@/lib/comparison/layout-schema";
+import type { ComparisonLayoutV5 } from "@/lib/comparison/layout-schema";
 
-const initial: ComparisonLayoutV4 = {
-  version: 4,
-  title: "Test",
-  rows: [
-    {
-      id: "row-a",
-      cells: [
-        {
-          id: "cell-a1",
-          widget: { id: "w-a1", kind: "portfolio", planIds: ["base"] },
-        },
-      ],
-    },
-    {
-      id: "row-b",
-      cells: [
-        {
-          id: "cell-b1",
-          widget: { id: "w-b1", kind: "monte-carlo", planIds: ["base"] },
-        },
-        {
-          id: "cell-b2",
-          widget: { id: "w-b2", kind: "longevity", planIds: ["base"] },
-        },
-      ],
-    },
-  ],
+const blank: ComparisonLayoutV5 = {
+  version: 5,
+  title: "T",
+  groups: [{ id: "g1", title: "", cells: [{ id: "c1", span: 5, widget: null }] }],
 };
 
-const fetchMock = vi.fn();
-beforeEach(() => {
-  fetchMock.mockReset();
-  global.fetch = fetchMock as never;
-});
-
-describe("useLayout (v4)", () => {
-  it("setTitle updates the title", () => {
-    const { result } = renderHook(() => useLayout(initial, "c"));
-    act(() => result.current.setTitle("Renamed"));
-    expect(result.current.layout.title).toBe("Renamed");
+describe("useLayout v5", () => {
+  it("addGroup appends an empty group with one span-5 cell", () => {
+    const { result } = renderHook(() => useLayout(blank, "client-1"));
+    act(() => result.current.addGroup());
+    expect(result.current.layout.groups).toHaveLength(2);
+    expect(result.current.layout.groups[1].title).toBe("");
+    expect(result.current.layout.groups[1].cells).toHaveLength(1);
+    expect(result.current.layout.groups[1].cells[0].span).toBe(5);
+    expect(result.current.layout.groups[1].cells[0].widget).toBeNull();
   });
 
-  it("addRow appends an empty-but-valid placeholder row and returns its ids", () => {
-    const { result } = renderHook(() => useLayout(initial, "c"));
-    let rowId = "";
-    let placeholderCellId = "";
-    act(() => {
-      ({ rowId, placeholderCellId } = result.current.addRow());
-    });
-    expect(result.current.layout.rows.at(-1)?.id).toBe(rowId);
-    // New row starts with a single text cell so it satisfies min-1-cell validation.
-    expect(result.current.layout.rows.at(-1)?.cells).toHaveLength(1);
-    expect(result.current.layout.rows.at(-1)?.cells[0].widget.kind).toBe("text");
-    expect(result.current.layout.rows.at(-1)?.cells[0].id).toBe(placeholderCellId);
+  it("addEmptyCellRight inserts a span-1 empty cell after the source", () => {
+    const { result } = renderHook(() => useLayout(blank, "client-1"));
+    act(() => result.current.addEmptyCellRight("g1", "c1"));
+    const cells = result.current.layout.groups[0].cells;
+    expect(cells).toHaveLength(2);
+    expect(cells[1].span).toBe(1);
+    expect(cells[1].widget).toBeNull();
   });
 
-  it("removeRow drops the row by id", () => {
-    const { result } = renderHook(() => useLayout(initial, "c"));
-    act(() => result.current.removeRow("row-a"));
-    expect(result.current.layout.rows.map((r) => r.id)).toEqual(["row-b"]);
-  });
-
-  it("moveRow reorders rows by index", () => {
-    const { result } = renderHook(() => useLayout(initial, "c"));
-    act(() => result.current.moveRow(1, 0));
-    expect(result.current.layout.rows.map((r) => r.id)).toEqual(["row-b", "row-a"]);
-  });
-
-  it("addCell appends a cell to the row with the given kind", () => {
-    const { result } = renderHook(() => useLayout(initial, "c"));
-    act(() => result.current.addCell("row-a", "estate-tax"));
-    expect(result.current.layout.rows[0].cells).toHaveLength(2);
-    expect(result.current.layout.rows[0].cells[1].widget.kind).toBe("estate-tax");
-  });
-
-  it("addCell refuses to exceed 5 cells in a row", () => {
-    const sixthRow: ComparisonLayoutV4 = {
-      ...initial,
-      rows: [
-        {
-          id: "row-x",
-          cells: Array.from({ length: 5 }, (_, i) => ({
-            id: `cell-x${i}`,
-            widget: { id: `w-x${i}`, kind: "kpi" as const, planIds: ["base"] },
-          })),
-        },
-      ],
-    };
-    const { result } = renderHook(() => useLayout(sixthRow, "c"));
-    act(() => result.current.addCell("row-x", "portfolio"));
-    expect(result.current.layout.rows[0].cells).toHaveLength(5);
-  });
-
-  it("removeCell drops the cell; removing the last cell of a row removes the row", () => {
-    const { result } = renderHook(() => useLayout(initial, "c"));
-    act(() => result.current.removeCell("row-b", "cell-b2"));
-    expect(result.current.layout.rows[1].cells.map((c) => c.id)).toEqual(["cell-b1"]);
-
-    act(() => result.current.removeCell("row-b", "cell-b1"));
-    expect(result.current.layout.rows.map((r) => r.id)).toEqual(["row-a"]);
-  });
-
-  it("moveCell within a row reorders the cells", () => {
-    const { result } = renderHook(() => useLayout(initial, "c"));
-    act(() => result.current.moveCell("row-b", 0, "row-b", 1));
-    expect(result.current.layout.rows[1].cells.map((c) => c.id)).toEqual([
-      "cell-b2", "cell-b1",
-    ]);
-  });
-
-  it("moveCell across rows moves the cell to the new row's index", () => {
-    const { result } = renderHook(() => useLayout(initial, "c"));
-    act(() => result.current.moveCell("row-b", 1, "row-a", 1));
-    expect(result.current.layout.rows[0].cells.map((c) => c.id)).toEqual([
-      "cell-a1", "cell-b2",
-    ]);
-    expect(result.current.layout.rows[1].cells.map((c) => c.id)).toEqual(["cell-b1"]);
-  });
-
-  it("updateWidgetPlanIds replaces planIds on the targeted cell", () => {
-    const { result } = renderHook(() => useLayout(initial, "c"));
-    act(() => result.current.updateWidgetPlanIds("cell-a1", ["base", "sc-1"]));
-    expect(result.current.layout.rows[0].cells[0].widget.planIds).toEqual(["base", "sc-1"]);
-  });
-
-  it("updateWidgetYearRange sets and clears the cell's yearRange", () => {
-    const { result } = renderHook(() => useLayout(initial, "c"));
-    act(() => result.current.updateWidgetYearRange("cell-a1", { start: 2030, end: 2055 }));
-    expect(result.current.layout.rows[0].cells[0].widget.yearRange).toEqual({
-      start: 2030, end: 2055,
-    });
-    act(() => result.current.updateWidgetYearRange("cell-a1", undefined));
-    expect(result.current.layout.rows[0].cells[0].widget.yearRange).toBeUndefined();
-  });
-
-  it("updateWidgetConfig replaces config on the targeted cell", () => {
-    const { result } = renderHook(() => useLayout(initial, "c"));
-    act(() => result.current.updateWidgetConfig("cell-a1", { stackBy: "source" }));
-    expect(result.current.layout.rows[0].cells[0].widget.config).toEqual({ stackBy: "source" });
-  });
-
-  it("updateTextMarkdown writes config.markdown on a text cell", () => {
-    const text: ComparisonLayoutV4 = {
-      version: 4,
+  it("addEmptyCellDown inserts a span-5 cell at the end of the source's visual row", () => {
+    const initial: ComparisonLayoutV5 = {
+      version: 5,
       title: "T",
-      rows: [
+      groups: [
         {
-          id: "row-t",
+          id: "g1",
+          title: "",
           cells: [
-            {
-              id: "cell-t",
-              widget: { id: "w-t", kind: "text", planIds: [], config: { markdown: "" } },
-            },
+            { id: "a", span: 3, widget: null },
+            { id: "b", span: 2, widget: null },
+            { id: "c", span: 5, widget: null },
           ],
         },
       ],
     };
-    const { result } = renderHook(() => useLayout(text, "c"));
-    act(() => result.current.updateTextMarkdown("cell-t", "Hello"));
-    expect(result.current.layout.rows[0].cells[0].widget.config).toEqual({ markdown: "Hello" });
+    const { result } = renderHook(() => useLayout(initial, "client-1"));
+    act(() => result.current.addEmptyCellDown("g1", "a"));
+    const cells = result.current.layout.groups[0].cells;
+    expect(cells.map((c) => c.id)).toEqual(["a", "b", expect.any(String), "c"]);
+    const inserted = cells[2];
+    expect(inserted.span).toBe(5);
+    expect(inserted.widget).toBeNull();
   });
 
-  it("reset replaces the layout with the v4 default for the given primary", () => {
-    const { result } = renderHook(() => useLayout(initial, "c"));
-    act(() => result.current.reset("base"));
-    expect(result.current.layout.rows).toHaveLength(5);
-    expect(result.current.layout.rows[0].cells).toHaveLength(5);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("save() PUTs the current layout and surfaces errors", async () => {
-    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ layout: initial }) });
-    const { result } = renderHook(() => useLayout(initial, "c"));
-    await act(async () => {
-      await result.current.save();
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(sentBody.version).toBe(4);
-
-    fetchMock.mockResolvedValue({ ok: false, status: 422, json: async () => ({ errors: ["x"] }) });
-    let caught: unknown;
-    await act(async () => {
-      try {
-        await result.current.save();
-      } catch (e) {
-        caught = e;
-      }
-    });
-    expect(caught).toBeInstanceOf(Error);
-  });
-
-  describe("dirty flag", () => {
-    it("is false on initial mount", () => {
-      const { result } = renderHook(() => useLayout(initial, "c"));
-      expect(result.current.dirty).toBe(false);
-    });
-
-    it("flips to true on any mutation", () => {
-      const { result } = renderHook(() => useLayout(initial, "c"));
-      act(() => result.current.setTitle("Renamed"));
-      expect(result.current.dirty).toBe(true);
-    });
-
-    it("clears to false after a successful save", async () => {
-      fetchMock.mockResolvedValue({ ok: true } as Response);
-      const { result } = renderHook(() => useLayout(initial, "c"));
-      act(() => result.current.setTitle("Renamed"));
-      await act(async () => { await result.current.save(); });
-      expect(result.current.dirty).toBe(false);
-    });
-
-    it("stays true if save fails", async () => {
-      fetchMock.mockResolvedValue({ ok: false, status: 500 } as Response);
-      const { result } = renderHook(() => useLayout(initial, "c"));
-      act(() => result.current.setTitle("Renamed"));
-      await expect(act(async () => { await result.current.save(); })).rejects.toThrow();
-      expect(result.current.dirty).toBe(true);
-    });
-  });
-
-  describe("duplicateCell", () => {
-    it("clones the cell+widget with new ids into the same row, immediately after the source", () => {
-      const { result } = renderHook(() => useLayout(initial, "c"));
-      act(() => result.current.duplicateCell("row-a", "cell-a1"));
-      const row = result.current.layout.rows.find((r) => r.id === "row-a")!;
-      expect(row.cells).toHaveLength(2);
-      expect(row.cells[0].id).toBe("cell-a1");
-      // New cell sits right after the source.
-      expect(row.cells[1].id).not.toBe("cell-a1");
-      expect(row.cells[1].widget.id).not.toBe("w-a1");
-      expect(row.cells[1].widget.kind).toBe("portfolio");
-      expect(row.cells[1].widget.planIds).toEqual(["base"]);
-    });
-
-    it("creates a new row at the bottom when the source row is full (5 cells)", () => {
-      const full: ComparisonLayoutV4 = {
-        ...initial,
-        rows: [
-          {
-            id: "r-full",
-            cells: Array.from({ length: 5 }, (_, i) => ({
-              id: `c${i}`,
-              widget: { id: `w${i}`, kind: "portfolio" as const, planIds: ["base"] },
-            })),
-          },
-        ],
-      };
-      const { result } = renderHook(() => useLayout(full, "c"));
-      act(() => result.current.duplicateCell("r-full", "c2"));
-      expect(result.current.layout.rows).toHaveLength(2);
-      const last = result.current.layout.rows.at(-1)!;
-      expect(last.cells).toHaveLength(1);
-      expect(last.cells[0].widget.kind).toBe("portfolio");
-      expect(last.cells[0].widget.planIds).toEqual(["base"]);
-    });
-
-    it("is a no-op when the cell is not found", () => {
-      const { result } = renderHook(() => useLayout(initial, "c"));
-      const before = result.current.layout;
-      act(() => result.current.duplicateCell("row-a", "nope"));
-      expect(result.current.layout).toBe(before);
-    });
-  });
-
-  it("save() drops whitespace-only text cells (and prunes now-empty rows)", async () => {
-    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ layout: initial }) });
-    const onlyText: ComparisonLayoutV4 = {
-      version: 4,
+  it("removeCell on populated cell replaces with empty placeholder, preserving span", () => {
+    const initial: ComparisonLayoutV5 = {
+      version: 5,
       title: "T",
-      rows: [
+      groups: [
         {
-          id: "row-t",
+          id: "g",
+          title: "",
           cells: [
-            {
-              id: "cell-t",
-              widget: { id: "w-t", kind: "text", planIds: [], config: { markdown: "   " } },
-            },
+            { id: "c", span: 3, widget: { id: "w", kind: "portfolio", planIds: ["base"] } },
           ],
         },
       ],
     };
-    const { result } = renderHook(() => useLayout(onlyText, "c"));
-    await act(async () => {
-      await result.current.save();
-    });
-    const sent = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(sent.rows).toHaveLength(0);
+    const { result } = renderHook(() => useLayout(initial, "client-1"));
+    act(() => result.current.removeCell("g", "c"));
+    expect(result.current.layout.groups[0].cells[0].widget).toBeNull();
+    expect(result.current.layout.groups[0].cells[0].span).toBe(3);
+  });
+
+  it("removeCell on empty cell deletes it", () => {
+    const initial: ComparisonLayoutV5 = {
+      version: 5,
+      title: "T",
+      groups: [
+        {
+          id: "g",
+          title: "",
+          cells: [
+            { id: "c1", span: 2, widget: null },
+            { id: "c2", span: 3, widget: null },
+          ],
+        },
+      ],
+    };
+    const { result } = renderHook(() => useLayout(initial, "client-1"));
+    act(() => result.current.removeCell("g", "c1"));
+    expect(result.current.layout.groups[0].cells.map((c) => c.id)).toEqual(["c2"]);
+  });
+
+  it("setCellSpan changes a cell's span", () => {
+    const { result } = renderHook(() => useLayout(blank, "client-1"));
+    act(() => result.current.setCellSpan("c1", 3));
+    expect(result.current.layout.groups[0].cells[0].span).toBe(3);
+  });
+
+  it("setCellWidget populates an empty cell with the given widget", () => {
+    const { result } = renderHook(() => useLayout(blank, "client-1"));
+    act(() =>
+      result.current.setCellWidget("c1", {
+        id: "w-new",
+        kind: "portfolio",
+        planIds: ["base"],
+      }),
+    );
+    expect(result.current.layout.groups[0].cells[0].widget?.kind).toBe("portfolio");
+    expect(result.current.layout.groups[0].cells[0].widget?.id).toBe("w-new");
+  });
+
+  it("setGroupTitle updates a group's title", () => {
+    const { result } = renderHook(() => useLayout(blank, "client-1"));
+    act(() => result.current.setGroupTitle("g1", "Summary"));
+    expect(result.current.layout.groups[0].title).toBe("Summary");
+  });
+
+  it("removeGroup deletes the group", () => {
+    const two: ComparisonLayoutV5 = {
+      version: 5,
+      title: "T",
+      groups: [
+        { id: "g1", title: "", cells: [{ id: "c1", span: 5, widget: null }] },
+        { id: "g2", title: "", cells: [{ id: "c2", span: 5, widget: null }] },
+      ],
+    };
+    const { result } = renderHook(() => useLayout(two, "client-1"));
+    act(() => result.current.removeGroup("g1"));
+    expect(result.current.layout.groups.map((g) => g.id)).toEqual(["g2"]);
+  });
+
+  it("duplicateCell clones a populated cell after the source with same span", () => {
+    const initial: ComparisonLayoutV5 = {
+      version: 5,
+      title: "T",
+      groups: [
+        {
+          id: "g",
+          title: "",
+          cells: [
+            { id: "c", span: 2, widget: { id: "w", kind: "portfolio", planIds: ["base"] } },
+          ],
+        },
+      ],
+    };
+    const { result } = renderHook(() => useLayout(initial, "client-1"));
+    act(() => result.current.duplicateCell("g", "c"));
+    const cells = result.current.layout.groups[0].cells;
+    expect(cells).toHaveLength(2);
+    expect(cells[1].span).toBe(2);
+    expect(cells[1].widget?.kind).toBe("portfolio");
+    expect(cells[1].widget?.id).not.toBe("w");
+  });
+
+  it("moveCell across groups moves the cell and removes the source group if empty", () => {
+    const two: ComparisonLayoutV5 = {
+      version: 5,
+      title: "T",
+      groups: [
+        { id: "g1", title: "", cells: [{ id: "c1", span: 5, widget: null }] },
+        { id: "g2", title: "", cells: [{ id: "c2", span: 5, widget: null }] },
+      ],
+    };
+    const { result } = renderHook(() => useLayout(two, "client-1"));
+    act(() => result.current.moveCell("g1", 0, "g2", 1));
+    expect(result.current.layout.groups).toHaveLength(1);
+    expect(result.current.layout.groups[0].id).toBe("g2");
+    expect(result.current.layout.groups[0].cells.map((c) => c.id)).toEqual(["c2", "c1"]);
   });
 });

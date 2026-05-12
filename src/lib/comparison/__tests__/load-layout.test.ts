@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { loadLayout } from "../load-layout";
-import { ComparisonLayoutV4Schema } from "../layout-schema";
+import { loadLayout, parseSavedLayout } from "../load-layout";
+import { ComparisonLayoutV5Schema } from "../layout-schema";
 
 const select = vi.fn();
 vi.mock("@/db", () => ({
@@ -18,17 +18,20 @@ const ctx = { primaryScenarioId: "base", urlPlanIds: null, defaultTitle: "Test R
 describe("loadLayout", () => {
   beforeEach(() => select.mockReset());
 
-  it("returns the v4 default when no row exists", async () => {
+  it("returns a v5 default when no row exists", async () => {
     select.mockResolvedValue([]);
     const layout = await loadLayout("c", "f", ctx);
-    expect(layout.version).toBe(4);
+    expect(layout.version).toBe(5);
     expect(layout.title).toBe("Test Report");
-    expect(ComparisonLayoutV4Schema.safeParse(layout).success).toBe(true);
-    // Spec default: 5 kpis + 4 more rows = 5 rows.
-    expect(layout.rows).toHaveLength(5);
+    expect(ComparisonLayoutV5Schema.safeParse(layout).success).toBe(true);
+    // Default: single group with one span-5 placeholder cell
+    expect(layout.groups).toHaveLength(1);
+    expect(layout.groups[0].cells).toHaveLength(1);
+    expect(layout.groups[0].cells[0].span).toBe(5);
+    expect(layout.groups[0].cells[0].widget).toBeNull();
   });
 
-  it("returns a stored v4 layout unchanged", async () => {
+  it("returns a stored v4 layout migrated to v5", async () => {
     const stored = {
       version: 4,
       title: "Stored",
@@ -50,10 +53,14 @@ describe("loadLayout", () => {
     };
     select.mockResolvedValue([{ layout: stored }]);
     const layout = await loadLayout("c", "f", ctx);
-    expect(layout).toEqual(stored);
+    expect(layout.version).toBe(5);
+    expect(layout.title).toBe("Stored");
+    expect(layout.groups).toHaveLength(1);
+    expect(layout.groups[0].cells[0].span).toBe(5);
+    expect(layout.groups[0].cells[0].widget?.kind).toBe("portfolio");
   });
 
-  it("migrates a stored v3 layout into v4", async () => {
+  it("migrates a stored v3 layout into v5", async () => {
     const v3 = {
       version: 3,
       yearRange: { start: 2026, end: 2065 },
@@ -64,16 +71,17 @@ describe("loadLayout", () => {
     };
     select.mockResolvedValue([{ layout: v3 }]);
     const layout = await loadLayout("c", "f", ctx);
-    expect(layout.version).toBe(4);
-    // portfolio becomes 1 row of 1 cell, kpi-strip expands into a 5-cell row.
-    expect(layout.rows).toHaveLength(2);
-    expect(layout.rows[0].cells).toHaveLength(1);
-    expect(layout.rows[1].cells).toHaveLength(5);
+    expect(layout.version).toBe(5);
+    // portfolio becomes 1 group of 1 cell (span 5), kpi-strip expands into a group of 5 cells.
+    expect(layout.groups).toHaveLength(2);
+    expect(layout.groups[0].cells).toHaveLength(1);
+    expect(layout.groups[0].cells[0].span).toBe(5);
+    expect(layout.groups[1].cells).toHaveLength(5);
     // planIds default to primary
-    expect(layout.rows[0].cells[0].widget.planIds).toEqual(["base"]);
+    expect(layout.groups[0].cells[0].widget?.planIds).toEqual(["base"]);
   });
 
-  it("migrates a stored v2 layout via v3 → v4", async () => {
+  it("migrates a stored v2 layout via v3 → v4 → v5", async () => {
     const v2 = {
       version: 2,
       yearRange: null,
@@ -83,8 +91,8 @@ describe("loadLayout", () => {
     };
     select.mockResolvedValue([{ layout: v2 }]);
     const layout = await loadLayout("c", "f", ctx);
-    expect(layout.version).toBe(4);
-    expect(layout.rows[0].cells[0].widget.kind).toBe("portfolio");
+    expect(layout.version).toBe(5);
+    expect(layout.groups[0].cells[0].widget?.kind).toBe("portfolio");
   });
 
   it("seeds planIds from ctx.urlPlanIds when migrating v3", async () => {
@@ -98,16 +106,64 @@ describe("loadLayout", () => {
       primaryScenarioId: "base",
       urlPlanIds: ["base", "scenario-x"],
     });
-    expect(layout.rows[0].cells[0].widget.planIds).toEqual(["base", "scenario-x"]);
+    expect(layout.groups[0].cells[0].widget?.planIds).toEqual(["base", "scenario-x"]);
   });
 
   it("falls back to default on unparseable saved layout", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     select.mockResolvedValue([{ layout: { not: "anything", we: "recognize" } }]);
     const layout = await loadLayout("c", "f", ctx);
-    expect(layout.version).toBe(4);
-    expect(layout.rows).toHaveLength(5); // default-layout-v4 shape
+    expect(layout.version).toBe(5);
+    expect(layout.groups).toHaveLength(1); // default = single blank group
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
+  });
+});
+
+describe("parseSavedLayout v5 dispatch", () => {
+  it("returns a v5 payload unchanged", () => {
+    const v5 = {
+      version: 5 as const,
+      title: "R",
+      groups: [{ id: "g", title: "", cells: [{ id: "c", span: 5 as const, widget: null }] }],
+    };
+    expect(parseSavedLayout(v5, ctx)).toEqual(v5);
+  });
+
+  it("migrates a v4 payload to v5", () => {
+    const v4 = {
+      version: 4 as const,
+      title: "R",
+      rows: [
+        {
+          id: "r",
+          cells: [
+            {
+              id: "c",
+              widget: { id: "w", kind: "portfolio" as const, planIds: ["base"] },
+            },
+          ],
+        },
+      ],
+    };
+    const out = parseSavedLayout(v4, ctx);
+    expect(out?.version).toBe(5);
+    expect(out?.groups[0].cells[0].span).toBe(5);
+    expect(out?.groups[0].cells[0].widget?.kind).toBe("portfolio");
+  });
+
+  it("migrates a v3 payload through v4 to v5", () => {
+    const v3 = {
+      version: 3 as const,
+      yearRange: null,
+      items: [{ instanceId: "11111111-1111-4111-8111-111111111111", kind: "portfolio" as const }],
+    };
+    const out = parseSavedLayout(v3, ctx);
+    expect(out?.version).toBe(5);
+    expect(out?.groups).toHaveLength(1);
+  });
+
+  it("returns null for unrecognized payloads", () => {
+    expect(parseSavedLayout({ foo: "bar" }, ctx)).toBe(null);
   });
 });
