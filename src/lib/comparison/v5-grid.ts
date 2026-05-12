@@ -22,22 +22,16 @@ export function computeVisualRows(cells: readonly CellV5[]): CellV5[][] {
 
 export function findEndOfVisualRowIndex(cells: readonly CellV5[], fromIndex: number): number {
   if (fromIndex < 0 || fromIndex >= cells.length) return cells.length;
-  // Walk backwards to find the start of fromIndex's visual row.
-  let rowStart = fromIndex;
-  let sum = cells[fromIndex].span;
-  while (rowStart > 0) {
-    const prevSum = sum + cells[rowStart - 1].span;
-    if (prevSum > MAX_SPAN_PER_ROW) break;
-    sum = prevSum;
-    rowStart -= 1;
+  let sum = 0;
+  for (let i = 0; i < cells.length; i += 1) {
+    if (sum + cells[i].span > MAX_SPAN_PER_ROW) {
+      // Cell `i` starts a new row.
+      if (fromIndex < i) return i;
+      sum = cells[i].span;
+    } else {
+      sum += cells[i].span;
+    }
   }
-  // Walk forwards from rowStart, accumulating until we'd overflow.
-  let i = rowStart;
-  let acc = 0;
-  while (i < cells.length) {
-    if (acc + cells[i].span > MAX_SPAN_PER_ROW) break;
-    acc += cells[i].span;
-    i += 1;
-  }
-  return i;
+  // fromIndex is in the final row.
+  return cells.length;
 }

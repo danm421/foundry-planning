@@ -46,4 +46,13 @@ describe("v5-grid helpers", () => {
     const cells = [cell("a", 5)];
     expect(findEndOfVisualRowIndex(cells, 0)).toBe(1);
   });
+
+  it("findEndOfVisualRowIndex handles two tightly-packed adjacent rows", () => {
+    const cells = [cell("a", 3), cell("b", 2), cell("c", 3), cell("d", 2)];
+    // Rows: [a,b] | [c,d]
+    expect(findEndOfVisualRowIndex(cells, 0)).toBe(2);
+    expect(findEndOfVisualRowIndex(cells, 1)).toBe(2);
+    expect(findEndOfVisualRowIndex(cells, 2)).toBe(4);
+    expect(findEndOfVisualRowIndex(cells, 3)).toBe(4);
+  });
 });
