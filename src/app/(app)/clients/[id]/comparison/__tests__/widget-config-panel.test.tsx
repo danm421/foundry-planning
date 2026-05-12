@@ -9,7 +9,7 @@ vi.mock("@/lib/comparison/widgets/registry", () => ({
     kpi: {
       kind: "kpi", title: "KPI", category: "kpis",
       scenarios: "one", needsMc: true, render: () => null,
-      renderConfig: ({ config, onChange }: { config: unknown; onChange: (c: unknown) => void }) => (
+      renderConfig: ({ onChange }: { onChange: (c: unknown) => void }) => (
         <button onClick={() => onChange({ metric: "lifetimeTax" })}>set-metric</button>
       ),
     },

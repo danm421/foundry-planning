@@ -14,10 +14,12 @@ export function PerWidgetYearRange({ min, max, yearRange, onChange }: Props) {
   const end = yearRange?.end ?? max;
 
   const setStart = (v: number) => {
+    if (Number.isNaN(v)) return;
     const clamped = Math.min(Math.max(v, min), end);
     onChange({ start: clamped, end });
   };
   const setEnd = (v: number) => {
+    if (Number.isNaN(v)) return;
     const clamped = Math.max(Math.min(v, max), start);
     onChange({ start, end: clamped });
   };
@@ -32,6 +34,7 @@ export function PerWidgetYearRange({ min, max, yearRange, onChange }: Props) {
           max={end}
           value={start}
           onChange={(e) => setStart(Number(e.target.value))}
+          step={1}
           className="w-16 rounded border border-slate-700 bg-slate-950 px-1 py-0.5 text-slate-100"
         />
       </label>
@@ -43,6 +46,7 @@ export function PerWidgetYearRange({ min, max, yearRange, onChange }: Props) {
           max={max}
           value={end}
           onChange={(e) => setEnd(Number(e.target.value))}
+          step={1}
           className="w-16 rounded border border-slate-700 bg-slate-950 px-1 py-0.5 text-slate-100"
         />
       </label>
