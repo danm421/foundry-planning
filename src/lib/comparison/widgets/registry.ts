@@ -21,6 +21,7 @@ import { rmdScheduleWidget } from "./rmd-schedule";
 import { charitableImpactWidget } from "./charitable-impact";
 import { decadeSummaryWidget } from "./decade-summary";
 import { cashFlowGapWidget } from "./cash-flow-gap";
+import { successGaugeWidget } from "./success-gauge";
 
 export const COMPARISON_WIDGETS: Record<
   ComparisonWidgetKindV4,
@@ -47,4 +48,5 @@ export const COMPARISON_WIDGETS: Record<
   "charitable-impact": charitableImpactWidget,
   "decade-summary": decadeSummaryWidget,
   "cash-flow-gap": cashFlowGapWidget,
+  "success-gauge": successGaugeWidget,
 };
