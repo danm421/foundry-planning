@@ -41,15 +41,15 @@ const baseEstate: Partial<EstateTaxResult> = {
   totalTaxesAndExpenses: 0,
 };
 
-// PA doesn't levy a state estate tax, but the fixture mirrors the prior test
-// shape — cast through unknown to satisfy the `StateCode` narrowing.
-const paEstateDetail = {
-  state: "PA",
+// PA doesn't levy a state estate tax — real engine output sets state to null
+// for residents of states not in STATE_ESTATE_TAX.
+const paEstateDetail: StateEstateTaxResult = {
+  state: null,
   fallbackUsed: false, fallbackRate: 0,
   exemption: 0, exemptionYear: 2026, giftAddback: 0,
   baseForTax: 0, amountOverExemption: 0, bracketLines: [],
   preCapTax: 0, stateEstateTax: 0, notes: [],
-} as unknown as StateEstateTaxResult;
+};
 
 const paInheritance: StateInheritanceTaxResult = {
   state: "PA",
