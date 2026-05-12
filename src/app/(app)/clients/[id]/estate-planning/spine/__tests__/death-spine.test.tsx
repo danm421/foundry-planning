@@ -16,6 +16,7 @@ const zeroBreakdown: StageTaxBreakdown = {
   applicableExclusion: 0,
   federalEstateTax: 0,
   stateEstateTax: 0,
+  stateInheritanceTax: 0,
 };
 
 function detailWithTotal(total: number): BeneficiaryDetail {
@@ -24,12 +25,14 @@ function detailWithTotal(total: number): BeneficiaryDetail {
       gross: 0,
       transfers: [],
       drains: { federal_estate_tax: 0, state_estate_tax: 0, admin_expenses: 0, debts_paid: 0, ird_tax: 0 },
+      inheritanceTax: 0,
       net: 0,
     },
     fromSecondDeath: {
       gross: total,
       transfers: [],
       drains: { federal_estate_tax: 0, state_estate_tax: 0, admin_expenses: 0, debts_paid: 0, ird_tax: 0 },
+      inheritanceTax: 0,
       net: total,
     },
     inTrust: [],

@@ -28,6 +28,7 @@ import type {
   HypotheticalEstateTax,
   HypotheticalEstateTaxOrdering,
 } from "@/engine/types";
+import type { StateInheritanceTaxResult } from "@/lib/tax/state-inheritance";
 import type { ProjectionResult } from "@/engine";
 import { treeAsOfYear, type BalanceMode } from "../../lib/tree-as-of-year";
 import { resolveRecipientLabel } from "@/lib/estate/recipient-label";
@@ -59,6 +60,9 @@ export interface StageTaxBreakdown {
   applicableExclusion: number;
   federalEstateTax: number;
   stateEstateTax: number;
+  /** Total state inheritance tax across recipients (PA/NJ/KY/NE/MD).
+   *  0 in states without an inheritance tax. */
+  stateInheritanceTax: number;
 }
 
 export type SpineData =
@@ -160,6 +164,7 @@ function extractTaxBreakdown(e: EstateTaxResult): StageTaxBreakdown {
     applicableExclusion: e.applicableExclusion,
     federalEstateTax: e.federalEstateTax,
     stateEstateTax: e.stateEstateTax,
+    stateInheritanceTax: inheritanceTaxTotal(e),
   };
 }
 
@@ -173,7 +178,15 @@ function zeroTaxBreakdown(): StageTaxBreakdown {
     applicableExclusion: 0,
     federalEstateTax: 0,
     stateEstateTax: 0,
+    stateInheritanceTax: 0,
   };
+}
+
+/** Engine attaches `stateInheritanceTax` only when the residence state levies
+ *  one; treat missing/inactive as $0. */
+function inheritanceTaxTotal(e: EstateTaxResult): number {
+  const sti = e.stateInheritanceTax;
+  return sti && !sti.inactive ? sti.totalTax : 0;
 }
 
 /**
@@ -187,10 +200,21 @@ function buildBeneficiaryCards(args: {
   secondTransfers: DeathTransfer[];
   firstAttributions: DrainAttribution[];
   secondAttributions: DrainAttribution[];
+  firstInheritanceTax?: StateInheritanceTaxResult;
+  secondInheritanceTax?: StateInheritanceTaxResult;
   tree: ClientData;
   totalToHeirs: number;
 }): BeneficiaryCardData[] {
-  const { firstTransfers, secondTransfers, firstAttributions, secondAttributions, tree, totalToHeirs } = args;
+  const {
+    firstTransfers,
+    secondTransfers,
+    firstAttributions,
+    secondAttributions,
+    firstInheritanceTax,
+    secondInheritanceTax,
+    tree,
+    totalToHeirs,
+  } = args;
   type Key = string;
   const grouped = new Map<
     Key,
@@ -250,6 +274,8 @@ function buildBeneficiaryCards(args: {
       secondTransfers,
       firstDrainAttributions: firstAttributions,
       secondDrainAttributions: secondAttributions,
+      firstInheritanceTax,
+      secondInheritanceTax,
       tree,
     });
     cards.push({
@@ -492,43 +518,57 @@ export function deriveSpineData(args: {
     let firstDeathTransfers: DeathTransfer[];
     let firstAttributions: DrainAttribution[];
     let firstBreakdown: StageTaxBreakdown;
+    let firstInheritanceResult: StateInheritanceTaxResult | undefined;
     let secondTax: number;
     let secondDeathTransfers: DeathTransfer[];
     let secondAttributions: DrainAttribution[];
     let secondBreakdown: StageTaxBreakdown;
+    let secondInheritanceResult: StateInheritanceTaxResult | undefined;
     let combinedValue: number;
 
     if (source.kind === "hypothetical") {
       firstStageYear = source.collapsedYear;
       secondStageYear = source.collapsedYear;
-      firstTax = source.branch.firstDeath.totalTaxesAndExpenses;
+      firstTax = source.branch.firstDeath.totalTaxesAndExpenses
+        + inheritanceTaxTotal(source.branch.firstDeath);
       firstToSpouse = source.branch.firstDeath.maritalDeduction;
       firstDeathTransfers = source.branch.firstDeathTransfers;
       firstAttributions = source.branch.firstDeath.drainAttributions ?? [];
       firstBreakdown = extractTaxBreakdown(source.branch.firstDeath);
-      secondTax = source.branch.finalDeath?.totalTaxesAndExpenses ?? 0;
+      firstInheritanceResult = source.branch.firstDeath.stateInheritanceTax;
+      secondTax = source.branch.finalDeath
+        ? source.branch.finalDeath.totalTaxesAndExpenses
+          + inheritanceTaxTotal(source.branch.finalDeath)
+        : 0;
       secondDeathTransfers = source.branch.finalDeathTransfers ?? [];
       secondAttributions = source.branch.finalDeath?.drainAttributions ?? [];
       secondBreakdown = source.branch.finalDeath
         ? extractTaxBreakdown(source.branch.finalDeath)
         : zeroTaxBreakdown();
+      secondInheritanceResult = source.branch.finalDeath?.stateInheritanceTax;
       combinedValue = source.branch.finalDeath?.grossEstate ?? 0;
     } else if (source.kind === "real") {
       firstStageYear = source.firstYear;
       secondStageYear = source.secondYear;
-      firstTax = source.firstEvent?.totalTaxesAndExpenses ?? 0;
+      firstTax = source.firstEvent
+        ? source.firstEvent.totalTaxesAndExpenses + inheritanceTaxTotal(source.firstEvent)
+        : 0;
       firstToSpouse = source.firstEvent?.maritalDeduction ?? 0;
       firstDeathTransfers = source.firstTransfers;
       firstAttributions = source.firstEvent?.drainAttributions ?? [];
       firstBreakdown = source.firstEvent
         ? extractTaxBreakdown(source.firstEvent)
         : zeroTaxBreakdown();
-      secondTax = source.secondEvent?.totalTaxesAndExpenses ?? 0;
+      firstInheritanceResult = source.firstEvent?.stateInheritanceTax;
+      secondTax = source.secondEvent
+        ? source.secondEvent.totalTaxesAndExpenses + inheritanceTaxTotal(source.secondEvent)
+        : 0;
       secondDeathTransfers = source.secondTransfers;
       secondAttributions = source.secondEvent?.drainAttributions ?? [];
       secondBreakdown = source.secondEvent
         ? extractTaxBreakdown(source.secondEvent)
         : zeroTaxBreakdown();
+      secondInheritanceResult = source.secondEvent?.stateInheritanceTax;
       combinedValue = source.combinedValue;
     } else {
       firstStageYear = firstDeathYear;
@@ -538,10 +578,12 @@ export function deriveSpineData(args: {
       firstDeathTransfers = [];
       firstAttributions = [];
       firstBreakdown = zeroTaxBreakdown();
+      firstInheritanceResult = undefined;
       secondTax = 0;
       secondDeathTransfers = [];
       secondAttributions = [];
       secondBreakdown = zeroTaxBreakdown();
+      secondInheritanceResult = undefined;
       combinedValue = 0;
     }
 
@@ -560,6 +602,8 @@ export function deriveSpineData(args: {
       secondTransfers: secondDeathTransfers,
       firstAttributions,
       secondAttributions,
+      firstInheritanceTax: firstInheritanceResult,
+      secondInheritanceTax: secondInheritanceResult,
       tree,
       totalToHeirs,
     });
@@ -672,23 +716,29 @@ export function deriveSpineData(args: {
     let stageTransfers: DeathTransfer[];
     let stageAttributions: DrainAttribution[];
     let stageBreakdown: StageTaxBreakdown;
+    let stageInheritanceResult: StateInheritanceTaxResult | undefined;
 
     if (ht) {
       stageDeathYear = ht.year;
-      stageTax = ht.primaryFirst.firstDeath.totalTaxesAndExpenses;
+      stageTax = ht.primaryFirst.firstDeath.totalTaxesAndExpenses
+        + inheritanceTaxTotal(ht.primaryFirst.firstDeath);
       stageTransfers = ht.primaryFirst.firstDeathTransfers;
       stageAttributions = ht.primaryFirst.firstDeath.drainAttributions ?? [];
       stageBreakdown = extractTaxBreakdown(ht.primaryFirst.firstDeath);
+      stageInheritanceResult = ht.primaryFirst.firstDeath.stateInheritanceTax;
     } else {
       const deathYearRow = withResult.years.find((y) => y.year === deathYear);
       const deathOrder: 1 | 2 = event?.deathOrder ?? (hasSpouse ? 2 : 1);
       stageDeathYear = deathYear;
-      stageTax = event?.totalTaxesAndExpenses ?? 0;
+      stageTax = event
+        ? event.totalTaxesAndExpenses + inheritanceTaxTotal(event)
+        : 0;
       stageTransfers = (deathYearRow?.deathTransfers ?? []).filter(
         (t) => t.deathOrder === deathOrder,
       );
       stageAttributions = event?.drainAttributions ?? [];
       stageBreakdown = event ? extractTaxBreakdown(event) : zeroTaxBreakdown();
+      stageInheritanceResult = event?.stateInheritanceTax;
     }
 
     const toHeirs = sumToHeirs(stageTransfers, tree);
@@ -701,6 +751,7 @@ export function deriveSpineData(args: {
       secondTransfers: stageTransfers,
       firstAttributions: [],
       secondAttributions: stageAttributions,
+      secondInheritanceTax: stageInheritanceResult,
       tree,
       totalToHeirs: toHeirs,
     });

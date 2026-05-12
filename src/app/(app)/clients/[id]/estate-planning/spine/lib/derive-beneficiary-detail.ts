@@ -17,6 +17,7 @@ import type {
   DrainAttribution,
   DrainKind,
 } from "@/engine/types";
+import type { StateInheritanceTaxResult } from "@/lib/tax/state-inheritance";
 
 export interface BeneficiaryDetail {
   fromFirstDeath: DeathSlice;
@@ -33,7 +34,12 @@ export interface DeathSlice {
   transfers: DeathTransfer[];
   /** Per-drain-kind allocation. */
   drains: Record<DrainKind, number>;
-  /** gross − Σ drains. */
+  /** State inheritance tax (PA/NJ/KY/NE/MD) levied on this recipient's
+   *  share. Engine output is informational only — not a drain attribution —
+   *  but the display layer subtracts it from net so the heir card matches
+   *  what the recipient actually nets after the state collects. */
+  inheritanceTax: number;
+  /** gross − Σ drains − inheritanceTax. */
   net: number;
 }
 
@@ -57,6 +63,13 @@ interface DeriveArgs {
   secondTransfers: DeathTransfer[];
   firstDrainAttributions: DrainAttribution[];
   secondDrainAttributions: DrainAttribution[];
+  /** State inheritance tax result for the first/second death event.
+   *  Engine emits one entry per recipient keyed by
+   *  `${recipientKind}:${recipientId ?? "anon"}` — matches the key built in
+   *  inheritance-tax.ts. Undefined when the residence state has no
+   *  inheritance tax. */
+  firstInheritanceTax?: StateInheritanceTaxResult;
+  secondInheritanceTax?: StateInheritanceTaxResult;
   tree: ClientData;
 }
 
@@ -83,6 +96,7 @@ function buildSlice(
   recipientId: string | null,
   transfers: DeathTransfer[],
   attributions: DrainAttribution[],
+  inheritanceTaxResult: StateInheritanceTaxResult | undefined,
 ): DeathSlice {
   const filtered = transfers.filter(
     (t) =>
@@ -98,12 +112,32 @@ function buildSlice(
     drains[a.drainKind] += a.amount;
   }
   const totalDrains = DRAIN_KINDS.reduce((s, k) => s + drains[k], 0);
+  const inheritanceTax = recipientInheritanceTax(
+    recipientKind,
+    recipientId,
+    inheritanceTaxResult,
+  );
   return {
     gross,
     transfers: filtered,
     drains,
-    net: gross - totalDrains,
+    inheritanceTax,
+    net: gross - totalDrains - inheritanceTax,
   };
+}
+
+/** Mirrors the recipient key built in `engine/death-event/inheritance-tax.ts`
+ *  (`${recipientKind}:${recipientId ?? "anon"}`). Returns 0 when no matching
+ *  per-recipient row exists or the result is missing/inactive. */
+function recipientInheritanceTax(
+  recipientKind: DeathTransfer["recipientKind"],
+  recipientId: string | null,
+  result: StateInheritanceTaxResult | undefined,
+): number {
+  if (!result || result.inactive) return 0;
+  const key = `${recipientKind}:${recipientId ?? "anon"}`;
+  const row = result.perRecipient.find((r) => r.recipientKey === key);
+  return row?.tax ?? 0;
 }
 
 function computeTrustPassThrough(
@@ -154,12 +188,14 @@ export function deriveBeneficiaryDetail(args: DeriveArgs): BeneficiaryDetail {
     args.recipient.id,
     args.firstTransfers,
     args.firstDrainAttributions,
+    args.firstInheritanceTax,
   );
   const fromSecondDeath = buildSlice(
     args.recipient.kind,
     args.recipient.id,
     args.secondTransfers,
     args.secondDrainAttributions,
+    args.secondInheritanceTax,
   );
   const inTrust = computeTrustPassThrough(
     args.recipient.id,

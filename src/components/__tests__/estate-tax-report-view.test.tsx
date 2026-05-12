@@ -228,14 +228,12 @@ describe("EstateTaxReportView", () => {
     expect(screen.getByText(/Grand totals/i)).toBeDefined();
   });
 
-  it("sums federal + admin only in grand totals (state moved to State Death Tax tab)", async () => {
+  it("sums federal + state estate + admin into grand totals", async () => {
     const hypo = makeHypothetical(2045, true, {
       primary: {
         first: { federalEstateTax: 500_000, stateEstateTax: 0 },
         final: {
           federalEstateTax: 2_000_000,
-          // State is intentionally non-zero in the fixture to prove it's
-          // excluded from the Estate Tax tab's grand totals.
           stateEstateTax: 500_000,
           totalEstateTax: 2_500_000,
           totalTaxesAndExpenses: 2_500_000,
@@ -266,14 +264,15 @@ describe("EstateTaxReportView", () => {
       expect(screen.getByText(/Grand totals/i)).toBeDefined(),
     );
     const grandTotals = screen.getByText(/Grand totals/i).closest("section")!;
-    // Grand-total federal row and the grand-total bottom line both read
-    // $2,500,000 (federal + admin, with admin = 0).
-    expect(within(grandTotals).getAllByText("$2,500,000").length).toBe(2);
-    // $3,000,000 (which would be federal + state + admin) must NOT appear.
-    expect(within(grandTotals).queryByText("$3,000,000")).toBeNull();
-    // And the heading should read federal-only.
+    // Total federal estate tax row reads $2,500,000.
+    expect(within(grandTotals).getByText("$2,500,000")).toBeDefined();
+    // Total state estate tax row reads $500,000.
+    expect(within(grandTotals).getByText("$500,000")).toBeDefined();
+    // Grand-total bottom line reads $3,000,000 (federal + state + admin).
+    expect(within(grandTotals).getByText("$3,000,000")).toBeDefined();
+    // Heading is no longer federal-only.
     expect(
-      within(grandTotals).getByText(/federal taxes & expenses/i),
+      within(grandTotals).getByText(/^Grand total · taxes & expenses$/i),
     ).toBeDefined();
   });
 

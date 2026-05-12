@@ -112,6 +112,14 @@ function DeathSection({ label, slice }: { label: string; slice: DeathSlice }) {
           );
         },
       )}
+      {slice.inheritanceTax > 0.5 && (
+        <div className="flex items-center justify-between pl-3 text-ink-3">
+          <span>State inheritance tax share</span>
+          <span className="tabular-nums">
+            ({Math.round(slice.inheritanceTax).toLocaleString()})
+          </span>
+        </div>
+      )}
       <div className="flex items-center justify-between pl-3 border-t border-hair mt-1 pt-0.5 font-semibold text-ink-2">
         <span>— Net from {label.toLowerCase()}</span>
         <MoneyText value={slice.net} className="tabular-nums" />

@@ -26,6 +26,9 @@ export function TaxCalcWalk({
     },
     { label: "Federal estate tax", value: breakdown.federalEstateTax },
     { label: "State estate tax", value: breakdown.stateEstateTax },
+    ...(breakdown.stateInheritanceTax > 0
+      ? [{ label: "State inheritance tax", value: breakdown.stateInheritanceTax }]
+      : []),
     { label: "Admin expenses (paid)", value: breakdown.estateAdminExpenses },
   ];
   return (

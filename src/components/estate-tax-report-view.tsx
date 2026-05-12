@@ -404,13 +404,17 @@ function DecedentBreakdown({
     .filter((a) => a.drainKind === "ird_tax")
     .reduce((s, a) => s + a.amount, 0);
 
-  // Headline matches eMoney's "Total Taxes & Expenses" but is federal-only:
-  // engine's totalTaxesAndExpenses (federal + state + admin) minus state estate
-  // tax, plus IRD income tax. State death taxes live on the State Death Tax
-  // tab. IRD is separate in the engine because it's income tax on heirs, not
-  // an estate-administered drain.
+  const stateInheritanceTax =
+    tax.stateInheritanceTax && !tax.stateInheritanceTax.inactive
+      ? tax.stateInheritanceTax.totalTax
+      : 0;
+
+  // Engine's totalTaxesAndExpenses is federal + state estate + admin. Add
+  // state inheritance tax (informational on the engine; surfaced here so the
+  // Estate Tax tab includes all state death taxes) and IRD income tax (drains
+  // heirs, not the estate, so the engine keeps it separate).
   const totalTaxesAndExpenses =
-    tax.totalTaxesAndExpenses - tax.stateEstateTax + irdTotal;
+    tax.totalTaxesAndExpenses + stateInheritanceTax + irdTotal;
   const headlineColor =
     totalTaxesAndExpenses > 0 ? "text-rose-200" : "text-emerald-200";
 
@@ -531,7 +535,17 @@ function DecedentBreakdown({
           subtotalLabel="Total Taxes & Expenses"
           subtotalAccent="tax"
         >
-          <LineRow label="Estate Tax" amount={tax.federalEstateTax} />
+          <LineRow label="Federal Estate Tax" amount={tax.federalEstateTax} />
+          <LineRow
+            label="State Estate Tax"
+            amount={tax.stateEstateTax}
+            hideIfZero
+          />
+          <LineRow
+            label="State Inheritance Tax"
+            amount={stateInheritanceTax}
+            hideIfZero
+          />
           <LineRow
             label="Probate and Final Expenses"
             amount={tax.estateAdminExpenses}
@@ -565,12 +579,18 @@ function DecedentBreakdown({
 function TotalsCard({
   heading,
   federal,
+  stateEstate,
+  stateInheritance,
   admin,
+  ird,
   total,
 }: {
   heading: string;
   federal: number;
+  stateEstate: number;
+  stateInheritance: number;
   admin: number;
+  ird: number;
   total: number;
 }) {
   const accent = total > 0 ? "text-rose-200" : "text-emerald-200";
@@ -586,12 +606,23 @@ function TotalsCard({
       </header>
       <div className="px-5 py-3 md:max-w-[50%]">
         <LineRow label="Total federal estate tax" amount={federal} />
+        <LineRow label="Total state estate tax" amount={stateEstate} hideIfZero />
+        <LineRow
+          label="Total state inheritance tax"
+          amount={stateInheritance}
+          hideIfZero
+        />
         <LineRow label="Total admin expenses" amount={admin} hideIfZero />
+        <LineRow
+          label="Total tax on Income with Respect to Decedent"
+          amount={ird}
+          hideIfZero
+        />
       </div>
       <div className="border-t border-indigo-900/40 bg-indigo-950/30 px-5 py-3 md:max-w-[50%]">
         <div className="flex items-baseline justify-between gap-4">
           <span className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-100">
-            Grand total · federal taxes &amp; expenses
+            Grand total · taxes &amp; expenses
           </span>
           <span className={"text-xl font-semibold tabular-nums " + accent}>
             {fmt.format(total)}
@@ -602,28 +633,56 @@ function TotalsCard({
   );
 }
 
+function inheritanceTaxOf(r: EstateTaxResult): number {
+  return r.stateInheritanceTax && !r.stateInheritanceTax.inactive
+    ? r.stateInheritanceTax.totalTax
+    : 0;
+}
+
+function irdTaxOf(r: EstateTaxResult): number {
+  return (r.drainAttributions ?? [])
+    .filter((a) => a.drainKind === "ird_tax")
+    .reduce((s, a) => s + a.amount, 0);
+}
+
 function GrandTotals({ ordering }: { ordering: HypotheticalEstateTaxOrdering }) {
   const federal = ordering.totals.federal;
+  const stateEstate = ordering.totals.state;
+  const stateInheritance =
+    inheritanceTaxOf(ordering.firstDeath)
+    + (ordering.finalDeath ? inheritanceTaxOf(ordering.finalDeath) : 0);
   const admin = ordering.totals.admin;
+  const ird =
+    irdTaxOf(ordering.firstDeath)
+    + (ordering.finalDeath ? irdTaxOf(ordering.finalDeath) : 0);
   return (
     <TotalsCard
       heading="Grand totals"
       federal={federal}
+      stateEstate={stateEstate}
+      stateInheritance={stateInheritance}
       admin={admin}
-      total={federal + admin}
+      ird={ird}
+      total={federal + stateEstate + stateInheritance + admin + ird}
     />
   );
 }
 
 function SplitTotals({ first, second }: { first: EstateTaxResult; second: EstateTaxResult }) {
   const federal = first.federalEstateTax + second.federalEstateTax;
+  const stateEstate = first.stateEstateTax + second.stateEstateTax;
+  const stateInheritance = inheritanceTaxOf(first) + inheritanceTaxOf(second);
   const admin = first.estateAdminExpenses + second.estateAdminExpenses;
+  const ird = irdTaxOf(first) + irdTaxOf(second);
   return (
     <TotalsCard
       heading="Grand totals — Split death"
       federal={federal}
+      stateEstate={stateEstate}
+      stateInheritance={stateInheritance}
       admin={admin}
-      total={federal + admin}
+      ird={ird}
+      total={federal + stateEstate + stateInheritance + admin + ird}
     />
   );
 }
