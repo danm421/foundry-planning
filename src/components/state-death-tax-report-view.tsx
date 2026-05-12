@@ -412,23 +412,23 @@ function DecedentSection({ heading, tax }: { heading: string; tax: EstateTaxResu
             )}
           </div>
         )}
+        {sti && stateDetail.inheritanceCredit != null && (
+          <div className="border-t border-amber-900/40 bg-amber-950/20 px-5 py-2 text-sm text-amber-200">
+            MD inheritance tax of {fmt.format(sti.totalTax)} reduces MD state estate tax
+            via the inheritance-tax credit (credit applied: {fmt.format(stateDetail.inheritanceCredit.reduction)}).
+          </div>
+        )}
         {showEstate && sti && (
-          <>
-            <div className="border-t border-amber-900/40 bg-amber-950/20 px-5 py-2 text-sm text-amber-200">
-              MD inheritance tax of {fmt.format(sti.totalTax)} reduces MD state estate tax
-              via the inheritance-tax credit (credit applied: {fmt.format(stateDetail.inheritanceCredit?.reduction ?? 0)}).
+          <div className="border-t border-gray-800 bg-gray-900/40 px-5 py-3">
+            <div className="flex items-baseline justify-between gap-4">
+              <span className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-100">
+                Total state death tax
+              </span>
+              <span className="text-base font-semibold tabular-nums text-rose-200">
+                {fmt.format(stateDetail.stateEstateTax + sti.totalTax)}
+              </span>
             </div>
-            <div className="border-t border-gray-800 bg-gray-900/40 px-5 py-3">
-              <div className="flex items-baseline justify-between gap-4">
-                <span className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-100">
-                  Total state death tax
-                </span>
-                <span className="text-base font-semibold tabular-nums text-rose-200">
-                  {fmt.format(stateDetail.stateEstateTax + sti.totalTax)}
-                </span>
-              </div>
-            </div>
-          </>
+          </div>
         )}
       </div>
     </section>

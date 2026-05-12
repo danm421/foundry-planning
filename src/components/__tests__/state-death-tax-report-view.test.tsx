@@ -211,4 +211,60 @@ describe("StateDeathTaxReportView", () => {
     // Credit callout
     expect(screen.getByText(/inheritance.tax credit/i)).toBeInTheDocument();
   });
+
+  it("does not show MD callout for non-MD inheritance state with custom estate-tax override", async () => {
+    const njEstateDetail: import("@/lib/tax/state-estate").StateEstateTaxResult = {
+      state: null,
+      fallbackUsed: true, fallbackRate: 0.05,
+      exemption: 0, exemptionYear: 0, giftAddback: 0,
+      baseForTax: 1_000_000, amountOverExemption: 0,
+      bracketLines: [],
+      preCapTax: 50_000, stateEstateTax: 50_000,
+      notes: ["Custom flat rate of 5% applied."],
+    };
+    const njInheritance: import("@/lib/tax/state-inheritance").StateInheritanceTaxResult = {
+      state: "NJ",
+      inactive: false,
+      estateMinimumFloorApplied: false,
+      totalTax: 20_000,
+      notes: [],
+      perRecipient: [{
+        recipientKey: "sib", label: "Sibling Doe", classLabel: "D",
+        classSource: "derived-from-relationship",
+        grossShare: 100_000, excluded: 0, excludedReasons: [],
+        exemption: 0, taxableShare: 100_000,
+        bracketLines: [{ from: 0, to: 100_000, rate: 0.20, amountTaxed: 100_000, tax: 20_000 }],
+        tax: 20_000, netToRecipient: 80_000, notes: [],
+      }],
+    };
+    const decedent: EstateTaxResult = {
+      ...(baseEstate as EstateTaxResult),
+      residenceState: "NJ",
+      stateEstateTax: 50_000,
+      stateEstateTaxDetail: njEstateDetail,
+      stateInheritanceTax: njInheritance,
+    };
+    mockProjection({
+      firstDeathEvent: decedent,
+      secondDeathEvent: undefined,
+      years: [{ year: 2026, hypotheticalEstateTax: { year: 2026,
+        primaryFirst: { firstDecedent: "client", firstDeath: decedent,
+          firstDeathTransfers: [], totals: { federal: 0, state: 50_000, admin: 0, total: 70_000 } } } }],
+      todayHypotheticalEstateTax: { year: 2026,
+        primaryFirst: { firstDecedent: "client", firstDeath: decedent,
+          firstDeathTransfers: [], totals: { federal: 0, state: 50_000, admin: 0, total: 70_000 } } },
+    });
+
+    render(<StateDeathTaxReportView clientId="c1" {...ownerProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Sibling Doe/)).toBeInTheDocument();
+    });
+    // No MD callout
+    expect(screen.queryByText(/inheritance.tax credit/i)).not.toBeInTheDocument();
+    // Combined total still appears
+    expect(screen.getByText(/Total state death tax/i)).toBeInTheDocument();
+    // 50,000 + 20,000 = 70,000
+    expect(screen.getAllByText(/\$70,000/).length).toBeGreaterThan(0);
+  });
 });
