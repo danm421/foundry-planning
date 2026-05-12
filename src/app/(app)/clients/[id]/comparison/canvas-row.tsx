@@ -22,6 +22,10 @@ interface Props {
   onDuplicateCell: (rowId: string, cellId: string) => void;
   onMoveCellLeft: (rowId: string, cellId: string) => void;
   onMoveCellRight: (rowId: string, cellId: string) => void;
+  onMoveUp: (rowId: string) => void;
+  onMoveDown: (rowId: string) => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
 }
 
 export function CanvasRow({
@@ -34,6 +38,10 @@ export function CanvasRow({
   onDuplicateCell,
   onMoveCellLeft,
   onMoveCellRight,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown,
 }: Props) {
   const widthBadge = WIDTH_BADGE[row.cells.length] ?? "?";
   const atMax = row.cells.length >= 5;
@@ -41,45 +49,69 @@ export function CanvasRow({
   return (
     <div
       data-canvas-row={row.id}
-      className="group/row relative flex flex-col gap-2 rounded-lg border border-transparent px-2 py-2 hover:border-slate-800"
+      className="group/row relative flex gap-2 rounded-lg border border-transparent px-2 py-2 hover:border-slate-800"
     >
-      <div className="flex items-stretch gap-2">
-        {row.cells.map((cell, idx) => (
-          <CanvasCell
-            key={cell.id}
-            cell={cell}
-            rowId={row.id}
-            widthBadge={widthBadge}
-            scenarios={scenarios}
-            onEdit={() => onEditCell(cell.id)}
-            onRemove={() => onRemoveCell(row.id, cell.id)}
-            onDuplicate={() => onDuplicateCell(row.id, cell.id)}
-            onMoveLeft={() => onMoveCellLeft(row.id, cell.id)}
-            onMoveRight={() => onMoveCellRight(row.id, cell.id)}
-            canMoveLeft={idx > 0}
-            canMoveRight={idx < row.cells.length - 1}
-          />
-        ))}
+      <div className="flex shrink-0 flex-col items-center gap-1 pt-2 text-slate-400">
+        <span aria-hidden="true">⋮⋮</span>
+        <button
+          type="button"
+          aria-label="Move row up"
+          onClick={() => onMoveUp(row.id)}
+          disabled={!canMoveUp}
+          className="rounded px-1 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30"
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          aria-label="Move row down"
+          onClick={() => onMoveDown(row.id)}
+          disabled={!canMoveDown}
+          className="rounded px-1 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30"
+        >
+          ↓
+        </button>
       </div>
 
-      <div className="flex items-center justify-end gap-2 opacity-0 transition-opacity group-hover/row:opacity-100">
-        <button
-          type="button"
-          aria-label="Add cell"
-          onClick={() => onAddCell(row.id)}
-          disabled={atMax}
-          className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300 hover:bg-slate-800 disabled:opacity-40"
-        >
-          + Cell
-        </button>
-        <button
-          type="button"
-          aria-label="Delete row"
-          onClick={() => onDeleteRow(row.id)}
-          className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300 hover:bg-slate-800"
-        >
-          Delete row
-        </button>
+      <div className="flex-1">
+        <div className="flex items-stretch gap-2">
+          {row.cells.map((cell, idx) => (
+            <CanvasCell
+              key={cell.id}
+              cell={cell}
+              rowId={row.id}
+              widthBadge={widthBadge}
+              scenarios={scenarios}
+              onEdit={() => onEditCell(cell.id)}
+              onRemove={() => onRemoveCell(row.id, cell.id)}
+              onDuplicate={() => onDuplicateCell(row.id, cell.id)}
+              onMoveLeft={() => onMoveCellLeft(row.id, cell.id)}
+              onMoveRight={() => onMoveCellRight(row.id, cell.id)}
+              canMoveLeft={idx > 0}
+              canMoveRight={idx < row.cells.length - 1}
+            />
+          ))}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 opacity-0 transition-opacity group-hover/row:opacity-100">
+          <button
+            type="button"
+            aria-label="Add cell"
+            onClick={() => onAddCell(row.id)}
+            disabled={atMax}
+            className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+          >
+            + Cell
+          </button>
+          <button
+            type="button"
+            aria-label="Delete row"
+            onClick={() => onDeleteRow(row.id)}
+            className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300 hover:bg-slate-800"
+          >
+            Delete row
+          </button>
+        </div>
       </div>
     </div>
   );

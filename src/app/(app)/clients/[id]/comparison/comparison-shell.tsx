@@ -87,7 +87,7 @@ export function ComparisonShell({
               No widgets — open the Widget panel to add some.
             </div>
           ) : (
-            api.layout.rows.map((row) => (
+            api.layout.rows.map((row, rowIdx) => (
               <CanvasRow
                 key={row.id}
                 row={row}
@@ -107,6 +107,10 @@ export function ComparisonShell({
                   const idx = r?.cells.findIndex((c) => c.id === cellId) ?? -1;
                   if (r && idx >= 0 && idx < r.cells.length - 1) api.moveCell(rowId, idx, rowId, idx + 1);
                 }}
+                onMoveUp={() => api.moveRow(rowIdx, rowIdx - 1)}
+                onMoveDown={() => api.moveRow(rowIdx, rowIdx + 1)}
+                canMoveUp={rowIdx > 0}
+                canMoveDown={rowIdx < api.layout.rows.length - 1}
               />
             ))
           )}
