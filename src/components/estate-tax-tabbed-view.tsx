@@ -47,7 +47,13 @@ export default function EstateTaxTabbedView({
             retirementYear={retirementYear}
           />
         ) : (
-          <StateDeathTaxReportView clientId={clientId} />
+          <StateDeathTaxReportView
+            clientId={clientId}
+            isMarried={isMarried}
+            ownerNames={ownerNames}
+            ownerDobs={ownerDobs}
+            retirementYear={retirementYear}
+          />
         )}
       </div>
     </div>
