@@ -268,11 +268,6 @@ function ownerForName(
   return r.deceased === "client" ? names.clientName : names.spouseName ?? "Spouse";
 }
 
-const pct = new Intl.NumberFormat("en-US", {
-  style: "percent",
-  maximumFractionDigits: 2,
-});
-
 function formatAmount(amount: number, opts: { negate?: boolean } = {}): string {
   const n = opts.negate ? -amount : amount;
   return n < 0 ? `(${fmt.format(-n)})` : fmt.format(n);
