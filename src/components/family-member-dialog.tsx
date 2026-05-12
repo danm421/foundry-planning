@@ -13,11 +13,24 @@ import type { FamilyMember } from "@/components/family-view";
 
 const RELATIONSHIP_OPTIONS = [
   { value: "child", label: "Child" },
+  { value: "stepchild", label: "Stepchild" },
   { value: "grandchild", label: "Grandchild" },
+  { value: "great_grandchild", label: "Great-grandchild" },
   { value: "parent", label: "Parent" },
+  { value: "grandparent", label: "Grandparent" },
   { value: "sibling", label: "Sibling" },
+  { value: "sibling_in_law", label: "Sibling-in-law" },
+  { value: "child_in_law", label: "Son/Daughter-in-law" },
+  { value: "niece_nephew", label: "Niece/Nephew" },
+  { value: "aunt_uncle", label: "Aunt/Uncle" },
+  { value: "cousin", label: "Cousin" },
+  { value: "grand_aunt_uncle", label: "Grand-aunt/uncle" },
   { value: "other", label: "Other" },
 ] as const;
+
+const INHERITANCE_STATES = ["PA", "NJ", "KY", "NE", "MD"] as const;
+type InheritanceState = (typeof INHERITANCE_STATES)[number];
+type ClassLetter = "A" | "B" | "C" | "D";
 
 interface Props {
   clientId: string;
@@ -48,12 +61,23 @@ export default function FamilyMemberDialog({
     setLoading(true);
     setError(null);
     const data = new FormData(e.currentTarget);
+
+    const inheritanceClassOverride: Partial<Record<InheritanceState, ClassLetter>> = {};
+    for (const s of INHERITANCE_STATES) {
+      const v = (data.get(`inheritanceClassOverride.${s}`) as string) || "";
+      if (v === "A" || v === "B" || v === "C" || v === "D") {
+        inheritanceClassOverride[s] = v;
+      }
+    }
+
     const body = {
       firstName: data.get("firstName") as string,
       lastName: data.get("lastName") as string,
       relationship: data.get("relationship") as string,
       dateOfBirth: (data.get("dateOfBirth") as string) || null,
       notes: (data.get("notes") as string) || null,
+      domesticPartner: data.get("domesticPartner") === "on",
+      inheritanceClassOverride,
     };
     try {
       const newMemberId =
@@ -91,9 +115,6 @@ export default function FamilyMemberDialog({
         const json = await res.json().catch(() => ({}));
         throw new Error(json.error ?? "Failed to save");
       }
-      // Base mode returns the saved row; scenario mode returns { ok, targetId }.
-      // Synthesize a FamilyMember in scenario mode — router.refresh() (run by
-      // the writer) reloads canonical state shortly after.
       const saved: FamilyMember = writer.scenarioActive
         ? {
             id: isEdit ? editing!.id : newMemberId,
@@ -102,6 +123,8 @@ export default function FamilyMemberDialog({
             relationship: body.relationship as FamilyMember["relationship"],
             dateOfBirth: body.dateOfBirth,
             notes: body.notes,
+            domesticPartner: body.domesticPartner,
+            inheritanceClassOverride: body.inheritanceClassOverride,
           }
         : ((await res.json()) as FamilyMember);
       onSaved(saved, isEdit ? "edit" : "create");
@@ -112,6 +135,8 @@ export default function FamilyMemberDialog({
       setLoading(false);
     }
   }
+
+  const existingOverrides = editing?.inheritanceClassOverride ?? {};
 
   return (
     <DialogShell
@@ -185,6 +210,48 @@ export default function FamilyMemberDialog({
             />
           </div>
         </div>
+
+        <label className="flex items-center gap-2 text-sm text-gray-300">
+          <input
+            type="checkbox"
+            name="domesticPartner"
+            defaultChecked={editing?.domesticPartner ?? false}
+            className="h-4 w-4 rounded border-gray-700 bg-gray-800 text-blue-500 focus:ring-blue-500"
+          />
+          Domestic partner (affects NJ/MD inheritance tax)
+        </label>
+
+        <details className="rounded border border-gray-700 bg-gray-800/50 p-3">
+          <summary className="cursor-pointer select-none text-sm text-gray-300 hover:text-gray-100">
+            Inheritance tax class overrides
+          </summary>
+          <div className="mt-3 space-y-2">
+            <p className="text-xs text-gray-400">
+              Use these only if the auto-classification (based on the relationship dropdown above) is wrong for a specific state.
+            </p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {INHERITANCE_STATES.map((state) => (
+                <div key={state} className="flex items-center gap-2">
+                  <label htmlFor={`fm-override-${state}`} className="w-10 text-xs font-medium text-gray-400">
+                    {state}
+                  </label>
+                  <select
+                    id={`fm-override-${state}`}
+                    name={`inheritanceClassOverride.${state}`}
+                    defaultValue={existingOverrides[state] ?? ""}
+                    className={selectClassName}
+                  >
+                    <option value="">Auto</option>
+                    <option value="A">Class A</option>
+                    <option value="B">Class B</option>
+                    <option value="C">Class C</option>
+                    <option value="D">Class D</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+        </details>
 
         <div>
           <label htmlFor="fm-notes" className={fieldLabelClassName}>Notes</label>

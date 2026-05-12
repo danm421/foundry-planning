@@ -52,7 +52,10 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { firstName, lastName, relationship, dateOfBirth, notes } = body;
+    const {
+      firstName, lastName, relationship, dateOfBirth, notes,
+      domesticPartner, inheritanceClassOverride,
+    } = body;
     if (!firstName) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
@@ -66,6 +69,8 @@ export async function POST(
         relationship: relationship ?? "child",
         dateOfBirth: dateOfBirth || null,
         notes: notes ?? null,
+        domesticPartner: !!domesticPartner,
+        inheritanceClassOverride: inheritanceClassOverride ?? {},
       })
       .returning();
 
