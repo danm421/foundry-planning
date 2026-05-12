@@ -1,13 +1,18 @@
 import { MonteCarloComparisonSection } from "@/components/comparison/monte-carlo-comparison-section";
+import { MonteCarloTableList } from "@/components/comparison/tables/monte-carlo-table";
+import { ViewModeSchema, defaultViewMode, getViewMode, renderViewModeConfig, ViewModeFrame, type ViewModeConfig } from "./view-mode";
 import type { ComparisonWidgetDefinition } from "./types";
 
-export const monteCarloWidget: ComparisonWidgetDefinition = {
+export const monteCarloWidget: ComparisonWidgetDefinition<ViewModeConfig> = {
   kind: "monte-carlo",
   title: "Monte Carlo",
   category: "monte-carlo",
   scenarios: "one-or-many",
   needsMc: true,
-  render: ({ mc }) => {
+  configSchema: ViewModeSchema,
+  defaultConfig: defaultViewMode,
+  renderConfig: renderViewModeConfig,
+  render: ({ mc, config }) => {
     if (!mc) {
       return (
         <section className="px-6 py-8">
@@ -16,6 +21,12 @@ export const monteCarloWidget: ComparisonWidgetDefinition = {
         </section>
       );
     }
-    return <MonteCarloComparisonSection plansMc={mc.perPlan} />;
+    return (
+      <ViewModeFrame
+        mode={getViewMode(config)}
+        chart={<MonteCarloComparisonSection plansMc={mc.perPlan} />}
+        table={<MonteCarloTableList mc={mc} />}
+      />
+    );
   },
 };
