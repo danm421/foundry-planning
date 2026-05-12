@@ -142,3 +142,35 @@ export const ComparisonLayoutV5Schema = z.object({
   groups: z.array(GroupSchema),
 });
 export type ComparisonLayoutV5 = z.infer<typeof ComparisonLayoutV5Schema>;
+
+// ---------- text widget config ----------
+
+export const AiToneSchema = z.enum(["concise", "detailed", "plain"]);
+export type AiTone = z.infer<typeof AiToneSchema>;
+
+export const AiLengthSchema = z.enum(["short", "medium", "long"]);
+export type AiLength = z.infer<typeof AiLengthSchema>;
+
+export const TextWidgetAiConfigSchema = z.object({
+  sources: z.object({
+    groupIds: z.array(z.string()).default([]),
+    cellIds: z.array(z.string()).default([]),
+  }),
+  tone: AiToneSchema.default("concise"),
+  length: AiLengthSchema.default("medium"),
+  customInstructions: z.string().default(""),
+  lastGenerated: z
+    .object({
+      hash: z.string(),
+      at: z.string(),
+      cached: z.boolean(),
+    })
+    .optional(),
+});
+export type TextWidgetAiConfig = z.infer<typeof TextWidgetAiConfigSchema>;
+
+export const TextWidgetConfigSchema = z.object({
+  markdown: z.string().default(""),
+  ai: TextWidgetAiConfigSchema.optional(),
+});
+export type TextWidgetConfig = z.infer<typeof TextWidgetConfigSchema>;
