@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import AddClientForm, { ClientFormInitial } from "./forms/add-client-form";
 import DialogShell from "./dialog-shell";
 
@@ -14,6 +15,7 @@ interface AddClientDialogProps {
 }
 
 export default function AddClientDialog({ open, onOpenChange, editing, onRequestDelete }: AddClientDialogProps) {
+  const router = useRouter();
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
   const actualOpen = isControlled ? !!open : internalOpen;
@@ -21,8 +23,14 @@ export default function AddClientDialog({ open, onOpenChange, editing, onRequest
     canSubmit: true,
     loading: false,
   });
+  // Track whether any auto-save fired so we know to refresh the parent on close.
+  const autoSavedRef = useRef(false);
 
   function close() {
+    if (autoSavedRef.current) {
+      router.refresh();
+      autoSavedRef.current = false;
+    }
     if (isControlled) onOpenChange?.(false);
     else setInternalOpen(false);
   }
@@ -63,6 +71,9 @@ export default function AddClientDialog({ open, onOpenChange, editing, onRequest
             initial={editing}
             onSuccess={close}
             onSubmitStateChange={setSubmitState}
+            onAutoSaved={() => {
+              autoSavedRef.current = true;
+            }}
           />
         </DialogShell>
       )}
