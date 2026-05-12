@@ -15,6 +15,8 @@ import InsurancePolicyDetailsTab from "./insurance-policy-details-tab";
 import InsurancePolicyBeneficiariesTab from "./insurance-policy-beneficiaries-tab";
 import InsurancePolicyCashValueTab from "./insurance-policy-cash-value-tab";
 import DialogShell from "./dialog-shell";
+import TabAutoSaveIndicator from "./tab-auto-save-indicator";
+import { useTabAutoSave, type SaveResult } from "@/lib/use-tab-auto-save";
 
 export type PostPayoutGrowthSource = "model_portfolio" | "inflation" | "custom";
 
@@ -241,6 +243,37 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
   const [tab, setTab] = useState<TabKey>("details");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Auto-save state — these track ADD → EDIT promotion when the user switches
+  // tabs without explicitly clicking Save. After the first successful auto-
+  // save the dialog operates against `effectivePolicyId` instead of the
+  // (undefined) prop, and subsequent saves PATCH instead of POST.
+  const [effectiveMode, setEffectiveMode] = useState<"create" | "edit">(mode);
+  const [effectivePolicyId, setEffectivePolicyId] = useState<string | undefined>(policyId);
+  const [nameInvalid, setNameInvalid] = useState(false);
+  // Snapshot of the last saved state, for dirty-tracking. Initialized to the
+  // seeded values so a freshly-opened dialog is "clean" until the user edits.
+  const lastSavedSnapshotRef = useRef<string>(
+    JSON.stringify(seededState ?? DEFAULT_STATE),
+  );
+  // True once any auto-save has succeeded — so we know to router.refresh on
+  // close so the parent panel picks up the new/updated policy.
+  const autoSavedRef = useRef(false);
+
+  // Auto-save hook — kept above the edit-mode guard so the hook order is
+  // stable on every render (rules-of-hooks). The guard branches the JSX, not
+  // the hook calls.
+  const isDirty = JSON.stringify(state) !== lastSavedSnapshotRef.current;
+  const canSave = state.name.trim().length > 0;
+  const autoSave = useTabAutoSave({
+    isDirty,
+    canSave,
+    saveAsync: async () => {
+      const result = await performSave();
+      if (result.ok) applySaveSuccess(result.recordId);
+      return result;
+    },
+    onBlocked: () => setNameInvalid(true),
+  });
 
   // Edit-mode guard: if we couldn't find the policy, render an error card.
   if (mode === "edit" && seededState === null) {
@@ -259,6 +292,7 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
   }
 
   function handlePatch(patch: Partial<PolicyFormState>) {
+    if (patch.name !== undefined && nameInvalid) setNameInvalid(false);
     setState((prev) => {
       const adjusted = applyPolicyTypeTransition(prev, patch);
       // If the name field is in the patch, the user typed — freeze auto-naming.
@@ -280,27 +314,49 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
     });
   }
 
+  // Pure save against the API. Returns a SaveResult so both the explicit Save
+  // button and the auto-save-on-tab-switch path can share this logic without
+  // either having to know about the other's side-effects (refresh, close).
+  async function performSave(): Promise<SaveResult & { recordId?: string }> {
+    const url =
+      effectiveMode === "create"
+        ? `/api/clients/${clientId}/insurance-policies`
+        : `/api/clients/${clientId}/insurance-policies/${effectivePolicyId}`;
+    const method = effectiveMode === "create" ? "POST" : "PATCH";
+    const response = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildPayload(state)),
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      return { ok: false, error: body.error ?? `HTTP ${response.status}` };
+    }
+    const json = (await response.json().catch(() => ({}))) as { id?: string };
+    return { ok: true, recordId: json.id };
+  }
+
+  function applySaveSuccess(recordId: string | undefined) {
+    lastSavedSnapshotRef.current = JSON.stringify(state);
+    autoSavedRef.current = true;
+    if (effectiveMode === "create" && recordId) {
+      setEffectiveMode("edit");
+      setEffectivePolicyId(recordId);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!canSave) {
+      setNameInvalid(true);
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
-      const url =
-        mode === "create"
-          ? `/api/clients/${clientId}/insurance-policies`
-          : `/api/clients/${clientId}/insurance-policies/${policyId}`;
-      const method = mode === "create" ? "POST" : "PATCH";
-      const response = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildPayload(state)),
-      });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as {
-          error?: string;
-        };
-        throw new Error(body.error ?? `HTTP ${response.status}`);
-      }
+      const result = await performSave();
+      if (!result.ok) throw new Error(result.error);
+      applySaveSuccess(result.recordId);
       router.refresh();
       onClose();
     } catch (err) {
@@ -310,14 +366,19 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
     }
   }
 
+  function handleCloseRequest() {
+    if (autoSavedRef.current) router.refresh();
+    onClose();
+  }
+
   async function handleDelete() {
-    if (!policyId) return;
+    if (!effectivePolicyId) return;
     if (!window.confirm("Delete this policy? This cannot be undone.")) return;
     setError(null);
     setSubmitting(true);
     try {
       const response = await fetch(
-        `/api/clients/${clientId}/insurance-policies/${policyId}`,
+        `/api/clients/${clientId}/insurance-policies/${effectivePolicyId}`,
         { method: "DELETE" },
       );
       if (!response.ok) {
@@ -335,12 +396,12 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
     }
   }
 
-  const title = mode === "create" ? "Add policy" : "Edit policy";
+  const title = effectiveMode === "create" ? "Add policy" : "Edit policy";
 
   return (
     <DialogShell
       open
-      onOpenChange={(o) => { if (!o) onClose(); }}
+      onOpenChange={(o) => { if (!o) handleCloseRequest(); }}
       title={title}
       size="md"
       tabs={[
@@ -349,15 +410,22 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
         { id: "cash_value", label: "Cash Value" },
       ]}
       activeTab={tab}
-      onTabChange={(id) => setTab(id as TabKey)}
+      onTabChange={(id) => autoSave.interceptTabChange(id, (next) => setTab(next as TabKey))}
+      tabBarRight={
+        <TabAutoSaveIndicator
+          saving={autoSave.saving}
+          error={autoSave.saveError}
+          onDismissError={autoSave.clearSaveError}
+        />
+      }
       primaryAction={{
-        label: mode === "edit" ? "Save Changes" : "Add Policy",
+        label: effectiveMode === "edit" ? "Save Changes" : "Add Policy",
         form: "insurance-policy-form",
-        disabled: submitting || state.name.trim().length === 0,
+        disabled: submitting || autoSave.saving,
         loading: submitting,
       }}
       destructiveAction={
-        mode === "edit"
+        effectiveMode === "edit"
           ? { label: "Delete policy", onClick: handleDelete, disabled: submitting }
           : undefined
       }
@@ -375,9 +443,10 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
               entities={props.entities}
               modelPortfolios={props.modelPortfolios}
               resolvedInflationRate={props.resolvedInflationRate}
-              mode={mode}
+              mode={effectiveMode}
               clientFirstName={clientFirstName}
               spouseFirstName={spouseFirstName}
+              nameInvalid={nameInvalid}
             />
           </div>
         )}
@@ -387,8 +456,8 @@ export default function InsurancePolicyDialog(props: InsurancePolicyDialogProps)
               clientId={clientId}
               clientFirstName={clientFirstName}
               spouseFirstName={spouseFirstName}
-              mode={mode}
-              policyId={policyId}
+              mode={effectiveMode}
+              policyId={effectivePolicyId}
               members={props.familyMembers}
               externals={props.externalBeneficiaries}
             />

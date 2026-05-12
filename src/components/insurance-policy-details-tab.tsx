@@ -22,6 +22,9 @@ interface InsurancePolicyDetailsTabProps {
   mode: "create" | "edit";
   clientFirstName: string;
   spouseFirstName: string | null;
+  /** Show the Name field as invalid (red border + aria-invalid). Cleared when
+   *  the user types into it. */
+  nameInvalid?: boolean;
 }
 
 // Coerce a number input value → number. Empty string becomes 0.
@@ -51,6 +54,7 @@ export default function InsurancePolicyDetailsTab({
   mode,
   clientFirstName,
   spouseFirstName,
+  nameInvalid,
 }: InsurancePolicyDetailsTabProps) {
   const isTerm = state.policyType === "term";
   const trustEntities = entities.filter((e) => e.entityType === "trust");
@@ -112,8 +116,13 @@ export default function InsurancePolicyDetailsTab({
                 type="text"
                 required
                 value={state.name}
+                aria-invalid={nameInvalid || undefined}
                 onChange={(e) => onChange({ name: e.target.value })}
-                className={inputClassName}
+                className={
+                  nameInvalid
+                    ? `${inputClassName} !border-crit focus:!border-crit`
+                    : inputClassName
+                }
               />
             </label>
             <label className="block">

@@ -1,9 +1,16 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import AddLiabilityForm, { LiabilityFormInitial, LiabilityFormValues } from "./forms/add-liability-form";
+import { useCallback, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import AddLiabilityForm, {
+  type LiabilityFormInitial,
+  type LiabilityFormValues,
+  type LiabilityFormAutoSaveHandle,
+} from "./forms/add-liability-form";
 import LiabilityAmortizationTab from "./liability-amortization-tab";
 import DialogShell from "./dialog-shell";
+import TabAutoSaveIndicator from "./tab-auto-save-indicator";
+import { useTabAutoSave } from "@/lib/use-tab-auto-save";
 import type { ClientMilestones } from "@/lib/milestones";
 
 type TabId = "details" | "amortization";
@@ -36,6 +43,7 @@ export default function AddLiabilityDialog({
   editing,
   onRequestDelete,
 }: AddLiabilityDialogProps) {
+  const router = useRouter();
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("details");
@@ -44,6 +52,14 @@ export default function AddLiabilityDialog({
     canSubmit: true,
     loading: false,
   });
+  const [autoSaveState, setAutoSaveState] = useState<{ isDirty: boolean; canSave: boolean }>({
+    isDirty: false,
+    canSave: true,
+  });
+  const formAutoSaveRef = useRef<LiabilityFormAutoSaveHandle | null>(null);
+  // Tracks the freshly-created liability id when an auto-save in ADD mode
+  // POSTs a new record. We use this to know we need to router.refresh on close.
+  const autoSavedRef = useRef(false);
   const actualOpen = isControlled ? !!open : internalOpen;
   const isEdit = Boolean(editing);
 
@@ -52,10 +68,24 @@ export default function AddLiabilityDialog({
   }, []);
 
   function close() {
+    if (autoSavedRef.current) {
+      router.refresh();
+      autoSavedRef.current = false;
+    }
     if (isControlled) onOpenChange?.(false);
     else setInternalOpen(false);
     setActiveTab("details");
   }
+
+  const autoSave = useTabAutoSave({
+    isDirty: autoSaveState.isDirty,
+    canSave: autoSaveState.canSave,
+    saveAsync: async () => {
+      const handle = formAutoSaveRef.current;
+      if (!handle) return { ok: true };
+      return handle.saveAsync();
+    },
+  });
 
   return (
     <>
@@ -82,13 +112,22 @@ export default function AddLiabilityDialog({
           { id: "amortization", label: "Amortization" },
         ]}
         activeTab={activeTab}
-        onTabChange={(id) => setActiveTab(id as TabId)}
+        onTabChange={(id) =>
+          autoSave.interceptTabChange(id, (next) => setActiveTab(next as TabId))
+        }
+        tabBarRight={
+          <TabAutoSaveIndicator
+            saving={autoSave.saving}
+            error={autoSave.saveError}
+            onDismissError={autoSave.clearSaveError}
+          />
+        }
         primaryAction={
           activeTab === "details"
             ? {
                 label: isEdit ? "Save Changes" : "Add Liability",
                 form: "add-liability-form",
-                disabled: !submitState.canSubmit,
+                disabled: !submitState.canSubmit || autoSave.saving,
                 loading: submitState.loading,
               }
             : undefined
@@ -99,8 +138,12 @@ export default function AddLiabilityDialog({
             : undefined
         }
       >
-        {activeTab === "details" && (
+        {/* Details: kept mounted across tab switches so the form's in-memory
+            state survives — auto-save needs the form alive when the user
+            comes back to Details from Amortization. */}
+        <div className={activeTab === "details" ? "" : "hidden"}>
           <AddLiabilityForm
+            ref={formAutoSaveRef}
             clientId={clientId}
             realEstateAccounts={realEstateAccounts}
             entities={entities}
@@ -113,8 +156,12 @@ export default function AddLiabilityDialog({
             onSuccess={close}
             onValuesChange={handleValuesChange}
             onSubmitStateChange={setSubmitState}
+            onAutoSaveStateChange={setAutoSaveState}
+            onAutoSaved={() => {
+              autoSavedRef.current = true;
+            }}
           />
-        )}
+        </div>
         {activeTab === "amortization" && liveValues && (
           <LiabilityAmortizationTab
             clientId={clientId}

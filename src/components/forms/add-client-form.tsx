@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { inputClassName, selectClassName, textareaClassName, fieldLabelClassName } from "./input-styles";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import { useTabAutoSave, type SaveResult } from "@/lib/use-tab-auto-save";
+import TabAutoSaveIndicator from "../tab-auto-save-indicator";
 
 export interface ClientFormInitial {
   id: string;
@@ -49,6 +51,9 @@ interface AddClientFormProps {
   initial?: ClientFormInitial;
   onSuccess?: () => void;
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
+  /** Fires when an auto-save on tab switch creates or updates the client.
+   *  The dialog uses this to refresh the parent on close. */
+  onAutoSaved?: () => void;
 }
 
 function toDateInput(v: string | null | undefined): string {
@@ -57,34 +62,37 @@ function toDateInput(v: string | null | undefined): string {
   return String(v).slice(0, 10);
 }
 
-export default function AddClientForm({ mode = "create", initial, onSuccess, onSubmitStateChange }: AddClientFormProps) {
+export default function AddClientForm({ initial, onSuccess, onSubmitStateChange, onAutoSaved }: AddClientFormProps) {
   const router = useRouter();
-  // Edit-mode submits route through the unified writer so client-level field
-  // changes (retirement age, DOB, spouse info, etc.) record as scenario_change
-  // rows when `?scenario=<sid>` is active. In base mode the writer falls
-  // through to the legacy `PUT /api/clients/[id]` route. Create mode never
-  // goes through the writer — there's no client-id to attach a change to
-  // until the row exists.
-  const writer = useScenarioWriter(initial?.id ?? "");
+  // After an auto-save POSTs a brand-new client, subsequent saves route
+  // against the returned id. We can't mutate the `writer` (which is bound to
+  // initial?.id), but the create path doesn't go through the writer anyway —
+  // it uses raw fetch — so we patch the URL inside saveCore() based on this.
+  const [effectiveClientId, setEffectiveClientId] = useState<string | null>(initial?.id ?? null);
+  const writer = useScenarioWriter(effectiveClientId ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSpouse, setShowSpouse] = useState(Boolean(initial?.spouseName || initial?.spouseDob));
   const [activeTab, setActiveTab] = useState<FormTab>("details");
+  const formRef = useRef<HTMLFormElement | null>(null);
+  // Dirty-tracking for tab-switch auto-save. We track at the form level via
+  // `onChange` so we don't have to convert every input to controlled state.
+  const [dirty, setDirty] = useState(false);
+  const [canSave, setCanSave] = useState(true);
 
   useEffect(() => {
     onSubmitStateChange?.({ canSubmit: !loading, loading });
   }, [loading, onSubmitStateChange]);
 
-  const isEdit = mode === "edit" && initial;
+  // After auto-save in create mode, effectiveClientId is set and we route
+  // subsequent saves through PUT instead of POST.
+  const isEdit = effectiveClientId !== null;
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-
-    const form = e.currentTarget;
-    const data = new FormData(form);
-
+  // Build the request body from current FormData. Shared by the explicit-save
+  // submit handler and the auto-save-on-tab-switch path so both produce the
+  // same payload shape.
+  function buildBody(formEl: HTMLFormElement): Record<string, string | number | null | undefined> {
+    const data = new FormData(formEl);
     const body: Record<string, string | number | null | undefined> = {
       firstName: data.get("firstName") as string,
       lastName: data.get("lastName") as string,
@@ -125,18 +133,25 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onS
       body.spouseEmail = null;
       body.spouseAddress = null;
     }
+    return body;
+  }
 
+  // Pure save: writes through the writer (PUT) when we already have an id,
+  // otherwise POSTs via raw fetch (matches existing behavior). Returns a
+  // SaveResult plus the recordId so the auto-save path can promote ADD→EDIT.
+  async function saveCore(formEl: HTMLFormElement): Promise<SaveResult & { recordId?: string }> {
+    const body = buildBody(formEl);
     try {
       const res = isEdit
         ? await writer.submit(
             {
               op: "edit",
               targetKind: "client",
-              targetId: initial!.id,
+              targetId: effectiveClientId!,
               desiredFields: body,
             },
             {
-              url: `/api/clients/${initial!.id}`,
+              url: `/api/clients/${effectiveClientId}`,
               method: "PUT",
               body,
             },
@@ -146,36 +161,87 @@ export default function AddClientForm({ mode = "create", initial, onSuccess, onS
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
           });
-
       if (!res.ok) {
-        const json = await res.json();
-        throw new Error(json.error ?? "Failed to save client");
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        return { ok: false, error: json.error ?? "Failed to save client" };
       }
-
-      // The writer auto-refreshes on success in edit mode; create mode is a
-      // raw fetch and still needs the manual refresh.
-      if (!isEdit) router.refresh();
-      onSuccess?.();
+      const json = (await res.json().catch(() => null)) as { id?: string } | null;
+      const recordId = json?.id ?? effectiveClientId ?? undefined;
+      if (!effectiveClientId && recordId) setEffectiveClientId(recordId);
+      setDirty(false);
+      return { ok: true, recordId };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
+      return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
     }
   }
 
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    const result = await saveCore(e.currentTarget);
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    // Edit path: writer auto-refreshes. Create path: manual refresh.
+    if (!isEdit) router.refresh();
+    onSuccess?.();
+  }
+
+  const autoSave = useTabAutoSave({
+    isDirty: dirty,
+    canSave,
+    saveAsync: async () => {
+      const form = formRef.current;
+      if (!form) return { ok: true };
+      setLoading(true);
+      const result = await saveCore(form);
+      setLoading(false);
+      if (result.ok) onAutoSaved?.();
+      return result;
+    },
+  });
+
+  function handleFormChange() {
+    if (!dirty) setDirty(true);
+    const form = formRef.current;
+    if (form) setCanSave(form.checkValidity());
+  }
+
+  function goToTab(next: FormTab) {
+    void autoSave.interceptTabChange(next, (id) => setActiveTab(id as FormTab));
+  }
+
   return (
-    <form id="add-client-form" onSubmit={handleSubmit} className="space-y-4">
+    <form
+      id="add-client-form"
+      ref={formRef}
+      onSubmit={handleSubmit}
+      onChange={handleFormChange}
+      className="space-y-4"
+    >
       {error && (
         <p className="rounded bg-red-900/50 px-3 py-2 text-sm text-red-400">{error}</p>
       )}
 
-      <nav className="-mt-2 flex gap-1 border-b border-gray-700" role="tablist" aria-label="Client form sections">
-        <TabButton active={activeTab === "details"} onClick={() => setActiveTab("details")}>
-          Details
-        </TabButton>
-        <TabButton active={activeTab === "contact"} onClick={() => setActiveTab("contact")}>
-          Contact
-        </TabButton>
+      <nav className="-mt-2 flex items-center justify-between border-b border-gray-700" role="tablist" aria-label="Client form sections">
+        <div className="flex gap-1">
+          <TabButton active={activeTab === "details"} onClick={() => goToTab("details")}>
+            Details
+          </TabButton>
+          <TabButton active={activeTab === "contact"} onClick={() => goToTab("contact")}>
+            Contact
+          </TabButton>
+        </div>
+        <div className="pr-2">
+          <TabAutoSaveIndicator
+            saving={autoSave.saving}
+            error={autoSave.saveError}
+            onDismissError={autoSave.clearSaveError}
+          />
+        </div>
       </nav>
 
       <div role="tabpanel" hidden={activeTab !== "details"} className="space-y-4">
