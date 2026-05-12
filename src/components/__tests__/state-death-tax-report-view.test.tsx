@@ -151,4 +151,64 @@ describe("StateDeathTaxReportView", () => {
     expect(screen.getByText(/Amount Over Exemption/i)).toBeInTheDocument();
     expect(screen.getAllByText(/\$284,000/).length).toBeGreaterThan(0);
   });
+
+  const mdEstateDetail: import("@/lib/tax/state-estate").StateEstateTaxResult = {
+    state: "MD",
+    fallbackUsed: false, fallbackRate: 0,
+    exemption: 5_000_000, exemptionYear: 2026, giftAddback: 0,
+    baseForTax: 6_000_000, amountOverExemption: 1_000_000,
+    bracketLines: [{ from: 5_000_000, to: 6_000_000, rate: 0.16, amountTaxed: 1_000_000, tax: 160_000 }],
+    preCapTax: 160_000, stateEstateTax: 130_000,
+    notes: ["Citation: Md. Code, Tax-Gen. §7-309"],
+    inheritanceCredit: { applied: true, credit: 30_000, reduction: 30_000 },
+  };
+
+  const mdInheritance: import("@/lib/tax/state-inheritance").StateInheritanceTaxResult = {
+    state: "MD",
+    inactive: false,
+    estateMinimumFloorApplied: false,
+    totalTax: 30_000,
+    notes: ["Citation: Md. Code, Tax-Gen. §7-203"],
+    perRecipient: [{
+      recipientKey: "niece", label: "Niece Jones", classLabel: "C",
+      classSource: "derived-from-relationship",
+      grossShare: 300_000, excluded: 0, excludedReasons: [],
+      exemption: 0, taxableShare: 300_000,
+      bracketLines: [{ from: 0, to: 300_000, rate: 0.10, amountTaxed: 300_000, tax: 30_000 }],
+      tax: 30_000, netToRecipient: 270_000, notes: [],
+    }],
+  };
+
+  it("renders MD dual sections + combined total + credit callout", async () => {
+    const decedent: EstateTaxResult = {
+      ...(baseEstate as EstateTaxResult),
+      residenceState: "MD",
+      stateEstateTax: 130_000,
+      stateEstateTaxDetail: mdEstateDetail,
+      stateInheritanceTax: mdInheritance,
+    };
+    mockProjection({
+      firstDeathEvent: decedent,
+      secondDeathEvent: undefined,
+      years: [{ year: 2026, hypotheticalEstateTax: { year: 2026,
+        primaryFirst: { firstDecedent: "client", firstDeath: decedent,
+          firstDeathTransfers: [], totals: { federal: 0, state: 130_000, admin: 0, total: 160_000 } } } }],
+      todayHypotheticalEstateTax: { year: 2026,
+        primaryFirst: { firstDecedent: "client", firstDeath: decedent,
+          firstDeathTransfers: [], totals: { federal: 0, state: 130_000, admin: 0, total: 160_000 } } },
+    });
+
+    render(<StateDeathTaxReportView clientId="c1" {...ownerProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/State Estate Tax \(Maryland\)/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/State Inheritance Tax \(MD\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Niece Jones/)).toBeInTheDocument();
+    // Combined total: 130,000 + 30,000 = 160,000
+    expect(screen.getByText(/Total state death tax/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/\$160,000/).length).toBeGreaterThan(0);
+    // Credit callout
+    expect(screen.getByText(/inheritance.tax credit/i)).toBeInTheDocument();
+  });
 });
