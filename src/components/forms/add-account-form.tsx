@@ -357,6 +357,34 @@ export default function AddAccountForm({
   );
   const [customAllocations, setCustomAllocations] = useState<{ assetClassId: string; weight: number }[]>([]);
   const [allocationsLoaded, setAllocationsLoaded] = useState(false);
+  // Controlled state for previously-uncontrolled fields. Conversion from
+  // `defaultValue` is a prerequisite for tab-switch auto-save (the save path
+  // needs to read these without scraping FormData) — and it also closes a
+  // latent bug where the Realization tab's values weren't tracked in React
+  // state, so they couldn't participate in dirty-tracking.
+  const [growthRatePct, setGrowthRatePct] = useState<string>(() => {
+    if (initial?.growthRate != null && initial.growthRate !== "") {
+      return (Number(initial.growthRate) * 100).toString();
+    }
+    const cat = initial?.category ?? defaultCategory ?? "taxable";
+    const def = categoryDefaultSources?.[cat]?.blendedReturn;
+    return def != null ? String(def) : "7";
+  });
+  const [overridePctOi, setOverridePctOi] = useState<string>(
+    initial?.overridePctOi ? (Number(initial.overridePctOi) * 100).toFixed(2) : "",
+  );
+  const [overridePctLtCg, setOverridePctLtCg] = useState<string>(
+    initial?.overridePctLtCg ? (Number(initial.overridePctLtCg) * 100).toFixed(2) : "",
+  );
+  const [overridePctQdiv, setOverridePctQdiv] = useState<string>(
+    initial?.overridePctQdiv ? (Number(initial.overridePctQdiv) * 100).toFixed(2) : "",
+  );
+  const [overridePctTaxExempt, setOverridePctTaxExempt] = useState<string>(
+    initial?.overridePctTaxExempt ? (Number(initial.overridePctTaxExempt) * 100).toFixed(2) : "",
+  );
+  const [turnoverPct, setTurnoverPct] = useState<string>(
+    initial?.turnoverPct ? (Number(initial.turnoverPct) * 100).toFixed(2) : "0",
+  );
 
   const ASSET_MIX_CATEGORIES = ["taxable", "retirement"];
   const showAssetMixTab = ASSET_MIX_CATEGORIES.includes(category);
@@ -967,7 +995,9 @@ export default function AddAccountForm({
                       <PercentInput
                         id="growthRate"
                         name="growthRate"
-                        defaultValue={hasExplicitGrowth ? initialGrowthPct : 7}
+                        value={growthRatePct}
+                        onChange={(raw) => setGrowthRatePct(raw)}
+                        placeholder={String(hasExplicitGrowth ? initialGrowthPct : 7)}
                         className={inputClassName}
                       />
                     </div>
@@ -1005,7 +1035,8 @@ export default function AddAccountForm({
                   <PercentInput
                     id="growthRate"
                     name="growthRate"
-                    defaultValue={initialGrowthPct}
+                    value={growthRatePct}
+                    onChange={(raw) => setGrowthRatePct(raw)}
                     className={inputClassName}
                   />
                 </div>
@@ -1212,35 +1243,40 @@ export default function AddAccountForm({
               <div>
                 <label className={fieldLabelClassName}>Ordinary Income %</label>
                 <PercentInput name="overridePctOi"
-                  defaultValue={initial?.overridePctOi ? (Number(initial.overridePctOi) * 100).toFixed(2) : ""}
+                  value={overridePctOi}
+                  onChange={(raw) => setOverridePctOi(raw)}
                   placeholder="From portfolio"
                   className={inputClassName} />
               </div>
               <div>
                 <label className={fieldLabelClassName}>LT Capital Gains %</label>
                 <PercentInput name="overridePctLtCg"
-                  defaultValue={initial?.overridePctLtCg ? (Number(initial.overridePctLtCg) * 100).toFixed(2) : ""}
+                  value={overridePctLtCg}
+                  onChange={(raw) => setOverridePctLtCg(raw)}
                   placeholder="From portfolio"
                   className={inputClassName} />
               </div>
               <div>
                 <label className={fieldLabelClassName}>Qualified Dividends %</label>
                 <PercentInput name="overridePctQdiv"
-                  defaultValue={initial?.overridePctQdiv ? (Number(initial.overridePctQdiv) * 100).toFixed(2) : ""}
+                  value={overridePctQdiv}
+                  onChange={(raw) => setOverridePctQdiv(raw)}
                   placeholder="From portfolio"
                   className={inputClassName} />
               </div>
               <div>
                 <label className={fieldLabelClassName}>Tax-Exempt %</label>
                 <PercentInput name="overridePctTaxExempt"
-                  defaultValue={initial?.overridePctTaxExempt ? (Number(initial.overridePctTaxExempt) * 100).toFixed(2) : ""}
+                  value={overridePctTaxExempt}
+                  onChange={(raw) => setOverridePctTaxExempt(raw)}
                   placeholder="From portfolio"
                   className={inputClassName} />
               </div>
               <div>
                 <label className={fieldLabelClassName}>Turnover %</label>
                 <PercentInput name="turnoverPct"
-                  defaultValue={initial?.turnoverPct ? (Number(initial.turnoverPct) * 100).toFixed(2) : "0"}
+                  value={turnoverPct}
+                  onChange={(raw) => setTurnoverPct(raw)}
                   className={inputClassName} />
                 <p className="mt-1 text-xs text-gray-400">Portion of LT CG realized as short-term each year.</p>
               </div>
