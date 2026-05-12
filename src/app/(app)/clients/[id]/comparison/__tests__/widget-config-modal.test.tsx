@@ -66,6 +66,30 @@ describe("WidgetConfigModal", () => {
     expect(screen.getByRole("button", { name: /save/i })).not.toBeDisabled();
   });
 
+  it("seeds yearRange from the widget def's defaultYearRange when picking a kind", () => {
+    const onSave = vi.fn();
+    render(
+      <WidgetConfigModal
+        mode="create"
+        scenarios={[{ id: "base", name: "Base" }]}
+        availableYearRange={{ min: 2026, max: 2070 }}
+        plans={[]}
+        primaryScenarioId="base"
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /investments/i }));
+    fireEvent.click(screen.getByRole("button", { name: /asset allocation drift/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "allocation-drift",
+        yearRange: expect.objectContaining({ start: 2026, end: 2026 }),
+      }),
+    );
+  });
+
   it("Cancel does not call onSave", () => {
     const onSave = vi.fn();
     const onClose = vi.fn();

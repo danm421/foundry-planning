@@ -166,11 +166,15 @@ export function WidgetConfigModal(props: Props) {
   }, [def, plans, planIds]);
 
   const handlePickKind = (next: ComparisonWidgetKindV4) => {
+    const nextDef = COMPARISON_WIDGETS[next];
     setKind(next);
     const seeded = seedPlanIds(next, primaryScenarioId, scenarios);
     setPlanIds(seeded);
-    const seededConfig = COMPARISON_WIDGETS[next].defaultConfig;
-    setConfig(seededConfig);
+    setConfig(nextDef.defaultConfig);
+    const seededIds = new Set(seeded);
+    const seededPlans = plans.filter((p) => seededIds.has(p.id));
+    const yr = nextDef.defaultYearRange?.({ plans: seededPlans });
+    setYearRange(yr);
   };
 
   const handleSave = () => {
