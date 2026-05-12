@@ -100,28 +100,28 @@ export function WidgetConfigModal(props: Props) {
       role="dialog"
       aria-modal="true"
       aria-label={mode === "create" ? "Add widget" : "Edit widget"}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[85vh] w-[640px] max-w-full flex-col gap-3 overflow-hidden rounded-lg border border-slate-700 bg-slate-950 p-4 text-sm text-slate-200 shadow-xl"
+        className="flex max-h-[85vh] w-[640px] max-w-full flex-col gap-3 overflow-hidden rounded-[var(--radius)] border-2 border-ink-3 bg-card text-sm text-slate-200 shadow-2xl ring-1 ring-black/60"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">
+        <header className="flex items-center justify-between border-b border-hair px-4 py-3">
+          <h2 className="text-base font-semibold text-ink">
             {mode === "create" ? "Add widget" : `Edit: ${def?.title}`}
           </h2>
           <button
             type="button"
             aria-label="Close"
             onClick={onClose}
-            className="rounded px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+            className="rounded px-2 py-1 text-ink-3 hover:bg-card-hover hover:text-ink"
           >
             ✕
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto px-4 pt-3">
           {mode === "create" && (
             <section className="mb-3">
               <div className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">Widget</div>
@@ -191,7 +191,7 @@ export function WidgetConfigModal(props: Props) {
           )}
         </div>
 
-        <footer className="flex items-center justify-end gap-2 border-t border-slate-800 pt-3">
+        <footer className="flex items-center justify-end gap-2 border-t border-hair px-4 py-3">
           <button
             type="button"
             onClick={onClose}

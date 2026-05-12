@@ -162,6 +162,7 @@ export function ComparisonShell({
                       onAddRight={(cellId) => api.addEmptyCellRight(group.id, cellId)}
                       onAddDown={(cellId) => api.addEmptyCellDown(group.id, cellId)}
                       onChangeSpan={(cellId, span) => api.setCellSpan(cellId, span)}
+                      onSetCellWidget={(cellId, widget) => api.setCellWidget(cellId, widget)}
                     />
                   ))}
                 </SortableContext>

@@ -6,7 +6,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { CellSpan, Group } from "@/lib/comparison/layout-schema";
+import type { CellSpan, Group, WidgetInstance } from "@/lib/comparison/layout-schema";
 import { CanvasCell, type ScenarioLookup } from "./canvas-cell";
 
 interface Props {
@@ -21,6 +21,7 @@ interface Props {
   onAddRight: (cellId: string) => void;
   onAddDown: (cellId: string) => void;
   onChangeSpan: (cellId: string, span: CellSpan) => void;
+  onSetCellWidget?: (cellId: string, widget: WidgetInstance) => void;
 }
 
 export function CanvasGroup({
@@ -35,6 +36,7 @@ export function CanvasGroup({
   onAddRight,
   onAddDown,
   onChangeSpan,
+  onSetCellWidget,
 }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: group.id,
@@ -103,6 +105,7 @@ export function CanvasGroup({
               onAddRight={() => onAddRight(cell.id)}
               onAddDown={() => onAddDown(cell.id)}
               onChangeSpan={(span) => onChangeSpan(cell.id, span)}
+              onSetWidget={onSetCellWidget ? (widget) => onSetCellWidget(cell.id, widget) : undefined}
             />
           ))}
         </div>
