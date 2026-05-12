@@ -68,12 +68,19 @@ describe("WidgetConfigModal", () => {
 
   it("seeds yearRange from the widget def's defaultYearRange when picking a kind", () => {
     const onSave = vi.fn();
+    const plans = [
+      {
+        id: "base",
+        label: "Base",
+        result: { years: [{ year: 2026 }, { year: 2027 }] },
+      } as never,
+    ];
     render(
       <WidgetConfigModal
         mode="create"
         scenarios={[{ id: "base", name: "Base" }]}
         availableYearRange={{ min: 2026, max: 2070 }}
-        plans={[]}
+        plans={plans}
         primaryScenarioId="base"
         onSave={onSave}
         onClose={vi.fn()}

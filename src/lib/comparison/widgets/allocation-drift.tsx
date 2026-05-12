@@ -7,6 +7,11 @@ export const allocationDriftWidget: ComparisonWidgetDefinition = {
   category: "investments",
   scenarios: "one-or-many",
   needsMc: false,
+  defaultYearRange: ({ plans }) => {
+    const planStart = plans[0]?.result.years[0]?.year;
+    if (planStart == null) return undefined;
+    return { start: planStart, end: planStart };
+  },
   render: ({ plans, yearRange }) => (
     <AllocationDriftComparisonSection plans={plans} yearRange={yearRange} />
   ),
