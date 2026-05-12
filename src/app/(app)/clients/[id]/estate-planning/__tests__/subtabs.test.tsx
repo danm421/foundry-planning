@@ -40,12 +40,13 @@ describe("EstatePlanningSubtabs", () => {
     vi.mocked(usePathname).mockReturnValue("/clients/c1/estate-planning");
     const { container } = render(<EstatePlanningSubtabs clientId="c1" />);
     const links = Array.from(container.querySelectorAll("a"));
-    expect(links).toHaveLength(5);
+    expect(links).toHaveLength(6);
     expect(links[0].getAttribute("href")).toBe("/clients/c1/estate-planning");
     expect(links[1].getAttribute("href")).toBe("/clients/c1/estate-planning/estate-tax");
-    expect(links[2].getAttribute("href")).toBe("/clients/c1/estate-planning/estate-transfer");
-    expect(links[3].getAttribute("href")).toBe("/clients/c1/estate-planning/liquidity");
-    expect(links[4].getAttribute("href")).toBe("/clients/c1/estate-planning/gift-tax");
+    expect(links[2].getAttribute("href")).toBe("/clients/c1/estate-planning/inheritance-tax");
+    expect(links[3].getAttribute("href")).toBe("/clients/c1/estate-planning/estate-transfer");
+    expect(links[4].getAttribute("href")).toBe("/clients/c1/estate-planning/liquidity");
+    expect(links[5].getAttribute("href")).toBe("/clients/c1/estate-planning/gift-tax");
   });
 
   it("marks Planning active on the exact /estate-planning path", () => {
