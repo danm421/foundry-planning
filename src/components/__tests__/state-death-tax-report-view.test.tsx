@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({ get: () => null }),
@@ -266,5 +267,73 @@ describe("StateDeathTaxReportView", () => {
     expect(screen.getByText(/Total state death tax/i)).toBeInTheDocument();
     // 50,000 + 20,000 = 70,000
     expect(screen.getAllByText(/\$70,000/).length).toBeGreaterThan(0);
+  });
+
+  it("renders grand totals across both deaths in Split view", async () => {
+    const first: EstateTaxResult = {
+      ...(baseEstate as EstateTaxResult),
+      deceased: "client",
+      year: 2042,
+      residenceState: "MD",
+      stateEstateTax: 130_000,
+      stateEstateTaxDetail: mdEstateDetail,
+      stateInheritanceTax: mdInheritance,
+    };
+    const secondInheritance: import("@/lib/tax/state-inheritance").StateInheritanceTaxResult = {
+      ...mdInheritance,
+      totalTax: 10_000,
+      perRecipient: [{
+        ...mdInheritance.perRecipient[0],
+        tax: 10_000,
+        taxableShare: 100_000,
+        grossShare: 100_000,
+        netToRecipient: 90_000,
+        bracketLines: [{ from: 0, to: 100_000, rate: 0.1, amountTaxed: 100_000, tax: 10_000 }],
+      }],
+    };
+    const second: EstateTaxResult = {
+      ...(baseEstate as EstateTaxResult),
+      deceased: "spouse",
+      deathOrder: 2,
+      year: 2045,
+      residenceState: "MD",
+      stateEstateTax: 50_000,
+      stateEstateTaxDetail: {
+        ...mdEstateDetail,
+        stateEstateTax: 50_000,
+        inheritanceCredit: { applied: true, credit: 10_000, reduction: 10_000 },
+      },
+      stateInheritanceTax: secondInheritance,
+    };
+    mockProjection({
+      firstDeathEvent: first,
+      secondDeathEvent: second,
+      years: [{ year: 2026, hypotheticalEstateTax: null }],
+      todayHypotheticalEstateTax: { year: 2026,
+        primaryFirst: { firstDecedent: "client", firstDeath: first,
+          firstDeathTransfers: [], totals: { federal: 0, state: 0, admin: 0, total: 0 } } },
+    });
+
+    render(
+      <StateDeathTaxReportView
+        clientId="c1"
+        isMarried
+        ownerNames={{ clientName: "Alex", spouseName: "Sam" }}
+        ownerDobs={{ clientDob: "1970-01-01", spouseDob: "1972-06-01" }}
+        retirementYear={2035}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Split Death/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: /Split Death/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Grand totals/i)).toBeInTheDocument();
+    });
+    // 130_000 + 30_000 + 50_000 + 10_000 = 220_000
+    expect(screen.getAllByText(/\$220,000/).length).toBeGreaterThan(0);
   });
 });

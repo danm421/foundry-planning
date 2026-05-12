@@ -239,6 +239,12 @@ export default function StateDeathTaxReportView({
           </>
         )
       )}
+      {isSplit && splitFirst && splitSecond && (
+        <GrandTotalsCard first={splitFirst} second={splitSecond} />
+      )}
+      {!isSplit && isMarried && activeOrdering?.firstDeath && activeOrdering.finalDeath && (
+        <GrandTotalsCard first={activeOrdering.firstDeath} second={activeOrdering.finalDeath} />
+      )}
     </div>
   );
 }
@@ -357,6 +363,38 @@ function StateEstateTaxSection({ detail }: { detail: StateEstateTaxResult }) {
         </div>
       )}
     </Section>
+  );
+}
+
+function deathTotal(r: EstateTaxResult): number {
+  return r.stateEstateTax + (r.stateInheritanceTax && !r.stateInheritanceTax.inactive
+    ? r.stateInheritanceTax.totalTax
+    : 0);
+}
+
+function GrandTotalsCard({ first, second }: { first: EstateTaxResult; second: EstateTaxResult }) {
+  const total = deathTotal(first) + deathTotal(second);
+  const accent = total > 0 ? "text-rose-200" : "text-emerald-200";
+  return (
+    <section className="overflow-hidden rounded-xl border border-indigo-900/50 bg-indigo-950/15">
+      <header className="border-b border-indigo-900/40 px-5 py-3">
+        <h2 className="text-base font-semibold text-gray-50">Grand totals — state death taxes</h2>
+      </header>
+      <div className="px-5 py-3">
+        <LineRow label="First decedent state death tax" amount={deathTotal(first)} />
+        <LineRow label="Second decedent state death tax" amount={deathTotal(second)} />
+      </div>
+      <div className="border-t border-indigo-900/40 bg-indigo-950/30 px-5 py-3">
+        <div className="flex items-baseline justify-between gap-4">
+          <span className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-100">
+            Total state death taxes
+          </span>
+          <span className={"text-xl font-semibold tabular-nums " + accent}>
+            {fmt.format(total)}
+          </span>
+        </div>
+      </div>
+    </section>
   );
 }
 
