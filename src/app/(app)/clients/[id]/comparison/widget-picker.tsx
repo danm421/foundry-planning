@@ -142,6 +142,3 @@ export function WidgetPicker({ api, primaryScenarioId }: Props) {
     </aside>
   );
 }
-
-// Temporary back-compat alias used by comparison-shell.tsx until Task 11.
-export { WidgetPicker as WidgetPanel };

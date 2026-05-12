@@ -38,7 +38,28 @@ vi.mock("../use-preview-plans", () => {
 });
 
 vi.mock("../widget-picker", () => ({
-  WidgetPanel: () => <div data-testid="widget-panel" />,
+  WidgetPicker: ({ api }: { api: { addRow: () => { rowId: string; placeholderCellId: string }; addCell: (rowId: string, kind: string) => void; removeCell: (rowId: string, cellId: string) => void } }) => (
+    <div aria-label="Widget picker">
+      <button
+        onClick={() => {
+          const { rowId, placeholderCellId } = api.addRow();
+          api.addCell(rowId, "portfolio");
+          api.removeCell(rowId, placeholderCellId);
+        }}
+      >
+        Add portfolio
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("../widget-config-popover", () => ({
+  WidgetConfigPopover: ({ anchor, onClose }: { anchor: HTMLElement | null; onClose: () => void }) =>
+    anchor === null ? null : (
+      <div role="dialog" aria-label="Edit widget">
+        <button onClick={onClose}>Close popover</button>
+      </div>
+    ),
 }));
 
 const layout: ComparisonLayoutV4 = {
@@ -62,7 +83,8 @@ describe("ComparisonShell (v4)", () => {
       />,
     );
     expect(screen.queryByText(/portfolio \(base\)/)).toBeNull();
-    expect(screen.getByText(/portfolio/i)).toBeInTheDocument(); // card title
+    // Card title "portfolio" — exact match excludes the picker's "Add portfolio" button.
+    expect(screen.getByText("portfolio")).toBeInTheDocument();
   });
 
   it("switches to Preview-mode rendering and binds planIds", () => {
@@ -78,7 +100,7 @@ describe("ComparisonShell (v4)", () => {
     expect(screen.getByText(/portfolio \(base\)/)).toBeInTheDocument();
   });
 
-  it("opens the WidgetPanel on gear click", () => {
+  it("renders the WidgetPicker rail always (no gear button)", () => {
     render(
       <ComparisonShell
         clientId="c"
@@ -87,8 +109,35 @@ describe("ComparisonShell (v4)", () => {
         primaryScenarioId="base"
       />,
     );
-    fireEvent.click(screen.getByLabelText(/Open widget panel/i));
-    expect(screen.getByTestId("widget-panel")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Widget picker/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Open widget panel/i)).toBeNull();
+  });
+
+  it("clicking ✎ on a card opens the config popover anchored to it", () => {
+    render(
+      <ComparisonShell
+        clientId="c"
+        initialLayout={layout}
+        scenarios={scenarios}
+        primaryScenarioId="base"
+      />,
+    );
+    fireEvent.click(screen.getByLabelText(/Edit widget/i));
+    expect(screen.getByRole("dialog", { name: /edit widget/i })).toBeInTheDocument();
+  });
+
+  it("Save button is disabled until a change is made", () => {
+    render(
+      <ComparisonShell
+        clientId="c"
+        initialLayout={layout}
+        scenarios={scenarios}
+        primaryScenarioId="base"
+      />,
+    );
+    expect(screen.getByRole("button", { name: /^save$/i })).toBeDisabled();
+    fireEvent.click(screen.getByText(/add portfolio/i));
+    expect(screen.getByRole("button", { name: /^save$/i })).not.toBeDisabled();
   });
 
   it("renders the report title and updates on input", () => {
