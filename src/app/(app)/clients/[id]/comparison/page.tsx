@@ -1,17 +1,8 @@
-// src/app/(app)/clients/[id]/comparison/page.tsx
-import { notFound } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { scenarios as scenariosTable, scenarioSnapshots, clients } from "@/db/schema";
+import { scenarios as scenariosTable, clients } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
-import { parsePlansSearchParam } from "@/lib/scenario/scenario-from-search-params";
-import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
-import { buildYearlyEstateReport } from "@/lib/estate/yearly-estate-report";
-import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
-import { loadPanelData } from "@/lib/scenario/load-panel-data";
-import { buildComparisonPlans } from "@/lib/comparison/build-comparison-plans";
 import { loadLayout } from "@/lib/comparison/load-layout";
-import type { SnapshotOption } from "@/components/scenario/scenario-picker-dropdown";
 import { ComparisonPageClient } from "./comparison-page-client";
 
 interface PageProps {
@@ -19,14 +10,31 @@ interface PageProps {
   searchParams: Promise<Record<string, string | undefined>>;
 }
 
+function parseUrlPlanIds(sp: Record<string, string | undefined>): string[] | null {
+  const raw = sp.plans;
+  if (raw && raw.length > 0) {
+    return raw.split(",").map((t) => t.trim()).filter(Boolean);
+  }
+  if (sp.left !== undefined || sp.right !== undefined) {
+    return [sp.left ?? "base", sp.right ?? "base"];
+  }
+  return null;
+}
+
 export default async function ComparisonPage({ params, searchParams }: PageProps) {
   const { id: clientId } = await params;
   const sp = await searchParams;
   const firmId = await requireOrgId();
 
-  const refs = parsePlansSearchParam(sp);
-
-  const [scenarios, snapshots, plans, initialLayout] = await Promise.all([
+  const [client, scenarios, initialLayout] = await Promise.all([
+    db
+      .select({
+        firstName: clients.firstName,
+        lastName: clients.lastName,
+      })
+      .from(clients)
+      .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)))
+      .then((rows) => rows[0] ?? null),
     db
       .select({
         id: scenariosTable.id,
@@ -36,81 +44,36 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
       .from(scenariosTable)
       .innerJoin(clients, eq(clients.id, scenariosTable.clientId))
       .where(and(eq(scenariosTable.clientId, clientId), eq(clients.firmId, firmId))),
-    db
-      .select({
-        id: scenarioSnapshots.id,
-        name: scenarioSnapshots.name,
-        sourceKind: scenarioSnapshots.sourceKind,
-      })
-      .from(scenarioSnapshots)
-      .innerJoin(clients, eq(clients.id, scenarioSnapshots.clientId))
-      .where(and(eq(scenarioSnapshots.clientId, clientId), eq(clients.firmId, firmId))),
-    buildComparisonPlans({
-      refs,
-      loadProjection: (ref) =>
-        loadProjectionForRef(clientId, firmId, ref).catch((e: unknown) => {
-          if (e instanceof Error && /not found|no base case/i.test(e.message)) notFound();
-          throw e;
-        }),
-      loadPanel: async (ref, label) => {
-        if (ref.kind !== "scenario" || ref.id === "base") return null;
-        const d = await loadPanelData(clientId, ref.id, firmId);
-        if (!d) return null;
-        return {
-          scenarioId: d.scenarioId,
-          scenarioName: d.scenarioName,
-          label,
-          changes: d.changes,
-          toggleGroups: d.toggleGroups,
-          cascadeWarnings: d.cascadeWarnings,
-          targetNames: d.targetNames,
-        };
-      },
-      buildEstateRows: (l) => {
-        const clientInfo = l.tree.client;
-        return buildYearlyEstateReport({
-          projection: l.result,
-          clientData: l.tree,
-          ordering: "primaryFirst",
-          ownerNames: {
-            clientName: `${clientInfo.firstName} ${clientInfo.lastName}`.trim(),
-            spouseName: clientInfo.spouseName ?? null,
-          },
-          ownerDobs: {
-            clientDob: clientInfo.dateOfBirth,
-            spouseDob: clientInfo.spouseDob ?? null,
-          },
-        });
-      },
-      buildLiquidityRows: (l) => {
-        const clientInfo = l.tree.client;
-        return buildYearlyLiquidityReport({
-          projection: l.result,
-          clientData: l.tree,
-          ownerNames: {
-            clientName: `${clientInfo.firstName} ${clientInfo.lastName}`.trim(),
-            spouseName: clientInfo.spouseName ?? null,
-          },
-          ownerDobs: {
-            clientDob: clientInfo.dateOfBirth,
-            spouseDob: clientInfo.spouseDob ?? null,
-          },
-        });
-      },
+    loadLayout(clientId, firmId, {
+      primaryScenarioId: "base",
+      urlPlanIds: parseUrlPlanIds(sp),
+      defaultTitle: undefined, // resolved below after we know the client name
     }),
-    loadLayout(clientId, firmId),
   ]);
 
-  const drawerPlans = plans.map((p) => p.panelData).filter((p) => p !== null);
+  if (!client) {
+    const { notFound } = await import("next/navigation");
+    notFound();
+  }
+
+  const scenarioLookup: { id: string; name: string }[] = [
+    { id: "base", name: "Base case" },
+    ...scenarios.map((s) => ({ id: s.id, name: s.name })),
+  ];
+
+  // If the layout came back with the generic default title, prefer a personalized
+  // one based on the client name. We don't re-save here; the next user save will.
+  const personalizedLayout =
+    initialLayout.title === "Comparison Report" && client
+      ? { ...initialLayout, title: `${client.firstName} ${client.lastName} — Report`.trim() }
+      : initialLayout;
 
   return (
     <ComparisonPageClient
       clientId={clientId}
-      plans={plans}
-      initialLayout={initialLayout}
-      scenarios={scenarios}
-      snapshots={snapshots as SnapshotOption[]}
-      drawerPlans={drawerPlans}
+      initialLayout={personalizedLayout}
+      scenarios={scenarioLookup}
+      primaryScenarioId="base"
     />
   );
 }

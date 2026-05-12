@@ -1,95 +1,145 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import type {
-  ComparisonLayout,
-  YearRange,
-} from "@/lib/comparison/layout-schema";
-import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
+import { useMemo, useState } from "react";
+import type { ComparisonLayoutV4 } from "@/lib/comparison/layout-schema";
 import { COMPARISON_WIDGETS } from "@/lib/comparison/widgets/registry";
 import { useLayout } from "./use-layout";
 import { useSharedMcRun } from "./use-shared-mc-run";
+import { usePreviewPlans } from "./use-preview-plans";
 import { WidgetRenderer } from "./widget-renderer";
 import { WidgetPanel } from "./widget-panel";
+import { CanvasRow } from "./canvas-row";
+import { ReportTitle } from "./report-title";
+import { ModeToggle, type CanvasMode } from "./mode-toggle";
 
 interface Props {
   clientId: string;
-  plans: ComparisonPlan[];
-  initialLayout: ComparisonLayout;
-  /** True while the right-side Widget panel is open. */
-  panelOpen: boolean;
-  onClosePanel: () => void;
-  yearRange: YearRange | null;
+  initialLayout: ComparisonLayoutV4;
+  scenarios: { id: string; name: string }[];
+  primaryScenarioId: string;
+}
+
+function uniquePlanIds(layout: ComparisonLayoutV4): string[] {
+  const set = new Set<string>();
+  for (const r of layout.rows) {
+    for (const c of r.cells) {
+      for (const pid of c.widget.planIds) set.add(pid);
+    }
+  }
+  return Array.from(set);
 }
 
 export function ComparisonShell({
   clientId,
-  plans,
   initialLayout,
-  panelOpen,
-  onClosePanel,
-  yearRange,
+  scenarios,
+  primaryScenarioId,
 }: Props) {
   const api = useLayout(initialLayout, clientId);
-  const layout = api.layout;
-  const { setYearRange } = api;
+  const [mode, setMode] = useState<CanvasMode>("layout");
+  const [panelOpen, setPanelOpen] = useState(false);
 
-  // Mirror the page-owned yearRange into the saved-layout state so panel-Done
-  // saves include the current slider value. setYearRange has a same-value
-  // bail-out, so this is safe to fire each render.
-  useEffect(() => {
-    setYearRange(yearRange);
-  }, [yearRange, setYearRange]);
+  const planIds = useMemo(() => uniquePlanIds(api.layout), [api.layout]);
 
-  const mcEnabled = useMemo(
-    () => layout.items.some((i) => COMPARISON_WIDGETS[i.kind].needsMc),
-    [layout.items],
+  const preview = usePreviewPlans({
+    clientId,
+    planIds,
+    enabled: mode === "preview",
+  });
+
+  const previewPlans = useMemo(
+    () => (preview.status === "ready" ? preview.plans ?? [] : []),
+    [preview],
   );
+
+  const mcEnabled =
+    mode === "preview" &&
+    api.layout.rows.some((r) =>
+      r.cells.some((c) => COMPARISON_WIDGETS[c.widget.kind].needsMc),
+    );
 
   const mcState = useSharedMcRun({
     clientId,
-    plans,
+    plans: previewPlans,
     enabled: mcEnabled,
   });
   const mc = mcState.status === "ready" ? mcState.result ?? null : null;
 
-  const isLive =
-    plans.length >= 2 && plans.some((p, i) => i > 0 && p.id !== plans[0].id);
-
-  if (!isLive && !panelOpen) {
-    return (
-      <div className="px-6 py-16 text-center text-slate-400">
-        Pick a second plan to see the comparison.
-      </div>
-    );
-  }
-
-  const handleDone = async () => {
-    try {
-      await api.save();
-    } catch (e) {
-      console.error("[comparison-layout] save failed:", e);
-    } finally {
-      onClosePanel();
+  const availableYearRange = useMemo(() => {
+    const years = previewPlans.flatMap((p) => p.result.years.map((y) => y.year));
+    if (years.length === 0) {
+      const yr = new Date().getFullYear();
+      return { min: yr, max: yr + 30 };
     }
-  };
+    return { min: Math.min(...years), max: Math.max(...years) };
+  }, [previewPlans]);
 
   return (
     <>
-      <WidgetRenderer
-        layout={layout}
-        clientId={clientId}
-        plans={plans}
-        mc={mc}
-        yearRange={yearRange}
-        editing={panelOpen}
-        onTextChange={api.updateTextMarkdown}
-      />
+      <header className="sticky top-0 z-20 flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-950/95 px-6 py-3 backdrop-blur">
+        <ReportTitle value={api.layout.title} onChange={api.setTitle} />
+        <ModeToggle mode={mode} onChange={setMode} />
+        <button
+          type="button"
+          aria-label="Open widget panel"
+          onClick={() => setPanelOpen(true)}
+          className="ml-auto rounded border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
+        >
+          ⚙
+        </button>
+      </header>
+
+      {mode === "layout" ? (
+        <div className="flex flex-col gap-2 px-4 py-4">
+          {api.layout.rows.length === 0 ? (
+            <div className="px-2 py-16 text-center text-slate-400">
+              No widgets — open the Widget panel to add some.
+            </div>
+          ) : (
+            api.layout.rows.map((row) => (
+              <CanvasRow
+                key={row.id}
+                row={row}
+                scenarios={scenarios}
+                onEditCell={() => setPanelOpen(true)}
+                onRemoveCell={(rowId, cellId) => api.removeCell(rowId, cellId)}
+                onAddCell={(rowId) => api.addCell(rowId, "text")}
+                onDeleteRow={(rowId) => api.removeRow(rowId)}
+              />
+            ))
+          )}
+          <button
+            type="button"
+            onClick={() => api.addRow()}
+            className="self-start rounded border border-dashed border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800"
+          >
+            + Add row
+          </button>
+        </div>
+      ) : preview.status === "loading" ? (
+        <div className="px-6 py-16 text-center text-slate-400">
+          Loading plan data…
+        </div>
+      ) : preview.status === "error" ? (
+        <div className="px-6 py-16 text-center text-red-400">
+          Couldn&apos;t load plan data: {preview.error}
+        </div>
+      ) : (
+        <WidgetRenderer
+          layout={api.layout}
+          clientId={clientId}
+          plans={previewPlans}
+          mc={mc}
+        />
+      )}
+
       {panelOpen && (
         <WidgetPanel
-          layout={layout}
           api={api}
-          onDone={handleDone}
+          scenarios={scenarios}
+          availableYearRange={availableYearRange}
+          primaryScenarioId={primaryScenarioId}
+          onDone={() => setPanelOpen(false)}
         />
       )}
     </>
