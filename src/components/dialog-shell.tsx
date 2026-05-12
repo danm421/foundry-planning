@@ -23,6 +23,10 @@ interface DialogShellProps {
   tabs?: DialogTab[];
   activeTab?: string;
   onTabChange?: (id: string) => void;
+  /** Rendered to the right of the tab strip — used by auto-save dialogs to
+   *  show a "Saving…" indicator or inline error chip without restructuring
+   *  the tabs row. */
+  tabBarRight?: ReactNode;
   primaryAction?: ActionConfig;
   secondaryAction?: ActionConfig;        // defaults to a Cancel button that closes the dialog
   destructiveAction?: ActionConfig;
@@ -44,6 +48,7 @@ export default function DialogShell({
   tabs,
   activeTab,
   onTabChange,
+  tabBarRight,
   primaryAction,
   secondaryAction,
   destructiveAction,
@@ -117,7 +122,12 @@ export default function DialogShell({
 
         {/* Tabs */}
         {tabs && tabs.length > 0 && activeTab !== undefined && onTabChange && (
-          <DialogTabs tabs={tabs} activeTab={activeTab} onTabChange={onTabChange} />
+          <DialogTabs
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={onTabChange}
+            right={tabBarRight}
+          />
         )}
 
         {/* Body */}
