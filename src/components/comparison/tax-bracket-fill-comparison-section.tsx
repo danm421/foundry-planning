@@ -6,6 +6,8 @@ import {
   CategoryScale,
   LinearScale,
   BarElement,
+  LineElement,
+  PointElement,
   Tooltip,
   Legend,
 } from "chart.js";
@@ -15,9 +17,21 @@ import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { YearRange } from "@/lib/comparison/layout-schema";
 import { seriesColor } from "@/lib/comparison/series-palette";
 import { buildTaxBracketRows } from "@/lib/reports/tax-bracket";
-import { inferOrdinaryBrackets, sliceIntoBrackets } from "@/lib/comparison/bracket-fill";
+import {
+  bracketTopsByYear,
+  inferOrdinaryBrackets,
+  sliceIntoBrackets,
+} from "@/lib/comparison/bracket-fill";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  LineElement,
+  PointElement,
+  Tooltip,
+  Legend,
+);
 
 const RATE_COLOR: Record<string, string> = {
   "0.10": "#16a34a",
@@ -60,6 +74,8 @@ function PlanCard({ plan, yearRange, index }: { plan: ComparisonPlan; yearRange:
     return [...set].sort((a, b) => a - b);
   }, [years]);
 
+  const bracketTops = useMemo(() => bracketTopsByYear(years), [years]);
+
   const data = useMemo(() => {
     const labels = rows.map((r) => String(r.year));
     const yearMeta = years.map((y) => {
@@ -69,16 +85,26 @@ function PlanCard({ plan, yearRange, index }: { plan: ComparisonPlan; yearRange:
       const slices = sliceIntoBrackets(tr.flow.incomeTaxBase, brackets);
       return { brackets, slices };
     });
-    return {
-      labels,
-      datasets: allRates.map((rate) => ({
-        label: rateLabel(rate),
-        data: yearMeta.map((m) => m.slices.find((s) => s.rate === rate)?.amount ?? 0),
-        backgroundColor: rateColor(rate),
-        stack: "tbf",
-      })),
-    };
-  }, [years, rows, allRates]);
+    const barDatasets = allRates.map((rate) => ({
+      label: rateLabel(rate),
+      data: yearMeta.map((m) => m.slices.find((s) => s.rate === rate)?.amount ?? 0),
+      backgroundColor: rateColor(rate),
+      stack: "tbf",
+    }));
+    const lineDatasets = Array.from(bracketTops.entries()).map(([rate, series]) => ({
+      type: "line" as const,
+      label: `Top of ${rateLabel(rate)}`,
+      data: series,
+      borderColor: rateColor(rate) + "cc",
+      backgroundColor: "transparent",
+      borderWidth: 1,
+      borderDash: [4, 4] as [number, number],
+      pointRadius: 0,
+      stepped: "before" as const,
+      fill: false,
+    }));
+    return { labels, datasets: [...barDatasets, ...lineDatasets] };
+  }, [years, rows, allRates, bracketTops]);
 
   const options = useMemo(
     () => ({
