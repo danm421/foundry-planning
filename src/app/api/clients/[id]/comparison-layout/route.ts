@@ -6,7 +6,8 @@ import { clients, clientComparisonLayouts } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { authErrorResponse } from "@/lib/authz";
-import { ComparisonLayoutSchema } from "@/lib/comparison/layout-schema";
+import { ComparisonLayoutV4Schema } from "@/lib/comparison/layout-schema";
+import { validateLayoutV4 } from "@/lib/comparison/validate-layout-v4";
 import { loadLayout } from "@/lib/comparison/load-layout";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,10 @@ export async function GET(
     const client = await requireClientInFirm(id, firmId);
     if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const layout = await loadLayout(id, firmId);
+    const layout = await loadLayout(id, firmId, {
+      primaryScenarioId: "base",
+      urlPlanIds: null,
+    });
     return NextResponse.json({ layout });
   } catch (err) {
     const authResp = authErrorResponse(err);
@@ -49,7 +53,14 @@ export async function PUT(
     const client = await requireClientInFirm(id, firmId);
     if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const body = ComparisonLayoutSchema.parse(await req.json());
+    const body = ComparisonLayoutV4Schema.parse(await req.json());
+
+    const validation = validateLayoutV4(body);
+    if (!validation.ok) {
+      return NextResponse.json({ errors: validation.errors }, { status: 422 });
+    }
+
+    const cellCount = body.rows.reduce((n, r) => n + r.cells.length, 0);
 
     const [row] = await db
       .insert(clientComparisonLayouts)
@@ -66,7 +77,7 @@ export async function PUT(
       resourceId: row.id,
       clientId: id,
       firmId,
-      metadata: { itemCount: body.items.length },
+      metadata: { rowCount: body.rows.length, cellCount },
     });
 
     return NextResponse.json({ layout: body });
