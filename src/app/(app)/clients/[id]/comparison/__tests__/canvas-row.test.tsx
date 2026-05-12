@@ -97,4 +97,36 @@ describe("CanvasRow", () => {
     fireEvent.click(removeButtons[0]);
     expect(onRemoveCell).toHaveBeenCalledWith("row-1", "c1");
   });
+
+  it("invokes onDeleteRow with the row id when Delete row is clicked", () => {
+    const onDeleteRow = vi.fn();
+    render(
+      <CanvasRow
+        row={row}
+        scenarios={[{ id: "base", name: "Base" }]}
+        onEditCell={vi.fn()}
+        onRemoveCell={vi.fn()}
+        onAddCell={vi.fn()}
+        onDeleteRow={onDeleteRow}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText(/Delete row/i));
+    expect(onDeleteRow).toHaveBeenCalledWith("row-1");
+  });
+
+  it("invokes onEditCell with the cell id when Edit widget is clicked", () => {
+    const onEditCell = vi.fn();
+    render(
+      <CanvasRow
+        row={row}
+        scenarios={[{ id: "base", name: "Base" }]}
+        onEditCell={onEditCell}
+        onRemoveCell={vi.fn()}
+        onAddCell={vi.fn()}
+        onDeleteRow={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getAllByLabelText(/Edit widget/i)[0]);
+    expect(onEditCell).toHaveBeenCalledWith("c1");
+  });
 });

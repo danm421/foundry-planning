@@ -33,7 +33,7 @@ export function WidgetCard({ widget, widthBadge, scenarios, onEdit, onRemove }: 
       className="flex h-full flex-col gap-2 rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm text-slate-200"
     >
       <div className="flex items-start gap-2">
-        <span className="text-slate-400">⋮⋮</span>
+        <span className="text-slate-400" aria-hidden="true">⋮⋮</span>
         <span className="flex-1 truncate font-medium">{def.title}</span>
         <span className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-400">
           {widthBadge}
