@@ -33,6 +33,7 @@ export interface UseLayoutApi {
     fromRowId: string, fromIndex: number,
     toRowId: string, toIndex: number,
   ) => void;
+  duplicateCell: (rowId: string, cellId: string) => void;
   updateWidgetPlanIds: (cellId: string, planIds: string[]) => void;
   updateWidgetYearRange: (cellId: string, yearRange: YearRange | undefined) => void;
   updateWidgetConfig: (cellId: string, config: unknown) => void;
@@ -40,6 +41,7 @@ export interface UseLayoutApi {
   reset: (primaryScenarioId: string) => void;
   save: () => Promise<void>;
   saving: boolean;
+  dirty: boolean;
 }
 
 function defaultPlanIdsFor(
@@ -103,9 +105,11 @@ function mapCellById(
 export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLayoutApi {
   const [layout, setLayout] = useState<ComparisonLayoutV4>(initial);
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
   const setTitle = useCallback((title: string) => {
     setLayout((p) => (p.title === title ? p : { ...p, title }));
+    setDirty(true);
   }, []);
 
   const addRow = useCallback((): AddRowResult => {
@@ -117,11 +121,13 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
     });
     const row = makeRow([placeholder]);
     setLayout((p) => ({ ...p, rows: [...p.rows, row] }));
+    setDirty(true);
     return { rowId: row.id, placeholderCellId: placeholder.id };
   }, []);
 
   const removeRow = useCallback((rowId: string) => {
     setLayout((p) => ({ ...p, rows: p.rows.filter((r) => r.id !== rowId) }));
+    setDirty(true);
   }, []);
 
   const moveRow = useCallback((fromIndex: number, toIndex: number) => {
@@ -132,6 +138,7 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
       rows.splice(toIndex, 0, m);
       return { ...p, rows };
     });
+    setDirty(true);
   }, []);
 
   const addCell = useCallback(
@@ -148,6 +155,7 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
         const cell = makeCell(buildWidget(kind, firstWidgetPlan));
         return mapRow(p, rowId, (r) => ({ ...r, cells: [...r.cells, cell] }));
       });
+      setDirty(true);
     },
     [],
   );
@@ -162,6 +170,7 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
       }
       return mapRow(p, rowId, (r) => ({ ...r, cells: remaining }));
     });
+    setDirty(true);
   }, []);
 
   const moveCell = useCallback(
@@ -194,14 +203,49 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
         rows = rows.filter((r) => r.cells.length > 0);
         return { ...p, rows };
       });
+      setDirty(true);
     },
     [],
   );
+
+  const duplicateCell = useCallback((rowId: string, cellId: string) => {
+    setLayout((p) => {
+      const rowIdx = p.rows.findIndex((r) => r.id === rowId);
+      if (rowIdx < 0) return p;
+      const row = p.rows[rowIdx];
+      const cellIdx = row.cells.findIndex((c) => c.id === cellId);
+      if (cellIdx < 0) return p;
+      const src = row.cells[cellIdx];
+      const cloneWidget: WidgetInstance = {
+        ...src.widget,
+        id: newId(),
+        planIds: [...src.widget.planIds],
+      };
+      if (src.widget.yearRange) cloneWidget.yearRange = { ...src.widget.yearRange };
+      if (src.widget.config !== undefined) {
+        cloneWidget.config = JSON.parse(JSON.stringify(src.widget.config));
+      }
+      const clone: Cell = { id: newId(), widget: cloneWidget };
+
+      if (row.cells.length < MAX_CELLS_PER_ROW) {
+        const cells = [
+          ...row.cells.slice(0, cellIdx + 1),
+          clone,
+          ...row.cells.slice(cellIdx + 1),
+        ];
+        return mapRow(p, rowId, (r) => ({ ...r, cells }));
+      }
+      // Source row is full — append a new row with the clone alone.
+      return { ...p, rows: [...p.rows, makeRow([clone])] };
+    });
+    setDirty(true);
+  }, []);
 
   const updateWidgetPlanIds = useCallback((cellId: string, planIds: string[]) => {
     setLayout((p) =>
       mapCellById(p, cellId, (c) => ({ ...c, widget: { ...c.widget, planIds } })),
     );
+    setDirty(true);
   }, []);
 
   const updateWidgetYearRange = useCallback(
@@ -214,6 +258,7 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
           return { ...c, widget: w };
         }),
       );
+      setDirty(true);
     },
     [],
   );
@@ -222,6 +267,7 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
     setLayout((p) =>
       mapCellById(p, cellId, (c) => ({ ...c, widget: { ...c.widget, config } })),
     );
+    setDirty(true);
   }, []);
 
   const updateTextMarkdown = useCallback((cellId: string, markdown: string) => {
@@ -231,10 +277,12 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
         widget: { ...c.widget, config: { markdown } },
       })),
     );
+    setDirty(true);
   }, []);
 
   const reset = useCallback((primaryScenarioId: string) => {
     setLayout(getDefaultLayoutV4({ primaryScenarioId }));
+    setDirty(true);
   }, []);
 
   const save = useCallback(async () => {
@@ -257,6 +305,7 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
         body: JSON.stringify(trimmed),
       });
       if (!res.ok) throw new Error(`Layout save failed: ${res.status}`);
+      setDirty(false);
     } finally {
       setSaving(false);
     }
@@ -267,15 +316,15 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
       layout,
       setTitle,
       addRow, removeRow, moveRow,
-      addCell, removeCell, moveCell,
+      addCell, removeCell, moveCell, duplicateCell,
       updateWidgetPlanIds, updateWidgetYearRange, updateWidgetConfig,
       updateTextMarkdown,
-      reset, save, saving,
+      reset, save, saving, dirty,
     }),
     [
-      layout, setTitle, addRow, removeRow, moveRow, addCell, removeCell, moveCell,
+      layout, setTitle, addRow, removeRow, moveRow, addCell, removeCell, moveCell, duplicateCell,
       updateWidgetPlanIds, updateWidgetYearRange, updateWidgetConfig,
-      updateTextMarkdown, reset, save, saving,
+      updateTextMarkdown, reset, save, saving, dirty,
     ],
   );
 }

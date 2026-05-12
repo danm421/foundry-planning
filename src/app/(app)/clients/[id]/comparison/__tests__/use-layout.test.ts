@@ -196,6 +196,79 @@ describe("useLayout (v4)", () => {
     expect(caught).toBeInstanceOf(Error);
   });
 
+  describe("dirty flag", () => {
+    it("is false on initial mount", () => {
+      const { result } = renderHook(() => useLayout(initial, "c"));
+      expect(result.current.dirty).toBe(false);
+    });
+
+    it("flips to true on any mutation", () => {
+      const { result } = renderHook(() => useLayout(initial, "c"));
+      act(() => result.current.setTitle("Renamed"));
+      expect(result.current.dirty).toBe(true);
+    });
+
+    it("clears to false after a successful save", async () => {
+      fetchMock.mockResolvedValue({ ok: true } as Response);
+      const { result } = renderHook(() => useLayout(initial, "c"));
+      act(() => result.current.setTitle("Renamed"));
+      await act(async () => { await result.current.save(); });
+      expect(result.current.dirty).toBe(false);
+    });
+
+    it("stays true if save fails", async () => {
+      fetchMock.mockResolvedValue({ ok: false, status: 500 } as Response);
+      const { result } = renderHook(() => useLayout(initial, "c"));
+      act(() => result.current.setTitle("Renamed"));
+      await expect(act(async () => { await result.current.save(); })).rejects.toThrow();
+      expect(result.current.dirty).toBe(true);
+    });
+  });
+
+  describe("duplicateCell", () => {
+    it("clones the cell+widget with new ids into the same row, immediately after the source", () => {
+      const { result } = renderHook(() => useLayout(initial, "c"));
+      act(() => result.current.duplicateCell("row-a", "cell-a1"));
+      const row = result.current.layout.rows.find((r) => r.id === "row-a")!;
+      expect(row.cells).toHaveLength(2);
+      expect(row.cells[0].id).toBe("cell-a1");
+      // New cell sits right after the source.
+      expect(row.cells[1].id).not.toBe("cell-a1");
+      expect(row.cells[1].widget.id).not.toBe("w-a1");
+      expect(row.cells[1].widget.kind).toBe("portfolio");
+      expect(row.cells[1].widget.planIds).toEqual(["base"]);
+    });
+
+    it("creates a new row at the bottom when the source row is full (5 cells)", () => {
+      const full: ComparisonLayoutV4 = {
+        ...initial,
+        rows: [
+          {
+            id: "r-full",
+            cells: Array.from({ length: 5 }, (_, i) => ({
+              id: `c${i}`,
+              widget: { id: `w${i}`, kind: "portfolio" as const, planIds: ["base"] },
+            })),
+          },
+        ],
+      };
+      const { result } = renderHook(() => useLayout(full, "c"));
+      act(() => result.current.duplicateCell("r-full", "c2"));
+      expect(result.current.layout.rows).toHaveLength(2);
+      const last = result.current.layout.rows.at(-1)!;
+      expect(last.cells).toHaveLength(1);
+      expect(last.cells[0].widget.kind).toBe("portfolio");
+      expect(last.cells[0].widget.planIds).toEqual(["base"]);
+    });
+
+    it("is a no-op when the cell is not found", () => {
+      const { result } = renderHook(() => useLayout(initial, "c"));
+      const before = result.current.layout;
+      act(() => result.current.duplicateCell("row-a", "nope"));
+      expect(result.current.layout).toBe(before);
+    });
+  });
+
   it("save() drops whitespace-only text cells (and prunes now-empty rows)", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ layout: initial }) });
     const onlyText: ComparisonLayoutV4 = {
