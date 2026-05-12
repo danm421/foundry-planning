@@ -15,7 +15,7 @@ describe("useLayout v5", () => {
     const { result } = renderHook(() => useLayout(blank, "client-1"));
     act(() => result.current.addGroup());
     expect(result.current.layout.groups).toHaveLength(2);
-    expect(result.current.layout.groups[1].title).toBe("");
+    expect(result.current.layout.groups[1].title).toBe("Group Name");
     expect(result.current.layout.groups[1].cells).toHaveLength(1);
     expect(result.current.layout.groups[1].cells[0].span).toBe(5);
     expect(result.current.layout.groups[1].cells[0].widget).toBeNull();

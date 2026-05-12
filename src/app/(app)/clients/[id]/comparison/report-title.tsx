@@ -33,7 +33,7 @@ export function ReportTitle({ value, onChange }: Props) {
           (e.target as HTMLInputElement).blur();
         }
       }}
-      className="bg-transparent text-lg font-semibold text-slate-100 outline-none focus:border-b focus:border-amber-400"
+      className="w-full min-w-0 bg-transparent text-lg font-semibold text-slate-100 outline-none focus:border-b focus:border-amber-400"
     />
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DndContext,
   type DragEndEvent,
@@ -50,6 +50,7 @@ export function ComparisonShell({
   const [mode, setMode] = useState<CanvasMode>("layout");
   const [editingCellId, setEditingCellId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [focusGroupTitleId, setFocusGroupTitleId] = useState<string | null>(null);
 
   const planIds = useMemo(() => uniquePlanIds(api.layout), [api.layout]);
 
@@ -117,6 +118,37 @@ export function ComparisonShell({
     }
   }, [api]);
 
+  useEffect(() => {
+    if (!api.dirty) return;
+
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+
+    const onDocClick = (e: MouseEvent) => {
+      if (e.defaultPrevented) return;
+      if (e.button !== 0) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const anchor = (e.target as Element | null)?.closest("a");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href");
+      if (!href || href.startsWith("#")) return;
+      if (anchor.target && anchor.target !== "_self") return;
+      if (!window.confirm("You have unsaved changes. Leave this page anyway?")) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("click", onDocClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("click", onDocClick, true);
+    };
+  }, [api.dirty]);
+
   const editingCell = api.layout.groups
     .flatMap((g) => g.cells)
     .find((c) => c.id === editingCellId) ?? null;
@@ -129,8 +161,10 @@ export function ComparisonShell({
 
   return (
     <>
-      <header className="sticky top-0 z-20 flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-950/95 px-6 py-3 backdrop-blur">
-        <ReportTitle value={api.layout.title} onChange={api.setTitle} />
+      <header className="sticky top-[100px] z-20 flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-950/95 px-6 py-3 backdrop-blur">
+        <div className="flex min-w-[200px] max-w-2xl flex-1 items-center">
+          <ReportTitle value={api.layout.title} onChange={api.setTitle} />
+        </div>
         <ModeToggle mode={mode} onChange={setMode} />
         <div className="ml-auto">
           <SaveStatus
@@ -153,6 +187,7 @@ export function ComparisonShell({
                       key={group.id}
                       group={group}
                       scenarios={scenarios}
+                      autoFocusTitle={group.id === focusGroupTitleId}
                       onSetTitle={(title) => api.setGroupTitle(group.id, title)}
                       onRemoveGroup={() => api.removeGroup(group.id)}
                       onAddWidget={(cellId) => setEditingCellId(cellId)}
@@ -169,7 +204,10 @@ export function ComparisonShell({
               </DndContext>
               <button
                 type="button"
-                onClick={() => api.addGroup()}
+                onClick={() => {
+                  const { groupId } = api.addGroup();
+                  setFocusGroupTitleId(groupId);
+                }}
                 className="self-start rounded-full border border-dashed border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
               >
                 + New group

@@ -123,8 +123,8 @@ export function CanvasCell({
   const widget = cell.widget;
   const def = widget ? COMPARISON_WIDGETS[widget.kind] : null;
 
-  const selectedRingPopulated = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-slate-700";
-  const selectedRingEmpty = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-slate-700";
+  const selectedRingPopulated = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-ink-3";
+  const selectedRingEmpty = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-ink-3";
 
   const ResizeHandle = (
     <button

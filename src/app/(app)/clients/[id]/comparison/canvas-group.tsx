@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import {
   SortableContext,
   rectSortingStrategy,
@@ -12,6 +13,7 @@ import { CanvasCell, type ScenarioLookup } from "./canvas-cell";
 interface Props {
   group: Group;
   scenarios: ScenarioLookup[];
+  autoFocusTitle?: boolean;
   onSetTitle: (title: string) => void;
   onRemoveGroup: () => void;
   onAddWidget: (cellId: string) => void;
@@ -27,6 +29,7 @@ interface Props {
 export function CanvasGroup({
   group,
   scenarios,
+  autoFocusTitle,
   onSetTitle,
   onRemoveGroup,
   onAddWidget,
@@ -42,6 +45,15 @@ export function CanvasGroup({
     id: group.id,
     data: { type: "group" },
   });
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!autoFocusTitle) return;
+    const el = titleInputRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [autoFocusTitle]);
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -73,6 +85,7 @@ export function CanvasGroup({
           ⋮⋮
         </button>
         <input
+          ref={titleInputRef}
           type="text"
           aria-label="Group title"
           value={group.title}

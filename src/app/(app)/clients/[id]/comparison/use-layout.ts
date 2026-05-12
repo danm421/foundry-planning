@@ -45,7 +45,7 @@ function makeEmptyCell(span: CellSpan = 5): CellV5 {
 }
 
 function makeGroup(cells: CellV5[]): Group {
-  return { id: newId(), title: "", cells };
+  return { id: newId(), title: "Group Name", cells };
 }
 
 function mapGroup(layout: ComparisonLayoutV5, groupId: string, f: (g: Group) => Group): ComparisonLayoutV5 {
