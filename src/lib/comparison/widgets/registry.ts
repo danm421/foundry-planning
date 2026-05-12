@@ -22,6 +22,7 @@ import { charitableImpactWidget } from "./charitable-impact";
 import { decadeSummaryWidget } from "./decade-summary";
 import { cashFlowGapWidget } from "./cash-flow-gap";
 import { successGaugeWidget } from "./success-gauge";
+import { estateEndBeneficiariesWidget } from "./estate-end-beneficiaries";
 
 export const COMPARISON_WIDGETS: Record<
   ComparisonWidgetKindV4,
@@ -49,4 +50,5 @@ export const COMPARISON_WIDGETS: Record<
   "decade-summary": decadeSummaryWidget,
   "cash-flow-gap": cashFlowGapWidget,
   "success-gauge": successGaugeWidget,
+  "estate-end-beneficiaries": estateEndBeneficiariesWidget,
 };
