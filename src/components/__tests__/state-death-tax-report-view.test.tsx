@@ -336,4 +336,39 @@ describe("StateDeathTaxReportView", () => {
     // 130_000 + 30_000 + 50_000 + 10_000 = 220_000
     expect(screen.getAllByText(/\$220,000/).length).toBeGreaterThan(0);
   });
+
+  it("renders an empty-state legend when residence state has no death tax", async () => {
+    const flDetail: import("@/lib/tax/state-estate").StateEstateTaxResult = {
+      state: null,
+      fallbackUsed: false, fallbackRate: 0,
+      exemption: 0, exemptionYear: 0, giftAddback: 0,
+      baseForTax: 0, amountOverExemption: 0, bracketLines: [],
+      preCapTax: 0, stateEstateTax: 0, notes: [],
+    };
+    const decedent: EstateTaxResult = {
+      ...(baseEstate as EstateTaxResult),
+      residenceState: "FL",
+      stateEstateTax: 0,
+      stateEstateTaxDetail: flDetail,
+      stateInheritanceTax: undefined,
+    };
+    mockProjection({
+      firstDeathEvent: decedent,
+      secondDeathEvent: undefined,
+      years: [{ year: 2026, hypotheticalEstateTax: { year: 2026,
+        primaryFirst: { firstDecedent: "client", firstDeath: decedent,
+          firstDeathTransfers: [], totals: { federal: 0, state: 0, admin: 0, total: 0 } } } }],
+      todayHypotheticalEstateTax: { year: 2026,
+        primaryFirst: { firstDecedent: "client", firstDeath: decedent,
+          firstDeathTransfers: [], totals: { federal: 0, state: 0, admin: 0, total: 0 } } },
+    });
+
+    render(<StateDeathTaxReportView clientId="c1" {...ownerProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/does not levy a state estate tax or inheritance tax/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/CT, DC, HI, IL, ME, MD, MA, MN, NY, OR, RI, VT, WA/)).toBeInTheDocument();
+    expect(screen.getByText(/PA, NJ, KY, NE, MD/)).toBeInTheDocument();
+  });
 });

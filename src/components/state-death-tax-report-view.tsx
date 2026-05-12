@@ -157,6 +157,15 @@ export default function StateDeathTaxReportView({
         ? ownerNames.clientName
         : null;
 
+  const visibleDeaths: EstateTaxResult[] = isSplit
+    ? [splitFirst, splitSecond].filter((x): x is EstateTaxResult => x != null)
+    : activeOrdering
+      ? [activeOrdering.firstDeath, ...(activeOrdering.finalDeath ? [activeOrdering.finalDeath] : [])]
+      : [];
+
+  const anyStateDeathTax = visibleDeaths.some(hasAnyStateDeathTax);
+  const residenceState = visibleDeaths[0]?.residenceState ?? null;
+
   return (
     <div className="space-y-4 pt-4 text-gray-100">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -208,7 +217,9 @@ export default function StateDeathTaxReportView({
         </div>
       </div>
 
-      {isSplit ? (
+      {!anyStateDeathTax ? (
+        <NoStateDeathTaxLegend residenceState={residenceState} />
+      ) : isSplit ? (
         <>
           {splitFirst && (
             <DecedentSection
@@ -221,6 +232,9 @@ export default function StateDeathTaxReportView({
               heading={`${ownerForName(splitSecond, ownerNames)} — Second to die · ${splitSecond.year}`}
               tax={splitSecond}
             />
+          )}
+          {splitFirst && splitSecond && (
+            <GrandTotalsCard first={splitFirst} second={splitSecond} />
           )}
         </>
       ) : (
@@ -236,14 +250,11 @@ export default function StateDeathTaxReportView({
                 tax={activeOrdering.finalDeath}
               />
             )}
+            {isMarried && activeOrdering.firstDeath && activeOrdering.finalDeath && (
+              <GrandTotalsCard first={activeOrdering.firstDeath} second={activeOrdering.finalDeath} />
+            )}
           </>
         )
-      )}
-      {isSplit && splitFirst && splitSecond && (
-        <GrandTotalsCard first={splitFirst} second={splitSecond} />
-      )}
-      {!isSplit && isMarried && activeOrdering?.firstDeath && activeOrdering.finalDeath && (
-        <GrandTotalsCard first={activeOrdering.firstDeath} second={activeOrdering.finalDeath} />
       )}
     </div>
   );
@@ -370,6 +381,28 @@ function deathTotal(r: EstateTaxResult): number {
   return r.stateEstateTax + (r.stateInheritanceTax && !r.stateInheritanceTax.inactive
     ? r.stateInheritanceTax.totalTax
     : 0);
+}
+
+function hasAnyStateDeathTax(r: EstateTaxResult): boolean {
+  const d = r.stateEstateTaxDetail;
+  if (d.fallbackUsed || d.state != null || d.stateEstateTax > 0) return true;
+  if (r.stateInheritanceTax && !r.stateInheritanceTax.inactive) return true;
+  return false;
+}
+
+function NoStateDeathTaxLegend({ residenceState }: { residenceState: string | null }) {
+  const label = residenceState ?? "This state";
+  return (
+    <div className="rounded-lg border border-gray-700 bg-gray-900 p-4 text-sm text-gray-200">
+      <p>{label} does not levy a state estate tax or inheritance tax.</p>
+      <p className="mt-2 text-xs text-gray-400">
+        State estate tax states: CT, DC, HI, IL, ME, MD, MA, MN, NY, OR, RI, VT, WA.
+      </p>
+      <p className="mt-1 text-xs text-gray-400">
+        State inheritance tax states: PA, NJ, KY, NE, MD.
+      </p>
+    </div>
+  );
 }
 
 function GrandTotalsCard({ first, second }: { first: EstateTaxResult; second: EstateTaxResult }) {
