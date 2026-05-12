@@ -24,6 +24,7 @@ import { cashFlowGapWidget } from "./cash-flow-gap";
 import { successGaugeWidget } from "./success-gauge";
 import { estateEndBeneficiariesWidget } from "./estate-end-beneficiaries";
 import { estateTransfersYearlyWidget } from "./estate-transfers-yearly";
+import { giftTaxWidget } from "./gift-tax";
 
 export const COMPARISON_WIDGETS: Record<
   ComparisonWidgetKindV4,
@@ -53,4 +54,5 @@ export const COMPARISON_WIDGETS: Record<
   "success-gauge": successGaugeWidget,
   "estate-end-beneficiaries": estateEndBeneficiariesWidget,
   "estate-transfers-yearly": estateTransfersYearlyWidget,
+  "gift-tax": giftTaxWidget,
 };
