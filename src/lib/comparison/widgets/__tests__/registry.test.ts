@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { WIDGET_KINDS } from "../../layout-schema";
+import { WIDGET_KINDS_V4 } from "../../layout-schema";
 import { COMPARISON_WIDGETS } from "../registry";
 
 describe("COMPARISON_WIDGETS registry", () => {
-  it("has a definition for every WIDGET_KIND", () => {
-    for (const kind of WIDGET_KINDS) {
+  it("has a definition for every WIDGET_KIND_V4", () => {
+    for (const kind of WIDGET_KINDS_V4) {
       expect(COMPARISON_WIDGETS[kind]).toBeDefined();
       expect(COMPARISON_WIDGETS[kind].kind).toBe(kind);
     }

@@ -74,6 +74,10 @@ export const WIDGET_KINDS_V4 = [
   "charitable-impact",
   "decade-summary",
   "cash-flow-gap",
+  "estate-transfers-yearly",
+  "estate-end-beneficiaries",
+  "gift-tax",
+  "success-gauge",
 ] as const;
 export type ComparisonWidgetKindV4 = (typeof WIDGET_KINDS_V4)[number];
 
