@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { forwardRef, useImperativeHandle, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import type { SaveResult } from "@/lib/use-tab-auto-save";
 import MilestoneYearPicker from "../milestone-year-picker";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { resolveMilestone } from "@/lib/milestones";
@@ -61,9 +62,21 @@ interface AddLiabilityFormProps {
   onSuccess?: () => void;
   onValuesChange?: (values: LiabilityFormValues) => void;
   onSubmitStateChange?: (state: { canSubmit: boolean; loading: boolean }) => void;
+  /** Pushed up whenever the form's dirty/can-save state changes. The dialog
+   *  uses these to wire `useTabAutoSave` without needing to introspect the
+   *  form's internals. */
+  onAutoSaveStateChange?: (state: { isDirty: boolean; canSave: boolean }) => void;
+  /** Reports the persisted record id after a successful auto-save in create
+   *  mode, so the dialog can flip into edit semantics and refresh on close. */
+  onAutoSaved?: (recordId: string) => void;
 }
 
-export default function AddLiabilityForm({
+/** Imperative handle the dialog uses to trigger a save on tab switch. */
+export interface LiabilityFormAutoSaveHandle {
+  saveAsync: () => Promise<SaveResult & { recordId?: string }>;
+}
+
+const AddLiabilityForm = forwardRef<LiabilityFormAutoSaveHandle, AddLiabilityFormProps>(function AddLiabilityForm({
   clientId,
   realEstateAccounts,
   entities,
@@ -76,7 +89,9 @@ export default function AddLiabilityForm({
   onSuccess,
   onValuesChange,
   onSubmitStateChange,
-}: AddLiabilityFormProps) {
+  onAutoSaveStateChange,
+  onAutoSaved,
+}, ref) {
   const router = useRouter();
   const writer = useScenarioWriter(clientId);
   const [loading, setLoading] = useState(false);
@@ -92,6 +107,18 @@ export default function AddLiabilityForm({
     initial?.owners && initial.owners.length > 0 ? initial.owners : defaultOwners,
   );
   const [isInterestDeductible, setIsInterestDeductible] = useState(initial?.isInterestDeductible ?? false);
+  // Controlled state for previously-uncontrolled fields. The auto-save hook
+  // needs to compare current vs last-saved snapshots and gate validation, so
+  // every meaningful input must be readable as a value here, not just via
+  // FormData on submit.
+  const [name, setName] = useState<string>(initial?.name ?? "");
+  const [linkedPropertyId, setLinkedPropertyId] = useState<string>(initial?.linkedPropertyId ?? "");
+  const [nameInvalid, setNameInvalid] = useState(false);
+  // After an auto-save POSTs a brand-new liability, subsequent saves must PUT
+  // against the returned id rather than POST again. Tracking the resolved id
+  // separately from the prop-derived `isEdit` keeps existing UI behavior
+  // (autofocus, edit-only delete) intact while routing the API path.
+  const [effectiveLiabilityId, setEffectiveLiabilityId] = useState<string | null>(initial?.id ?? null);
   const isEdit = mode === "edit" && !!initial;
 
   // Auto-focus + select-all the Name input on create so the advisor can start
@@ -204,29 +231,13 @@ export default function AddLiabilityForm({
   // Form submission
   // ============================================================================
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-
-    const form = e.currentTarget;
-    const data = new FormData(form);
-    const linkedPropertyId = data.get("linkedPropertyId") as string;
-
-    // Mortgages (interest-deductible liabilities) must link to a real-estate
-    // account so the engine can attribute the interest to the correct property.
-    if (isInterestDeductible && !linkedPropertyId) {
-      setError("Mortgage liabilities must link to a real estate property.");
-      setLoading(false);
-      return;
-    }
-
-    const termMonths = termUnit === "annual"
-      ? parseInt(termValue) * 12
-      : parseInt(termValue);
-
-    const body = {
-      name: data.get("name") as string,
+  // Build the request body from the current controlled state. Shared between
+  // the explicit-save submit handler and the auto-save-on-tab-switch path so
+  // both routes use the same payload shape.
+  function buildBody() {
+    const termMonths = termUnit === "annual" ? parseInt(termValue) * 12 : parseInt(termValue);
+    return {
+      name,
       balance,
       interestRate: String(parseFloat(interestRatePct) / 100),
       monthlyPayment,
@@ -241,23 +252,36 @@ export default function AddLiabilityForm({
       startYearRef,
       isInterestDeductible,
     };
+  }
 
+  // Pure save: POST or PUT depending on whether we have an id yet. Returns a
+  // SaveResult so both the explicit-save (router.refresh + onSuccess) and
+  // auto-save paths can share validation + error handling without entangling
+  // their side effects.
+  async function saveCore(): Promise<SaveResult & { recordId?: string }> {
+    if (isInterestDeductible && !linkedPropertyId) {
+      return { ok: false, error: "Mortgage liabilities must link to a real estate property." };
+    }
+    if (name.trim().length === 0) {
+      return { ok: false, error: "Liability name is required." };
+    }
+    const body = buildBody();
+    const idForUpdate = effectiveLiabilityId;
     try {
       const newLiabilityId =
         typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
           ? crypto.randomUUID()
           : `tmp-${Date.now()}`;
-
-      const res = isEdit
+      const res = idForUpdate
         ? await writer.submit(
             {
               op: "edit",
               targetKind: "liability",
-              targetId: initial!.id,
+              targetId: idForUpdate,
               desiredFields: body,
             },
             {
-              url: `/api/clients/${clientId}/liabilities/${initial!.id}`,
+              url: `/api/clients/${clientId}/liabilities/${idForUpdate}`,
               method: "PUT",
               body,
             },
@@ -274,20 +298,74 @@ export default function AddLiabilityForm({
               body,
             },
           );
-
       if (!res.ok) {
-        const json = await res.json();
-        throw new Error(json.error ?? "Failed to save liability");
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        return { ok: false, error: json.error ?? "Failed to save liability" };
       }
-
-      router.refresh();
-      onSuccess?.();
+      const json = (await res.json().catch(() => null)) as { id?: string } | null;
+      const recordId = json?.id;
+      // Snapshot what we just saved so isDirty resets.
+      lastSavedSnapshotRef.current = JSON.stringify(body);
+      // Flip into PUT-mode after a successful POST so subsequent saves update.
+      if (!idForUpdate && recordId) setEffectiveLiabilityId(recordId);
+      return { ok: true, recordId };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
+      return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
     }
   }
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (name.trim().length === 0) {
+      setNameInvalid(true);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    const result = await saveCore();
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    router.refresh();
+    onSuccess?.();
+  }
+
+  // Dirty-tracking: compare current body to last saved snapshot. Initialized
+  // to the seeded body so a freshly-opened dialog is clean until the user edits.
+  const lastSavedSnapshotRef = useRef<string>(JSON.stringify(buildBody()));
+  const isDirty = JSON.stringify(buildBody()) !== lastSavedSnapshotRef.current;
+  const canSave = name.trim().length > 0 && !(isInterestDeductible && !linkedPropertyId);
+
+  useEffect(() => {
+    onAutoSaveStateChange?.({ isDirty, canSave });
+  }, [isDirty, canSave, onAutoSaveStateChange]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      saveAsync: async () => {
+        if (!canSave) {
+          setNameInvalid(name.trim().length === 0);
+          return { ok: false, error: "Required fields missing." };
+        }
+        setLoading(true);
+        const result = await saveCore();
+        setLoading(false);
+        if (result.ok && result.recordId && !effectiveLiabilityId) {
+          onAutoSaved?.(result.recordId);
+        }
+        return result;
+      },
+    }),
+    // saveCore reads current state via closure; including it as a dep would
+    // recreate the handle every render, which is acceptable but wasteful.
+    // The state values that matter (name, balance, etc.) are captured by
+    // closure on every render anyway, so listing them is sufficient.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [canSave, name, balance, interestRatePct, monthlyPayment, startYear, startMonth, termValue, termUnit, balanceAsOfMonth, balanceAsOfYear, linkedPropertyId, owners, startYearRef, isInterestDeductible, effectiveLiabilityId],
+  );
 
   // ============================================================================
   // Calculator button component
@@ -329,9 +407,16 @@ export default function AddLiabilityForm({
           name="name"
           type="text"
           required
-          defaultValue={initial?.name ?? ""}
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            if (nameInvalid) setNameInvalid(false);
+          }}
+          aria-invalid={nameInvalid || undefined}
           placeholder="e.g., Primary Mortgage"
-          className={inputClassName}
+          className={
+            nameInvalid ? `${inputClassName} !border-crit focus:!border-crit` : inputClassName
+          }
         />
       </div>
 
@@ -358,7 +443,8 @@ export default function AddLiabilityForm({
             <select
               id="linkedPropertyId"
               name="linkedPropertyId"
-              defaultValue={initial?.linkedPropertyId ?? ""}
+              value={linkedPropertyId}
+              onChange={(e) => setLinkedPropertyId(e.target.value)}
               className={selectClassName}
             >
               <option value="">None</option>
@@ -528,4 +614,6 @@ export default function AddLiabilityForm({
 
     </form>
   );
-}
+});
+
+export default AddLiabilityForm;
