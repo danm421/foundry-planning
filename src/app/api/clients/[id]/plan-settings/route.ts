@@ -4,6 +4,7 @@ import { clients, modelPortfolios, scenarios, planSettings } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
+import { isUSPSStateCode } from "@/lib/usps-states";
 
 export const dynamic = "force-dynamic";
 
@@ -148,10 +149,9 @@ export async function PUT(
     }
 
     if (residenceState !== undefined && residenceState !== null) {
-      const VALID = new Set(["CT","DC","HI","IL","ME","MD","MA","MN","NY","OR","RI","VT","WA"]);
-      if (typeof residenceState !== "string" || !VALID.has(residenceState)) {
+      if (!isUSPSStateCode(residenceState)) {
         return NextResponse.json(
-          { error: "residenceState must be a valid USPS code for a state estate tax jurisdiction (or null)" },
+          { error: "residenceState must be a USPS 2-letter code for a US state or DC (or null)" },
           { status: 400 },
         );
       }

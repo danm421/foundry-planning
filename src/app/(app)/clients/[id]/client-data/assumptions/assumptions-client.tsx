@@ -41,7 +41,7 @@ export interface AssumptionsSettings {
   flatStateRate: string;
   estateAdminExpenses: string;
   flatStateEstateRate: string;
-  residenceState: import("@/lib/tax/state-estate").StateCode | null;
+  residenceState: import("@/lib/usps-states").USPSStateCode | null;
   irdTaxRate: string;
   inflationRate: string;
   inflationRateSource: "asset_class" | "custom";

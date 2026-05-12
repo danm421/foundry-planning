@@ -3,7 +3,8 @@ import type {
   EstateTaxResult, Liability, PlanSettings,
 } from "../types";
 import { applyUnifiedRateSchedule } from "@/lib/tax/estate";
-import { computeStateEstateTax, type StateCode } from "@/lib/tax/state-estate";
+import { computeStateEstateTax } from "@/lib/tax/state-estate";
+import type { USPSStateCode } from "@/lib/usps-states";
 import { STATE_INHERITANCE_TAX } from "@/lib/tax/state-inheritance";
 import type { ExternalBeneficiarySummary } from "./shared";
 import { computeInheritanceForDeathEvent, inheritanceCodeFor } from "./inheritance-tax";
@@ -345,7 +346,7 @@ export function buildEstateTaxResult(input: {
   lifetimeGiftTaxAdjustment: number;
   beaAtDeathYear: number;
   dsueReceived: number;
-  residenceState: StateCode | null;
+  residenceState: USPSStateCode | null;
   stateEstateTaxFallbackRate: number;
   estateTaxDebits: Array<{ accountId: string; amount: number }>;
   creditorPayoffDebits: Array<{ accountId: string; amount: number }>;

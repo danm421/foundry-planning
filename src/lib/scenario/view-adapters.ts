@@ -328,7 +328,7 @@ export interface PlanSettingsViewEngineFields {
   ssWageGrowthRate: string | null;
   estateAdminExpenses: string;
   flatStateEstateRate: string;
-  residenceState: import("@/lib/tax/state-estate").StateCode | null;
+  residenceState: import("@/lib/usps-states").USPSStateCode | null;
   irdTaxRate: string;
   outOfHouseholdRate: string | null;
 }

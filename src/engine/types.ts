@@ -177,7 +177,7 @@ export interface EstateTaxResult {
 
   // State Tax
   /** USPS two-letter code; null when no residence state is set. */
-  residenceState: import("@/lib/tax/state-estate").StateCode | null;
+  residenceState: import("@/lib/usps-states").USPSStateCode | null;
   /** Effective marginal rate used in fallback mode; otherwise weighted-average bracket rate. */
   stateEstateTaxRate: number;
   stateEstateTax: number;
@@ -829,8 +829,8 @@ export interface PlanSettings {
   ssWageGrowthRate?: number | null;
   /** Lump-sum estate administration expenses (funerals, executor fees, etc.). */
   estateAdminExpenses?: number;
-  /** USPS 2-letter code; null = no estate-tax state (fallback rate may still apply). */
-  residenceState?: import("@/lib/tax/state-estate").StateCode | null;
+  /** USPS 2-letter code; null = no residence state set (fallback rate may still apply). */
+  residenceState?: import("@/lib/usps-states").USPSStateCode | null;
   /** Flat state estate tax rate applied on top of federal estate tax. 0 disables.
    *  Used only when `residenceState` is null/absent. */
   flatStateEstateRate?: number;

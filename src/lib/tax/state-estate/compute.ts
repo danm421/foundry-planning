@@ -3,7 +3,9 @@ import { applyCliff, applyMaxCombinedCap } from "./special-rules";
 import type { Bracket, BracketLine, GiftAddback as GiftAddbackRule, StateCode, StateEstateTaxResult } from "./types";
 
 export interface ComputeStateEstateTaxInput {
-  state: StateCode | null;
+  /** USPS 2-letter code, or null. Codes outside the estate-tax jurisdictions
+   *  fall through to the back-compat flat-rate path. */
+  state: string | null;
   deathYear: number;
   /** Post-deductions taxable estate (already netted for marital/charitable/admin). */
   taxableEstate: number;
@@ -29,10 +31,10 @@ const EMPTY: StateEstateTaxResult = {
 };
 
 export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateEstateTaxResult {
-  if (input.state == null) {
+  if (input.state == null || !(input.state in STATE_ESTATE_TAX)) {
     return computeFallback(input);
   }
-  const rule = STATE_ESTATE_TAX[input.state];
+  const rule = STATE_ESTATE_TAX[input.state as StateCode];
 
   const giftAddback = computeGiftAddback(rule.giftAddback, input.adjustedTaxableGifts);
   const baseForTax = input.taxableEstate + giftAddback;
@@ -99,7 +101,7 @@ export function computeStateEstateTax(input: ComputeStateEstateTaxInput): StateE
   }
 
   return {
-    state: input.state,
+    state: input.state as StateCode,
     fallbackUsed: false,
     fallbackRate: 0,
     exemption: rule.exemption,
