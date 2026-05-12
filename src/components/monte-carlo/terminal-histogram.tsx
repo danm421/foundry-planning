@@ -329,7 +329,7 @@ export function TerminalHistogram({
               tone={failureRate > 0.1 ? "rose" : failureRate > 0.05 ? "amber" : "emerald"}
             />
           </div>
-          <div className="text-[11px] text-slate-500 mb-1 tabular-nums">
+          <div className="text-[11px] text-ink-3 mb-1 tabular-nums">
             Mean {formatShortCurrency(sd.mean)}
             <span className="mx-1.5 text-slate-700">·</span>
             σ {formatShortCurrency(sd.stdDev)}
@@ -350,7 +350,7 @@ export function TerminalHistogram({
       </div>
 
       {(series.belowDomainCount > 0 || series.aboveDomainCount > 0) && (
-        <p className="text-[11px] text-slate-500 mt-2 text-center">
+        <p className="text-[11px] text-ink-3 mt-2 text-center">
           {series.belowDomainCount > 0 && (
             <span>
               ← {formatInteger(series.belowDomainCount)} trial
@@ -398,7 +398,7 @@ function Stat({ label, value, sub, tone }: StatProps) {
     <div className="rounded-md bg-slate-950/40 ring-1 ring-slate-800 px-3 py-2">
       <div className="text-[10px] uppercase tracking-wider text-slate-400">{label}</div>
       <div className={`text-base font-semibold tabular-nums ${toneClass}`}>{value}</div>
-      {sub && <div className="text-[10px] text-slate-500 tabular-nums">{sub}</div>}
+      {sub && <div className="text-[10px] text-ink-3 tabular-nums">{sub}</div>}
     </div>
   );
 }

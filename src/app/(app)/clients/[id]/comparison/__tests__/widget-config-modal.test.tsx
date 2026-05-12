@@ -19,7 +19,8 @@ describe("WidgetConfigModal", () => {
       />,
     );
     expect(screen.getByRole("button", { name: /save/i })).toBeDisabled();
-    // "Portfolio Assets" is the actual title of the portfolio widget
+    // Portfolio Assets lives in the Investments category — switch tabs first.
+    fireEvent.click(screen.getByRole("tab", { name: /investments/i }));
     fireEvent.click(screen.getByRole("button", { name: /portfolio assets/i }));
     expect(screen.getByRole("button", { name: /save/i })).not.toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
@@ -58,7 +59,8 @@ describe("WidgetConfigModal", () => {
         onClose={() => {}}
       />,
     );
-    // "Year-by-year detail" is the actual title of the year-by-year widget
+    // Year-by-year detail lives in the Cash flow category.
+    fireEvent.click(screen.getByRole("tab", { name: /cash flow/i }));
     fireEvent.click(screen.getByRole("button", { name: /year-by-year detail/i }));
     // seedPlanIds picks 2 distinct ids when possible (base + s2), so Save should be enabled
     expect(screen.getByRole("button", { name: /save/i })).not.toBeDisabled();

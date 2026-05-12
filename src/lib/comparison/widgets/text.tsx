@@ -37,7 +37,7 @@ export const textWidget: ComparisonWidgetDefinition<TextConfig> = {
     if (body.trim() === "") {
       return (
         <section className="px-6 py-4">
-          <div className="rounded border border-dashed border-slate-800 px-4 py-3 text-xs italic text-slate-500">
+          <div className="rounded border border-dashed border-slate-800 px-4 py-3 text-xs italic text-ink-3">
             Empty text block — open the Widget panel to add content.
           </div>
         </section>

@@ -35,7 +35,7 @@ export function SaveStatus({ dirty, saving, error, onSave }: Props) {
     pillClass = "text-amber-300";
   } else {
     pill = "Saved";
-    pillClass = "text-slate-500";
+    pillClass = "text-ink-3";
   }
 
   const disabled = saving || (!dirty && !error);

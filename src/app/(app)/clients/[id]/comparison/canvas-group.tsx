@@ -66,7 +66,7 @@ export function CanvasGroup({
           type="button"
           aria-label="Drag group"
           data-drag-handle="group"
-          className="cursor-grab text-slate-500 hover:text-slate-200"
+          className="cursor-grab text-ink-3 hover:text-slate-200"
           {...attributes}
           {...listeners}
         >

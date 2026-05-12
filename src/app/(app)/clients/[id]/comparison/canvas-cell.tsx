@@ -216,7 +216,7 @@ export function CanvasCell({
               onMouseDown={(e) => e.stopPropagation()}
               placeholder="Type markdown… **bold**, *italic*, - list items"
               rows={4}
-              className="w-full resize-y rounded border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-xs text-slate-100 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
+              className="w-full resize-y rounded border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-xs text-slate-100 placeholder:text-ink-3 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
             />
           ) : (
             def.scenarios !== "none" && (

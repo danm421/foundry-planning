@@ -59,7 +59,7 @@ export function PerWidgetYearRange({ min, max, yearRange, onChange }: Props) {
           All years
         </button>
       ) : (
-        <span className="italic text-slate-500">All years</span>
+        <span className="italic text-ink-3">All years</span>
       )}
     </div>
   );
