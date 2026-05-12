@@ -4,6 +4,8 @@ import type { ComparisonWidgetDefinition } from "./types";
 export const ssIncomeWidget: ComparisonWidgetDefinition = {
   kind: "ss-income",
   title: "Social Security Income",
+  category: "retirement-income",
+  scenarios: "one-or-many",
   needsMc: false,
   render: ({ plans, yearRange }) => (
     <SsIncomeComparisonSection plans={plans} yearRange={yearRange} />

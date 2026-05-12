@@ -4,6 +4,8 @@ import type { ComparisonWidgetDefinition } from "./types";
 export const estateImpactWidget: ComparisonWidgetDefinition = {
   kind: "estate-impact",
   title: "Impact vs Base",
+  category: "estate",
+  scenarios: "one-or-many",
   needsMc: false,
   render: ({ plans }) => {
     const allHaveFinalEstate = plans.every((p) => p.finalEstate !== null);

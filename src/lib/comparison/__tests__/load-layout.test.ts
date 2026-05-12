@@ -1,107 +1,112 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { loadLayout } from "../load-layout";
+import { ComparisonLayoutV4Schema } from "../layout-schema";
 
+const select = vi.fn();
 vi.mock("@/db", () => ({
   db: {
-    select: vi.fn(),
+    select: () => ({
+      from: () => ({
+        where: (...args: unknown[]) => select(...args),
+      }),
+    }),
   },
 }));
 
-vi.mock("@/db/schema", () => ({
-  clientComparisonLayouts: { clientId: "client_id", firmId: "firm_id", layout: "layout" },
-}));
-
-import { db } from "@/db";
-
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
-function mockSelect(rows: Array<{ layout: unknown }>) {
-  const where = vi.fn().mockResolvedValue(rows);
-  const from = vi.fn().mockReturnValue({ where });
-  (db.select as ReturnType<typeof vi.fn>).mockReturnValue({ from });
-}
+const ctx = { primaryScenarioId: "base", urlPlanIds: null, defaultTitle: "Test Report" };
 
 describe("loadLayout", () => {
-  it("returns the default layout when no row exists", async () => {
-    mockSelect([]);
-    const layout = await loadLayout("client-1", "firm-1");
-    expect(layout.version).toBe(3);
-    expect(layout.items.length).toBe(19);
+  beforeEach(() => select.mockReset());
+
+  it("returns the v4 default when no row exists", async () => {
+    select.mockResolvedValue([]);
+    const layout = await loadLayout("c", "f", ctx);
+    expect(layout.version).toBe(4);
+    expect(layout.title).toBe("Test Report");
+    expect(ComparisonLayoutV4Schema.safeParse(layout).success).toBe(true);
+    // Spec default: 5 kpis + 4 more rows = 5 rows.
+    expect(layout.rows).toHaveLength(5);
   });
 
-  it("loads a v1 layout as v3 with yearRange: null (legacy passthrough, hidden dropped)", async () => {
-    mockSelect([
-      {
-        layout: {
-          version: 1,
-          items: [
+  it("returns a stored v4 layout unchanged", async () => {
+    const stored = {
+      version: 4,
+      title: "Stored",
+      rows: [
+        {
+          id: "00000000-0000-0000-0000-00000000aa01",
+          cells: [
             {
-              instanceId: "11111111-1111-4111-8111-111111111111",
-              kind: "portfolio",
-              hidden: false,
-              collapsed: false,
-            },
-            {
-              instanceId: "22222222-2222-4222-8222-222222222222",
-              kind: "monte-carlo",
-              hidden: true,
-              collapsed: false,
+              id: "00000000-0000-0000-0000-00000000aa02",
+              widget: {
+                id: "00000000-0000-0000-0000-00000000aa03",
+                kind: "portfolio",
+                planIds: ["plan-base"],
+              },
             },
           ],
         },
-      },
-    ]);
-    const layout = await loadLayout("client-1", "firm-1");
-    expect(layout.version).toBe(3);
-    expect(layout.yearRange).toBeNull();
-    expect(layout.items.map((i) => i.kind)).toEqual(["portfolio"]);
-    expect("hidden" in layout.items[0]).toBe(false);
-    expect("collapsed" in layout.items[0]).toBe(false);
+      ],
+    };
+    select.mockResolvedValue([{ layout: stored }]);
+    const layout = await loadLayout("c", "f", ctx);
+    expect(layout).toEqual(stored);
   });
 
-  it("loads a v2 layout as v3, preserving yearRange and dropping hidden items", async () => {
-    mockSelect([
-      {
-        layout: {
-          version: 2,
-          yearRange: { start: 2030, end: 2055 },
-          items: [
-            { instanceId: "11111111-1111-4111-8111-111111111111", kind: "portfolio", hidden: false, collapsed: false },
-            { instanceId: "22222222-2222-4222-8222-222222222222", kind: "estate-tax", hidden: true, collapsed: false },
-            { instanceId: "33333333-3333-4333-8333-333333333333", kind: "monte-carlo", hidden: false, collapsed: true },
-          ],
-        },
-      },
-    ]);
-    const layout = await loadLayout("client-1", "firm-1");
-    expect(layout.version).toBe(3);
-    expect(layout.yearRange).toEqual({ start: 2030, end: 2055 });
-    expect(layout.items.map((i) => i.kind)).toEqual(["portfolio", "monte-carlo"]);
-    expect("collapsed" in layout.items[1]).toBe(false);
+  it("migrates a stored v3 layout into v4", async () => {
+    const v3 = {
+      version: 3,
+      yearRange: { start: 2026, end: 2065 },
+      items: [
+        { instanceId: "11111111-1111-4111-8111-111111111111", kind: "portfolio" },
+        { instanceId: "22222222-2222-4222-8222-222222222222", kind: "kpi-strip" },
+      ],
+    };
+    select.mockResolvedValue([{ layout: v3 }]);
+    const layout = await loadLayout("c", "f", ctx);
+    expect(layout.version).toBe(4);
+    // portfolio becomes 1 row of 1 cell, kpi-strip expands into a 5-cell row.
+    expect(layout.rows).toHaveLength(2);
+    expect(layout.rows[0].cells).toHaveLength(1);
+    expect(layout.rows[1].cells).toHaveLength(5);
+    // planIds default to primary
+    expect(layout.rows[0].cells[0].widget.planIds).toEqual(["base"]);
   });
 
-  it("loads a v3 layout straight through", async () => {
-    mockSelect([
-      {
-        layout: {
-          version: 3,
-          yearRange: { start: 2030, end: 2055 },
-          items: [],
-        },
-      },
-    ]);
-    const layout = await loadLayout("client-1", "firm-1");
-    expect(layout.version).toBe(3);
-    expect(layout.yearRange).toEqual({ start: 2030, end: 2055 });
+  it("migrates a stored v2 layout via v3 → v4", async () => {
+    const v2 = {
+      version: 2,
+      yearRange: null,
+      items: [
+        { instanceId: "33333333-3333-4333-8333-333333333333", kind: "portfolio", hidden: false },
+      ],
+    };
+    select.mockResolvedValue([{ layout: v2 }]);
+    const layout = await loadLayout("c", "f", ctx);
+    expect(layout.version).toBe(4);
+    expect(layout.rows[0].cells[0].widget.kind).toBe("portfolio");
   });
 
-  it("falls back to default when the saved layout fails Zod parse", async () => {
+  it("seeds planIds from ctx.urlPlanIds when migrating v3", async () => {
+    const v3 = {
+      version: 3,
+      yearRange: null,
+      items: [{ instanceId: "44444444-4444-4444-8444-444444444444", kind: "portfolio" }],
+    };
+    select.mockResolvedValue([{ layout: v3 }]);
+    const layout = await loadLayout("c", "f", {
+      primaryScenarioId: "base",
+      urlPlanIds: ["base", "scenario-x"],
+    });
+    expect(layout.rows[0].cells[0].widget.planIds).toEqual(["base", "scenario-x"]);
+  });
+
+  it("falls back to default on unparseable saved layout", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    mockSelect([{ layout: { version: 1, items: [{ kind: "not-a-real-kind" }] } }]);
-    const layout = await loadLayout("client-1", "firm-1");
-    expect(layout.items.length).toBe(19);
+    select.mockResolvedValue([{ layout: { not: "anything", we: "recognize" } }]);
+    const layout = await loadLayout("c", "f", ctx);
+    expect(layout.version).toBe(4);
+    expect(layout.rows).toHaveLength(5); // default-layout-v4 shape
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });

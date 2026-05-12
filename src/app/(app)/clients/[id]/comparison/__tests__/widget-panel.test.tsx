@@ -1,162 +1,215 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
+import { render, fireEvent, screen } from "@testing-library/react";
 import { WidgetPanel } from "../widget-panel";
-import type { ComparisonLayout } from "@/lib/comparison/layout-schema";
+import type { ComparisonLayoutV4 } from "@/lib/comparison/layout-schema";
 import type { UseLayoutApi } from "../use-layout";
 
-const id = (n: number) => `0000000${n}-0000-4000-8000-000000000000`;
-
-function makeLayout(): ComparisonLayout {
+vi.mock("@/lib/comparison/widgets/registry", () => {
+  const m = (kind: string, title: string, category: string, scenarios: string) => ({
+    kind, title, category, scenarios, needsMc: false, render: () => null,
+  });
   return {
-    version: 3,
-    yearRange: null,
-    items: [
-      { instanceId: id(1), kind: "portfolio" },
-      { instanceId: id(2), kind: "monte-carlo" },
-      { instanceId: id(3), kind: "text", config: { markdown: "hi" } },
-    ],
+    COMPARISON_WIDGETS: {
+      kpi: m("kpi", "KPI", "kpis", "one"),
+      "kpi-strip": m("kpi-strip", "KPI Strip (legacy)", "kpis", "one-or-many"),
+      portfolio: m("portfolio", "Portfolio", "investments", "one-or-many"),
+      "allocation-drift": m("allocation-drift", "Asset Allocation Drift", "investments", "one-or-many"),
+      "monte-carlo": m("monte-carlo", "Monte Carlo Outcomes", "monte-carlo", "one-or-many"),
+      longevity: m("longevity", "Longevity", "monte-carlo", "one-or-many"),
+      "income-expense": m("income-expense", "Income & Expenses", "cashflow", "one-or-many"),
+      "year-by-year": m("year-by-year", "Year-by-year", "cashflow", "many-only"),
+      "tax-bracket-fill": m("tax-bracket-fill", "Bracket Fill", "tax", "one-or-many"),
+      "ss-income": m("ss-income", "SS Income", "retirement-income", "one-or-many"),
+      "estate-tax": m("estate-tax", "Estate Tax", "estate", "one-or-many"),
+      text: m("text", "Text block", "text", "none"),
+    },
   };
-}
+});
 
-function makeApi(layout: ComparisonLayout): UseLayoutApi {
+const layout: ComparisonLayoutV4 = {
+  version: 4,
+  title: "T",
+  rows: [
+    { id: "r1", cells: [{ id: "c1", widget: { id: "w1", kind: "portfolio", planIds: ["base"] } }] },
+    { id: "r2", cells: [{ id: "c2", widget: { id: "w2", kind: "monte-carlo", planIds: ["base"] } }] },
+  ],
+};
+
+function makeApi(): UseLayoutApi {
   return {
     layout,
-    move: vi.fn(),
-    add: vi.fn(),
-    remove: vi.fn(),
-    insertTextAt: vi.fn(),
-    addTextBlock: vi.fn(),
+    setTitle: vi.fn(),
+    addRow: vi.fn(() => ({ rowId: "row-new", placeholderCellId: "placeholder-cell" })),
+    removeRow: vi.fn(),
+    moveRow: vi.fn(),
+    addCell: vi.fn(),
+    removeCell: vi.fn(),
+    moveCell: vi.fn(),
+    updateWidgetPlanIds: vi.fn(),
+    updateWidgetYearRange: vi.fn(),
+    updateWidgetConfig: vi.fn(),
     updateTextMarkdown: vi.fn(),
-    setYearRange: vi.fn(),
     reset: vi.fn(),
     save: vi.fn(async () => {}),
     saving: false,
   };
 }
 
-vi.mock("@/lib/comparison/widgets/registry", () => {
-  const make = (kind: string, title: string) => ({ kind, title, needsMc: false, render: () => null });
-  return {
-    COMPARISON_WIDGETS: {
-      "kpi-strip": make("kpi-strip", "KPI Strip"),
-      portfolio: make("portfolio", "Portfolio"),
-      "monte-carlo": make("monte-carlo", "Monte Carlo"),
-      longevity: make("longevity", "Longevity"),
-      "lifetime-tax": make("lifetime-tax", "Lifetime Tax"),
-      liquidity: make("liquidity", "Liquidity"),
-      "estate-impact": make("estate-impact", "Estate Impact"),
-      "estate-tax": make("estate-tax", "Estate Tax"),
-      text: make("text", "Text block"),
-      "income-expense": make("income-expense", "Income vs Expense"),
-      "withdrawal-source": make("withdrawal-source", "Withdrawal Source"),
-      "year-by-year": make("year-by-year", "Year-by-year"),
-      "ss-income": make("ss-income", "Social Security Income"),
-      "allocation-drift": make("allocation-drift", "Asset Allocation Drift"),
-      "tax-bracket-fill": make("tax-bracket-fill", "Tax Bracket Fill"),
-      "roth-ladder": make("roth-ladder", "Roth Conversion Ladder"),
-      "rmd-schedule": make("rmd-schedule", "RMD Schedule"),
-      "charitable-impact": make("charitable-impact", "Charitable Impact"),
-      "decade-summary": make("decade-summary", "Decade Summary"),
-      "cash-flow-gap": make("cash-flow-gap", "Cash-Flow Gap Years"),
-    },
-  };
-});
+const scenarios = [{ id: "base", name: "Base" }, { id: "sc-1", name: "Roth Heavy" }];
 
-describe("WidgetPanel", () => {
-  it("lists current layout items in order under LAYOUT", () => {
-    const layout = makeLayout();
+describe("WidgetPanel (v4)", () => {
+  it("Lists Layout entries by canvas order", () => {
     const { container } = render(
-      <WidgetPanel layout={layout} api={makeApi(layout)} onDone={vi.fn()} />,
+      <WidgetPanel
+        api={makeApi()}
+        scenarios={scenarios}
+        availableYearRange={{ min: 2026, max: 2065 }}
+        primaryScenarioId="base"
+        onDone={vi.fn()}
+      />,
     );
-    const rows = container.querySelectorAll("[data-layout-row]");
-    expect(Array.from(rows).map((r) => r.getAttribute("data-layout-row"))).toEqual([
-      id(1), id(2), id(3),
+    const entries = container.querySelectorAll("[data-layout-entry]");
+    expect(Array.from(entries).map((e) => e.getAttribute("data-layout-entry"))).toEqual([
+      "c1", "c2",
     ]);
   });
 
-  it("shows kinds that aren't in the layout under AVAILABLE (excluding text)", () => {
-    const layout = makeLayout();
-    const { container } = render(
-      <WidgetPanel layout={layout} api={makeApi(layout)} onDone={vi.fn()} />,
+  it("Groups Available widgets by category header", () => {
+    render(
+      <WidgetPanel
+        api={makeApi()}
+        scenarios={scenarios}
+        availableYearRange={{ min: 2026, max: 2065 }}
+        primaryScenarioId="base"
+        onDone={vi.fn()}
+      />,
     );
-    const available = Array.from(
-      container.querySelectorAll("[data-available-kind]"),
-    ).map((el) => el.getAttribute("data-available-kind"));
-    // 20 kinds total; 3 in layout (portfolio, monte-carlo, text); text is never in Available.
-    expect(available).toContain("kpi-strip");
-    expect(available).toContain("longevity");
-    expect(available).not.toContain("portfolio");
-    expect(available).not.toContain("text");
-    expect(available).toHaveLength(17);
+    // Target the category-header toggle buttons specifically; widget entry buttons
+    // share the same role but have different names (never matching category titles
+    // in the mock — see mock titles above).
+    expect(screen.getByRole("button", { name: /KPIs/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Cash Flow$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Investments$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Monte Carlo$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Retirement Income/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Tax$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Estate$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Text$/i })).toBeInTheDocument();
   });
 
-  it("clicking an available row calls api.add(kind)", () => {
-    const layout = makeLayout();
-    const api = makeApi(layout);
-    const { container } = render(
-      <WidgetPanel layout={layout} api={api} onDone={vi.fn()} />,
+  it("Available hides the legacy kpi-strip", () => {
+    render(
+      <WidgetPanel
+        api={makeApi()}
+        scenarios={scenarios}
+        availableYearRange={{ min: 2026, max: 2065 }}
+        primaryScenarioId="base"
+        onDone={vi.fn()}
+      />,
     );
-    const btn = container.querySelector('[data-available-kind="liquidity"]') as HTMLElement;
-    fireEvent.click(btn);
-    expect(api.add).toHaveBeenCalledWith("liquidity");
+    expect(screen.queryByText("KPI Strip (legacy)")).toBeNull();
   });
 
-  it("clicking remove on a layout row calls api.remove(instanceId)", () => {
-    const layout = makeLayout();
-    const api = makeApi(layout);
-    const { container } = render(
-      <WidgetPanel layout={layout} api={api} onDone={vi.fn()} />,
+  it("Clicking an Available entry adds a new row containing that widget", () => {
+    const api = makeApi();
+    render(
+      <WidgetPanel
+        api={api}
+        scenarios={scenarios}
+        availableYearRange={{ min: 2026, max: 2065 }}
+        primaryScenarioId="base"
+        onDone={vi.fn()}
+      />,
     );
-    const removeBtn = container.querySelector(
-      `[data-layout-row="${id(2)}"] [data-action="remove"]`,
-    ) as HTMLElement;
-    fireEvent.click(removeBtn);
-    expect(api.remove).toHaveBeenCalledWith(id(2));
+    fireEvent.click(screen.getByText("Longevity"));
+    expect(api.addRow).toHaveBeenCalled();
+    expect(api.addCell).toHaveBeenCalledWith("row-new", "longevity");
+    // The placeholder text cell on the new row needs removing — panel handles that:
+    expect(api.removeCell).toHaveBeenCalled();
   });
 
-  it("clicking 'Insert text' between rows calls api.insertTextAt(index)", () => {
-    const layout = makeLayout();
-    const api = makeApi(layout);
-    const { container } = render(
-      <WidgetPanel layout={layout} api={api} onDone={vi.fn()} />,
+  it("Clicking ✎ on a Layout entry expands the inline config below it", () => {
+    render(
+      <WidgetPanel
+        api={makeApi()}
+        scenarios={scenarios}
+        availableYearRange={{ min: 2026, max: 2065 }}
+        primaryScenarioId="base"
+        onDone={vi.fn()}
+      />,
     );
-    // Slot index 1 sits between the first two items.
-    const slot = container.querySelector('[data-insert-text-at="1"]') as HTMLElement;
-    fireEvent.click(slot);
-    expect(api.insertTextAt).toHaveBeenCalledWith(1);
+    const editBtns = screen.getAllByLabelText(/^Edit /i);
+    fireEvent.click(editBtns[0]);
+    // ScenarioChipPicker should now appear (scenarios are clickable chips with the name).
+    expect(screen.getByText("Base")).toBeInTheDocument();
   });
 
-  it("Done button calls onDone", () => {
+  it("Clicking 🗑 on a Layout entry calls removeCell with row+cell ids", () => {
+    const api = makeApi();
+    render(
+      <WidgetPanel
+        api={api}
+        scenarios={scenarios}
+        availableYearRange={{ min: 2026, max: 2065 }}
+        primaryScenarioId="base"
+        onDone={vi.fn()}
+      />,
+    );
+    const removeBtns = screen.getAllByLabelText(/^Remove /i);
+    fireEvent.click(removeBtns[0]);
+    expect(api.removeCell).toHaveBeenCalledWith("r1", "c1");
+  });
+
+  it("Done button calls api.save then onDone", async () => {
+    const api = makeApi();
     const onDone = vi.fn();
-    const layout = makeLayout();
-    const { getByText } = render(
-      <WidgetPanel layout={layout} api={makeApi(layout)} onDone={onDone} />,
+    render(
+      <WidgetPanel
+        api={api}
+        scenarios={scenarios}
+        availableYearRange={{ min: 2026, max: 2065 }}
+        primaryScenarioId="base"
+        onDone={onDone}
+      />,
     );
-    fireEvent.click(getByText("Done"));
+    fireEvent.click(screen.getByText("Done"));
+    // save is async; wait a microtask:
+    await Promise.resolve();
+    expect(api.save).toHaveBeenCalled();
     expect(onDone).toHaveBeenCalled();
   });
 
-  it("Reset button calls api.reset after confirm", () => {
-    const layout = makeLayout();
-    const api = makeApi(layout);
+  it("Reset button asks for confirmation, then calls api.reset with primary id", () => {
+    const api = makeApi();
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
-    const { getByText } = render(
-      <WidgetPanel layout={layout} api={api} onDone={vi.fn()} />,
+    render(
+      <WidgetPanel
+        api={api}
+        scenarios={scenarios}
+        availableYearRange={{ min: 2026, max: 2065 }}
+        primaryScenarioId="base"
+        onDone={vi.fn()}
+      />,
     );
-    fireEvent.click(getByText(/Reset to default/i));
-    expect(api.reset).toHaveBeenCalled();
+    fireEvent.click(screen.getByText(/Reset to default/i));
+    expect(api.reset).toHaveBeenCalledWith("base");
     confirmSpy.mockRestore();
   });
 
-  it("Reset is a no-op when user cancels confirm", () => {
-    const layout = makeLayout();
-    const api = makeApi(layout);
+  it("Reset button is a no-op when confirm is cancelled", () => {
+    const api = makeApi();
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
-    const { getByText } = render(
-      <WidgetPanel layout={layout} api={api} onDone={vi.fn()} />,
+    render(
+      <WidgetPanel
+        api={api}
+        scenarios={scenarios}
+        availableYearRange={{ min: 2026, max: 2065 }}
+        primaryScenarioId="base"
+        onDone={vi.fn()}
+      />,
     );
-    fireEvent.click(getByText(/Reset to default/i));
+    fireEvent.click(screen.getByText(/Reset to default/i));
     expect(api.reset).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
   });

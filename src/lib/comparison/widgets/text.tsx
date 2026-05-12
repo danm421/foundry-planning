@@ -9,6 +9,8 @@ type TextConfig = z.infer<typeof TextConfigSchema>;
 export const textWidget: ComparisonWidgetDefinition<TextConfig> = {
   kind: "text",
   title: "Text block",
+  category: "text",
+  scenarios: "none",
   needsMc: false,
   configSchema: TextConfigSchema,
   defaultConfig: { markdown: "" },

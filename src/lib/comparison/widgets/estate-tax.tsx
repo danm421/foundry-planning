@@ -5,6 +5,8 @@ import type { ComparisonWidgetDefinition } from "./types";
 export const estateTaxWidget: ComparisonWidgetDefinition = {
   kind: "estate-tax",
   title: "Estate Tax",
+  category: "estate",
+  scenarios: "one-or-many",
   needsMc: false,
   render: ({ plans, clientId }) => {
     return (

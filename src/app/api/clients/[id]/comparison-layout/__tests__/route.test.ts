@@ -38,17 +38,38 @@ function makeParams() {
   return { params: Promise.resolve({ id: testClientId }) };
 }
 
+const validV4Body = {
+  version: 4,
+  title: "Test Report",
+  rows: [
+    {
+      id: "00000000-0000-0000-0000-000000000001",
+      cells: [
+        {
+          id: "00000000-0000-0000-0000-000000000002",
+          widget: {
+            id: "00000000-0000-0000-0000-000000000003",
+            kind: "portfolio",
+            planIds: ["base"],
+          },
+        },
+      ],
+    },
+  ],
+};
+
 describe("GET /api/clients/[id]/comparison-layout", () => {
-  it("returns the default layout when no row exists", async () => {
+  it("returns the v4 default layout when no row exists", async () => {
     const res = await GET(new NextRequest("http://localhost/x"), makeParams());
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.layout.version).toBe(3);
-    expect(json.layout.items.length).toBe(19);
+    expect(json.layout.version).toBe(4);
+    expect(json.layout.title).toBe("Comparison Report");
+    expect(json.layout.rows.length).toBe(5);
   });
 
   it("404s when the client doesn't belong to the firm", async () => {
-    const otherClient = await db
+    const [other] = await db
       .insert(clients)
       .values({
         firmId: "different-firm",
@@ -62,24 +83,17 @@ describe("GET /api/clients/[id]/comparison-layout", () => {
       .returning({ id: clients.id });
     const res = await GET(
       new NextRequest("http://localhost/x"),
-      { params: Promise.resolve({ id: otherClient[0].id }) },
+      { params: Promise.resolve({ id: other.id }) },
     );
     expect(res.status).toBe(404);
-    await db.delete(clients).where(eq(clients.id, otherClient[0].id));
+    await db.delete(clients).where(eq(clients.id, other.id));
   });
 });
 
 describe("PUT /api/clients/[id]/comparison-layout", () => {
-  it("upserts a valid layout", async () => {
-    const body = {
-      version: 3,
-      yearRange: null,
-      items: [
-        { instanceId: "11111111-1111-4111-8111-111111111111", kind: "portfolio" },
-      ],
-    };
+  it("upserts a valid v4 layout", async () => {
     const res = await PUT(
-      new NextRequest("http://localhost/x", { method: "PUT", body: JSON.stringify(body) }),
+      new NextRequest("http://localhost/x", { method: "PUT", body: JSON.stringify(validV4Body) }),
       makeParams(),
     );
     expect(res.status).toBe(200);
@@ -88,37 +102,75 @@ describe("PUT /api/clients/[id]/comparison-layout", () => {
       .from(clientComparisonLayouts)
       .where(eq(clientComparisonLayouts.clientId, testClientId));
     expect(rows.length).toBe(1);
-    expect(rows[0].layout).toMatchObject({ items: [{ kind: "portfolio" }] });
+    expect(rows[0].layout).toMatchObject({ version: 4, title: "Test Report" });
   });
 
-  it("rejects malformed payload with 400", async () => {
+  it("rejects a malformed payload with 400", async () => {
     const res = await PUT(
       new NextRequest("http://localhost/x", {
         method: "PUT",
-        body: JSON.stringify({ version: 3, yearRange: null, items: [{ kind: "bogus" }] }),
+        body: JSON.stringify({ version: 4, title: "X", rows: [{ cells: [] }] }),
       }),
       makeParams(),
     );
     expect(res.status).toBe(400);
   });
 
-  it("replaces an existing layout on second PUT", async () => {
-    const body1 = {
-      version: 3,
-      yearRange: null,
-      items: [{ instanceId: "11111111-1111-4111-8111-111111111111", kind: "portfolio" }],
+  it("rejects a cardinality-violating payload with 422", async () => {
+    const bad = {
+      version: 4,
+      title: "Bad",
+      rows: [
+        {
+          id: "00000000-0000-0000-0000-0000000000a1",
+          cells: [
+            {
+              id: "00000000-0000-0000-0000-0000000000a2",
+              widget: {
+                id: "00000000-0000-0000-0000-0000000000a3",
+                kind: "year-by-year", // many-only
+                planIds: ["just-one"], // only one plan → invalid
+              },
+            },
+          ],
+        },
+      ],
     };
-    const body2 = {
-      version: 3,
-      yearRange: null,
-      items: [{ instanceId: "22222222-2222-4222-8222-222222222222", kind: "estate-tax" }],
-    };
-    await PUT(
-      new NextRequest("http://localhost/x", { method: "PUT", body: JSON.stringify(body1) }),
+    const res = await PUT(
+      new NextRequest("http://localhost/x", { method: "PUT", body: JSON.stringify(bad) }),
       makeParams(),
     );
+    expect(res.status).toBe(422);
+    const json = await res.json();
+    expect(Array.isArray(json.errors)).toBe(true);
+  });
+
+  it("replaces an existing v4 layout on second PUT", async () => {
     await PUT(
-      new NextRequest("http://localhost/x", { method: "PUT", body: JSON.stringify(body2) }),
+      new NextRequest("http://localhost/x", { method: "PUT", body: JSON.stringify(validV4Body) }),
+      makeParams(),
+    );
+    const second = {
+      ...validV4Body,
+      title: "Second",
+      rows: [
+        {
+          id: "00000000-0000-0000-0000-0000000000b1",
+          cells: [
+            {
+              id: "00000000-0000-0000-0000-0000000000b2",
+              widget: {
+                id: "00000000-0000-0000-0000-0000000000b3",
+                kind: "estate-tax",
+                planIds: ["base"],
+              },
+            },
+          ],
+        },
+      ],
+    };
+    await PUT(
+      new NextRequest("http://localhost/x", { method: "PUT", body: JSON.stringify(second) }),
       makeParams(),
     );
     const rows = await db
@@ -126,6 +178,6 @@ describe("PUT /api/clients/[id]/comparison-layout", () => {
       .from(clientComparisonLayouts)
       .where(eq(clientComparisonLayouts.clientId, testClientId));
     expect(rows.length).toBe(1);
-    expect(rows[0].layout).toMatchObject({ items: [{ kind: "estate-tax" }] });
+    expect((rows[0].layout as { title: string }).title).toBe("Second");
   });
 });

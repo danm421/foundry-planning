@@ -49,3 +49,60 @@ export const ComparisonLayoutSchema = z.object({
   items: z.array(ComparisonLayoutItemSchema),
 });
 export type ComparisonLayout = z.infer<typeof ComparisonLayoutSchema>;
+
+// ---------- v4 ----------
+
+export const WIDGET_KINDS_V4 = [
+  "kpi",        // NEW v4 — single-metric tile
+  "kpi-strip",  // LEGACY — kept for migration; no new v4 layouts should reference it
+  "portfolio",
+  "monte-carlo",
+  "longevity",
+  "lifetime-tax",
+  "liquidity",
+  "estate-impact",
+  "estate-tax",
+  "text",
+  "income-expense",
+  "withdrawal-source",
+  "year-by-year",
+  "ss-income",
+  "allocation-drift",
+  "tax-bracket-fill",
+  "roth-ladder",
+  "rmd-schedule",
+  "charitable-impact",
+  "decade-summary",
+  "cash-flow-gap",
+] as const;
+export type ComparisonWidgetKindV4 = (typeof WIDGET_KINDS_V4)[number];
+
+export const ComparisonWidgetKindV4Schema = z.enum(WIDGET_KINDS_V4);
+
+export const WidgetInstanceSchema = z.object({
+  id: z.string(),
+  kind: ComparisonWidgetKindV4Schema,
+  planIds: z.array(z.string()),
+  yearRange: YearRangeSchema.optional(),
+  config: z.unknown().optional(),
+});
+export type WidgetInstance = z.infer<typeof WidgetInstanceSchema>;
+
+export const CellSchema = z.object({
+  id: z.string(),
+  widget: WidgetInstanceSchema,
+});
+export type Cell = z.infer<typeof CellSchema>;
+
+export const RowSchema = z.object({
+  id: z.string(),
+  cells: z.array(CellSchema).min(1).max(5),
+});
+export type Row = z.infer<typeof RowSchema>;
+
+export const ComparisonLayoutV4Schema = z.object({
+  version: z.literal(4),
+  title: z.string(),
+  rows: z.array(RowSchema),
+});
+export type ComparisonLayoutV4 = z.infer<typeof ComparisonLayoutV4Schema>;

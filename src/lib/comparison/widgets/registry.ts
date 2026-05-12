@@ -1,5 +1,6 @@
-import type { ComparisonWidgetKind } from "../layout-schema";
+import type { ComparisonWidgetKindV4 } from "../layout-schema";
 import type { ComparisonWidgetDefinition } from "./types";
+import { kpiWidget } from "./kpi";
 import { kpiStripWidget } from "./kpi-strip";
 import { portfolioWidget } from "./portfolio";
 import { monteCarloWidget } from "./monte-carlo";
@@ -22,9 +23,10 @@ import { decadeSummaryWidget } from "./decade-summary";
 import { cashFlowGapWidget } from "./cash-flow-gap";
 
 export const COMPARISON_WIDGETS: Record<
-  ComparisonWidgetKind,
+  ComparisonWidgetKindV4,
   ComparisonWidgetDefinition
 > = {
+  kpi: kpiWidget,
   "kpi-strip": kpiStripWidget,
   portfolio: portfolioWidget,
   "monte-carlo": monteCarloWidget,
