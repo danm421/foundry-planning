@@ -41,10 +41,11 @@ export function WidgetConfigPopover({
     middleware: [offset(8), flip(), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
   });
+  const { setReference, setFloating } = refs;
 
   useEffect(() => {
-    refs.setReference(anchor);
-  }, [anchor, refs]);
+    setReference(anchor);
+  }, [anchor, setReference]);
 
   const dismiss = useDismiss(context, { outsidePress: true, escapeKey: true });
   const { getFloatingProps } = useInteractions([dismiss]);
@@ -53,7 +54,7 @@ export function WidgetConfigPopover({
 
   return (
     <div
-      ref={refs.setFloating}
+      ref={setFloating}
       style={floatingStyles}
       role="dialog"
       aria-label="Edit widget"
