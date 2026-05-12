@@ -4,11 +4,14 @@ import { db } from "@/db";
 import { clientComparisonLayouts } from "@/db/schema";
 import {
   ComparisonLayoutSchema,
+  ComparisonLayoutV4Schema,
   ComparisonWidgetKindSchema,
   YearRangeSchema,
   type ComparisonLayout,
+  type ComparisonLayoutV4,
 } from "./layout-schema";
-import { getDefaultLayout } from "./widgets/default-layout";
+import { getDefaultLayoutV4 } from "./widgets/default-layout-v4";
+import { migrateV3ToV4, type MigrationContext } from "./migrate-to-v4";
 
 const LegacyItemSchema = z.object({
   instanceId: z.string().uuid(),
@@ -41,30 +44,27 @@ function promoteItems(
     }));
 }
 
-export function parseLegacyV1Layout(raw: unknown): ComparisonLayout | null {
+function parseLegacyV1Layout(raw: unknown): ComparisonLayout | null {
   const v1 = LegacyV1LayoutSchema.safeParse(raw);
   if (!v1.success) return null;
-  return {
-    version: 3,
-    yearRange: null,
-    items: promoteItems(v1.data.items),
-  };
+  return { version: 3, yearRange: null, items: promoteItems(v1.data.items) };
 }
 
-export function parseLegacyV2Layout(raw: unknown): ComparisonLayout | null {
+function parseLegacyV2Layout(raw: unknown): ComparisonLayout | null {
   const v2 = LegacyV2LayoutSchema.safeParse(raw);
   if (!v2.success) return null;
-  return {
-    version: 3,
-    yearRange: v2.data.yearRange,
-    items: promoteItems(v2.data.items),
-  };
+  return { version: 3, yearRange: v2.data.yearRange, items: promoteItems(v2.data.items) };
+}
+
+function withTitle(layout: ComparisonLayoutV4, ctx: MigrationContext): ComparisonLayoutV4 {
+  return ctx.defaultTitle ? { ...layout, title: ctx.defaultTitle } : layout;
 }
 
 export async function loadLayout(
   clientId: string,
   firmId: string,
-): Promise<ComparisonLayout> {
+  ctx: MigrationContext,
+): Promise<ComparisonLayoutV4> {
   const rows = await db
     .select({ layout: clientComparisonLayouts.layout })
     .from(clientComparisonLayouts)
@@ -75,21 +75,27 @@ export async function loadLayout(
       ),
     );
 
-  if (rows.length === 0) return getDefaultLayout();
+  if (rows.length === 0) {
+    return withTitle(getDefaultLayoutV4({ primaryScenarioId: ctx.primaryScenarioId }), ctx);
+  }
 
-  const parsed = ComparisonLayoutSchema.safeParse(rows[0].layout);
-  if (parsed.success) return parsed.data;
+  const raw = rows[0].layout;
 
-  // Lazy migration: parse legacy shapes in-memory; next save writes v3.
-  const v2 = parseLegacyV2Layout(rows[0].layout);
-  if (v2) return v2;
+  const v4 = ComparisonLayoutV4Schema.safeParse(raw);
+  if (v4.success) return v4.data;
 
-  const v1 = parseLegacyV1Layout(rows[0].layout);
-  if (v1) return v1;
+  const v3 = ComparisonLayoutSchema.safeParse(raw);
+  if (v3.success) return migrateV3ToV4(v3.data, ctx);
+
+  const v2 = parseLegacyV2Layout(raw);
+  if (v2) return migrateV3ToV4(v2, ctx);
+
+  const v1 = parseLegacyV1Layout(raw);
+  if (v1) return migrateV3ToV4(v1, ctx);
 
   console.warn(
     `[comparison-layout] failed to parse saved layout for client ${clientId}; falling back to default`,
-    parsed.error.issues,
+    v4.error.issues,
   );
-  return getDefaultLayout();
+  return withTitle(getDefaultLayoutV4({ primaryScenarioId: ctx.primaryScenarioId }), ctx);
 }
