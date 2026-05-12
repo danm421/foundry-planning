@@ -113,6 +113,15 @@ export default function StateDeathTaxReportView({
   }
 
   const isSplit = selectedAsOf === "split";
+
+  if (!isSplit && !hypothetical) {
+    return (
+      <div className="rounded-lg border border-gray-700 bg-gray-900 p-6 text-center text-gray-300">
+        No state death tax snapshot available for {resolvedYear}.
+      </div>
+    );
+  }
+
   const splitFirst = isSplit ? projection?.firstDeathEvent ?? null : null;
   const splitSecond = isSplit ? projection?.secondDeathEvent ?? null : null;
 
