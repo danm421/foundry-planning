@@ -181,7 +181,6 @@ export function ComparisonShell({
               Couldn&apos;t load plan data: {preview.error}
             </div>
           ) : (
-            // @ts-expect-error — WidgetRenderer still accepts v4 layout; Task 12 upgrades it
             <WidgetRenderer
               layout={api.layout}
               clientId={clientId}
