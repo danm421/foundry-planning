@@ -129,7 +129,7 @@ export function WidgetPanel({
                   <span className="flex-1 truncate">{def?.title}</span>
                   <button
                     type="button"
-                    aria-label="Edit widget"
+                    aria-label={`Edit ${def?.title}`}
                     onClick={() => setOpenCellId(open ? null : cellId)}
                     className="rounded px-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
                   >
@@ -137,8 +137,11 @@ export function WidgetPanel({
                   </button>
                   <button
                     type="button"
-                    aria-label="Remove widget"
-                    onClick={() => api.removeCell(rowId, cellId)}
+                    aria-label={`Remove ${def?.title}`}
+                    onClick={() => {
+                      if (openCellId === cellId) setOpenCellId(null);
+                      api.removeCell(rowId, cellId);
+                    }}
                     className="rounded px-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
                   >
                     🗑
@@ -173,6 +176,7 @@ export function WidgetPanel({
                 <button
                   type="button"
                   onClick={() => toggleCollapse(key)}
+                  aria-expanded={!isCollapsed}
                   className="flex w-full items-center justify-between border-b border-slate-800 px-3 py-1.5 text-left text-[11px] uppercase tracking-wider text-slate-300 hover:bg-slate-900"
                 >
                   {title}

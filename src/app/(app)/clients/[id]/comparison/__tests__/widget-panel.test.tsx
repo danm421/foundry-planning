@@ -139,7 +139,7 @@ describe("WidgetPanel (v4)", () => {
         onDone={vi.fn()}
       />,
     );
-    const editBtns = screen.getAllByLabelText(/Edit widget/i);
+    const editBtns = screen.getAllByLabelText(/^Edit /i);
     fireEvent.click(editBtns[0]);
     // ScenarioChipPicker should now appear (scenarios are clickable chips with the name).
     expect(screen.getByText("Base")).toBeInTheDocument();
@@ -156,7 +156,7 @@ describe("WidgetPanel (v4)", () => {
         onDone={vi.fn()}
       />,
     );
-    const removeBtns = screen.getAllByLabelText(/Remove widget/i);
+    const removeBtns = screen.getAllByLabelText(/^Remove /i);
     fireEvent.click(removeBtns[0]);
     expect(api.removeCell).toHaveBeenCalledWith("r1", "c1");
   });
@@ -194,6 +194,23 @@ describe("WidgetPanel (v4)", () => {
     );
     fireEvent.click(screen.getByText(/Reset to default/i));
     expect(api.reset).toHaveBeenCalledWith("base");
+    confirmSpy.mockRestore();
+  });
+
+  it("Reset button is a no-op when confirm is cancelled", () => {
+    const api = makeApi();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(
+      <WidgetPanel
+        api={api}
+        scenarios={scenarios}
+        availableYearRange={{ min: 2026, max: 2065 }}
+        primaryScenarioId="base"
+        onDone={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText(/Reset to default/i));
+    expect(api.reset).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
   });
 });
