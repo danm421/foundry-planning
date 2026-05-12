@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildComparisonAiPrompt, type AiPlanYearly } from "../ai-prompt";
+import { buildComparisonAiPrompt, formatMoney, type AiPlanYearly } from "../ai-prompt";
 import type { ResolvedSource } from "../ai-source-resolve";
 
 const sources: ResolvedSource[] = [
@@ -35,9 +35,25 @@ describe("buildComparisonAiPrompt", () => {
       customInstructions: "address the client by first name",
       householdName: "Smith Family",
     });
-    expect(system).toMatch(/concise/i);
-    expect(system).toMatch(/1-2 short paragraphs/i);
+    expect(system).toMatch(/lead with the single most important point/i);
+    expect(system).toMatch(/2-3 sentences total/i);
     expect(system).toMatch(/address the client by first name/);
+  });
+
+  it("always bakes in a warm/personable baseline and money formatting rules", () => {
+    const { system } = buildComparisonAiPrompt({
+      sources,
+      plans,
+      tone: "detailed",
+      length: "long",
+      customInstructions: "",
+      householdName: "Smith Family",
+    });
+    expect(system).toMatch(/warm, personable, and conversational/i);
+    expect(system).toMatch(/never invent figures/i);
+    expect(system).toMatch(/\$X\.XM/);
+    expect(system).toMatch(/\$XXX K|\$XXX\sK|\$XXX,XXX|XXX K/i);
+    expect(system).toMatch(/percentages with at most one decimal/i);
   });
 
   it("lists each source widget on its own line in the user prompt", () => {
@@ -93,6 +109,21 @@ describe("buildComparisonAiPrompt", () => {
     expect(user).not.toMatch(/\b2032\b/);
   });
 
+  it("pre-formats year-row money values in the user prompt", () => {
+    const { user } = buildComparisonAiPrompt({
+      sources,
+      plans,
+      tone: "concise",
+      length: "short",
+      customInstructions: "",
+      householdName: "Smith Family",
+    });
+    // 100000 → $100K, 1_000_000 → $1.0M, 80000 → $80K. Raw decimals must be gone.
+    expect(user).toMatch(/\$100K/);
+    expect(user).toMatch(/\$1\.0M|\$1\.1M/);
+    expect(user).not.toMatch(/100000\b|1000000\b/);
+  });
+
   it("returns identical strings for identical inputs (determinism)", () => {
     const a = buildComparisonAiPrompt({
       sources,
@@ -112,5 +143,30 @@ describe("buildComparisonAiPrompt", () => {
     });
     expect(a.system).toBe(b.system);
     expect(a.user).toBe(b.user);
+  });
+});
+
+describe("formatMoney", () => {
+  it("formats millions with one decimal and an M suffix", () => {
+    expect(formatMoney(3_664_560.69)).toBe("$3.7M");
+    expect(formatMoney(12_784_402.37)).toBe("$12.8M");
+  });
+
+  it("formats five and six-figure values as rounded K", () => {
+    expect(formatMoney(473_772.08)).toBe("$474K");
+    expect(formatMoney(95_387.31)).toBe("$95K");
+  });
+
+  it("formats low four-figure values as X.XK", () => {
+    expect(formatMoney(1234)).toBe("$1.2K");
+  });
+
+  it("formats values under $1,000 as a rounded dollar amount", () => {
+    expect(formatMoney(750.4)).toBe("$750");
+    expect(formatMoney(0)).toBe("$0");
+  });
+
+  it("handles negative values", () => {
+    expect(formatMoney(-95_387)).toBe("-$95K");
   });
 });

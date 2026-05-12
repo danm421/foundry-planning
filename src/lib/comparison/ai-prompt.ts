@@ -2,16 +2,25 @@ import type { ResolvedSource } from "./ai-source-resolve";
 import type { AiTone, AiLength } from "./layout-schema";
 
 const TONE_INSTRUCTIONS: Record<AiTone, string> = {
-  concise: "Be concise and direct. Lead with the main point.",
-  detailed: "Be detailed. Include specific numbers and short explanations.",
-  plain: "Use plain English. Avoid jargon. Address the household directly.",
+  concise: "Lead with the single most important point. Trim every word you can.",
+  detailed: "Bring in specific numbers where they sharpen the point. Don't pad.",
+  plain: "Use everyday language. No jargon at all.",
 };
 
 const LENGTH_HINTS: Record<AiLength, string> = {
-  short: "1-2 short paragraphs.",
-  medium: "3-4 short paragraphs.",
-  long: "5-6 short paragraphs.",
+  short: "2-3 sentences total. One short paragraph.",
+  medium: "4-6 sentences total. 1-2 short paragraphs.",
+  long: "7-10 sentences total. 2-3 short paragraphs.",
 };
+
+export function formatMoney(n: number): string {
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 10_000) return `${sign}$${Math.round(abs / 1000)}K`;
+  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(1)}K`;
+  return `${sign}$${Math.round(abs).toLocaleString("en-US")}`;
+}
 
 export interface AiPlanYearly {
   planId: string;
@@ -39,14 +48,18 @@ export function buildComparisonAiPrompt(input: BuildPromptInput): { system: stri
   const { sources, plans, tone, length, customInstructions, householdName } = input;
 
   const systemParts = [
-    "You are a financial-planning assistant generating advisor-facing commentary inside a side-by-side scenario comparison tool.",
-    "Output: clean Markdown only. No preamble like 'Here is your analysis'.",
-    "Only use numbers that appear in the data below. Do not invent figures.",
-    "Frame observations and risks; do not give individualized advice or recommendations.",
-    "Keep paragraphs short (2-4 sentences each).",
-    "Tie the analysis back to the widgets the advisor is comparing, listed in the user message.",
+    "You write advisor commentary for a financial-planning report.",
+    "Always sound warm, personable, and conversational — like you're talking with the household, not at them. Use \"you\" and \"your\". Skip corporate-speak and jargon.",
+    "Output: clean Markdown only. No preamble like \"Here is your analysis\" or headings unless asked for.",
+    "Only use numbers from the data below. Never invent figures.",
+    "Format every dollar amount as $X.XM (e.g. $3.7M) or $XXX K (e.g. $474K) or $X,XXX with commas. Never show raw decimals like 3664560.69.",
+    "Format percentages with at most one decimal place (e.g. 5.2%).",
+    "Round numbers — the reader does not need cents.",
+    "Frame observations and risks. Do not give individualized advice or recommendations.",
+    "Keep paragraphs short (1-2 sentences). Favor brevity over completeness.",
+    "Tie the analysis back to the widgets listed below.",
     TONE_INSTRUCTIONS[tone],
-    LENGTH_HINTS[length],
+    `Length: ${LENGTH_HINTS[length]} Do not exceed this.`,
   ];
   if (customInstructions.trim().length > 0) {
     systemParts.push(`Advisor instructions: ${customInstructions.trim()}`);
@@ -91,7 +104,7 @@ export function buildComparisonAiPrompt(input: BuildPromptInput): { system: stri
       : p.years;
     const rows = filtered.map(
       (y) =>
-        `  ${y.year} age=${y.age} income=${y.income} expenses=${y.expenses} taxes=${y.taxes} endBalance=${y.endBalance}`,
+        `  ${y.year} (age ${y.age}): income ${formatMoney(y.income)}, expenses ${formatMoney(y.expenses)}, taxes ${formatMoney(y.taxes)}, end balance ${formatMoney(y.endBalance)}`,
     );
     planBlocks.push([`Plan: ${p.label} (id=${p.planId})`, ...rows].join("\n"));
   }
@@ -102,7 +115,7 @@ export function buildComparisonAiPrompt(input: BuildPromptInput): { system: stri
     "Widgets the advisor is comparing:",
     widgetLines.length > 0 ? widgetLines.join("\n") : "  (none selected)",
     "",
-    "Yearly projection data:",
+    "Yearly projection data (already rounded — use these formatted figures verbatim, do not re-precision them):",
     planBlocks.length > 0 ? planBlocks.join("\n\n") : "(no plans referenced)",
     "",
     "Write the commentary now.",
