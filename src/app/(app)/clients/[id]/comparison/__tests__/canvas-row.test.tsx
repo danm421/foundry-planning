@@ -35,6 +35,13 @@ describe("CanvasRow", () => {
         onRemoveCell={vi.fn()}
         onAddCell={vi.fn()}
         onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
+        onMoveUp={vi.fn()}
+        onMoveDown={vi.fn()}
+        canMoveUp={true}
+        canMoveDown={true}
       />,
     );
     const cards = screen.getAllByText(/Portfolio|Monte Carlo/);
@@ -60,6 +67,13 @@ describe("CanvasRow", () => {
         onRemoveCell={vi.fn()}
         onAddCell={vi.fn()}
         onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
+        onMoveUp={vi.fn()}
+        onMoveDown={vi.fn()}
+        canMoveUp={true}
+        canMoveDown={true}
       />,
     );
     expect(screen.getByLabelText(/Add cell/i)).toBeDisabled();
@@ -75,6 +89,13 @@ describe("CanvasRow", () => {
         onRemoveCell={vi.fn()}
         onAddCell={onAddCell}
         onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
+        onMoveUp={vi.fn()}
+        onMoveDown={vi.fn()}
+        canMoveUp={true}
+        canMoveDown={true}
       />,
     );
     fireEvent.click(screen.getByLabelText(/Add cell/i));
@@ -91,6 +112,13 @@ describe("CanvasRow", () => {
         onRemoveCell={onRemoveCell}
         onAddCell={vi.fn()}
         onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
+        onMoveUp={vi.fn()}
+        onMoveDown={vi.fn()}
+        canMoveUp={true}
+        canMoveDown={true}
       />,
     );
     const removeButtons = screen.getAllByLabelText(/Remove widget/i);
@@ -108,6 +136,13 @@ describe("CanvasRow", () => {
         onRemoveCell={vi.fn()}
         onAddCell={vi.fn()}
         onDeleteRow={onDeleteRow}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
+        onMoveUp={vi.fn()}
+        onMoveDown={vi.fn()}
+        canMoveUp={true}
+        canMoveDown={true}
       />,
     );
     fireEvent.click(screen.getByLabelText(/Delete row/i));
@@ -124,9 +159,85 @@ describe("CanvasRow", () => {
         onRemoveCell={vi.fn()}
         onAddCell={vi.fn()}
         onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
+        onMoveUp={vi.fn()}
+        onMoveDown={vi.fn()}
+        canMoveUp={true}
+        canMoveDown={true}
       />,
     );
     fireEvent.click(screen.getAllByLabelText(/Edit widget/i)[0]);
     expect(onEditCell).toHaveBeenCalledWith("c1");
+  });
+
+  it("invokes onMoveUp/onMoveDown when up/down buttons are clicked", () => {
+    const onMoveUp = vi.fn();
+    const onMoveDown = vi.fn();
+    render(
+      <CanvasRow
+        row={row}
+        scenarios={[{ id: "base", name: "Base" }]}
+        onEditCell={vi.fn()}
+        onRemoveCell={vi.fn()}
+        onAddCell={vi.fn()}
+        onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
+        onMoveUp={onMoveUp}
+        onMoveDown={onMoveDown}
+        canMoveUp={true}
+        canMoveDown={true}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText(/Move row up/i));
+    fireEvent.click(screen.getByLabelText(/Move row down/i));
+    expect(onMoveUp).toHaveBeenCalledWith("row-1");
+    expect(onMoveDown).toHaveBeenCalledWith("row-1");
+  });
+
+  it("disables up at top and down at bottom", () => {
+    render(
+      <CanvasRow
+        row={row}
+        scenarios={[{ id: "base", name: "Base" }]}
+        onEditCell={vi.fn()}
+        onRemoveCell={vi.fn()}
+        onAddCell={vi.fn()}
+        onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
+        onMoveUp={vi.fn()}
+        onMoveDown={vi.fn()}
+        canMoveUp={false}
+        canMoveDown={false}
+      />,
+    );
+    expect(screen.getByLabelText(/Move row up/i)).toBeDisabled();
+    expect(screen.getByLabelText(/Move row down/i)).toBeDisabled();
+  });
+
+  it("forwards a sortable drag handle (data-drag-handle='row') in the left gutter", () => {
+    render(
+      <CanvasRow
+        row={row}
+        scenarios={[{ id: "base", name: "Base" }]}
+        onEditCell={vi.fn()}
+        onRemoveCell={vi.fn()}
+        onAddCell={vi.fn()}
+        onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
+        onMoveUp={vi.fn()}
+        onMoveDown={vi.fn()}
+        canMoveUp={true}
+        canMoveDown={true}
+      />,
+    );
+    expect(document.querySelector("[data-drag-handle='row']")).not.toBeNull();
   });
 });

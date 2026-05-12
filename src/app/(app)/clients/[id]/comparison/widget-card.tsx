@@ -14,6 +14,13 @@ interface Props {
   scenarios: ScenarioLookup[];
   onEdit: () => void;
   onRemove: () => void;
+  onDuplicate: () => void;
+  onMoveLeft: () => void;
+  onMoveRight: () => void;
+  canMoveLeft: boolean;
+  canMoveRight: boolean;
+  dragAttributes?: Record<string, unknown>;
+  dragListeners?: Record<string, unknown>;
 }
 
 function lookup(scenarios: ScenarioLookup[], id: string): string {
@@ -21,7 +28,20 @@ function lookup(scenarios: ScenarioLookup[], id: string): string {
   return scenarios.find((s) => s.id === id)?.name ?? id;
 }
 
-export function WidgetCard({ widget, widthBadge, scenarios, onEdit, onRemove }: Props) {
+export function WidgetCard({
+  widget,
+  widthBadge,
+  scenarios,
+  onEdit,
+  onRemove,
+  onDuplicate,
+  onMoveLeft,
+  onMoveRight,
+  canMoveLeft,
+  canMoveRight,
+  dragAttributes,
+  dragListeners,
+}: Props) {
   const def = COMPARISON_WIDGETS[widget.kind];
   const showChips = def.scenarios !== "none";
   const needsAnotherPlan =
@@ -33,7 +53,16 @@ export function WidgetCard({ widget, widthBadge, scenarios, onEdit, onRemove }: 
       className="flex h-full flex-col gap-2 rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm text-slate-200"
     >
       <div className="flex items-start gap-2">
-        <span className="text-slate-400" aria-hidden="true">⋮⋮</span>
+        <button
+          type="button"
+          data-drag-handle="widget"
+          aria-label="Drag widget"
+          className="cursor-grab text-slate-400 hover:text-slate-200"
+          {...(dragAttributes ?? {})}
+          {...(dragListeners ?? {})}
+        >
+          ⋮⋮
+        </button>
         <span className="flex-1 truncate font-medium">{def.title}</span>
         <span className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-400">
           {widthBadge}
@@ -48,11 +77,40 @@ export function WidgetCard({ widget, widthBadge, scenarios, onEdit, onRemove }: 
         </button>
         <button
           type="button"
+          aria-label="Duplicate widget"
+          onClick={onDuplicate}
+          className="rounded px-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+        >
+          ⎘
+        </button>
+        <button
+          type="button"
           aria-label="Remove widget"
           onClick={onRemove}
           className="rounded px-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
         >
           🗑
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          aria-label="Move widget left"
+          onClick={onMoveLeft}
+          disabled={!canMoveLeft}
+          className="rounded px-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent"
+        >
+          ←
+        </button>
+        <button
+          type="button"
+          aria-label="Move widget right"
+          onClick={onMoveRight}
+          disabled={!canMoveRight}
+          className="rounded px-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent"
+        >
+          →
         </button>
       </div>
 
