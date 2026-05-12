@@ -35,12 +35,52 @@ const SPAN_TO_CLASS: Record<CellSpan, string> = {
 const ACTION_BTN =
   "rounded border border-slate-500 bg-slate-800 px-1.5 py-0.5 text-slate-100 shadow-sm hover:border-amber-400 hover:bg-slate-700 hover:text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-400";
 
-const ACTION_BTN_DISABLED =
-  "rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-slate-500";
-
 function lookup(scenarios: ScenarioLookup[], id: string): string {
   if (id === "base") return "Base";
   return scenarios.find((s) => s.id === id)?.name ?? id;
+}
+
+const SPAN_VALUES: CellSpan[] = [1, 2, 3, 4, 5];
+
+function SpanPicker({
+  span,
+  onChange,
+}: {
+  span: CellSpan;
+  onChange: (next: CellSpan) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Cell width"
+      className="inline-flex items-center gap-0.5 rounded border border-slate-600 bg-slate-800 p-0.5"
+    >
+      {SPAN_VALUES.map((n) => {
+        const active = n === span;
+        return (
+          <button
+            key={n}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            aria-label={`Width ${n} of 5`}
+            title={`Width ${n}/5`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!active) onChange(n);
+            }}
+            className={
+              active
+                ? "rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900"
+                : "rounded px-1.5 py-0.5 text-[10px] text-slate-300 hover:bg-slate-700 hover:text-slate-100"
+            }
+          >
+            {n}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 export function CanvasCell({
@@ -83,13 +123,6 @@ export function CanvasCell({
   const widget = cell.widget;
   const def = widget ? COMPARISON_WIDGETS[widget.kind] : null;
 
-  const handleSpanLeft = () => {
-    if (cell.span > 1) onChangeSpan((cell.span - 1) as CellSpan);
-  };
-  const handleSpanRight = () => {
-    if (cell.span < 5) onChangeSpan((cell.span + 1) as CellSpan);
-  };
-
   const selectedRingPopulated = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-slate-700";
   const selectedRingEmpty = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-slate-700";
 
@@ -121,9 +154,7 @@ export function CanvasCell({
               ⋮⋮
             </button>
             <span className="flex-1 truncate font-medium">{def.title}</span>
-            <span className="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-200">
-              {cell.span}/5
-            </span>
+            <SpanPicker span={cell.span} onChange={onChangeSpan} />
             {selected && (
               <>
                 <button type="button" aria-label="Edit widget" title="Edit" onClick={onEditWidget} className={ACTION_BTN}>✎</button>
@@ -145,30 +176,6 @@ export function CanvasCell({
             </div>
           )}
 
-          {selected && (
-            <div className="mt-auto flex items-center gap-1">
-              <button
-                type="button"
-                aria-label="Shrink span"
-                title="Narrower"
-                onClick={handleSpanLeft}
-                disabled={cell.span <= 1}
-                className={cell.span <= 1 ? ACTION_BTN_DISABLED : ACTION_BTN}
-              >
-                −
-              </button>
-              <button
-                type="button"
-                aria-label="Grow span"
-                title="Wider"
-                onClick={handleSpanRight}
-                disabled={cell.span >= 5}
-                className={cell.span >= 5 ? ACTION_BTN_DISABLED : ACTION_BTN}
-              >
-                +
-              </button>
-            </div>
-          )}
         </div>
       ) : (
         <div className={`flex h-full min-h-[120px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed ${selectedRingEmpty} p-3`}>
@@ -181,12 +188,12 @@ export function CanvasCell({
           >
             +
           </button>
+          <SpanPicker span={cell.span} onChange={onChangeSpan} />
           {selected && (
             <div className="flex items-center gap-1">
               <button type="button" aria-label="Add right" title="Add right" onClick={onAddRight} className={ACTION_BTN}>→</button>
               <button type="button" aria-label="Add down" title="Add below" onClick={onAddDown} className={ACTION_BTN}>↓</button>
               <button type="button" aria-label="Remove placeholder" title="Remove" onClick={onRemove} className={ACTION_BTN}>🗑</button>
-              <span className="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-200">{cell.span}/5</span>
             </div>
           )}
         </div>
