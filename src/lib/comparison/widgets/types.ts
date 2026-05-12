@@ -74,4 +74,8 @@ export interface ComparisonWidgetDefinition<TConfig = unknown> {
    *  for the given plan contains data the widget would render. When omitted,
    *  every year counts as data (preset is disabled by the modal). */
   hasDataInYear?: (plan: ComparisonPlan, year: ProjectionYear) => boolean;
+  /** Optional seed for `WidgetInstance.yearRange` at widget creation time.
+   *  Receives the bound plans (already seeded by scenarios). Return undefined
+   *  to leave yearRange unset (which means "use page-level range / all years"). */
+  defaultYearRange?: (ctx: { plans: ComparisonPlan[] }) => YearRange | undefined;
 }
