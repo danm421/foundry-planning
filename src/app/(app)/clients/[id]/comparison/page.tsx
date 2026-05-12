@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { scenarios as scenariosTable, clients } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
@@ -39,7 +40,6 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
       .select({
         id: scenariosTable.id,
         name: scenariosTable.name,
-        isBaseCase: scenariosTable.isBaseCase,
       })
       .from(scenariosTable)
       .innerJoin(clients, eq(clients.id, scenariosTable.clientId))
@@ -51,10 +51,7 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
     }),
   ]);
 
-  if (!client) {
-    const { notFound } = await import("next/navigation");
-    notFound();
-  }
+  if (!client) notFound();
 
   const scenarioLookup: { id: string; name: string }[] = [
     { id: "base", name: "Base case" },
