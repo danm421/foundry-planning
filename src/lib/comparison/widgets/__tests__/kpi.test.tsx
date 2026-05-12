@@ -5,23 +5,35 @@ import { kpiWidget } from "../kpi";
 import type { ComparisonPlan } from "../../build-comparison-plans";
 import type { ComparisonWidgetContext } from "../types";
 
-const mockPlan = (
-  id: string,
-  label: string,
-  resultOverrides: Record<string, unknown> = {},
-): ComparisonPlan =>
-  ({
-    id,
-    label,
+function mockPlan(
+  overrides: Partial<{
+    endingNetWorth: number;
+    lifetimeTaxTotal: number;
+    totalToHeirs: number;
+    finalAge: number;
+    finalYear: number;
+  }> = {},
+): ComparisonPlan {
+  const {
+    endingNetWorth = 5_000_000,
+    lifetimeTaxTotal = 2_000_000,
+    totalToHeirs = 3_500_000,
+    finalAge = 104,
+    finalYear = 2065,
+  } = overrides;
+  return {
+    id: "plan-base",
+    label: "Base",
     result: {
       years: [
-        { year: 2026, ages: { client: 65 }, totalNetWorth: 1_000_000 },
-        { year: 2065, ages: { client: 104 }, totalNetWorth: 5_000_000 },
+        { year: 2026, ages: { client: 65 }, portfolioAssets: { total: 1_000_000 } },
+        { year: finalYear, ages: { client: finalAge }, portfolioAssets: { total: endingNetWorth } },
       ],
-      summary: { lifetimeTax: 2_000_000, netToHeirs: 3_500_000 },
-      ...resultOverrides,
     },
-  }) as unknown as ComparisonPlan;
+    lifetime: { total: lifetimeTaxTotal, byBucket: {} },
+    finalEstate: { totalToHeirs },
+  } as unknown as ComparisonPlan;
+}
 
 const mockCtx = (
   plans: ComparisonPlan[],
@@ -45,40 +57,33 @@ describe("kpi widget", () => {
     expect(kpiWidget.defaultPlanCount).toBe(1);
   });
 
-  it("renders End Net Worth from the bound plan", () => {
-    const ctx = mockCtx(
-      [mockPlan("plan-base", "Base")],
-      { metric: "endNetWorth" },
-    );
-    render(<>{kpiWidget.render(ctx)}</>);
+  it("renders End Net Worth from the bound plan's last portfolioAssets.total", () => {
+    render(<>{kpiWidget.render(mockCtx([mockPlan()], { metric: "endNetWorth" }))}</>);
     expect(screen.getByText(/5(\.0)?M/i)).toBeInTheDocument();
     expect(screen.getByText(/End Net Worth/i)).toBeInTheDocument();
   });
 
-  it("renders Lifetime Tax from summary", () => {
-    const ctx = mockCtx(
-      [mockPlan("plan-base", "Base")],
-      { metric: "lifetimeTax" },
-    );
-    render(<>{kpiWidget.render(ctx)}</>);
+  it("renders Lifetime Tax from plan.lifetime.total", () => {
+    render(<>{kpiWidget.render(mockCtx([mockPlan()], { metric: "lifetimeTax" }))}</>);
     expect(screen.getByText(/2(\.0)?M/i)).toBeInTheDocument();
     expect(screen.getByText(/Lifetime Tax/i)).toBeInTheDocument();
   });
 
-  it("renders Net to Heirs from summary", () => {
-    const ctx = mockCtx(
-      [mockPlan("plan-base", "Base")],
-      { metric: "netToHeirs" },
-    );
-    render(<>{kpiWidget.render(ctx)}</>);
+  it("renders Net to Heirs from plan.finalEstate.totalToHeirs", () => {
+    render(<>{kpiWidget.render(mockCtx([mockPlan()], { metric: "netToHeirs" }))}</>);
     expect(screen.getByText(/3\.5M/i)).toBeInTheDocument();
     expect(screen.getByText(/Net to Heirs/i)).toBeInTheDocument();
   });
 
+  it("renders Longevity Age from the last projection year", () => {
+    render(<>{kpiWidget.render(mockCtx([mockPlan({ finalAge: 92 })], { metric: "longevityAge" }))}</>);
+    expect(screen.getByText("92")).toBeInTheDocument();
+    expect(screen.getByText(/Longevity Age/i)).toBeInTheDocument();
+  });
+
   it("renders Success Probability from mc.successByIndex", () => {
-    const plan = mockPlan("plan-base", "Base");
     const ctx = mockCtx(
-      [plan],
+      [mockPlan()],
       { metric: "successProbability" },
       {
         perPlan: [],
@@ -93,23 +98,15 @@ describe("kpi widget", () => {
     expect(screen.getByText(/Success/i)).toBeInTheDocument();
   });
 
-  it("renders Longevity Age from the final projection year", () => {
-    const ctx = mockCtx(
-      [mockPlan("plan-base", "Base")],
-      { metric: "longevityAge" },
-    );
-    render(<>{kpiWidget.render(ctx)}</>);
-    expect(screen.getByText("104")).toBeInTheDocument();
-    expect(screen.getByText(/Longevity Age/i)).toBeInTheDocument();
+  it("renders Net to Heirs as $0 when finalEstate is null", () => {
+    const plan = mockPlan();
+    (plan as unknown as { finalEstate: unknown }).finalEstate = null;
+    render(<>{kpiWidget.render(mockCtx([plan], { metric: "netToHeirs" }))}</>);
+    expect(screen.getByText(/\$0/)).toBeInTheDocument();
   });
 
-  it("renders an empty/dash state when bound to zero plans", () => {
-    const ctx = mockCtx([], { metric: "endNetWorth" });
-    render(<>{kpiWidget.render(ctx)}</>);
-    expect(screen.getByText(/—|N\/A/)).toBeInTheDocument();
-  });
-
-  it("declares needsMc=true at the definition level (page-level MC fetch is gated per-instance by config.metric)", () => {
-    expect(kpiWidget.needsMc).toBe(true);
+  it("renders dash state when bound to zero plans", () => {
+    render(<>{kpiWidget.render(mockCtx([], { metric: "endNetWorth" }))}</>);
+    expect(screen.getByText("—")).toBeInTheDocument();
   });
 });

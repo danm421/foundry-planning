@@ -1,5 +1,3 @@
-import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
-
 export type KpiMetric =
   | "successProbability"
   | "longevityAge"
@@ -35,41 +33,22 @@ function formatAge(n: number | undefined): string {
 }
 
 interface KpiComparisonSectionProps {
-  plan: ComparisonPlan | undefined;
   metric: KpiMetric;
-  successProbability?: number;
+  /** Pre-computed value for the metric; `undefined` renders as "—". For
+   *  currency metrics, pass a number. For success probability, pass 0..1.
+   *  For longevity age, pass the final year's age. */
+  value: number | undefined;
 }
 
-export function KpiComparisonSection({
-  plan,
-  metric,
-  successProbability,
-}: KpiComparisonSectionProps) {
-  let value: string;
-
-  if (!plan && metric !== "successProbability") {
-    value = "—";
-  } else if (metric === "successProbability") {
-    value = formatPercent(successProbability);
-  } else if (metric === "longevityAge") {
-    const lastYear = plan?.result.years.at(-1);
-    value = formatAge(lastYear?.ages.client);
-  } else if (metric === "endNetWorth") {
-    const lastYear = plan?.result.years.at(-1) as { totalNetWorth?: number } | undefined;
-    value = formatCurrencyCompact(lastYear?.totalNetWorth);
-  } else if (metric === "lifetimeTax") {
-    const result = plan?.result as { summary?: { lifetimeTax?: number } } | undefined;
-    value = formatCurrencyCompact(result?.summary?.lifetimeTax);
-  } else if (metric === "netToHeirs") {
-    const result = plan?.result as { summary?: { netToHeirs?: number } } | undefined;
-    value = formatCurrencyCompact(result?.summary?.netToHeirs);
-  } else {
-    value = "—";
-  }
+export function KpiComparisonSection({ metric, value }: KpiComparisonSectionProps) {
+  let display: string;
+  if (metric === "successProbability") display = formatPercent(value);
+  else if (metric === "longevityAge") display = formatAge(value);
+  else display = formatCurrencyCompact(value);
 
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-      <div className="text-3xl font-semibold tabular-nums">{value}</div>
+      <div className="text-3xl font-semibold tabular-nums">{display}</div>
       <div className="mt-1 text-xs uppercase tracking-wide text-neutral-500">
         {METRIC_LABELS[metric]}
       </div>
