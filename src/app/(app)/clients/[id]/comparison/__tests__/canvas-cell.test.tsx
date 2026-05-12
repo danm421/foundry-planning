@@ -36,11 +36,11 @@ describe("CanvasCell v5", () => {
     expect(screen.queryByText(/portfolio/i)).toBeNull();
   });
 
-  it("populated cell shows the widget title and edit/duplicate/remove buttons", () => {
+  it("populated cell shows the widget title and reveals edit/duplicate/remove buttons when selected", () => {
     const onEdit = vi.fn();
     const onDuplicate = vi.fn();
     const onRemove = vi.fn();
-    render(
+    const { container } = render(
       wrap(
         <CanvasCell
           cell={filledCell}
@@ -56,6 +56,10 @@ describe("CanvasCell v5", () => {
         />,
       ),
     );
+    // Action buttons hidden until the cell is selected.
+    expect(screen.queryByRole("button", { name: /edit widget/i })).toBeNull();
+    const root = container.querySelector("[data-canvas-cell='c2']") as HTMLElement;
+    fireEvent.mouseDown(root);
     fireEvent.click(screen.getByRole("button", { name: /edit widget/i }));
     fireEvent.click(screen.getByRole("button", { name: /duplicate widget/i }));
     fireEvent.click(screen.getByRole("button", { name: /remove widget/i }));
@@ -64,10 +68,10 @@ describe("CanvasCell v5", () => {
     expect(onRemove).toHaveBeenCalled();
   });
 
-  it("calls onAddRight and onAddDown from the toolbar", () => {
+  it("calls onAddRight and onAddDown from the toolbar after selection", () => {
     const onAddRight = vi.fn();
     const onAddDown = vi.fn();
-    render(
+    const { container } = render(
       wrap(
         <CanvasCell
           cell={filledCell}
@@ -83,6 +87,8 @@ describe("CanvasCell v5", () => {
         />,
       ),
     );
+    const root = container.querySelector("[data-canvas-cell='c2']") as HTMLElement;
+    fireEvent.mouseDown(root);
     fireEvent.click(screen.getByRole("button", { name: /add right/i }));
     fireEvent.click(screen.getByRole("button", { name: /add down/i }));
     expect(onAddRight).toHaveBeenCalled();

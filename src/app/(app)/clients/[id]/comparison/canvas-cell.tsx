@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { CellSpan, CellV5 } from "@/lib/comparison/layout-schema";
@@ -31,6 +32,12 @@ const SPAN_TO_CLASS: Record<CellSpan, string> = {
   5: "col-span-5",
 };
 
+const ACTION_BTN =
+  "rounded border border-slate-500 bg-slate-800 px-1.5 py-0.5 text-slate-100 shadow-sm hover:border-amber-400 hover:bg-slate-700 hover:text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-400";
+
+const ACTION_BTN_DISABLED =
+  "rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-slate-500";
+
 function lookup(scenarios: ScenarioLookup[], id: string): string {
   if (id === "base") return "Base";
   return scenarios.find((s) => s.id === id)?.name ?? id;
@@ -52,6 +59,22 @@ export function CanvasCell({
     id: cell.id,
     data: { type: "cell", groupId },
   });
+  const [selected, setSelected] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!selected) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      const root = rootRef.current;
+      if (!root) return;
+      if (e.target instanceof Node && !root.contains(e.target)) {
+        setSelected(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [selected]);
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -67,17 +90,25 @@ export function CanvasCell({
     if (cell.span < 5) onChangeSpan((cell.span + 1) as CellSpan);
   };
 
+  const selectedRingPopulated = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-slate-700";
+  const selectedRingEmpty = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-slate-700";
+
   return (
     <div
-      ref={setNodeRef}
+      ref={(node) => {
+        rootRef.current = node;
+        setNodeRef(node);
+      }}
       style={style}
       data-canvas-cell={cell.id}
       data-canvas-group={groupId}
       data-span={cell.span}
-      className={`${SPAN_TO_CLASS[cell.span]} group/cell relative min-w-0`}
+      data-selected={selected || undefined}
+      onMouseDown={() => setSelected(true)}
+      className={`${SPAN_TO_CLASS[cell.span]} relative min-w-0`}
     >
       {widget && def ? (
-        <div className="flex h-full flex-col gap-2 rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm text-slate-200">
+        <div className={`flex h-full flex-col gap-2 rounded-lg border ${selectedRingPopulated} bg-slate-900 p-3 text-sm text-slate-200`}>
           <div className="flex items-start gap-2">
             <button
               type="button"
@@ -89,14 +120,18 @@ export function CanvasCell({
               ⋮⋮
             </button>
             <span className="flex-1 truncate font-medium">{def.title}</span>
-            <span className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-400">
+            <span className="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-200">
               {cell.span}/5
             </span>
-            <button type="button" aria-label="Edit widget" onClick={onEditWidget} className="rounded px-1 text-slate-400 hover:bg-slate-800">✎</button>
-            <button type="button" aria-label="Duplicate widget" onClick={onDuplicate} className="rounded px-1 text-slate-400 hover:bg-slate-800">⎘</button>
-            <button type="button" aria-label="Add right" onClick={onAddRight} className="rounded px-1 text-slate-400 hover:bg-slate-800">→</button>
-            <button type="button" aria-label="Add down" onClick={onAddDown} className="rounded px-1 text-slate-400 hover:bg-slate-800">↓</button>
-            <button type="button" aria-label="Remove widget" onClick={onRemove} className="rounded px-1 text-slate-400 hover:bg-slate-800">🗑</button>
+            {selected && (
+              <>
+                <button type="button" aria-label="Edit widget" onClick={onEditWidget} className={ACTION_BTN}>✎</button>
+                <button type="button" aria-label="Duplicate widget" onClick={onDuplicate} className={ACTION_BTN}>⎘</button>
+                <button type="button" aria-label="Add right" onClick={onAddRight} className={ACTION_BTN}>→</button>
+                <button type="button" aria-label="Add down" onClick={onAddDown} className={ACTION_BTN}>↓</button>
+                <button type="button" aria-label="Remove widget" onClick={onRemove} className={ACTION_BTN}>🗑</button>
+              </>
+            )}
           </div>
 
           {def.scenarios !== "none" && (
@@ -109,27 +144,47 @@ export function CanvasCell({
             </div>
           )}
 
-          <div className="mt-auto flex items-center gap-1 opacity-0 transition-opacity group-hover/cell:opacity-100">
-            <button type="button" aria-label="Shrink span" onClick={handleSpanLeft} disabled={cell.span <= 1} className="rounded px-1 text-[10px] text-slate-400 hover:bg-slate-800 disabled:opacity-30">−</button>
-            <button type="button" aria-label="Grow span" onClick={handleSpanRight} disabled={cell.span >= 5} className="rounded px-1 text-[10px] text-slate-400 hover:bg-slate-800 disabled:opacity-30">+</button>
-          </div>
+          {selected && (
+            <div className="mt-auto flex items-center gap-1">
+              <button
+                type="button"
+                aria-label="Shrink span"
+                onClick={handleSpanLeft}
+                disabled={cell.span <= 1}
+                className={cell.span <= 1 ? ACTION_BTN_DISABLED : ACTION_BTN}
+              >
+                −
+              </button>
+              <button
+                type="button"
+                aria-label="Grow span"
+                onClick={handleSpanRight}
+                disabled={cell.span >= 5}
+                className={cell.span >= 5 ? ACTION_BTN_DISABLED : ACTION_BTN}
+              >
+                +
+              </button>
+            </div>
+          )}
         </div>
       ) : (
-        <div className="flex h-full min-h-[120px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 p-3">
+        <div className={`flex h-full min-h-[120px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed ${selectedRingEmpty} p-3`}>
           <button
             type="button"
             aria-label="Add widget"
             onClick={onAddWidget}
-            className="rounded-full border border-slate-700 px-3 py-1 text-2xl text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+            className="rounded-full border border-slate-500 bg-slate-800 px-3 py-1 text-2xl text-slate-100 shadow-sm hover:border-amber-400 hover:bg-slate-700 hover:text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-400"
           >
             +
           </button>
-          <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover/cell:opacity-100">
-            <button type="button" aria-label="Add right" onClick={onAddRight} className="rounded px-1 text-slate-400 hover:bg-slate-800">→</button>
-            <button type="button" aria-label="Add down" onClick={onAddDown} className="rounded px-1 text-slate-400 hover:bg-slate-800">↓</button>
-            <button type="button" aria-label="Remove placeholder" onClick={onRemove} className="rounded px-1 text-slate-400 hover:bg-slate-800">🗑</button>
-            <span className="text-[10px] uppercase tracking-wider text-slate-500">{cell.span}/5</span>
-          </div>
+          {selected && (
+            <div className="flex items-center gap-1">
+              <button type="button" aria-label="Add right" onClick={onAddRight} className={ACTION_BTN}>→</button>
+              <button type="button" aria-label="Add down" onClick={onAddDown} className={ACTION_BTN}>↓</button>
+              <button type="button" aria-label="Remove placeholder" onClick={onRemove} className={ACTION_BTN}>🗑</button>
+              <span className="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-200">{cell.span}/5</span>
+            </div>
+          )}
         </div>
       )}
     </div>
