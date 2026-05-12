@@ -1,13 +1,18 @@
 import { LongevityComparisonSection } from "@/components/comparison/longevity-comparison-section";
+import { LongevityTableList } from "@/components/comparison/tables/longevity-table";
+import { ViewModeSchema, defaultViewMode, getViewMode, renderViewModeConfig, ViewModeFrame, type ViewModeConfig } from "./view-mode";
 import type { ComparisonWidgetDefinition } from "./types";
 
-export const longevityWidget: ComparisonWidgetDefinition = {
+export const longevityWidget: ComparisonWidgetDefinition<ViewModeConfig> = {
   kind: "longevity",
   title: "Longevity",
   category: "monte-carlo",
   scenarios: "one-or-many",
   needsMc: true,
-  render: ({ mc }) => {
+  configSchema: ViewModeSchema,
+  defaultConfig: defaultViewMode,
+  renderConfig: renderViewModeConfig,
+  render: ({ mc, config }) => {
     if (!mc) {
       return (
         <section className="px-6 py-8">
@@ -17,11 +22,17 @@ export const longevityWidget: ComparisonWidgetDefinition = {
       );
     }
     return (
-      <LongevityComparisonSection
-        plans={mc.perPlan.map((p) => ({ label: p.label, matrix: p.result.byYearLiquidAssetsPerTrial }))}
-        threshold={mc.threshold}
-        planStartYear={mc.planStartYear}
-        clientBirthYear={mc.clientBirthYear}
+      <ViewModeFrame
+        mode={getViewMode(config)}
+        chart={
+          <LongevityComparisonSection
+            plans={mc.perPlan.map((p) => ({ label: p.label, matrix: p.result.byYearLiquidAssetsPerTrial }))}
+            threshold={mc.threshold}
+            planStartYear={mc.planStartYear}
+            clientBirthYear={mc.clientBirthYear}
+          />
+        }
+        table={<LongevityTableList mc={mc} />}
       />
     );
   },
