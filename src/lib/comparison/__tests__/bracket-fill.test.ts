@@ -79,3 +79,53 @@ describe("inferOrdinaryBrackets", () => {
     expect(inferOrdinaryBrackets(marginal, params)).toBe(MFJ_BRACKETS);
   });
 });
+
+import { bracketTopsByYear } from "../bracket-fill";
+import type { ProjectionYear } from "@/engine";
+
+function fakeYear(year: number, brackets: BracketTier[]): ProjectionYear {
+  return {
+    year,
+    taxResult: {
+      diag: {
+        marginalBracketTier: brackets[0],
+        bracketsUsed: { incomeBrackets: { married_joint: brackets } },
+      },
+    },
+  } as never;
+}
+
+describe("bracketTopsByYear", () => {
+  it("returns one series per rate, with year-aligned tops (skipping open-ended top tier)", () => {
+    const years = [
+      fakeYear(2026, [
+        { from: 0, to: 100, rate: 0.10 },
+        { from: 100, to: 200, rate: 0.12 },
+        { from: 200, to: null, rate: 0.22 },
+      ]),
+      fakeYear(2027, [
+        { from: 0, to: 110, rate: 0.10 },
+        { from: 110, to: 220, rate: 0.12 },
+        { from: 220, to: null, rate: 0.22 },
+      ]),
+    ];
+    const out = bracketTopsByYear(years);
+    expect(out.get(0.10)).toEqual([100, 110]);
+    expect(out.get(0.12)).toEqual([200, 220]);
+    expect(out.has(0.22)).toBe(false);
+  });
+
+  it("skips years with no taxResult by using NaN so chart.js leaves a gap", () => {
+    const years = [
+      fakeYear(2026, [
+        { from: 0, to: 100, rate: 0.10 },
+        { from: 100, to: null, rate: 0.12 },
+      ]),
+      { year: 2027 } as never,
+    ];
+    const out = bracketTopsByYear(years);
+    const tops10 = out.get(0.10)!;
+    expect(tops10[0]).toBe(100);
+    expect(Number.isNaN(tops10[1])).toBe(true);
+  });
+});

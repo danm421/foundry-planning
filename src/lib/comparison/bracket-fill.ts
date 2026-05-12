@@ -1,4 +1,5 @@
 import type { BracketTier, FilingStatus, TaxYearParameters } from "@/lib/tax/types";
+import type { ProjectionYear } from "@/engine";
 
 export interface BracketFillSegment {
   rate: number;
@@ -59,4 +60,33 @@ export function inferOrdinaryBrackets(
     }
   }
   return params.incomeBrackets.married_joint;
+}
+
+/**
+ * For each ordinary-bracket rate (excluding the open-ended top tier), return a
+ * year-aligned series of bracket-top dollar amounts. Years without a taxResult
+ * yield NaN so Chart.js can render a gap.
+ */
+export function bracketTopsByYear(years: ProjectionYear[]): Map<number, number[]> {
+  const ratesSeen = new Set<number>();
+  const perYear: Array<Map<number, number>> = years.map((y) => {
+    const tr = y.taxResult;
+    if (!tr) return new Map();
+    const brackets = inferOrdinaryBrackets(tr.diag.marginalBracketTier, tr.diag.bracketsUsed);
+    const m = new Map<number, number>();
+    for (const tier of brackets) {
+      if (tier.to == null) continue;
+      m.set(tier.rate, tier.to);
+      ratesSeen.add(tier.rate);
+    }
+    return m;
+  });
+  const out = new Map<number, number[]>();
+  for (const rate of ratesSeen) {
+    out.set(
+      rate,
+      perYear.map((m) => (m.has(rate) ? (m.get(rate) as number) : NaN)),
+    );
+  }
+  return out;
 }
