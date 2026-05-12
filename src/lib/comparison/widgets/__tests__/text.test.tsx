@@ -7,6 +7,7 @@ import type { ComparisonPlan } from "../../build-comparison-plans";
 const noPlans: ComparisonPlan[] = [];
 const baseCtx = {
   instanceId: "11111111-1111-4111-8111-111111111111",
+  cellId: "cell-aaa",
   clientId: "c",
   plans: noPlans,
   mc: null,
@@ -14,8 +15,8 @@ const baseCtx = {
 };
 
 describe("textWidget", () => {
-  it("renders markdown when editing=false", () => {
-    const { container } = render(
+  it("renders a clamped markdown preview when body is non-empty", () => {
+    const { container, getByRole } = render(
       <>{textWidget.render({
         ...baseCtx,
         editing: false,
@@ -24,34 +25,45 @@ describe("textWidget", () => {
     );
     expect(container.querySelector("h1")?.textContent).toBe("Heading");
     expect(container.querySelector("strong")?.textContent).toBe("bold");
+    expect(getByRole("button", { name: /show full/i })).toBeTruthy();
   });
 
-  it("shows an empty-state hint when editing=false and markdown is empty", () => {
+  it("renders an empty-state click target when markdown is empty", () => {
     const { getByText } = render(
       <>{textWidget.render({
         ...baseCtx,
-        editing: false,
+        editing: true,
         config: { markdown: "" },
       })}</>,
     );
     expect(getByText(/Empty text block/i)).toBeTruthy();
   });
 
-  it("renders a textarea when editing=true and calls onTextChange", () => {
-    const onTextChange = vi.fn();
-    const { getByPlaceholderText } = render(
+  it("calls onExpand with the cellId and current edit mode when the Expand button is clicked", () => {
+    const onExpand = vi.fn();
+    const { getByRole } = render(
       <>{textWidget.render({
         ...baseCtx,
         editing: true,
-        config: { markdown: "" },
-        onTextChange,
+        config: { markdown: "hello" },
+        onExpand,
       })}</>,
     );
-    const ta = getByPlaceholderText(/markdown/i) as HTMLTextAreaElement;
-    fireEvent.change(ta, { target: { value: "hello" } });
-    expect(onTextChange).toHaveBeenCalledWith(
-      "11111111-1111-4111-8111-111111111111",
-      "hello",
+    fireEvent.click(getByRole("button", { name: /expand to edit/i }));
+    expect(onExpand).toHaveBeenCalledWith("cell-aaa", "edit");
+  });
+
+  it("uses view mode when not editing", () => {
+    const onExpand = vi.fn();
+    const { getByRole } = render(
+      <>{textWidget.render({
+        ...baseCtx,
+        editing: false,
+        config: { markdown: "hello" },
+        onExpand,
+      })}</>,
     );
+    fireEvent.click(getByRole("button", { name: /show full/i }));
+    expect(onExpand).toHaveBeenCalledWith("cell-aaa", "view");
   });
 });

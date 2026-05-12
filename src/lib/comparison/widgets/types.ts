@@ -32,6 +32,13 @@ export interface ComparisonWidgetContext {
   /** Updates a text widget's markdown in the parent layout state.
    *  Only meaningful for the `text` widget. */
   onTextChange?: (instanceId: string, markdown: string) => void;
+  /** Cell id this widget instance occupies in the v5 layout. Distinct
+   *  from `instanceId` (which is `widget.id`). The text widget uses this
+   *  to open its expand modal for the right cell. */
+  cellId?: string;
+  /** Open the full text-widget expand modal for this cell. The `mode`
+   *  mirrors the layout's edit/view state. */
+  onExpand?: (cellId: string, mode: "edit" | "view") => void;
 }
 
 export type ComparisonWidgetCategory =

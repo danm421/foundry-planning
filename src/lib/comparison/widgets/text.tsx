@@ -1,10 +1,10 @@
 import { z } from "zod";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { TextWidgetConfigSchema } from "../layout-schema";
 import type { ComparisonWidgetDefinition } from "./types";
 
-const TextConfigSchema = z.object({ markdown: z.string() });
-type TextConfig = z.infer<typeof TextConfigSchema>;
+type TextConfig = z.infer<typeof TextWidgetConfigSchema>;
 
 export const textWidget: ComparisonWidgetDefinition<TextConfig> = {
   kind: "text",
@@ -12,52 +12,58 @@ export const textWidget: ComparisonWidgetDefinition<TextConfig> = {
   category: "text",
   scenarios: "none",
   needsMc: false,
-  configSchema: TextConfigSchema,
+  configSchema: TextWidgetConfigSchema,
   defaultConfig: { markdown: "" },
-  render: ({ instanceId, config, editing, onTextChange }) => {
-    const parsed = TextConfigSchema.safeParse(config);
+  render: ({ cellId, config, editing, onExpand }) => {
+    const parsed = TextWidgetConfigSchema.safeParse(config);
     const body = parsed.success ? parsed.data.markdown : "";
 
-    if (editing) {
-      return (
-        <section className="px-6 py-3">
-          <textarea
-            className="w-full rounded border border-slate-800 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-200"
-            rows={4}
-            value={body}
-            onChange={(e) => onTextChange?.(instanceId, e.target.value)}
-            placeholder="Type markdown… **bold**, *italic*, - list items"
-            data-text-editor-instance={instanceId}
-            autoFocus={body === ""}
-          />
-        </section>
-      );
-    }
-
-    if (body.trim() === "") {
-      return (
-        <section className="px-6 py-4">
-          <div className="rounded border border-dashed border-slate-800 px-4 py-3 text-xs italic text-ink-3">
-            Empty text block — open the Widget panel to add content.
-          </div>
-        </section>
-      );
-    }
+    const handleExpand = () => {
+      if (!cellId) return;
+      onExpand?.(cellId, editing ? "edit" : "view");
+    };
 
     return (
-      <section className="prose prose-invert prose-sm max-w-none px-6 py-4">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          allowedElements={[
-            "h1", "h2", "h3", "p", "strong", "em", "a",
-            "ul", "ol", "li", "code", "pre",
-            "blockquote", "table", "thead", "tbody", "tr", "th", "td",
-            "hr", "br",
-          ]}
-          unwrapDisallowed
-        >
-          {body}
-        </ReactMarkdown>
+      <section className="relative px-6 py-4">
+        {body.trim() === "" ? (
+          <button
+            type="button"
+            onClick={handleExpand}
+            className="w-full rounded border border-dashed border-slate-700 px-4 py-6 text-xs italic text-ink-3 hover:border-amber-400 hover:text-amber-200"
+          >
+            Empty text block — click to add content
+          </button>
+        ) : (
+          <>
+            <div
+              className="prose prose-invert prose-sm max-w-none overflow-hidden"
+              style={{ maskImage: "linear-gradient(to bottom, black 70%, transparent 100%)", WebkitMaskImage: "linear-gradient(to bottom, black 70%, transparent 100%)" }}
+              aria-hidden={false}
+            >
+              <div className="line-clamp-6">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  allowedElements={[
+                    "h1", "h2", "h3", "p", "strong", "em", "a",
+                    "ul", "ol", "li", "code", "pre",
+                    "blockquote", "table", "thead", "tbody", "tr", "th", "td",
+                    "hr", "br",
+                  ]}
+                  unwrapDisallowed
+                >
+                  {body}
+                </ReactMarkdown>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleExpand}
+              className="absolute bottom-2 right-3 rounded border border-slate-700 bg-slate-900/90 px-2 py-1 text-[11px] text-slate-200 hover:border-amber-400 hover:text-amber-200"
+            >
+              {editing ? "Expand to edit" : "Show full"}
+            </button>
+          </>
+        )}
       </section>
     );
   },
