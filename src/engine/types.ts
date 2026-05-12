@@ -183,6 +183,10 @@ export interface EstateTaxResult {
   stateEstateTax: number;
   /** Full per-state detail for the audit report. Always present. */
   stateEstateTaxDetail: import("@/lib/tax/state-estate").StateEstateTaxResult;
+  /** State inheritance-tax result (PA/NJ/KY/NE/MD). Undefined when the
+   *  residence state has no inheritance tax. Informational only — does not
+   *  drain accounts. */
+  stateInheritanceTax?: import("@/lib/tax/state-inheritance").StateInheritanceTaxResult;
 
   // Totals
   totalEstateTax: number;            // federal + state
