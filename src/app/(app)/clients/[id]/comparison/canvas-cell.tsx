@@ -113,6 +113,7 @@ export function CanvasCell({
             <button
               type="button"
               aria-label="Drag widget"
+              title="Drag to reorder"
               className="cursor-grab text-slate-400 hover:text-slate-200"
               {...attributes}
               {...listeners}
@@ -125,11 +126,11 @@ export function CanvasCell({
             </span>
             {selected && (
               <>
-                <button type="button" aria-label="Edit widget" onClick={onEditWidget} className={ACTION_BTN}>✎</button>
-                <button type="button" aria-label="Duplicate widget" onClick={onDuplicate} className={ACTION_BTN}>⎘</button>
-                <button type="button" aria-label="Add right" onClick={onAddRight} className={ACTION_BTN}>→</button>
-                <button type="button" aria-label="Add down" onClick={onAddDown} className={ACTION_BTN}>↓</button>
-                <button type="button" aria-label="Remove widget" onClick={onRemove} className={ACTION_BTN}>🗑</button>
+                <button type="button" aria-label="Edit widget" title="Edit" onClick={onEditWidget} className={ACTION_BTN}>✎</button>
+                <button type="button" aria-label="Duplicate widget" title="Duplicate" onClick={onDuplicate} className={ACTION_BTN}>⎘</button>
+                <button type="button" aria-label="Add right" title="Add right" onClick={onAddRight} className={ACTION_BTN}>→</button>
+                <button type="button" aria-label="Add down" title="Add below" onClick={onAddDown} className={ACTION_BTN}>↓</button>
+                <button type="button" aria-label="Remove widget" title="Remove" onClick={onRemove} className={ACTION_BTN}>🗑</button>
               </>
             )}
           </div>
@@ -149,6 +150,7 @@ export function CanvasCell({
               <button
                 type="button"
                 aria-label="Shrink span"
+                title="Narrower"
                 onClick={handleSpanLeft}
                 disabled={cell.span <= 1}
                 className={cell.span <= 1 ? ACTION_BTN_DISABLED : ACTION_BTN}
@@ -158,6 +160,7 @@ export function CanvasCell({
               <button
                 type="button"
                 aria-label="Grow span"
+                title="Wider"
                 onClick={handleSpanRight}
                 disabled={cell.span >= 5}
                 className={cell.span >= 5 ? ACTION_BTN_DISABLED : ACTION_BTN}
@@ -172,6 +175,7 @@ export function CanvasCell({
           <button
             type="button"
             aria-label="Add widget"
+            title="Add widget"
             onClick={onAddWidget}
             className="rounded-full border border-slate-500 bg-slate-800 px-3 py-1 text-2xl text-slate-100 shadow-sm hover:border-amber-400 hover:bg-slate-700 hover:text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-400"
           >
@@ -179,9 +183,9 @@ export function CanvasCell({
           </button>
           {selected && (
             <div className="flex items-center gap-1">
-              <button type="button" aria-label="Add right" onClick={onAddRight} className={ACTION_BTN}>→</button>
-              <button type="button" aria-label="Add down" onClick={onAddDown} className={ACTION_BTN}>↓</button>
-              <button type="button" aria-label="Remove placeholder" onClick={onRemove} className={ACTION_BTN}>🗑</button>
+              <button type="button" aria-label="Add right" title="Add right" onClick={onAddRight} className={ACTION_BTN}>→</button>
+              <button type="button" aria-label="Add down" title="Add below" onClick={onAddDown} className={ACTION_BTN}>↓</button>
+              <button type="button" aria-label="Remove placeholder" title="Remove" onClick={onRemove} className={ACTION_BTN}>🗑</button>
               <span className="rounded border border-slate-600 bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-200">{cell.span}/5</span>
             </div>
           )}
