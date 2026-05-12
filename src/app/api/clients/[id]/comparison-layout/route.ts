@@ -6,8 +6,8 @@ import { clients, clientComparisonLayouts } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import { recordAudit } from "@/lib/audit";
 import { authErrorResponse } from "@/lib/authz";
-import { ComparisonLayoutV4Schema } from "@/lib/comparison/layout-schema";
-import { validateLayoutV4 } from "@/lib/comparison/validate-layout-v4";
+import { ComparisonLayoutV5Schema } from "@/lib/comparison/layout-schema";
+import { validateLayoutV5 } from "@/lib/comparison/validate-layout-v5";
 import { loadLayout } from "@/lib/comparison/load-layout";
 
 export const dynamic = "force-dynamic";
@@ -53,14 +53,14 @@ export async function PUT(
     const client = await requireClientInFirm(id, firmId);
     if (!client) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const body = ComparisonLayoutV4Schema.parse(await req.json());
+    const body = ComparisonLayoutV5Schema.parse(await req.json());
 
-    const validation = validateLayoutV4(body);
+    const validation = validateLayoutV5(body);
     if (!validation.ok) {
       return NextResponse.json({ errors: validation.errors }, { status: 422 });
     }
 
-    const cellCount = body.rows.reduce((n, r) => n + r.cells.length, 0);
+    const cellCount = body.groups.reduce((n, g) => n + g.cells.length, 0);
 
     const [row] = await db
       .insert(clientComparisonLayouts)
@@ -77,7 +77,7 @@ export async function PUT(
       resourceId: row.id,
       clientId: id,
       firmId,
-      metadata: { rowCount: body.rows.length, cellCount },
+      metadata: { groupCount: body.groups.length, cellCount },
     });
 
     return NextResponse.json({ layout: body });
