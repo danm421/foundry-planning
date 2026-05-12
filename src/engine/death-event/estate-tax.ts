@@ -1,10 +1,12 @@
 import type {
-  Account, DeathTransfer, EntitySummary, GrossEstateLine,
+  Account, DeathTransfer, EntitySummary, FamilyMember, GrossEstateLine,
   EstateTaxResult, Liability, PlanSettings,
 } from "../types";
 import { applyUnifiedRateSchedule } from "@/lib/tax/estate";
 import { computeStateEstateTax, type StateCode } from "@/lib/tax/state-estate";
+import { STATE_INHERITANCE_TAX } from "@/lib/tax/state-inheritance";
 import type { ExternalBeneficiarySummary } from "./shared";
+import { computeInheritanceForDeathEvent, inheritanceCodeFor } from "./inheritance-tax";
 import { controllingEntity, ownedByHousehold, controllingFamilyMember } from "../ownership";
 
 // ── Form 706 federal tax formula ────────────────────────────────────────────
@@ -348,6 +350,15 @@ export function buildEstateTaxResult(input: {
   estateTaxDebits: Array<{ accountId: string; amount: number }>;
   creditorPayoffDebits: Array<{ accountId: string; amount: number }>;
   creditorPayoffResidual: number;
+  /** Per-recipient transfers produced by bequest resolution. Optional —
+   *  preview calls (which pre-sizes the estate-tax drain) skip inheritance
+   *  computation by omitting this and the related inputs below. */
+  transfersForInheritance?: DeathTransfer[];
+  accounts?: Account[];
+  familyMembers?: FamilyMember[];
+  externalBeneficiaries?: ExternalBeneficiarySummary[];
+  /** Decedent age at death — needed for PA IRA-under-59½ rule. */
+  decedentAgeAtDeath?: number;
 }): EstateTaxResult {
   const taxableEstate = Math.max(
     0,
@@ -370,7 +381,46 @@ export function buildEstateTaxResult(input: {
     adjustedTaxableGifts: input.adjustedTaxableGifts,
     fallbackFlatRate: input.stateEstateTaxFallbackRate,
   });
-  const stateEstateTax = stateEstateTaxDetail.stateEstateTax;
+
+  const inheritanceState = inheritanceCodeFor(input.residenceState);
+  const stateInheritanceTax =
+    inheritanceState != null && input.transfersForInheritance != null
+      ? computeInheritanceForDeathEvent({
+          state: inheritanceState,
+          deathYear: input.year,
+          decedentAge: input.decedentAgeAtDeath ?? 0,
+          grossEstate: input.gross.total,
+          transfers: input.transfersForInheritance,
+          accounts: input.accounts ?? [],
+          familyMembers: input.familyMembers ?? [],
+          externalBeneficiaries: input.externalBeneficiaries ?? [],
+        })
+      : undefined;
+
+  // MD only: inheritance tax is credited against MD's state estate tax.
+  let finalStateEstateTax = stateEstateTaxDetail.stateEstateTax;
+  if (
+    inheritanceState === "MD"
+    && STATE_INHERITANCE_TAX.MD.reducesStateEstateTax
+    && stateInheritanceTax
+  ) {
+    const credit = stateInheritanceTax.totalTax;
+    const reduction = Math.min(stateEstateTaxDetail.stateEstateTax, credit);
+    finalStateEstateTax = Math.max(0, stateEstateTaxDetail.stateEstateTax - credit);
+    stateEstateTaxDetail.inheritanceCredit = {
+      applied: reduction > 0,
+      credit,
+      reduction,
+    };
+    stateEstateTaxDetail.stateEstateTax = finalStateEstateTax;
+    if (reduction > 0) {
+      stateEstateTaxDetail.notes.push(
+        `MD inheritance-tax credit applied: -$${reduction.toLocaleString()} (pre-credit estate tax was $${(finalStateEstateTax + reduction).toLocaleString()}).`,
+      );
+    }
+  }
+
+  const stateEstateTax = finalStateEstateTax;
   const stateEstateTaxRate = stateEstateTaxDetail.fallbackUsed
     ? stateEstateTaxDetail.fallbackRate
     : (taxableEstate > 0 ? stateEstateTax / taxableEstate : 0);
@@ -403,6 +453,7 @@ export function buildEstateTaxResult(input: {
     stateEstateTaxRate,
     stateEstateTax,
     stateEstateTaxDetail,
+    stateInheritanceTax: stateInheritanceTax && !stateInheritanceTax.inactive ? stateInheritanceTax : undefined,
     totalEstateTax,
     totalTaxesAndExpenses,
     dsueGenerated,

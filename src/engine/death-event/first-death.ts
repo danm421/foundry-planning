@@ -454,6 +454,11 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
   });
 
   // Phase 11 — final EstateTaxResult with drain debits populated.
+  const decedentMember = input.familyMembers.find((m) => m.role === input.deceased);
+  const decedentAgeAtDeath = decedentMember?.dateOfBirth
+    ? input.year - Number(decedentMember.dateOfBirth.slice(0, 4))
+    : 0;
+
   const baseEstateTax = buildEstateTaxResult({
     year: input.year,
     deathOrder: 1,
@@ -469,6 +474,11 @@ export function applyFirstDeath(input: DeathEventInput): DeathEventResult {
     estateTaxDebits: estateTaxDrain.debits,
     creditorPayoffDebits: [],
     creditorPayoffResidual: 0,
+    transfersForInheritance: ledger,
+    accounts: input.accounts,
+    familyMembers: input.familyMembers,
+    externalBeneficiaries: input.externalBeneficiaries,
+    decedentAgeAtDeath,
   });
 
   // Phase 11b — drain attribution. The chain ran on pre-drain balances, so

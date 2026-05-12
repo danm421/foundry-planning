@@ -508,6 +508,11 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     deathOrder: 2,
   });
 
+  const decedentMember = input.familyMembers.find((m) => m.role === input.deceased);
+  const decedentAgeAtDeath = decedentMember?.dateOfBirth
+    ? input.year - Number(decedentMember.dateOfBirth.slice(0, 4))
+    : 0;
+
   const baseEstateTax = buildEstateTaxResult({
     year: input.year,
     deathOrder: 2,
@@ -523,6 +528,11 @@ export function applyFinalDeath(input: DeathEventInput): DeathEventResult {
     estateTaxDebits: estateTaxDrain.debits,
     creditorPayoffDebits: creditorDrain.debits,
     creditorPayoffResidual: creditorDrain.residual,
+    transfersForInheritance: ledger,
+    accounts: input.accounts,
+    familyMembers: input.familyMembers,
+    externalBeneficiaries: input.externalBeneficiaries,
+    decedentAgeAtDeath,
   });
 
   // Phase 9b — drain attribution. Per-recipient × drain-kind allocation of the
