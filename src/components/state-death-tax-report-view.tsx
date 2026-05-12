@@ -9,6 +9,7 @@ import type {
 } from "@/engine/types";
 import type { InheritanceRecipientResult } from "@/lib/tax/state-inheritance";
 import type { StateCode, StateEstateTaxResult } from "@/lib/tax/state-estate";
+import { USPS_STATE_NAMES, type USPSStateCode } from "@/lib/usps-states";
 import { AsOfDropdown, type AsOfValue } from "./report-controls/as-of-dropdown";
 import { TimePeriodButtons } from "./report-controls/time-period-buttons";
 import type { OwnerDobs } from "./report-controls/age-helpers";
@@ -390,8 +391,8 @@ function hasAnyStateDeathTax(r: EstateTaxResult): boolean {
   return false;
 }
 
-function NoStateDeathTaxLegend({ residenceState }: { residenceState: string | null }) {
-  const label = residenceState ?? "This state";
+function NoStateDeathTaxLegend({ residenceState }: { residenceState: USPSStateCode | null }) {
+  const label = residenceState != null ? USPS_STATE_NAMES[residenceState] : "This state";
   return (
     <div className="rounded-lg border border-gray-700 bg-gray-900 p-4 text-sm text-gray-200">
       <p>{label} does not levy a state estate tax or inheritance tax.</p>

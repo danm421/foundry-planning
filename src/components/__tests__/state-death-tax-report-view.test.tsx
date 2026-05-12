@@ -366,7 +366,7 @@ describe("StateDeathTaxReportView", () => {
     render(<StateDeathTaxReportView clientId="c1" {...ownerProps} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/does not levy a state estate tax or inheritance tax/i)).toBeInTheDocument();
+      expect(screen.getByText(/Florida does not levy a state estate tax or inheritance tax/i)).toBeInTheDocument();
     });
     expect(screen.getByText(/CT, DC, HI, IL, ME, MD, MA, MN, NY, OR, RI, VT, WA/)).toBeInTheDocument();
     expect(screen.getByText(/PA, NJ, KY, NE, MD/)).toBeInTheDocument();
