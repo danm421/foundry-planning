@@ -57,4 +57,25 @@ export const kpiWidget: ComparisonWidgetDefinition<KpiConfig> = {
     const value = metricValue(metric, plan, successProbability);
     return <KpiComparisonSection metric={metric} value={value} />;
   },
+  renderConfig: ({ config, onChange }) => {
+    const current = KpiConfigSchema.safeParse(config).success
+      ? (config as KpiConfig).metric
+      : "endNetWorth";
+    return (
+      <label className="flex items-center gap-2 text-xs text-slate-300">
+        <span>Metric</span>
+        <select
+          className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100"
+          value={current}
+          onChange={(e) => onChange({ metric: e.target.value as KpiMetric })}
+        >
+          <option value="successProbability">Success Probability</option>
+          <option value="longevityAge">Longevity Age</option>
+          <option value="endNetWorth">End Net Worth</option>
+          <option value="lifetimeTax">Lifetime Tax</option>
+          <option value="netToHeirs">Net to Heirs</option>
+        </select>
+      </label>
+    );
+  },
 };

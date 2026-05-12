@@ -49,6 +49,11 @@ export type ComparisonWidgetScenarios =
   | "one-or-many"
   | "many-only";
 
+export interface ComparisonWidgetConfigContext<TConfig = unknown> {
+  config: TConfig | undefined;
+  onChange: (next: TConfig) => void;
+}
+
 export interface ComparisonWidgetDefinition<TConfig = unknown> {
   kind: ComparisonWidgetKind;
   title: string;
@@ -61,4 +66,6 @@ export interface ComparisonWidgetDefinition<TConfig = unknown> {
   configSchema?: z.ZodType<TConfig>;
   defaultConfig?: TConfig;
   render: (ctx: ComparisonWidgetContext) => ReactNode;
+  /** Optional inline panel config UI. Receives the current config and a setter. */
+  renderConfig?: (ctx: ComparisonWidgetConfigContext<TConfig>) => ReactNode;
 }
