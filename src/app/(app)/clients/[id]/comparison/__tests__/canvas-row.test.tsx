@@ -35,6 +35,9 @@ describe("CanvasRow", () => {
         onRemoveCell={vi.fn()}
         onAddCell={vi.fn()}
         onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
       />,
     );
     const cards = screen.getAllByText(/Portfolio|Monte Carlo/);
@@ -60,6 +63,9 @@ describe("CanvasRow", () => {
         onRemoveCell={vi.fn()}
         onAddCell={vi.fn()}
         onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
       />,
     );
     expect(screen.getByLabelText(/Add cell/i)).toBeDisabled();
@@ -75,6 +81,9 @@ describe("CanvasRow", () => {
         onRemoveCell={vi.fn()}
         onAddCell={onAddCell}
         onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByLabelText(/Add cell/i));
@@ -91,6 +100,9 @@ describe("CanvasRow", () => {
         onRemoveCell={onRemoveCell}
         onAddCell={vi.fn()}
         onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
       />,
     );
     const removeButtons = screen.getAllByLabelText(/Remove widget/i);
@@ -108,6 +120,9 @@ describe("CanvasRow", () => {
         onRemoveCell={vi.fn()}
         onAddCell={vi.fn()}
         onDeleteRow={onDeleteRow}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByLabelText(/Delete row/i));
@@ -124,6 +139,9 @@ describe("CanvasRow", () => {
         onRemoveCell={vi.fn()}
         onAddCell={vi.fn()}
         onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
       />,
     );
     fireEvent.click(screen.getAllByLabelText(/Edit widget/i)[0]);

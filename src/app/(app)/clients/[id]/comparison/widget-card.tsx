@@ -14,6 +14,11 @@ interface Props {
   scenarios: ScenarioLookup[];
   onEdit: () => void;
   onRemove: () => void;
+  onDuplicate: () => void;
+  onMoveLeft: () => void;
+  onMoveRight: () => void;
+  canMoveLeft: boolean;
+  canMoveRight: boolean;
 }
 
 function lookup(scenarios: ScenarioLookup[], id: string): string {
@@ -21,7 +26,18 @@ function lookup(scenarios: ScenarioLookup[], id: string): string {
   return scenarios.find((s) => s.id === id)?.name ?? id;
 }
 
-export function WidgetCard({ widget, widthBadge, scenarios, onEdit, onRemove }: Props) {
+export function WidgetCard({
+  widget,
+  widthBadge,
+  scenarios,
+  onEdit,
+  onRemove,
+  onDuplicate,
+  onMoveLeft,
+  onMoveRight,
+  canMoveLeft,
+  canMoveRight,
+}: Props) {
   const def = COMPARISON_WIDGETS[widget.kind];
   const showChips = def.scenarios !== "none";
   const needsAnotherPlan =
@@ -48,11 +64,40 @@ export function WidgetCard({ widget, widthBadge, scenarios, onEdit, onRemove }: 
         </button>
         <button
           type="button"
+          aria-label="Duplicate widget"
+          onClick={onDuplicate}
+          className="rounded px-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+        >
+          ⎘
+        </button>
+        <button
+          type="button"
           aria-label="Remove widget"
           onClick={onRemove}
           className="rounded px-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
         >
           🗑
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          aria-label="Move widget left"
+          onClick={onMoveLeft}
+          disabled={!canMoveLeft}
+          className="rounded px-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent"
+        >
+          ←
+        </button>
+        <button
+          type="button"
+          aria-label="Move widget right"
+          onClick={onMoveRight}
+          disabled={!canMoveRight}
+          className="rounded px-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent"
+        >
+          →
         </button>
       </div>
 

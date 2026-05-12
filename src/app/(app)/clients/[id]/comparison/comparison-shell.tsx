@@ -96,6 +96,17 @@ export function ComparisonShell({
                 onRemoveCell={(rowId, cellId) => api.removeCell(rowId, cellId)}
                 onAddCell={(rowId) => api.addCell(rowId, "text")}
                 onDeleteRow={(rowId) => api.removeRow(rowId)}
+                onDuplicateCell={(rowId, cellId) => api.duplicateCell(rowId, cellId)}
+                onMoveCellLeft={(rowId, cellId) => {
+                  const r = api.layout.rows.find((row) => row.id === rowId);
+                  const idx = r?.cells.findIndex((c) => c.id === cellId) ?? -1;
+                  if (idx > 0) api.moveCell(rowId, idx, rowId, idx - 1);
+                }}
+                onMoveCellRight={(rowId, cellId) => {
+                  const r = api.layout.rows.find((row) => row.id === rowId);
+                  const idx = r?.cells.findIndex((c) => c.id === cellId) ?? -1;
+                  if (r && idx >= 0 && idx < r.cells.length - 1) api.moveCell(rowId, idx, rowId, idx + 1);
+                }}
               />
             ))
           )}

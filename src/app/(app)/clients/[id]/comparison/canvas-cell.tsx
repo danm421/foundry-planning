@@ -10,9 +10,26 @@ interface Props {
   scenarios: ScenarioLookup[];
   onEdit: () => void;
   onRemove: () => void;
+  onDuplicate: () => void;
+  onMoveLeft: () => void;
+  onMoveRight: () => void;
+  canMoveLeft: boolean;
+  canMoveRight: boolean;
 }
 
-export function CanvasCell({ cell, rowId, widthBadge, scenarios, onEdit, onRemove }: Props) {
+export function CanvasCell({
+  cell,
+  rowId,
+  widthBadge,
+  scenarios,
+  onEdit,
+  onRemove,
+  onDuplicate,
+  onMoveLeft,
+  onMoveRight,
+  canMoveLeft,
+  canMoveRight,
+}: Props) {
   return (
     <div
       data-canvas-cell={cell.id}
@@ -25,6 +42,11 @@ export function CanvasCell({ cell, rowId, widthBadge, scenarios, onEdit, onRemov
         scenarios={scenarios}
         onEdit={onEdit}
         onRemove={onRemove}
+        onDuplicate={onDuplicate}
+        onMoveLeft={onMoveLeft}
+        onMoveRight={onMoveRight}
+        canMoveLeft={canMoveLeft}
+        canMoveRight={canMoveRight}
       />
     </div>
   );
