@@ -6,9 +6,10 @@ import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 
 vi.mock("react-chartjs-2", () => ({
   Line: () => <div data-testid="chart" />,
+  Bar: () => <div data-testid="chart" />,
 }));
 
-function mkPlan(label: string): ComparisonPlan {
+function mkPlan(label: string, years: number[] = [2030]): ComparisonPlan {
   return {
     index: 0,
     isBaseline: true,
@@ -17,18 +18,16 @@ function mkPlan(label: string): ComparisonPlan {
     label,
     tree: {} as ComparisonPlan["tree"],
     result: {
-      years: [
-        {
-          year: 2030,
-          portfolioAssets: {
-            taxable: {}, cash: {}, retirement: {}, realEstate: {}, business: {},
-            lifeInsurance: {}, trustsAndBusinesses: {}, accessibleTrustAssets: {},
-            taxableTotal: 100, cashTotal: 50, retirementTotal: 200, realEstateTotal: 150,
-            businessTotal: 0, lifeInsuranceTotal: 0, trustsAndBusinessesTotal: 0,
-            accessibleTrustAssetsTotal: 0, total: 500,
-          },
+      years: years.map((year) => ({
+        year,
+        portfolioAssets: {
+          taxable: {}, cash: {}, retirement: {}, realEstate: {}, business: {},
+          lifeInsurance: {}, trustsAndBusinesses: {}, accessibleTrustAssets: {},
+          taxableTotal: 100, cashTotal: 50, retirementTotal: 200, realEstateTotal: 150,
+          businessTotal: 0, lifeInsuranceTotal: 0, trustsAndBusinessesTotal: 0,
+          accessibleTrustAssetsTotal: 0, total: 500,
         },
-      ] as ComparisonPlan["result"]["years"],
+      })) as ComparisonPlan["result"]["years"],
     } as ComparisonPlan["result"],
     lifetime: {} as ComparisonPlan["lifetime"],
     liquidityRows: [],
@@ -79,5 +78,27 @@ describe("AllocationDriftComparisonSection", () => {
     };
     render(<AllocationDriftComparisonSection plans={[empty]} yearRange={null} />);
     expect(screen.getByText(/No portfolio data/i)).toBeTruthy();
+  });
+
+  it("renders the multi-year area chart when yearRange spans multiple years", () => {
+    const { container } = render(
+      <AllocationDriftComparisonSection
+        plans={[mkPlan("base", [2026, 2027, 2028])]}
+        yearRange={{ start: 2026, end: 2028 }}
+      />,
+    );
+    expect(container.querySelector("[data-test='allocation-drift-area']")).not.toBeNull();
+    expect(container.querySelector("[data-test='allocation-drift-bar']")).toBeNull();
+  });
+
+  it("renders the single-year horizontal bar when start === end", () => {
+    const { container } = render(
+      <AllocationDriftComparisonSection
+        plans={[mkPlan("base", [2026, 2027, 2028])]}
+        yearRange={{ start: 2026, end: 2026 }}
+      />,
+    );
+    expect(container.querySelector("[data-test='allocation-drift-bar']")).not.toBeNull();
+    expect(container.querySelector("[data-test='allocation-drift-area']")).toBeNull();
   });
 });
