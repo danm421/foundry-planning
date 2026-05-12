@@ -22,7 +22,7 @@ import { relations, sql, type InferSelectModel, type InferInsertModel } from "dr
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { BracketTier } from "@/lib/tax/types";
 import type { ReportPagesPersisted } from "@/lib/reports/types";
-import type { ComparisonLayout } from "@/lib/comparison/layout-schema";
+import type { ComparisonLayout, ComparisonLayoutV4 } from "@/lib/comparison/layout-schema";
 
 const inet = customType<{ data: string; driverData: string }>({
   dataType() {
@@ -2429,7 +2429,7 @@ export const clientComparisonLayouts = pgTable(
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" })
       .unique(),
-    layout: jsonb("layout").notNull().$type<ComparisonLayout>(),
+    layout: jsonb("layout").notNull().$type<ComparisonLayout | ComparisonLayoutV4>(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
