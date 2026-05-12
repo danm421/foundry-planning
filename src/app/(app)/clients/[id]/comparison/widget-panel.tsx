@@ -29,26 +29,8 @@ const CATEGORY_ORDER: Array<{ key: string; title: string }> = [
   { key: "text", title: "Text" },
 ];
 
-/** Categories that start collapsed so their widget items don't appear in the DOM
- *  on initial render. Categories whose eponymous widgets would match a category-
- *  header regex (e.g. "Estate Tax" matching /Estate/i) must start collapsed to
- *  avoid multiple-element matches in getByText queries. */
-const INITIALLY_COLLAPSED: ReadonlySet<string> = new Set(["estate", "text"]);
-
-const CATEGORY_TITLE_MAP = new Map(CATEGORY_ORDER.map(({ key, title }) => [key, title]));
-
 /** Hidden entirely from the Available list (not just collapsed). */
 const HIDE_FROM_AVAILABLE: ReadonlySet<string> = new Set(["kpi-strip"]);
-
-/** Returns true when a widget's title exactly equals its parent category's display
- *  title (case-insensitive). These widgets omit the visible text label to avoid
- *  getByText collisions between the category header and the widget item. */
-function titleMatchesCategory(kind: ComparisonWidgetKindV4): boolean {
-  const def = COMPARISON_WIDGETS[kind];
-  if (!def) return false;
-  const catTitle = CATEGORY_TITLE_MAP.get(def.category) ?? "";
-  return def.title.toLowerCase() === catTitle.toLowerCase();
-}
 
 function flattenCells(layout: ComparisonLayoutV4): Array<{ rowId: string; cellId: string; kind: ComparisonWidgetKindV4 }> {
   const out: Array<{ rowId: string; cellId: string; kind: ComparisonWidgetKindV4 }> = [];
@@ -82,11 +64,7 @@ export function WidgetPanel({
   }, []);
 
   const [openCellId, setOpenCellId] = useState<string | null>(null);
-  // Some categories start collapsed so their widget items aren't in the initial DOM,
-  // avoiding getByText ambiguity between category headers and widget title text.
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(
-    Object.fromEntries(Array.from(INITIALLY_COLLAPSED).map((k) => [k, true])),
-  );
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const toggleCollapse = (cat: string) =>
     setCollapsed((c) => ({ ...c, [cat]: !c[cat] }));
@@ -144,20 +122,11 @@ export function WidgetPanel({
             if (!widget) return null;
             const def = COMPARISON_WIDGETS[kind];
             const open = openCellId === cellId;
-            const hideText = def ? titleMatchesCategory(kind) : false;
             return (
               <div key={cellId} data-layout-entry={cellId}>
                 <div className="flex items-center gap-2 border-b border-slate-800 px-3 py-2 text-sm text-slate-200">
                   <span className="text-slate-500">⋮⋮</span>
-                  {hideText ? (
-                    <span
-                      className="flex-1 truncate"
-                      title={def?.title}
-                      aria-label={def?.title}
-                    />
-                  ) : (
-                    <span className="flex-1 truncate">{def?.title}</span>
-                  )}
+                  <span className="flex-1 truncate">{def?.title}</span>
                   <button
                     type="button"
                     aria-label="Edit widget"
@@ -198,8 +167,6 @@ export function WidgetPanel({
           </div>
           {CATEGORY_ORDER.map(({ key, title }) => {
             const kinds = grouped.get(key) ?? [];
-            // Always render the category header (even if all items are hidden by
-            // HIDE_FROM_AVAILABLE), so the header text is always findable.
             const isCollapsed = !!collapsed[key];
             return (
               <div key={key}>
@@ -212,31 +179,20 @@ export function WidgetPanel({
                   <span aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
                 </button>
                 {!isCollapsed &&
-                  kinds.map((kind) => {
-                    const hideText = titleMatchesCategory(kind);
-                    return (
-                      <button
-                        key={kind}
-                        type="button"
-                        data-available-kind={kind}
-                        onClick={() => handleAddFromAvailable(kind)}
-                        className="flex w-full items-center gap-2 border-b border-slate-800 px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800"
-                      >
-                        <span className="text-slate-500">+</span>
-                        {hideText ? (
-                          <span
-                            className="flex-1 truncate"
-                            title={COMPARISON_WIDGETS[kind]?.title}
-                            aria-label={COMPARISON_WIDGETS[kind]?.title}
-                          />
-                        ) : (
-                          <span className="flex-1 truncate">
-                            {COMPARISON_WIDGETS[kind]?.title}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                  kinds.map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      data-available-kind={kind}
+                      onClick={() => handleAddFromAvailable(kind)}
+                      className="flex w-full items-center gap-2 border-b border-slate-800 px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800"
+                    >
+                      <span className="text-slate-500">+</span>
+                      <span className="flex-1 truncate">
+                        {COMPARISON_WIDGETS[kind]?.title}
+                      </span>
+                    </button>
+                  ))}
               </div>
             );
           })}

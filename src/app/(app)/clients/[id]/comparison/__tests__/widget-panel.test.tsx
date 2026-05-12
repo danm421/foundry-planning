@@ -15,9 +15,9 @@ vi.mock("@/lib/comparison/widgets/registry", () => {
       "kpi-strip": m("kpi-strip", "KPI Strip (legacy)", "kpis", "one-or-many"),
       portfolio: m("portfolio", "Portfolio", "investments", "one-or-many"),
       "allocation-drift": m("allocation-drift", "Asset Allocation Drift", "investments", "one-or-many"),
-      "monte-carlo": m("monte-carlo", "Monte Carlo", "monte-carlo", "one-or-many"),
+      "monte-carlo": m("monte-carlo", "Monte Carlo Outcomes", "monte-carlo", "one-or-many"),
       longevity: m("longevity", "Longevity", "monte-carlo", "one-or-many"),
-      "income-expense": m("income-expense", "Cash Flow", "cashflow", "one-or-many"),
+      "income-expense": m("income-expense", "Income & Expenses", "cashflow", "one-or-many"),
       "year-by-year": m("year-by-year", "Year-by-year", "cashflow", "many-only"),
       "tax-bracket-fill": m("tax-bracket-fill", "Bracket Fill", "tax", "one-or-many"),
       "ss-income": m("ss-income", "SS Income", "retirement-income", "one-or-many"),
@@ -85,14 +85,17 @@ describe("WidgetPanel (v4)", () => {
         onDone={vi.fn()}
       />,
     );
-    expect(screen.getByText(/KPIs/i)).toBeInTheDocument();
-    expect(screen.getByText(/Cash Flow/i)).toBeInTheDocument();
-    expect(screen.getByText(/Investments/i)).toBeInTheDocument();
-    expect(screen.getByText(/Monte Carlo/i)).toBeInTheDocument();
-    expect(screen.getByText(/Retirement Income/i)).toBeInTheDocument();
-    expect(screen.getByText(/^Tax/i)).toBeInTheDocument();
-    expect(screen.getByText(/Estate/i)).toBeInTheDocument();
-    expect(screen.getByText(/^Text/i)).toBeInTheDocument();
+    // Target the category-header toggle buttons specifically; widget entry buttons
+    // share the same role but have different names (never matching category titles
+    // in the mock — see mock titles above).
+    expect(screen.getByRole("button", { name: /KPIs/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Cash Flow$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Investments$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Monte Carlo$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Retirement Income/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Tax$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Estate$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Text$/i })).toBeInTheDocument();
   });
 
   it("Available hides the legacy kpi-strip", () => {
