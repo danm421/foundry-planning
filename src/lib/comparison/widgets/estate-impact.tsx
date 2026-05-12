@@ -3,7 +3,7 @@ import type { ComparisonWidgetDefinition } from "./types";
 
 export const estateImpactWidget: ComparisonWidgetDefinition = {
   kind: "estate-impact",
-  title: "Impact vs Base",
+  title: "Distribution Comparison",
   category: "estate",
   scenarios: "one-or-many",
   needsMc: false,
