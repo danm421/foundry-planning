@@ -7,7 +7,7 @@ import { useLayout } from "./use-layout";
 import { useSharedMcRun } from "./use-shared-mc-run";
 import { usePreviewPlans } from "./use-preview-plans";
 import { WidgetRenderer } from "./widget-renderer";
-import { WidgetPanel } from "./widget-panel";
+import { WidgetPanel } from "./widget-picker";
 import { CanvasRow } from "./canvas-row";
 import { ReportTitle } from "./report-title";
 import { ModeToggle, type CanvasMode } from "./mode-toggle";
@@ -64,15 +64,6 @@ export function ComparisonShell({
     enabled: mcEnabled,
   });
   const mc = mcState.status === "ready" ? mcState.result ?? null : null;
-
-  const availableYearRange = useMemo(() => {
-    const years = previewPlans.flatMap((p) => p.result.years.map((y) => y.year));
-    if (years.length === 0) {
-      const yr = new Date().getFullYear();
-      return { min: yr, max: yr + 30 };
-    }
-    return { min: Math.min(...years), max: Math.max(...years) };
-  }, [previewPlans]);
 
   return (
     <>
@@ -136,10 +127,7 @@ export function ComparisonShell({
       {panelOpen && (
         <WidgetPanel
           api={api}
-          scenarios={scenarios}
-          availableYearRange={availableYearRange}
           primaryScenarioId={primaryScenarioId}
-          onDone={() => setPanelOpen(false)}
         />
       )}
     </>

@@ -37,10 +37,8 @@ vi.mock("../use-preview-plans", () => {
   };
 });
 
-vi.mock("../widget-panel", () => ({
-  WidgetPanel: ({ onDone }: { onDone: () => void }) => (
-    <div data-testid="widget-panel"><button onClick={onDone}>Done</button></div>
-  ),
+vi.mock("../widget-picker", () => ({
+  WidgetPanel: () => <div data-testid="widget-panel" />,
 }));
 
 const layout: ComparisonLayoutV4 = {
