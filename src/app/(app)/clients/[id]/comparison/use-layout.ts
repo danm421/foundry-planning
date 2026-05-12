@@ -6,6 +6,7 @@ import type {
   CellV5,
   ComparisonLayoutV5,
   Group,
+  TextWidgetAiConfig,
   WidgetInstance,
   YearRange,
 } from "@/lib/comparison/layout-schema";
@@ -34,6 +35,7 @@ export interface UseLayoutApi {
   updateWidgetYearRange: (cellId: string, yearRange: YearRange | undefined) => void;
   updateWidgetConfig: (cellId: string, config: unknown) => void;
   updateTextMarkdown: (cellId: string, markdown: string) => void;
+  updateTextAiConfig: (cellId: string, ai: TextWidgetAiConfig | undefined) => void;
 
   save: () => Promise<void>;
   saving: boolean;
@@ -251,12 +253,36 @@ export function useLayout(initial: ComparisonLayoutV5, clientId: string): UseLay
 
   const updateTextMarkdown = useCallback((cellId: string, markdown: string) => {
     setLayout((p) =>
-      mapCellById(p, cellId, (c) =>
-        c.widget ? { ...c, widget: { ...c.widget, config: { markdown } } } : c,
-      ),
+      mapCellById(p, cellId, (c) => {
+        if (!c.widget) return c;
+        const prev =
+          (c.widget.config as { markdown?: string; ai?: unknown } | undefined) ?? {};
+        return {
+          ...c,
+          widget: { ...c.widget, config: { ...prev, markdown } },
+        };
+      }),
     );
     setDirty(true);
   }, []);
+
+  const updateTextAiConfig = useCallback(
+    (cellId: string, ai: TextWidgetAiConfig | undefined) => {
+      setLayout((p) =>
+        mapCellById(p, cellId, (c) => {
+          if (!c.widget) return c;
+          const prev =
+            (c.widget.config as { markdown?: string; ai?: unknown } | undefined) ?? {};
+          const next: { markdown?: string; ai?: unknown } = { ...prev };
+          if (ai === undefined) delete next.ai;
+          else next.ai = ai;
+          return { ...c, widget: { ...c.widget, config: next } };
+        }),
+      );
+      setDirty(true);
+    },
+    [],
+  );
 
   const save = useCallback(async () => {
     setSaving(true);
@@ -279,13 +305,13 @@ export function useLayout(initial: ComparisonLayoutV5, clientId: string): UseLay
       setTitle,
       addGroup, removeGroup, setGroupTitle, moveGroup,
       addEmptyCellRight, addEmptyCellDown, removeCell, setCellSpan, setCellWidget, duplicateCell, moveCell,
-      updateWidgetPlanIds, updateWidgetYearRange, updateWidgetConfig, updateTextMarkdown,
+      updateWidgetPlanIds, updateWidgetYearRange, updateWidgetConfig, updateTextMarkdown, updateTextAiConfig,
       save, saving, dirty,
     }),
     [
       layout, setTitle, addGroup, removeGroup, setGroupTitle, moveGroup,
       addEmptyCellRight, addEmptyCellDown, removeCell, setCellSpan, setCellWidget, duplicateCell, moveCell,
-      updateWidgetPlanIds, updateWidgetYearRange, updateWidgetConfig, updateTextMarkdown,
+      updateWidgetPlanIds, updateWidgetYearRange, updateWidgetConfig, updateTextMarkdown, updateTextAiConfig,
       save, saving, dirty,
     ],
   );
