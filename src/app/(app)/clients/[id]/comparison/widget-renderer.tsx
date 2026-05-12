@@ -31,6 +31,17 @@ export function WidgetRenderer({ layout, clientId, plans, mc }: Props) {
         <div key={row.id} data-render-row={row.id} className="flex items-stretch gap-2">
           {row.cells.map((cell) => {
             const def = COMPARISON_WIDGETS[cell.widget.kind];
+            if (!def) {
+              return (
+                <div
+                  key={cell.id}
+                  data-render-cell={cell.id}
+                  className="flex-1 min-w-0 rounded border border-dashed border-slate-700 p-4 text-sm text-slate-400"
+                >
+                  Unknown widget: {cell.widget.kind}
+                </div>
+              );
+            }
             const widgetPlans = cell.widget.planIds
               .map((pid) => planById.get(pid))
               .filter((p): p is ComparisonPlan => p !== undefined);

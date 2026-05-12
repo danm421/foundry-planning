@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { WidgetRenderer } from "../widget-renderer";
 import type { ComparisonLayoutV4 } from "@/lib/comparison/layout-schema";
@@ -31,6 +31,10 @@ vi.mock("@/lib/comparison/widgets/registry", () => {
 
 const plan = (id: string): ComparisonPlan =>
   ({ id, label: id, result: { years: [] } } as unknown as ComparisonPlan);
+
+beforeEach(() => {
+  for (const key in lastCtx) delete lastCtx[key];
+});
 
 describe("WidgetRenderer (v4)", () => {
   it("renders rows of cells in order", () => {
@@ -131,5 +135,26 @@ describe("WidgetRenderer (v4)", () => {
       <WidgetRenderer layout={layout} clientId="c" plans={[]} mc={null} />,
     );
     expect(container.textContent).toContain("No widgets");
+  });
+
+  it("renders an Unknown widget placeholder when kind is not in the registry", () => {
+    const layout: ComparisonLayoutV4 = {
+      version: 4,
+      title: "T",
+      rows: [
+        {
+          id: "r1",
+          cells: [
+            {
+              id: "c1",
+              // @ts-expect-error — intentionally unknown kind to exercise the guard
+              widget: { id: "w1", kind: "made-up-kind", planIds: [] },
+            },
+          ],
+        },
+      ],
+    };
+    render(<WidgetRenderer layout={layout} clientId="c" plans={[]} mc={null} />);
+    expect(screen.getByText(/Unknown widget: made-up-kind/i)).toBeInTheDocument();
   });
 });
