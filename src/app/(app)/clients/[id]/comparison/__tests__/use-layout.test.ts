@@ -46,16 +46,18 @@ describe("useLayout (v4)", () => {
     expect(result.current.layout.title).toBe("Renamed");
   });
 
-  it("addRow appends an empty-but-valid placeholder row and returns its id", () => {
+  it("addRow appends an empty-but-valid placeholder row and returns its ids", () => {
     const { result } = renderHook(() => useLayout(initial, "c"));
-    let newId = "";
+    let rowId = "";
+    let placeholderCellId = "";
     act(() => {
-      newId = result.current.addRow();
+      ({ rowId, placeholderCellId } = result.current.addRow());
     });
-    expect(result.current.layout.rows.at(-1)?.id).toBe(newId);
+    expect(result.current.layout.rows.at(-1)?.id).toBe(rowId);
     // New row starts with a single text cell so it satisfies min-1-cell validation.
     expect(result.current.layout.rows.at(-1)?.cells).toHaveLength(1);
     expect(result.current.layout.rows.at(-1)?.cells[0].widget.kind).toBe("text");
+    expect(result.current.layout.rows.at(-1)?.cells[0].id).toBe(placeholderCellId);
   });
 
   it("removeRow drops the row by id", () => {

@@ -16,10 +16,15 @@ const newId = (): string => crypto.randomUUID();
 
 const MAX_CELLS_PER_ROW = 5;
 
+export interface AddRowResult {
+  rowId: string;
+  placeholderCellId: string;
+}
+
 export interface UseLayoutApi {
   layout: ComparisonLayoutV4;
   setTitle: (title: string) => void;
-  addRow: () => string;
+  addRow: () => AddRowResult;
   removeRow: (rowId: string) => void;
   moveRow: (fromIndex: number, toIndex: number) => void;
   addCell: (rowId: string, kind: ComparisonWidgetKindV4) => void;
@@ -103,7 +108,7 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
     setLayout((p) => (p.title === title ? p : { ...p, title }));
   }, []);
 
-  const addRow = useCallback((): string => {
+  const addRow = useCallback((): AddRowResult => {
     const placeholder = makeCell({
       id: newId(),
       kind: "text",
@@ -112,7 +117,7 @@ export function useLayout(initial: ComparisonLayoutV4, clientId: string): UseLay
     });
     const row = makeRow([placeholder]);
     setLayout((p) => ({ ...p, rows: [...p.rows, row] }));
-    return row.id;
+    return { rowId: row.id, placeholderCellId: placeholder.id };
   }, []);
 
   const removeRow = useCallback((rowId: string) => {
