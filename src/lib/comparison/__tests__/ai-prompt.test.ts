@@ -1,6 +1,45 @@
 import { describe, it, expect } from "vitest";
-import { buildComparisonAiPrompt, formatMoney, type AiPlanYearly } from "../ai-prompt";
+import {
+  buildComparisonAiPrompt,
+  formatMoney,
+  type AiPlanYearly,
+  type HouseholdContext,
+} from "../ai-prompt";
 import type { ResolvedSource } from "../ai-source-resolve";
+
+const household: HouseholdContext = {
+  clientFirstName: "John",
+  clientLastName: "Smith",
+  clientCurrentAge: 62,
+  clientRetirementAge: 65,
+  clientRetirementYear: 2030,
+  planEndAge: 95,
+  spouse: {
+    firstName: "Jane",
+    currentAge: 58,
+    retirementAge: 67,
+    retirementYear: 2034,
+  },
+  filingStatus: "married_joint",
+  inflationRate: 0.025,
+  residenceState: "TX",
+  planStartYear: 2026,
+  planEndYear: 2070,
+};
+
+const householdSolo: HouseholdContext = {
+  clientFirstName: "Ada",
+  clientLastName: "Lovelace",
+  clientCurrentAge: 50,
+  clientRetirementAge: 65,
+  clientRetirementYear: 2041,
+  planEndAge: 95,
+  filingStatus: "single",
+  inflationRate: 0.025,
+  residenceState: null,
+  planStartYear: 2026,
+  planEndYear: 2071,
+};
 
 const sources: ResolvedSource[] = [
   {
@@ -33,7 +72,7 @@ describe("buildComparisonAiPrompt", () => {
       tone: "concise",
       length: "short",
       customInstructions: "address the client by first name",
-      householdName: "Smith Family",
+      household,
     });
     expect(system).toMatch(/lead with the single most important point/i);
     expect(system).toMatch(/2-3 sentences total/i);
@@ -47,7 +86,7 @@ describe("buildComparisonAiPrompt", () => {
       tone: "detailed",
       length: "long",
       customInstructions: "",
-      householdName: "Smith Family",
+      household,
     });
     expect(system).toMatch(/warm, personable, and conversational/i);
     expect(system).toMatch(/never invent figures/i);
@@ -63,7 +102,7 @@ describe("buildComparisonAiPrompt", () => {
       tone: "concise",
       length: "short",
       customInstructions: "",
-      householdName: "Smith Family",
+      household,
     });
     expect(user).toMatch(/kpi.*Retirement.*2030.*2032.*base/);
   });
@@ -75,7 +114,7 @@ describe("buildComparisonAiPrompt", () => {
       tone: "detailed",
       length: "medium",
       customInstructions: "",
-      householdName: "Smith Family",
+      household,
     });
     expect(user).toMatch(/Baseline/);
     expect(user).toMatch(/\b2030\b/);
@@ -89,7 +128,7 @@ describe("buildComparisonAiPrompt", () => {
       tone: "plain",
       length: "long",
       customInstructions: "",
-      householdName: "Smith Family",
+      household,
     });
     expect(system).not.toMatch(/Advisor instructions:/);
   });
@@ -102,11 +141,15 @@ describe("buildComparisonAiPrompt", () => {
       tone: "concise",
       length: "short",
       customInstructions: "",
-      householdName: "Smith Family",
+      household,
     });
-    expect(user).toMatch(/\b2031\b/);
-    expect(user).not.toMatch(/\b2030\b/);
-    expect(user).not.toMatch(/\b2032\b/);
+    // Only check the plan-data section — the household context block also
+    // mentions the household's own retirement year (which may collide with
+    // any year-range we test against).
+    const planSection = user.split("Yearly projection data")[1] ?? "";
+    expect(planSection).toMatch(/\b2031\b/);
+    expect(planSection).not.toMatch(/\b2030\b/);
+    expect(planSection).not.toMatch(/\b2032\b/);
   });
 
   it("pre-formats year-row money values in the user prompt", () => {
@@ -116,12 +159,59 @@ describe("buildComparisonAiPrompt", () => {
       tone: "concise",
       length: "short",
       customInstructions: "",
-      householdName: "Smith Family",
+      household,
     });
     // 100000 → $100K, 1_000_000 → $1.0M, 80000 → $80K. Raw decimals must be gone.
     expect(user).toMatch(/\$100K/);
     expect(user).toMatch(/\$1\.0M|\$1\.1M/);
     expect(user).not.toMatch(/100000\b|1000000\b/);
+  });
+
+  it("emits an 'About the household' section with names, ages, retirement years, filing, and inflation", () => {
+    const { user } = buildComparisonAiPrompt({
+      sources,
+      plans,
+      tone: "concise",
+      length: "short",
+      customInstructions: "",
+      household,
+    });
+    expect(user).toMatch(/About the household:/);
+    expect(user).toMatch(/John.*age 62.*retires at age 65.*2030/);
+    expect(user).toMatch(/Jane.*age 58.*retires at age 67.*2034/);
+    expect(user).toMatch(/married filing jointly/);
+    expect(user).toMatch(/Inflation assumption: 2\.5%/);
+    expect(user).toMatch(/Residence state: TX/);
+    expect(user).toMatch(/Plan horizon: 2026.{1,3}2070.*age 95/);
+  });
+
+  it("omits the spouse line and residence state for a single household with no state set", () => {
+    const { user, system } = buildComparisonAiPrompt({
+      sources,
+      plans,
+      tone: "concise",
+      length: "short",
+      customInstructions: "",
+      household: householdSolo,
+    });
+    expect(user).not.toMatch(/Jane|spouse/i);
+    expect(user).not.toMatch(/Residence state/);
+    // System prompt should only mention Ada, not "Ada and Jane".
+    expect(system).toMatch(/\bAda\b/);
+    expect(system).not.toMatch(/Jane/);
+  });
+
+  it("tells the model to address the household by first name in the system prompt", () => {
+    const { system } = buildComparisonAiPrompt({
+      sources,
+      plans,
+      tone: "concise",
+      length: "short",
+      customInstructions: "",
+      household,
+    });
+    expect(system).toMatch(/Address the household by first name/);
+    expect(system).toMatch(/John and Jane/);
   });
 
   it("returns identical strings for identical inputs (determinism)", () => {
@@ -131,7 +221,7 @@ describe("buildComparisonAiPrompt", () => {
       tone: "concise",
       length: "short",
       customInstructions: "x",
-      householdName: "H",
+      household,
     });
     const b = buildComparisonAiPrompt({
       sources,
@@ -139,7 +229,7 @@ describe("buildComparisonAiPrompt", () => {
       tone: "concise",
       length: "short",
       customInstructions: "x",
-      householdName: "H",
+      household,
     });
     expect(a.system).toBe(b.system);
     expect(a.user).toBe(b.user);

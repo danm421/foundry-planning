@@ -35,21 +35,92 @@ export interface AiPlanYearly {
   }>;
 }
 
+export interface HouseholdContext {
+  clientFirstName: string;
+  clientLastName: string;
+  clientCurrentAge: number | undefined;
+  clientRetirementAge: number;
+  clientRetirementYear: number | undefined;
+  planEndAge: number;
+  spouse?: {
+    firstName: string;
+    currentAge: number | undefined;
+    retirementAge: number | undefined;
+    retirementYear: number | undefined;
+  };
+  filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household";
+  inflationRate: number;
+  residenceState: string | null;
+  planStartYear: number;
+  planEndYear: number;
+}
+
 export interface BuildPromptInput {
   sources: ResolvedSource[];
   plans: AiPlanYearly[];
   tone: AiTone;
   length: AiLength;
   customInstructions: string;
-  householdName: string;
+  household: HouseholdContext;
+}
+
+function formatFilingStatus(s: HouseholdContext["filingStatus"]): string {
+  switch (s) {
+    case "married_joint": return "married filing jointly";
+    case "married_separate": return "married filing separately";
+    case "head_of_household": return "head of household";
+    case "single": return "single";
+  }
+}
+
+function householdDisplayName(h: HouseholdContext): string {
+  const parts: string[] = [];
+  if (h.spouse) parts.push(`${h.clientFirstName} & ${h.spouse.firstName}`);
+  else parts.push(h.clientFirstName);
+  if (h.clientLastName) parts.push(h.clientLastName);
+  return parts.join(" ").trim() || "the household";
+}
+
+function formatHouseholdContextBlock(h: HouseholdContext): string {
+  const lines: string[] = [];
+  const clientAge = h.clientCurrentAge != null ? `, currently age ${h.clientCurrentAge}` : "";
+  const clientRet =
+    h.clientRetirementYear != null
+      ? `retires at age ${h.clientRetirementAge} (${h.clientRetirementYear})`
+      : `retires at age ${h.clientRetirementAge}`;
+  lines.push(`- ${h.clientFirstName}${clientAge}; ${clientRet}.`);
+  if (h.spouse) {
+    const sAge = h.spouse.currentAge != null ? `, currently age ${h.spouse.currentAge}` : "";
+    let sRet = "";
+    if (h.spouse.retirementAge != null && h.spouse.retirementYear != null) {
+      sRet = `retires at age ${h.spouse.retirementAge} (${h.spouse.retirementYear})`;
+    } else if (h.spouse.retirementAge != null) {
+      sRet = `retires at age ${h.spouse.retirementAge}`;
+    } else {
+      sRet = "retirement age unknown";
+    }
+    lines.push(`- ${h.spouse.firstName}${sAge}; ${sRet}.`);
+  }
+  lines.push(`- Filing status: ${formatFilingStatus(h.filingStatus)}.`);
+  lines.push(`- Inflation assumption: ${(h.inflationRate * 100).toFixed(1)}%.`);
+  if (h.residenceState) lines.push(`- Residence state: ${h.residenceState}.`);
+  lines.push(`- Plan horizon: ${h.planStartYear}–${h.planEndYear} (through age ${h.planEndAge}).`);
+  return lines.join("\n");
 }
 
 export function buildComparisonAiPrompt(input: BuildPromptInput): { system: string; user: string } {
-  const { sources, plans, tone, length, customInstructions, householdName } = input;
+  const { sources, plans, tone, length, customInstructions, household } = input;
+  const householdName = householdDisplayName(household);
+  const householdBlock = formatHouseholdContextBlock(household);
+
+  const firstNames = household.spouse
+    ? `${household.clientFirstName} and ${household.spouse.firstName}`
+    : household.clientFirstName;
 
   const systemParts = [
     "You write advisor commentary for a financial-planning report.",
     "Always sound warm, personable, and conversational — like you're talking with the household, not at them. Use \"you\" and \"your\". Skip corporate-speak and jargon.",
+    `Address the household by first name where it sounds natural (${firstNames}). Don't overuse names; once or twice across the whole response is plenty.`,
     "Output: clean Markdown only. No preamble like \"Here is your analysis\" or headings unless asked for.",
     "Only use numbers from the data below. Never invent figures.",
     "Format every dollar amount as $X.XM (e.g. $3.7M) or $XXX K (e.g. $474K) or $X,XXX with commas. Never show raw decimals like 3664560.69.",
@@ -111,6 +182,9 @@ export function buildComparisonAiPrompt(input: BuildPromptInput): { system: stri
 
   const user = [
     `Household: ${householdName}.`,
+    "",
+    "About the household:",
+    householdBlock,
     "",
     "Widgets the advisor is comparing:",
     widgetLines.length > 0 ? widgetLines.join("\n") : "  (none selected)",

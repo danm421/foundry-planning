@@ -27,17 +27,23 @@ function getClient(): AzureOpenAI {
 
 /**
  * Call Azure OpenAI for document extraction.
+ *
+ * `model` accepts the legacy "mini" / "full" aliases (resolved via env)
+ * or an explicit deployment name like "gpt-5.4" — useful when a caller
+ * wants to pin the model without depending on the AZURE_*_MODEL env vars.
  */
 export async function callAIExtraction(
   systemPrompt: string,
   userPrompt: string,
-  model: "mini" | "full" = "mini"
+  model: "mini" | "full" | (string & {}) = "mini"
 ): Promise<string> {
   const client = getClient();
   const modelName =
     model === "full"
       ? (process.env.AZURE_ANALYSIS_MODEL ?? "gpt-5.4")
-      : (process.env.AZURE_MODEL ?? "gpt-5.4-mini");
+      : model === "mini"
+        ? (process.env.AZURE_MODEL ?? "gpt-5.4-mini")
+        : model;
 
   // Removed `x-ms-azureai-sensitivity: "high"` request header
   // (commit e2834b0). The header was added as defense-in-depth for

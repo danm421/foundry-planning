@@ -23,7 +23,22 @@ vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn(async () => undefined) }));
 
 vi.mock("@/lib/scenario/load-projection-for-ref", () => ({
   loadProjectionForRef: vi.fn(async () => ({
-    tree: { client: { firstName: "Ada", lastName: "Lovelace" } },
+    tree: {
+      client: {
+        firstName: "Ada",
+        lastName: "Lovelace",
+        dateOfBirth: "1965-01-01",
+        retirementAge: 65,
+        planEndAge: 95,
+        filingStatus: "single",
+      },
+      planSettings: {
+        inflationRate: 0.025,
+        planStartYear: 2026,
+        planEndYear: 2070,
+        residenceState: "NJ",
+      },
+    },
     result: {
       years: [
         {
