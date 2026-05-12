@@ -33,7 +33,7 @@ const SPAN_TO_CLASS: Record<CellSpan, string> = {
 };
 
 const ACTION_BTN =
-  "rounded border border-slate-500 bg-slate-800 px-1.5 py-0.5 text-slate-100 shadow-sm hover:border-amber-400 hover:bg-slate-700 hover:text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-400";
+  "rounded border border-slate-500 bg-slate-800 px-1.5 py-1 text-slate-100 shadow-sm hover:border-amber-400 hover:bg-slate-700 hover:text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-400";
 
 function lookup(scenarios: ScenarioLookup[], id: string): string {
   if (id === "base") return "Base";
@@ -126,6 +126,12 @@ export function CanvasCell({
   const selectedRingPopulated = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-slate-700";
   const selectedRingEmpty = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-slate-700";
 
+  const SpanBadge = (
+    <span className="rounded border border-slate-600 bg-slate-800 px-1 py-0.5 text-[10px] uppercase tracking-wider text-slate-300">
+      {cell.span}/5
+    </span>
+  );
+
   return (
     <div
       ref={(node) => {
@@ -140,9 +146,34 @@ export function CanvasCell({
       onMouseDown={() => setSelected(true)}
       className={`${SPAN_TO_CLASS[cell.span]} relative min-w-0`}
     >
+      {selected && (
+        <div
+          data-testid="cell-toolbar"
+          className="absolute bottom-full left-0 z-30 mb-1 flex w-max items-center gap-1 whitespace-nowrap rounded-lg border border-amber-400/60 bg-slate-900/95 p-1 shadow-xl backdrop-blur"
+        >
+          <SpanPicker span={cell.span} onChange={onChangeSpan} />
+          <span className="mx-1 h-5 w-px bg-slate-700" aria-hidden="true" />
+          {widget ? (
+            <>
+              <button type="button" aria-label="Edit widget" title="Edit" onClick={onEditWidget} className={ACTION_BTN}>✎</button>
+              <button type="button" aria-label="Duplicate widget" title="Duplicate" onClick={onDuplicate} className={ACTION_BTN}>⎘</button>
+              <button type="button" aria-label="Add right" title="Add right" onClick={onAddRight} className={ACTION_BTN}>→</button>
+              <button type="button" aria-label="Add down" title="Add below" onClick={onAddDown} className={ACTION_BTN}>↓</button>
+              <button type="button" aria-label="Remove widget" title="Remove" onClick={onRemove} className={ACTION_BTN}>🗑</button>
+            </>
+          ) : (
+            <>
+              <button type="button" aria-label="Add right" title="Add right" onClick={onAddRight} className={ACTION_BTN}>→</button>
+              <button type="button" aria-label="Add down" title="Add below" onClick={onAddDown} className={ACTION_BTN}>↓</button>
+              <button type="button" aria-label="Remove placeholder" title="Remove" onClick={onRemove} className={ACTION_BTN}>🗑</button>
+            </>
+          )}
+        </div>
+      )}
+
       {widget && def ? (
         <div className={`flex h-full flex-col gap-2 rounded-lg border ${selectedRingPopulated} bg-slate-900 p-3 text-sm text-slate-200`}>
-          <div className="flex items-start gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               aria-label="Drag widget"
@@ -154,16 +185,7 @@ export function CanvasCell({
               ⋮⋮
             </button>
             <span className="flex-1 truncate font-medium">{def.title}</span>
-            <SpanPicker span={cell.span} onChange={onChangeSpan} />
-            {selected && (
-              <>
-                <button type="button" aria-label="Edit widget" title="Edit" onClick={onEditWidget} className={ACTION_BTN}>✎</button>
-                <button type="button" aria-label="Duplicate widget" title="Duplicate" onClick={onDuplicate} className={ACTION_BTN}>⎘</button>
-                <button type="button" aria-label="Add right" title="Add right" onClick={onAddRight} className={ACTION_BTN}>→</button>
-                <button type="button" aria-label="Add down" title="Add below" onClick={onAddDown} className={ACTION_BTN}>↓</button>
-                <button type="button" aria-label="Remove widget" title="Remove" onClick={onRemove} className={ACTION_BTN}>🗑</button>
-              </>
-            )}
+            {SpanBadge}
           </div>
 
           {def.scenarios !== "none" && (
@@ -175,7 +197,6 @@ export function CanvasCell({
               ))}
             </div>
           )}
-
         </div>
       ) : (
         <div className={`flex h-full min-h-[120px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed ${selectedRingEmpty} p-3`}>
@@ -188,14 +209,7 @@ export function CanvasCell({
           >
             +
           </button>
-          <SpanPicker span={cell.span} onChange={onChangeSpan} />
-          {selected && (
-            <div className="flex items-center gap-1">
-              <button type="button" aria-label="Add right" title="Add right" onClick={onAddRight} className={ACTION_BTN}>→</button>
-              <button type="button" aria-label="Add down" title="Add below" onClick={onAddDown} className={ACTION_BTN}>↓</button>
-              <button type="button" aria-label="Remove placeholder" title="Remove" onClick={onRemove} className={ACTION_BTN}>🗑</button>
-            </div>
-          )}
+          {SpanBadge}
         </div>
       )}
     </div>
