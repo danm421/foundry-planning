@@ -6,7 +6,7 @@ export interface ResolvedSource {
   groupTitle: string;
   widgetKind: ComparisonWidgetKindV4;
   planIds: string[];
-  yearRange: YearRange | undefined;
+  yearRange?: YearRange;
 }
 
 export interface AiSourceSelection {
