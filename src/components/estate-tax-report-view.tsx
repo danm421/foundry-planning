@@ -7,7 +7,6 @@ import type {
   EstateTaxResult,
   HypotheticalEstateTaxOrdering,
 } from "@/engine/types";
-import type { StateCode, StateEstateTaxResult } from "@/lib/tax/state-estate";
 import { AsOfDropdown, type AsOfValue } from "./report-controls/as-of-dropdown";
 import { TimePeriodButtons } from "./report-controls/time-period-buttons";
 import type { OwnerDobs } from "./report-controls/age-helpers";
@@ -405,16 +404,16 @@ function DecedentBreakdown({
     .filter((a) => a.drainKind === "ird_tax")
     .reduce((s, a) => s + a.amount, 0);
 
-  // Headline matches eMoney's "Total Taxes & Expenses": engine's
-  // totalTaxesAndExpenses (estate tax + admin) plus IRD income tax. IRD is
-  // separate in the engine because it's income tax on heirs, not an
-  // estate-administered drain.
-  const totalTaxesAndExpenses = tax.totalTaxesAndExpenses + irdTotal;
+  // Headline matches eMoney's "Total Taxes & Expenses" but is federal-only:
+  // engine's totalTaxesAndExpenses (federal + state + admin) minus state estate
+  // tax, plus IRD income tax. State death taxes live on the State Death Tax
+  // tab. IRD is separate in the engine because it's income tax on heirs, not
+  // an estate-administered drain.
+  const totalTaxesAndExpenses =
+    tax.totalTaxesAndExpenses - tax.stateEstateTax + irdTotal;
   const headlineColor =
     totalTaxesAndExpenses > 0 ? "text-rose-200" : "text-emerald-200";
 
-  const stateDetail = tax.stateEstateTaxDetail;
-  const showState = stateDetail.stateEstateTax > 0 || stateDetail.fallbackUsed || stateDetail.state != null;
   const showTentativeBase =
     tax.adjustedTaxableGifts > 0 || tax.lifetimeGiftTaxAdjustment > 0;
   const unifiedCreditHint = `(${fmt.format(tax.beaAtDeathYear)} Basic Exclusion + ${fmt.format(tax.dsueReceived)} DSUE)`;
@@ -525,9 +524,6 @@ function DecedentBreakdown({
           />
         </Section>
 
-        {/* State Estate Tax — only when applicable */}
-        {showState && <StateEstateTaxSection detail={stateDetail} />}
-
         {/* Total Taxes & Expenses */}
         <Section
           title="Total Taxes & Expenses"
@@ -536,11 +532,6 @@ function DecedentBreakdown({
           subtotalAccent="tax"
         >
           <LineRow label="Estate Tax" amount={tax.federalEstateTax} />
-          <LineRow
-            label="State Estate Tax"
-            amount={tax.stateEstateTax}
-            hideIfZero
-          />
           <LineRow
             label="Probate and Final Expenses"
             amount={tax.estateAdminExpenses}
@@ -574,13 +565,11 @@ function DecedentBreakdown({
 function TotalsCard({
   heading,
   federal,
-  state,
   admin,
   total,
 }: {
   heading: string;
   federal: number;
-  state: number;
   admin: number;
   total: number;
 }) {
@@ -597,13 +586,12 @@ function TotalsCard({
       </header>
       <div className="px-5 py-3 md:max-w-[50%]">
         <LineRow label="Total federal estate tax" amount={federal} />
-        <LineRow label="Total state estate tax" amount={state} hideIfZero />
         <LineRow label="Total admin expenses" amount={admin} hideIfZero />
       </div>
       <div className="border-t border-indigo-900/40 bg-indigo-950/30 px-5 py-3 md:max-w-[50%]">
         <div className="flex items-baseline justify-between gap-4">
           <span className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-100">
-            Grand total · taxes &amp; expenses
+            Grand total · federal taxes &amp; expenses
           </span>
           <span className={"text-xl font-semibold tabular-nums " + accent}>
             {fmt.format(total)}
@@ -615,106 +603,28 @@ function TotalsCard({
 }
 
 function GrandTotals({ ordering }: { ordering: HypotheticalEstateTaxOrdering }) {
+  const federal = ordering.totals.federal;
+  const admin = ordering.totals.admin;
   return (
     <TotalsCard
       heading="Grand totals"
-      federal={ordering.totals.federal}
-      state={ordering.totals.state}
-      admin={ordering.totals.admin}
-      total={ordering.totals.total}
+      federal={federal}
+      admin={admin}
+      total={federal + admin}
     />
   );
 }
 
 function SplitTotals({ first, second }: { first: EstateTaxResult; second: EstateTaxResult }) {
+  const federal = first.federalEstateTax + second.federalEstateTax;
+  const admin = first.estateAdminExpenses + second.estateAdminExpenses;
   return (
     <TotalsCard
       heading="Grand totals — Split death"
-      federal={first.federalEstateTax + second.federalEstateTax}
-      state={first.stateEstateTax + second.stateEstateTax}
-      admin={first.estateAdminExpenses + second.estateAdminExpenses}
-      total={first.totalTaxesAndExpenses + second.totalTaxesAndExpenses}
+      federal={federal}
+      admin={admin}
+      total={federal + admin}
     />
   );
 }
 
-const STATE_FULL_NAME: Record<StateCode, string> = {
-  CT: "Connecticut", DC: "District of Columbia", HI: "Hawaii",
-  IL: "Illinois", ME: "Maine", MD: "Maryland", MA: "Massachusetts",
-  MN: "Minnesota", NY: "New York", OR: "Oregon",
-  RI: "Rhode Island", VT: "Vermont", WA: "Washington",
-};
-
-function stateFullName(code: StateCode | null): string {
-  if (code == null) return "—";
-  return STATE_FULL_NAME[code];
-}
-
-function fmtBound(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
-  return n.toLocaleString();
-}
-
-function StateEstateTaxSection({ detail }: { detail: StateEstateTaxResult }) {
-  if (detail.fallbackUsed) {
-    return (
-      <Section
-        title="State Estate Tax (Custom Override)"
-        subtotal={detail.stateEstateTax}
-        subtotalLabel="State Estate Tax"
-        subtotalAccent="tax"
-      >
-        <LineRow
-          label={`Taxable Estate × ${(detail.fallbackRate * 100).toFixed(2)}%`}
-          amount={detail.stateEstateTax}
-        />
-      </Section>
-    );
-  }
-
-  return (
-    <Section
-      title={`State Estate Tax (${stateFullName(detail.state)})`}
-      subtotal={detail.stateEstateTax}
-      subtotalLabel="State Estate Tax"
-      subtotalAccent="tax"
-    >
-      <LineRow label="Taxable Estate (from above)" amount={detail.baseForTax - detail.giftAddback} />
-      {detail.giftAddback > 0 && (
-        <LineRow label="State gift addback" amount={detail.giftAddback} />
-      )}
-      <LineRow label="Base for State Tax" amount={detail.baseForTax} />
-      <LineRow
-        label={`Exemption (${detail.exemptionYear})`}
-        amount={detail.exemption}
-        showAsDeduction
-      />
-      <LineRow label="Amount Over Exemption" amount={detail.amountOverExemption} />
-
-      {detail.bracketLines.map((b, i) => (
-        <LineRow
-          key={i}
-          label={`$${fmtBound(b.from)} – ${b.to === null ? "no limit" : `$${fmtBound(b.to)}`} × ${(b.rate * 100).toFixed(2)}%`}
-          amount={b.tax}
-        />
-      ))}
-
-      {detail.cap?.applied && (
-        <LineRow
-          label={`Max combined cap ($${fmtBound(detail.cap.cap)})`}
-          amount={detail.cap.reduction}
-          showAsDeduction
-        />
-      )}
-
-      {detail.notes.length > 0 && (
-        <div className="mt-3 space-y-1 pb-1 text-xs text-gray-400">
-          {detail.notes.map((n, i) => (
-            <div key={i}>• {n}</div>
-          ))}
-        </div>
-      )}
-    </Section>
-  );
-}
