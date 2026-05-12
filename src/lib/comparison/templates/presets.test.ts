@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { ComparisonLayoutV5Schema } from "@/lib/comparison/layout-schema";
-import { retirementReadinessTemplate } from "./retirement-readiness";
+import { PRESETS } from "./index";
 
-describe("retirementReadinessTemplate", () => {
+describe.each(PRESETS)("$name preset", (preset) => {
   it("has a valid v5 layout", () => {
-    expect(() => ComparisonLayoutV5Schema.parse(retirementReadinessTemplate.layout)).not.toThrow();
+    expect(() => ComparisonLayoutV5Schema.parse(preset.layout)).not.toThrow();
   });
-  it("slotCount matches slotLabels", () => {
-    expect(retirementReadinessTemplate.slotLabels).toHaveLength(retirementReadinessTemplate.slotCount);
+  it("slotCount matches slotLabels length", () => {
+    expect(preset.slotLabels).toHaveLength(preset.slotCount);
   });
-  it("widget planIds only use slot tokens in 0..slotCount-1", () => {
-    const allowed = ["A", "B"];
-    for (const g of retirementReadinessTemplate.layout.groups) {
+  it("every widget planId is a slot token in 0..slotCount-1", () => {
+    const allowed = ["A", "B", "C", "D", "E", "F", "G", "H"].slice(0, preset.slotCount);
+    for (const g of preset.layout.groups) {
       for (const c of g.cells) {
         if (!c.widget) continue;
         for (const p of c.widget.planIds) {
