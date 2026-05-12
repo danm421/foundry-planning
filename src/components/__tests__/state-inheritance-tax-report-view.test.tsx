@@ -94,9 +94,6 @@ describe("StateInheritanceTaxReportView", () => {
   it("renders the per-recipient table for a PA death event", async () => {
     render(<StateInheritanceTaxReportView clientId="c1" />);
     await waitFor(() => {
-      expect(screen.getByText(/State Inheritance Tax/)).toBeInTheDocument();
-    });
-    await waitFor(() => {
       expect(screen.getByText(/Sibling Smith/)).toBeInTheDocument();
     });
     expect(screen.getByText(/Class C/)).toBeInTheDocument();

@@ -84,17 +84,16 @@ export default function StateInheritanceTaxReportView({ clientId }: Props) {
   }, [projection]);
 
   if (loading) {
-    return <div className="p-6 text-gray-300">Loading projection…</div>;
+    return <div className="pt-4 text-gray-300">Loading projection…</div>;
   }
   if (loadError) {
-    return <div className="p-6 text-red-400">Failed to load projection: {loadError}</div>;
+    return <div className="pt-4 text-red-400">Failed to load projection: {loadError}</div>;
   }
 
   if (sections.length === 0) {
     return (
-      <div className="p-6 text-gray-200">
-        <h1 className="text-2xl font-semibold">State Inheritance Tax</h1>
-        <p className="mt-2 text-sm text-gray-400">
+      <div className="space-y-2 pt-4 text-gray-200">
+        <p className="text-sm text-gray-400">
           No state inheritance tax applies to this client&apos;s residence state.
           Inheritance tax is levied by PA, NJ, KY, NE, and MD on beneficiaries
           (other than spouse/lineal heirs in most jurisdictions).
@@ -104,15 +103,12 @@ export default function StateInheritanceTaxReportView({ clientId }: Props) {
   }
 
   return (
-    <div className="space-y-8 p-6 text-gray-100">
-      <header>
-        <h1 className="text-2xl font-semibold">State Inheritance Tax</h1>
-        <p className="text-sm text-gray-400">
-          Per-beneficiary tax breakdown. Inheritance tax is reported here for
-          information only — it does not reduce the asset value passed to
-          recipients in the projection.
-        </p>
-      </header>
+    <div className="space-y-6 pt-4 text-gray-100">
+      <p className="text-xs text-gray-400">
+        Per-beneficiary tax breakdown. Inheritance tax is reported here for
+        information only — it does not reduce the asset value passed to
+        recipients in the projection.
+      </p>
 
       {sections.map((d, i) => (
         <DeathSectionView key={`${d.year}-${d.ordering}-${d.result.deathOrder}-${i}`} death={d} />

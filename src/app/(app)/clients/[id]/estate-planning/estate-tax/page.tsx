@@ -3,7 +3,7 @@ import { clients } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
-import EstateTaxReportView from "@/components/estate-tax-report-view";
+import EstateTaxTabbedView from "@/components/estate-tax-tabbed-view";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -51,7 +51,7 @@ export default async function EstateTaxReportPage({ params }: PageProps) {
       : clientRetirementYear;
 
   return (
-    <EstateTaxReportView
+    <EstateTaxTabbedView
       clientId={id}
       isMarried={isMarried}
       ownerNames={ownerNames}
