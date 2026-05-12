@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import GrowthSourceRadio from "./growth-source-radio";
 import MilestoneYearPicker from "@/components/milestone-year-picker";
 import ScheduleTab from "@/components/schedule-tab";
+import { useTabAutoSave, type SaveResult } from "@/lib/use-tab-auto-save";
+import TabAutoSaveIndicator from "@/components/tab-auto-save-indicator";
 import type { YearRef, ClientMilestones } from "@/lib/milestones";
 import { defaultSavingsRuleRefs, resolveMilestone } from "@/lib/milestones";
 import EmployerMatchFields, {
@@ -106,14 +109,23 @@ export default function SavingsRuleDialog({
   resolvedInflationRate,
 }: SavingsRuleDialogProps) {
   type SavTabId = "details" | "schedule";
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<SavTabId>("details");
   const [hasSchedule, setHasSchedule] = useState((schedule ?? []).length > 0);
   const [stagedSchedule, setStagedSchedule] = useState<{ year: number; amount: number }[]>(schedule ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const currentYear = new Date().getFullYear();
-  const isEdit = Boolean(editing);
+  // After an auto-save in create mode, effectiveRuleId routes subsequent
+  // saves through PUT. We can't mutate `editing` (it's a prop) so we track
+  // the promoted id separately.
+  const [effectiveRuleId, setEffectiveRuleId] = useState<string | null>(editing?.id ?? null);
+  const isEdit = effectiveRuleId !== null;
   const writer = useScenarioWriter(clientId);
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [canSave, setCanSave] = useState(true);
+  const autoSavedRef = useRef(false);
   const [growthSource, setGrowthSource] = useState<"custom" | "inflation">(
     editing?.growthSource === "inflation" ? "inflation" : "custom"
   );
@@ -182,17 +194,16 @@ export default function SavingsRuleDialog({
     editing?.applyContributionLimit ?? true
   );
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    const data = new FormData(e.currentTarget);
+  // Build the request body from form state + FormData. Shared by explicit
+  // submit and auto-save-on-tab-switch.
+  function buildBody(formEl: HTMLFormElement) {
+    const data = new FormData(formEl);
     const matchPct = data.get("employerMatchPct") as string;
     const matchCap = data.get("employerMatchCap") as string;
     const matchAmount = data.get("employerMatchAmount") as string;
     const annualAmountInput = data.get("annualAmount") as string;
     const annualPercentInput = data.get("annualPercent") as string;
-    const body = {
+    return {
       accountId: data.get("accountId") as string,
       annualAmount: contribMode === "amount" ? annualAmountInput : (editing?.annualAmount ?? "0"),
       annualPercent:
@@ -214,26 +225,30 @@ export default function SavingsRuleDialog({
         showEmployerMatch && matchMode === "percent" && matchCap ? String(Number(matchCap) / 100) : null,
       employerMatchAmount: showEmployerMatch && matchMode === "flat" && matchAmount ? matchAmount : null,
     };
+  }
 
+  // Pure save: PUT when we have a rule id, POST otherwise. Schedule overrides
+  // are only persisted on the first POST (mirrors existing behavior — once
+  // the rule exists the user manages its schedule via the Schedule tab and
+  // its own save UI). Returns SaveResult + recordId for ADD→EDIT promotion.
+  async function saveCore(formEl: HTMLFormElement): Promise<SaveResult & { recordId?: string; saved?: SavingsRuleRow }> {
+    const body = buildBody(formEl);
     try {
-      // Mint the new id up-front so we can pass it to the writer's `entity`
-      // payload (the unified route requires `entity.id`) and still use the
-      // same id when synthesizing the optimistic row in scenario mode.
       const newRuleId =
         typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
           ? crypto.randomUUID()
           : `tmp-${Date.now()}`;
-
-      const res = isEdit
+      const idForUpdate = effectiveRuleId;
+      const res = idForUpdate
         ? await writer.submit(
             {
               op: "edit",
               targetKind: "savings_rule",
-              targetId: editing!.id,
+              targetId: idForUpdate,
               desiredFields: body,
             },
             {
-              url: `/api/clients/${clientId}/savings-rules/${editing!.id}`,
+              url: `/api/clients/${clientId}/savings-rules/${idForUpdate}`,
               method: "PUT",
               body,
             },
@@ -252,26 +267,23 @@ export default function SavingsRuleDialog({
           );
 
       if (!res.ok) {
-        const json = await res.json();
-        throw new Error(json.error ?? "Failed to save savings rule");
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        return { ok: false, error: json.error ?? "Failed to save savings rule" };
       }
 
-      // Base mode returns the saved row; scenario mode returns { ok, targetId }.
-      // For the optimistic onSaved callback, synthesize a SavingsRuleRow from
-      // the body when in scenario mode — router.refresh() (run by the writer)
-      // reloads canonical state shortly after.
       const saved: SavingsRuleRow = writer.scenarioActive
         ? ({
-            id: isEdit ? editing!.id : newRuleId,
+            id: idForUpdate ?? newRuleId,
             ...body,
             startYear: Number(body.startYear),
             endYear: Number(body.endYear),
           } as unknown as SavingsRuleRow)
         : ((await res.json()) as SavingsRuleRow);
 
-      // On create: if a schedule was staged, persist it now that we have the ID.
-      // Schedule overrides are nested and not in v1 scenario scope — base mode only.
-      if (!isEdit && stagedSchedule.length > 0 && !writer.scenarioActive) {
+      // First-create only: persist any staged schedule rows. Subsequent saves
+      // skip this — the Schedule tab manages its own persistence after the
+      // rule exists.
+      if (!idForUpdate && stagedSchedule.length > 0 && !writer.scenarioActive) {
         await fetch(`/api/clients/${clientId}/savings-rules/${saved.id}/schedule`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -279,19 +291,60 @@ export default function SavingsRuleDialog({
         });
       }
 
-      onSaved(saved, isEdit ? "edit" : "create");
-      onOpenChange(false);
+      if (!idForUpdate) setEffectiveRuleId(saved.id);
+      setDirty(false);
+      return { ok: true, recordId: saved.id, saved };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
+      return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
     }
+  }
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    const result = await saveCore(e.currentTarget);
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    if (result.saved) onSaved(result.saved, effectiveRuleId === editing?.id ? "edit" : "create");
+    onOpenChange(false);
+  }
+
+  const autoSave = useTabAutoSave({
+    isDirty: dirty,
+    canSave,
+    saveAsync: async () => {
+      const form = formRef.current;
+      if (!form) return { ok: true };
+      setLoading(true);
+      const result = await saveCore(form);
+      setLoading(false);
+      if (result.ok) autoSavedRef.current = true;
+      return result;
+    },
+  });
+
+  function handleFormChange() {
+    if (!dirty) setDirty(true);
+    const form = formRef.current;
+    if (form) setCanSave(form.checkValidity());
+  }
+
+  function handleClose() {
+    if (autoSavedRef.current) {
+      router.refresh();
+      autoSavedRef.current = false;
+    }
+    onOpenChange(false);
   }
 
   return (
     <DialogShell
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(o) => { if (!o) handleClose(); }}
       title={isEdit ? "Edit Savings Rule" : "Add Savings Rule"}
       size="md"
       tabs={[
@@ -299,20 +352,36 @@ export default function SavingsRuleDialog({
         { id: "schedule", label: "Schedule" },
       ]}
       activeTab={activeTab}
-      onTabChange={(id) => setActiveTab(id as SavTabId)}
+      onTabChange={(id) => autoSave.interceptTabChange(id, (next) => setActiveTab(next as SavTabId))}
+      tabBarRight={
+        <TabAutoSaveIndicator
+          saving={autoSave.saving}
+          error={autoSave.saveError}
+          onDismissError={autoSave.clearSaveError}
+        />
+      }
       primaryAction={activeTab === "details" ? {
         label: isEdit ? "Save Changes" : "Add Rule",
         form: "savings-rule-form",
         loading: loading,
-        disabled: loading,
+        disabled: loading || autoSave.saving,
       } : undefined}
       destructiveAction={activeTab === "details" && isEdit && onRequestDelete ? {
         label: "Delete…",
         onClick: onRequestDelete,
       } : undefined}
     >
-      {activeTab === "details" && (
-        <form id="savings-rule-form" onSubmit={handleSubmit} className="space-y-4">
+      {/* Details kept mounted across tab switches so the form's DOM state
+          (uncontrolled inputs like annualAmount, employerMatchPct) survives
+          a trip to Schedule and back. */}
+      <div className={activeTab === "details" ? "" : "hidden"}>
+        <form
+          id="savings-rule-form"
+          ref={formRef}
+          onSubmit={handleSubmit}
+          onChange={handleFormChange}
+          className="space-y-4"
+        >
           {error && (
             <p className="rounded border border-crit/40 bg-crit/10 px-3 py-2 text-[13px] text-crit">
               {error}
@@ -492,7 +561,7 @@ export default function SavingsRuleDialog({
             )}
           </div>
         </form>
-      )}
+      </div>
 
       {activeTab === "schedule" && (
         <ScheduleTab
