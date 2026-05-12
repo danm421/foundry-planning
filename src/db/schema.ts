@@ -136,9 +136,18 @@ export const entityTaxTreatmentEnum = pgEnum("entity_tax_treatment", [
 
 export const familyRelationshipEnum = pgEnum("family_relationship", [
   "child",
+  "stepchild",
   "grandchild",
+  "great_grandchild",
   "parent",
+  "grandparent",
   "sibling",
+  "sibling_in_law",
+  "child_in_law",
+  "niece_nephew",
+  "aunt_uncle",
+  "cousin",
+  "grand_aunt_uncle",
   "other",
 ]);
 
@@ -713,6 +722,11 @@ export const familyMembers = pgTable("family_members", {
   relationship: familyRelationshipEnum("relationship").notNull().default("child"),
   role: familyMemberRoleEnum("role").notNull().default("other"),
   dateOfBirth: date("date_of_birth"),
+  domesticPartner: boolean("domestic_partner").notNull().default(false),
+  inheritanceClassOverride: jsonb("inheritance_class_override")
+    .$type<Partial<Record<"PA" | "NJ" | "KY" | "NE" | "MD", "A" | "B" | "C" | "D">>>()
+    .notNull()
+    .default({}),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

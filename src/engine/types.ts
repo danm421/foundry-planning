@@ -183,6 +183,10 @@ export interface EstateTaxResult {
   stateEstateTax: number;
   /** Full per-state detail for the audit report. Always present. */
   stateEstateTaxDetail: import("@/lib/tax/state-estate").StateEstateTaxResult;
+  /** State inheritance-tax result (PA/NJ/KY/NE/MD). Undefined when the
+   *  residence state has no inheritance tax. Informational only — does not
+   *  drain accounts. */
+  stateInheritanceTax?: import("@/lib/tax/state-inheritance").StateInheritanceTaxResult;
 
   // Totals
   totalEstateTax: number;            // federal + state
@@ -253,10 +257,33 @@ export interface FamilyMember {
    *  are dependants. The engine uses this to resolve ownership when translating
    *  "client"-owned and "spouse"-owned accounts to `owners[]` rows. */
   role: "client" | "spouse" | "child" | "other";
-  relationship: "child" | "grandchild" | "parent" | "sibling" | "other";
+  relationship:
+    | "child"
+    | "stepchild"
+    | "grandchild"
+    | "great_grandchild"
+    | "parent"
+    | "grandparent"
+    | "sibling"
+    | "sibling_in_law"
+    | "child_in_law"
+    | "niece_nephew"
+    | "aunt_uncle"
+    | "cousin"
+    | "grand_aunt_uncle"
+    | "other";
   firstName: string;
   lastName: string | null;
   dateOfBirth: string | null;
+  /** NJ/MD recognize as spouse-equivalent for inheritance tax. Loader always
+   *  populates this from `domestic_partner`; left optional so older test
+   *  fixtures continue to typecheck. Defaults to `false` semantically. */
+  domesticPartner?: boolean;
+  /** Per-state explicit override — `{ NJ: "C" }` forces NJ Class C for this
+   *  person. Loader always populates this from `inheritance_class_override`;
+   *  left optional so older test fixtures continue to typecheck. Defaults to
+   *  `{}` semantically. */
+  inheritanceClassOverride?: Partial<Record<"PA" | "NJ" | "KY" | "NE" | "MD", "A" | "B" | "C" | "D">>;
 }
 
 export type GiftEventKind = "outright" | "clut_remainder_interest";

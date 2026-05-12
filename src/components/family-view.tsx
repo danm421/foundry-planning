@@ -19,7 +19,21 @@ import type { AccountOwner } from "@/engine/ownership";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Relationship = "child" | "grandchild" | "parent" | "sibling" | "other";
+type Relationship =
+  | "child"
+  | "stepchild"
+  | "grandchild"
+  | "great_grandchild"
+  | "parent"
+  | "grandparent"
+  | "sibling"
+  | "sibling_in_law"
+  | "child_in_law"
+  | "niece_nephew"
+  | "aunt_uncle"
+  | "cousin"
+  | "grand_aunt_uncle"
+  | "other";
 export type EntityType = "trust" | "llc" | "s_corp" | "c_corp" | "partnership" | "foundation" | "other";
 
 export interface FamilyMember {
@@ -31,6 +45,8 @@ export interface FamilyMember {
   role?: "client" | "spouse" | "child" | "other";
   dateOfBirth: string | null;
   notes: string | null;
+  domesticPartner?: boolean;
+  inheritanceClassOverride?: Partial<Record<"PA" | "NJ" | "KY" | "NE" | "MD", "A" | "B" | "C" | "D">>;
 }
 
 export interface NamePctRow {
@@ -182,9 +198,18 @@ interface FamilyViewProps {
 
 const RELATIONSHIP_LABELS: Record<Relationship, string> = {
   child: "Child",
+  stepchild: "Stepchild",
   grandchild: "Grandchild",
+  great_grandchild: "Great-grandchild",
   parent: "Parent",
+  grandparent: "Grandparent",
   sibling: "Sibling",
+  sibling_in_law: "Sibling-in-law",
+  child_in_law: "Son/Daughter-in-law",
+  niece_nephew: "Niece/Nephew",
+  aunt_uncle: "Aunt/Uncle",
+  cousin: "Cousin",
+  grand_aunt_uncle: "Grand-aunt/uncle",
   other: "Other",
 };
 
@@ -309,9 +334,18 @@ export default function FamilyView({
   // Group members by relationship
   const byRel: Record<Relationship, FamilyMember[]> = {
     child: [],
+    stepchild: [],
     grandchild: [],
+    great_grandchild: [],
     parent: [],
+    grandparent: [],
     sibling: [],
+    sibling_in_law: [],
+    child_in_law: [],
+    niece_nephew: [],
+    aunt_uncle: [],
+    cousin: [],
+    grand_aunt_uncle: [],
     other: [],
   };
   for (const m of members) byRel[m.relationship].push(m);

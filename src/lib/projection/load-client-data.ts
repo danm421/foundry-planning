@@ -990,6 +990,8 @@ export const loadClientDataWithContext = cache(
       firstName: f.firstName,
       lastName: f.lastName ?? null,
       dateOfBirth: f.dateOfBirth ?? null,
+      domesticPartner: f.domesticPartner,
+      inheritanceClassOverride: f.inheritanceClassOverride ?? {},
     }));
 
     const clientInfo = {

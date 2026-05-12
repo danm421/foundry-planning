@@ -70,4 +70,8 @@ export interface StateEstateTaxResult {
   stateEstateTax: number;
   /** Human-readable annotations for the audit report. */
   notes: string[];
+  /** MD only — credit from the inheritance-tax pass against this state estate
+   *  tax. `credit` is the inheritance-tax total. `reduction` is the dollar
+   *  amount this result decreased by relative to the pre-credit computation. */
+  inheritanceCredit?: { applied: boolean; credit: number; reduction: number };
 }

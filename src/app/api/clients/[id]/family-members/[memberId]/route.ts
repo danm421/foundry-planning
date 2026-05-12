@@ -27,7 +27,10 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { firstName, lastName, relationship, dateOfBirth, notes } = body;
+    const {
+      firstName, lastName, relationship, dateOfBirth, notes,
+      domesticPartner, inheritanceClassOverride,
+    } = body;
 
     const [updated] = await db
       .update(familyMembers)
@@ -37,6 +40,8 @@ export async function PUT(
         ...(relationship !== undefined && { relationship }),
         ...(dateOfBirth !== undefined && { dateOfBirth: dateOfBirth || null }),
         ...(notes !== undefined && { notes: notes ?? null }),
+        ...(domesticPartner !== undefined && { domesticPartner: !!domesticPartner }),
+        ...(inheritanceClassOverride !== undefined && { inheritanceClassOverride }),
         updatedAt: new Date(),
       })
       .where(and(eq(familyMembers.id, memberId), eq(familyMembers.clientId, id)))
