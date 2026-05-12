@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
@@ -10,6 +10,7 @@ import type {
   AiLength,
 } from "@/lib/comparison/layout-schema";
 import { resolveAiSources } from "@/lib/comparison/ai-source-resolve";
+import { estimateAiTokens, formatTokenEstimate } from "@/lib/comparison/ai-tokens";
 import { RichTextEditor } from "./rich-text-editor";
 import { AiSourcePicker } from "./ai-source-picker";
 
@@ -21,6 +22,9 @@ interface Props {
   cellId: string;
   initialMarkdown: string;
   initialAi: TextWidgetAiConfig | undefined;
+  /** Used by the live token estimate when a source widget has no
+   *  explicit yearRange. Falls back to 45 (typical plan span). */
+  availableYearSpan?: number;
   onClose: () => void;
   onSave: (next: { markdown: string; ai: TextWidgetAiConfig | undefined }) => void;
 }
@@ -33,7 +37,7 @@ const DEFAULT_AI: TextWidgetAiConfig = {
 };
 
 export function TextWidgetExpandModal(props: Props) {
-  const { open, mode, clientId, layout, cellId, initialMarkdown, initialAi, onClose, onSave } = props;
+  const { open, mode, clientId, layout, cellId, initialMarkdown, initialAi, availableYearSpan, onClose, onSave } = props;
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [ai, setAi] = useState<TextWidgetAiConfig>(initialAi ?? DEFAULT_AI);
   const [generating, setGenerating] = useState(false);
@@ -47,6 +51,19 @@ export function TextWidgetExpandModal(props: Props) {
     setAi(initialAi ?? DEFAULT_AI);
     setGenerateError(null);
   }, [open, initialMarkdown, initialAi]);
+
+  const estimate = useMemo(
+    () =>
+      estimateAiTokens({
+        layout,
+        selection: ai.sources,
+        selfCellId: cellId,
+        customInstructions: ai.customInstructions,
+        length: ai.length,
+        defaultPlanYearSpan: availableYearSpan ?? 45,
+      }),
+    [layout, ai.sources, cellId, ai.customInstructions, ai.length, availableYearSpan],
+  );
 
   const generate = useCallback(async (force: boolean) => {
     setGenerating(true);
@@ -207,6 +224,12 @@ export function TextWidgetExpandModal(props: Props) {
                     Force
                   </button>
                 </div>
+                <p
+                  className="text-[11px] text-slate-400"
+                  title={`Estimate · ${estimate.inputTokens.toLocaleString("en-US")} input + ${estimate.outputTokens.toLocaleString("en-US")} output · ${estimate.resolvedSourceCount} widget(s), ${estimate.uniquePlanCount} plan(s), ${estimate.totalYearRows} year row(s)`}
+                >
+                  Estimated cost: {formatTokenEstimate(estimate.totalTokens)}
+                </p>
                 {ai.lastGenerated && (
                   <p className="text-[11px] text-slate-400">
                     {ai.lastGenerated.cached ? "Cached · " : ""}generated {ai.lastGenerated.at.slice(0, 16).replace("T", " ")}

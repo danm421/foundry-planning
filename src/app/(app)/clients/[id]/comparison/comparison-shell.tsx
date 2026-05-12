@@ -287,6 +287,7 @@ export function ComparisonShell({
             cellId={expanded.cellId}
             initialMarkdown={cfg?.markdown ?? ""}
             initialAi={cfg?.ai}
+            availableYearSpan={availableYearRange.max - availableYearRange.min + 1}
             onClose={() => setExpanded(null)}
             onSave={({ markdown, ai }) => {
               api.updateTextMarkdown(expanded.cellId, markdown);
