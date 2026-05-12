@@ -1,12 +1,12 @@
 "use client";
 
-import type { ComparisonLayoutV4 } from "@/lib/comparison/layout-schema";
+import type { ComparisonLayoutV5 } from "@/lib/comparison/layout-schema";
 import { ComparisonShell } from "./comparison-shell";
 import { useStripPlansUrl } from "./strip-plans-url";
 
 interface Props {
   clientId: string;
-  initialLayout: ComparisonLayoutV4;
+  initialLayout: ComparisonLayoutV5;
   scenarios: { id: string; name: string }[];
   primaryScenarioId: string;
 }
