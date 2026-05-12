@@ -219,4 +219,25 @@ describe("CanvasRow", () => {
     expect(screen.getByLabelText(/Move row up/i)).toBeDisabled();
     expect(screen.getByLabelText(/Move row down/i)).toBeDisabled();
   });
+
+  it("forwards a sortable drag handle (data-drag-handle='row') in the left gutter", () => {
+    render(
+      <CanvasRow
+        row={row}
+        scenarios={[{ id: "base", name: "Base" }]}
+        onEditCell={vi.fn()}
+        onRemoveCell={vi.fn()}
+        onAddCell={vi.fn()}
+        onDeleteRow={vi.fn()}
+        onDuplicateCell={vi.fn()}
+        onMoveCellLeft={vi.fn()}
+        onMoveCellRight={vi.fn()}
+        onMoveUp={vi.fn()}
+        onMoveDown={vi.fn()}
+        canMoveUp={true}
+        canMoveDown={true}
+      />,
+    );
+    expect(document.querySelector("[data-drag-handle='row']")).not.toBeNull();
+  });
 });

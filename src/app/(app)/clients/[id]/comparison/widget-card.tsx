@@ -19,6 +19,8 @@ interface Props {
   onMoveRight: () => void;
   canMoveLeft: boolean;
   canMoveRight: boolean;
+  dragAttributes?: Record<string, unknown>;
+  dragListeners?: Record<string, unknown>;
 }
 
 function lookup(scenarios: ScenarioLookup[], id: string): string {
@@ -37,6 +39,8 @@ export function WidgetCard({
   onMoveRight,
   canMoveLeft,
   canMoveRight,
+  dragAttributes,
+  dragListeners,
 }: Props) {
   const def = COMPARISON_WIDGETS[widget.kind];
   const showChips = def.scenarios !== "none";
@@ -49,7 +53,16 @@ export function WidgetCard({
       className="flex h-full flex-col gap-2 rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm text-slate-200"
     >
       <div className="flex items-start gap-2">
-        <span className="text-slate-400" aria-hidden="true">⋮⋮</span>
+        <button
+          type="button"
+          data-drag-handle="widget"
+          aria-label="Drag widget"
+          className="cursor-grab text-slate-400 hover:text-slate-200"
+          {...(dragAttributes ?? {})}
+          {...(dragListeners ?? {})}
+        >
+          ⋮⋮
+        </button>
         <span className="flex-1 truncate font-medium">{def.title}</span>
         <span className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-400">
           {widthBadge}

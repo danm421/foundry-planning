@@ -166,4 +166,22 @@ describe("WidgetCard", () => {
     expect(screen.getByLabelText(/Move widget left/i)).toBeDisabled();
     expect(screen.getByLabelText(/Move widget right/i)).toBeDisabled();
   });
+
+  it("forwards a sortable drag handle (data-drag-handle) on the card", () => {
+    render(
+      <WidgetCard
+        widget={widget("portfolio", ["base"])}
+        widthBadge="full"
+        scenarios={[{ id: "base", name: "Base" }]}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+        onDuplicate={vi.fn()}
+        onMoveLeft={vi.fn()}
+        onMoveRight={vi.fn()}
+        canMoveLeft={true}
+        canMoveRight={true}
+      />,
+    );
+    expect(document.querySelector("[data-drag-handle='widget']")).not.toBeNull();
+  });
 });

@@ -1,6 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import {
+  DndContext,
+  type DragEndEvent,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type { ComparisonLayoutV4 } from "@/lib/comparison/layout-schema";
 import { COMPARISON_WIDGETS } from "@/lib/comparison/widgets/registry";
 import { useLayout } from "./use-layout";
@@ -65,6 +74,32 @@ export function ComparisonShell({
   });
   const mc = mcState.status === "ready" ? mcState.result ?? null : null;
 
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  const handleDragEnd = useCallback((e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const aData = active.data.current as { type: "row" } | { type: "cell"; rowId: string } | undefined;
+    const oData = over.data.current as { type: "row" } | { type: "cell"; rowId: string } | undefined;
+    if (!aData || !oData) return;
+
+    if (aData.type === "row" && oData.type === "row") {
+      const from = api.layout.rows.findIndex((r) => r.id === active.id);
+      const to = api.layout.rows.findIndex((r) => r.id === over.id);
+      if (from >= 0 && to >= 0) api.moveRow(from, to);
+      return;
+    }
+    if (aData.type === "cell" && oData.type === "cell") {
+      const fromRow = api.layout.rows.find((r) => r.id === aData.rowId);
+      const toRow = api.layout.rows.find((r) => r.id === oData.rowId);
+      if (!fromRow || !toRow) return;
+      const fromIdx = fromRow.cells.findIndex((c) => c.id === active.id);
+      const toIdx = toRow.cells.findIndex((c) => c.id === over.id);
+      if (fromIdx < 0 || toIdx < 0) return;
+      api.moveCell(aData.rowId, fromIdx, oData.rowId, toIdx);
+    }
+  }, [api]);
+
   return (
     <>
       <header className="sticky top-0 z-20 flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-950/95 px-6 py-3 backdrop-blur">
@@ -87,32 +122,36 @@ export function ComparisonShell({
               No widgets — open the Widget panel to add some.
             </div>
           ) : (
-            api.layout.rows.map((row, rowIdx) => (
-              <CanvasRow
-                key={row.id}
-                row={row}
-                scenarios={scenarios}
-                onEditCell={() => setPanelOpen(true)}
-                onRemoveCell={(rowId, cellId) => api.removeCell(rowId, cellId)}
-                onAddCell={(rowId) => api.addCell(rowId, "text")}
-                onDeleteRow={(rowId) => api.removeRow(rowId)}
-                onDuplicateCell={(rowId, cellId) => api.duplicateCell(rowId, cellId)}
-                onMoveCellLeft={(rowId, cellId) => {
-                  const r = api.layout.rows.find((row) => row.id === rowId);
-                  const idx = r?.cells.findIndex((c) => c.id === cellId) ?? -1;
-                  if (idx > 0) api.moveCell(rowId, idx, rowId, idx - 1);
-                }}
-                onMoveCellRight={(rowId, cellId) => {
-                  const r = api.layout.rows.find((row) => row.id === rowId);
-                  const idx = r?.cells.findIndex((c) => c.id === cellId) ?? -1;
-                  if (r && idx >= 0 && idx < r.cells.length - 1) api.moveCell(rowId, idx, rowId, idx + 1);
-                }}
-                onMoveUp={() => api.moveRow(rowIdx, rowIdx - 1)}
-                onMoveDown={() => api.moveRow(rowIdx, rowIdx + 1)}
-                canMoveUp={rowIdx > 0}
-                canMoveDown={rowIdx < api.layout.rows.length - 1}
-              />
-            ))
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={api.layout.rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+                {api.layout.rows.map((row, rowIdx) => (
+                  <CanvasRow
+                    key={row.id}
+                    row={row}
+                    scenarios={scenarios}
+                    onEditCell={() => setPanelOpen(true)}
+                    onRemoveCell={(rowId, cellId) => api.removeCell(rowId, cellId)}
+                    onAddCell={(rowId) => api.addCell(rowId, "text")}
+                    onDeleteRow={(rowId) => api.removeRow(rowId)}
+                    onDuplicateCell={(rowId, cellId) => api.duplicateCell(rowId, cellId)}
+                    onMoveCellLeft={(rowId, cellId) => {
+                      const r = api.layout.rows.find((row) => row.id === rowId);
+                      const idx = r?.cells.findIndex((c) => c.id === cellId) ?? -1;
+                      if (idx > 0) api.moveCell(rowId, idx, rowId, idx - 1);
+                    }}
+                    onMoveCellRight={(rowId, cellId) => {
+                      const r = api.layout.rows.find((row) => row.id === rowId);
+                      const idx = r?.cells.findIndex((c) => c.id === cellId) ?? -1;
+                      if (r && idx >= 0 && idx < r.cells.length - 1) api.moveCell(rowId, idx, rowId, idx + 1);
+                    }}
+                    onMoveUp={() => api.moveRow(rowIdx, rowIdx - 1)}
+                    onMoveDown={() => api.moveRow(rowIdx, rowIdx + 1)}
+                    canMoveUp={rowIdx > 0}
+                    canMoveDown={rowIdx < api.layout.rows.length - 1}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
           )}
           <button
             type="button"
