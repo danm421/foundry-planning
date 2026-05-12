@@ -32,6 +32,8 @@ const SPAN_TO_CLASS: Record<CellSpan, string> = {
   5: "col-span-5",
 };
 
+const GRID_GAP_PX = 8; // tailwind gap-2 = 0.5rem
+
 const ACTION_BTN =
   "rounded border border-slate-500 bg-slate-800 px-1.5 py-1 text-slate-100 shadow-sm hover:border-amber-400 hover:bg-slate-700 hover:text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-400";
 
@@ -40,47 +42,10 @@ function lookup(scenarios: ScenarioLookup[], id: string): string {
   return scenarios.find((s) => s.id === id)?.name ?? id;
 }
 
-const SPAN_VALUES: CellSpan[] = [1, 2, 3, 4, 5];
-
-function SpanPicker({
-  span,
-  onChange,
-}: {
-  span: CellSpan;
-  onChange: (next: CellSpan) => void;
-}) {
-  return (
-    <div
-      role="radiogroup"
-      aria-label="Cell width"
-      className="inline-flex items-center gap-0.5 rounded border border-slate-600 bg-slate-800 p-0.5"
-    >
-      {SPAN_VALUES.map((n) => {
-        const active = n === span;
-        return (
-          <button
-            key={n}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            aria-label={`Width ${n} of 5`}
-            title={`Width ${n}/5`}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!active) onChange(n);
-            }}
-            className={
-              active
-                ? "rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-semibold text-slate-900"
-                : "rounded px-1.5 py-0.5 text-[10px] text-slate-300 hover:bg-slate-700 hover:text-slate-100"
-            }
-          >
-            {n}
-          </button>
-        );
-      })}
-    </div>
-  );
+function clampSpan(n: number): CellSpan {
+  if (n < 1) return 1;
+  if (n > 5) return 5;
+  return n as CellSpan;
 }
 
 export function CanvasCell({
@@ -100,6 +65,7 @@ export function CanvasCell({
     data: { type: "cell", groupId },
   });
   const [selected, setSelected] = useState(false);
+  const [resizing, setResizing] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -115,6 +81,38 @@ export function CanvasCell({
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, [selected]);
 
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const grid = rootRef.current?.parentElement;
+    if (!grid) return;
+    const colStep = (grid.clientWidth + GRID_GAP_PX) / 5;
+    const startX = e.clientX;
+    const startSpan = cell.span;
+    let lastSpan: CellSpan = startSpan;
+    setResizing(true);
+
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      const next = clampSpan(startSpan + Math.round(dx / colStep));
+      if (next !== lastSpan) {
+        lastSpan = next;
+        onChangeSpan(next);
+      }
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      setResizing(false);
+    };
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -125,6 +123,20 @@ export function CanvasCell({
 
   const selectedRingPopulated = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-slate-700";
   const selectedRingEmpty = selected ? "border-amber-400 ring-1 ring-amber-400/40" : "border-slate-700";
+
+  const ResizeHandle = (
+    <button
+      type="button"
+      aria-label="Resize cell width"
+      title="Drag to resize"
+      onMouseDown={handleResizeMouseDown}
+      onClick={(e) => e.stopPropagation()}
+      data-resize-handle
+      className={`absolute right-0 top-1/2 z-20 h-12 w-1.5 -translate-y-1/2 cursor-ew-resize rounded-full transition-colors ${
+        resizing ? "bg-amber-400" : "bg-slate-600 hover:bg-amber-400"
+      }`}
+    />
+  );
 
   const SpanBadge = (
     <span className="rounded border border-slate-600 bg-slate-800 px-1 py-0.5 text-[10px] uppercase tracking-wider text-slate-300">
@@ -144,15 +156,13 @@ export function CanvasCell({
       data-span={cell.span}
       data-selected={selected || undefined}
       onMouseDown={() => setSelected(true)}
-      className={`${SPAN_TO_CLASS[cell.span]} relative min-w-0`}
+      className={`${SPAN_TO_CLASS[cell.span]} group/cell relative min-w-0`}
     >
       {selected && (
         <div
           data-testid="cell-toolbar"
           className="absolute bottom-full left-0 z-30 mb-1 flex w-max items-center gap-1 whitespace-nowrap rounded-lg border border-amber-400/60 bg-slate-900/95 p-1 shadow-xl backdrop-blur"
         >
-          <SpanPicker span={cell.span} onChange={onChangeSpan} />
-          <span className="mx-1 h-5 w-px bg-slate-700" aria-hidden="true" />
           {widget ? (
             <>
               <button type="button" aria-label="Edit widget" title="Edit" onClick={onEditWidget} className={ACTION_BTN}>✎</button>
@@ -172,7 +182,7 @@ export function CanvasCell({
       )}
 
       {widget && def ? (
-        <div className={`flex h-full flex-col gap-2 rounded-lg border ${selectedRingPopulated} bg-slate-900 p-3 text-sm text-slate-200`}>
+        <div className={`flex h-full flex-col gap-2 rounded-lg border ${selectedRingPopulated} bg-slate-900 p-3 pr-4 text-sm text-slate-200`}>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -199,7 +209,7 @@ export function CanvasCell({
           )}
         </div>
       ) : (
-        <div className={`flex h-full min-h-[120px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed ${selectedRingEmpty} p-3`}>
+        <div className={`flex h-full min-h-[120px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed ${selectedRingEmpty} p-3 pr-4`}>
           <button
             type="button"
             aria-label="Add widget"
@@ -212,6 +222,8 @@ export function CanvasCell({
           {SpanBadge}
         </div>
       )}
+
+      {ResizeHandle}
     </div>
   );
 }
