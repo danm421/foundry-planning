@@ -19,8 +19,8 @@ describe("WidgetConfigModal", () => {
       />,
     );
     expect(screen.getByRole("button", { name: /save/i })).toBeDisabled();
-    // Portfolio Assets lives in the Investments category — switch tabs first.
-    fireEvent.click(screen.getByRole("tab", { name: /investments/i }));
+    // Portfolio Assets lives in the Cash flow category — switch tabs first.
+    fireEvent.click(screen.getByRole("tab", { name: /cash flow/i }));
     fireEvent.click(screen.getByRole("button", { name: /portfolio assets/i }));
     expect(screen.getByRole("button", { name: /save/i })).not.toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: /save/i }));

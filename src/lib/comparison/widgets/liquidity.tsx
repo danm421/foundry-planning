@@ -4,7 +4,7 @@ import type { ComparisonWidgetDefinition } from "./types";
 export const liquidityWidget: ComparisonWidgetDefinition = {
   kind: "liquidity",
   title: "Liquidity",
-  category: "cashflow",
+  category: "estate",
   scenarios: "one-or-many",
   needsMc: false,
   render: ({ plans }) => (

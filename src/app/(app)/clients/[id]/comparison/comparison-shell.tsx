@@ -27,6 +27,7 @@ interface Props {
   initialLayout: ComparisonLayoutV5;
   scenarios: { id: string; name: string }[];
   primaryScenarioId: string;
+  clientRetirementYear: number | null;
 }
 
 function uniquePlanIds(layout: ComparisonLayoutV5): string[] {
@@ -45,6 +46,7 @@ export function ComparisonShell({
   initialLayout,
   scenarios,
   primaryScenarioId,
+  clientRetirementYear,
 }: Props) {
   const api = useLayout(initialLayout, clientId);
   const [mode, setMode] = useState<CanvasMode>("layout");
@@ -237,6 +239,7 @@ export function ComparisonShell({
             widget={editingCell.widget}
             scenarios={scenarios}
             availableYearRange={availableYearRange}
+            clientRetirementYear={clientRetirementYear}
             primaryScenarioId={primaryScenarioId}
             onSave={handleModalSave}
             onClose={() => setEditingCellId(null)}
@@ -246,6 +249,7 @@ export function ComparisonShell({
             mode="create"
             scenarios={scenarios}
             availableYearRange={availableYearRange}
+            clientRetirementYear={clientRetirementYear}
             primaryScenarioId={primaryScenarioId}
             onSave={handleModalSave}
             onClose={() => setEditingCellId(null)}

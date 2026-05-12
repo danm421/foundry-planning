@@ -9,6 +9,7 @@ interface Props {
   initialLayout: ComparisonLayoutV5;
   scenarios: { id: string; name: string }[];
   primaryScenarioId: string;
+  clientRetirementYear: number | null;
 }
 
 export function ComparisonPageClient({
@@ -16,6 +17,7 @@ export function ComparisonPageClient({
   initialLayout,
   scenarios,
   primaryScenarioId,
+  clientRetirementYear,
 }: Props) {
   useStripPlansUrl();
   return (
@@ -25,6 +27,7 @@ export function ComparisonPageClient({
         initialLayout={initialLayout}
         scenarios={scenarios}
         primaryScenarioId={primaryScenarioId}
+        clientRetirementYear={clientRetirementYear}
       />
     </div>
   );

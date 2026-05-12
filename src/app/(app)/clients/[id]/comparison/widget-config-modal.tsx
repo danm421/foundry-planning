@@ -70,6 +70,7 @@ function validate(kind: ComparisonWidgetKindV4, planIds: string[]): string | nul
 interface CommonProps {
   scenarios: { id: string; name: string }[];
   availableYearRange: { min: number; max: number };
+  clientRetirementYear?: number | null;
   primaryScenarioId: string;
   onSave: (widget: WidgetInstance) => void;
   onClose: () => void;
@@ -80,7 +81,15 @@ type Props =
   | (CommonProps & { mode: "edit"; widget: WidgetInstance });
 
 export function WidgetConfigModal(props: Props) {
-  const { mode, scenarios, availableYearRange, primaryScenarioId, onSave, onClose } = props;
+  const {
+    mode,
+    scenarios,
+    availableYearRange,
+    clientRetirementYear = null,
+    primaryScenarioId,
+    onSave,
+    onClose,
+  } = props;
 
   const [kind, setKind] = useState<ComparisonWidgetKindV4 | null>(
     mode === "edit" ? props.widget.kind : null,
@@ -277,6 +286,7 @@ export function WidgetConfigModal(props: Props) {
                 max={availableYearRange.max}
                 yearRange={yearRange}
                 onChange={setYearRange}
+                clientRetirementYear={clientRetirementYear}
               />
             </section>
           )}

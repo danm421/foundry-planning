@@ -3,7 +3,7 @@ import type { ComparisonWidgetDefinition } from "./types";
 
 export const incomeExpenseWidget: ComparisonWidgetDefinition = {
   kind: "income-expense",
-  title: "Income & Expenses over time",
+  title: "Cash Flow Bar Chart",
   category: "cashflow",
   scenarios: "one-or-many",
   needsMc: false,

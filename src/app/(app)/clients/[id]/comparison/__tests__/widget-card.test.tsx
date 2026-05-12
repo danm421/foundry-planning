@@ -7,7 +7,7 @@ import type { WidgetInstance } from "@/lib/comparison/layout-schema";
 vi.mock("@/lib/comparison/widgets/registry", () => ({
   COMPARISON_WIDGETS: {
     portfolio: {
-      kind: "portfolio", title: "Portfolio Assets", category: "investments",
+      kind: "portfolio", title: "Portfolio Assets", category: "cashflow",
       scenarios: "one-or-many", needsMc: false, render: () => null,
     },
     text: {

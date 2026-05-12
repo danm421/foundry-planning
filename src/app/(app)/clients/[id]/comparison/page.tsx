@@ -32,6 +32,8 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
       .select({
         firstName: clients.firstName,
         lastName: clients.lastName,
+        dateOfBirth: clients.dateOfBirth,
+        retirementAge: clients.retirementAge,
       })
       .from(clients)
       .where(and(eq(clients.id, clientId), eq(clients.firmId, firmId)))
@@ -65,12 +67,20 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
       ? { ...initialLayout, title: `${client.firstName} ${client.lastName} — Report`.trim() }
       : initialLayout;
 
+  const birthYear =
+    client.dateOfBirth ? parseInt(client.dateOfBirth.slice(0, 4), 10) : null;
+  const clientRetirementYear =
+    birthYear !== null && Number.isFinite(birthYear)
+      ? birthYear + client.retirementAge
+      : null;
+
   return (
     <ComparisonPageClient
       clientId={clientId}
       initialLayout={personalizedLayout}
       scenarios={scenarioLookup}
       primaryScenarioId="base"
+      clientRetirementYear={clientRetirementYear}
     />
   );
 }
