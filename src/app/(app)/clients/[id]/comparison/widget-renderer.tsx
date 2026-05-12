@@ -18,9 +18,10 @@ interface Props {
   clientId: string;
   plans: ComparisonPlan[];
   mc: McSharedResult | null;
+  onExpandTextCell?: (cellId: string, mode: "edit" | "view") => void;
 }
 
-export function WidgetRenderer({ layout, clientId, plans, mc }: Props) {
+export function WidgetRenderer({ layout, clientId, plans, mc, onExpandTextCell }: Props) {
   if (layout.groups.length === 0) {
     return <div className="px-6 py-16 text-center text-slate-400">No widgets yet.</div>;
   }
@@ -60,12 +61,14 @@ export function WidgetRenderer({ layout, clientId, plans, mc }: Props) {
                 >
                   {def.render({
                     instanceId: cell.widget.id,
+                    cellId: cell.id,
                     clientId,
                     plans: widgetPlans,
                     mc,
                     config: cell.widget.config,
                     yearRange: cell.widget.yearRange ?? null,
                     editing: false,
+                    onExpand: onExpandTextCell,
                   })}
                 </div>
               );

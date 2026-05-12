@@ -10,7 +10,11 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import type { ComparisonLayoutV5, WidgetInstance } from "@/lib/comparison/layout-schema";
+import type {
+  ComparisonLayoutV5,
+  TextWidgetAiConfig,
+  WidgetInstance,
+} from "@/lib/comparison/layout-schema";
 import { COMPARISON_WIDGETS } from "@/lib/comparison/widgets/registry";
 import { useLayout } from "./use-layout";
 import { useSharedMcRun } from "./use-shared-mc-run";
@@ -21,6 +25,7 @@ import { ReportTitle } from "./report-title";
 import { ModeToggle, type CanvasMode } from "./mode-toggle";
 import { SaveStatus } from "./save-status";
 import { WidgetConfigModal } from "./widget-config-modal";
+import { TextWidgetExpandModal } from "@/components/comparison/text-widget-expand-modal";
 
 interface Props {
   clientId: string;
@@ -53,6 +58,11 @@ export function ComparisonShell({
   const [editingCellId, setEditingCellId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [focusGroupTitleId, setFocusGroupTitleId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<{ cellId: string; mode: "edit" | "view" } | null>(null);
+
+  const onExpandTextCell = useCallback((cellId: string, modeArg: "edit" | "view") => {
+    setExpanded({ cellId, mode: modeArg });
+  }, []);
 
   const planIds = useMemo(() => uniquePlanIds(api.layout), [api.layout]);
 
@@ -199,7 +209,7 @@ export function ComparisonShell({
                       onAddRight={(cellId) => api.addEmptyCellRight(group.id, cellId)}
                       onAddDown={(cellId) => api.addEmptyCellDown(group.id, cellId)}
                       onChangeSpan={(cellId, span) => api.setCellSpan(cellId, span)}
-                      onSetCellWidget={(cellId, widget) => api.setCellWidget(cellId, widget)}
+                      onExpandTextCell={onExpandTextCell}
                     />
                   ))}
                 </SortableContext>
@@ -227,6 +237,7 @@ export function ComparisonShell({
               clientId={clientId}
               plans={previewPlans}
               mc={mc}
+              onExpandTextCell={onExpandTextCell}
             />
           )}
         </div>
@@ -258,6 +269,33 @@ export function ComparisonShell({
           />
         )
       )}
+
+      {expanded && (() => {
+        const expandedCell = api.layout.groups
+          .flatMap((g) => g.cells)
+          .find((c) => c.id === expanded.cellId);
+        if (!expandedCell?.widget || expandedCell.widget.kind !== "text") return null;
+        const cfg = expandedCell.widget.config as
+          | { markdown?: string; ai?: TextWidgetAiConfig }
+          | undefined;
+        return (
+          <TextWidgetExpandModal
+            open
+            mode={expanded.mode}
+            clientId={clientId}
+            layout={api.layout}
+            cellId={expanded.cellId}
+            initialMarkdown={cfg?.markdown ?? ""}
+            initialAi={cfg?.ai}
+            onClose={() => setExpanded(null)}
+            onSave={({ markdown, ai }) => {
+              api.updateTextMarkdown(expanded.cellId, markdown);
+              api.updateTextAiConfig(expanded.cellId, ai);
+              setExpanded(null);
+            }}
+          />
+        );
+      })()}
     </>
   );
 }

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { CellSpan, CellV5, WidgetInstance } from "@/lib/comparison/layout-schema";
+import type { CellSpan, CellV5 } from "@/lib/comparison/layout-schema";
 import { COMPARISON_WIDGETS } from "@/lib/comparison/widgets/registry";
 
 export interface ScenarioLookup {
@@ -22,7 +22,7 @@ interface Props {
   onAddRight: () => void;
   onAddDown: () => void;
   onChangeSpan: (span: CellSpan) => void;
-  onSetWidget?: (widget: WidgetInstance) => void;
+  onExpand?: (cellId: string, mode: "edit" | "view") => void;
 }
 
 const SPAN_TO_CLASS: Record<CellSpan, string> = {
@@ -60,7 +60,7 @@ export function CanvasCell({
   onAddRight,
   onAddDown,
   onChangeSpan,
-  onSetWidget,
+  onExpand,
 }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: cell.id,
@@ -200,24 +200,18 @@ export function CanvasCell({
             {SpanBadge}
           </div>
 
-          {widget.kind === "text" && onSetWidget ? (
-            <textarea
-              aria-label="Text block content"
-              value={
-                typeof widget.config === "object" &&
-                widget.config !== null &&
-                "markdown" in widget.config
-                  ? String((widget.config as { markdown?: string }).markdown ?? "")
-                  : ""
-              }
-              onChange={(e) =>
-                onSetWidget({ ...widget, config: { markdown: e.target.value } })
-              }
-              onMouseDown={(e) => e.stopPropagation()}
-              placeholder="Type markdown… **bold**, *italic*, - list items"
-              rows={4}
-              className="w-full resize-y rounded border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-xs text-slate-100 placeholder:text-ink-3 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
-            />
+          {widget.kind === "text" ? (
+            def.render({
+              instanceId: widget.id,
+              cellId: cell.id,
+              clientId: "",
+              plans: [],
+              mc: null,
+              config: widget.config,
+              yearRange: widget.yearRange ?? null,
+              editing: true,
+              onExpand,
+            })
           ) : (
             def.scenarios !== "none" && (
               <div className="flex flex-wrap gap-1">
