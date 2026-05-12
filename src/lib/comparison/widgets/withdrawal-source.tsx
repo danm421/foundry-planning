@@ -10,4 +10,8 @@ export const withdrawalSourceWidget: ComparisonWidgetDefinition = {
   render: ({ plans, yearRange }) => (
     <WithdrawalSourceComparisonSection plans={plans} yearRange={yearRange} />
   ),
+  hasDataInYear: (_plan, year) =>
+    (year.withdrawals?.total ?? 0) > 0 ||
+    (year.income?.socialSecurity ?? 0) > 0 ||
+    (year.income?.deferred ?? 0) > 0,
 };

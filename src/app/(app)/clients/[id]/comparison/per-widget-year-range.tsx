@@ -13,6 +13,13 @@ interface Props {
   yearRange: YearRange | undefined;
   onChange: (next: YearRange | undefined) => void;
   clientRetirementYear?: number | null;
+  /** Min/max year where the bound widget actually has data. null means the
+   *  range hasn't been computed yet (plans loading) or the widget doesn't
+   *  emit anything in any year for the selected plans. */
+  dataYearRange?: [number, number] | null;
+  /** When true, render the "Data" preset button — even if the range is null
+   *  (it'll be disabled with a tooltip). When false, hide the button. */
+  dataPresetSupported?: boolean;
 }
 
 export function PerWidgetYearRange({
@@ -21,6 +28,8 @@ export function PerWidgetYearRange({
   yearRange,
   onChange,
   clientRetirementYear = null,
+  dataYearRange = null,
+  dataPresetSupported = false,
 }: Props) {
   const start = yearRange?.start ?? min;
   const end = yearRange?.end ?? max;
@@ -29,6 +38,10 @@ export function PerWidgetYearRange({
   const current: [number, number] = [start, end];
   // "Full" is the implicit default — also active when the range is undefined.
   const fullActive = yearRange === undefined || isPresetActive(current, presets.full);
+  const dataActive =
+    !fullActive &&
+    dataYearRange !== null &&
+    isPresetActive(current, dataYearRange);
 
   const setStart = (v: number) => {
     if (Number.isNaN(v)) return;
@@ -69,6 +82,15 @@ export function PerWidgetYearRange({
           disabledReason="Set client DOB and retirement age to enable"
           onClick={() => applyPreset(presets.retirement)}
         />
+        {dataPresetSupported && (
+          <PresetButton
+            label="Data only"
+            active={dataActive}
+            disabled={dataYearRange === null}
+            disabledReason="No data for this widget in the selected scenarios"
+            onClick={() => applyPreset(dataYearRange)}
+          />
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
         <label className="flex items-center gap-1">

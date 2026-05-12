@@ -59,7 +59,7 @@ export function ComparisonShell({
   const preview = usePreviewPlans({
     clientId,
     planIds,
-    enabled: mode === "preview",
+    enabled: mode === "preview" || editingCellId !== null,
   });
 
   const previewPlans = useMemo(
@@ -240,6 +240,7 @@ export function ComparisonShell({
             scenarios={scenarios}
             availableYearRange={availableYearRange}
             clientRetirementYear={clientRetirementYear}
+            plans={previewPlans}
             primaryScenarioId={primaryScenarioId}
             onSave={handleModalSave}
             onClose={() => setEditingCellId(null)}
@@ -250,6 +251,7 @@ export function ComparisonShell({
             scenarios={scenarios}
             availableYearRange={availableYearRange}
             clientRetirementYear={clientRetirementYear}
+            plans={previewPlans}
             primaryScenarioId={primaryScenarioId}
             onSave={handleModalSave}
             onClose={() => setEditingCellId(null)}

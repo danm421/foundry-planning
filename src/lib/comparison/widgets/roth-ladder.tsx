@@ -10,4 +10,5 @@ export const rothLadderWidget: ComparisonWidgetDefinition = {
   render: ({ plans, yearRange }) => (
     <RothLadderComparisonSection plans={plans} yearRange={yearRange} />
   ),
+  hasDataInYear: (_plan, year) => (year.rothConversions?.length ?? 0) > 0,
 };

@@ -3,6 +3,7 @@ import type { z } from "zod";
 import type { ComparisonWidgetKindV4, YearRange } from "../layout-schema";
 import type { ComparisonPlan } from "../build-comparison-plans";
 import type { PlanMcData } from "@/components/comparison/monte-carlo-comparison-section";
+import type { ProjectionYear } from "@/engine";
 
 /** Re-exported under the legacy name so callers don't need to change imports. */
 export type ComparisonWidgetKind = ComparisonWidgetKindV4;
@@ -68,4 +69,9 @@ export interface ComparisonWidgetDefinition<TConfig = unknown> {
   render: (ctx: ComparisonWidgetContext) => ReactNode;
   /** Optional inline panel config UI. Receives the current config and a setter. */
   renderConfig?: (ctx: ComparisonWidgetConfigContext<TConfig>) => ReactNode;
+  /** Optional predicate used by the year-range "Data" preset to crop to years
+   *  where this widget actually shows something. Return true if the given year
+   *  for the given plan contains data the widget would render. When omitted,
+   *  every year counts as data (preset is disabled by the modal). */
+  hasDataInYear?: (plan: ComparisonPlan, year: ProjectionYear) => boolean;
 }

@@ -10,4 +10,10 @@ export const rmdScheduleWidget: ComparisonWidgetDefinition = {
   render: ({ plans, yearRange }) => (
     <RmdScheduleComparisonSection plans={plans} yearRange={yearRange} />
   ),
+  hasDataInYear: (_plan, year) => {
+    for (const led of Object.values(year.accountLedgers ?? {})) {
+      if ((led.rmdAmount ?? 0) > 0) return true;
+    }
+    return false;
+  },
 };

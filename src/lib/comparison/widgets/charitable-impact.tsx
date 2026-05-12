@@ -10,4 +10,20 @@ export const charitableImpactWidget: ComparisonWidgetDefinition = {
   render: ({ plans, yearRange }) => (
     <CharitableImpactComparisonSection plans={plans} yearRange={yearRange} />
   ),
+  hasDataInYear: (plan, year) => {
+    if ((year.charitableOutflows ?? 0) > 0) return true;
+    const charityIds = new Set(
+      (plan.tree.externalBeneficiaries ?? [])
+        .filter((eb) => eb.kind === "charity")
+        .map((eb) => eb.id),
+    );
+    for (const g of plan.tree.gifts ?? []) {
+      if (g.year !== year.year) continue;
+      if (!g.recipientExternalBeneficiaryId) continue;
+      if (charityIds.has(g.recipientExternalBeneficiaryId) && g.amount > 0) {
+        return true;
+      }
+    }
+    return false;
+  },
 };

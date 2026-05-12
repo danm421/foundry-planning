@@ -5,6 +5,7 @@ import type { WidgetInstance, YearRange, ComparisonWidgetKindV4 } from "@/lib/co
 import { WIDGET_KINDS_V4 } from "@/lib/comparison/layout-schema";
 import { COMPARISON_WIDGETS } from "@/lib/comparison/widgets/registry";
 import type { ComparisonWidgetCategory } from "@/lib/comparison/widgets/types";
+import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import { ScenarioChipPicker } from "./scenario-chip-picker";
 import { PerWidgetYearRange } from "./per-widget-year-range";
 
@@ -71,6 +72,9 @@ interface CommonProps {
   scenarios: { id: string; name: string }[];
   availableYearRange: { min: number; max: number };
   clientRetirementYear?: number | null;
+  /** Loaded preview plans. Empty until the preview API resolves. Used to
+   *  compute the "Data" preset's year range. */
+  plans?: ComparisonPlan[];
   primaryScenarioId: string;
   onSave: (widget: WidgetInstance) => void;
   onClose: () => void;
@@ -86,6 +90,7 @@ export function WidgetConfigModal(props: Props) {
     scenarios,
     availableYearRange,
     clientRetirementYear = null,
+    plans = [],
     primaryScenarioId,
     onSave,
     onClose,
@@ -139,6 +144,26 @@ export function WidgetConfigModal(props: Props) {
   const def = kind ? COMPARISON_WIDGETS[kind] : null;
   const validationError = kind ? validate(kind, planIds) : "Pick a widget.";
   const canSave = validationError === null && kind !== null;
+
+  const dataYearRange = useMemo<[number, number] | null>(() => {
+    if (!def?.hasDataInYear || plans.length === 0 || planIds.length === 0) {
+      return null;
+    }
+    const selectedIds = new Set(planIds);
+    const selected = plans.filter((p) => selectedIds.has(p.id));
+    if (selected.length === 0) return null;
+    let lo = Number.POSITIVE_INFINITY;
+    let hi = Number.NEGATIVE_INFINITY;
+    for (const plan of selected) {
+      for (const year of plan.result.years) {
+        if (!def.hasDataInYear(plan, year)) continue;
+        if (year.year < lo) lo = year.year;
+        if (year.year > hi) hi = year.year;
+      }
+    }
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+    return [lo, hi];
+  }, [def, plans, planIds]);
 
   const handlePickKind = (next: ComparisonWidgetKindV4) => {
     setKind(next);
@@ -287,6 +312,8 @@ export function WidgetConfigModal(props: Props) {
                 yearRange={yearRange}
                 onChange={setYearRange}
                 clientRetirementYear={clientRetirementYear}
+                dataYearRange={dataYearRange}
+                dataPresetSupported={Boolean(def?.hasDataInYear)}
               />
             </section>
           )}

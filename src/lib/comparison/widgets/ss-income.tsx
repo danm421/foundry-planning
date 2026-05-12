@@ -10,4 +10,5 @@ export const ssIncomeWidget: ComparisonWidgetDefinition = {
   render: ({ plans, yearRange }) => (
     <SsIncomeComparisonSection plans={plans} yearRange={yearRange} />
   ),
+  hasDataInYear: (_plan, year) => (year.income?.socialSecurity ?? 0) > 0,
 };
