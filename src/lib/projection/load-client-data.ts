@@ -537,6 +537,7 @@ export const loadClientDataWithContext = cache(
           turnoverPct: a.turnoverPct,
           annualPropertyTax: a.annualPropertyTax,
           propertyTaxGrowthRate: a.propertyTaxGrowthRate,
+          propertyTaxGrowthSource: a.propertyTaxGrowthSource,
           rmdEnabled: a.rmdEnabled,
           isDefaultChecking: a.isDefaultChecking,
           modelPortfolioId: a.modelPortfolioId,

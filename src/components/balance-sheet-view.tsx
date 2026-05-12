@@ -37,6 +37,9 @@ export interface AccountRow {
   overridePctLtCg?: string | null;
   overridePctQdiv?: string | null;
   overridePctTaxExempt?: string | null;
+  annualPropertyTax?: string | null;
+  propertyTaxGrowthRate?: string | null;
+  propertyTaxGrowthSource?: string;
   isDefaultChecking?: boolean;
   owners?: AccountOwner[];
 }
@@ -160,6 +163,9 @@ function accountToInitial(a: AccountRow): AccountFormInitial {
     overridePctLtCg: a.overridePctLtCg ?? null,
     overridePctQdiv: a.overridePctQdiv ?? null,
     overridePctTaxExempt: a.overridePctTaxExempt ?? null,
+    annualPropertyTax: a.annualPropertyTax ?? undefined,
+    propertyTaxGrowthRate: a.propertyTaxGrowthRate ?? undefined,
+    propertyTaxGrowthSource: a.propertyTaxGrowthSource,
     isDefaultChecking: a.isDefaultChecking ?? false,
     owners: a.owners,
   };

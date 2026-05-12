@@ -26,6 +26,7 @@ export const ACCOUNT_FIELD_LABELS: FieldLabels = {
   turnoverPct: { label: "Turnover %", format: "percent" },
   annualPropertyTax: { label: "Annual property tax", format: "currency" },
   propertyTaxGrowthRate: { label: "Property tax growth", format: "percent" },
+  propertyTaxGrowthSource: { label: "Property tax growth source", format: "text" },
   source: { label: "Source", format: "text" },
 };
 
@@ -50,6 +51,7 @@ export async function toAccountSnapshot(row: AccountRow): Promise<EntitySnapshot
     turnoverPct: Number(row.turnoverPct),
     annualPropertyTax: Number(row.annualPropertyTax),
     propertyTaxGrowthRate: Number(row.propertyTaxGrowthRate),
+    propertyTaxGrowthSource: row.propertyTaxGrowthSource,
     source: row.source,
   };
 }

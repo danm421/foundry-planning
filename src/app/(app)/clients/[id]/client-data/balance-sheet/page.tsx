@@ -76,6 +76,9 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
         overridePctLtCg: accounts.overridePctLtCg,
         overridePctQdiv: accounts.overridePctQdiv,
         overridePctTaxExempt: accounts.overridePctTaxExempt,
+        annualPropertyTax: accounts.annualPropertyTax,
+        propertyTaxGrowthRate: accounts.propertyTaxGrowthRate,
+        propertyTaxGrowthSource: accounts.propertyTaxGrowthSource,
       })
       .from(accounts)
       .where(and(eq(accounts.clientId, id), eq(accounts.scenarioId, scenario.id))),
@@ -194,6 +197,10 @@ export default async function BalanceSheetPage({ params, searchParams }: PagePro
       overridePctQdiv: meta?.overridePctQdiv == null ? null : String(meta.overridePctQdiv),
       overridePctTaxExempt:
         meta?.overridePctTaxExempt == null ? null : String(meta.overridePctTaxExempt),
+      annualPropertyTax: meta?.annualPropertyTax == null ? null : String(meta.annualPropertyTax),
+      propertyTaxGrowthRate:
+        meta?.propertyTaxGrowthRate == null ? null : String(meta.propertyTaxGrowthRate),
+      propertyTaxGrowthSource: meta?.propertyTaxGrowthSource ?? "custom",
       isDefaultChecking: a.isDefaultChecking ?? false,
       owners: a.owners,
     };

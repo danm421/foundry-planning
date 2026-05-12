@@ -69,6 +69,7 @@ export const accountCreateSchema = z
     overridePctTaxExempt: z.number().min(0).max(1).optional().nullable(),
     annualPropertyTax: money.optional(),
     propertyTaxGrowthRate: growthRate.optional().nullable(),
+    propertyTaxGrowthSource: z.enum(["custom", "inflation"]).optional(),
   })
   .passthrough(); // prompts evolve; don't lock out novel fields
 

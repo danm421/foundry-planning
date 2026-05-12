@@ -45,6 +45,9 @@ type RawAccount = {
   turnoverPct: string | null;
   annualPropertyTax: string | number;
   propertyTaxGrowthRate: string | number;
+  /** "custom" or "inflation". When "inflation", engine substitutes the
+   *  plan's resolved inflation rate. Absent on legacy rows → "custom". */
+  propertyTaxGrowthSource?: string | null;
   rmdEnabled: boolean;
   isDefaultChecking: boolean;
   modelPortfolioId: string | null;
@@ -132,12 +135,21 @@ export function resolveAccountFromRaw(
     raw.category === "business" ||
     raw.category === "life_insurance"
   ) {
-    growthRate =
-      raw.growthRate != null
-        ? n(raw.growthRate)
-        : resolver.resolveCategoryDefault(raw.category).rate;
+    if (gs === "inflation") {
+      growthRate = resolvedInflationRate;
+    } else {
+      growthRate =
+        raw.growthRate != null
+          ? n(raw.growthRate)
+          : resolver.resolveCategoryDefault(raw.category).rate;
+    }
     realization = undefined;
   }
+
+  const propertyTaxGrowthRate =
+    raw.propertyTaxGrowthSource === "inflation"
+      ? resolvedInflationRate
+      : n(raw.propertyTaxGrowthRate);
 
   return {
     id: raw.id,
@@ -154,7 +166,7 @@ export function resolveAccountFromRaw(
     isDefaultChecking: raw.isDefaultChecking,
     realization,
     annualPropertyTax: n(raw.annualPropertyTax),
-    propertyTaxGrowthRate: n(raw.propertyTaxGrowthRate),
+    propertyTaxGrowthRate,
     insuredPerson: (raw.insuredPerson as Account["insuredPerson"]) ?? undefined,
     lifeInsurance: resolvePostPayoutPortfolio(
       raw.lifeInsurance ?? ctx.policiesByAccount?.[raw.id],

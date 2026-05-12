@@ -1002,6 +1002,10 @@ export const accounts = pgTable("accounts", {
   overridePctTaxExempt: decimal("override_pct_tax_exempt", { precision: 5, scale: 4 }),
   annualPropertyTax: decimal("annual_property_tax", { precision: 15, scale: 2 }).notNull().default("0"),
   propertyTaxGrowthRate: decimal("property_tax_growth_rate", { precision: 5, scale: 4 }).notNull().default("0.03"),
+  // Source for `propertyTaxGrowthRate`. When "inflation", the engine
+  // substitutes the plan's resolved inflation rate at projection time;
+  // the rate column is then a fallback / display value only.
+  propertyTaxGrowthSource: itemGrowthSourceEnum("property_tax_growth_source").notNull().default("custom"),
   source: sourceEnum("source").notNull().default("manual"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

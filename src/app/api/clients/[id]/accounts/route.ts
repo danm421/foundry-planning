@@ -175,6 +175,7 @@ export async function POST(
           overridePctTaxExempt: overridePctTaxExempt ?? null,
           annualPropertyTax: body.annualPropertyTax ?? "0",
           propertyTaxGrowthRate: body.propertyTaxGrowthRate ?? "0.03",
+          propertyTaxGrowthSource: body.propertyTaxGrowthSource ?? "custom",
         })
         .returning();
       account = inserted;

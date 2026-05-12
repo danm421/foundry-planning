@@ -1,0 +1,1 @@
+ALTER TABLE "accounts" ADD COLUMN "property_tax_growth_source" "item_growth_source" DEFAULT 'custom' NOT NULL;

@@ -60,6 +60,7 @@ export interface AccountFormInitial {
   owners?: AccountOwner[];
   annualPropertyTax?: string;
   propertyTaxGrowthRate?: string;
+  propertyTaxGrowthSource?: string;
   growthSource?: string;
   modelPortfolioId?: string | null;
   turnoverPct?: string;
@@ -320,6 +321,17 @@ export default function AddAccountForm({
   const [propertyTaxGrowthRate, setPropertyTaxGrowthRate] = useState(
     initial?.propertyTaxGrowthRate != null ? (Number(initial.propertyTaxGrowthRate) * 100).toString() : "3"
   );
+  const [propertyTaxGrowthSource, setPropertyTaxGrowthSource] = useState<"custom" | "inflation">(
+    initial?.propertyTaxGrowthSource === "inflation" ? "inflation" : "custom",
+  );
+  // Controlled custom rate for real estate value growth — preserved across
+  // inflation/custom toggles so the typed value isn't lost.
+  const [realEstateGrowthRatePct, setRealEstateGrowthRatePct] = useState<string>(() => {
+    if (initial?.category === "real_estate" && initial.growthRate != null && initial.growthRate !== "") {
+      return (Number(initial.growthRate) * 100).toString();
+    }
+    return "3";
+  });
 
   // Owner selection: AccountOwner[] driven by OwnershipEditor.
   const clientFm = familyMembers.find((fm) => fm.role === "client");
@@ -334,6 +346,11 @@ export default function AddAccountForm({
   const isInvestable = ["taxable", "cash", "retirement"].includes(category);
   const [growthSource, setGrowthSource] = useState<"default" | "model_portfolio" | "custom" | "asset_mix" | "inflation">(
     (initial?.growthSource as "default" | "model_portfolio" | "custom" | "asset_mix" | "inflation") ?? "default"
+  );
+  // Real estate uses its own source toggle (custom vs. plan inflation). Stored
+  // in the same `growth_source` column on save.
+  const [realEstateGrowthSource, setRealEstateGrowthSource] = useState<"custom" | "inflation">(
+    initial?.category === "real_estate" && initial?.growthSource === "inflation" ? "inflation" : "custom",
   );
   const [modelPortfolioId, setModelPortfolioId] = useState<string>(
     initial?.modelPortfolioId ?? ""
@@ -468,9 +485,18 @@ export default function AddAccountForm({
     const form = e.currentTarget;
     const data = new FormData(form);
 
-    const growthRate = growthSource === "custom"
-      ? String(Number(data.get("growthRate")) / 100)
-      : isInvestable ? null : String(Number(data.get("growthRate")) / 100);
+    // Real estate persists the user's typed rate regardless of source, so
+    // toggling Inflation ↔ Custom doesn't lose the value. The engine uses
+    // `growthSource` to decide whether to substitute the resolved inflation
+    // rate at projection time.
+    let growthRate: string | null;
+    if (category === "real_estate") {
+      growthRate = String(Number(realEstateGrowthRatePct) / 100);
+    } else if (growthSource === "custom") {
+      growthRate = String(Number(data.get("growthRate")) / 100);
+    } else {
+      growthRate = isInvestable ? null : String(Number(data.get("growthRate")) / 100);
+    }
 
     const toPctOrNull = (name: string) => {
       const v = data.get(name) as string;
@@ -496,7 +522,11 @@ export default function AddAccountForm({
       growthRate,
       rmdEnabled,
       priorYearEndValue: rmdEnabled && priorYearEndValue !== "" ? priorYearEndValue : null,
-      growthSource: isInvestable ? growthSource : "custom",
+      growthSource: isInvestable
+        ? growthSource
+        : category === "real_estate"
+          ? realEstateGrowthSource
+          : "custom",
       modelPortfolioId: growthSource === "model_portfolio" ? modelPortfolioId : null,
       turnoverPct: toPctOrNull("turnoverPct") ?? "0",
       overridePctOi: toPctOrNull("overridePctOi"),
@@ -504,7 +534,14 @@ export default function AddAccountForm({
       overridePctQdiv: toPctOrNull("overridePctQdiv"),
       overridePctTaxExempt: toPctOrNull("overridePctTaxExempt"),
       annualPropertyTax: category === "real_estate" ? annualPropertyTax : undefined,
-      propertyTaxGrowthRate: category === "real_estate" ? String(Number(propertyTaxGrowthRate) / 100) : undefined,
+      // Always persist the user's last custom rate, even when source=inflation
+      // (the engine substitutes the inflation rate at projection time; this
+      // value is then a fallback/display value preserved across toggles).
+      propertyTaxGrowthRate:
+        category === "real_estate"
+          ? String(Number(propertyTaxGrowthRate) / 100)
+          : undefined,
+      propertyTaxGrowthSource: category === "real_estate" ? propertyTaxGrowthSource : undefined,
     };
 
     try {
@@ -936,6 +973,30 @@ export default function AddAccountForm({
                     </div>
                   )}
                 </div>
+              ) : category === "real_estate" ? (
+                <div>
+                  <label className={fieldLabelClassName}>Growth Rate</label>
+                  <select
+                    value={realEstateGrowthSource}
+                    onChange={(e) => setRealEstateGrowthSource(e.target.value as "custom" | "inflation")}
+                    className={selectClassName}
+                  >
+                    <option value="custom">Custom %</option>
+                    <option value="inflation">
+                      {(resolvedInflationRate * 100).toFixed(2)}% — Inflation rate
+                    </option>
+                  </select>
+                  {realEstateGrowthSource === "custom" && (
+                    <div className="mt-2">
+                      <PercentInput
+                        id="growthRate"
+                        value={realEstateGrowthRatePct}
+                        onChange={(raw) => setRealEstateGrowthRatePct(raw)}
+                        className={inputClassName}
+                      />
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div>
                   <label className={fieldLabelClassName} htmlFor="growthRate">
@@ -954,7 +1015,7 @@ export default function AddAccountForm({
                 <>
                   <div>
                     <label className={fieldLabelClassName} htmlFor="annualPropertyTax">
-                      Annual Property Tax ($)
+                      Annual Property Tax
                     </label>
                     <CurrencyInput
                       id="annualPropertyTax"
@@ -964,15 +1025,27 @@ export default function AddAccountForm({
                     />
                   </div>
                   <div>
-                    <label className={fieldLabelClassName} htmlFor="propertyTaxGrowthRate">
-                      Property Tax Growth Rate (%)
-                    </label>
-                    <PercentInput
-                      id="propertyTaxGrowthRate"
-                      value={propertyTaxGrowthRate}
-                      onChange={(raw) => setPropertyTaxGrowthRate(raw)}
-                      className={inputClassName}
-                    />
+                    <label className={fieldLabelClassName}>Property Tax Growth</label>
+                    <select
+                      value={propertyTaxGrowthSource}
+                      onChange={(e) => setPropertyTaxGrowthSource(e.target.value as "custom" | "inflation")}
+                      className={selectClassName}
+                    >
+                      <option value="custom">Custom %</option>
+                      <option value="inflation">
+                        {(resolvedInflationRate * 100).toFixed(2)}% — Inflation rate
+                      </option>
+                    </select>
+                    {propertyTaxGrowthSource === "custom" && (
+                      <div className="mt-2">
+                        <PercentInput
+                          id="propertyTaxGrowthRate"
+                          value={propertyTaxGrowthRate}
+                          onChange={(raw) => setPropertyTaxGrowthRate(raw)}
+                          className={inputClassName}
+                        />
+                      </div>
+                    )}
                   </div>
                 </>
               )}
