@@ -111,4 +111,44 @@ describe("StateDeathTaxReportView", () => {
     expect(screen.getByText(/Class C/)).toBeInTheDocument();
     expect(screen.getAllByText(/\$24,000/).length).toBeGreaterThan(0);
   });
+
+  const nyEstateDetail: import("@/lib/tax/state-estate").StateEstateTaxResult = {
+    state: "NY",
+    fallbackUsed: false, fallbackRate: 0,
+    exemption: 7_160_000, exemptionYear: 2026, giftAddback: 0,
+    baseForTax: 10_000_000, amountOverExemption: 2_840_000,
+    bracketLines: [
+      { from: 7_160_000, to: 10_100_000, rate: 0.1, amountTaxed: 2_840_000, tax: 284_000 },
+    ],
+    preCapTax: 284_000, stateEstateTax: 284_000,
+    notes: ["Citation: NY Tax Law §952"],
+  };
+
+  it("renders the NY state-estate-tax bracket breakdown when no inheritance tax applies", async () => {
+    const decedent: EstateTaxResult = {
+      ...(baseEstate as EstateTaxResult),
+      residenceState: "NY",
+      stateEstateTax: 284_000,
+      stateEstateTaxDetail: nyEstateDetail,
+      stateInheritanceTax: undefined,
+    };
+    mockProjection({
+      firstDeathEvent: decedent,
+      secondDeathEvent: undefined,
+      years: [{ year: 2026, hypotheticalEstateTax: { year: 2026,
+        primaryFirst: { firstDecedent: "client", firstDeath: decedent,
+          firstDeathTransfers: [], totals: { federal: 0, state: 284_000, admin: 0, total: 284_000 } } } }],
+      todayHypotheticalEstateTax: { year: 2026,
+        primaryFirst: { firstDecedent: "client", firstDeath: decedent,
+          firstDeathTransfers: [], totals: { federal: 0, state: 284_000, admin: 0, total: 284_000 } } },
+    });
+
+    render(<StateDeathTaxReportView clientId="c1" {...ownerProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/State Estate Tax \(New York\)/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Amount Over Exemption/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/\$284,000/).length).toBeGreaterThan(0);
+  });
 });
