@@ -4,6 +4,7 @@ import type { ComparisonLayoutV4 } from "../layout-schema";
 
 const single = (kind: ComparisonLayoutV4["rows"][number]["cells"][number]["widget"]["kind"], planIds: string[]): ComparisonLayoutV4 => ({
   version: 4,
+  title: "Validation Test",
   rows: [
     {
       id: "00000000-0000-0000-0000-000000000001",
@@ -72,6 +73,7 @@ describe("validateLayoutV4", () => {
   it("reports every offending widget when many are wrong", () => {
     const layout: ComparisonLayoutV4 = {
       version: 4,
+      title: "Validation Test",
       rows: [
         {
           id: "00000000-0000-0000-0000-0000000000a1",
