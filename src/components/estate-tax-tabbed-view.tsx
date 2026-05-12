@@ -3,14 +3,14 @@
 import { useState } from "react";
 import DialogTabs from "@/components/dialog-tabs";
 import EstateTaxReportView from "./estate-tax-report-view";
-import StateInheritanceTaxReportView from "./state-inheritance-tax-report-view";
+import StateDeathTaxReportView from "./state-death-tax-report-view";
 import type { OwnerDobs } from "./report-controls/age-helpers";
 
-type TabId = "estate" | "inheritance";
+type TabId = "estate" | "state";
 
 const TABS = [
   { id: "estate", label: "Estate Tax" },
-  { id: "inheritance", label: "Inheritance Tax" },
+  { id: "state", label: "State Death Tax" },
 ];
 
 interface Props {
@@ -47,7 +47,7 @@ export default function EstateTaxTabbedView({
             retirementYear={retirementYear}
           />
         ) : (
-          <StateInheritanceTaxReportView clientId={clientId} />
+          <StateDeathTaxReportView clientId={clientId} />
         )}
       </div>
     </div>

@@ -10,7 +10,7 @@ vi.mock("@/engine/projection", () => ({
   runProjectionWithEvents: (data: unknown) => (data as { __result: unknown }).__result,
 }));
 
-import StateInheritanceTaxReportView from "../state-inheritance-tax-report-view";
+import StateDeathTaxReportView from "../state-death-tax-report-view";
 import type { EstateTaxResult } from "@/engine/types";
 
 const baseEstateTaxResult: Partial<EstateTaxResult> = {
@@ -54,7 +54,7 @@ const stateEstateDetail = {
   notes: [],
 };
 
-describe("StateInheritanceTaxReportView", () => {
+describe("StateDeathTaxReportView", () => {
   beforeEach(() => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -92,7 +92,7 @@ describe("StateInheritanceTaxReportView", () => {
   });
 
   it("renders the per-recipient table for a PA death event", async () => {
-    render(<StateInheritanceTaxReportView clientId="c1" />);
+    render(<StateDeathTaxReportView clientId="c1" />);
     await waitFor(() => {
       expect(screen.getByText(/Sibling Smith/)).toBeInTheDocument();
     });

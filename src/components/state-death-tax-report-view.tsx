@@ -26,7 +26,7 @@ interface DeathSection {
   result: EstateTaxResult;
 }
 
-export default function StateInheritanceTaxReportView({ clientId }: Props) {
+export default function StateDeathTaxReportView({ clientId }: Props) {
   const searchParams = useSearchParams();
   const [projection, setProjection] = useState<ProjectionResult | null>(null);
   const [loading, setLoading] = useState(true);
