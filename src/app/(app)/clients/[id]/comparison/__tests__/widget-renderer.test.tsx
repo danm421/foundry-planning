@@ -1,98 +1,134 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { WidgetRenderer } from "../widget-renderer";
-import type { ComparisonLayout } from "@/lib/comparison/layout-schema";
+import type { ComparisonLayoutV4 } from "@/lib/comparison/layout-schema";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 
-// Replace the registry with stubs so we don't accidentally render real widgets
+const lastCtx: Record<string, { planIds: string[]; yearRange: unknown }> = {};
+
 vi.mock("@/lib/comparison/widgets/registry", () => {
   const make = (kind: string) => ({
-    kind,
-    title: kind,
-    needsMc: false,
-    render: ({ editing }: { editing: boolean }) => (
-      <div data-widget={kind} data-editing={String(editing)}>{kind}</div>
-    ),
+    kind, title: kind, needsMc: false,
+    category: "investments", scenarios: "one-or-many",
+    render: (ctx: { plans: ComparisonPlan[]; yearRange: unknown }) => {
+      lastCtx[kind] = {
+        planIds: ctx.plans.map((p) => p.id),
+        yearRange: ctx.yearRange,
+      };
+      return <div data-widget={kind}>{kind} ({ctx.plans.map((p) => p.id).join(",")})</div>;
+    },
   });
   return {
     COMPARISON_WIDGETS: {
-      "kpi-strip": make("kpi-strip"),
       portfolio: make("portfolio"),
       "monte-carlo": make("monte-carlo"),
       longevity: make("longevity"),
-      "lifetime-tax": make("lifetime-tax"),
-      liquidity: make("liquidity"),
-      "estate-impact": make("estate-impact"),
-      "estate-tax": make("estate-tax"),
-      text: make("text"),
-      "income-expense": make("income-expense"),
-      "withdrawal-source": make("withdrawal-source"),
-      "year-by-year": make("year-by-year"),
+      text: { ...make("text"), scenarios: "none" },
     },
   };
 });
 
-const id = (n: number) => `0000000${n}-0000-4000-8000-000000000000`;
+const plan = (id: string): ComparisonPlan =>
+  ({ id, label: id, result: { years: [] } } as unknown as ComparisonPlan);
 
-describe("WidgetRenderer", () => {
-  it("renders all widgets in layout order", () => {
-    const layout: ComparisonLayout = {
-      version: 3,
-      yearRange: null,
-      items: [
-        { instanceId: id(1), kind: "portfolio" },
-        { instanceId: id(2), kind: "estate-tax" },
+describe("WidgetRenderer (v4)", () => {
+  it("renders rows of cells in order", () => {
+    const layout: ComparisonLayoutV4 = {
+      version: 4,
+      title: "T",
+      rows: [
+        { id: "r1", cells: [{ id: "c1", widget: { id: "w1", kind: "portfolio", planIds: ["base"] } }] },
+        {
+          id: "r2",
+          cells: [
+            { id: "c2", widget: { id: "w2", kind: "monte-carlo", planIds: ["base", "sc-1"] } },
+            { id: "c3", widget: { id: "w3", kind: "longevity", planIds: ["sc-1"] } },
+          ],
+        },
       ],
     };
-    const { container } = render(
+    render(
       <WidgetRenderer
         layout={layout}
         clientId="c"
-        plans={[] as ComparisonPlan[]}
+        plans={[plan("base"), plan("sc-1")]}
         mc={null}
-        yearRange={null}
-        editing={false}
       />,
     );
-    const widgets = container.querySelectorAll("[data-widget]");
-    expect(widgets).toHaveLength(2);
-    expect(widgets[0].getAttribute("data-widget")).toBe("portfolio");
-    expect(widgets[1].getAttribute("data-widget")).toBe("estate-tax");
+    expect(screen.getByText(/portfolio \(base\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/monte-carlo \(base,sc-1\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/longevity \(sc-1\)/i)).toBeInTheDocument();
   });
 
-  it("passes editing=true through to each widget when set", () => {
-    const layout: ComparisonLayout = {
-      version: 3,
-      yearRange: null,
-      items: [{ instanceId: id(1), kind: "portfolio" }],
+  it("filters plans by per-widget planIds (in declared order)", () => {
+    const layout: ComparisonLayoutV4 = {
+      version: 4,
+      title: "T",
+      rows: [
+        {
+          id: "r1",
+          cells: [
+            { id: "c1", widget: { id: "w1", kind: "portfolio", planIds: ["sc-1", "base"] } },
+          ],
+        },
+      ],
     };
-    const { container } = render(
+    render(
       <WidgetRenderer
         layout={layout}
         clientId="c"
-        plans={[]}
+        plans={[plan("base"), plan("sc-1")]}
         mc={null}
-        yearRange={null}
-        editing={true}
       />,
     );
-    expect(
-      container.querySelector("[data-widget='portfolio']")?.getAttribute("data-editing"),
-    ).toBe("true");
+    expect(lastCtx.portfolio.planIds).toEqual(["sc-1", "base"]);
   });
 
-  it("renders empty-state when the layout has zero items", () => {
-    const layout: ComparisonLayout = { version: 3, yearRange: null, items: [] };
+  it("passes per-widget yearRange into ctx", () => {
+    const layout: ComparisonLayoutV4 = {
+      version: 4,
+      title: "T",
+      rows: [
+        {
+          id: "r1",
+          cells: [
+            {
+              id: "c1",
+              widget: {
+                id: "w1", kind: "portfolio", planIds: ["base"],
+                yearRange: { start: 2030, end: 2055 },
+              },
+            },
+          ],
+        },
+      ],
+    };
+    render(<WidgetRenderer layout={layout} clientId="c" plans={[plan("base")]} mc={null} />);
+    expect(lastCtx.portfolio.yearRange).toEqual({ start: 2030, end: 2055 });
+  });
+
+  it("text widget renders even when there are no plans", () => {
+    const layout: ComparisonLayoutV4 = {
+      version: 4,
+      title: "T",
+      rows: [
+        {
+          id: "r1",
+          cells: [
+            { id: "c1", widget: { id: "w1", kind: "text", planIds: [], config: { markdown: "hi" } } },
+          ],
+        },
+      ],
+    };
+    render(<WidgetRenderer layout={layout} clientId="c" plans={[]} mc={null} />);
+    expect(screen.getByText("text ()")).toBeInTheDocument();
+  });
+
+  it("renders empty-state when layout has no rows", () => {
+    const layout: ComparisonLayoutV4 = { version: 4, title: "T", rows: [] };
     const { container } = render(
-      <WidgetRenderer
-        layout={layout}
-        clientId="c"
-        plans={[]}
-        mc={null}
-        yearRange={null}
-        editing={false}
-      />,
+      <WidgetRenderer layout={layout} clientId="c" plans={[]} mc={null} />,
     );
     expect(container.textContent).toContain("No widgets");
   });
