@@ -96,8 +96,11 @@ export default async function FamilyPage({ params, searchParams }: PageProps) {
     firstName: m.firstName,
     lastName: m.lastName ?? null,
     relationship: m.relationship,
+    role: m.role,
     dateOfBirth: m.dateOfBirth ?? null,
     notes: m.notes ?? null,
+    domesticPartner: m.domesticPartner,
+    inheritanceClassOverride: m.inheritanceClassOverride ?? {},
   }));
 
   const ents: Entity[] = entityRows.map((e) => ({

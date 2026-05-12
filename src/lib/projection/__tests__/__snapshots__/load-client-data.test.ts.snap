@@ -100,8 +100,10 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
   "familyMembers": [
     {
       "dateOfBirth": "2002-08-10",
+      "domesticPartner": undefined,
       "firstName": "Charlie",
       "id": "00000000-0000-0000-0000-000000000100",
+      "inheritanceClassOverride": {},
       "lastName": "Sample",
       "relationship": "child",
       "role": undefined,
