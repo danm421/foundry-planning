@@ -236,6 +236,57 @@ describe("computeStateIncomeTax — cap-gains integration", () => {
   });
 });
 
+describe("computeStateIncomeTax — bracket recapture", () => {
+  it("CA at $1.5M MJ flags recapture", () => {
+    const r = computeStateIncomeTax({
+      state: "CA",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 55,
+      federalIncome: {
+        agi: 1_500_000,
+        taxableIncome: 1_400_000,
+        ordinaryIncome: 1_500_000,
+        earnedIncome: 1_500_000,
+        dividends: 0,
+        capitalGains: 0,
+        shortCapitalGains: 0,
+        taxableSocialSecurity: 0,
+        taxExemptIncome: 0,
+      },
+      retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.specialRulesApplied).toContain("CA-recapture");
+    expect(r.diag.notes.some((n) => n.toLowerCase().includes("ca recapture"))).toBe(true);
+  });
+
+  it("CA at $150K MJ does NOT flag recapture (regression net)", () => {
+    const r = computeStateIncomeTax({
+      state: "CA",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 55,
+      federalIncome: {
+        agi: 150_000,
+        taxableIncome: 130_000,
+        ordinaryIncome: 150_000,
+        earnedIncome: 150_000,
+        dividends: 0,
+        capitalGains: 0,
+        shortCapitalGains: 0,
+        taxableSocialSecurity: 0,
+        taxExemptIncome: 0,
+      },
+      retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.specialRulesApplied).not.toContain("CA-recapture");
+  });
+});
+
 describe("computeStateIncomeTax — easy FAGI-base states", () => {
   it("AZ 2026 single, $100K FAGI, no SS/retirement → flat 2.5% on (AGI − std ded)", () => {
     const r = computeStateIncomeTax({

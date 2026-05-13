@@ -16,6 +16,7 @@ import { getRetirementRule } from "./data/retirement-rules";
 import { computeRetirementSubtraction } from "./retirement-subtraction";
 import { computeCapGainsAdjustment, computeWaCapGainsTax } from "./cap-gains";
 import { CAP_GAINS_RULES } from "./data/cap-gains-rules";
+import { applyRecapture } from "./special-rules";
 
 export interface FederalIncomeForState {
   agi: number;
@@ -225,7 +226,19 @@ export function computeStateIncomeTax(
   const exemptionCredits = exemption.type === "credit" ? exemption.amount : 0;
   const stateTaxableIncome = Math.max(0, stateAGI - stdDed - personalExemptionDeduction);
   const preCreditTax = applyBrackets(stateTaxableIncome, brackets);
-  const stateTax = Math.max(0, preCreditTax - exemptionCredits);
+  const recapture = applyRecapture(input.state, {
+    stateTaxableIncome,
+    preCreditTax,
+    filingStatus: stateFs,
+  });
+  const adjustedPreCreditTax = preCreditTax + recapture.adjustment;
+  const stateTax = Math.max(0, adjustedPreCreditTax - exemptionCredits);
+  const specialRulesApplied: string[] = [];
+  if (recapture.adjustment > 0) specialRulesApplied.push(`${input.state}-recapture`);
+  if (CAP_GAINS_RULES[input.state]?.ltcgExemptPct) specialRulesApplied.push(`${input.state}-LTCG-carveout`);
+
+  const notes = [ssResult.note, retirementResult.note];
+  if (recapture.adjustment > 0) notes.push(recapture.note);
 
   return {
     state: input.state,
@@ -243,10 +256,10 @@ export function computeStateIncomeTax(
     filingStatusUsed: input.filingStatus,
     stateFilingStatusUsed: stateFs,
     bracketsUsed: brackets,
-    preCreditTax,
-    specialRulesApplied: [],
+    preCreditTax: adjustedPreCreditTax,
+    specialRulesApplied,
     stateTax,
-    diag: { notes: [ssResult.note, retirementResult.note] },
+    diag: { notes },
   };
 }
 
