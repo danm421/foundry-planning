@@ -39,8 +39,7 @@ const CATEGORY_LABELS: Record<ComparisonWidgetCategory, string> = {
 };
 
 /** Widgets that are both registered and visible in the picker, paired with their
- *  definitions so downstream code never has to re-lookup `COMPARISON_WIDGETS[k]`
- *  (which is `T | undefined` because the registry is `Partial<…>`). */
+ *  definitions so downstream code never has to re-lookup `COMPARISON_WIDGETS[k]`. */
 const REGISTERED_KINDS: ReadonlyArray<{
   kind: ComparisonWidgetKindV4;
   def: ComparisonWidgetDefinition;
