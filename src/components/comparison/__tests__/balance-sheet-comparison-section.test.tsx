@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { BalanceSheetComparisonSection } from "../balance-sheet-comparison-section";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 
@@ -22,32 +22,73 @@ function mkPlan(label: string, tree: Partial<ComparisonPlan["tree"]>): Compariso
 }
 
 describe("BalanceSheetComparisonSection", () => {
-  it("renders all five ownerLabelFor branches in the Owner column", () => {
-    // Each account exercises a distinct branch of `ownerLabelFor`:
-    //  - joint  (2 family_member owners, roles client+spouse, 0.5/0.5)
-    //  - single non-principal family_member (1.0, role=child) -> firstName
-    //  - single entity (1.0) -> entity.name
-    //  - 3 family_member owners -> "shared"
-    //  - family_member + entity -> "mixed"
+  it("renders owner-column matrix with Cooper / Susan / Joint/ROS + Total", () => {
     const plan = mkPlan("A", {
       accounts: [
         {
-          id: "a-joint",
-          name: "Joint Brokerage",
-          category: "taxable",
-          value: 100_000,
+          id: "a-cash",
+          name: "CASH - Checking",
+          category: "cash",
+          value: 50_000,
           owners: [
             { kind: "family_member", familyMemberId: "fm-client", percent: 0.5 },
             { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.5 },
           ],
         },
         {
-          id: "a-child",
-          name: "UTMA for Junior",
-          category: "taxable",
-          value: 25_000,
-          owners: [{ kind: "family_member", familyMemberId: "fm-child", percent: 1 }],
+          id: "a-401k-c",
+          name: "INV - Client 401k",
+          category: "retirement",
+          value: 400_000,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
         },
+        {
+          id: "a-401k-s",
+          name: "INV - Spouse 401k",
+          category: "retirement",
+          value: 350_000,
+          owners: [{ kind: "family_member", familyMemberId: "fm-spouse", percent: 1 }],
+        },
+      ],
+      liabilities: [],
+      familyMembers: [
+        { id: "fm-client", role: "client", firstName: "Cooper" },
+        { id: "fm-spouse", role: "spouse", firstName: "Susan" },
+      ],
+      entities: [],
+    } as unknown as ComparisonPlan["tree"]);
+    render(<BalanceSheetComparisonSection plans={[plan]} />);
+    // Column headers in order.
+    expect(screen.getByRole("columnheader", { name: "Cooper" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Susan" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Joint/ROS" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Total" })).toBeTruthy();
+    // CASH joint row: full $50,000 lands in Joint/ROS + Total only.
+    const cashRow = screen.getByText("CASH - Checking").closest("tr")!;
+    const cashCells = within(cashRow).getAllByRole("cell");
+    expect(cashCells[1].textContent).toBe("—"); // Cooper
+    expect(cashCells[2].textContent).toBe("—"); // Susan
+    expect(cashCells[3].textContent).toBe("$50,000"); // Joint/ROS
+    expect(cashCells[4].textContent).toBe("$50,000"); // Total
+    // Client 401k → Cooper column only.
+    const c401kRow = screen.getByText("INV - Client 401k").closest("tr")!;
+    const c401kCells = within(c401kRow).getAllByRole("cell");
+    expect(c401kCells[1].textContent).toBe("$400,000");
+    expect(c401kCells[2].textContent).toBe("—");
+    expect(c401kCells[3].textContent).toBe("—");
+    expect(c401kCells[4].textContent).toBe("$400,000");
+    // Total Assets row: column totals + grand total.
+    const totalRow = screen.getByText("Total Assets").closest("tr")!;
+    const totalCells = within(totalRow).getAllByRole("cell");
+    expect(totalCells[1].textContent).toBe("$400,000"); // Cooper
+    expect(totalCells[2].textContent).toBe("$350,000"); // Susan
+    expect(totalCells[3].textContent).toBe("$50,000"); // Joint/ROS
+    expect(totalCells[4].textContent).toBe("$800,000"); // Total
+  });
+
+  it("adds entity and child columns when present, splitting mixed ownership proportionally", () => {
+    const plan = mkPlan("A", {
+      accounts: [
         {
           id: "a-entity",
           name: "Family Trust Brokerage",
@@ -56,15 +97,11 @@ describe("BalanceSheetComparisonSection", () => {
           owners: [{ kind: "entity", entityId: "ent-trust", percent: 1 }],
         },
         {
-          id: "a-shared",
-          name: "Shared Family LLC Distribution",
-          category: "business",
-          value: 60_000,
-          owners: [
-            { kind: "family_member", familyMemberId: "fm-client", percent: 0.34 },
-            { kind: "family_member", familyMemberId: "fm-spouse", percent: 0.33 },
-            { kind: "family_member", familyMemberId: "fm-child", percent: 0.33 },
-          ],
+          id: "a-utma",
+          name: "UTMA for Junior",
+          category: "taxable",
+          value: 25_000,
+          owners: [{ kind: "family_member", familyMemberId: "fm-child", percent: 1 }],
         },
         {
           id: "a-mixed",
@@ -80,25 +117,26 @@ describe("BalanceSheetComparisonSection", () => {
       liabilities: [],
       familyMembers: [
         { id: "fm-client", role: "client", firstName: "Pat" },
-        { id: "fm-spouse", role: "spouse", firstName: "Sam" },
         { id: "fm-child", role: "child", firstName: "Junior" },
       ],
       entities: [{ id: "ent-trust", name: "Family Trust" }],
     } as unknown as ComparisonPlan["tree"]);
     render(<BalanceSheetComparisonSection plans={[plan]} />);
-    // joint: client+spouse, both with role tags, 0.5/0.5
-    expect(screen.getByText("joint")).toBeTruthy();
-    // single non-principal family member -> firstName fallback
-    expect(screen.getByText("Junior")).toBeTruthy();
-    // single entity -> entity.name
-    expect(screen.getByText("Family Trust")).toBeTruthy();
-    // 3 family_member owners -> "shared"
-    expect(screen.getByText("shared")).toBeTruthy();
-    // family_member + entity -> "mixed"
-    expect(screen.getByText("mixed")).toBeTruthy();
+    // Headers include Pat (client), Junior (child), Family Trust (entity).
+    expect(screen.getByRole("columnheader", { name: "Pat" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Junior" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Family Trust" })).toBeTruthy();
+    // Mixed row splits 50/50 between Pat and Family Trust columns.
+    const mixedRow = screen.getByText("Mixed Ownership Property").closest("tr")!;
+    const cells = within(mixedRow).getAllByRole("cell");
+    // Order: name | Pat | Junior | Family Trust | Total
+    expect(cells[1].textContent).toBe("$250,000");
+    expect(cells[2].textContent).toBe("—");
+    expect(cells[3].textContent).toBe("$250,000");
+    expect(cells[4].textContent).toBe("$500,000");
   });
 
-  it("renders accounts and liabilities with totals and net worth", () => {
+  it("renders liabilities and net worth", () => {
     const plan = mkPlan("A", {
       accounts: [
         {
@@ -135,12 +173,8 @@ describe("BalanceSheetComparisonSection", () => {
     } as unknown as ComparisonPlan["tree"]);
     render(<BalanceSheetComparisonSection plans={[plan]} />);
     expect(screen.getByText("CASH - Checking")).toBeTruthy();
-    expect(screen.getByText("INV - Client 401k")).toBeTruthy();
     expect(screen.getByText("Home Mortgage")).toBeTruthy();
-    // Total Assets = 450,000 ; Total Liabilities = 300,000 (also appears as
-    // the single Home Mortgage row, hence getAllByText) ; Net Worth = 150,000.
-    expect(screen.getByText(/\$450,000/)).toBeTruthy();
-    expect(screen.getAllByText(/\$300,000/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Net Worth/)).toBeTruthy();
     expect(screen.getByText(/\$150,000/)).toBeTruthy();
   });
 });
