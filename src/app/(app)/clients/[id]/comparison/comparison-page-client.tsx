@@ -9,6 +9,7 @@ import {
   type PresetSummary,
   type TemplateSummary,
 } from "./new-comparison-modal";
+import { SlotMappingModal } from "./slot-mapping-modal";
 
 interface ComparisonSummary {
   id: string;
@@ -40,7 +41,8 @@ export function ComparisonPageClient({
   const [activeCid, setActiveCid] = useState<string | null>(initialActiveCid);
   const [layout, setLayout] = useState<ComparisonLayoutV5>(initialLayout);
   const [newOpen, setNewOpen] = useState(false);
-  // pendingPreset / pendingTemplate are wired in Task 20.
+  const [pendingPreset, setPendingPreset] = useState<PresetSummary | null>(null);
+  const [pendingTemplate, setPendingTemplate] = useState<TemplateSummary | null>(null);
 
   const handleSelectComparison = async (cid: string) => {
     if (cid === activeCid) return;
@@ -91,9 +93,71 @@ export function ComparisonPageClient({
         open={newOpen}
         onClose={() => setNewOpen(false)}
         onPickBlank={handlePickBlank}
-        onPickPreset={(_p: PresetSummary) => { setNewOpen(false); }}
-        onPickTemplate={(_t: TemplateSummary) => { setNewOpen(false); }}
+        onPickPreset={(p) => { setPendingPreset(p); setNewOpen(false); }}
+        onPickTemplate={(t) => { setPendingTemplate(t); setNewOpen(false); }}
       />
+      {pendingPreset && (
+        <SlotMappingModal
+          open
+          templateName={pendingPreset.name}
+          slotLabels={pendingPreset.slotLabels}
+          clientPlans={scenarios}
+          defaultName={pendingPreset.name}
+          onCancel={() => setPendingPreset(null)}
+          onConfirm={async ({ name, slotMappings }) => {
+            const res = await fetch(`/api/clients/${clientId}/comparisons`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                source: "preset",
+                presetKey: pendingPreset.key,
+                name,
+                slotMappings,
+              }),
+            });
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              throw new Error(body.error ?? "Failed to create comparison");
+            }
+            const { comparison } = await res.json();
+            setComparisons((cs) => [...cs, { id: comparison.id, name: comparison.name }]);
+            setActiveCid(comparison.id);
+            setLayout(comparison.layout);
+            setPendingPreset(null);
+          }}
+        />
+      )}
+      {pendingTemplate && (
+        <SlotMappingModal
+          open
+          templateName={pendingTemplate.name}
+          slotLabels={pendingTemplate.slotLabels}
+          clientPlans={scenarios}
+          defaultName={pendingTemplate.name}
+          onCancel={() => setPendingTemplate(null)}
+          onConfirm={async ({ name, slotMappings }) => {
+            const res = await fetch(`/api/clients/${clientId}/comparisons`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                source: "template",
+                templateId: pendingTemplate.id,
+                name,
+                slotMappings,
+              }),
+            });
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              throw new Error(body.error ?? "Failed to create comparison");
+            }
+            const { comparison } = await res.json();
+            setComparisons((cs) => [...cs, { id: comparison.id, name: comparison.name }]);
+            setActiveCid(comparison.id);
+            setLayout(comparison.layout);
+            setPendingTemplate(null);
+          }}
+        />
+      )}
     </div>
   );
 }
