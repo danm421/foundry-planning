@@ -10,6 +10,8 @@ import { BRACKETS_2026 } from "./data/brackets-2026";
 import { STD_DEDUCTIONS } from "./data/std-deductions";
 import { EXEMPTIONS } from "./data/exemptions";
 import { INCOME_BASE_RULES } from "./data/income-base";
+import { getSsRule } from "./data/ss-rules";
+import { computeSsSubtraction } from "./ss-subtraction";
 
 export interface FederalIncomeForState {
   agi: number;
@@ -125,13 +127,31 @@ export function computeStateIncomeTax(
     total: taxFreeInterestAddback,
   };
 
+  // Section C: SS subtraction
+  const ssRule = getSsRule(input.state, input.year);
+  const ssResult = computeSsSubtraction({
+    rule: ssRule,
+    taxableSocialSecurity: input.federalIncome.taxableSocialSecurity,
+    agi: input.federalIncome.agi,
+    age: Math.max(input.primaryAge, input.spouseAge ?? 0),
+    isJoint: input.filingStatus === "married_joint",
+  });
+  const subtractions = {
+    socialSecurity: ssResult.amount,
+    retirementIncome: 0,    // Section D
+    capitalGains: 0,        // Section E
+    preTaxContrib: 0,       // Section E
+    other: 0,
+    total: ssResult.amount,
+  };
+
   // Easy path: lookup brackets, std deduction, exemption.
-  // Section C will subtract SS; Section D will subtract retirement; etc.
+  // Section D will subtract retirement; Section E cap gains / pre-tax contrib; etc.
   const stateFs = mapFilingStatus(input.filingStatus);
   const brackets = getBrackets(input.state, input.year, stateFs);
   const stdDed = getStdDeduction(input.state, input.year, stateFs, input.primaryAge);
   const exemption = getExemption(input.state, input.year, stateFs);
-  const stateAGI = startingIncome + addbacks.total;
+  const stateAGI = startingIncome + addbacks.total - subtractions.total;
   const personalExemptionDeduction = exemption.type === "exemption" ? exemption.amount : 0;
   const exemptionCredits = exemption.type === "credit" ? exemption.amount : 0;
   const stateTaxableIncome = Math.max(0, stateAGI - stdDed - personalExemptionDeduction);
@@ -145,7 +165,7 @@ export function computeStateIncomeTax(
     incomeBase: baseRule.base,
     startingIncome,
     addbacks,
-    subtractions: EMPTY_SUBTRACTIONS,
+    subtractions,
     stateAGI,
     stdDeduction: stdDed,
     personalExemptionDeduction,
@@ -157,7 +177,7 @@ export function computeStateIncomeTax(
     preCreditTax,
     specialRulesApplied: [],
     stateTax,
-    diag: { notes: ["Section A easy-path compute (no SS/retirement adjustments yet)."] },
+    diag: { notes: [ssResult.note] },
   };
 }
 

@@ -99,6 +99,22 @@ describe("computeStateIncomeTax — income base", () => {
   });
 });
 
+describe("computeStateIncomeTax — SS handling", () => {
+  it("CA subtracts SS (CA = exempt) so it doesn't tax federally taxable SS", () => {
+    const r = computeStateIncomeTax({
+      state: "CA", year: 2026, filingStatus: "married_joint", primaryAge: 70,
+      federalIncome: {
+        agi: 80_000, taxableIncome: 70_000, ordinaryIncome: 60_000,
+        earnedIncome: 0, dividends: 0, capitalGains: 0,
+        taxableSocialSecurity: 20_000, taxExemptIncome: 0,
+      },
+      retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
+      preTaxContrib: 0, fallbackFlatRate: 0,
+    });
+    expect(r.subtractions.socialSecurity).toBe(20_000);
+  });
+});
+
 describe("computeStateIncomeTax — easy FAGI-base states", () => {
   it("AZ 2026 single, $100K FAGI, no SS/retirement → flat 2.5% on (AGI − std ded)", () => {
     const r = computeStateIncomeTax({
