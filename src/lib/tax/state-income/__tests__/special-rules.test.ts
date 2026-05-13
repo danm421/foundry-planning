@@ -24,13 +24,26 @@ describe("applyRecapture — CA", () => {
     expect(r.adjustment).toBeCloseTo(99_500, 2);
   });
 
-  it("CA above 500K single → effective top-rate recapture", () => {
+  it("CA single at $700K (below flat $1M threshold) → no adjustment", () => {
+    // Real CA Mental Health Services Tax: flat $1M for ALL filing statuses.
     const r = applyRecapture("CA", {
-      stateTaxableIncome: 750_000,
+      stateTaxableIncome: 700_000,
       preCreditTax: 50_000,
       filingStatus: "single",
     });
+    expect(r.adjustment).toBe(0);
+    expect(r.note).toContain("below threshold");
+  });
+
+  it("CA single at $1.5M → effective top-rate recapture (same $1M threshold as joint)", () => {
+    const r = applyRecapture("CA", {
+      stateTaxableIncome: 1_500_000,
+      preCreditTax: 100_000,
+      filingStatus: "single",
+    });
     expect(r.adjustment).toBeGreaterThan(0);
+    // target = 1.5M × 0.133 = 199_500; adjustment = 199_500 − 100_000 = 99_500
+    expect(r.adjustment).toBeCloseTo(99_500, 2);
   });
 
   it("CA at exactly the threshold (joint) → no adjustment", () => {

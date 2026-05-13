@@ -235,7 +235,7 @@ export function computeStateIncomeTax(
   const stateTax = Math.max(0, adjustedPreCreditTax - exemptionCredits);
   const specialRulesApplied: string[] = [];
   if (recapture.adjustment > 0) specialRulesApplied.push(`${input.state}-recapture`);
-  if (CAP_GAINS_RULES[input.state]?.ltcgExemptPct) specialRulesApplied.push(`${input.state}-LTCG-carveout`);
+  if (capGainsAdj > 0) specialRulesApplied.push(`${input.state}-LTCG-carveout`);
 
   const notes = [ssResult.note, retirementResult.note];
   if (recapture.adjustment > 0) notes.push(recapture.note);

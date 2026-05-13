@@ -195,6 +195,22 @@ describe("computeStateIncomeTax — cap-gains integration", () => {
       preTaxContrib: 0, fallbackFlatRate: 0,
     });
     expect(r.subtractions.capitalGains).toBe(40_000);
+    expect(r.specialRulesApplied).toContain("AR-LTCG-carveout");
+  });
+
+  it("AR with no LTCG → does NOT flag LTCG-carveout (regression net)", () => {
+    const r = computeStateIncomeTax({
+      state: "AR", year: 2026, filingStatus: "single", primaryAge: 60,
+      federalIncome: {
+        agi: 200_000, taxableIncome: 180_000, ordinaryIncome: 100_000,
+        earnedIncome: 100_000, dividends: 0, capitalGains: 0,
+        shortCapitalGains: 0, taxableSocialSecurity: 0, taxExemptIncome: 0,
+      },
+      retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
+      preTaxContrib: 0, fallbackFlatRate: 0,
+    });
+    expect(r.subtractions.capitalGains).toBe(0);
+    expect(r.specialRulesApplied).not.toContain("AR-LTCG-carveout");
   });
 
   it("WA: gains-only with standard exclusion, $500K LTCG → $222K taxable → $15,540", () => {

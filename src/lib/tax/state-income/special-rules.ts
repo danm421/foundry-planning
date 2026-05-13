@@ -16,14 +16,12 @@ interface RecaptureResult {
 type RecaptureFn = (input: RecaptureInput) => RecaptureResult;
 
 export const RECAPTURE_RULES: Partial<Record<USPSStateCode, RecaptureFn>> = {
-  // California Mental Health Services Tax — 1% surcharge on taxable income > $1M
-  // (all filers). Phase 1 simplification: model the combined top-rate effect
-  // (12.3% top bracket + 1% MHST = 13.3%) as a top-rate recapture against the
-  // pre-credit bracket tax. Threshold is the same $1M for all filing statuses
-  // under CA law; we keep the joint/single split here as a placeholder for
-  // future per-status calibration.
+  // California Mental Health Services Tax — flat 1% surcharge on taxable income
+  // > $1M for ALL filing statuses (joint, single, HoH). Phase 1 simplification:
+  // model the combined top-rate effect (12.3% top bracket + 1% MHST = 13.3%)
+  // as a top-rate recapture against the pre-credit bracket tax.
   CA: (input) => {
-    const threshold = input.filingStatus === "joint" ? 1_000_000 : 500_000;
+    const threshold = 1_000_000;
     if (input.stateTaxableIncome <= threshold) {
       return { adjustment: 0, note: "CA recapture: below threshold." };
     }
