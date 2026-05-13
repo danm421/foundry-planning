@@ -10,9 +10,19 @@ vi.mock("react-chartjs-2", () => ({
 import { Line } from "react-chartjs-2";
 
 function yrs(values: number[]): ProjectionYear[] {
+  // Portfolio total is summed from liquid buckets, not read off
+  // `portfolioAssets.total` (which would include real estate / business).
   return values.map(
     (v, i) =>
-      ({ year: 2026 + i, portfolioAssets: { total: v } }) as unknown as ProjectionYear,
+      ({
+        year: 2026 + i,
+        portfolioAssets: {
+          cashTotal: v,
+          taxableTotal: 0,
+          retirementTotal: 0,
+          lifeInsuranceTotal: 0,
+        },
+      }) as unknown as ProjectionYear,
   );
 }
 

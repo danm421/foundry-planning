@@ -17,29 +17,25 @@ import { seriesColor } from "@/lib/comparison/series-palette";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
+// Portfolio Assets = liquid investable buckets only. Real estate, business,
+// and entity/trust-owned shares live on the balance sheet, not here.
 const PORTFOLIO_SERIES = [
   { label: "Cash", color: "#9ca3af", valueFor: (y: ProjectionYear) => y.portfolioAssets.cashTotal },
   { label: "Taxable", color: "#facc15", valueFor: (y: ProjectionYear) => y.portfolioAssets.taxableTotal },
   { label: "Retirement", color: "#f97316", valueFor: (y: ProjectionYear) => y.portfolioAssets.retirementTotal },
   { label: "Life Insurance", color: "#16a34a", valueFor: (y: ProjectionYear) => y.portfolioAssets.lifeInsuranceTotal },
-  { label: "Real Estate", color: "#0891b2", valueFor: (y: ProjectionYear) => y.portfolioAssets.realEstateTotal },
-  { label: "Business", color: "#7c3aed", valueFor: (y: ProjectionYear) => y.portfolioAssets.businessTotal },
-  { label: "Trusts & Businesses", color: "#2563eb", valueFor: (y: ProjectionYear) => y.portfolioAssets.trustsAndBusinessesTotal },
-  { label: "Accessible Trust Assets", color: "#99f6e4", valueFor: (y: ProjectionYear) => y.portfolioAssets.accessibleTrustAssetsTotal },
 ];
 
 function portfolioTotalForYear(y: ProjectionYear): number {
   const pa = y.portfolioAssets as unknown as {
-    total?: number;
     taxableTotal?: number;
     cashTotal?: number;
     retirementTotal?: number;
     lifeInsuranceTotal?: number;
   };
-  if (typeof pa?.total === "number") return pa.total;
   return (
-    (pa?.taxableTotal ?? 0) +
     (pa?.cashTotal ?? 0) +
+    (pa?.taxableTotal ?? 0) +
     (pa?.retirementTotal ?? 0) +
     (pa?.lifeInsuranceTotal ?? 0)
   );

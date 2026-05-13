@@ -30,21 +30,19 @@ const usd = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-// Pull the portfolio total for a year. Prefers `portfolioAssets.total` (the
-// engine emits this on every projected year); falls back to summing the four
-// liquid subtotals so leaner test fixtures (or older shapes) still render.
+// Portfolio total = liquid investable buckets only (cash + taxable + retirement
+// + life insurance). Real estate, business, and entity/trust-owned shares live
+// on the balance sheet, not in Portfolio Assets.
 function portfolioTotalForYear(y: ProjectionYear): number {
   const pa = y.portfolioAssets as unknown as {
-    total?: number;
     taxableTotal?: number;
     cashTotal?: number;
     retirementTotal?: number;
     lifeInsuranceTotal?: number;
   };
-  if (typeof pa?.total === "number") return pa.total;
   return (
-    (pa?.taxableTotal ?? 0) +
     (pa?.cashTotal ?? 0) +
+    (pa?.taxableTotal ?? 0) +
     (pa?.retirementTotal ?? 0) +
     (pa?.lifeInsuranceTotal ?? 0)
   );

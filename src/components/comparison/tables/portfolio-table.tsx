@@ -9,14 +9,13 @@ const usd = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+// Portfolio Assets = liquid investable buckets only. Real estate, business,
+// and entity/trust-owned shares belong on the balance sheet, not here.
 const COLUMNS: Array<{ key: keyof ProjectionYear["portfolioAssets"]; label: string }> = [
-  { key: "taxableTotal",             label: "Taxable" },
-  { key: "cashTotal",                label: "Cash" },
-  { key: "retirementTotal",          label: "Retirement" },
-  { key: "realEstateTotal",          label: "Real Estate" },
-  { key: "businessTotal",            label: "Business" },
-  { key: "lifeInsuranceTotal",       label: "Life Insurance" },
-  { key: "trustsAndBusinessesTotal", label: "Trusts & Bus." },
+  { key: "cashTotal",          label: "Cash" },
+  { key: "taxableTotal",       label: "Taxable" },
+  { key: "retirementTotal",    label: "Retirement" },
+  { key: "lifeInsuranceTotal", label: "Life Insurance" },
 ];
 
 export function PortfolioTableList({ plans }: { plans: ComparisonPlan[] }) {
@@ -37,19 +36,25 @@ export function PortfolioTableList({ plans }: { plans: ComparisonPlan[] }) {
                 </tr>
               </thead>
               <tbody>
-                {plan.result.years.map((y) => (
-                  <tr key={y.year} className="border-t border-slate-800 text-slate-200">
-                    <td className="px-2 py-1">{y.year}</td>
-                    {COLUMNS.map((c) => (
-                      <td key={c.key} className="px-2 py-1 text-right tabular-nums">
-                        {usd.format((y.portfolioAssets[c.key] as number) ?? 0)}
+                {plan.result.years.map((y) => {
+                  const total = COLUMNS.reduce(
+                    (sum, c) => sum + ((y.portfolioAssets[c.key] as number) ?? 0),
+                    0,
+                  );
+                  return (
+                    <tr key={y.year} className="border-t border-slate-800 text-slate-200">
+                      <td className="px-2 py-1">{y.year}</td>
+                      {COLUMNS.map((c) => (
+                        <td key={c.key} className="px-2 py-1 text-right tabular-nums">
+                          {usd.format((y.portfolioAssets[c.key] as number) ?? 0)}
+                        </td>
+                      ))}
+                      <td className="px-2 py-1 text-right tabular-nums font-medium">
+                        {usd.format(total)}
                       </td>
-                    ))}
-                    <td className="px-2 py-1 text-right tabular-nums font-medium">
-                      {usd.format(y.portfolioAssets.total)}
-                    </td>
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
