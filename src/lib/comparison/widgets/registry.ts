@@ -31,6 +31,7 @@ import { incomeSourcesWidget } from "./income-sources";
 import { balanceSheetWidget } from "./balance-sheet";
 import { expenseDetailWidget } from "./expense-detail";
 import { assetAllocationWidget } from "./asset-allocation";
+import { scenarioChangesWidget } from "./scenario-changes";
 
 export const COMPARISON_WIDGETS: Partial<
   Record<ComparisonWidgetKindV4, ComparisonWidgetDefinition>
@@ -66,4 +67,5 @@ export const COMPARISON_WIDGETS: Partial<
   "balance-sheet": balanceSheetWidget,
   "expense-detail": expenseDetailWidget,
   "asset-allocation": assetAllocationWidget,
+  "scenario-changes": scenarioChangesWidget,
 };
