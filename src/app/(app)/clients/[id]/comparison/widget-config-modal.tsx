@@ -23,6 +23,7 @@ const CATEGORY_ORDER: readonly ComparisonWidgetCategory[] = [
   "monte-carlo",
   "estate",
   "text",
+  "scenario",
 ];
 
 const CATEGORY_LABELS: Record<ComparisonWidgetCategory, string> = {
