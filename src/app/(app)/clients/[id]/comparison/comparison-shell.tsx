@@ -42,6 +42,10 @@ interface Props {
   clientRetirementYear: number | null;
   onSelectComparison: (cid: string) => void;
   onComparisonsChange: (next: ComparisonSummary[]) => void;
+  onOpenNewComparison: () => void;
+  onRenameActive: () => void;
+  onDeleteActive: () => void;
+  onSaveActiveAsTemplate: () => void;
 }
 
 function uniquePlanIds(layout: ComparisonLayoutV5): string[] {
@@ -65,11 +69,14 @@ export function ComparisonShell({
   clientRetirementYear,
   onSelectComparison,
   onComparisonsChange,
+  onOpenNewComparison,
+  onRenameActive,
+  onDeleteActive,
+  onSaveActiveAsTemplate,
 }: Props) {
   const api = useLayout(initialLayout, clientId, activeCid);
-  void comparisons;
-  void onSelectComparison;
   void onComparisonsChange;
+  const [overflowOpen, setOverflowOpen] = useState(false);
   const [mode, setMode] = useState<CanvasMode>("layout");
   const [editingCellId, setEditingCellId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -190,6 +197,81 @@ export function ComparisonShell({
   return (
     <>
       <header className="sticky top-[100px] z-20 flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-950/95 px-6 py-3 backdrop-blur">
+        <div className="flex items-center gap-1.5">
+          {activeCid && comparisons.length > 0 && (
+            <select
+              value={activeCid}
+              onChange={(e) => onSelectComparison(e.target.value)}
+              className="max-w-[220px] rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
+              aria-label="Switch comparison"
+            >
+              {comparisons.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            onClick={onOpenNewComparison}
+            className="rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+          >
+            + New
+          </button>
+          {activeCid && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setOverflowOpen((v) => !v)}
+                aria-label="More actions"
+                aria-haspopup="menu"
+                aria-expanded={overflowOpen}
+                className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+              >
+                ⋮
+              </button>
+              {overflowOpen && (
+                <>
+                  <button
+                    type="button"
+                    aria-hidden="true"
+                    tabIndex={-1}
+                    onClick={() => setOverflowOpen(false)}
+                    className="fixed inset-0 z-30 cursor-default bg-transparent"
+                  />
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-full z-40 mt-1 w-48 overflow-hidden rounded-md border border-slate-700 bg-slate-900 shadow-lg"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setOverflowOpen(false); onRenameActive(); }}
+                      className="block w-full px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800"
+                    >
+                      Rename
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setOverflowOpen(false); onSaveActiveAsTemplate(); }}
+                      className="block w-full px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-800"
+                    >
+                      Save as template…
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setOverflowOpen(false); onDeleteActive(); }}
+                      className="block w-full border-t border-slate-700 px-3 py-2 text-left text-sm text-red-400 hover:bg-slate-800"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
         <div className="flex min-w-[200px] max-w-2xl flex-1 items-center">
           <ReportTitle value={api.layout.title} onChange={api.setTitle} />
         </div>

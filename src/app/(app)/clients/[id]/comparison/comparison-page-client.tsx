@@ -44,6 +44,11 @@ export function ComparisonPageClient({
     setLayout(comparison.layout);
   };
 
+  // The picker/slot-mapping/rename/delete/save-as flows are wired in
+  // subsequent tasks. For Task 17 the buttons exist but the handlers
+  // are no-ops so the header renders cleanly.
+  const noop = () => {};
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
       <ComparisonShell
@@ -57,6 +62,10 @@ export function ComparisonPageClient({
         clientRetirementYear={clientRetirementYear}
         onSelectComparison={handleSelectComparison}
         onComparisonsChange={setComparisons}
+        onOpenNewComparison={noop}
+        onRenameActive={noop}
+        onDeleteActive={noop}
+        onSaveActiveAsTemplate={noop}
       />
     </div>
   );
