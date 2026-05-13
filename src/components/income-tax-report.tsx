@@ -12,6 +12,8 @@ import {
 } from "@/components/cashflow/tax-detail-view";
 import { TaxDrillDownModal } from "@/components/cashflow/tax-drill-down-modal";
 import { TaxCellDrillDownModal } from "@/components/cashflow/tax-cell-drill-down-modal";
+import { StateTaxDrillDownModal } from "@/components/cashflow/state-tax-drill-down-modal";
+import type { StateIncomeTaxResult } from "@/lib/tax/state-income";
 import { TaxTabChart } from "@/components/cashflow/charts/tax-tab-chart";
 import { buildIncomeCellDrill } from "@/lib/reports/tax-cell-drill/income-breakdown";
 import { buildConversionCellDrill } from "@/lib/reports/tax-cell-drill/bracket-conversions";
@@ -47,6 +49,10 @@ export default function IncomeTaxReport({ clientId }: Props) {
 
   const [activeTab, setActiveTab] = useState<TaxDetailTabId>("income");
   const [taxDrill, setTaxDrill] = useState<TaxDrillState | null>(null);
+  const [stateDrill, setStateDrill] = useState<{
+    year: number;
+    state: StateIncomeTaxResult;
+  } | null>(null);
   const [cellDrill, setCellDrill] = useState<CellDrill | null>(null);
 
   const ctx: CellDrillContext = useMemo(
@@ -188,6 +194,10 @@ export default function IncomeTaxReport({ clientId }: Props) {
             activeTab={activeTab}
             years={visibleYears}
             onYearClick={(y) => {
+              if (activeTab === "state" && y.taxResult?.state) {
+                setStateDrill({ year: y.year, state: y.taxResult.state });
+                return;
+              }
               if (y.taxDetail) {
                 setTaxDrill({
                   year: y.year,
@@ -236,6 +246,14 @@ export default function IncomeTaxReport({ clientId }: Props) {
         <TaxCellDrillDownModal
           {...drillProps}
           onClose={() => setCellDrill(null)}
+        />
+      )}
+
+      {stateDrill && (
+        <StateTaxDrillDownModal
+          year={stateDrill.year}
+          state={stateDrill.state}
+          onClose={() => setStateDrill(null)}
         />
       )}
     </div>
