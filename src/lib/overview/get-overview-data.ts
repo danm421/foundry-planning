@@ -178,6 +178,7 @@ export async function getOverviewData(
     client,
     kpi: { netWorth, liquidPortfolio, yearsToRetirement },
     runway: { netWorthSeries, minNetWorth },
+    projection: projection ?? [],
     allocation,
     lifeEvents,
     openItemsPreview,
