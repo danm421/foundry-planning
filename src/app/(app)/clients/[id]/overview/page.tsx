@@ -4,17 +4,12 @@ import { getOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
 import { getOverviewData } from "@/lib/overview/get-overview-data";
 import KpiStrip from "@/components/client-overview/kpi-strip";
-import RunwayPanel from "@/components/client-overview/runway-panel";
+import PortfolioGrowthPanel from "@/components/client-overview/portfolio-growth-panel";
 import AllocationPanel from "@/components/client-overview/allocation-panel";
-import LifeEventsPanel from "@/components/client-overview/life-events-panel";
 import OpenItemsPreview from "@/components/client-overview/open-items-preview";
 import RecentActivityPanel from "@/components/client-overview/recent-activity-panel";
 import EmptyHouseholdBanner from "@/components/client-overview/empty-household-banner";
 import { isFreshHousehold } from "@/components/client-overview/is-fresh-household";
-import { MonteCarloKpiSlot } from "@/components/client-overview/monte-carlo-kpi-slot";
-import { MonteCarloKpiSkeleton } from "@/components/client-overview/monte-carlo-kpi-skeleton";
-import { RunwayGaugeSlot } from "@/components/client-overview/runway-gauge-slot";
-import { RunwayGaugeSkeleton } from "@/components/client-overview/runway-gauge-skeleton";
 import { AlertsStripSlot } from "@/components/client-overview/alerts-strip-slot";
 import { AlertsStripSkeleton } from "@/components/client-overview/alerts-strip-skeleton";
 
@@ -31,14 +26,9 @@ export default async function ClientOverviewPage({
   const { id } = await params;
   const sp = await searchParams;
   const scenarioId = sp.scenario ?? "base";
-  // toggleState wire-up via `?toggles=` lands in Phase ε — pass {} for now.
   if (!(await findClientInFirm(id, firmId))) notFound();
 
   const d = await getOverviewData(id, firmId, scenarioId);
-
-  const earliestRetirementYear = d.lifeEvents.length
-    ? Math.min(...d.lifeEvents.map((e) => e.year))
-    : null;
 
   return (
     <div className="flex flex-col gap-[var(--gap-grid)]">
@@ -48,29 +38,12 @@ export default async function ClientOverviewPage({
         clientId={id}
         netWorth={d.kpi.netWorth}
         liquidPortfolio={d.kpi.liquidPortfolio}
-        mcSlot={
-          <Suspense fallback={<MonteCarloKpiSkeleton clientId={id} />}>
-            <MonteCarloKpiSlot clientId={id} firmId={firmId} scenarioId={scenarioId} />
-          </Suspense>
-        }
-        yearsToRetirement={d.kpi.yearsToRetirement}
-        earliestRetirementYear={earliestRetirementYear}
       />
 
       <div className="grid grid-cols-1 gap-[var(--gap-grid)] md:grid-cols-2">
-        <RunwayPanel
-          clientId={id}
-          gaugeSlot={
-            <Suspense fallback={<RunwayGaugeSkeleton />}>
-              <RunwayGaugeSlot clientId={id} firmId={firmId} scenarioId={scenarioId} />
-            </Suspense>
-          }
-          netWorthSeries={d.runway.netWorthSeries}
-        />
+        <PortfolioGrowthPanel clientId={id} projection={d.projection} />
         <AllocationPanel clientId={id} rollup={d.allocation} />
       </div>
-
-      <LifeEventsPanel clientId={id} events={d.lifeEvents} />
 
       <div className="grid grid-cols-1 gap-[var(--gap-grid)] md:grid-cols-2">
         <OpenItemsPreview

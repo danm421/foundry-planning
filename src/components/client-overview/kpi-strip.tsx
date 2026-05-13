@@ -1,13 +1,10 @@
-import type { ReactElement, ReactNode } from "react";
+import type { ReactElement } from "react";
 import KpiCard from "./kpi-card";
 
 interface Props {
   clientId: string;
   netWorth: number | null;
   liquidPortfolio: number | null;
-  mcSlot: ReactNode;
-  yearsToRetirement: number | null;
-  earliestRetirementYear?: number | null;
 }
 
 const todayIso = () =>
@@ -19,7 +16,7 @@ const todayIso = () =>
 
 export default function KpiStrip(p: Props): ReactElement {
   return (
-    <div className="grid grid-cols-1 gap-[var(--gap-grid)] sm:grid-cols-2 md:grid-cols-4">
+    <div className="grid grid-cols-1 gap-[var(--gap-grid)] sm:grid-cols-2">
       <KpiCard
         href={`/clients/${p.clientId}/assets/balance-sheet-report`}
         num="01"
@@ -40,18 +37,6 @@ export default function KpiStrip(p: Props): ReactElement {
         value={p.liquidPortfolio}
         valueFormat="currency"
         footnote="Excl. real estate, business"
-        delta={null}
-      />
-      {p.mcSlot}
-      <KpiCard
-        href={`/clients/${p.clientId}/cashflow/timeline`}
-        num="04"
-        categoryLabel="Horizon"
-        category="tax"
-        label="Years to retirement"
-        value={p.yearsToRetirement}
-        valueFormat="int"
-        footnote={p.earliestRetirementYear != null ? `${p.earliestRetirementYear}` : ""}
         delta={null}
       />
     </div>
