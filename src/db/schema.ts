@@ -2268,6 +2268,9 @@ export const firms = pgTable("firms", {
   purgedAt: timestamp("purged_at", { withTimezone: true }),
   dpaVersion: text("dpa_version"),
   aiImportsUsed: integer("ai_imports_used").notNull().default(0),
+  logoUrl: text("logo_url"),
+  faviconUrl: text("favicon_url"),
+  primaryColor: text("primary_color"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
