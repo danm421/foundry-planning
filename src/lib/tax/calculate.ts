@@ -7,7 +7,7 @@ import { calcNiit } from "./niit";
 import { calcFica, calcAdditionalMedicare } from "./fica";
 import { calcQbiDeduction } from "./qbi";
 import { calcTaxableSocialSecurity } from "./ssTaxability";
-import { calcStateTax } from "./state";
+import { computeStateIncomeTax } from "./state-income";
 
 export function calculateTaxYear(input: CalcInput): TaxResult {
   const p = input.taxParams;
@@ -139,8 +139,37 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
     rate: p.addlMedicareRate,
   });
 
-  // 13. State tax (flat × taxable income, matches existing behavior)
-  const stateTax = calcStateTax(taxableIncome, input.flatStateRate);
+  // 13. State tax — bracket engine if residenceState set, otherwise flat fallback.
+  //
+  // Compute contract: `ordinaryIncome` is the non-wage ordinary bucket
+  // (RMDs/IRA dists/non-qual divs/interest); `earnedIncome` is wages;
+  // `capitalGains` is total gains (LTCG + STCG). The local `ordinaryIncome`
+  // here has already had STCG folded in for federal bracketing — we strip
+  // that back out by passing `input.ordinaryIncome + interestIncome` so the
+  // state engine's GTI math doesn't double-count STCG inside both the OI
+  // bucket and the capital-gains bucket.
+  const stateResult = computeStateIncomeTax({
+    state: input.residenceState ?? null,
+    year: input.year,
+    filingStatus: input.filingStatus,
+    primaryAge: input.primaryAge ?? 0,
+    spouseAge: input.spouseAge,
+    federalIncome: {
+      agi: adjustedGrossIncome,
+      taxableIncome,
+      ordinaryIncome: input.ordinaryIncome + interestIncome,
+      dividends,
+      capitalGains: capitalGains + shortCapitalGains,
+      shortCapitalGains,
+      earnedIncome,
+      taxableSocialSecurity,
+      taxExemptIncome: input.taxExemptIncome ?? 0,
+    },
+    retirementBreakdown: input.retirementBreakdown ?? { db: 0, ira: 0, k401: 0, annuity: 0 },
+    preTaxContrib: input.aboveLineDeductions,
+    fallbackFlatRate: input.flatStateRate,
+  });
+  const stateTax = stateResult.stateTax;
 
   // 14. Roll-ups
   const regularFederalIncomeTax = regularTaxCalc; // v1: no AMT credit, no tax credits
@@ -191,6 +220,7 @@ export function calculateTaxYear(input: CalcInput): TaxResult {
       bracketsUsed: p,
       inflationFactor: input.inflationFactor,
     },
+    state: stateResult,
   };
 }
 

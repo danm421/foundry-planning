@@ -152,4 +152,7 @@ export interface TaxResult {
     bracketsUsed: TaxYearParameters;
     inflationFactor: number;
   };
+  /** State income-tax detail (bracket-mode engine). Always populated;
+   *  when residenceState is null, contains the fallback flat-rate result. */
+  state?: import("./state-income").StateIncomeTaxResult;
 }
