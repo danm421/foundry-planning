@@ -27,6 +27,7 @@ import { estateTransfersYearlyWidget } from "./estate-transfers-yearly";
 import { giftTaxWidget } from "./gift-tax";
 import { majorTransactionsWidget } from "./major-transactions";
 import { clientProfileWidget } from "./client-profile";
+import { incomeSourcesWidget } from "./income-sources";
 
 export const COMPARISON_WIDGETS: Partial<
   Record<ComparisonWidgetKindV4, ComparisonWidgetDefinition>
@@ -58,4 +59,5 @@ export const COMPARISON_WIDGETS: Partial<
   "gift-tax": giftTaxWidget,
   "major-transactions": majorTransactionsWidget,
   "client-profile": clientProfileWidget,
+  "income-sources": incomeSourcesWidget,
 };
