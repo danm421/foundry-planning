@@ -124,6 +124,15 @@ describe("uploadBrandingAsset", () => {
 });
 
 describe("removeBrandingAsset", () => {
+  it("rejects non-admin callers", async () => {
+    const { ForbiddenError } = await import("@/lib/authz");
+    mockRequireAdminOrOwner.mockRejectedValueOnce(new ForbiddenError("nope"));
+    await expect(removeBrandingAsset("logo")).rejects.toBeInstanceOf(ForbiddenError);
+    expect(mockSetLogo).not.toHaveBeenCalled();
+    expect(mockDel).not.toHaveBeenCalled();
+    expect(mockRecordAudit).not.toHaveBeenCalled();
+  });
+
   it("clears db column and deletes blob", async () => {
     mockGetBranding.mockResolvedValueOnce({
       logoUrl: "https://blob/old",
@@ -148,6 +157,14 @@ describe("removeBrandingAsset", () => {
 });
 
 describe("setPrimaryColorAction", () => {
+  it("rejects non-admin callers", async () => {
+    const { ForbiddenError } = await import("@/lib/authz");
+    mockRequireAdminOrOwner.mockRejectedValueOnce(new ForbiddenError("nope"));
+    await expect(setPrimaryColorAction("#0a2bff")).rejects.toBeInstanceOf(ForbiddenError);
+    expect(mockSetColor).not.toHaveBeenCalled();
+    expect(mockRecordAudit).not.toHaveBeenCalled();
+  });
+
   it("normalizes and writes valid hex", async () => {
     const result = await setPrimaryColorAction("#0A2BFF");
     expect(result).toEqual({ ok: true });

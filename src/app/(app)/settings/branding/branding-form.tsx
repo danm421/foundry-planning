@@ -138,10 +138,11 @@ function AssetCard({
 }
 
 function ColorCard({ initial }: { initial: string | null }) {
+  const [savedValue, setSavedValue] = useState(initial ?? "");
   const [value, setValue] = useState(initial ?? "");
   const [pending, startTransition] = useTransition();
   const [toast, setToast] = useState<string | null>(null);
-  const dirty = (initial ?? "") !== value;
+  const dirty = savedValue !== value;
   const swatch = /^#[0-9a-f]{6}$/i.test(value) ? value : null;
 
   function handleSave() {
@@ -152,6 +153,7 @@ function ColorCard({ initial }: { initial: string | null }) {
         setToast(result.error);
         return;
       }
+      setSavedValue(value);
       setToast("Saved");
     });
   }
