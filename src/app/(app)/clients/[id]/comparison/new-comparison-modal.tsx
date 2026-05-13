@@ -40,14 +40,22 @@ export function NewComparisonModal({
 
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
-    fetch("/api/firms/comparison-templates")
-      .then((r) => r.json())
-      .then((d) => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await fetch("/api/firms/comparison-templates");
+        const d = await r.json();
+        if (cancelled) return;
         setPresets(d.presets ?? []);
         setTemplates(d.templates ?? []);
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   if (!open) return null;
