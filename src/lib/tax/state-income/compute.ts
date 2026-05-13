@@ -84,12 +84,15 @@ export function computeStateIncomeTax(
     };
   }
 
-  // WA: gains-only short-circuit. WA has no ordinary income tax, only a
-  // long-term capital gains tax (7% first $1M, 9% above). Handled before the
-  // no-income-tax check so WA produces a non-zero result when LTCG exist.
+  // WA: gains-only tax. Short-circuit so we never apply ordinary-income brackets
+  // or wage-based subtractions — WA taxes long-term capital gains only.
   if (input.state === "WA") {
     const ltcg = Math.max(0, input.federalIncome.capitalGains - input.federalIncome.shortCapitalGains);
-    const tax = computeWaCapGainsTax(ltcg);
+    const waStateFs = mapFilingStatus(input.filingStatus);
+    const waAge = Math.max(input.primaryAge, input.spouseAge ?? 0);
+    const exclusion = getStdDeduction("WA", input.year, waStateFs, waAge);
+    const taxableLtcg = Math.max(0, ltcg - exclusion);
+    const tax = computeWaCapGainsTax(taxableLtcg);
     return {
       state: "WA",
       year: input.year,
@@ -99,17 +102,22 @@ export function computeStateIncomeTax(
       addbacks: EMPTY_ADDBACKS,
       subtractions: { ...EMPTY_SUBTRACTIONS },
       stateAGI: ltcg,
-      stdDeduction: 0,
+      stdDeduction: exclusion,
       personalExemptionDeduction: 0,
       exemptionCredits: 0,
-      stateTaxableIncome: ltcg,
+      stateTaxableIncome: taxableLtcg,
       filingStatusUsed: input.filingStatus,
-      stateFilingStatusUsed: input.filingStatus === "married_joint" ? "joint" : "single",
+      stateFilingStatusUsed: waStateFs,
       bracketsUsed: CAP_GAINS_RULES.WA!.gainsOnly!.brackets,
       preCreditTax: tax,
       specialRulesApplied: ["WA-gains-only"],
       stateTax: tax,
-      diag: { notes: ["WA gains-only tax: 7% first $1M, 9% above."] },
+      diag: {
+        notes: [
+          `WA standard exclusion: $${exclusion.toLocaleString()} applied to LTCG before brackets.`,
+          "WA gains-only tax: 7% first $1M, 9% above.",
+        ],
+      },
     };
   }
 
@@ -201,7 +209,7 @@ export function computeStateIncomeTax(
     socialSecurity: ssResult.amount,
     retirementIncome: retirementAmount,
     capitalGains: capGainsAdj,
-    preTaxContrib: 0,       // Section E
+    preTaxContrib: 0,       // Section E remaining: preTaxContrib
     other: 0,
     total: ssResult.amount + retirementAmount + capGainsAdj,
   };

@@ -197,7 +197,10 @@ describe("computeStateIncomeTax — cap-gains integration", () => {
     expect(r.subtractions.capitalGains).toBe(40_000);
   });
 
-  it("WA: gains-only, $500K LTCG → $35K", () => {
+  it("WA: gains-only with standard exclusion, $500K LTCG → $222K taxable → $15,540", () => {
+    // WA 2026 standard exclusion = $278,000 (from std-deductions.ts).
+    // $500K LTCG − $278K = $222K taxable × 7% = $15,540.
+    const WA_2026_EXCLUSION = 278_000;
     const r = computeStateIncomeTax({
       state: "WA", year: 2026, filingStatus: "married_joint", primaryAge: 60,
       federalIncome: {
@@ -208,7 +211,27 @@ describe("computeStateIncomeTax — cap-gains integration", () => {
       retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
       preTaxContrib: 0, fallbackFlatRate: 0,
     });
-    expect(r.stateTax).toBe(35_000);
+    expect(r.stateTax).toBeCloseTo(15_540, 2);
+    expect(r.startingIncome).toBe(500_000);
+    expect(r.stateAGI).toBe(500_000);
+    expect(r.stateTaxableIncome).toBe(500_000 - WA_2026_EXCLUSION);
+    expect(r.stdDeduction).toBe(WA_2026_EXCLUSION);
+    expect(r.specialRulesApplied).toContain("WA-gains-only");
+  });
+
+  it("WA: $200K LTCG (below the ~$278K exclusion) → $0 tax", () => {
+    const r = computeStateIncomeTax({
+      state: "WA", year: 2026, filingStatus: "married_joint", primaryAge: 60,
+      federalIncome: {
+        agi: 500_000, taxableIncome: 450_000, ordinaryIncome: 300_000,
+        earnedIncome: 300_000, dividends: 0, capitalGains: 200_000,
+        shortCapitalGains: 0, taxableSocialSecurity: 0, taxExemptIncome: 0,
+      },
+      retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
+      preTaxContrib: 0, fallbackFlatRate: 0,
+    });
+    expect(r.stateTax).toBe(0);
+    expect(r.stateTaxableIncome).toBe(0);
     expect(r.specialRulesApplied).toContain("WA-gains-only");
   });
 });

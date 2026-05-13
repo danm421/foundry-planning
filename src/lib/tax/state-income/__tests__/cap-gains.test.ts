@@ -31,6 +31,9 @@ describe("computeWaCapGainsTax", () => {
     expect(computeWaCapGainsTax(500_000)).toBe(35_000);
     expect(computeWaCapGainsTax(1_500_000)).toBe(70_000 + 45_000);
   });
+  it("returns 7% × $1M at the exact $1M boundary", () => {
+    expect(computeWaCapGainsTax(1_000_000)).toBe(70_000);
+  });
   it("returns 0 for $0 or negative", () => {
     expect(computeWaCapGainsTax(0)).toBe(0);
     expect(computeWaCapGainsTax(-50_000)).toBe(0);
