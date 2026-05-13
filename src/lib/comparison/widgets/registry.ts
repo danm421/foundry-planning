@@ -30,6 +30,7 @@ import { clientProfileWidget } from "./client-profile";
 import { incomeSourcesWidget } from "./income-sources";
 import { balanceSheetWidget } from "./balance-sheet";
 import { expenseDetailWidget } from "./expense-detail";
+import { assetAllocationWidget } from "./asset-allocation";
 
 export const COMPARISON_WIDGETS: Partial<
   Record<ComparisonWidgetKindV4, ComparisonWidgetDefinition>
@@ -64,4 +65,5 @@ export const COMPARISON_WIDGETS: Partial<
   "income-sources": incomeSourcesWidget,
   "balance-sheet": balanceSheetWidget,
   "expense-detail": expenseDetailWidget,
+  "asset-allocation": assetAllocationWidget,
 };
