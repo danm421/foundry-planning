@@ -37,6 +37,7 @@ const BASE_FEDERAL_INCOME = {
   earnedIncome: AGI,
   dividends: 0,
   capitalGains: 0,
+  shortCapitalGains: 0,
   taxableSocialSecurity: 0,
   taxExemptIncome: 0,
 };

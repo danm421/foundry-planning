@@ -9,6 +9,7 @@ const BASE_FEDERAL_INCOME: ComputeStateIncomeTaxInput["federalIncome"] = {
   ordinaryIncome: 100_000,
   dividends: 0,
   capitalGains: 0,
+  shortCapitalGains: 0,
   earnedIncome: 100_000,
   taxableSocialSecurity: 0,
   taxExemptIncome: 0,
@@ -33,6 +34,7 @@ describe("computeStateIncomeTax — no-income-tax states", () => {
           ordinaryIncome: 100_000,
           dividends: 10_000,
           capitalGains: 30_000,
+          shortCapitalGains: 0,
           earnedIncome: 0,
           taxableSocialSecurity: 20_000,
           taxExemptIncome: 0,
@@ -55,7 +57,7 @@ describe("computeStateIncomeTax — no-income-tax states", () => {
       primaryAge: 65,
       federalIncome: {
         agi: 200_000, taxableIncome: 175_000, ordinaryIncome: 100_000,
-        dividends: 0, capitalGains: 0, earnedIncome: 0,
+        dividends: 0, capitalGains: 0, shortCapitalGains: 0, earnedIncome: 0,
         taxableSocialSecurity: 0, taxExemptIncome: 0,
       },
       retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
@@ -73,7 +75,7 @@ describe("computeStateIncomeTax — income base", () => {
       state: "CO", year: 2026, filingStatus: "single", primaryAge: 45,
       federalIncome: {
         agi: 100_000, taxableIncome: 85_000, ordinaryIncome: 0,
-        earnedIncome: 100_000, dividends: 0, capitalGains: 0,
+        earnedIncome: 100_000, dividends: 0, capitalGains: 0, shortCapitalGains: 0,
         taxableSocialSecurity: 0, taxExemptIncome: 0,
       },
       retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
@@ -88,7 +90,7 @@ describe("computeStateIncomeTax — income base", () => {
       state: "CT", year: 2026, filingStatus: "single", primaryAge: 45,
       federalIncome: {
         agi: 100_000, taxableIncome: 85_000, ordinaryIncome: 0,
-        earnedIncome: 95_000, dividends: 0, capitalGains: 0,
+        earnedIncome: 95_000, dividends: 0, capitalGains: 0, shortCapitalGains: 0,
         taxableSocialSecurity: 0, taxExemptIncome: 5_000,
       },
       retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
@@ -105,7 +107,7 @@ describe("computeStateIncomeTax — SS handling", () => {
       state: "CA", year: 2026, filingStatus: "married_joint", primaryAge: 70,
       federalIncome: {
         agi: 80_000, taxableIncome: 70_000, ordinaryIncome: 60_000,
-        earnedIncome: 0, dividends: 0, capitalGains: 0,
+        earnedIncome: 0, dividends: 0, capitalGains: 0, shortCapitalGains: 0,
         taxableSocialSecurity: 20_000, taxExemptIncome: 0,
       },
       retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
@@ -130,6 +132,7 @@ describe("computeStateIncomeTax — retirement integration", () => {
         earnedIncome: 0,
         dividends: 0,
         capitalGains: 0,
+        shortCapitalGains: 0,
         taxableSocialSecurity: ssAmount,
         taxExemptIncome: 0,
       },
@@ -165,6 +168,7 @@ describe("computeStateIncomeTax — retirement integration", () => {
         earnedIncome: 0,
         dividends: 0,
         capitalGains: 0,
+        shortCapitalGains: 0,
         taxableSocialSecurity: 10_000,
         taxExemptIncome: 0,
       },
@@ -175,6 +179,37 @@ describe("computeStateIncomeTax — retirement integration", () => {
     expect(r.subtractions.socialSecurity).toBe(10_000);
     expect(r.subtractions.retirementIncome).toBe(30_000);
     expect(r.subtractions.total).toBe(40_000);
+  });
+});
+
+describe("computeStateIncomeTax — cap-gains integration", () => {
+  it("AR subtracts 50% of LTCG", () => {
+    const r = computeStateIncomeTax({
+      state: "AR", year: 2026, filingStatus: "single", primaryAge: 60,
+      federalIncome: {
+        agi: 200_000, taxableIncome: 180_000, ordinaryIncome: 100_000,
+        earnedIncome: 100_000, dividends: 0, capitalGains: 80_000,
+        shortCapitalGains: 0, taxableSocialSecurity: 0, taxExemptIncome: 0,
+      },
+      retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
+      preTaxContrib: 0, fallbackFlatRate: 0,
+    });
+    expect(r.subtractions.capitalGains).toBe(40_000);
+  });
+
+  it("WA: gains-only, $500K LTCG → $35K", () => {
+    const r = computeStateIncomeTax({
+      state: "WA", year: 2026, filingStatus: "married_joint", primaryAge: 60,
+      federalIncome: {
+        agi: 1_000_000, taxableIncome: 900_000, ordinaryIncome: 500_000,
+        earnedIncome: 500_000, dividends: 0, capitalGains: 500_000,
+        shortCapitalGains: 0, taxableSocialSecurity: 0, taxExemptIncome: 0,
+      },
+      retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
+      preTaxContrib: 0, fallbackFlatRate: 0,
+    });
+    expect(r.stateTax).toBe(35_000);
+    expect(r.specialRulesApplied).toContain("WA-gains-only");
   });
 });
 

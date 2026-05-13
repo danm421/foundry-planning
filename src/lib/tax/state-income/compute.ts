@@ -14,6 +14,8 @@ import { getSsRule } from "./data/ss-rules";
 import { computeSsSubtraction } from "./ss-subtraction";
 import { getRetirementRule } from "./data/retirement-rules";
 import { computeRetirementSubtraction } from "./retirement-subtraction";
+import { computeCapGainsAdjustment, computeWaCapGainsTax } from "./cap-gains";
+import { CAP_GAINS_RULES } from "./data/cap-gains-rules";
 
 export interface FederalIncomeForState {
   agi: number;
@@ -21,6 +23,8 @@ export interface FederalIncomeForState {
   ordinaryIncome: number;
   dividends: number;
   capitalGains: number;
+  /** Short-term portion of `capitalGains`. LTCG = capitalGains − shortCapitalGains. */
+  shortCapitalGains: number;
   earnedIncome: number;
   taxableSocialSecurity: number;
   taxExemptIncome: number;
@@ -77,6 +81,35 @@ export function computeStateIncomeTax(
       specialRulesApplied: [],
       stateTax,
       diag: { notes: ["No residence state set; using flat fallback rate."] },
+    };
+  }
+
+  // WA: gains-only short-circuit. WA has no ordinary income tax, only a
+  // long-term capital gains tax (7% first $1M, 9% above). Handled before the
+  // no-income-tax check so WA produces a non-zero result when LTCG exist.
+  if (input.state === "WA") {
+    const ltcg = Math.max(0, input.federalIncome.capitalGains - input.federalIncome.shortCapitalGains);
+    const tax = computeWaCapGainsTax(ltcg);
+    return {
+      state: "WA",
+      year: input.year,
+      hasIncomeTax: true,
+      incomeBase: "federal-agi",
+      startingIncome: ltcg,
+      addbacks: EMPTY_ADDBACKS,
+      subtractions: { ...EMPTY_SUBTRACTIONS },
+      stateAGI: ltcg,
+      stdDeduction: 0,
+      personalExemptionDeduction: 0,
+      exemptionCredits: 0,
+      stateTaxableIncome: ltcg,
+      filingStatusUsed: input.filingStatus,
+      stateFilingStatusUsed: input.filingStatus === "married_joint" ? "joint" : "single",
+      bracketsUsed: CAP_GAINS_RULES.WA!.gainsOnly!.brackets,
+      preCreditTax: tax,
+      specialRulesApplied: ["WA-gains-only"],
+      stateTax: tax,
+      diag: { notes: ["WA gains-only tax: 7% first $1M, 9% above."] },
     };
   }
 
@@ -158,13 +191,19 @@ export function computeStateIncomeTax(
     if (combined > combinedCap) retirementAmount = Math.max(0, combinedCap - ssResult.amount);
   }
 
+  // Section E: LTCG carve-out (AR/MT/ND/WI). WA handled above in short-circuit.
+  const capGainsAdj = computeCapGainsAdjustment(input.state, {
+    ltcg: input.federalIncome.capitalGains - input.federalIncome.shortCapitalGains,
+    stcg: input.federalIncome.shortCapitalGains,
+  });
+
   const subtractions = {
     socialSecurity: ssResult.amount,
     retirementIncome: retirementAmount,
-    capitalGains: 0,        // Section E
+    capitalGains: capGainsAdj,
     preTaxContrib: 0,       // Section E
     other: 0,
-    total: ssResult.amount + retirementAmount,
+    total: ssResult.amount + retirementAmount + capGainsAdj,
   };
 
   // Easy path: lookup brackets, std deduction, exemption.
