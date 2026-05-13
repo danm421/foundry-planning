@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import { textWidget } from "../text";
+import { IDLE_MC_RUN } from "../types";
 import type { ComparisonPlan } from "../../build-comparison-plans";
 
 const noPlans: ComparisonPlan[] = [];
@@ -11,6 +12,7 @@ const baseCtx = {
   clientId: "c",
   plans: noPlans,
   mc: null,
+  mcRun: IDLE_MC_RUN,
   yearRange: null,
 };
 

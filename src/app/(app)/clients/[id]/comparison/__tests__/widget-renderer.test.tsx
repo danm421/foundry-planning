@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { WidgetRenderer } from "../widget-renderer";
+import { IDLE_MC_RUN } from "@/lib/comparison/widgets/types";
 import type { ComparisonLayoutV5 } from "@/lib/comparison/layout-schema";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 
@@ -62,7 +63,7 @@ describe("WidgetRenderer (v5)", () => {
         layout={layout}
         clientId="c"
         plans={[plan("base"), plan("sc-1")]}
-        mc={null}
+        mc={null} mcRun={IDLE_MC_RUN}
       />,
     );
     expect(screen.getByText(/portfolio \(base\)/i)).toBeInTheDocument();
@@ -89,7 +90,7 @@ describe("WidgetRenderer (v5)", () => {
         layout={layout}
         clientId="c"
         plans={[plan("base"), plan("sc-1")]}
-        mc={null}
+        mc={null} mcRun={IDLE_MC_RUN}
       />,
     );
     expect(lastCtx.portfolio.planIds).toEqual(["sc-1", "base"]);
@@ -116,7 +117,7 @@ describe("WidgetRenderer (v5)", () => {
         },
       ],
     };
-    render(<WidgetRenderer layout={layout} clientId="c" plans={[plan("base")]} mc={null} />);
+    render(<WidgetRenderer layout={layout} clientId="c" plans={[plan("base")]} mc={null} mcRun={IDLE_MC_RUN} />);
     expect(lastCtx.portfolio.yearRange).toEqual({ start: 2030, end: 2055 });
   });
 
@@ -134,14 +135,14 @@ describe("WidgetRenderer (v5)", () => {
         },
       ],
     };
-    render(<WidgetRenderer layout={layout} clientId="c" plans={[]} mc={null} />);
+    render(<WidgetRenderer layout={layout} clientId="c" plans={[]} mc={null} mcRun={IDLE_MC_RUN} />);
     expect(screen.getByText("text ()")).toBeInTheDocument();
   });
 
   it("renders empty-state when layout has no groups", () => {
     const layout: ComparisonLayoutV5 = { version: 5, title: "T", groups: [] };
     const { container } = render(
-      <WidgetRenderer layout={layout} clientId="c" plans={[]} mc={null} />,
+      <WidgetRenderer layout={layout} clientId="c" plans={[]} mc={null} mcRun={IDLE_MC_RUN} />,
     );
     expect(container.textContent).toContain("No widgets");
   });
@@ -165,7 +166,7 @@ describe("WidgetRenderer (v5)", () => {
         },
       ],
     };
-    render(<WidgetRenderer layout={layout} clientId="c" plans={[]} mc={null} />);
+    render(<WidgetRenderer layout={layout} clientId="c" plans={[]} mc={null} mcRun={IDLE_MC_RUN} />);
     expect(screen.getByText(/Unknown widget: made-up-kind/i)).toBeInTheDocument();
   });
 
@@ -185,7 +186,7 @@ describe("WidgetRenderer (v5)", () => {
       ],
     };
     const { container } = render(
-      <WidgetRenderer layout={layout} clientId="c" plans={[plan("base")]} mc={null} />,
+      <WidgetRenderer layout={layout} clientId="c" plans={[plan("base")]} mc={null} mcRun={IDLE_MC_RUN} />,
     );
     // Only one cell rendered — the null cell is skipped
     expect(container.querySelectorAll("[data-render-cell]")).toHaveLength(1);
@@ -206,7 +207,7 @@ describe("WidgetRenderer (v5)", () => {
         },
       ],
     };
-    render(<WidgetRenderer layout={layout} clientId="c" plans={[plan("base")]} mc={null} />);
+    render(<WidgetRenderer layout={layout} clientId="c" plans={[plan("base")]} mc={null} mcRun={IDLE_MC_RUN} />);
     expect(screen.getByText("Retirement Summary")).toBeInTheDocument();
   });
 
@@ -225,7 +226,7 @@ describe("WidgetRenderer (v5)", () => {
       ],
     };
     const { container } = render(
-      <WidgetRenderer layout={layout} clientId="c" plans={[plan("base")]} mc={null} />,
+      <WidgetRenderer layout={layout} clientId="c" plans={[plan("base")]} mc={null} mcRun={IDLE_MC_RUN} />,
     );
     expect(container.querySelector("h2")).toBeNull();
   });

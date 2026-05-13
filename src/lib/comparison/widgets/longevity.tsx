@@ -1,6 +1,7 @@
 import { LongevityComparisonSection } from "@/components/comparison/longevity-comparison-section";
 import { LongevityTableList } from "@/components/comparison/tables/longevity-table";
 import { ViewModeSchema, defaultViewMode, getViewMode, renderViewModeConfig, ViewModeFrame, type ViewModeConfig } from "./view-mode";
+import { McPlaceholder } from "./mc-placeholder";
 import type { ComparisonWidgetDefinition } from "./types";
 
 export const longevityWidget: ComparisonWidgetDefinition<ViewModeConfig> = {
@@ -12,14 +13,9 @@ export const longevityWidget: ComparisonWidgetDefinition<ViewModeConfig> = {
   configSchema: ViewModeSchema,
   defaultConfig: defaultViewMode,
   renderConfig: renderViewModeConfig,
-  render: ({ mc, config }) => {
+  render: ({ mc, mcRun, config }) => {
     if (!mc) {
-      return (
-        <section className="px-6 py-8">
-          <h2 className="mb-4 text-lg font-semibold text-slate-100">Longevity</h2>
-          <div className="h-72 animate-pulse rounded border border-slate-800 bg-slate-900" />
-        </section>
-      );
+      return <McPlaceholder title="Longevity" mcRun={mcRun} />;
     }
     return (
       <ViewModeFrame

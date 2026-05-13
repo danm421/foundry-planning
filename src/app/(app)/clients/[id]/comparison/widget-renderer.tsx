@@ -2,7 +2,7 @@
 
 import type { ComparisonLayoutV5 } from "@/lib/comparison/layout-schema";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
-import type { McSharedResult } from "@/lib/comparison/widgets/types";
+import type { McRunView, McSharedResult } from "@/lib/comparison/widgets/types";
 import { COMPARISON_WIDGETS } from "@/lib/comparison/widgets/registry";
 
 const SPAN_TO_CLASS: Record<1 | 2 | 3 | 4 | 5, string> = {
@@ -18,10 +18,11 @@ interface Props {
   clientId: string;
   plans: ComparisonPlan[];
   mc: McSharedResult | null;
+  mcRun: McRunView;
   onExpandTextCell?: (cellId: string, mode: "edit" | "view") => void;
 }
 
-export function WidgetRenderer({ layout, clientId, plans, mc, onExpandTextCell }: Props) {
+export function WidgetRenderer({ layout, clientId, plans, mc, mcRun, onExpandTextCell }: Props) {
   if (layout.groups.length === 0) {
     return <div className="px-6 py-16 text-center text-slate-400">No widgets yet.</div>;
   }
@@ -65,6 +66,7 @@ export function WidgetRenderer({ layout, clientId, plans, mc, onExpandTextCell }
                     clientId,
                     plans: widgetPlans,
                     mc,
+                    mcRun,
                     config: cell.widget.config,
                     yearRange: cell.widget.yearRange ?? null,
                     editing: false,

@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { successGaugeWidget } from "../success-gauge";
+import { IDLE_MC_RUN } from "../types";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 
 const plan = { id: "base", label: "Base" } as ComparisonPlan;
@@ -21,6 +22,7 @@ describe("successGaugeWidget", () => {
             planStartYear: 2026,
             clientBirthYear: 1965,
           },
+          mcRun: IDLE_MC_RUN,
           yearRange: null,
           editing: false,
         })}
@@ -38,6 +40,7 @@ describe("successGaugeWidget", () => {
           clientId: "c",
           plans: [plan],
           mc: null,
+          mcRun: IDLE_MC_RUN,
           yearRange: null,
           editing: false,
         })}

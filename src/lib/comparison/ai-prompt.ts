@@ -1,5 +1,6 @@
 import type { ResolvedSource } from "./ai-source-resolve";
 import type { AiTone, AiLength } from "./layout-schema";
+import type { McAiPlanSummary } from "./ai-mc-summary";
 
 const TONE_INSTRUCTIONS: Record<AiTone, string> = {
   concise: "Lead with the single most important point. Trim every word you can.",
@@ -62,6 +63,9 @@ export interface BuildPromptInput {
   length: AiLength;
   customInstructions: string;
   household: HouseholdContext;
+  /** Per-plan Monte Carlo summaries, included when any source widget shows
+   *  MC output (monte-carlo / longevity / success-gauge). Omitted otherwise. */
+  mcByPlan?: McAiPlanSummary[] | null;
 }
 
 function formatFilingStatus(s: HouseholdContext["filingStatus"]): string {
@@ -108,8 +112,31 @@ function formatHouseholdContextBlock(h: HouseholdContext): string {
   return lines.join("\n");
 }
 
+function formatMcBlock(mcByPlan: McAiPlanSummary[]): string {
+  const blocks: string[] = [];
+  for (const p of mcByPlan) {
+    const successPct = (p.successRate * 100).toFixed(1);
+    const ending = p.ending;
+    const yearLines = p.byYear.map(
+      (y) =>
+        `    ${y.year} (age ${y.age}): 5th ${formatMoney(y.p5)} · median ${formatMoney(y.p50)} · 95th ${formatMoney(y.p95)}`,
+    );
+    blocks.push(
+      [
+        `Plan: ${p.label} (id=${p.planId})`,
+        `  Success rate: ${successPct}% of trials end above the asset floor.`,
+        `  Ending balance distribution: 5th ${formatMoney(ending.p5)} · median ${formatMoney(ending.p50)} · 95th ${formatMoney(ending.p95)} · mean ${formatMoney(ending.mean)} · worst ${formatMoney(ending.min)}.`,
+        ...(yearLines.length > 0
+          ? ["  Liquid-portfolio percentile bands by year:", ...yearLines]
+          : []),
+      ].join("\n"),
+    );
+  }
+  return blocks.join("\n\n");
+}
+
 export function buildComparisonAiPrompt(input: BuildPromptInput): { system: string; user: string } {
-  const { sources, plans, tone, length, customInstructions, household } = input;
+  const { sources, plans, tone, length, customInstructions, household, mcByPlan } = input;
   const householdName = householdDisplayName(household);
   const householdBlock = formatHouseholdContextBlock(household);
 
@@ -180,7 +207,9 @@ export function buildComparisonAiPrompt(input: BuildPromptInput): { system: stri
     planBlocks.push([`Plan: ${p.label} (id=${p.planId})`, ...rows].join("\n"));
   }
 
-  const user = [
+  const mcBlock = mcByPlan && mcByPlan.length > 0 ? formatMcBlock(mcByPlan) : null;
+
+  const userParts = [
     `Household: ${householdName}.`,
     "",
     "About the household:",
@@ -191,9 +220,16 @@ export function buildComparisonAiPrompt(input: BuildPromptInput): { system: stri
     "",
     "Yearly projection data (already rounded — use these formatted figures verbatim, do not re-precision them):",
     planBlocks.length > 0 ? planBlocks.join("\n\n") : "(no plans referenced)",
-    "",
-    "Write the commentary now.",
-  ].join("\n");
+  ];
+  if (mcBlock) {
+    userParts.push(
+      "",
+      "Monte Carlo simulation results (1,000 trials per plan; the floor is the minimum liquid-asset threshold a trial must stay above to count as success):",
+      mcBlock,
+    );
+  }
+  userParts.push("", "Write the commentary now.");
+  const user = userParts.join("\n");
 
   return { system, user };
 }

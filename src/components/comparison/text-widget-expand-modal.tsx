@@ -11,6 +11,7 @@ import type {
 } from "@/lib/comparison/layout-schema";
 import { resolveAiSources } from "@/lib/comparison/ai-source-resolve";
 import { estimateAiTokens, formatTokenEstimate } from "@/lib/comparison/ai-tokens";
+import type { McAiPlanSummary } from "@/lib/comparison/ai-mc-summary";
 import { RichTextEditor } from "./rich-text-editor";
 import { AiSourcePicker } from "./ai-source-picker";
 
@@ -25,6 +26,10 @@ interface Props {
   /** Used by the live token estimate when a source widget has no
    *  explicit yearRange. Falls back to 45 (typical plan span). */
   availableYearSpan?: number;
+  /** Already-computed Monte Carlo summaries from useSharedMcRun, keyed by
+   *  plan id. Passed through to the AI route so monte-carlo / longevity
+   *  widget references include real numbers (success rate, ending bands). */
+  mcByPlan?: McAiPlanSummary[] | null;
   onClose: () => void;
   onSave: (next: { markdown: string; ai: TextWidgetAiConfig | undefined }) => void;
 }
@@ -37,13 +42,15 @@ const DEFAULT_AI: TextWidgetAiConfig = {
 };
 
 export function TextWidgetExpandModal(props: Props) {
-  const { open, mode, clientId, layout, cellId, initialMarkdown, initialAi, availableYearSpan, onClose, onSave } = props;
+  const { open, mode, clientId, layout, cellId, initialMarkdown, initialAi, availableYearSpan, mcByPlan, onClose, onSave } = props;
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [ai, setAi] = useState<TextWidgetAiConfig>(initialAi ?? DEFAULT_AI);
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const aiRef = useRef(ai);
   aiRef.current = ai;
+  const mcByPlanRef = useRef<McAiPlanSummary[] | null | undefined>(mcByPlan);
+  mcByPlanRef.current = mcByPlan;
 
   useEffect(() => {
     if (!open) return;
@@ -74,6 +81,12 @@ export function TextWidgetExpandModal(props: Props) {
         setGenerateError("Pick at least one group or widget as a source.");
         return;
       }
+      const sourceKinds = new Set(resolved.map((r) => r.widgetKind));
+      const includeMc =
+        sourceKinds.has("monte-carlo") ||
+        sourceKinds.has("longevity") ||
+        sourceKinds.has("success-gauge");
+      const mcPayload = includeMc ? mcByPlanRef.current ?? null : null;
       const res = await fetch(`/api/clients/${clientId}/comparison/ai-analysis`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,6 +95,7 @@ export function TextWidgetExpandModal(props: Props) {
           tone: aiRef.current.tone,
           length: aiRef.current.length,
           customInstructions: aiRef.current.customInstructions,
+          mcByPlan: mcPayload,
           force,
         }),
       });

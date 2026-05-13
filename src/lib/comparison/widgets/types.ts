@@ -18,11 +18,34 @@ export interface McSharedResult {
   clientBirthYear: number | undefined;
 }
 
+/** Lightweight view of useSharedMcRun for widget renders. Widgets that
+ *  `needsMc` use this to render explicit loading/error states instead of
+ *  the legacy "null mc" empty skeleton. */
+export interface McRunView {
+  status: "idle" | "loading" | "ready" | "error";
+  phase?: "fetching" | "running";
+  done?: number;
+  total?: number;
+  error?: string;
+  retry: () => void;
+}
+
+/** No-op mcRun for contexts that don't drive a real MC fetch (layout-mode
+ *  thumbnails, isolated tests). Widgets that need MC will render their
+ *  idle placeholder; nothing will attempt to retry. */
+export const IDLE_MC_RUN: McRunView = {
+  status: "idle",
+  retry: () => {},
+};
+
 export interface ComparisonWidgetContext {
   instanceId: string;
   clientId: string;
   plans: ComparisonPlan[];
   mc: McSharedResult | null;
+  /** Status + retry for the shared MC run. Always present even for widgets
+   *  that don't need MC — they just ignore it. */
+  mcRun: McRunView;
   config?: unknown;
   /** Page-level year-range clip. `null` = show all years. Widgets that show
    *  per-year data should filter years by start/end inclusive. */

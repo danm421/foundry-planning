@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   createReturnEngine,
   runMonteCarlo,
@@ -26,9 +26,16 @@ export interface SharedMcState {
   error?: string;
 }
 
-export function useSharedMcRun({ clientId, plans, enabled }: Args): SharedMcState {
+export interface SharedMcController extends SharedMcState {
+  retry: () => void;
+}
+
+export function useSharedMcRun({ clientId, plans, enabled }: Args): SharedMcController {
   const [state, setState] = useState<SharedMcState>({ status: "idle" });
+  const [retryNonce, setRetryNonce] = useState(0);
   const plansKey = plans.map((p) => p.id).join(",");
+
+  const retry = useCallback(() => setRetryNonce((n) => n + 1), []);
 
   useEffect(() => {
     if (!enabled) {
@@ -123,7 +130,7 @@ export function useSharedMcRun({ clientId, plans, enabled }: Args): SharedMcStat
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, plansKey, enabled]);
+  }, [clientId, plansKey, enabled, retryNonce]);
 
-  return state;
+  return { ...state, retry };
 }

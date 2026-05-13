@@ -35,11 +35,39 @@ const ResolvedSourceSchema = z.object({
   yearRange: YearRangeSchema.optional(),
 });
 
+const McAiPlanSummarySchema = z.object({
+  planId: z.string(),
+  label: z.string(),
+  successRate: z.number(),
+  ending: z.object({
+    p5: z.number(),
+    p20: z.number(),
+    p50: z.number(),
+    p80: z.number(),
+    p95: z.number(),
+    min: z.number(),
+    max: z.number(),
+    mean: z.number(),
+  }),
+  byYear: z
+    .array(
+      z.object({
+        year: z.number(),
+        age: z.number(),
+        p5: z.number(),
+        p50: z.number(),
+        p95: z.number(),
+      }),
+    )
+    .max(60),
+});
+
 const Body = z.object({
   resolvedSources: z.array(ResolvedSourceSchema).min(1).max(40),
   tone: AiToneSchema,
   length: AiLengthSchema,
   customInstructions: z.string().max(2000).default(""),
+  mcByPlan: z.array(McAiPlanSummarySchema).max(20).nullish(),
   force: z.boolean().default(false),
 });
 
@@ -152,6 +180,7 @@ export async function POST(
       length: body.length,
       customInstructions: body.customInstructions,
       household,
+      mcByPlan: body.mcByPlan ?? null,
     });
 
     const hash = hashAiRequest({ system, user });

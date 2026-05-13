@@ -236,6 +236,69 @@ describe("buildComparisonAiPrompt", () => {
   });
 });
 
+describe("buildComparisonAiPrompt mcByPlan", () => {
+  const mcByPlan = [
+    {
+      planId: "base",
+      label: "Baseline",
+      successRate: 0.823,
+      ending: {
+        p5: 250_000,
+        p20: 800_000,
+        p50: 2_100_000,
+        p80: 4_500_000,
+        p95: 7_800_000,
+        min: 0,
+        max: 12_300_000,
+        mean: 2_900_000,
+      },
+      byYear: [
+        { year: 2026, age: 65, p5: 900_000, p50: 1_000_000, p95: 1_100_000 },
+        { year: 2050, age: 89, p5: 200_000, p50: 1_800_000, p95: 5_400_000 },
+      ],
+    },
+  ];
+
+  it("includes a Monte Carlo block with success rate and ending percentiles when mcByPlan is provided", () => {
+    const { user } = buildComparisonAiPrompt({
+      sources,
+      plans,
+      tone: "concise",
+      length: "short",
+      customInstructions: "",
+      household,
+      mcByPlan,
+    });
+    expect(user).toMatch(/Monte Carlo simulation results/);
+    expect(user).toMatch(/Success rate: 82\.3%/);
+    expect(user).toMatch(/median \$2\.1M/);
+    expect(user).toMatch(/worst \$0/);
+  });
+
+  it("omits the Monte Carlo block when mcByPlan is null or empty", () => {
+    const a = buildComparisonAiPrompt({
+      sources,
+      plans,
+      tone: "concise",
+      length: "short",
+      customInstructions: "",
+      household,
+      mcByPlan: null,
+    });
+    const b = buildComparisonAiPrompt({
+      sources,
+      plans,
+      tone: "concise",
+      length: "short",
+      customInstructions: "",
+      household,
+      mcByPlan: [],
+    });
+    expect(a.user).not.toMatch(/Monte Carlo simulation results/);
+    expect(b.user).not.toMatch(/Monte Carlo simulation results/);
+  });
+});
+
 describe("formatMoney", () => {
   it("formats millions with one decimal and an M suffix", () => {
     expect(formatMoney(3_664_560.69)).toBe("$3.7M");

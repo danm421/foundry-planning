@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { kpiWidget } from "../kpi";
+import { IDLE_MC_RUN } from "../types";
 import type { ComparisonPlan } from "../../build-comparison-plans";
 import type { ComparisonWidgetContext } from "../types";
 
@@ -44,6 +45,7 @@ const mockCtx = (
   clientId: "client-1",
   plans,
   mc,
+  mcRun: IDLE_MC_RUN,
   config,
   yearRange: null,
   editing: false,

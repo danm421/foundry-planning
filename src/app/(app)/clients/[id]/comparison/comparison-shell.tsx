@@ -16,6 +16,7 @@ import type {
   WidgetInstance,
 } from "@/lib/comparison/layout-schema";
 import { COMPARISON_WIDGETS } from "@/lib/comparison/widgets/registry";
+import { buildMcAiSummaries } from "@/lib/comparison/ai-mc-summary";
 import { useLayout } from "./use-layout";
 import { useSharedMcRun } from "./use-shared-mc-run";
 import { usePreviewPlans } from "./use-preview-plans";
@@ -92,7 +93,7 @@ export function ComparisonShell({
   const preview = usePreviewPlans({
     clientId,
     planIds,
-    enabled: mode === "preview" || editingCellId !== null,
+    enabled: mode === "preview" || editingCellId !== null || expanded !== null,
   });
 
   const previewPlans = useMemo(
@@ -100,14 +101,30 @@ export function ComparisonShell({
     [preview],
   );
 
-  const mcEnabled =
-    mode === "preview" &&
-    api.layout.groups.some((g) =>
-      g.cells.some((c) => c.widget && COMPARISON_WIDGETS[c.widget.kind].needsMc),
-    );
+  const layoutNeedsMc = api.layout.groups.some((g) =>
+    g.cells.some((c) => c.widget && COMPARISON_WIDGETS[c.widget.kind].needsMc),
+  );
+  // Run MC in preview mode for chart rendering, and also whenever the
+  // AI text modal is open so Generate can include MC numbers in the prompt.
+  const mcEnabled = (mode === "preview" || expanded !== null) && layoutNeedsMc;
 
   const mcState = useSharedMcRun({ clientId, plans: previewPlans, enabled: mcEnabled });
   const mc = mcState.status === "ready" ? mcState.result ?? null : null;
+  const mcRun = useMemo(
+    () => ({
+      status: mcState.status,
+      phase: mcState.phase,
+      done: mcState.done,
+      total: mcState.total,
+      error: mcState.error,
+      retry: mcState.retry,
+    }),
+    [mcState.status, mcState.phase, mcState.done, mcState.total, mcState.error, mcState.retry],
+  );
+  const mcByPlan = useMemo(
+    () => buildMcAiSummaries(previewPlans, mc),
+    [previewPlans, mc],
+  );
 
   const availableYearRange = useMemo(() => {
     const years = previewPlans.flatMap((p) => p.result.years.map((y) => y.year));
@@ -335,6 +352,7 @@ export function ComparisonShell({
               clientId={clientId}
               plans={previewPlans}
               mc={mc}
+              mcRun={mcRun}
               onExpandTextCell={onExpandTextCell}
             />
           )}
@@ -386,6 +404,7 @@ export function ComparisonShell({
             initialMarkdown={cfg?.markdown ?? ""}
             initialAi={cfg?.ai}
             availableYearSpan={availableYearRange.max - availableYearRange.min + 1}
+            mcByPlan={mcByPlan}
             onClose={() => setExpanded(null)}
             onSave={({ markdown, ai }) => {
               api.updateTextMarkdown(expanded.cellId, markdown);

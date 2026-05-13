@@ -5,6 +5,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { CellSpan, CellV5 } from "@/lib/comparison/layout-schema";
 import { COMPARISON_WIDGETS } from "@/lib/comparison/widgets/registry";
+import { IDLE_MC_RUN } from "@/lib/comparison/widgets/types";
 
 export interface ScenarioLookup {
   id: string;
@@ -207,6 +208,7 @@ export function CanvasCell({
               clientId: "",
               plans: [],
               mc: null,
+              mcRun: IDLE_MC_RUN,
               config: widget.config,
               yearRange: widget.yearRange ?? null,
               editing: true,

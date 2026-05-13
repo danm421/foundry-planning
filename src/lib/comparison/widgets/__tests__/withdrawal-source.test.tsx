@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { withdrawalSourceWidget } from "../withdrawal-source";
+import { IDLE_MC_RUN } from "../types";
 import type { ComparisonPlan } from "../../build-comparison-plans";
 
 vi.mock("@/components/comparison/withdrawal-source-comparison-section", () => ({
@@ -13,6 +14,7 @@ const baseCtx = {
   clientId: "c",
   plans: [] as ComparisonPlan[],
   mc: null,
+  mcRun: IDLE_MC_RUN,
   config: undefined,
   yearRange: null,
   editing: false,
