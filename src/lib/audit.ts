@@ -165,7 +165,10 @@ export type AuditAction =
   // Firm-level lifecycle
   | "firm.name_changed"
   | "firm.archived"
-  | "firm.founder_initialized";
+  | "firm.founder_initialized"
+  | "firm.branding_logo_changed"
+  | "firm.branding_favicon_changed"
+  | "firm.branding_color_changed";
 
 type Args = {
   action: AuditAction;
