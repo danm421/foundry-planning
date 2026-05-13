@@ -25,6 +25,7 @@ import { successGaugeWidget } from "./success-gauge";
 import { estateEndBeneficiariesWidget } from "./estate-end-beneficiaries";
 import { estateTransfersYearlyWidget } from "./estate-transfers-yearly";
 import { giftTaxWidget } from "./gift-tax";
+import { majorTransactionsWidget } from "./major-transactions";
 
 export const COMPARISON_WIDGETS: Partial<
   Record<ComparisonWidgetKindV4, ComparisonWidgetDefinition>
@@ -54,4 +55,5 @@ export const COMPARISON_WIDGETS: Partial<
   "estate-end-beneficiaries": estateEndBeneficiariesWidget,
   "estate-transfers-yearly": estateTransfersYearlyWidget,
   "gift-tax": giftTaxWidget,
+  "major-transactions": majorTransactionsWidget,
 };
