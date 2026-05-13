@@ -11,6 +11,7 @@ interface Props {
 const TABS: { label: string; href: string; roles: ReadonlyArray<string> }[] = [
   { label: "Team", href: "/settings/team", roles: ["org:owner", "org:admin", "org:member"] },
   { label: "Firm", href: "/settings/firm", roles: ["org:owner", "org:admin"] },
+  { label: "Branding", href: "/settings/branding", roles: ["org:owner", "org:admin"] },
   { label: "Billing", href: "/settings/billing", roles: ["org:owner"] },
 ];
 
