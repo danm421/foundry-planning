@@ -157,7 +157,88 @@ function emitBrackets(year: 2025 | 2026) {
   }
 }
 
+interface StdDedRow {
+  Code: string; Year: number;
+  Single: number; Joint: number;
+  "Add'l Age 65+ (Single)": number;
+  "Add'l Age 65+ (Joint, per filer)": number;
+  "Phase-out / Notes"?: string;
+}
+function emitStdDeductions() {
+  const rows = readSheet<StdDedRow>("Standard_Deductions");
+  const byYearState: Record<number, Record<string, StdDedRow>> = {};
+  for (const r of rows) {
+    if (!byYearState[r.Year]) byYearState[r.Year] = {};
+    byYearState[r.Year][r.Code] = r;
+  }
+  const lines = [
+    `// src/lib/tax/state-income/data/std-deductions.ts`,
+    `// AUTO-GENERATED. Source: Standard_Deductions sheet.`,
+    `import type { USPSStateCode } from "@/lib/usps-states";`,
+    `import type { StdDeductionRow } from "../types";`,
+    ``,
+    `export const STD_DEDUCTIONS: Record<number, Partial<Record<USPSStateCode, StdDeductionRow>>> = {`,
+  ];
+  for (const y of Object.keys(byYearState).map(Number).sort()) {
+    lines.push(`  ${y}: {`);
+    for (const code of Object.keys(byYearState[y]).sort()) {
+      const r = byYearState[y][code];
+      const notes = r["Phase-out / Notes"]
+        ? `, notes: ${JSON.stringify(r["Phase-out / Notes"])}` : "";
+      lines.push(`    ${code}: { single: ${r.Single}, joint: ${r.Joint}, add65Single: ${r["Add'l Age 65+ (Single)"]}, add65Joint: ${r["Add'l Age 65+ (Joint, per filer)"]}${notes} },`);
+    }
+    lines.push(`  },`);
+  }
+  lines.push(`};`, ``);
+  fs.writeFileSync(path.join(OUT_DIR, "std-deductions.ts"), lines.join("\n"));
+  console.log(`Wrote std-deductions.ts`);
+}
+
+interface ExemptionRowRaw {
+  Code: string; Year: number;
+  Single: number; Joint: number; Dependent: number;
+  "Age 65+ Add'l": number;
+  Type: "Exemption" | "Credit" | "Credit (dep)" | "None";
+  "Phase-out / Notes"?: string;
+}
+function emitExemptions() {
+  const rows = readSheet<ExemptionRowRaw>("Personal_Exemptions");
+  const byYearState: Record<number, Record<string, ExemptionRowRaw>> = {};
+  for (const r of rows) {
+    if (!byYearState[r.Year]) byYearState[r.Year] = {};
+    byYearState[r.Year][r.Code] = r;
+  }
+  const typeMap: Record<string, "exemption" | "credit" | "none"> = {
+    Exemption: "exemption", Credit: "credit", "Credit (dep)": "credit", None: "none",
+  };
+  const lines = [
+    `// src/lib/tax/state-income/data/exemptions.ts`,
+    `// AUTO-GENERATED. Source: Personal_Exemptions sheet.`,
+    `import type { USPSStateCode } from "@/lib/usps-states";`,
+    `import type { ExemptionRow } from "../types";`,
+    ``,
+    `export const EXEMPTIONS: Record<number, Partial<Record<USPSStateCode, ExemptionRow>>> = {`,
+  ];
+  for (const y of Object.keys(byYearState).map(Number).sort()) {
+    lines.push(`  ${y}: {`);
+    for (const code of Object.keys(byYearState[y]).sort()) {
+      const r = byYearState[y][code];
+      const notes = r["Phase-out / Notes"]
+        ? `, notes: ${JSON.stringify(r["Phase-out / Notes"])}` : "";
+      lines.push(`    ${code}: { single: ${r.Single}, joint: ${r.Joint}, dependent: ${r.Dependent}, add65: ${r["Age 65+ Add'l"]}, type: ${JSON.stringify(typeMap[r.Type] ?? "none")}${notes} },`);
+    }
+    lines.push(`  },`);
+  }
+  lines.push(`};`, ``);
+  fs.writeFileSync(path.join(OUT_DIR, "exemptions.ts"), lines.join("\n"));
+  console.log(`Wrote exemptions.ts`);
+}
+
 console.log("Extracting bracket data from workbook...");
 emitBrackets(2025);
 emitBrackets(2026);
+console.log("Extracting std deductions...");
+emitStdDeductions();
+console.log("Extracting personal exemptions...");
+emitExemptions();
 console.log("Done.");
