@@ -12,6 +12,7 @@ import {
 } from "./new-comparison-modal";
 import { SlotMappingModal } from "./slot-mapping-modal";
 import { SaveAsTemplateModal } from "./save-as-template-modal";
+import { RenameComparisonModal } from "./rename-comparison-modal";
 
 interface ComparisonSummary {
   id: string;
@@ -46,6 +47,7 @@ export function ComparisonPageClient({
   const [pendingPreset, setPendingPreset] = useState<PresetSummary | null>(null);
   const [pendingTemplate, setPendingTemplate] = useState<TemplateSummary | null>(null);
   const [saveAsOpen, setSaveAsOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
 
   const nameByPlanId = useMemo(
     () => Object.fromEntries(scenarios.map((s) => [s.id, s.name])),
@@ -87,25 +89,87 @@ export function ComparisonPageClient({
     setLayout(comparison.layout);
   };
 
-  const noop = () => {};
+  const handleDelete = async () => {
+    if (!activeCid) return;
+    if (!window.confirm("Delete this comparison? This cannot be undone.")) return;
+    const res = await fetch(`/api/clients/${clientId}/comparisons/${activeCid}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) return;
+    const remaining = comparisons.filter((c) => c.id !== activeCid);
+    setComparisons(remaining);
+    if (remaining.length === 0) {
+      setActiveCid(null);
+      setNewOpen(true);
+      return;
+    }
+    const next = remaining[0];
+    setActiveCid(next.id);
+    const r = await fetch(`/api/clients/${clientId}/comparisons/${next.id}`);
+    if (r.ok) {
+      const { comparison } = await r.json();
+      setLayout(comparison.layout);
+    }
+  };
+
+  const isEmpty = activeCid === null && comparisons.length === 0;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
-      <ComparisonShell
-        key={activeCid ?? "empty"}
-        clientId={clientId}
-        activeCid={activeCid}
-        comparisons={comparisons}
-        initialLayout={layout}
-        scenarios={scenarios}
-        primaryScenarioId={primaryScenarioId}
-        clientRetirementYear={clientRetirementYear}
-        onSelectComparison={handleSelectComparison}
-        onComparisonsChange={setComparisons}
-        onOpenNewComparison={() => setNewOpen(true)}
-        onRenameActive={noop}
-        onDeleteActive={noop}
-        onSaveActiveAsTemplate={() => activeCid && setSaveAsOpen(true)}
+      {isEmpty ? (
+        <div className="flex min-h-screen items-center justify-center px-4">
+          <div className="mx-auto w-full max-w-md rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-8 text-center">
+            <h2 className="text-xl font-semibold text-slate-100">No comparisons yet</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              Pick a starting point to build this client&apos;s first comparison.
+            </p>
+            <button
+              type="button"
+              onClick={() => setNewOpen(true)}
+              className="mt-6 rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-white"
+            >
+              + New comparison
+            </button>
+          </div>
+        </div>
+      ) : (
+        <ComparisonShell
+          key={activeCid ?? "empty"}
+          clientId={clientId}
+          activeCid={activeCid}
+          comparisons={comparisons}
+          initialLayout={layout}
+          scenarios={scenarios}
+          primaryScenarioId={primaryScenarioId}
+          clientRetirementYear={clientRetirementYear}
+          onSelectComparison={handleSelectComparison}
+          onComparisonsChange={setComparisons}
+          onOpenNewComparison={() => setNewOpen(true)}
+          onRenameActive={() => activeCid && setRenameOpen(true)}
+          onDeleteActive={handleDelete}
+          onSaveActiveAsTemplate={() => activeCid && setSaveAsOpen(true)}
+        />
+      )}
+      <RenameComparisonModal
+        open={renameOpen}
+        initial={activeName}
+        onCancel={() => setRenameOpen(false)}
+        onConfirm={async (name) => {
+          if (!activeCid) return;
+          const res = await fetch(`/api/clients/${clientId}/comparisons/${activeCid}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error ?? "Rename failed");
+          }
+          setComparisons((cs) =>
+            cs.map((c) => (c.id === activeCid ? { ...c, name } : c)),
+          );
+          setRenameOpen(false);
+        }}
       />
       <SaveAsTemplateModal
         open={saveAsOpen}
