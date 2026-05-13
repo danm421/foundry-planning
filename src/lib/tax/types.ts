@@ -91,6 +91,22 @@ export interface CalcInput {
   flatStateRate: number;
   taxParams: TaxYearParameters;
   inflationFactor: number;         // for diag display
+  /** Per-source retirement income breakdown for state-income-tax exclusion rules.
+   *  db = pension/deferred income; ira = traditional IRA RMDs/withdrawals;
+   *  k401 = 401k/403b RMDs/withdrawals; annuity = annuity income.
+   *  TODO (H3): the residence-state UI form wires residenceState into planSettings;
+   *  until then this breakdown sits in CalcInput ready for G1 to consume. */
+  retirementBreakdown?: {
+    db: number;
+    ira: number;
+    k401: number;
+    annuity: number;
+  };
+  /** Residence state for the bracket-mode state income tax engine.
+   *  TODO (H3): plumbed from planSettings.residenceState once the UI form lands. */
+  residenceState?: import("@/lib/usps-states").USPSStateCode | null;
+  primaryAge?: number;
+  spouseAge?: number;
 }
 
 export interface TaxResult {

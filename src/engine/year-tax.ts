@@ -39,6 +39,18 @@ export interface YearTaxInput {
   interestIncomeForTax: number;
   /** deduction breakdown computed upstream — included in output untouched plus charity patch */
   deductionBreakdownIn: DeductionBreakdown | null;
+  /** Retirement income breakdown for state income tax exclusion rules.
+   *  Built in projection.ts from taxDetail.bySource + accountById/incomeById.
+   *  Optional — defaults to all-zero when absent (pre-G1 callers). */
+  retirementBreakdown?: {
+    db: number;
+    ira: number;
+    k401: number;
+    annuity: number;
+  };
+  /** Ages at projection year, for state retirement-exclusion age thresholds. */
+  primaryAge?: number;
+  spouseAge?: number;
 }
 
 export interface YearTaxOutput {
@@ -65,6 +77,7 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
     aboveLineDeductions, itemizedDeductions: itemizedIn,
     charityCarryforwardIn, charityGiftsThisYear, secaResult,
     transferEarlyWithdrawalPenalty, interestIncomeForTax, deductionBreakdownIn,
+    retirementBreakdown, primaryAge, spouseAge,
   } = input;
 
   // Deductible-half-of-SE-tax is an above-the-line adjustment per §164(f).
@@ -119,6 +132,10 @@ export function computeTaxForYear(input: YearTaxInput): YearTaxOutput {
         flatStateRate: planSettings.flatStateRate,
         taxParams: resolved!.params,
         inflationFactor: resolved!.inflationFactor,
+        retirementBreakdown,
+        residenceState: planSettings.residenceState,
+        primaryAge,
+        spouseAge,
       })
     : calculateTaxYearFlat({
         taxableIncome,
