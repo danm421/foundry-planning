@@ -726,7 +726,7 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     // amount` for these; here we register the column with the entity's name.
     for (const entity of clientData.entities ?? []) {
       if (entity.entityType === "trust") continue;
-      incomeNames[entity.id] = entity.name;
+      incomeNames[entity.id] = entity.name ?? entity.id;
       if (!incomesByType["business_income"]) incomesByType["business_income"] = [];
       incomesByType["business_income"].push(entity.id);
     }
