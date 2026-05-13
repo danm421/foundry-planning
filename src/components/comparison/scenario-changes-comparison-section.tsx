@@ -34,13 +34,13 @@ function ChangeBox({ unit, targetNames, clientId, scenarioId }: { unit: ChangeUn
   const text = ai.status === "ready" && ai.markdown ? ai.markdown : deterministic;
   const badge = opBadge(unitOp(unit));
 
-  async function describeWithAI() {
+  async function describeWithAI(force = false) {
     setAi({ status: "loading" });
     try {
       const res = await fetch(`/api/clients/${clientId}/comparison/describe-changes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenarioId, unit, targetNames }),
+        body: JSON.stringify({ scenarioId, unit, targetNames, force }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as { markdown: string };
@@ -69,7 +69,7 @@ function ChangeBox({ unit, targetNames, clientId, scenarioId }: { unit: ChangeUn
           type="button"
           disabled={ai.status === "loading"}
           className="text-amber-300 hover:underline disabled:opacity-50"
-          onClick={describeWithAI}
+          onClick={() => describeWithAI(ai.status === "ready")}
         >
           {ai.status === "loading" ? "Describing…" : ai.status === "ready" ? "Regenerate" : "Describe with AI"}
         </button>

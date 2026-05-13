@@ -26,6 +26,7 @@ export const maxDuration = 60;
 
 const ChangeSchema = z.object({
   id: z.string(),
+  scenarioId: z.string(),
   opType: z.enum(["add", "edit", "remove"]),
   targetKind: z.string(),
   targetId: z.string(),
@@ -51,6 +52,7 @@ const BodySchema = z.object({
   scenarioId: z.string().uuid(),
   unit: UnitSchema,
   targetNames: z.record(z.string(), z.string()).default({}),
+  force: z.boolean().default(false),
 });
 
 const SYSTEM_PROMPT =
@@ -95,17 +97,22 @@ export async function POST(
     const rl = await checkExtractRateLimit(firmId);
     if (!rl.allowed) return rateLimitErrorResponse(rl, "AI describe-changes rate limit exceeded");
 
-    const userPrompt = buildUserPrompt(body.unit, body.targetNames);
+    // `body.unit`'s schema-derived `targetKind`/`opType` are `string`/string-union
+    // unions; `ChangeUnit` carries the engine's narrower literal unions. The
+    // describer only reads these as strings, so the cast is sound.
+    const userPrompt = buildUserPrompt(body.unit as unknown as ChangeUnit, body.targetNames);
     const hash = hashAiRequest({ system: SYSTEM_PROMPT, user: userPrompt });
 
-    const hit = await getCachedAnalysis(id, hash);
-    if (hit) {
-      return NextResponse.json({
-        markdown: hit.markdown,
-        generatedAt: hit.generatedAt,
-        cached: true,
-        hash,
-      });
+    if (!body.force) {
+      const hit = await getCachedAnalysis(id, hash);
+      if (hit) {
+        return NextResponse.json({
+          markdown: hit.markdown,
+          generatedAt: hit.generatedAt,
+          cached: true,
+          hash,
+        });
+      }
     }
 
     // Pin gpt-5.4 explicitly for predictability across environments,

@@ -84,6 +84,7 @@ export type AuditAction =
   | "report.ai_generate"
   | "comparison_layout.upsert"
   | "comparison.ai_generate"
+  | "comparison.ai_describe_changes"
   | "client_comparison.create"
   | "client_comparison.update"
   | "client_comparison.delete"

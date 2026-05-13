@@ -55,6 +55,7 @@ const validUnit = {
   kind: "single",
   change: {
     id: "c1",
+    scenarioId: "11111111-1111-4111-a111-111111111111",
     opType: "edit",
     targetKind: "income",
     targetId: "i1",
@@ -100,9 +101,10 @@ describe("POST /api/clients/[id]/comparison/describe-changes", () => {
   });
 
   it("returns 429 when rate limit is exceeded", async () => {
+    const { NextResponse } = await import("next/server");
     const { checkExtractRateLimit, rateLimitErrorResponse } = await import("@/lib/rate-limit");
-    vi.mocked(checkExtractRateLimit).mockResolvedValueOnce({ allowed: false, remaining: 0, reset: Date.now() + 60000 });
-    vi.mocked(rateLimitErrorResponse).mockReturnValueOnce(new Response("rate limited", { status: 429 }));
+    vi.mocked(checkExtractRateLimit).mockResolvedValueOnce({ allowed: false, reason: "exceeded", remaining: 0, reset: Date.now() + 60000 });
+    vi.mocked(rateLimitErrorResponse).mockReturnValueOnce(NextResponse.json({ error: "rate limited" }, { status: 429 }));
     const res = await post(validBody);
     expect(res.status).toBe(429);
   });
