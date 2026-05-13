@@ -2459,3 +2459,58 @@ export const clientComparisonLayouts = pgTable(
 
 export type ClientComparisonLayoutRow = InferSelectModel<typeof clientComparisonLayouts>;
 export type NewClientComparisonLayoutRow = InferInsertModel<typeof clientComparisonLayouts>;
+
+// ─────────────────────────────────────────────────────────────────
+// Named comparisons + reusable templates (v2 of comparison layouts)
+// ─────────────────────────────────────────────────────────────────
+
+export const comparisonTemplateVisibilityEnum = pgEnum(
+  "comparison_template_visibility",
+  ["private", "firm"],
+);
+
+export const clientComparisons = pgTable(
+  "client_comparisons",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    layout: jsonb("layout").notNull().$type<ComparisonLayoutV5>(),
+    sourceTemplateId: uuid("source_template_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("client_comparisons_client_idx").on(t.clientId),
+    index("client_comparisons_firm_idx").on(t.firmId),
+    index("client_comparisons_source_idx").on(t.sourceTemplateId),
+  ],
+);
+export type ClientComparisonRow = InferSelectModel<typeof clientComparisons>;
+export type NewClientComparisonRow = InferInsertModel<typeof clientComparisons>;
+
+export const comparisonTemplates = pgTable(
+  "comparison_templates",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    firmId: text("firm_id").notNull(),
+    createdByUserId: text("created_by_user_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    visibility: comparisonTemplateVisibilityEnum("visibility").notNull().default("private"),
+    slotCount: integer("slot_count").notNull(),
+    slotLabels: jsonb("slot_labels").notNull().$type<string[]>(),
+    layout: jsonb("layout").notNull().$type<ComparisonLayoutV5>(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("comparison_templates_firm_idx").on(t.firmId),
+    index("comparison_templates_creator_idx").on(t.createdByUserId),
+  ],
+);
+export type ComparisonTemplateRow = InferSelectModel<typeof comparisonTemplates>;
+export type NewComparisonTemplateRow = InferInsertModel<typeof comparisonTemplates>;
