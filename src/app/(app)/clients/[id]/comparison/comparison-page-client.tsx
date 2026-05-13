@@ -4,6 +4,11 @@ import { useState } from "react";
 import type { ComparisonLayoutV5 } from "@/lib/comparison/layout-schema";
 import { ComparisonShell } from "./comparison-shell";
 import { useStripPlansUrl } from "./strip-plans-url";
+import {
+  NewComparisonModal,
+  type PresetSummary,
+  type TemplateSummary,
+} from "./new-comparison-modal";
 
 interface ComparisonSummary {
   id: string;
@@ -34,6 +39,8 @@ export function ComparisonPageClient({
   const [comparisons, setComparisons] = useState<ComparisonSummary[]>(initialComparisons);
   const [activeCid, setActiveCid] = useState<string | null>(initialActiveCid);
   const [layout, setLayout] = useState<ComparisonLayoutV5>(initialLayout);
+  const [newOpen, setNewOpen] = useState(false);
+  // pendingPreset / pendingTemplate are wired in Task 20.
 
   const handleSelectComparison = async (cid: string) => {
     if (cid === activeCid) return;
@@ -44,9 +51,22 @@ export function ComparisonPageClient({
     setLayout(comparison.layout);
   };
 
-  // The picker/slot-mapping/rename/delete/save-as flows are wired in
-  // subsequent tasks. For Task 17 the buttons exist but the handlers
-  // are no-ops so the header renders cleanly.
+  const handlePickBlank = async () => {
+    setNewOpen(false);
+    const name = window.prompt("Name your comparison", "Untitled");
+    if (!name || !name.trim()) return;
+    const res = await fetch(`/api/clients/${clientId}/comparisons`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: "blank", name: name.trim() }),
+    });
+    if (!res.ok) return;
+    const { comparison } = await res.json();
+    setComparisons((cs) => [...cs, { id: comparison.id, name: comparison.name }]);
+    setActiveCid(comparison.id);
+    setLayout(comparison.layout);
+  };
+
   const noop = () => {};
 
   return (
@@ -62,10 +82,17 @@ export function ComparisonPageClient({
         clientRetirementYear={clientRetirementYear}
         onSelectComparison={handleSelectComparison}
         onComparisonsChange={setComparisons}
-        onOpenNewComparison={noop}
+        onOpenNewComparison={() => setNewOpen(true)}
         onRenameActive={noop}
         onDeleteActive={noop}
         onSaveActiveAsTemplate={noop}
+      />
+      <NewComparisonModal
+        open={newOpen}
+        onClose={() => setNewOpen(false)}
+        onPickBlank={handlePickBlank}
+        onPickPreset={(_p: PresetSummary) => { setNewOpen(false); }}
+        onPickTemplate={(_t: TemplateSummary) => { setNewOpen(false); }}
       />
     </div>
   );
