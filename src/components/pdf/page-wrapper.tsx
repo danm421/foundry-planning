@@ -1,5 +1,3 @@
-// src/components/reports-pdf/page-wrapper.tsx
-//
 // Wraps a single PDF page with paper-color background, gutter padding,
 // and (when not the cover) the running header + footer.
 

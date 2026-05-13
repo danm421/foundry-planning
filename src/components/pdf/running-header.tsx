@@ -1,5 +1,3 @@
-// src/components/reports-pdf/running-header.tsx
-//
 // Fixed header that repeats on every non-cover page. Left side shows
 // `Foundry · <household>`, right side shows `<report title> · <year>`.
 

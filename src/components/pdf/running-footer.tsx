@@ -1,5 +1,3 @@
-// src/components/reports-pdf/running-footer.tsx
-//
 // Fixed footer that repeats on every non-cover page. Left side shows
 // `Confidential · <firm>`. Right side shows zero-padded page index and
 // total ("01 / 12") with the current page in accent color.

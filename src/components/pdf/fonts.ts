@@ -1,9 +1,6 @@
-// src/components/reports-pdf/fonts.ts
-//
 // Registers the three SIL OFL families used by the PDF report with
-// @react-pdf/renderer. Only static TTFs ship in `public/fonts/` — the
-// renderer can't consume variable fonts. Idempotent: safe to call on
-// every render path.
+// @react-pdf/renderer. Only static TTFs ship in `public/fonts/` — the renderer
+// can't consume variable fonts. Idempotent: safe to call on every render path.
 
 import { Font } from "@react-pdf/renderer";
 

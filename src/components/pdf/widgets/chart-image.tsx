@@ -1,5 +1,3 @@
-// src/components/reports-pdf/widgets/chart-image.tsx
-//
 // Standalone image widget for embedding a pre-captured chart PNG into a PDF.
 // `ChartImage` (the type) is aliased to `ChartImageData` at the import site
 // to avoid a name collision with the component export.

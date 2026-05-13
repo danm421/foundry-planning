@@ -1,9 +1,5 @@
-// src/components/reports-pdf/theme.ts
-//
-// PDF-side theme tokens. Mirrors (but does not reuse) the Tailwind tokens
-// in the screen builder — `@react-pdf/renderer` consumes inline color
-// strings, not CSS variables. Keep palettes in sync by hand when either
-// side changes.
+// PDF-side theme tokens. Mirror the screen Tailwind palette by hand —
+// @react-pdf/renderer takes inline color strings, not CSS variables.
 
 export const PDF_THEME = {
   paper: "#f6f3ec",

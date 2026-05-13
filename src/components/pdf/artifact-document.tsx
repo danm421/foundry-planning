@@ -1,11 +1,4 @@
-// src/components/reports-pdf/artifact-document.tsx
-//
 // Wraps an artifact's view-blocks into a complete @react-pdf/renderer Document.
-// Sibling of document.tsx (custom report builder) — they coexist.
-//
-// The artifact itself produces view-blocks; this shell owns the chrome so
-// Plan 3's package mode can concatenate multiple artifacts under one Document
-// by composing several ArtifactDocument children.
 
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 import type { ReactNode } from "react";

@@ -1,5 +1,3 @@
-// src/components/reports-pdf/widgets/data-table.tsx
-//
 // Generalized table widget for PDF reports. Handles a header row, body rows,
 // and an optional footer row. NOT for nested/rowspan tables — those keep their
 // bespoke renderers (e.g. the estate-transfer table).
