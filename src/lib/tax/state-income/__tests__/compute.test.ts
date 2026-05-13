@@ -117,6 +117,7 @@ describe("computeStateIncomeTax — SS handling", () => {
 
 describe("computeStateIncomeTax — retirement integration", () => {
   it("PA: all retirement fully exempt", () => {
+    const ssAmount = 25_000; // PA SS rule defaults to exempt → full taxableSocialSecurity subtracts
     const r = computeStateIncomeTax({
       state: "PA",
       year: 2026,
@@ -129,7 +130,7 @@ describe("computeStateIncomeTax — retirement integration", () => {
         earnedIncome: 0,
         dividends: 0,
         capitalGains: 0,
-        taxableSocialSecurity: 25_000,
+        taxableSocialSecurity: ssAmount,
         taxExemptIncome: 0,
       },
       retirementBreakdown: { db: 30_000, ira: 50_000, k401: 20_000, annuity: 0 },
@@ -137,6 +138,43 @@ describe("computeStateIncomeTax — retirement integration", () => {
       fallbackFlatRate: 0,
     });
     expect(r.subtractions.retirementIncome).toBe(100_000);
+    expect(r.subtractions.total).toBe(ssAmount + 100_000);
+    expect(r.diag.notes.some((n) => n.toLowerCase().includes("retirement"))).toBe(true);
+  });
+
+  it("CO: combined SS+retirement cap clamps retirement subtraction", () => {
+    // CO retirement rule: ageThreshold 55, perFilerCap $20K, combinedSsCap true.
+    // married_joint → combinedCap = $20K × 2 = $40K.
+    // CO SS rule: conditional with jointAgiThreshold $95K and ageFullExemption 65.
+    // Use age 60 (between 55 and 65) so SS is NOT auto-exempt by age; instead the
+    // 55–64 cliff applies. AGI $90K (below $95K) → SS fully exempt at state level
+    // → ssResult.amount = taxableSocialSecurity = $10K.
+    // Retirement qualifying = $50K IRA → capped to $40K by perFilerCap×filers.
+    // Combined = $10K + $40K = $50K > $40K cap → retirement clamps to
+    // max(0, $40K − $10K) = $30K.
+    const r = computeStateIncomeTax({
+      state: "CO",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 60,
+      spouseAge: 60,
+      federalIncome: {
+        agi: 90_000,
+        taxableIncome: 80_000,
+        ordinaryIncome: 50_000,
+        earnedIncome: 0,
+        dividends: 0,
+        capitalGains: 0,
+        taxableSocialSecurity: 10_000,
+        taxExemptIncome: 0,
+      },
+      retirementBreakdown: { db: 0, ira: 50_000, k401: 0, annuity: 0 },
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.subtractions.socialSecurity).toBe(10_000);
+    expect(r.subtractions.retirementIncome).toBe(30_000);
+    expect(r.subtractions.total).toBe(40_000);
   });
 });
 

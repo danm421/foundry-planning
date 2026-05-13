@@ -80,4 +80,25 @@ describe("computeRetirementSubtraction", () => {
     });
     expect(r.amount).toBe(0);
   });
+
+  it("age below ageThreshold → zero subtraction with age-gate note", () => {
+    const LA_LIKE: RetirementRule = {
+      applies: { db: true, ira: true, k401: true, annuity: true },
+      ageThreshold: 65,
+      perFilerCap: 6_000,
+      notes: "",
+    };
+    const r = computeRetirementSubtraction({
+      rule: LA_LIKE,
+      breakdown: { db: 0, ira: 20_000, k401: 0, annuity: 0 },
+      isJoint: false,
+      age: 60,
+      agi: 80_000,
+      filers: 1,
+    });
+    expect(r.amount).toBe(0);
+    expect(r.note.toLowerCase()).toContain("age");
+    expect(r.note).toContain("60");
+    expect(r.note).toContain("65");
+  });
 });
