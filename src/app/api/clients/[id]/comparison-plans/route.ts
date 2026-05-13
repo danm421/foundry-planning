@@ -8,6 +8,7 @@ import { authErrorResponse } from "@/lib/authz";
 import { buildComparisonPlans } from "@/lib/comparison/build-comparison-plans";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
 import { loadPanelData } from "@/lib/scenario/load-panel-data";
+import { loadAllocationForPlan } from "@/lib/comparison/load-allocation-for-plan";
 import { buildYearlyEstateReport } from "@/lib/estate/yearly-estate-report";
 import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
 import type { ScenarioRef } from "@/lib/scenario/loader";
@@ -53,6 +54,8 @@ export async function POST(
         if (!data) return null;
         return { ...data, label: scenarioName };
       },
+      loadAllocation: (loaded) =>
+        loadAllocationForPlan({ clientId: id, firmId, loaded }),
       buildEstateRows: (l) => {
         const c = l.tree.client;
         return buildYearlyEstateReport({

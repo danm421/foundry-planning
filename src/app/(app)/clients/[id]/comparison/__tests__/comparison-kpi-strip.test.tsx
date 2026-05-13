@@ -43,6 +43,7 @@ function fakePlan(
     liquidityRows: [],
     finalEstate: { totalToHeirs: overrides.toHeirs ?? 0 } as never,
     panelData: null,
+    allocation: null,
   };
 }
 

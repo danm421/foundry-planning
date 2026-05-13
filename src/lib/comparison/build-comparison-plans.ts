@@ -6,6 +6,7 @@ import type { ClientData } from "@/engine/types";
 import type { ProjectionResult } from "@/engine/projection";
 import { sumLifetimeTax, type LifetimeTaxSummary } from "./lifetime-tax";
 import type { ComparisonChangesDrawerPlan } from "@/app/(app)/clients/[id]/comparison/comparison-changes-drawer";
+import type { HouseholdAllocation } from "@/lib/investments/allocation";
 
 export interface ComparisonPlan {
   index: number;
@@ -20,6 +21,7 @@ export interface ComparisonPlan {
   liquidityRows: YearlyLiquidityReport["rows"];
   finalEstate: YearlyEstateRow | null;
   panelData: ComparisonChangesDrawerPlan | null;
+  allocation: HouseholdAllocation | null;
 }
 
 export interface BuildComparisonPlansInput {
@@ -29,6 +31,7 @@ export interface BuildComparisonPlansInput {
     ref: ScenarioRef,
     label: string,
   ) => Promise<ComparisonChangesDrawerPlan | null>;
+  loadAllocation: (loaded: LoadedProjection) => Promise<HouseholdAllocation | null>;
   buildEstateRows: (loaded: LoadedProjection) => YearlyEstateReport;
   buildLiquidityRows: (loaded: LoadedProjection) => YearlyLiquidityReport;
 }
@@ -39,9 +42,12 @@ export async function buildComparisonPlans(
   const loaded = await Promise.all(
     input.refs.map((ref) => input.loadProjection(ref)),
   );
-  const panels = await Promise.all(
-    input.refs.map((ref, i) => input.loadPanel(ref, loaded[i].scenarioName)),
-  );
+  const [panels, allocations] = await Promise.all([
+    Promise.all(
+      input.refs.map((ref, i) => input.loadPanel(ref, loaded[i].scenarioName)),
+    ),
+    Promise.all(loaded.map((l) => input.loadAllocation(l))),
+  ]);
   return loaded.map((l, i) => {
     const estate = input.buildEstateRows(l);
     const liquidity = input.buildLiquidityRows(l);
@@ -57,6 +63,7 @@ export async function buildComparisonPlans(
       liquidityRows: liquidity.rows,
       finalEstate: estate.rows.at(-1) ?? null,
       panelData: panels[i],
+      allocation: allocations[i],
     };
   });
 }

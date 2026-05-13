@@ -43,6 +43,7 @@ function mkPlan(label: string, samples: Array<{ year: number; incomeTaxBase: num
     liquidityRows: [],
     finalEstate: null,
     panelData: null,
+    allocation: null,
   };
 }
 

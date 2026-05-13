@@ -27,6 +27,7 @@ describe("buildComparisonPlans", () => {
       ],
       loadProjection: (ref) => loaders[["base", "sid_a", "sid_b"].indexOf((ref as { id: string }).id)](),
       loadPanel: vi.fn().mockResolvedValue(null),
+      loadAllocation: vi.fn().mockResolvedValue(null),
       buildEstateRows: vi.fn().mockReturnValue({ rows: [] as YearlyEstateRow[] }),
       buildLiquidityRows: vi.fn().mockReturnValue({ rows: [] }),
     });
@@ -47,6 +48,7 @@ describe("buildComparisonPlans", () => {
       ],
       loadProjection,
       loadPanel: vi.fn().mockResolvedValue(null),
+      loadAllocation: vi.fn().mockResolvedValue(null),
       buildEstateRows: vi.fn().mockReturnValue({ rows: [] }),
       buildLiquidityRows: vi.fn().mockReturnValue({ rows: [] }),
     });
@@ -69,6 +71,7 @@ describe("buildComparisonPlans", () => {
       ],
       loadProjection: () => loaders[i++](),
       loadPanel: vi.fn().mockResolvedValue(null),
+      loadAllocation: vi.fn().mockResolvedValue(null),
       buildEstateRows: vi.fn().mockReturnValue({ rows: [] }),
       buildLiquidityRows: vi.fn().mockReturnValue({ rows: [] }),
     });

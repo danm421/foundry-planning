@@ -26,6 +26,7 @@ function mkPlan(label: string, samples: Array<{ year: number; totalIncome: numbe
     liquidityRows: [],
     finalEstate: null,
     panelData: null,
+    allocation: null,
   };
 }
 

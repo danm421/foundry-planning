@@ -52,6 +52,7 @@ function mkPlan(opts: {
     liquidityRows: [],
     finalEstate: null,
     panelData: null,
+    allocation: null,
   };
 }
 

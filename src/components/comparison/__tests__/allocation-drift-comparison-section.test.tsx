@@ -33,6 +33,7 @@ function mkPlan(label: string, years: number[] = [2030]): ComparisonPlan {
     liquidityRows: [],
     finalEstate: null,
     panelData: null,
+    allocation: null,
   };
 }
 

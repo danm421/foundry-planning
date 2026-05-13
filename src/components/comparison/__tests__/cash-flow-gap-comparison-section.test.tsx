@@ -26,6 +26,7 @@ function mkPlan(label: string, nets: Array<{ year: number; netCashFlow: number }
     liquidityRows: [],
     finalEstate: null,
     panelData: null,
+    allocation: null,
   };
 }
 

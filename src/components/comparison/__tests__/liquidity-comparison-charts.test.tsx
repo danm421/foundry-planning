@@ -21,6 +21,7 @@ function fakePlan(label: string): ComparisonPlan {
     liquidityRows: [],
     finalEstate: null,
     panelData: null,
+    allocation: null,
   } as unknown as ComparisonPlan;
 }
 
