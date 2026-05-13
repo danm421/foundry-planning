@@ -12,6 +12,8 @@ import { EXEMPTIONS } from "./data/exemptions";
 import { INCOME_BASE_RULES } from "./data/income-base";
 import { getSsRule } from "./data/ss-rules";
 import { computeSsSubtraction } from "./ss-subtraction";
+import { getRetirementRule } from "./data/retirement-rules";
+import { computeRetirementSubtraction } from "./retirement-subtraction";
 
 export interface FederalIncomeForState {
   agi: number;
@@ -136,13 +138,33 @@ export function computeStateIncomeTax(
     age: Math.max(input.primaryAge, input.spouseAge ?? 0),
     isJoint: input.filingStatus === "married_joint",
   });
+
+  // Section D: retirement-income subtraction
+  const retirementRule = getRetirementRule(input.state, input.year);
+  const retirementResult = computeRetirementSubtraction({
+    rule: retirementRule,
+    breakdown: input.retirementBreakdown,
+    isJoint: input.filingStatus === "married_joint",
+    age: Math.max(input.primaryAge, input.spouseAge ?? 0),
+    agi: input.federalIncome.agi,
+    filers: input.filingStatus === "married_joint" ? 2 : 1,
+  });
+  // Combined SS + retirement cap (CO): if rule says so, recap combined sum.
+  let retirementAmount = retirementResult.amount;
+  if (retirementRule.combinedSsCap && retirementRule.perFilerCap != null) {
+    const filers = input.filingStatus === "married_joint" ? 2 : 1;
+    const combinedCap = retirementRule.perFilerCap * filers;
+    const combined = ssResult.amount + retirementAmount;
+    if (combined > combinedCap) retirementAmount = Math.max(0, combinedCap - ssResult.amount);
+  }
+
   const subtractions = {
     socialSecurity: ssResult.amount,
-    retirementIncome: 0,    // Section D
+    retirementIncome: retirementAmount,
     capitalGains: 0,        // Section E
     preTaxContrib: 0,       // Section E
     other: 0,
-    total: ssResult.amount,
+    total: ssResult.amount + retirementAmount,
   };
 
   // Easy path: lookup brackets, std deduction, exemption.
@@ -177,7 +199,7 @@ export function computeStateIncomeTax(
     preCreditTax,
     specialRulesApplied: [],
     stateTax,
-    diag: { notes: [ssResult.note] },
+    diag: { notes: [ssResult.note, retirementResult.note] },
   };
 }
 

@@ -115,6 +115,31 @@ describe("computeStateIncomeTax — SS handling", () => {
   });
 });
 
+describe("computeStateIncomeTax — retirement integration", () => {
+  it("PA: all retirement fully exempt", () => {
+    const r = computeStateIncomeTax({
+      state: "PA",
+      year: 2026,
+      filingStatus: "married_joint",
+      primaryAge: 70,
+      federalIncome: {
+        agi: 200_000,
+        taxableIncome: 175_000,
+        ordinaryIncome: 100_000,
+        earnedIncome: 0,
+        dividends: 0,
+        capitalGains: 0,
+        taxableSocialSecurity: 25_000,
+        taxExemptIncome: 0,
+      },
+      retirementBreakdown: { db: 30_000, ira: 50_000, k401: 20_000, annuity: 0 },
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    expect(r.subtractions.retirementIncome).toBe(100_000);
+  });
+});
+
 describe("computeStateIncomeTax — easy FAGI-base states", () => {
   it("AZ 2026 single, $100K FAGI, no SS/retirement → flat 2.5% on (AGI − std ded)", () => {
     const r = computeStateIncomeTax({
