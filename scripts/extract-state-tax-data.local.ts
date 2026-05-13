@@ -234,6 +234,54 @@ function emitExemptions() {
   console.log(`Wrote exemptions.ts`);
 }
 
+interface IncomeBaseRowRaw {
+  Code: string;
+  "Starting Point": string;
+  "Tax-Free Interest Add-Back": string;
+  "Capital Gains Special Treatment": string;
+  "Pre-Tax Retirement Contributions": string;
+  "Alimony Treatment": string;
+  Notes?: string;
+}
+function emitIncomeBase() {
+  const rows = readSheet<IncomeBaseRowRaw>("Income_Base_Rules");
+  const baseMap: Record<string, "federal-agi" | "federal-taxable" | "state-gti"> = {
+    "Federal AGI": "federal-agi",
+    "Federal Taxable Income": "federal-taxable",
+    // catch-all for GTI variants:
+  };
+  const fallthroughs: string[] = [];
+  const lines = [
+    `// src/lib/tax/state-income/data/income-base.ts`,
+    `// AUTO-GENERATED. Source: Income_Base_Rules sheet.`,
+    `import type { USPSStateCode } from "@/lib/usps-states";`,
+    `import type { IncomeBaseRule } from "../types";`,
+    ``,
+    `export const INCOME_BASE_RULES: Partial<Record<USPSStateCode, IncomeBaseRule>> = {`,
+  ];
+  for (const r of rows.sort((a, b) => a.Code.localeCompare(b.Code))) {
+    if (r["Starting Point"] === "N/A") continue;
+    const base = baseMap[r["Starting Point"]] ?? "state-gti";
+    if (!baseMap[r["Starting Point"]]) {
+      fallthroughs.push(`${r.Code}: "${r["Starting Point"]}"`);
+    }
+    const addback = /Yes/i.test(r["Tax-Free Interest Add-Back"]);
+    const preTax = /Subtracted/i.test(r["Pre-Tax Retirement Contributions"]);
+    const alimony = /subtra/i.test(r["Alimony Treatment"]);
+    const notes = r.Notes ? `, notes: ${JSON.stringify(r.Notes)}` : "";
+    lines.push(`  ${r.Code}: { base: ${JSON.stringify(base)}, taxFreeInterestAddback: ${addback}, preTaxRetirementSubtract: ${preTax}, alimonySubtract: ${alimony}${notes} },`);
+  }
+  lines.push(`};`, ``);
+  fs.writeFileSync(path.join(OUT_DIR, "income-base.ts"), lines.join("\n"));
+  console.log(`Wrote income-base.ts`);
+  if (fallthroughs.length > 0) {
+    console.log(`  [income-base] Unexpected Starting Point values (→ state-gti):`);
+    for (const f of fallthroughs) console.log(`    ${f}`);
+  } else {
+    console.log(`  [income-base] No unexpected Starting Point values.`);
+  }
+}
+
 console.log("Extracting bracket data from workbook...");
 emitBrackets(2025);
 emitBrackets(2026);
@@ -241,4 +289,6 @@ console.log("Extracting std deductions...");
 emitStdDeductions();
 console.log("Extracting personal exemptions...");
 emitExemptions();
+console.log("Extracting income base rules...");
+emitIncomeBase();
 console.log("Done.");
