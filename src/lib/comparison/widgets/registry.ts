@@ -29,6 +29,7 @@ import { majorTransactionsWidget } from "./major-transactions";
 import { clientProfileWidget } from "./client-profile";
 import { incomeSourcesWidget } from "./income-sources";
 import { balanceSheetWidget } from "./balance-sheet";
+import { expenseDetailWidget } from "./expense-detail";
 
 export const COMPARISON_WIDGETS: Partial<
   Record<ComparisonWidgetKindV4, ComparisonWidgetDefinition>
@@ -62,4 +63,5 @@ export const COMPARISON_WIDGETS: Partial<
   "client-profile": clientProfileWidget,
   "income-sources": incomeSourcesWidget,
   "balance-sheet": balanceSheetWidget,
+  "expense-detail": expenseDetailWidget,
 };
