@@ -1,4 +1,3 @@
-// src/lib/reports/tax-cell-drill/__tests__/income-breakdown.test.ts
 import { describe, it, expect } from "vitest";
 import type { ProjectionYear } from "@/engine/types";
 import type { TaxResult } from "@/lib/tax/types";

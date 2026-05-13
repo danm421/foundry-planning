@@ -19,7 +19,7 @@ const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 
 /**
  * Derives effective and marginal federal tax rates from `taxResult.diag` —
- * the same fields used by buildTaxBracketRows in src/lib/reports/tax-bracket.ts.
+ * the same fields used by buildTaxBracketRows in src/lib/tax/bracket.ts.
  * Years without a taxResult yield 0 for both rates (matches that helper's
  * skip-rather-than-fabricate philosophy, mapped to 0 for chart continuity).
  */
