@@ -64,7 +64,11 @@ function mapCellById(layout: ComparisonLayoutV5, cellId: string, f: (c: CellV5) 
   };
 }
 
-export function useLayout(initial: ComparisonLayoutV5, clientId: string): UseLayoutApi {
+export function useLayout(
+  initial: ComparisonLayoutV5,
+  clientId: string,
+  activeCid: string | null,
+): UseLayoutApi {
   const [layout, setLayout] = useState<ComparisonLayoutV5>(initial);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -285,19 +289,23 @@ export function useLayout(initial: ComparisonLayoutV5, clientId: string): UseLay
   );
 
   const save = useCallback(async () => {
+    if (!activeCid) {
+      setDirty(false);
+      return;
+    }
     setSaving(true);
     try {
-      const res = await fetch(`/api/clients/${clientId}/comparison-layout`, {
+      const res = await fetch(`/api/clients/${clientId}/comparisons/${activeCid}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(layout),
+        body: JSON.stringify({ layout }),
       });
       if (!res.ok) throw new Error(`Layout save failed: ${res.status}`);
       setDirty(false);
     } finally {
       setSaving(false);
     }
-  }, [clientId, layout]);
+  }, [clientId, activeCid, layout]);
 
   return useMemo(
     () => ({

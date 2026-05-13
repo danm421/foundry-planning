@@ -27,12 +27,21 @@ import { SaveStatus } from "./save-status";
 import { WidgetConfigModal } from "./widget-config-modal";
 import { TextWidgetExpandModal } from "@/components/comparison/text-widget-expand-modal";
 
+interface ComparisonSummary {
+  id: string;
+  name: string;
+}
+
 interface Props {
   clientId: string;
+  activeCid: string | null;
+  comparisons: ComparisonSummary[];
   initialLayout: ComparisonLayoutV5;
   scenarios: { id: string; name: string }[];
   primaryScenarioId: string;
   clientRetirementYear: number | null;
+  onSelectComparison: (cid: string) => void;
+  onComparisonsChange: (next: ComparisonSummary[]) => void;
 }
 
 function uniquePlanIds(layout: ComparisonLayoutV5): string[] {
@@ -48,12 +57,19 @@ function uniquePlanIds(layout: ComparisonLayoutV5): string[] {
 
 export function ComparisonShell({
   clientId,
+  activeCid,
+  comparisons,
   initialLayout,
   scenarios,
   primaryScenarioId,
   clientRetirementYear,
+  onSelectComparison,
+  onComparisonsChange,
 }: Props) {
-  const api = useLayout(initialLayout, clientId);
+  const api = useLayout(initialLayout, clientId, activeCid);
+  void comparisons;
+  void onSelectComparison;
+  void onComparisonsChange;
   const [mode, setMode] = useState<CanvasMode>("layout");
   const [editingCellId, setEditingCellId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);

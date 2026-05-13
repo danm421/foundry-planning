@@ -3,31 +3,22 @@ import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { scenarios as scenariosTable, clients } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
-import { loadLayout } from "@/lib/comparison/load-layout";
+import {
+  defaultV5,
+  listClientComparisons,
+  loadComparison,
+} from "@/lib/comparison/load-layout";
 import { ComparisonPageClient } from "./comparison-page-client";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<Record<string, string | undefined>>;
 }
 
-function parseUrlPlanIds(sp: Record<string, string | undefined>): string[] | null {
-  const raw = sp.plans;
-  if (raw && raw.length > 0) {
-    return raw.split(",").map((t) => t.trim()).filter(Boolean);
-  }
-  if (sp.left !== undefined || sp.right !== undefined) {
-    return [sp.left ?? "base", sp.right ?? "base"];
-  }
-  return null;
-}
-
-export default async function ComparisonPage({ params, searchParams }: PageProps) {
+export default async function ComparisonPage({ params }: PageProps) {
   const { id: clientId } = await params;
-  const sp = await searchParams;
   const firmId = await requireOrgId();
 
-  const [client, scenarios, initialLayout] = await Promise.all([
+  const [client, scenarios, comparisons] = await Promise.all([
     db
       .select({
         firstName: clients.firstName,
@@ -46,11 +37,7 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
       .from(scenariosTable)
       .innerJoin(clients, eq(clients.id, scenariosTable.clientId))
       .where(and(eq(scenariosTable.clientId, clientId), eq(clients.firmId, firmId))),
-    loadLayout(clientId, firmId, {
-      primaryScenarioId: "base",
-      urlPlanIds: parseUrlPlanIds(sp),
-      defaultTitle: undefined, // resolved below after we know the client name
-    }),
+    listClientComparisons(clientId, firmId),
   ]);
 
   if (!client) notFound();
@@ -60,13 +47,6 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
     ...scenarios.map((s) => ({ id: s.id, name: s.name })),
   ];
 
-  // If the layout came back with the generic default title, prefer a personalized
-  // one based on the client name. We don't re-save here; the next user save will.
-  const personalizedLayout =
-    initialLayout.title === "Comparison Report" && client
-      ? { ...initialLayout, title: `${client.firstName} ${client.lastName} — Report`.trim() }
-      : initialLayout;
-
   const birthYear =
     client.dateOfBirth ? parseInt(client.dateOfBirth.slice(0, 4), 10) : null;
   const clientRetirementYear =
@@ -74,13 +54,48 @@ export default async function ComparisonPage({ params, searchParams }: PageProps
       ? birthYear + client.retirementAge
       : null;
 
+  const personalizedDefaultTitle = `${client.firstName} ${client.lastName} — Report`.trim();
+
+  if (comparisons.length === 0) {
+    return (
+      <ComparisonPageClient
+        clientId={clientId}
+        scenarios={scenarioLookup}
+        primaryScenarioId="base"
+        clientRetirementYear={clientRetirementYear}
+        comparisons={[]}
+        activeCid={null}
+        initialLayout={defaultV5({
+          primaryScenarioId: "base",
+          urlPlanIds: null,
+          defaultTitle: personalizedDefaultTitle,
+        })}
+      />
+    );
+  }
+
+  const first = comparisons[0];
+  const loaded = await loadComparison(first.id, clientId, firmId, {
+    primaryScenarioId: "base",
+    urlPlanIds: null,
+    defaultTitle: personalizedDefaultTitle,
+  });
+
+  const initialLayout = loaded?.layout ?? defaultV5({
+    primaryScenarioId: "base",
+    urlPlanIds: null,
+    defaultTitle: personalizedDefaultTitle,
+  });
+
   return (
     <ComparisonPageClient
       clientId={clientId}
-      initialLayout={personalizedLayout}
       scenarios={scenarioLookup}
       primaryScenarioId="base"
       clientRetirementYear={clientRetirementYear}
+      comparisons={comparisons}
+      activeCid={first.id}
+      initialLayout={initialLayout}
     />
   );
 }

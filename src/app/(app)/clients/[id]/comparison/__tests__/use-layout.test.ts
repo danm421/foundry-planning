@@ -12,7 +12,7 @@ const blank: ComparisonLayoutV5 = {
 
 describe("useLayout v5", () => {
   it("addGroup appends an empty group with one span-5 cell", () => {
-    const { result } = renderHook(() => useLayout(blank, "client-1"));
+    const { result } = renderHook(() => useLayout(blank, "client-1", "test-cid"));
     act(() => result.current.addGroup());
     expect(result.current.layout.groups).toHaveLength(2);
     expect(result.current.layout.groups[1].title).toBe("Group Name");
@@ -22,7 +22,7 @@ describe("useLayout v5", () => {
   });
 
   it("addEmptyCellRight inserts a span-1 empty cell after the source", () => {
-    const { result } = renderHook(() => useLayout(blank, "client-1"));
+    const { result } = renderHook(() => useLayout(blank, "client-1", "test-cid"));
     act(() => result.current.addEmptyCellRight("g1", "c1"));
     const cells = result.current.layout.groups[0].cells;
     expect(cells).toHaveLength(2);
@@ -46,7 +46,7 @@ describe("useLayout v5", () => {
         },
       ],
     };
-    const { result } = renderHook(() => useLayout(initial, "client-1"));
+    const { result } = renderHook(() => useLayout(initial, "client-1", "test-cid"));
     act(() => result.current.addEmptyCellDown("g1", "a"));
     const cells = result.current.layout.groups[0].cells;
     expect(cells.map((c) => c.id)).toEqual(["a", "b", expect.any(String), "c"]);
@@ -69,7 +69,7 @@ describe("useLayout v5", () => {
         },
       ],
     };
-    const { result } = renderHook(() => useLayout(initial, "client-1"));
+    const { result } = renderHook(() => useLayout(initial, "client-1", "test-cid"));
     act(() => result.current.removeCell("g", "c"));
     expect(result.current.layout.groups[0].cells[0].widget).toBeNull();
     expect(result.current.layout.groups[0].cells[0].span).toBe(3);
@@ -90,19 +90,19 @@ describe("useLayout v5", () => {
         },
       ],
     };
-    const { result } = renderHook(() => useLayout(initial, "client-1"));
+    const { result } = renderHook(() => useLayout(initial, "client-1", "test-cid"));
     act(() => result.current.removeCell("g", "c1"));
     expect(result.current.layout.groups[0].cells.map((c) => c.id)).toEqual(["c2"]);
   });
 
   it("setCellSpan changes a cell's span", () => {
-    const { result } = renderHook(() => useLayout(blank, "client-1"));
+    const { result } = renderHook(() => useLayout(blank, "client-1", "test-cid"));
     act(() => result.current.setCellSpan("c1", 3));
     expect(result.current.layout.groups[0].cells[0].span).toBe(3);
   });
 
   it("setCellWidget populates an empty cell with the given widget", () => {
-    const { result } = renderHook(() => useLayout(blank, "client-1"));
+    const { result } = renderHook(() => useLayout(blank, "client-1", "test-cid"));
     act(() =>
       result.current.setCellWidget("c1", {
         id: "w-new",
@@ -115,7 +115,7 @@ describe("useLayout v5", () => {
   });
 
   it("setGroupTitle updates a group's title", () => {
-    const { result } = renderHook(() => useLayout(blank, "client-1"));
+    const { result } = renderHook(() => useLayout(blank, "client-1", "test-cid"));
     act(() => result.current.setGroupTitle("g1", "Summary"));
     expect(result.current.layout.groups[0].title).toBe("Summary");
   });
@@ -129,7 +129,7 @@ describe("useLayout v5", () => {
         { id: "g2", title: "", cells: [{ id: "c2", span: 5, widget: null }] },
       ],
     };
-    const { result } = renderHook(() => useLayout(two, "client-1"));
+    const { result } = renderHook(() => useLayout(two, "client-1", "test-cid"));
     act(() => result.current.removeGroup("g1"));
     expect(result.current.layout.groups.map((g) => g.id)).toEqual(["g2"]);
   });
@@ -148,7 +148,7 @@ describe("useLayout v5", () => {
         },
       ],
     };
-    const { result } = renderHook(() => useLayout(initial, "client-1"));
+    const { result } = renderHook(() => useLayout(initial, "client-1", "test-cid"));
     act(() => result.current.duplicateCell("g", "c"));
     const cells = result.current.layout.groups[0].cells;
     expect(cells).toHaveLength(2);
@@ -166,7 +166,7 @@ describe("useLayout v5", () => {
         { id: "g2", title: "", cells: [{ id: "c2", span: 5, widget: null }] },
       ],
     };
-    const { result } = renderHook(() => useLayout(two, "client-1"));
+    const { result } = renderHook(() => useLayout(two, "client-1", "test-cid"));
     act(() => result.current.moveCell("g1", 0, "g2", 1));
     expect(result.current.layout.groups).toHaveLength(1);
     expect(result.current.layout.groups[0].id).toBe("g2");

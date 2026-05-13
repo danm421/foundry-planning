@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { loadLayout, parseSavedLayout } from "../load-layout";
+import { loadComparison, parseSavedLayout } from "../load-layout";
 import { ComparisonLayoutV5Schema } from "../layout-schema";
 
 const select = vi.fn();
@@ -15,20 +15,13 @@ vi.mock("@/db", () => ({
 
 const ctx = { primaryScenarioId: "base", urlPlanIds: null, defaultTitle: "Test Report" };
 
-describe("loadLayout", () => {
+describe("loadComparison", () => {
   beforeEach(() => select.mockReset());
 
-  it("returns a v5 default when no row exists", async () => {
+  it("returns null when no row exists", async () => {
     select.mockResolvedValue([]);
-    const layout = await loadLayout("c", "f", ctx);
-    expect(layout.version).toBe(5);
-    expect(layout.title).toBe("Test Report");
-    expect(ComparisonLayoutV5Schema.safeParse(layout).success).toBe(true);
-    // Default: single group with one span-5 placeholder cell
-    expect(layout.groups).toHaveLength(1);
-    expect(layout.groups[0].cells).toHaveLength(1);
-    expect(layout.groups[0].cells[0].span).toBe(5);
-    expect(layout.groups[0].cells[0].widget).toBeNull();
+    const loaded = await loadComparison("cid", "c", "f", ctx);
+    expect(loaded).toBeNull();
   });
 
   it("returns a stored v4 layout migrated to v5", async () => {
@@ -51,13 +44,16 @@ describe("loadLayout", () => {
         },
       ],
     };
-    select.mockResolvedValue([{ layout: stored }]);
-    const layout = await loadLayout("c", "f", ctx);
+    select.mockResolvedValue([{ id: "cid", name: "Default", layout: stored }]);
+    const loaded = await loadComparison("cid", "c", "f", ctx);
+    expect(loaded).not.toBeNull();
+    const layout = loaded!.layout;
     expect(layout.version).toBe(5);
     expect(layout.title).toBe("Stored");
     expect(layout.groups).toHaveLength(1);
     expect(layout.groups[0].cells[0].span).toBe(5);
     expect(layout.groups[0].cells[0].widget?.kind).toBe("portfolio");
+    expect(ComparisonLayoutV5Schema.safeParse(layout).success).toBe(true);
   });
 
   it("migrates a stored v3 layout into v5", async () => {
@@ -69,15 +65,14 @@ describe("loadLayout", () => {
         { instanceId: "22222222-2222-4222-8222-222222222222", kind: "kpi-strip" },
       ],
     };
-    select.mockResolvedValue([{ layout: v3 }]);
-    const layout = await loadLayout("c", "f", ctx);
+    select.mockResolvedValue([{ id: "cid", name: "Default", layout: v3 }]);
+    const loaded = await loadComparison("cid", "c", "f", ctx);
+    const layout = loaded!.layout;
     expect(layout.version).toBe(5);
-    // portfolio becomes 1 group of 1 cell (span 5), kpi-strip expands into a group of 5 cells.
     expect(layout.groups).toHaveLength(2);
     expect(layout.groups[0].cells).toHaveLength(1);
     expect(layout.groups[0].cells[0].span).toBe(5);
     expect(layout.groups[1].cells).toHaveLength(5);
-    // planIds default to primary
     expect(layout.groups[0].cells[0].widget?.planIds).toEqual(["base"]);
   });
 
@@ -89,10 +84,10 @@ describe("loadLayout", () => {
         { instanceId: "33333333-3333-4333-8333-333333333333", kind: "portfolio", hidden: false },
       ],
     };
-    select.mockResolvedValue([{ layout: v2 }]);
-    const layout = await loadLayout("c", "f", ctx);
-    expect(layout.version).toBe(5);
-    expect(layout.groups[0].cells[0].widget?.kind).toBe("portfolio");
+    select.mockResolvedValue([{ id: "cid", name: "Default", layout: v2 }]);
+    const loaded = await loadComparison("cid", "c", "f", ctx);
+    expect(loaded!.layout.version).toBe(5);
+    expect(loaded!.layout.groups[0].cells[0].widget?.kind).toBe("portfolio");
   });
 
   it("seeds planIds from ctx.urlPlanIds when migrating v3", async () => {
@@ -101,20 +96,20 @@ describe("loadLayout", () => {
       yearRange: null,
       items: [{ instanceId: "44444444-4444-4444-8444-444444444444", kind: "portfolio" }],
     };
-    select.mockResolvedValue([{ layout: v3 }]);
-    const layout = await loadLayout("c", "f", {
+    select.mockResolvedValue([{ id: "cid", name: "Default", layout: v3 }]);
+    const loaded = await loadComparison("cid", "c", "f", {
       primaryScenarioId: "base",
       urlPlanIds: ["base", "scenario-x"],
     });
-    expect(layout.groups[0].cells[0].widget?.planIds).toEqual(["base", "scenario-x"]);
+    expect(loaded!.layout.groups[0].cells[0].widget?.planIds).toEqual(["base", "scenario-x"]);
   });
 
   it("falls back to default on unparseable saved layout", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    select.mockResolvedValue([{ layout: { not: "anything", we: "recognize" } }]);
-    const layout = await loadLayout("c", "f", ctx);
-    expect(layout.version).toBe(5);
-    expect(layout.groups).toHaveLength(1); // default = single blank group
+    select.mockResolvedValue([{ id: "cid", name: "Default", layout: { not: "anything", we: "recognize" } }]);
+    const loaded = await loadComparison("cid", "c", "f", ctx);
+    expect(loaded!.layout.version).toBe(5);
+    expect(loaded!.layout.groups).toHaveLength(1);
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });

@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { clientComparisonLayouts } from "@/db/schema";
+import { clientComparisons } from "@/db/schema";
 import {
   ComparisonLayoutSchema,
   ComparisonLayoutV4Schema,
@@ -76,7 +76,7 @@ export function parseSavedLayout(raw: unknown, ctx: MigrationContext): Compariso
   return null;
 }
 
-function defaultV5(ctx: MigrationContext): ComparisonLayoutV5 {
+export function defaultV5(ctx: MigrationContext): ComparisonLayoutV5 {
   return {
     version: 5,
     title: ctx.defaultTitle ?? "Comparison Report",
@@ -90,28 +90,56 @@ function defaultV5(ctx: MigrationContext): ComparisonLayoutV5 {
   };
 }
 
-export async function loadLayout(
+export interface ComparisonSummary {
+  id: string;
+  name: string;
+}
+
+export async function listClientComparisons(
+  clientId: string,
+  firmId: string,
+): Promise<ComparisonSummary[]> {
+  return db
+    .select({ id: clientComparisons.id, name: clientComparisons.name })
+    .from(clientComparisons)
+    .where(
+      and(
+        eq(clientComparisons.clientId, clientId),
+        eq(clientComparisons.firmId, firmId),
+      ),
+    )
+    .orderBy(asc(clientComparisons.name));
+}
+
+export interface LoadedComparison {
+  id: string;
+  name: string;
+  layout: ComparisonLayoutV5;
+}
+
+export async function loadComparison(
+  comparisonId: string,
   clientId: string,
   firmId: string,
   ctx: MigrationContext,
-): Promise<ComparisonLayoutV5> {
-  const rows = await db
-    .select({ layout: clientComparisonLayouts.layout })
-    .from(clientComparisonLayouts)
+): Promise<LoadedComparison | null> {
+  const [row] = await db
+    .select()
+    .from(clientComparisons)
     .where(
       and(
-        eq(clientComparisonLayouts.clientId, clientId),
-        eq(clientComparisonLayouts.firmId, firmId),
+        eq(clientComparisons.id, comparisonId),
+        eq(clientComparisons.clientId, clientId),
+        eq(clientComparisons.firmId, firmId),
       ),
     );
+  if (!row) return null;
 
-  if (rows.length === 0) return defaultV5(ctx);
-
-  const parsed = parseSavedLayout(rows[0].layout, ctx);
-  if (parsed) return parsed;
+  const parsed = parseSavedLayout(row.layout, ctx);
+  if (parsed) return { id: row.id, name: row.name, layout: parsed };
 
   console.warn(
-    `[comparison-layout] failed to parse saved layout for client ${clientId}; falling back to default`,
+    `[client-comparison] failed to parse saved layout for comparison ${comparisonId}; falling back to default`,
   );
-  return defaultV5(ctx);
+  return { id: row.id, name: row.name, layout: defaultV5(ctx) };
 }
