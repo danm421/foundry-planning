@@ -1,6 +1,22 @@
 // src/lib/tax/state-income/__tests__/compute.test.ts
 import { describe, it, expect } from "vitest";
 import { computeStateIncomeTax } from "../compute";
+import type { ComputeStateIncomeTaxInput } from "../compute";
+
+const BASE_FEDERAL_INCOME: ComputeStateIncomeTaxInput["federalIncome"] = {
+  agi: 100_000,
+  taxableIncome: 88_000,
+  ordinaryIncome: 100_000,
+  dividends: 0,
+  capitalGains: 0,
+  earnedIncome: 100_000,
+  taxableSocialSecurity: 0,
+  taxExemptIncome: 0,
+};
+
+const BASE_RETIREMENT: ComputeStateIncomeTaxInput["retirementBreakdown"] = {
+  db: 0, ira: 0, k401: 0, annuity: 0,
+};
 
 describe("computeStateIncomeTax — no-income-tax states", () => {
   it.each(["AK", "FL", "NV", "NH", "SD", "TN", "TX", "WY"] as const)(
@@ -48,5 +64,28 @@ describe("computeStateIncomeTax — no-income-tax states", () => {
     });
     expect(r.stateTax).toBe(175_000 * 0.05);
     expect(r.state).toBeNull();
+  });
+});
+
+describe("computeStateIncomeTax — easy FAGI-base states", () => {
+  it("AZ 2026 single, $100K FAGI, no SS/retirement → flat 2.5% on (AGI − std ded)", () => {
+    const r = computeStateIncomeTax({
+      state: "AZ",
+      year: 2026,
+      filingStatus: "single",
+      primaryAge: 45,
+      federalIncome: BASE_FEDERAL_INCOME,
+      retirementBreakdown: BASE_RETIREMENT,
+      preTaxContrib: 0,
+      fallbackFlatRate: 0,
+    });
+    // AZ uses Federal AGI as base. Std deduction single 2026 = 8350. No exemption.
+    // Taxable = 100_000 - 8350 = 91_650. Rate 2.5% → 2291.25.
+    expect(r.stateTax).toBeCloseTo(2291.25, 2);
+    expect(r.incomeBase).toBe("federal-agi");
+    expect(r.stateAGI).toBe(100_000);
+    expect(r.stdDeduction).toBe(8350);
+    expect(r.stateTaxableIncome).toBe(91_650);
+    expect(r.hasIncomeTax).toBe(true);
   });
 });
