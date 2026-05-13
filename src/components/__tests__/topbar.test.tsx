@@ -37,7 +37,7 @@ describe("Topbar", () => {
     expect(container.querySelector("nav[role='tablist']")).toBeNull();
   });
 
-  it("renders all 6 report tabs in order on a client route", () => {
+  it("renders all 6 tabs in order on a client route", () => {
     vi.mocked(usePathname).mockReturnValue("/clients/c1/overview");
     const { container } = render(<Topbar />);
     const text = container.textContent ?? "";
@@ -47,7 +47,7 @@ describe("Topbar", () => {
       "Assets",
       "Cash Flow",
       "Estate Planning",
-      "Reports",
+      "Comparison",
     ];
     let last = -1;
     for (const label of expected) {

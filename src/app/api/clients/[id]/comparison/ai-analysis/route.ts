@@ -1,10 +1,7 @@
-// src/app/api/clients/[id]/comparison/ai-analysis/route.ts
-//
-// POST: generate Markdown commentary for the comparison tool's text
-// widget. Mirrors src/app/api/clients/[id]/reports/[reportId]/ai-analysis:
-// same Azure wrapper, same firm-keyed extract rate limit, same fail-closed
-// posture. Adds a Redis cache keyed by the SHA-256 of the assembled prompt
-// strings so repeated Generate clicks on unchanged inputs are free.
+// POST: generate Markdown commentary for the comparison tool's text widget.
+// Same Azure wrapper, firm-keyed extract rate limit, and fail-closed posture
+// as other AI routes. Adds a Redis cache keyed by the SHA-256 of the assembled
+// prompt strings so repeated Generate clicks on unchanged inputs are free.
 
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
