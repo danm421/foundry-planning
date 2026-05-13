@@ -25,6 +25,13 @@ import { successGaugeWidget } from "./success-gauge";
 import { estateEndBeneficiariesWidget } from "./estate-end-beneficiaries";
 import { estateTransfersYearlyWidget } from "./estate-transfers-yearly";
 import { giftTaxWidget } from "./gift-tax";
+import { majorTransactionsWidget } from "./major-transactions";
+import { clientProfileWidget } from "./client-profile";
+import { incomeSourcesWidget } from "./income-sources";
+import { balanceSheetWidget } from "./balance-sheet";
+import { expenseDetailWidget } from "./expense-detail";
+import { assetAllocationWidget } from "./asset-allocation";
+import { scenarioChangesWidget } from "./scenario-changes";
 
 export const COMPARISON_WIDGETS: Record<
   ComparisonWidgetKindV4,
@@ -55,4 +62,11 @@ export const COMPARISON_WIDGETS: Record<
   "estate-end-beneficiaries": estateEndBeneficiariesWidget,
   "estate-transfers-yearly": estateTransfersYearlyWidget,
   "gift-tax": giftTaxWidget,
+  "major-transactions": majorTransactionsWidget,
+  "client-profile": clientProfileWidget,
+  "income-sources": incomeSourcesWidget,
+  "balance-sheet": balanceSheetWidget,
+  "expense-detail": expenseDetailWidget,
+  "asset-allocation": assetAllocationWidget,
+  "scenario-changes": scenarioChangesWidget,
 };

@@ -26,6 +26,7 @@ function mkPlan(label: string, ss: number[]): ComparisonPlan {
     liquidityRows: [],
     finalEstate: null,
     panelData: null,
+    allocation: null,
   };
 }
 

@@ -36,6 +36,7 @@ function mkPlan(label: string, rmds: Array<{ year: number; byAccount: Record<str
     liquidityRows: [],
     finalEstate: null,
     panelData: null,
+    allocation: null,
   };
 }
 

@@ -72,6 +72,7 @@ function mkPlan(label: string): ComparisonPlan {
     liquidityRows: [],
     finalEstate: null,
     panelData: null,
+    allocation: null,
   };
 }
 

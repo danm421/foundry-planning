@@ -7,6 +7,8 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { authErrorResponse } from "@/lib/authz";
 import { buildComparisonPlans } from "@/lib/comparison/build-comparison-plans";
 import { loadProjectionForRef } from "@/lib/scenario/load-projection-for-ref";
+import { loadPanelData } from "@/lib/scenario/load-panel-data";
+import { loadAllocationForPlan } from "@/lib/comparison/load-allocation-for-plan";
 import { buildYearlyEstateReport } from "@/lib/estate/yearly-estate-report";
 import { buildYearlyLiquidityReport } from "@/lib/estate/yearly-liquidity-report";
 import type { ScenarioRef } from "@/lib/scenario/loader";
@@ -46,7 +48,14 @@ export async function POST(
     const plans = await buildComparisonPlans({
       refs: unique.map(tokenToRef),
       loadProjection: (ref) => loadProjectionForRef(id, firmId, ref),
-      loadPanel: async () => null, // panelData is UI-only; preview doesn't need it
+      loadPanel: async (ref, scenarioName) => {
+        if (ref.kind !== "scenario" || ref.id === "base") return null;
+        const data = await loadPanelData(id, ref.id, firmId);
+        if (!data) return null;
+        return { ...data, label: scenarioName };
+      },
+      loadAllocation: (loaded) =>
+        loadAllocationForPlan({ clientId: id, firmId, loaded }),
       buildEstateRows: (l) => {
         const c = l.tree.client;
         return buildYearlyEstateReport({
@@ -74,10 +83,7 @@ export async function POST(
       },
     });
 
-    // Strip panelData before sending; the client doesn't need it in preview mode.
-    return NextResponse.json({
-      plans: plans.map((p) => ({ ...p, panelData: null })),
-    });
+    return NextResponse.json({ plans });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: err.issues }, { status: 400 });

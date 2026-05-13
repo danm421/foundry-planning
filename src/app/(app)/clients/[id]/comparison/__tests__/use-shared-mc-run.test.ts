@@ -35,6 +35,7 @@ const makePlan = (id: string): ComparisonPlan =>
     liquidityRows: [],
     finalEstate: null,
     panelData: null,
+    allocation: null,
     ref: { kind: "scenario", id, toggleState: {} } as never,
   }) as unknown as ComparisonPlan;
 

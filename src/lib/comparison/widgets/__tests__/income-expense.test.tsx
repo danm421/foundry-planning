@@ -56,6 +56,7 @@ function makePlanFixture(): ComparisonPlan {
     liquidityRows: [] as never,
     finalEstate: null,
     panelData: null,
+    allocation: null,
   };
 }
 
