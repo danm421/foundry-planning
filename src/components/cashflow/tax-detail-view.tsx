@@ -3,6 +3,7 @@
 import type { ProjectionYear } from "@/engine";
 import { TaxDetailIncomeTable } from "./tax-detail-income-table";
 import { TaxDetailFlowTable } from "./tax-detail-flow-table";
+import { TaxDetailStateTable } from "./tax-detail-state-table";
 import { TaxBracketTab } from "./tax-bracket-tab";
 import { YearRangeSlider } from "./year-range-slider";
 import type {
@@ -10,11 +11,12 @@ import type {
   BracketColumnKey,
 } from "@/lib/reports/tax-cell-drill/types";
 
-export type TaxDetailTabId = "income" | "federal" | "bracket";
+export type TaxDetailTabId = "income" | "federal" | "state" | "bracket";
 
 export const TAX_DETAIL_TABS: { id: TaxDetailTabId; label: string }[] = [
   { id: "income", label: "Income Breakdown" },
   { id: "federal", label: "Federal Tax Breakdown" },
+  { id: "state", label: "State Tax Breakdown" },
   { id: "bracket", label: "Tax Bracket" },
 ];
 
@@ -74,6 +76,14 @@ export function TaxDetailView({
       )}
       {activeTab === "federal" && (
         <TaxDetailFlowTable
+          years={years}
+          onYearClick={onYearClick}
+          clientLifeExpectancy={clientLifeExpectancy}
+          spouseLifeExpectancy={spouseLifeExpectancy}
+        />
+      )}
+      {activeTab === "state" && (
+        <TaxDetailStateTable
           years={years}
           onYearClick={onYearClick}
           clientLifeExpectancy={clientLifeExpectancy}

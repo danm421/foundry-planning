@@ -2263,6 +2263,38 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       }
     }
 
+    // ── Retirement breakdown for state income tax exclusions ─────────────────
+    // Classify per-source ordinary income into the four state-exclusion buckets:
+    //   db     = pension/deferred (Income.type === "deferred")
+    //   ira    = traditional IRA RMDs + supplemental draws (subType = traditional_ira)
+    //   k401   = 401k/403b RMDs + supplemental draws (subType = 401k | 403b)
+    //   annuity = (no current account subType maps here; reserved for future use)
+    // bySource keys: "<accountId>:rmd", "withdrawal:<accountId>", or "<incomeId>"
+    const retirementBreakdown = { db: 0, ira: 0, k401: 0, annuity: 0 };
+    {
+      const incomeById = new Map(currentIncomes.map((inc) => [inc.id, inc]));
+      for (const [key, entry] of Object.entries(taxDetail.bySource)) {
+        if (entry.type !== "ordinary_income" || entry.amount <= 0) continue;
+        const rmdMatch = key.match(/^([^:]+):rmd$/);
+        const withdrawalMatch = key.match(/^withdrawal:(.+)$/);
+        if (rmdMatch) {
+          const acct = accountById.get(rmdMatch[1]);
+          const sub = acct?.subType ?? "";
+          if (sub === "traditional_ira") retirementBreakdown.ira += entry.amount;
+          else if (sub === "401k" || sub === "403b") retirementBreakdown.k401 += entry.amount;
+        } else if (withdrawalMatch) {
+          const acct = accountById.get(withdrawalMatch[1]);
+          const sub = acct?.subType ?? "";
+          if (sub === "traditional_ira") retirementBreakdown.ira += entry.amount;
+          else if (sub === "401k" || sub === "403b") retirementBreakdown.k401 += entry.amount;
+        } else {
+          // Income row keyed by incomeId
+          const inc = incomeById.get(key);
+          if (inc?.type === "deferred") retirementBreakdown.db += entry.amount;
+        }
+      }
+    }
+
     const taxOut = computeTaxForYear({
       taxDetail,
       socialSecurityGross: income.socialSecurity,
@@ -2281,6 +2313,9 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       transferEarlyWithdrawalPenalty: transferResult.earlyWithdrawalPenalty,
       interestIncomeForTax,
       deductionBreakdownIn: deductionBreakdownResult ?? null,
+      retirementBreakdown,
+      primaryAge: ages.client,
+      spouseAge: ages.spouse,
     });
 
     // `taxes` is the pre-supplemental tax. The legacy no-checking path (else branch

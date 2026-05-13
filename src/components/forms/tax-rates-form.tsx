@@ -71,6 +71,11 @@ export default function TaxRatesForm({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [mode, setMode] = useState<"flat" | "bracket">(initialMode);
+  // Controlled across two `<select>`s (one in the Income Tax section, one in
+  // the Estate Tax section) since residenceState drives both engines.
+  const [residenceStateValue, setResidenceStateValue] = useState<USPSStateCode | "">(
+    residenceState ?? "",
+  );
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -81,10 +86,9 @@ export default function TaxRatesForm({
     const data = new FormData(e.currentTarget);
     const toDec = (name: string) => String(Number(data.get(name) as string) / 100);
 
-    const rawResidence = data.get("residenceState");
-    const residence = typeof rawResidence === "string" && rawResidence.length === 2
-      ? rawResidence
-      : null;
+    // residenceState is mirrored across two selects; read from controlled state
+    // so the two stay in lockstep regardless of which one the user touched.
+    const residence = residenceStateValue === "" ? null : residenceStateValue;
     const body: Record<string, string | null | undefined> = {
       flatStateRate: toDec("flatStateRate"),
       taxEngineMode: mode,
@@ -166,6 +170,27 @@ export default function TaxRatesForm({
           <label className="block text-xs font-medium text-gray-300" htmlFor="flatStateRate">State rate</label>
           <PercentInput id="flatStateRate" name="flatStateRate" defaultValue={pct(flatStateRate)} className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent" />
         </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-300" htmlFor="residenceStateIncome">State of residence (income tax)</label>
+          <select
+            id="residenceStateIncome"
+            value={residenceStateValue}
+            onChange={(e) => setResidenceStateValue(e.target.value === "" ? "" : (e.target.value as USPSStateCode))}
+            className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            <option value="">— Use flat-rate fallback —</option>
+            {USPS_STATE_CODES.map((code) => (
+              <option key={code} value={code}>
+                {USPS_STATE_NAMES[code]}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-gray-400">
+            If selected, the bracket-mode engine computes state tax using that state&apos;s brackets,
+            deductions, and exemptions. Otherwise the flat State rate above applies. Also drives the
+            state-of-residence used by the Estate Tax engine below.
+          </p>
+        </div>
       </div>
 
       <header className="mt-6">
@@ -191,7 +216,8 @@ export default function TaxRatesForm({
           <select
             id="residenceState"
             name="residenceState"
-            defaultValue={residenceState ?? ""}
+            value={residenceStateValue}
+            onChange={(e) => setResidenceStateValue(e.target.value === "" ? "" : (e.target.value as USPSStateCode))}
             className="mt-1 block w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           >
             <option value="">— Not set —</option>
