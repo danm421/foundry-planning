@@ -81,6 +81,17 @@ describe("TaxBracketFillComparisonSection", () => {
       expect(d.stepped).toBe("before");
       expect(d.borderDash).toEqual([4, 4]);
     }
+    // Each bracket-top line must have a unique `stack`. The bar datasets share
+    // stack "tbf" (so they stack), and the y-scale uses stacked:true to enable
+    // that — but without a unique stack per line, Chart.js would cumulatively
+    // stack all six bracket-top lines into a single area chart, blowing the
+    // y-axis up to several million dollars of phantom "top of 35%".
+    const lineStacks = lineDatasets.map((d: { stack?: string }) => d.stack);
+    expect(new Set(lineStacks).size).toBe(lineStacks.length);
+    for (const s of lineStacks) {
+      expect(s).toBeTruthy();
+      expect(s).not.toBe("tbf");
+    }
   });
 
   it("renders an empty state when every clipped year is missing taxResult or zero", () => {

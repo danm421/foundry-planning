@@ -102,6 +102,10 @@ function PlanCard({ plan, yearRange, index }: { plan: ComparisonPlan; yearRange:
       pointRadius: 0,
       stepped: "before" as const,
       fill: false,
+      // Each line in its own stack — y.stacked=true is needed for the bar
+      // datasets, but without a unique stack key Chart.js groups all lines
+      // by their type and renders them as a cumulative stacked area.
+      stack: `bracket-top-${rate}`,
     }));
     return { labels, datasets: [...barDatasets, ...lineDatasets] };
   }, [years, rows, allRates, bracketTops]);
