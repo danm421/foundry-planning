@@ -12,7 +12,7 @@ const csp = [
    // and Clerk ships inline bootstrapping. Revisit once nonces are wired.
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://img.clerk.com",
+  "img-src 'self' data: blob: https://img.clerk.com https://*.public.blob.vercel-storage.com",
   "font-src 'self' data:",
   // Sentry ingest domains are only needed as a fallback — browser ingestion
   // normally tunnels through /monitoring (see `tunnelRoute` below).
