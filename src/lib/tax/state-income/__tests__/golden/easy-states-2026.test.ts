@@ -30,7 +30,10 @@ const AGI = 120_000;
 const BASE_FEDERAL_INCOME = {
   agi: AGI,
   taxableIncome: 100_000,
-  ordinaryIncome: AGI,
+  // ordinaryIncome is NON-WAGE only (RMDs, IRA distributions, non-qual divs, etc.)
+  // For a pure wage-earner, ordinaryIncome=0 and earnedIncome covers all income.
+  // Setting both to AGI would double-count for state-gti states (MS, PA).
+  ordinaryIncome: 0,
   earnedIncome: AGI,
   dividends: 0,
   capitalGains: 0,

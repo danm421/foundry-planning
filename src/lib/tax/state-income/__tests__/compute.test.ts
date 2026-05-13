@@ -67,6 +67,38 @@ describe("computeStateIncomeTax — no-income-tax states", () => {
   });
 });
 
+describe("computeStateIncomeTax — income base", () => {
+  it("CO 2026 uses Federal Taxable Income, not AGI", () => {
+    const r = computeStateIncomeTax({
+      state: "CO", year: 2026, filingStatus: "single", primaryAge: 45,
+      federalIncome: {
+        agi: 100_000, taxableIncome: 85_000, ordinaryIncome: 0,
+        earnedIncome: 100_000, dividends: 0, capitalGains: 0,
+        taxableSocialSecurity: 0, taxExemptIncome: 0,
+      },
+      retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
+      preTaxContrib: 0, fallbackFlatRate: 0,
+    });
+    expect(r.incomeBase).toBe("federal-taxable");
+    expect(r.startingIncome).toBe(85_000); // not 100_000
+  });
+
+  it("CT 2026 adds back tax-exempt interest", () => {
+    const r = computeStateIncomeTax({
+      state: "CT", year: 2026, filingStatus: "single", primaryAge: 45,
+      federalIncome: {
+        agi: 100_000, taxableIncome: 85_000, ordinaryIncome: 0,
+        earnedIncome: 95_000, dividends: 0, capitalGains: 0,
+        taxableSocialSecurity: 0, taxExemptIncome: 5_000,
+      },
+      retirementBreakdown: { db: 0, ira: 0, k401: 0, annuity: 0 },
+      preTaxContrib: 0, fallbackFlatRate: 0,
+    });
+    expect(r.addbacks.taxFreeInterest).toBe(5_000);
+    expect(r.stateAGI).toBe(105_000); // 100_000 AGI + 5_000 addback
+  });
+});
+
 describe("computeStateIncomeTax — easy FAGI-base states", () => {
   it("AZ 2026 single, $100K FAGI, no SS/retirement → flat 2.5% on (AGI − std ded)", () => {
     const r = computeStateIncomeTax({

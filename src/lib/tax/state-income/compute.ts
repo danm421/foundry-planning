@@ -9,6 +9,7 @@ import { BRACKETS_2025 } from "./data/brackets-2025";
 import { BRACKETS_2026 } from "./data/brackets-2026";
 import { STD_DEDUCTIONS } from "./data/std-deductions";
 import { EXEMPTIONS } from "./data/exemptions";
+import { INCOME_BASE_RULES } from "./data/income-base";
 
 export interface FederalIncomeForState {
   agi: number;
@@ -100,15 +101,37 @@ export function computeStateIncomeTax(
     };
   }
 
-  // Easy path: lookup brackets, std deduction, exemption; use FAGI as base.
-  // Phase 1 placeholder — Section B will add income-base variations;
+  // Determine income base for this state.
+  const baseRule = INCOME_BASE_RULES[input.state] ?? {
+    base: "federal-agi" as const,
+    taxFreeInterestAddback: false,
+    preTaxRetirementSubtract: false,
+    alimonySubtract: false,
+  };
+
+  const startingIncome =
+    baseRule.base === "federal-taxable"
+      ? input.federalIncome.taxableIncome
+      : baseRule.base === "state-gti"
+        ? buildStateGti(input)
+        : input.federalIncome.agi;
+
+  const taxFreeInterestAddback = baseRule.taxFreeInterestAddback
+    ? input.federalIncome.taxExemptIncome
+    : 0;
+  const addbacks = {
+    taxFreeInterest: taxFreeInterestAddback,
+    other: 0,
+    total: taxFreeInterestAddback,
+  };
+
+  // Easy path: lookup brackets, std deduction, exemption.
   // Section C will subtract SS; Section D will subtract retirement; etc.
   const stateFs = mapFilingStatus(input.filingStatus);
   const brackets = getBrackets(input.state, input.year, stateFs);
   const stdDed = getStdDeduction(input.state, input.year, stateFs, input.primaryAge);
   const exemption = getExemption(input.state, input.year, stateFs);
-  const startingIncome = input.federalIncome.agi;
-  const stateAGI = startingIncome;
+  const stateAGI = startingIncome + addbacks.total;
   const personalExemptionDeduction = exemption.type === "exemption" ? exemption.amount : 0;
   const exemptionCredits = exemption.type === "credit" ? exemption.amount : 0;
   const stateTaxableIncome = Math.max(0, stateAGI - stdDed - personalExemptionDeduction);
@@ -119,9 +142,9 @@ export function computeStateIncomeTax(
     state: input.state,
     year: input.year,
     hasIncomeTax: true,
-    incomeBase: "federal-agi",
+    incomeBase: baseRule.base,
     startingIncome,
-    addbacks: EMPTY_ADDBACKS,
+    addbacks,
     subtractions: EMPTY_SUBTRACTIONS,
     stateAGI,
     stdDeduction: stdDed,
@@ -136,6 +159,14 @@ export function computeStateIncomeTax(
     stateTax,
     diag: { notes: ["Section A easy-path compute (no SS/retirement adjustments yet)."] },
   };
+}
+
+function buildStateGti(input: ComputeStateIncomeTaxInput): number {
+  const f = input.federalIncome;
+  // State-defined GTI: earned income + non-wage ordinary income + dividends + capital gains + taxable SS.
+  // Note: ordinaryIncome in the engine contract is non-wage (RMDs, IRA distributions, non-qual divs, etc.)
+  // and does NOT include earnedIncome — so these two buckets are additive, not overlapping.
+  return f.earnedIncome + f.ordinaryIncome + f.dividends + f.capitalGains + f.taxableSocialSecurity;
 }
 
 function getBrackets(
