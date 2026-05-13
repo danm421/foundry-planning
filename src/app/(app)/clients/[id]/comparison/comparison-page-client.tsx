@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ComparisonLayoutV5 } from "@/lib/comparison/layout-schema";
+import { extractSlots } from "@/lib/comparison/templates";
 import { ComparisonShell } from "./comparison-shell";
 import { useStripPlansUrl } from "./strip-plans-url";
 import {
@@ -10,6 +11,7 @@ import {
   type TemplateSummary,
 } from "./new-comparison-modal";
 import { SlotMappingModal } from "./slot-mapping-modal";
+import { SaveAsTemplateModal } from "./save-as-template-modal";
 
 interface ComparisonSummary {
   id: string;
@@ -43,6 +45,22 @@ export function ComparisonPageClient({
   const [newOpen, setNewOpen] = useState(false);
   const [pendingPreset, setPendingPreset] = useState<PresetSummary | null>(null);
   const [pendingTemplate, setPendingTemplate] = useState<TemplateSummary | null>(null);
+  const [saveAsOpen, setSaveAsOpen] = useState(false);
+
+  const nameByPlanId = useMemo(
+    () => Object.fromEntries(scenarios.map((s) => [s.id, s.name])),
+    [scenarios],
+  );
+
+  const defaultSlotLabels = useMemo(() => {
+    try {
+      return extractSlots(layout, nameByPlanId).slotLabels;
+    } catch {
+      return [];
+    }
+  }, [layout, nameByPlanId]);
+
+  const activeName = comparisons.find((c) => c.id === activeCid)?.name ?? "";
 
   const handleSelectComparison = async (cid: string) => {
     if (cid === activeCid) return;
@@ -87,7 +105,35 @@ export function ComparisonPageClient({
         onOpenNewComparison={() => setNewOpen(true)}
         onRenameActive={noop}
         onDeleteActive={noop}
-        onSaveActiveAsTemplate={noop}
+        onSaveActiveAsTemplate={() => activeCid && setSaveAsOpen(true)}
+      />
+      <SaveAsTemplateModal
+        open={saveAsOpen}
+        initialName={activeName}
+        defaultSlotLabels={defaultSlotLabels}
+        onCancel={() => setSaveAsOpen(false)}
+        onConfirm={async ({ name, description, visibility, slotLabels }) => {
+          if (!activeCid) return;
+          const res = await fetch(
+            `/api/clients/${clientId}/comparisons/${activeCid}/save-as-template`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name,
+                description,
+                visibility,
+                nameByPlanId,
+                slotLabels,
+              }),
+            },
+          );
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error ?? "Failed to save template");
+          }
+          setSaveAsOpen(false);
+        }}
       />
       <NewComparisonModal
         open={newOpen}
