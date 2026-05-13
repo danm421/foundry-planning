@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ComparisonLayoutSchema,
   ComparisonLayoutItemSchema,
+  WidgetInstanceSchema,
 } from "../layout-schema";
 
 describe("ComparisonLayoutItemSchema", () => {
@@ -86,5 +87,24 @@ describe("ComparisonLayoutSchema", () => {
         items: [],
       }),
     ).toThrow();
+  });
+});
+
+describe("layout-schema v5 — additional widget kinds", () => {
+  it.each([
+    "asset-allocation",
+    "major-transactions",
+    "scenario-changes",
+    "client-profile",
+    "income-sources",
+    "balance-sheet",
+    "expense-detail",
+  ])("accepts kind %s", (kind) => {
+    const parsed = WidgetInstanceSchema.safeParse({
+      id: "widget-1",
+      kind,
+      planIds: ["base"],
+    });
+    expect(parsed.success).toBe(true);
   });
 });

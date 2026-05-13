@@ -72,7 +72,8 @@ export type ComparisonWidgetCategory =
   | "retirement-income"
   | "tax"
   | "estate"
-  | "text";
+  | "text"
+  | "scenario";
 
 export type ComparisonWidgetScenarios =
   | "none"

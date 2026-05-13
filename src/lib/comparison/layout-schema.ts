@@ -78,6 +78,13 @@ export const WIDGET_KINDS_V4 = [
   "estate-end-beneficiaries",
   "gift-tax",
   "success-gauge",
+  "asset-allocation",
+  "major-transactions",
+  "scenario-changes",
+  "client-profile",
+  "income-sources",
+  "balance-sheet",
+  "expense-detail",
 ] as const;
 export type ComparisonWidgetKindV4 = (typeof WIDGET_KINDS_V4)[number];
 

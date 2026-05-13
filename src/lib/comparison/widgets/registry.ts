@@ -26,9 +26,8 @@ import { estateEndBeneficiariesWidget } from "./estate-end-beneficiaries";
 import { estateTransfersYearlyWidget } from "./estate-transfers-yearly";
 import { giftTaxWidget } from "./gift-tax";
 
-export const COMPARISON_WIDGETS: Record<
-  ComparisonWidgetKindV4,
-  ComparisonWidgetDefinition
+export const COMPARISON_WIDGETS: Partial<
+  Record<ComparisonWidgetKindV4, ComparisonWidgetDefinition>
 > = {
   kpi: kpiWidget,
   "kpi-strip": kpiStripWidget,

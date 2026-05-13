@@ -4,7 +4,10 @@ import { useMemo, useState } from "react";
 import type { WidgetInstance, YearRange, ComparisonWidgetKindV4 } from "@/lib/comparison/layout-schema";
 import { WIDGET_KINDS_V4 } from "@/lib/comparison/layout-schema";
 import { COMPARISON_WIDGETS } from "@/lib/comparison/widgets/registry";
-import type { ComparisonWidgetCategory } from "@/lib/comparison/widgets/types";
+import type {
+  ComparisonWidgetCategory,
+  ComparisonWidgetDefinition,
+} from "@/lib/comparison/widgets/types";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import { ScenarioChipPicker } from "./scenario-chip-picker";
 import { PerWidgetYearRange } from "./per-widget-year-range";
@@ -31,13 +34,25 @@ const CATEGORY_LABELS: Record<ComparisonWidgetCategory, string> = {
   "monte-carlo": "Monte Carlo",
   estate: "Estate",
   text: "Other",
+  scenario: "Scenario",
 };
+
+/** Widgets that are both registered and visible in the picker, paired with their
+ *  definitions so downstream code never has to re-lookup `COMPARISON_WIDGETS[k]`
+ *  (which is `T | undefined` because the registry is `Partial<…>`). */
+const REGISTERED_KINDS: ReadonlyArray<{
+  kind: ComparisonWidgetKindV4;
+  def: ComparisonWidgetDefinition;
+}> = WIDGET_KINDS_V4.flatMap((k) => {
+  if (HIDE_FROM_PICKER.has(k)) return [];
+  const def = COMPARISON_WIDGETS[k];
+  return def ? [{ kind: k, def }] : [];
+});
 
 const VISIBLE_CATEGORIES: readonly ComparisonWidgetCategory[] = (() => {
   const used = new Set<ComparisonWidgetCategory>();
-  for (const k of WIDGET_KINDS_V4) {
-    if (HIDE_FROM_PICKER.has(k)) continue;
-    used.add(COMPARISON_WIDGETS[k].category);
+  for (const { def } of REGISTERED_KINDS) {
+    used.add(def.category);
   }
   return CATEGORY_ORDER.filter((c) => used.has(c));
 })();
@@ -48,6 +63,7 @@ function seedPlanIds(
   scenarios: { id: string }[],
 ): string[] {
   const def = COMPARISON_WIDGETS[kind];
+  if (!def) return [];
   switch (def.scenarios) {
     case "none": return [];
     case "one": return [primary];
@@ -60,7 +76,9 @@ function seedPlanIds(
 }
 
 function validate(kind: ComparisonWidgetKindV4, planIds: string[]): string | null {
-  const expectation = COMPARISON_WIDGETS[kind].scenarios;
+  const def = COMPARISON_WIDGETS[kind];
+  if (!def) return "This widget is not yet available.";
+  const expectation = def.scenarios;
   if (expectation === "none" && planIds.length !== 0) return "This widget does not use scenarios.";
   if (expectation === "one" && planIds.length !== 1) return "Pick exactly one scenario.";
   if (expectation === "one-or-many" && planIds.length < 1) return "Pick at least one scenario.";
@@ -111,33 +129,38 @@ export function WidgetConfigModal(props: Props) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<ComparisonWidgetCategory>(
     () => {
-      if (mode === "edit") return COMPARISON_WIDGETS[props.widget.kind].category;
+      if (mode === "edit") {
+        return COMPARISON_WIDGETS[props.widget.kind]?.category ?? VISIBLE_CATEGORIES[0];
+      }
       return VISIBLE_CATEGORIES[0];
     },
   );
 
   const hasSearch = search.trim().length > 0;
 
-  const groupedKinds: { category: ComparisonWidgetCategory; kinds: ComparisonWidgetKindV4[] }[] = useMemo(() => {
+  const groupedKinds: {
+    category: ComparisonWidgetCategory;
+    entries: Array<{ kind: ComparisonWidgetKindV4; def: ComparisonWidgetDefinition }>;
+  }[] = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const all = WIDGET_KINDS_V4.filter((k) => !HIDE_FROM_PICKER.has(k));
     const matching = q
-      ? all.filter((k) => COMPARISON_WIDGETS[k].title.toLowerCase().includes(q))
-      : all.filter((k) => COMPARISON_WIDGETS[k].category === activeCategory);
-    const byCategory = new Map<ComparisonWidgetCategory, ComparisonWidgetKindV4[]>();
-    for (const k of matching) {
-      const cat = COMPARISON_WIDGETS[k].category;
+      ? REGISTERED_KINDS.filter(({ def }) => def.title.toLowerCase().includes(q))
+      : REGISTERED_KINDS.filter(({ def }) => def.category === activeCategory);
+    const byCategory = new Map<
+      ComparisonWidgetCategory,
+      Array<{ kind: ComparisonWidgetKindV4; def: ComparisonWidgetDefinition }>
+    >();
+    for (const entry of matching) {
+      const cat = entry.def.category;
       const bucket = byCategory.get(cat);
-      if (bucket) bucket.push(k);
-      else byCategory.set(cat, [k]);
+      if (bucket) bucket.push(entry);
+      else byCategory.set(cat, [entry]);
     }
     return CATEGORY_ORDER.flatMap((category) => {
-      const kinds = byCategory.get(category);
-      if (!kinds || kinds.length === 0) return [];
-      kinds.sort((a, b) =>
-        COMPARISON_WIDGETS[a].title.localeCompare(COMPARISON_WIDGETS[b].title),
-      );
-      return [{ category, kinds }];
+      const entries = byCategory.get(category);
+      if (!entries || entries.length === 0) return [];
+      entries.sort((a, b) => a.def.title.localeCompare(b.def.title));
+      return [{ category, entries }];
     });
   }, [search, activeCategory]);
 
@@ -167,6 +190,7 @@ export function WidgetConfigModal(props: Props) {
 
   const handlePickKind = (next: ComparisonWidgetKindV4) => {
     const nextDef = COMPARISON_WIDGETS[next];
+    if (!nextDef) return;
     setKind(next);
     const seeded = seedPlanIds(next, primaryScenarioId, scenarios);
     setPlanIds(seeded);
@@ -261,7 +285,7 @@ export function WidgetConfigModal(props: Props) {
                       : "No widgets in this category."}
                   </p>
                 ) : (
-                  groupedKinds.map(({ category, kinds }) => (
+                  groupedKinds.map(({ category, entries }) => (
                     <div key={category}>
                       {hasSearch && (
                         <div className="mb-1 px-1 text-[10px] font-medium uppercase tracking-wider text-ink-3">
@@ -269,7 +293,7 @@ export function WidgetConfigModal(props: Props) {
                         </div>
                       )}
                       <div className="grid grid-cols-2 gap-1">
-                        {kinds.map((k) => {
+                        {entries.map(({ kind: k, def: entryDef }) => {
                           const selected = kind === k;
                           return (
                             <button
@@ -283,7 +307,7 @@ export function WidgetConfigModal(props: Props) {
                                   : "border-slate-700 hover:bg-slate-800"
                               }`}
                             >
-                              {COMPARISON_WIDGETS[k].title}
+                              {entryDef.title}
                             </button>
                           );
                         })}
