@@ -21,7 +21,7 @@ import {
   validatePrimaryColor,
 } from "@/lib/branding/validation";
 
-type ActionResult<T = Record<string, never>> =
+type ActionResult<T = unknown> =
   | ({ ok: true } & T)
   | { ok: false; error: string };
 

@@ -45,7 +45,7 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0
 
 function fileFormData(name: string, mime: string, body: Buffer): FormData {
   const fd = new FormData();
-  fd.set("file", new File([body], name, { type: mime }));
+  fd.set("file", new File([new Uint8Array(body)], name, { type: mime }));
   return fd;
 }
 
