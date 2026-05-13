@@ -21,7 +21,6 @@ import {
 import { relations, sql, type InferSelectModel, type InferInsertModel } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { BracketTier } from "@/lib/tax/types";
-import type { ReportPagesPersisted } from "@/lib/reports/types";
 import type { ComparisonLayout, ComparisonLayoutV4, ComparisonLayoutV5 } from "@/lib/comparison/layout-schema";
 
 const inet = customType<{ data: string; driverData: string }>({
@@ -1586,7 +1585,7 @@ export const reports = pgTable(
       .references(() => clients.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     templateKey: text("template_key"), // null for blank
-    pages: jsonb("pages").notNull().$type<ReportPagesPersisted>(),
+    pages: jsonb("pages").notNull().$type<unknown[]>(),
     createdByUserId: text("created_by_user_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
