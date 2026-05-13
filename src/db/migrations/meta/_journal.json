@@ -652,6 +652,13 @@
       "when": 1778630450223,
       "tag": "0092_comparison_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1778681074668,
+      "tag": "0093_firm_branding",
+      "breakpoints": true
     }
   ]
 }
