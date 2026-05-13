@@ -7,7 +7,7 @@ import { firms } from "@/db/schema";
 import { requireOrgId, UnauthorizedError } from "@/lib/db-helpers";
 import { getArtifact } from "@/lib/report-artifacts/index";
 import { isSafePngDataUri } from "@/lib/report-artifacts/png-validation";
-import { ArtifactDocument } from "@/components/reports-pdf/artifact-document";
+import { ArtifactDocument } from "@/components/pdf/artifact-document";
 import type { ChartImage, Variant } from "@/lib/report-artifacts/types";
 
 export const dynamic = "force-dynamic";

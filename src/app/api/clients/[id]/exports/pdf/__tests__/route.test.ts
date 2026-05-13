@@ -24,7 +24,7 @@ vi.mock("@/db", () => ({
   },
 }));
 
-vi.mock("@/components/reports-pdf/artifact-document", () => ({
+vi.mock("@/components/pdf/artifact-document", () => ({
   ArtifactDocument: ({ children }: { children: unknown }) => children,
 }));
 

@@ -2,8 +2,8 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { eq, and, inArray } from "drizzle-orm";
 import { View, Text, StyleSheet } from "@react-pdf/renderer";
-import { DataTable } from "@/components/reports-pdf/widgets/data-table";
-import { ChartImage } from "@/components/reports-pdf/widgets/chart-image";
+import { DataTable } from "@/components/pdf/widgets/data-table";
+import { ChartImage } from "@/components/pdf/widgets/chart-image";
 import { db } from "@/db";
 import {
   clients,
