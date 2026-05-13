@@ -30,6 +30,11 @@ vi.mock("@/lib/estate/yearly-liquidity-report", () => ({
   buildYearlyLiquidityReport: vi.fn(() => ({ rows: [] })),
 }));
 
+const loadPanelDataMock = vi.fn();
+vi.mock("@/lib/scenario/load-panel-data", () => ({
+  loadPanelData: (...args: unknown[]) => loadPanelDataMock(...args),
+}));
+
 import { POST } from "../route";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
@@ -39,6 +44,7 @@ let testClientId: string;
 
 beforeEach(async () => {
   buildMock.mockReset();
+  loadPanelDataMock.mockReset();
   const [c] = await db
     .insert(clients)
     .values({
@@ -121,6 +127,99 @@ describe("POST /api/clients/[id]/comparison-plans", () => {
     const json = await res.json();
     expect(json.plans).toHaveLength(1);
     expect(json.plans[0].id).toBe("base");
+  });
+
+  it("returns panelData for a scenario plan ref", async () => {
+    const scenarioId = "11111111-1111-1111-1111-111111111111";
+    loadPanelDataMock.mockResolvedValue({
+      scenarioId,
+      scenarioName: "Test scenario",
+      changes: [
+        {
+          id: "ch-1",
+          scenarioId,
+          opType: "edit",
+          targetKind: "income",
+          targetId: "22222222-2222-2222-2222-222222222222",
+          payload: { amount: { from: 100, to: 200 } },
+          toggleGroupId: null,
+          orderIndex: 0,
+          updatedAt: new Date(),
+          enabled: true,
+        },
+      ],
+      toggleGroups: [],
+      cascadeWarnings: [],
+      targetNames: {},
+    });
+    // Mirror real buildComparisonPlans: invoke loadPanel for each ref and
+    // propagate the result into the returned plans.
+    buildMock.mockImplementation(
+      async (input: {
+        refs: { kind: string; id: string }[];
+        loadPanel: (
+          ref: { kind: string; id: string },
+          label: string,
+        ) => Promise<unknown>;
+      }) => {
+        const panels = await Promise.all(
+          input.refs.map((ref) => input.loadPanel(ref, "Test scenario")),
+        );
+        return input.refs.map((ref, i) => ({
+          id: ref.id,
+          label: "Test scenario",
+          panelData: panels[i],
+        }));
+      },
+    );
+
+    const res = await POST(
+      new NextRequest("http://localhost/x", {
+        method: "POST",
+        body: JSON.stringify({ plans: [scenarioId] }),
+      }),
+      makeParams(),
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.plans[0].panelData).not.toBeNull();
+    expect(json.plans[0].panelData.changes).toHaveLength(1);
+    // Sanity: loadPanelData was called with (clientId, scenarioId, firmId).
+    expect(loadPanelDataMock).toHaveBeenCalledWith(testClientId, scenarioId, TEST_FIRM);
+  });
+
+  it("returns null panelData for base and snapshot refs", async () => {
+    buildMock.mockImplementation(
+      async (input: {
+        refs: { kind: string; id: string }[];
+        loadPanel: (
+          ref: { kind: string; id: string },
+          label: string,
+        ) => Promise<unknown>;
+      }) => {
+        const panels = await Promise.all(
+          input.refs.map((ref) => input.loadPanel(ref, "x")),
+        );
+        return input.refs.map((ref, i) => ({
+          id: ref.id,
+          label: "x",
+          panelData: panels[i],
+        }));
+      },
+    );
+
+    const res = await POST(
+      new NextRequest("http://localhost/x", {
+        method: "POST",
+        body: JSON.stringify({ plans: ["base", "snap:abc"] }),
+      }),
+      makeParams(),
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.plans[0].panelData).toBeNull();
+    expect(json.plans[1].panelData).toBeNull();
+    expect(loadPanelDataMock).not.toHaveBeenCalled();
   });
 
   it("dedupes repeated plan tokens before building", async () => {
