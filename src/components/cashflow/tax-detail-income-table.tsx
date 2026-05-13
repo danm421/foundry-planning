@@ -9,7 +9,7 @@ import {
   pickBorderTransition,
 } from "./tax-regime-indicators";
 import type { TransitionType } from "./tax-regime-indicators";
-import type { IncomeColumnKey } from "@/lib/reports/tax-cell-drill/types";
+import type { IncomeColumnKey } from "@/lib/tax/cell-drill/types";
 
 interface TaxDetailIncomeTableProps {
   years: ProjectionYear[];

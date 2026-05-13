@@ -9,14 +9,14 @@ import {
 } from "./tax-detail-view";
 import DialogShell from "@/components/dialog-shell";
 import { TaxCellDrillDownModal } from "./tax-cell-drill-down-modal";
-import { buildIncomeCellDrill } from "@/lib/reports/tax-cell-drill/income-breakdown";
-import { buildConversionCellDrill } from "@/lib/reports/tax-cell-drill/bracket-conversions";
-import { buildBracketStackCellDrill } from "@/lib/reports/tax-cell-drill/bracket-stacking";
+import { buildIncomeCellDrill } from "@/lib/tax/cell-drill/income-breakdown";
+import { buildConversionCellDrill } from "@/lib/tax/cell-drill/bracket-conversions";
+import { buildBracketStackCellDrill } from "@/lib/tax/cell-drill/bracket-stacking";
 import type {
   IncomeColumnKey,
   BracketColumnKey,
   CellDrillContext,
-} from "@/lib/reports/tax-cell-drill/types";
+} from "@/lib/tax/cell-drill/types";
 import type { Income, Account, EntitySummary, RothConversion } from "@/engine/types";
 
 interface TaxDetailModalProps {

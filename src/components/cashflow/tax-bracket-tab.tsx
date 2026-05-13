@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import type { ProjectionYear } from "@/engine";
-import { buildTaxBracketRows } from "@/lib/reports/tax-bracket";
-import type { BracketColumnKey } from "@/lib/reports/tax-cell-drill/types";
+import { buildTaxBracketRows } from "@/lib/tax/bracket";
+import type { BracketColumnKey } from "@/lib/tax/cell-drill/types";
 import type { StateIncomeTaxResult } from "@/lib/tax/state-income";
 import { USPS_STATE_NAMES } from "@/lib/usps-states";
 

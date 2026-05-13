@@ -9,7 +9,7 @@ import { YearRangeSlider } from "./year-range-slider";
 import type {
   IncomeColumnKey,
   BracketColumnKey,
-} from "@/lib/reports/tax-cell-drill/types";
+} from "@/lib/tax/cell-drill/types";
 
 export type TaxDetailTabId = "income" | "federal" | "state" | "bracket";
 

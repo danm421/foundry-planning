@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { ClientData, ProjectionYear } from "@/engine";
-import { resolveSourceLabel, formatCurrency } from "@/lib/reports/tax-cell-drill/_shared";
+import { resolveSourceLabel, formatCurrency } from "@/lib/tax/cell-drill/_shared";
 
 interface TaxDrillDownModalProps {
   year: number;

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ProjectionYear } from "@/engine/types";
 import type { TaxResult, BracketTier } from "@/lib/tax/types";
-import { buildTaxBracketRows } from "../tax-bracket";
+import { buildTaxBracketRows } from "../bracket";
 
 const tier12: BracketTier = { from: 23200, to: 94300, rate: 0.12 };
 const tier22: BracketTier = { from: 94300, to: 201050, rate: 0.22 };

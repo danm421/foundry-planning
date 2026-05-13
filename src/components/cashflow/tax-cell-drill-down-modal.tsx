@@ -1,7 +1,7 @@
 "use client";
 
-import type { CellDrillProps } from "@/lib/reports/tax-cell-drill/types";
-import { formatCurrency } from "@/lib/reports/tax-cell-drill/_shared";
+import type { CellDrillProps } from "@/lib/tax/cell-drill/types";
+import { formatCurrency } from "@/lib/tax/cell-drill/_shared";
 
 interface Props extends CellDrillProps {
   onClose: () => void;

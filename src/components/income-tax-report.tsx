@@ -15,14 +15,14 @@ import { TaxCellDrillDownModal } from "@/components/cashflow/tax-cell-drill-down
 import { StateTaxDrillDownModal } from "@/components/cashflow/state-tax-drill-down-modal";
 import type { StateIncomeTaxResult } from "@/lib/tax/state-income";
 import { TaxTabChart } from "@/components/cashflow/charts/tax-tab-chart";
-import { buildIncomeCellDrill } from "@/lib/reports/tax-cell-drill/income-breakdown";
-import { buildConversionCellDrill } from "@/lib/reports/tax-cell-drill/bracket-conversions";
-import { buildBracketStackCellDrill } from "@/lib/reports/tax-cell-drill/bracket-stacking";
+import { buildIncomeCellDrill } from "@/lib/tax/cell-drill/income-breakdown";
+import { buildConversionCellDrill } from "@/lib/tax/cell-drill/bracket-conversions";
+import { buildBracketStackCellDrill } from "@/lib/tax/cell-drill/bracket-stacking";
 import type {
   IncomeColumnKey,
   BracketColumnKey,
   CellDrillContext,
-} from "@/lib/reports/tax-cell-drill/types";
+} from "@/lib/tax/cell-drill/types";
 
 interface TaxDrillState {
   year: number;

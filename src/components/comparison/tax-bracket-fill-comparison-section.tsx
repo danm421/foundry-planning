@@ -16,7 +16,7 @@ import type { ProjectionYear } from "@/engine";
 import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { YearRange } from "@/lib/comparison/layout-schema";
 import { seriesColor } from "@/lib/comparison/series-palette";
-import { buildTaxBracketRows } from "@/lib/reports/tax-bracket";
+import { buildTaxBracketRows } from "@/lib/tax/bracket";
 import {
   bracketTopsByYear,
   inferOrdinaryBrackets,
