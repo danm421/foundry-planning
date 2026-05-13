@@ -12,7 +12,7 @@ function mkPlan(label: string, nets: Array<{ year: number; netCashFlow: number }
   return {
     index: 0,
     isBaseline: true,
-    ref: { kind: "scenario", id: label },
+    ref: { kind: "scenario", id: label, toggleState: {} },
     id: label,
     label,
     tree: {} as ComparisonPlan["tree"],

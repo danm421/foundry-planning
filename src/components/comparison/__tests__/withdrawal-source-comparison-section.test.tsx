@@ -12,7 +12,7 @@ function mkPlan(label: string): ComparisonPlan {
   return {
     index: 0,
     isBaseline: true,
-    ref: { kind: "scenario", id: label },
+    ref: { kind: "scenario", id: label, toggleState: {} },
     id: label,
     label,
     tree: {
@@ -66,7 +66,7 @@ function mkPlan(label: string): ComparisonPlan {
           },
           withdrawals: { byAccount: { trad: 20000, rot: 5000, brk: 10000 }, total: 35000 },
         },
-      ] as ComparisonPlan["result"]["years"],
+      ] as unknown as ComparisonPlan["result"]["years"],
     } as ComparisonPlan["result"],
     lifetime: {} as ComparisonPlan["lifetime"],
     liquidityRows: [],

@@ -17,7 +17,7 @@ function mkPlan(
   return {
     index: 0,
     isBaseline: label === "A",
-    ref: { kind: "scenario", id: label },
+    ref: { kind: "scenario", id: label, toggleState: {} },
     id: label,
     label,
     tree: {} as ComparisonPlan["tree"],

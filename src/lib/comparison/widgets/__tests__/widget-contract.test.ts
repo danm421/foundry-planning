@@ -43,11 +43,10 @@ describe("widget contract — category + scenarios + defaultPlanCount", () => {
     expect(COMPARISON_WIDGETS["year-by-year"].category).toBe("cashflow");
     expect(COMPARISON_WIDGETS["cash-flow-gap"].category).toBe("cashflow");
     expect(COMPARISON_WIDGETS["decade-summary"].category).toBe("cashflow");
-    expect(COMPARISON_WIDGETS["liquidity"].category).toBe("cashflow");
+    expect(COMPARISON_WIDGETS["portfolio"].category).toBe("cashflow");
 
     // Investments
     expect(COMPARISON_WIDGETS["allocation-drift"].category).toBe("investments");
-    expect(COMPARISON_WIDGETS["portfolio"].category).toBe("investments");
 
     // Monte Carlo
     expect(COMPARISON_WIDGETS["monte-carlo"].category).toBe("monte-carlo");
@@ -66,6 +65,7 @@ describe("widget contract — category + scenarios + defaultPlanCount", () => {
     expect(COMPARISON_WIDGETS["charitable-impact"].category).toBe("estate");
     expect(COMPARISON_WIDGETS["estate-impact"].category).toBe("estate");
     expect(COMPARISON_WIDGETS["estate-tax"].category).toBe("estate");
+    expect(COMPARISON_WIDGETS["liquidity"].category).toBe("estate");
 
     // Text
     expect(COMPARISON_WIDGETS["text"].category).toBe("text");

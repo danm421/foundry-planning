@@ -24,7 +24,7 @@ function mkPlan(label: string, samples: Array<{ year: number; incomeTaxBase: num
   return {
     index: 0,
     isBaseline: true,
-    ref: { kind: "scenario", id: label },
+    ref: { kind: "scenario", id: label, toggleState: {} },
     id: label,
     label,
     tree: {} as ComparisonPlan["tree"],
@@ -33,11 +33,11 @@ function mkPlan(label: string, samples: Array<{ year: number; incomeTaxBase: num
         year: s.year,
         ages: { client: 60 },
         taxResult: {
-          flow: { incomeTaxBase: s.incomeTaxBase } as ComparisonPlan["result"]["years"][number]["taxResult"]["flow"],
+          flow: { incomeTaxBase: s.incomeTaxBase } as NonNullable<ComparisonPlan["result"]["years"][number]["taxResult"]>["flow"],
           diag: { marginalFederalRate: s.marginal.rate, marginalBracketTier: s.marginal, bracketsUsed: params },
         },
         rothConversions: [],
-      })) as ComparisonPlan["result"]["years"],
+      })) as unknown as ComparisonPlan["result"]["years"],
     } as ComparisonPlan["result"],
     lifetime: {} as ComparisonPlan["lifetime"],
     liquidityRows: [],

@@ -14,7 +14,7 @@ function mkPlan(opts: {
   return {
     index: 0,
     isBaseline: true,
-    ref: { kind: "scenario", id: "x" },
+    ref: { kind: "scenario", id: "x", toggleState: {} },
     id: "x",
     label: "X",
     tree: {

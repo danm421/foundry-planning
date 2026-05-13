@@ -119,7 +119,7 @@ describe("Non-grantor business entity: net income → household tax (regression)
   });
 });
 
-import type { RealizationModel } from "../types";
+type RealizationModel = NonNullable<Account["realization"]>;
 
 const realization100PctOI: RealizationModel = {
   pctOrdinaryIncome: 1.0,
@@ -333,8 +333,9 @@ describe("LLC outside-basis bump on retained earnings (Section C)", () => {
     const llcRow = y0.entityCashFlow.get("llc1");
 
     expect(llcRow).toBeDefined();
-    expect(llcRow!.kind).toBe("business");
-    if (llcRow!.kind !== "business") throw new Error("type narrow");
+    if (!llcRow) throw new Error("llcRow missing");
+    expect(llcRow.kind).toBe("business");
+    if (llcRow.kind !== "business") throw new Error("type narrow");
 
     // beginningBasis: account basis ($0) + entity initialBasis (default 0) = 0.
     // Retained earnings $50k → endingBasis = $50k.

@@ -34,6 +34,7 @@ const baseRow: typeof accounts.$inferSelect = {
   overridePctTaxExempt: null,
   annualPropertyTax: "0",
   propertyTaxGrowthRate: "0.03",
+  propertyTaxGrowthSource: "custom",
   source: "manual",
   accountNumberLast4: null,
   custodian: null,
@@ -69,6 +70,7 @@ describe("toAccountSnapshot", () => {
       turnoverPct: 0,
       annualPropertyTax: 0,
       propertyTaxGrowthRate: 0.03,
+      propertyTaxGrowthSource: "custom",
       source: "manual",
     });
     expect(snap).not.toHaveProperty("id");

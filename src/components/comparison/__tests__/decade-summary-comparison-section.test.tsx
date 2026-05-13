@@ -8,7 +8,7 @@ function mkPlan(label: string, samples: Array<{ year: number; totalIncome: numbe
   return {
     index: 0,
     isBaseline: true,
-    ref: { kind: "scenario", id: label },
+    ref: { kind: "scenario", id: label, toggleState: {} },
     id: label,
     label,
     tree: {} as ComparisonPlan["tree"],

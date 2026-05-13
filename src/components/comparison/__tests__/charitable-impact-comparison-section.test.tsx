@@ -26,7 +26,7 @@ function mkPlan(opts: {
   return {
     index: 0,
     isBaseline: true,
-    ref: { kind: "scenario", id: opts.label },
+    ref: { kind: "scenario", id: opts.label, toggleState: {} },
     id: opts.label,
     label: opts.label,
     tree: {
