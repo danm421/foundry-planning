@@ -90,8 +90,8 @@ function MultiYearChart({ years }: { years: ProjectionYear[] }) {
         tooltip: {
           backgroundColor: "#1f2937",
           callbacks: {
-            label: (ctx: { dataset: { label?: string }; parsed: { y: number } }) =>
-              `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`,
+            label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }) =>
+              `${ctx.dataset.label}: ${(ctx.parsed.y ?? 0).toFixed(1)}%`,
           },
         },
       },
@@ -143,8 +143,8 @@ function SingleYearBar({ year }: { year: ProjectionYear }) {
         tooltip: {
           backgroundColor: "#1f2937",
           callbacks: {
-            label: (ctx: { dataset: { label?: string }; parsed: { x: number } }) =>
-              `${ctx.dataset.label}: ${ctx.parsed.x.toFixed(1)}%`,
+            label: (ctx: { dataset: { label?: string }; parsed: { x: number | null } }) =>
+              `${ctx.dataset.label}: ${(ctx.parsed.x ?? 0).toFixed(1)}%`,
           },
         },
       },

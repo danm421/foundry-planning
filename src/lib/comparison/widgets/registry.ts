@@ -35,7 +35,8 @@ import { scenarioChangesWidget } from "./scenario-changes";
 
 export const COMPARISON_WIDGETS: Record<
   ComparisonWidgetKindV4,
-  ComparisonWidgetDefinition
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ComparisonWidgetDefinition<any>
 > = {
   kpi: kpiWidget,
   "kpi-strip": kpiStripWidget,

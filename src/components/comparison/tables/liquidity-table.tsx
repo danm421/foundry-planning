@@ -30,9 +30,9 @@ export function LiquidityTableList({ plans }: { plans: ComparisonPlan[] }) {
                       <td className="px-2 py-1">{row.year}</td>
                       {cols.map((c) => (
                         <td key={c} className="px-2 py-1 text-right tabular-nums">
-                          {typeof (row as Record<string, unknown>)[c] === "number"
-                            ? usd.format((row as Record<string, number>)[c])
-                            : String((row as Record<string, unknown>)[c] ?? "—")}
+                          {typeof (row as unknown as Record<string, unknown>)[c] === "number"
+                            ? usd.format((row as unknown as Record<string, number>)[c])
+                            : String((row as unknown as Record<string, unknown>)[c] ?? "—")}
                         </td>
                       ))}
                     </tr>
