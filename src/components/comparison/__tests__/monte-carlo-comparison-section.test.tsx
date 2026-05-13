@@ -14,6 +14,7 @@ vi.mock("@/components/monte-carlo/success-gauge", () => ({
 
 function fakePlanMc(label: string, successRate: number) {
   return {
+    planId: label,
     label,
     successRate,
     summary: { ending: { p50: 1_000_000, p20: 600_000 } } as never,

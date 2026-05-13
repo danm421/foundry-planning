@@ -13,22 +13,24 @@ export const longevityWidget: ComparisonWidgetDefinition<ViewModeConfig> = {
   configSchema: ViewModeSchema,
   defaultConfig: defaultViewMode,
   renderConfig: renderViewModeConfig,
-  render: ({ mc, mcRun, config }) => {
+  render: ({ plans, mc, mcRun, config }) => {
     if (!mc) {
       return <McPlaceholder title="Longevity" mcRun={mcRun} />;
     }
+    const selected = new Set(plans.map((p) => p.id));
+    const perPlan = mc.perPlan.filter((p) => selected.has(p.planId));
     return (
       <ViewModeFrame
         mode={getViewMode(config)}
         chart={
           <LongevityComparisonSection
-            plans={mc.perPlan.map((p) => ({ label: p.label, matrix: p.result.byYearLiquidAssetsPerTrial }))}
+            plans={perPlan.map((p) => ({ label: p.label, matrix: p.result.byYearLiquidAssetsPerTrial }))}
             threshold={mc.threshold}
             planStartYear={mc.planStartYear}
             clientBirthYear={mc.clientBirthYear}
           />
         }
-        table={<LongevityTableList mc={mc} />}
+        table={<LongevityTableList mc={{ ...mc, perPlan }} />}
       />
     );
   },

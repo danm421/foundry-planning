@@ -13,15 +13,17 @@ export const monteCarloWidget: ComparisonWidgetDefinition<ViewModeConfig> = {
   configSchema: ViewModeSchema,
   defaultConfig: defaultViewMode,
   renderConfig: renderViewModeConfig,
-  render: ({ mc, mcRun, config }) => {
+  render: ({ plans, mc, mcRun, config }) => {
     if (!mc) {
       return <McPlaceholder title="Monte Carlo" mcRun={mcRun} />;
     }
+    const selected = new Set(plans.map((p) => p.id));
+    const perPlan = mc.perPlan.filter((p) => selected.has(p.planId));
     return (
       <ViewModeFrame
         mode={getViewMode(config)}
-        chart={<MonteCarloComparisonSection plansMc={mc.perPlan} />}
-        table={<MonteCarloTableList mc={mc} />}
+        chart={<MonteCarloComparisonSection plansMc={perPlan} />}
+        table={<MonteCarloTableList mc={{ ...mc, perPlan }} />}
       />
     );
   },

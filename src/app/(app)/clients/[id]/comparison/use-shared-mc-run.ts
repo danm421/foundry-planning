@@ -89,6 +89,7 @@ export function useSharedMcRun({ clientId, plans, enabled }: Args): SharedMcCont
         );
         if (cancelled) return;
         const perPlan: PlanMcData[] = results.map((r, i) => ({
+          planId: plans[i].id,
           label: plans[i].label,
           successRate: r.successRate,
           result: r,

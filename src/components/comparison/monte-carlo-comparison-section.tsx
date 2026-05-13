@@ -13,6 +13,7 @@ function fmtPtsDelta(v: number): string {
 }
 
 export interface PlanMcData {
+  planId: string;
   label: string;
   successRate: number;
   result: MonteCarloResult;
