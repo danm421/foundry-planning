@@ -16,6 +16,7 @@ import { RothLadderPdf } from "./widgets/roth-ladder";
 import { BalanceSheetPdf } from "./widgets/balance-sheet";
 import { ExpenseDetailPdf } from "./widgets/expense-detail";
 import { GiftTaxPdf } from "./widgets/gift-tax";
+import { EstateEndBeneficiariesPdf } from "./widgets/estate-end-beneficiaries";
 
 export interface CellRenderCtx {
   plans: ComparisonPlan[];
@@ -179,6 +180,19 @@ export function CellRender({ cell, ctx }: CellRenderProps) {
   if (kind === "gift-tax") {
     return (
       <GiftTaxPdf
+        config={cell.widget.config}
+        plans={ctx.plans}
+        mc={ctx.mc}
+        yearRange={cell.widget.yearRange ?? null}
+        span={cell.span}
+        branding={ctx.branding}
+      />
+    );
+  }
+
+  if (kind === "estate-end-beneficiaries") {
+    return (
+      <EstateEndBeneficiariesPdf
         config={cell.widget.config}
         plans={ctx.plans}
         mc={ctx.mc}
