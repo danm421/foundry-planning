@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { ClientData, ProjectionYear } from "@/engine";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/solver/types";
@@ -16,6 +17,7 @@ import { SolverRowSavingsContributions } from "./solver-row-savings-contribution
 import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
 import { SolverActionBar } from "./solver-action-bar";
 import { SolverPosGauge } from "./solver-pos-gauge";
+import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 
 interface Props {
   clientId: string;
@@ -35,6 +37,7 @@ export function LiveSolverWorkspace({
   initialSourceClientData,
   initialSourceProjection,
 }: Props) {
+  const router = useRouter();
   const currentYear = new Date().getFullYear();
   const [mutationMap, setMutationMap] = useState<Map<SolverMutationKey, SolverMutation>>(
     () => new Map(),
@@ -130,6 +133,37 @@ export function LiveSolverWorkspace({
     setComputeStatus("fresh");
     setCurrentProjection(initialSourceProjection);
   }, [initialSourceProjection]);
+
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  async function handleSaveSubmit(args: { name: string }) {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/solver/save-scenario`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          source: initialSource,
+          mutations,
+          name: args.name,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as { scenarioId: string };
+      setSaveOpen(false);
+      router.push(`/clients/${clientId}/comparison?scenario=${data.scenarioId}`);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   function pushMutation(m: SolverMutation) {
     setMutationMap((prev) => {
@@ -241,8 +275,18 @@ export function LiveSolverWorkspace({
         mcRunning={mcRunning}
         onReset={handleReset}
         onGenerateMc={handleGenerateMc}
-        onSave={() => alert("Task 16 wires the Save dialog")}
+        onSave={() => setSaveOpen(true)}
       />
+
+      <SaveAsScenarioDialog
+        open={saveOpen}
+        mutations={mutations}
+        onClose={() => (saving ? null : setSaveOpen(false))}
+        onSubmit={handleSaveSubmit}
+      />
+      {saveError ? (
+        <div className="text-sm text-red-600">Save failed: {saveError}</div>
+      ) : null}
     </div>
   );
 }
