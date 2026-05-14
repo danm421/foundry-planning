@@ -14,7 +14,7 @@ vi.mock("@/lib/scenario/loader", () => ({
   loadEffectiveTree: vi.fn(),
 }));
 vi.mock("@/lib/solver/apply-mutations", () => ({
-  applyMutations: vi.fn((tree, _mutations) => tree),
+  applyMutations: vi.fn((tree) => tree),
 }));
 vi.mock("@/engine", () => ({
   runProjection: vi.fn(() => [{ year: 2026 }, { year: 2027 }]),
