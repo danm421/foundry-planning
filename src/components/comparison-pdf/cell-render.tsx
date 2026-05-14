@@ -12,6 +12,7 @@ import { ScenarioChangesPdf } from "./widgets/scenario-changes";
 import { YearByYearPdf } from "./widgets/year-by-year";
 import { RmdSchedulePdf } from "./widgets/rmd-schedule";
 import { DecadeSummaryPdf } from "./widgets/decade-summary";
+import { RothLadderPdf } from "./widgets/roth-ladder";
 
 export interface CellRenderCtx {
   plans: ComparisonPlan[];
@@ -123,6 +124,19 @@ export function CellRender({ cell, ctx }: CellRenderProps) {
   if (kind === "decade-summary") {
     return (
       <DecadeSummaryPdf
+        config={cell.widget.config}
+        plans={ctx.plans}
+        mc={ctx.mc}
+        yearRange={cell.widget.yearRange ?? null}
+        span={cell.span}
+        branding={ctx.branding}
+      />
+    );
+  }
+
+  if (kind === "roth-ladder") {
+    return (
+      <RothLadderPdf
         config={cell.widget.config}
         plans={ctx.plans}
         mc={ctx.mc}
