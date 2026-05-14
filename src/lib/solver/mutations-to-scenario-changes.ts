@@ -11,6 +11,7 @@
 import type { ClientData } from "@/engine/types";
 import type {
   SolverMutation,
+  SolverPerson,
   SolverScenarioChangeDraft,
 } from "./types";
 
@@ -20,7 +21,30 @@ export function mutationsToScenarioChanges(
   mutations: SolverMutation[],
 ): SolverScenarioChangeDraft[] {
   const clientFieldDiff: Record<string, { from: unknown; to: unknown }> = {};
+  // Coalesce per-owner SS edits into one income row per owner so the
+  // (scenarioId, targetKind, targetId, opType) unique index isn't violated.
+  const ssDiffs = new Map<
+    SolverPerson,
+    { incomeId: string; fields: Record<string, { from: unknown; to: unknown }> }
+  >();
   const nonClientDrafts: SolverScenarioChangeDraft[] = [];
+
+  const ssRowFor = (person: SolverPerson) =>
+    source.incomes.find((i) => i.type === "social_security" && i.owner === person);
+
+  const accumulateSs = (
+    person: SolverPerson,
+    field: string,
+    from: unknown,
+    to: unknown,
+  ): void => {
+    if (from === to) return;
+    const row = ssRowFor(person);
+    if (!row) return;
+    const entry = ssDiffs.get(person) ?? { incomeId: row.id, fields: {} };
+    entry.fields[field] = { from, to };
+    ssDiffs.set(person, entry);
+  };
 
   for (const m of mutations) {
     switch (m.kind) {
@@ -82,18 +106,52 @@ export function mutationsToScenarioChanges(
         break;
       }
       case "ss-claim-age": {
-        const row = source.incomes.find(
-          (i) => i.type === "social_security" && i.owner === m.person,
-        );
-        if (row && row.claimingAge !== m.age) {
-          nonClientDrafts.push({
-            opType: "edit",
-            targetKind: "income",
-            targetId: row.id,
-            payload: { claimingAge: { from: row.claimingAge, to: m.age } },
-            orderIndex: 0,
-          });
+        const row = ssRowFor(m.person);
+        if (!row) break;
+        accumulateSs(m.person, "claimingAge", row.claimingAge, m.age);
+        if (m.months !== undefined) {
+          accumulateSs(
+            m.person,
+            "claimingAgeMonths",
+            row.claimingAgeMonths ?? 0,
+            m.months,
+          );
         }
+        break;
+      }
+      case "ss-claim-age-mode": {
+        const row = ssRowFor(m.person);
+        if (!row) break;
+        accumulateSs(m.person, "claimingAgeMode", row.claimingAgeMode ?? "years", m.mode);
+        break;
+      }
+      case "ss-benefit-mode": {
+        const row = ssRowFor(m.person);
+        if (!row) break;
+        accumulateSs(
+          m.person,
+          "ssBenefitMode",
+          row.ssBenefitMode ?? "manual_amount",
+          m.mode,
+        );
+        break;
+      }
+      case "ss-pia-monthly": {
+        const row = ssRowFor(m.person);
+        if (!row) break;
+        accumulateSs(m.person, "piaMonthly", row.piaMonthly ?? null, m.amount);
+        break;
+      }
+      case "ss-annual-amount": {
+        const row = ssRowFor(m.person);
+        if (!row) break;
+        accumulateSs(m.person, "annualAmount", row.annualAmount, m.amount);
+        break;
+      }
+      case "ss-cola": {
+        const row = ssRowFor(m.person);
+        if (!row) break;
+        accumulateSs(m.person, "growthRate", row.growthRate, m.rate);
         break;
       }
       case "savings-contribution": {
@@ -121,6 +179,16 @@ export function mutationsToScenarioChanges(
       targetKind: "client",
       targetId: clientId,
       payload: clientFieldDiff,
+      orderIndex: 0,
+    });
+  }
+  for (const entry of ssDiffs.values()) {
+    if (Object.keys(entry.fields).length === 0) continue;
+    drafts.push({
+      opType: "edit",
+      targetKind: "income",
+      targetId: entry.incomeId,
+      payload: entry.fields,
       orderIndex: 0,
     });
   }

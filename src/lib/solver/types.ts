@@ -7,10 +7,18 @@ import type { ClientData, ProjectionYear } from "@/engine/types";
 
 export type SolverPerson = "client" | "spouse";
 
+export type SsBenefitMode = "pia_at_fra" | "manual_amount" | "no_benefit";
+export type SsClaimAgeMode = "fra" | "at_retirement" | "years";
+
 export type SolverMutation =
   | { kind: "retirement-age"; person: SolverPerson; age: number; month?: number }
   | { kind: "living-expense-scale"; multiplier: number }
-  | { kind: "ss-claim-age"; person: SolverPerson; age: number }
+  | { kind: "ss-claim-age"; person: SolverPerson; age: number; months?: number }
+  | { kind: "ss-claim-age-mode"; person: SolverPerson; mode: SsClaimAgeMode }
+  | { kind: "ss-benefit-mode"; person: SolverPerson; mode: SsBenefitMode }
+  | { kind: "ss-pia-monthly"; person: SolverPerson; amount: number }
+  | { kind: "ss-annual-amount"; person: SolverPerson; amount: number }
+  | { kind: "ss-cola"; person: SolverPerson; rate: number }
   | { kind: "savings-contribution"; accountId: string; annualAmount: number }
   | { kind: "life-expectancy"; person: SolverPerson; age: number };
 
@@ -19,6 +27,11 @@ export type SolverMutationKey =
   | `retirement-age:${SolverPerson}`
   | "living-expense-scale"
   | `ss-claim-age:${SolverPerson}`
+  | `ss-claim-age-mode:${SolverPerson}`
+  | `ss-benefit-mode:${SolverPerson}`
+  | `ss-pia-monthly:${SolverPerson}`
+  | `ss-annual-amount:${SolverPerson}`
+  | `ss-cola:${SolverPerson}`
   | `savings-contribution:${string}`
   | `life-expectancy:${SolverPerson}`;
 
@@ -30,6 +43,16 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return "living-expense-scale";
     case "ss-claim-age":
       return `ss-claim-age:${m.person}`;
+    case "ss-claim-age-mode":
+      return `ss-claim-age-mode:${m.person}`;
+    case "ss-benefit-mode":
+      return `ss-benefit-mode:${m.person}`;
+    case "ss-pia-monthly":
+      return `ss-pia-monthly:${m.person}`;
+    case "ss-annual-amount":
+      return `ss-annual-amount:${m.person}`;
+    case "ss-cola":
+      return `ss-cola:${m.person}`;
     case "savings-contribution":
       return `savings-contribution:${m.accountId}`;
     case "life-expectancy":

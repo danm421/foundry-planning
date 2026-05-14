@@ -38,7 +38,51 @@ export function applyMutations(
       case "ss-claim-age": {
         result.incomes = result.incomes.map((i) =>
           i.type === "social_security" && i.owner === m.person
-            ? { ...i, claimingAge: m.age }
+            ? {
+                ...i,
+                claimingAge: m.age,
+                ...(m.months !== undefined ? { claimingAgeMonths: m.months } : {}),
+              }
+            : i,
+        );
+        break;
+      }
+      case "ss-claim-age-mode": {
+        result.incomes = result.incomes.map((i) =>
+          i.type === "social_security" && i.owner === m.person
+            ? { ...i, claimingAgeMode: m.mode }
+            : i,
+        );
+        break;
+      }
+      case "ss-benefit-mode": {
+        result.incomes = result.incomes.map((i) =>
+          i.type === "social_security" && i.owner === m.person
+            ? { ...i, ssBenefitMode: m.mode }
+            : i,
+        );
+        break;
+      }
+      case "ss-pia-monthly": {
+        result.incomes = result.incomes.map((i) =>
+          i.type === "social_security" && i.owner === m.person
+            ? { ...i, piaMonthly: m.amount }
+            : i,
+        );
+        break;
+      }
+      case "ss-annual-amount": {
+        result.incomes = result.incomes.map((i) =>
+          i.type === "social_security" && i.owner === m.person
+            ? { ...i, annualAmount: m.amount }
+            : i,
+        );
+        break;
+      }
+      case "ss-cola": {
+        result.incomes = result.incomes.map((i) =>
+          i.type === "social_security" && i.owner === m.person
+            ? { ...i, growthRate: m.rate }
             : i,
         );
         break;
