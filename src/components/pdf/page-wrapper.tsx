@@ -26,6 +26,8 @@ export function ReportPage({
   reportTitle,
   reportYear,
   firmName,
+  logoDataUrl,
+  accentColor,
   pageIndex,
   totalPages,
   children,
@@ -36,6 +38,8 @@ export function ReportPage({
   reportTitle: string;
   reportYear: number;
   firmName: string;
+  logoDataUrl: string | null;
+  accentColor: string;
   pageIndex: number;
   totalPages: number;
   children: ReactNode;
@@ -44,6 +48,8 @@ export function ReportPage({
     <Page size="LETTER" orientation={orientation} style={styles.page}>
       {!isCover && (
         <RunningHeader
+          firmName={firmName}
+          logoDataUrl={logoDataUrl}
           householdName={householdName}
           reportTitle={reportTitle}
           reportYear={reportYear}
@@ -55,6 +61,7 @@ export function ReportPage({
           firmName={firmName}
           pageIndex={pageIndex}
           totalPages={totalPages}
+          accentColor={accentColor}
         />
       )}
     </Page>
