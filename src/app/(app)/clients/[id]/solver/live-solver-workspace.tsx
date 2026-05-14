@@ -18,6 +18,7 @@ import { SolverRowIncomes } from "./solver-row-incomes";
 import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
 import { SolverActionBar } from "./solver-action-bar";
 import { SolverPosGauge } from "./solver-pos-gauge";
+import { SolverEndingAssetsKpi } from "./solver-ending-assets-kpi";
 import { SaveAsScenarioDialog } from "./save-as-scenario-dialog";
 
 interface Props {
@@ -112,6 +113,19 @@ export function LiveSolverWorkspace({
     : mcRunning
       ? "computing"
       : "idle";
+
+  const baseEndingAssets =
+    baseProjection.length > 0
+      ? baseProjection[baseProjection.length - 1].portfolioAssets.total
+      : null;
+  const workingEndingAssets =
+    currentProjection.length > 0
+      ? currentProjection[currentProjection.length - 1].portfolioAssets.total
+      : null;
+  const endingAssetsDelta =
+    baseEndingAssets != null && workingEndingAssets != null
+      ? workingEndingAssets - baseEndingAssets
+      : null;
 
   const baseSuccess =
     mcReady
@@ -212,7 +226,7 @@ export function LiveSolverWorkspace({
         setComputeStatus("error");
         setErrorMessage(err instanceof Error ? err.message : String(err));
       }
-    }, 250);
+    }, 600);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
@@ -268,6 +282,9 @@ export function LiveSolverWorkspace({
               <div className="mt-3">
                 <SolverPosGauge state={baseState} successPct={baseSuccess} />
               </div>
+              <div className="mt-4">
+                <SolverEndingAssetsKpi value={baseEndingAssets} />
+              </div>
             </div>
           </div>
         }
@@ -308,6 +325,13 @@ export function LiveSolverWorkspace({
               </div>
               <div className="mt-2.5">
                 <SolverPosGauge state={workingState} successPct={workingSuccess} />
+              </div>
+              <div className="mt-4">
+                <SolverEndingAssetsKpi
+                  value={workingEndingAssets}
+                  delta={endingAssetsDelta}
+                  dimmed={computeStatus === "computing"}
+                />
               </div>
             </div>
           </div>
