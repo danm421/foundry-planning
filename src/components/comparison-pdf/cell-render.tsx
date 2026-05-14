@@ -4,6 +4,7 @@ import type { ComparisonPlan } from "@/lib/comparison/build-comparison-plans";
 import type { McSharedResult } from "@/lib/comparison/widgets/types";
 import type { BrandingResolved } from "@/lib/comparison-pdf/branding";
 import { SnapshotCell } from "./snapshot-cell";
+import { TextPdf } from "./widgets/text";
 
 export interface CellRenderCtx {
   plans: ComparisonPlan[];
@@ -20,8 +21,22 @@ export interface CellRenderProps {
 export function CellRender({ cell, ctx }: CellRenderProps) {
   if (!cell.widget) return null;
   const kind = cell.widget.kind;
-  // Native renderers are wired in subsequent buckets; for now every kind
-  // falls through to the snapshot cell.
+
+  if (kind === "text") {
+    return (
+      <TextPdf
+        config={cell.widget.config}
+        plans={ctx.plans}
+        mc={ctx.mc}
+        yearRange={cell.widget.yearRange ?? null}
+        span={cell.span}
+        branding={ctx.branding}
+      />
+    );
+  }
+
+  // Native renderers for remaining kinds are wired in subsequent buckets;
+  // for now every other kind falls through to the snapshot cell.
   void kind;
   void ctx.plans;
   void ctx.mc;
