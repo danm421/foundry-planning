@@ -13,3 +13,12 @@ export const PDF_THEME = {
   crit: "#a13a3a",
   chart: ["#b87f1f", "#2f6b4a", "#3461a8", "#7a4ea3", "#a13a3a", "#5a5a60"],
 } as const;
+
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
+
+/** Returns `color` if it is a 6-digit hex string, else `PDF_THEME.accent`.
+ *  Color validation matches the write-side check on `firms.primaryColor`. */
+export function resolveAccentColor(color: string | null | undefined): string {
+  if (color && HEX6.test(color)) return color;
+  return PDF_THEME.accent;
+}
