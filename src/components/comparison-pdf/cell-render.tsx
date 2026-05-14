@@ -11,6 +11,7 @@ import { ClientProfilePdf } from "./widgets/client-profile";
 import { ScenarioChangesPdf } from "./widgets/scenario-changes";
 import { YearByYearPdf } from "./widgets/year-by-year";
 import { RmdSchedulePdf } from "./widgets/rmd-schedule";
+import { DecadeSummaryPdf } from "./widgets/decade-summary";
 
 export interface CellRenderCtx {
   plans: ComparisonPlan[];
@@ -109,6 +110,19 @@ export function CellRender({ cell, ctx }: CellRenderProps) {
   if (kind === "rmd-schedule") {
     return (
       <RmdSchedulePdf
+        config={cell.widget.config}
+        plans={ctx.plans}
+        mc={ctx.mc}
+        yearRange={cell.widget.yearRange ?? null}
+        span={cell.span}
+        branding={ctx.branding}
+      />
+    );
+  }
+
+  if (kind === "decade-summary") {
+    return (
+      <DecadeSummaryPdf
         config={cell.widget.config}
         plans={ctx.plans}
         mc={ctx.mc}
