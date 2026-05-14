@@ -10,6 +10,8 @@ function emptyTree(): ClientData {
       lastName: "",
       dateOfBirth: "",
       retirementAge: 0,
+      retirementMonth: 1,
+      planEndAge: 0,
       lifeExpectancy: 0,
       filingStatus: "single",
       spouseName: null,
@@ -17,7 +19,7 @@ function emptyTree(): ClientData {
       spouseDob: null,
       spouseRetirementAge: null,
       spouseLifeExpectancy: null,
-    } as ClientData["client"],
+    } as unknown as ClientData["client"],
     accounts: [],
     incomes: [],
     expenses: [],
@@ -77,7 +79,7 @@ describe("deriveStepStatuses", () => {
     tree.client.dateOfBirth = "1975-06-20";
     tree.client.retirementAge = 65;
     tree.client.lifeExpectancy = 95;
-    tree.client.filingStatus = "joint";
+    tree.client.filingStatus = "married_joint";
     // spouse fields missing
 
     const statuses = deriveStepStatuses(tree, {});

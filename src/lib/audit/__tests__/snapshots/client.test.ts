@@ -25,6 +25,8 @@ const row: typeof clients.$inferSelect = {
   address: "123 Main St",
   spouseEmail: "john@example.com",
   spouseAddress: null,
+  onboardingState: {},
+  onboardingCompletedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

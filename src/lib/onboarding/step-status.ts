@@ -83,7 +83,7 @@ function householdStatus(tree: ClientData): StepStatus {
   for (const [label, val] of requiredSingle) {
     if (!val) gaps.push(label);
   }
-  if (c.filingStatus === "joint") {
+  if (c.filingStatus === "married_joint") {
     if (!c.spouseName) gaps.push("Spouse first name");
     if (!c.spouseDob) gaps.push("Spouse date of birth");
     if (!c.spouseRetirementAge) gaps.push("Spouse retirement age");

@@ -15,6 +15,7 @@ import FamilyView, {
   type AccountLite,
   type Designation,
   type PrimaryInfo,
+  type NamePctRow,
 } from "@/components/family-view";
 import type { ClientData } from "@/engine/types";
 import { controllingEntity, controllingFamilyMember } from "@/engine/ownership";
@@ -73,7 +74,7 @@ export default async function FamilyStep({ clientId, tree }: FamilyStepProps) {
     owners: ownersByEntity.get(e.id) ?? [],
     owner: (e.owner as "client" | "spouse" | "joint" | null) ?? null,
     grantor: (e.grantor as "client" | "spouse" | null) ?? null,
-    beneficiaries: e.beneficiaries ?? null,
+    beneficiaries: (e.beneficiaries as NamePctRow[] | null) ?? null,
     trustSubType: e.trustSubType ?? null,
     isIrrevocable: e.isIrrevocable ?? null,
     trustee: e.trustee ?? null,
