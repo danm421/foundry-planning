@@ -21,11 +21,16 @@ export function SolverSolvePopover({
   onSubmit,
 }: Props) {
   const [value, setValue] = useState<number>(defaultTargetPct);
+  const [prevOpen, setPrevOpen] = useState(open);
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) setValue(defaultTargetPct);
+  }
 
   useEffect(() => {
     if (!open) return;
-    setValue(defaultTargetPct);
     const onDocClick = (e: MouseEvent) => {
       if (!containerRef.current?.contains(e.target as Node)) onClose();
     };
@@ -38,7 +43,7 @@ export function SolverSolvePopover({
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onEsc);
     };
-  }, [open, defaultTargetPct, onClose]);
+  }, [open, onClose]);
 
   if (!open) return null;
 
