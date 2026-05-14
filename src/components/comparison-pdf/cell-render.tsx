@@ -14,6 +14,7 @@ import { RmdSchedulePdf } from "./widgets/rmd-schedule";
 import { DecadeSummaryPdf } from "./widgets/decade-summary";
 import { RothLadderPdf } from "./widgets/roth-ladder";
 import { BalanceSheetPdf } from "./widgets/balance-sheet";
+import { ExpenseDetailPdf } from "./widgets/expense-detail";
 
 export interface CellRenderCtx {
   plans: ComparisonPlan[];
@@ -151,6 +152,19 @@ export function CellRender({ cell, ctx }: CellRenderProps) {
   if (kind === "balance-sheet") {
     return (
       <BalanceSheetPdf
+        config={cell.widget.config}
+        plans={ctx.plans}
+        mc={ctx.mc}
+        yearRange={cell.widget.yearRange ?? null}
+        span={cell.span}
+        branding={ctx.branding}
+      />
+    );
+  }
+
+  if (kind === "expense-detail") {
+    return (
+      <ExpenseDetailPdf
         config={cell.widget.config}
         plans={ctx.plans}
         mc={ctx.mc}
