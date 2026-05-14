@@ -34,6 +34,7 @@ const TABS: ReadonlyArray<{
       { label: "Entities", path: "/entities" },
     ],
   },
+  { label: "Solver", href: "solver" },
   {
     label: "Estate Planning",
     href: "estate-planning",
