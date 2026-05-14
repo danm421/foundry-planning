@@ -8,6 +8,7 @@ import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
 import { SolverCompareGrid } from "./solver-compare-grid";
 import { SolverSection } from "./solver-section";
 import { SolverRowRetirementAges } from "./solver-row-retirement-ages";
+import { SolverRowLifeExpectancy } from "./solver-row-life-expectancy";
 
 interface Props {
   clientId: string;
@@ -120,6 +121,11 @@ export function LiveSolverWorkspace({
       >
         <SolverSection title="Goals">
           <SolverRowRetirementAges
+            baseClient={baseClientData.client}
+            workingClient={workingTree.client}
+            onChange={pushMutation}
+          />
+          <SolverRowLifeExpectancy
             baseClient={baseClientData.client}
             workingClient={workingTree.client}
             onChange={pushMutation}
