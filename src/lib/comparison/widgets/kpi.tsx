@@ -3,8 +3,8 @@ import {
   KpiComparisonSection,
   type KpiMetric,
 } from "@/components/comparison/kpi-comparison-section";
-import type { ComparisonPlan } from "../build-comparison-plans";
 import type { ComparisonWidgetDefinition } from "./types";
+import { kpiMetricValue } from "./kpi-metric";
 
 const KpiMetricSchema = z.enum([
   "successProbability",
@@ -20,26 +20,6 @@ const KpiConfigSchema = z.object({
 
 export type KpiConfig = z.infer<typeof KpiConfigSchema>;
 
-function metricValue(
-  metric: KpiMetric,
-  plan: ComparisonPlan | undefined,
-  successProbability: number | undefined,
-): number | undefined {
-  if (!plan && metric !== "successProbability") return undefined;
-  switch (metric) {
-    case "successProbability":
-      return successProbability;
-    case "longevityAge":
-      return plan?.result.years.at(-1)?.ages.client;
-    case "endNetWorth":
-      return plan?.result.years.at(-1)?.portfolioAssets?.total;
-    case "lifetimeTax":
-      return plan?.lifetime.total;
-    case "netToHeirs":
-      return plan?.finalEstate?.totalToHeirs ?? 0;
-  }
-}
-
 export const kpiWidget: ComparisonWidgetDefinition<KpiConfig> = {
   kind: "kpi",
   title: "KPI",
@@ -53,8 +33,8 @@ export const kpiWidget: ComparisonWidgetDefinition<KpiConfig> = {
     const parsed = KpiConfigSchema.safeParse(config);
     const metric: KpiMetric = parsed.success ? parsed.data.metric : "endNetWorth";
     const plan = plans[0];
-    const successProbability = mc?.successByIndex[0];
-    const value = metricValue(metric, plan, successProbability);
+    const raw = kpiMetricValue(metric, plan, mc ?? null, 0);
+    const value = raw ?? undefined;
     return <KpiComparisonSection metric={metric} value={value} />;
   },
   renderConfig: ({ config, onChange }) => {

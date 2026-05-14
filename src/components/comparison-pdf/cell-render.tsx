@@ -5,6 +5,7 @@ import type { McSharedResult } from "@/lib/comparison/widgets/types";
 import type { BrandingResolved } from "@/lib/comparison-pdf/branding";
 import { SnapshotCell } from "./snapshot-cell";
 import { TextPdf } from "./widgets/text";
+import { KpiPdf } from "./widgets/kpi";
 
 export interface CellRenderCtx {
   plans: ComparisonPlan[];
@@ -25,6 +26,19 @@ export function CellRender({ cell, ctx }: CellRenderProps) {
   if (kind === "text") {
     return (
       <TextPdf
+        config={cell.widget.config}
+        plans={ctx.plans}
+        mc={ctx.mc}
+        yearRange={cell.widget.yearRange ?? null}
+        span={cell.span}
+        branding={ctx.branding}
+      />
+    );
+  }
+
+  if (kind === "kpi") {
+    return (
+      <KpiPdf
         config={cell.widget.config}
         plans={ctx.plans}
         mc={ctx.mc}
