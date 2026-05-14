@@ -194,6 +194,9 @@ interface FamilyViewProps {
   initialFullIncomes?: AssetsTabIncome[];
   initialFullExpenses?: AssetsTabExpense[];
   initialAssetFamilyMembers?: AssetsTabFamilyMember[];
+  embed?: "page" | "wizard";
+  /** When `embed === "wizard"`, only render this section. */
+  section?: "household" | "family" | "entities" | "externals";
 }
 
 const RELATIONSHIP_LABELS: Record<Relationship, string> = {
@@ -284,6 +287,8 @@ export default function FamilyView({
   initialFullIncomes,
   initialFullExpenses,
   initialAssetFamilyMembers,
+  embed = "page",
+  section,
 }: FamilyViewProps) {
   const writer = useScenarioWriter(clientId);
   const [members, setMembers] = useState<FamilyMember[]>(initialMembers);
@@ -353,47 +358,49 @@ export default function FamilyView({
   return (
     <div className="space-y-8">
       {/* Primary household */}
-      <section>
-        <header className="mb-3 flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-gray-100">Household</h2>
-            <p className="text-xs text-gray-400">Client and spouse. Edit from the Clients list.</p>
-          </div>
-          <button
-            onClick={() => setEditProfileOpen(true)}
-            className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-700"
-          >
-            Edit profile
-          </button>
-        </header>
+      {(embed !== "wizard" || section === "household") && (
+        <section>
+          <header className="mb-3 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-gray-100">Household</h2>
+              <p className="text-xs text-gray-400">Client and spouse. Edit from the Clients list.</p>
+            </div>
+            <button
+              onClick={() => setEditProfileOpen(true)}
+              className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-700"
+            >
+              Edit profile
+            </button>
+          </header>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <PersonCard
-            name={`${primary.firstName} ${primary.lastName}`}
-            badge="Client"
-            fields={[
-              ["Date of Birth", primary.dateOfBirth ? `${new Date(primary.dateOfBirth).toLocaleDateString()} (age ${primaryAge})` : "—"],
-              ["Retirement", formatRetirement(primary.retirementAge, primary.retirementMonth, primary.dateOfBirth)],
-              ["Life Expectancy", formatLifeExpectancy(primary.lifeExpectancy, primary.dateOfBirth)],
-            ]}
-          />
-          {primary.spouseName ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <PersonCard
-              name={`${primary.spouseName} ${primary.spouseLastName ?? primary.lastName}`.trim()}
-              badge="Spouse"
+              name={`${primary.firstName} ${primary.lastName}`}
+              badge="Client"
               fields={[
-                ["Date of Birth", primary.spouseDob ? `${new Date(primary.spouseDob).toLocaleDateString()} (age ${spouseAge})` : "—"],
-                ["Retirement", formatRetirement(primary.spouseRetirementAge, primary.spouseRetirementMonth, primary.spouseDob)],
-                ["Life Expectancy", formatLifeExpectancy(primary.spouseLifeExpectancy, primary.spouseDob)],
+                ["Date of Birth", primary.dateOfBirth ? `${new Date(primary.dateOfBirth).toLocaleDateString()} (age ${primaryAge})` : "—"],
+                ["Retirement", formatRetirement(primary.retirementAge, primary.retirementMonth, primary.dateOfBirth)],
+                ["Life Expectancy", formatLifeExpectancy(primary.lifeExpectancy, primary.dateOfBirth)],
               ]}
             />
-          ) : (
-            <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-6 text-sm text-gray-400">
-              No spouse on file
-            </div>
-          )}
-        </div>
-      </section>
+            {primary.spouseName ? (
+              <PersonCard
+                name={`${primary.spouseName} ${primary.spouseLastName ?? primary.lastName}`.trim()}
+                badge="Spouse"
+                fields={[
+                  ["Date of Birth", primary.spouseDob ? `${new Date(primary.spouseDob).toLocaleDateString()} (age ${spouseAge})` : "—"],
+                  ["Retirement", formatRetirement(primary.spouseRetirementAge, primary.spouseRetirementMonth, primary.spouseDob)],
+                  ["Life Expectancy", formatLifeExpectancy(primary.spouseLifeExpectancy, primary.spouseDob)],
+                ]}
+              />
+            ) : (
+              <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-800 bg-gray-900/40 p-6 text-sm text-gray-400">
+                No spouse on file
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       <AddClientDialog
         open={editProfileOpen}
@@ -402,6 +409,7 @@ export default function FamilyView({
       />
 
       {/* Family members */}
+      {(embed !== "wizard" || section === "family") && (
       <section>
         <header className="mb-3 flex items-center justify-between">
           <div>
@@ -487,8 +495,10 @@ export default function FamilyView({
           </div>
         )}
       </section>
+      )}
 
       {/* Entities */}
+      {(embed !== "wizard" || section === "entities") && (
       <section>
         <header className="mb-3 flex items-center justify-between">
           <div>
@@ -568,14 +578,18 @@ export default function FamilyView({
           </div>
         )}
       </section>
+      )}
 
       {/* External Beneficiaries */}
-      <ExternalBeneficiariesSection
-        clientId={clientId}
-        externals={externals}
-        setExternals={setExternals}
-      />
+      {(embed !== "wizard" || section === "externals") && (
+        <ExternalBeneficiariesSection
+          clientId={clientId}
+          externals={externals}
+          setExternals={setExternals}
+        />
+      )}
 
+      {embed !== "wizard" && (
       <GiftsSection
         clientId={clientId}
         members={members}
@@ -584,7 +598,9 @@ export default function FamilyView({
         gifts={giftsState}
         onChange={setGiftsState}
       />
+      )}
 
+      {embed !== "wizard" && (
       <BeneficiarySummary
         accounts={accounts}
         entities={entities}
@@ -606,6 +622,7 @@ export default function FamilyView({
           setEntityDialogOpen(true);
         }}
       />
+      )}
 
       {memberDialogOpen && (
         <FamilyMemberDialog
