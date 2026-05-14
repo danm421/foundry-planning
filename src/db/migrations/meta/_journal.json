@@ -659,6 +659,13 @@
       "when": 1778681074668,
       "tag": "0093_firm_branding",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1778797450856,
+      "tag": "0094_onboarding_state",
+      "breakpoints": true
     }
   ]
 }

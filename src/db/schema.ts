@@ -355,6 +355,8 @@ export const clients = pgTable("clients", {
   address: text("address"),
   spouseEmail: text("spouse_email"),
   spouseAddress: text("spouse_address"),
+  onboardingState: jsonb("onboarding_state").notNull().default({}),
+  onboardingCompletedAt: timestamp("onboarding_completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
