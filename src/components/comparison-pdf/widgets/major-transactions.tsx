@@ -100,6 +100,20 @@ export interface TransactionRow {
 }
 
 /**
+ * String-display row shape consumed by the DataTable. Pre-formatting all
+ * cells to strings lets column accessors be plain field reads — matches the
+ * pattern used by `expense-detail` and `estate-end-beneficiaries`. The Total
+ * footer row is just another `DisplayRow` with `year: ""`; no sentinel-string
+ * sniffing needed.
+ */
+interface DisplayRow {
+  year: string;
+  description: string;
+  inflow: string;
+  outflow: string;
+}
+
+/**
  * Pure helper: build the flat row list for a single plan.
  *
  * Apply (in order):
@@ -111,8 +125,9 @@ export interface TransactionRow {
  * Sales are emitted before purchases within a year. Years are already in
  * ascending order in `plan.result.years`; we preserve that.
  *
- * Exported so the widget's filter / mapping logic is unit-testable without
- * full `ComparisonPlan` fixtures in the renderer tests.
+ * Returns numeric rows; the render layer formats them and appends a Total
+ * footer as `DisplayRow`s. Exported so the widget's filter / mapping logic is
+ * unit-testable without full `ComparisonPlan` fixtures in the renderer tests.
  */
 export function buildTransactionRows(
   plan: ComparisonPlan,
@@ -153,14 +168,10 @@ export function buildTransactionRows(
   return rows;
 }
 
-// The Year accessor treats `description === "Total"` as a footer marker and
-// returns "" for that cell, so the Total label sits in the Description column
-// on the footer row (since DataTable uses one accessor per column for both
-// body and footer rows).
-const COLUMNS: DataTableColumn<TransactionRow>[] = [
+const COLUMNS: DataTableColumn<DisplayRow>[] = [
   {
     header: "Year",
-    accessor: (r) => (r.description === "Total" ? "" : String(r.year)),
+    accessor: (r) => r.year,
     align: "left",
     width: "10%",
   },
@@ -172,13 +183,13 @@ const COLUMNS: DataTableColumn<TransactionRow>[] = [
   },
   {
     header: "Inflow",
-    accessor: (r) => fmt(r.inflow),
+    accessor: (r) => r.inflow,
     align: "right",
     width: "20%",
   },
   {
     header: "Outflow",
-    accessor: (r) => fmt(r.outflow),
+    accessor: (r) => r.outflow,
     align: "right",
     width: "20%",
   },
@@ -222,11 +233,18 @@ export function MajorTransactionsBlock({
 
   const totalInflow = rows.reduce((sum, r) => sum + r.inflow, 0);
   const totalOutflow = rows.reduce((sum, r) => sum + r.outflow, 0);
-  const footerRow: TransactionRow = {
-    year: 0,
+
+  const displayRows: DisplayRow[] = rows.map((r) => ({
+    year: String(r.year),
+    description: r.description,
+    inflow: fmt(r.inflow),
+    outflow: fmt(r.outflow),
+  }));
+  const footerRow: DisplayRow = {
+    year: "",
     description: "Total",
-    inflow: totalInflow,
-    outflow: totalOutflow,
+    inflow: fmt(totalInflow),
+    outflow: fmt(totalOutflow),
   };
 
   return (
@@ -237,9 +255,9 @@ export function MajorTransactionsBlock({
           <Text style={s.planLabel}>{planLabel}</Text>
         </View>
       )}
-      <DataTable<TransactionRow>
+      <DataTable<DisplayRow>
         columns={COLUMNS}
-        rows={rows}
+        rows={displayRows}
         footerRow={footerRow}
         compact={compact}
       />
