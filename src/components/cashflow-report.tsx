@@ -41,6 +41,8 @@ import { DrillChart } from "@/components/cashflow/charts/drill-chart";
 import { buildLifeEventsByYear } from "@/lib/life-event-markers";
 import { useChartCapture } from "@/lib/report-artifacts/chart-capture";
 import { ExportButton } from "@/components/exports/export-button";
+import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
+import type { PortfolioBarsTimelineMarker } from "@/components/charts/portfolio-bars-chart";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler);
 
@@ -523,69 +525,16 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
     (y) => y.portfolioAssets.accessibleTrustAssetsTotal > 0,
   );
 
-  // Portfolio Assets chart (bars). When viewing a non-base scenario AND the
-  // base-case projection has loaded, render stacked delta bars matching the
-  // estate trajectory chart: blue floor = min(scenario, base) per year, with
-  // a green cap when the scenario is ahead and a gray cap when it's behind.
-  // Otherwise (base case, or scenario view before base loads), render the
-  // existing single blue bar.
+  // Portfolio Assets chart — delegated to <PortfolioBarsChart />.
+  // Pass baseline years when viewing a scenario so the component renders the
+  // delta-bars overlay (blue floor + green/gray caps). In base-case view
+  // baseline is null and the component renders a plain blue bar.
   const isScenarioView = !!searchParams?.get("scenario");
-  const baseLiquidByYear = useMemo(() => {
-    if (!baseYears) return null;
-    const map = new Map<number, number>();
-    for (const y of baseYears) map.set(y.year, liquidPortfolioTotal(y));
-    return map;
-  }, [baseYears]);
-  const showPortfolioDelta = isScenarioView && baseLiquidByYear !== null;
+  const portfolioBaseline = isScenarioView ? baseYears : null;
 
-  const portfolioChartData = showPortfolioDelta
-    ? {
-        labels: chartLabels,
-        datasets: [
-          {
-            label: "Common floor (vs base case)",
-            data: visibleYears.map((y) => {
-              const scenario = liquidPortfolioTotal(y);
-              const base = baseLiquidByYear.get(y.year) ?? scenario;
-              return Math.min(scenario, base);
-            }),
-            backgroundColor: "#2563eb",
-            stack: "portfolio",
-          },
-          {
-            label: "Scenario ahead of base",
-            data: visibleYears.map((y) => {
-              const scenario = liquidPortfolioTotal(y);
-              const base = baseLiquidByYear.get(y.year) ?? scenario;
-              return Math.max(0, scenario - base);
-            }),
-            backgroundColor: "#059669",
-            stack: "portfolio",
-          },
-          {
-            label: "Base case ahead of scenario",
-            data: visibleYears.map((y) => {
-              const scenario = liquidPortfolioTotal(y);
-              const base = baseLiquidByYear.get(y.year) ?? scenario;
-              return Math.max(0, base - scenario);
-            }),
-            backgroundColor: "#9ca3af",
-            stack: "portfolio",
-          },
-        ],
-      }
-    : {
-        labels: chartLabels,
-        datasets: [
-          {
-            label: "Total Portfolio Assets",
-            data: visibleYears.map(liquidPortfolioTotal),
-            backgroundColor: "#2563eb",
-            borderColor: "#2563eb",
-            borderWidth: 1,
-          },
-        ],
-      };
+  // Timeline markers typed for PortfolioBarsChart (same shape as the local
+  // TimelineMarker interface — re-exported for reuse).
+  const portfolioTimelineMarkers: PortfolioBarsTimelineMarker[] = timelineMarkers;
 
   const chartOptionsWithMarkers = {
     ...baseChartOptions,
@@ -598,14 +547,6 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
   const cashflowChartOptions = {
     ...chartOptionsWithMarkers,
     interaction: { mode: "index" as const, intersect: false },
-  };
-
-  const portfolioChartOptions = {
-    ...chartOptionsWithMarkers,
-    scales: {
-      x: { ...baseChartOptions.scales.x, stacked: showPortfolioDelta },
-      y: { ...baseChartOptions.scales.y, stacked: showPortfolioDelta },
-    },
   };
 
   // Cash Flow chart — stacked bars (bottom → top: Social Security, Salaries,
@@ -2092,7 +2033,12 @@ export default function CashFlowReport({ clientId }: CashFlowReportProps) {
             <div style={{ height: 300 }}>
               {chartView === "portfolio" ? (
                 <div ref={portfolioChartRef} style={{ height: "100%" }}>
-                  <Bar data={portfolioChartData} options={portfolioChartOptions} />
+                  <PortfolioBarsChart
+                    current={visibleYears}
+                    baseline={portfolioBaseline}
+                    timelineMarkers={portfolioTimelineMarkers}
+                    yearRange={{ start: yearRange[0], end: yearRange[1] }}
+                  />
                 </div>
               ) : (
                 <div ref={cashflowChartRef} style={{ height: "100%" }}>
