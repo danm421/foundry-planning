@@ -15,9 +15,9 @@ function mkRecipient(
   args: Partial<RecipientTotal> & { recipientLabel: string; total: number },
 ): RecipientTotal {
   return {
-    key: `${args.recipientKind ?? "family"}|${args.recipientLabel}`,
+    key: `${args.recipientKind ?? "family_member"}|${args.recipientLabel}`,
     recipientLabel: args.recipientLabel,
-    recipientKind: args.recipientKind ?? "family",
+    recipientKind: args.recipientKind ?? "family_member",
     fromFirstDeath: args.fromFirstDeath ?? 0,
     fromSecondDeath: args.fromSecondDeath ?? args.total,
     total: args.total,
@@ -48,7 +48,7 @@ describe("buildBeneficiaryRows (pure helper)", () => {
   it("renders beneficiary names + amounts", () => {
     const rows = buildBeneficiaryRows([
       mkRecipient({ recipientLabel: "Kids", total: 400_000 }),
-      mkRecipient({ recipientLabel: "Charity", total: 100_000, recipientKind: "charity" }),
+      mkRecipient({ recipientLabel: "Charity", total: 100_000, recipientKind: "external_beneficiary" }),
     ]);
     expect(rows.map((r) => r.beneficiary)).toEqual(["Kids", "Charity"]);
     expect(rows.map((r) => r.amount)).toEqual(["$400,000", "$100,000"]);
@@ -57,14 +57,14 @@ describe("buildBeneficiaryRows (pure helper)", () => {
   it("renders share column as percentage with 1 decimal", () => {
     const rows = buildBeneficiaryRows([
       mkRecipient({ recipientLabel: "Kids", total: 400_000 }),
-      mkRecipient({ recipientLabel: "Charity", total: 100_000, recipientKind: "charity" }),
+      mkRecipient({ recipientLabel: "Charity", total: 100_000, recipientKind: "external_beneficiary" }),
     ]);
     expect(rows.map((r) => r.share)).toEqual(["80.0%", "20.0%"]);
   });
 
   it("sorts rows by amount descending", () => {
     const rows = buildBeneficiaryRows([
-      mkRecipient({ recipientLabel: "Charity", total: 100_000, recipientKind: "charity" }),
+      mkRecipient({ recipientLabel: "Charity", total: 100_000, recipientKind: "external_beneficiary" }),
       mkRecipient({ recipientLabel: "Kids", total: 400_000 }),
       mkRecipient({ recipientLabel: "Sibling", total: 250_000 }),
     ]);
@@ -98,7 +98,7 @@ describe("buildBeneficiaryRows (pure helper)", () => {
   it("builds total row summing amounts and reporting 100.0%", () => {
     const totals = __TEST_ONLY__.buildTotalRow([
       mkRecipient({ recipientLabel: "Kids", total: 400_000 }),
-      mkRecipient({ recipientLabel: "Charity", total: 100_000, recipientKind: "charity" }),
+      mkRecipient({ recipientLabel: "Charity", total: 100_000, recipientKind: "external_beneficiary" }),
     ]);
     expect(totals).not.toBeNull();
     expect(totals?.beneficiary).toBe("Total");
@@ -148,7 +148,7 @@ describe("EstateBeneficiariesBlock (pure renderer)", () => {
           mkRecipient({
             recipientLabel: "Charity",
             total: 100_000,
-            recipientKind: "charity",
+            recipientKind: "external_beneficiary",
           }),
         ]}
         planLabel={undefined}
@@ -170,7 +170,7 @@ describe("EstateBeneficiariesBlock (pure renderer)", () => {
           mkRecipient({
             recipientLabel: "Charity",
             total: 100_000,
-            recipientKind: "charity",
+            recipientKind: "external_beneficiary",
           }),
         ]}
         planLabel={undefined}

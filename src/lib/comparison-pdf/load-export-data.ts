@@ -56,6 +56,8 @@ export async function loadExportData(
   if (!client) return null;
 
   const comparison = await loadComparison(comparisonId, clientId, firmId, {
+    primaryScenarioId: "base",
+    urlPlanIds: null,
     defaultTitle: "Comparison Report",
   });
   if (!comparison) return null;

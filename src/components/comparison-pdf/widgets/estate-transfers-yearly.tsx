@@ -319,7 +319,9 @@ function DeathDrilldown({
 
   return (
     <View style={s.drilldownWrap}>
-      <Text style={[s.drilldownHeading, compact && s.drilldownHeadingCompact]}>
+      <Text
+        style={compact ? [s.drilldownHeading, s.drilldownHeadingCompact] : s.drilldownHeading}
+      >
         Tax detail by decedent
       </Text>
       <View style={s.innerHeaderRow}>
@@ -440,7 +442,7 @@ export function EstateTransfersYearlyBlock({
       )}
 
       <Text
-        style={[s.orderingLabel, compact && s.orderingLabelCompact]}
+        style={compact ? [s.orderingLabel, s.orderingLabelCompact] : s.orderingLabel}
       >
         {orderingLabel}
       </Text>

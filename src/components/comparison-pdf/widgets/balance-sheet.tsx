@@ -210,12 +210,14 @@ function OwnerMatrix({
 
   return (
     <View style={s.matrixWrap}>
-      <Text style={[s.sectionHeading, compact && s.sectionHeadingCompact]}>{heading}</Text>
+      <Text style={[s.sectionHeading, ...(compact ? [s.sectionHeadingCompact] : [])]}>
+        {heading}
+      </Text>
       <View style={s.headerRow}>
         <Text
           style={[
             s.nameCellHeader,
-            compact && s.nameCellHeaderCompact,
+            ...(compact ? [s.nameCellHeaderCompact] : []),
             { width: nameColWidth },
           ]}
         >
@@ -226,7 +228,7 @@ function OwnerMatrix({
             key={c.key}
             style={[
               s.valueCellHeader,
-              compact && s.valueCellHeaderCompact,
+              ...(compact ? [s.valueCellHeaderCompact] : []),
               { width: valueColWidth },
             ]}
           >
@@ -236,7 +238,7 @@ function OwnerMatrix({
         <Text
           style={[
             s.valueCellHeader,
-            compact && s.valueCellHeaderCompact,
+            ...(compact ? [s.valueCellHeaderCompact] : []),
             { width: valueColWidth },
           ]}
         >
@@ -245,25 +247,45 @@ function OwnerMatrix({
       </View>
       {rows.map((r) => (
         <View key={r.id} style={s.bodyRow}>
-          <Text style={[s.nameCell, compact && s.nameCellCompact, { width: nameColWidth }]}>
+          <Text
+            style={[
+              s.nameCell,
+              ...(compact ? [s.nameCellCompact] : []),
+              { width: nameColWidth },
+            ]}
+          >
             {r.name}
           </Text>
           {columns.map((c) => (
             <Text
               key={c.key}
-              style={[s.valueCell, compact && s.valueCellCompact, { width: valueColWidth }]}
+              style={[
+                s.valueCell,
+                ...(compact ? [s.valueCellCompact] : []),
+                { width: valueColWidth },
+              ]}
             >
               {fmt(r.dist[c.key] ?? 0)}
             </Text>
           ))}
-          <Text style={[s.valueCell, compact && s.valueCellCompact, { width: valueColWidth }]}>
+          <Text
+            style={[
+              s.valueCell,
+              ...(compact ? [s.valueCellCompact] : []),
+              { width: valueColWidth },
+            ]}
+          >
             {fmt(r.value)}
           </Text>
         </View>
       ))}
       <View style={s.totalRow}>
         <Text
-          style={[s.nameCellTotal, compact && s.nameCellTotalCompact, { width: nameColWidth }]}
+          style={[
+            s.nameCellTotal,
+            ...(compact ? [s.nameCellTotalCompact] : []),
+            { width: nameColWidth },
+          ]}
         >
           {totalsLabel}
         </Text>
@@ -272,7 +294,7 @@ function OwnerMatrix({
             key={c.key}
             style={[
               s.valueCellTotal,
-              compact && s.valueCellTotalCompact,
+              ...(compact ? [s.valueCellTotalCompact] : []),
               { width: valueColWidth },
             ]}
           >
@@ -280,7 +302,11 @@ function OwnerMatrix({
           </Text>
         ))}
         <Text
-          style={[s.valueCellTotal, compact && s.valueCellTotalCompact, { width: valueColWidth }]}
+          style={[
+            s.valueCellTotal,
+            ...(compact ? [s.valueCellTotalCompact] : []),
+            { width: valueColWidth },
+          ]}
         >
           {fmt(grandTotal)}
         </Text>
@@ -365,8 +391,12 @@ function PlanBlock({
         />
       )}
       <View style={s.netWorthBox}>
-        <Text style={[s.netWorthLabel, compact && s.netWorthLabelCompact]}>Net Worth</Text>
-        <Text style={[s.netWorthValue, compact && s.netWorthValueCompact]}>{fmt(netWorth)}</Text>
+        <Text style={compact ? [s.netWorthLabel, s.netWorthLabelCompact] : s.netWorthLabel}>
+          Net Worth
+        </Text>
+        <Text style={compact ? [s.netWorthValue, s.netWorthValueCompact] : s.netWorthValue}>
+          {fmt(netWorth)}
+        </Text>
       </View>
     </View>
   );
