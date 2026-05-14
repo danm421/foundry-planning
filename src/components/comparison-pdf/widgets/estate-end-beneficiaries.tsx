@@ -162,48 +162,38 @@ const COLUMNS: DataTableColumn<BeneficiaryRow>[] = [
   { header: "Amount",      accessor: (r) => r.amount,      align: "right", width: "30%" },
 ];
 
-function recipientsForPlan(plan: ComparisonPlan): RecipientTotal[] {
-  // Test injection hatch: allows tests to bypass the full projection
-  // pipeline and supply a canned aggregate list directly. The widget
-  // ignores this in production callers because the field is not part
-  // of the ComparisonPlan type.
-  const injected = (plan as unknown as { __testRecipients?: RecipientTotal[] })
-    .__testRecipients;
-  if (injected) return injected;
-
-  const ownerNames = deriveOwnerNames(plan.tree);
-  const split = buildEstateTransferReportData({
-    projection: plan.result,
-    asOf: { kind: "split" },
-    ordering: "primaryFirst",
-    clientData: plan.tree,
-    ownerNames,
-  });
-  return split.aggregateRecipientTotals;
-}
-
-function PlanBlock({
-  plan,
-  index,
+/**
+ * Pure inner renderer: given a pre-computed list of `RecipientTotal`,
+ * renders the per-plan block (optional plan header + beneficiary table +
+ * total row, or the empty-state message).
+ *
+ * Exported so unit tests can render the table body directly with canned
+ * recipients without standing up a full projection fixture and routing
+ * through `buildEstateTransferReportData`. Production code should call
+ * `EstateEndBeneficiariesPdf` instead — it owns the data-fetching.
+ */
+export function EstateBeneficiariesBlock({
+  recipients,
+  planLabel,
   multiPlan,
+  dotColor,
   compact,
 }: {
-  plan: ComparisonPlan;
-  index: number;
+  recipients: RecipientTotal[];
+  planLabel: string | undefined;
   multiPlan: boolean;
+  dotColor: string;
   compact: boolean;
 }) {
-  const recipients = recipientsForPlan(plan);
   const rows = buildBeneficiaryRows(recipients);
   const total = buildTotalRow(recipients);
-  const dotColor = seriesColor(index) ?? PDF_THEME.ink3;
 
   return (
     <View style={s.planBlock}>
       {multiPlan && (
         <View style={s.planHeader}>
           <View style={[s.dot, { backgroundColor: dotColor }]} />
-          <Text style={s.planLabel}>{plan.label}</Text>
+          <Text style={s.planLabel}>{planLabel}</Text>
         </View>
       )}
       {rows.length === 0 ? (
@@ -217,6 +207,38 @@ function PlanBlock({
         />
       )}
     </View>
+  );
+}
+
+function PlanBlock({
+  plan,
+  index,
+  multiPlan,
+  compact,
+}: {
+  plan: ComparisonPlan;
+  index: number;
+  multiPlan: boolean;
+  compact: boolean;
+}) {
+  const ownerNames = deriveOwnerNames(plan.tree);
+  const split = buildEstateTransferReportData({
+    projection: plan.result,
+    asOf: { kind: "split" },
+    ordering: "primaryFirst",
+    clientData: plan.tree,
+    ownerNames,
+  });
+  const dotColor = seriesColor(index) ?? PDF_THEME.ink3;
+
+  return (
+    <EstateBeneficiariesBlock
+      recipients={split.aggregateRecipientTotals}
+      planLabel={plan.label}
+      multiPlan={multiPlan}
+      dotColor={dotColor}
+      compact={compact}
+    />
   );
 }
 

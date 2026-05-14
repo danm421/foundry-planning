@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToTree } from "@/components/pdf/test-utils/render-tree";
 import {
+  EstateBeneficiariesBlock,
   EstateEndBeneficiariesPdf,
   buildBeneficiaryRows,
   __TEST_ONLY__,
@@ -114,10 +115,12 @@ describe("buildBeneficiaryRows (pure helper)", () => {
 });
 
 describe("EstateEndBeneficiariesPdf (widget integration)", () => {
-  // The widget calls buildEstateTransferReportData() which requires a full
-  // projection. The integration smoke tests below mirror plan + screen state
-  // via small fixtures and verify the empty / multi-plan behavior; the
-  // table-rendering logic is covered by the pure-helper tests above.
+  // The outer widget calls buildEstateTransferReportData() which requires a
+  // full projection fixture. We keep one smoke test here that drives the
+  // real pipeline end-to-end with an empty projection (forcing the empty
+  // path). The render-level table behavior is covered by the
+  // EstateBeneficiariesBlock tests below, which feed RecipientTotal[]
+  // directly and avoid the need for projection fixtures.
 
   it("renders empty-state message when no beneficiary data is available", () => {
     const plan = mkPlan();
@@ -134,30 +137,24 @@ describe("EstateEndBeneficiariesPdf (widget integration)", () => {
     expect(tree).toContain("No beneficiary data available.");
     expect(tree).not.toContain("Total");
   });
+});
 
+describe("EstateBeneficiariesBlock (pure renderer)", () => {
   it("renders Beneficiary, Share, and Amount column headers", () => {
     const tree = renderToTree(
-      <EstateEndBeneficiariesPdf
-        config={undefined}
-        plans={[
-          {
-            ...mkPlan(),
-            // Stash recipients on a hidden test-only override the widget
-            // can read instead of running buildEstateTransferReportData().
-            __testRecipients: [
-              mkRecipient({ recipientLabel: "Kids", total: 400_000 }),
-              mkRecipient({
-                recipientLabel: "Charity",
-                total: 100_000,
-                recipientKind: "charity",
-              }),
-            ],
-          } as unknown as ComparisonPlan,
+      <EstateBeneficiariesBlock
+        recipients={[
+          mkRecipient({ recipientLabel: "Kids", total: 400_000 }),
+          mkRecipient({
+            recipientLabel: "Charity",
+            total: 100_000,
+            recipientKind: "charity",
+          }),
         ]}
-        mc={null}
-        yearRange={null}
-        span={5}
-        branding={branding}
+        planLabel={undefined}
+        multiPlan={false}
+        dotColor="#000"
+        compact={false}
       />,
     );
     expect(tree).toContain("Beneficiary");
@@ -165,26 +162,21 @@ describe("EstateEndBeneficiariesPdf (widget integration)", () => {
     expect(tree).toContain("Amount");
   });
 
-  it("renders beneficiary rows and the Total row with the injected recipients", () => {
-    const plan = {
-      ...mkPlan(),
-      __testRecipients: [
-        mkRecipient({ recipientLabel: "Kids", total: 400_000 }),
-        mkRecipient({
-          recipientLabel: "Charity",
-          total: 100_000,
-          recipientKind: "charity",
-        }),
-      ],
-    } as unknown as ComparisonPlan;
+  it("renders beneficiary rows and the Total row with the supplied recipients", () => {
     const tree = renderToTree(
-      <EstateEndBeneficiariesPdf
-        config={undefined}
-        plans={[plan]}
-        mc={null}
-        yearRange={null}
-        span={5}
-        branding={branding}
+      <EstateBeneficiariesBlock
+        recipients={[
+          mkRecipient({ recipientLabel: "Kids", total: 400_000 }),
+          mkRecipient({
+            recipientLabel: "Charity",
+            total: 100_000,
+            recipientKind: "charity",
+          }),
+        ]}
+        planLabel={undefined}
+        multiPlan={false}
+        dotColor="#000"
+        compact={false}
       />,
     );
     expect(tree).toContain("Kids");
@@ -205,63 +197,48 @@ describe("EstateEndBeneficiariesPdf (widget integration)", () => {
     expect(kidsIdx).toBeLessThan(charityIdx);
   });
 
-  it("filters out spouse recipients in the rendered widget", () => {
-    const plan = {
-      ...mkPlan(),
-      __testRecipients: [
-        mkRecipient({
-          recipientLabel: "Blake-Spouse",
-          total: 500_000,
-          recipientKind: "spouse",
-        }),
-        mkRecipient({ recipientLabel: "Kids", total: 400_000 }),
-      ],
-    } as unknown as ComparisonPlan;
+  it("filters out spouse recipients in the rendered block", () => {
     const tree = renderToTree(
-      <EstateEndBeneficiariesPdf
-        config={undefined}
-        plans={[plan]}
-        mc={null}
-        yearRange={null}
-        span={5}
-        branding={branding}
+      <EstateBeneficiariesBlock
+        recipients={[
+          mkRecipient({
+            recipientLabel: "Blake-Spouse",
+            total: 500_000,
+            recipientKind: "spouse",
+          }),
+          mkRecipient({ recipientLabel: "Kids", total: 400_000 }),
+        ]}
+        planLabel={undefined}
+        multiPlan={false}
+        dotColor="#000"
+        compact={false}
       />,
     );
     expect(tree).not.toContain("Blake-Spouse");
     expect(tree).toContain("Kids");
   });
 
-  it("shows plan labels for multi-plan and suppresses them for single-plan", () => {
-    const planA = {
-      ...mkPlan({ id: "A", label: "Plan Alpha" }),
-      __testRecipients: [mkRecipient({ recipientLabel: "Kids", total: 100_000 })],
-    } as unknown as ComparisonPlan;
-    const planB = {
-      ...mkPlan({ id: "B", label: "Plan Beta" }),
-      __testRecipients: [mkRecipient({ recipientLabel: "Kids", total: 200_000 })],
-    } as unknown as ComparisonPlan;
+  it("shows the plan label when multiPlan is true and suppresses it when false", () => {
+    const recipients = [mkRecipient({ recipientLabel: "Kids", total: 100_000 })];
 
     const multi = renderToTree(
-      <EstateEndBeneficiariesPdf
-        config={undefined}
-        plans={[planA, planB]}
-        mc={null}
-        yearRange={null}
-        span={5}
-        branding={branding}
+      <EstateBeneficiariesBlock
+        recipients={recipients}
+        planLabel="Plan Alpha"
+        multiPlan={true}
+        dotColor="#000"
+        compact={false}
       />,
     );
     expect(multi).toContain("Plan Alpha");
-    expect(multi).toContain("Plan Beta");
 
     const single = renderToTree(
-      <EstateEndBeneficiariesPdf
-        config={undefined}
-        plans={[planA]}
-        mc={null}
-        yearRange={null}
-        span={5}
-        branding={branding}
+      <EstateBeneficiariesBlock
+        recipients={recipients}
+        planLabel="Plan Alpha"
+        multiPlan={false}
+        dotColor="#000"
+        compact={false}
       />,
     );
     expect(single).not.toContain("Plan Alpha");
