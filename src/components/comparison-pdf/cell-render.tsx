@@ -9,6 +9,7 @@ import { KpiPdf } from "./widgets/kpi";
 import { KpiStripPdf } from "./widgets/kpi-strip";
 import { ClientProfilePdf } from "./widgets/client-profile";
 import { ScenarioChangesPdf } from "./widgets/scenario-changes";
+import { YearByYearPdf } from "./widgets/year-by-year";
 
 export interface CellRenderCtx {
   plans: ComparisonPlan[];
@@ -81,6 +82,19 @@ export function CellRender({ cell, ctx }: CellRenderProps) {
   if (kind === "scenario-changes") {
     return (
       <ScenarioChangesPdf
+        config={cell.widget.config}
+        plans={ctx.plans}
+        mc={ctx.mc}
+        yearRange={cell.widget.yearRange ?? null}
+        span={cell.span}
+        branding={ctx.branding}
+      />
+    );
+  }
+
+  if (kind === "year-by-year") {
+    return (
+      <YearByYearPdf
         config={cell.widget.config}
         plans={ctx.plans}
         mc={ctx.mc}
