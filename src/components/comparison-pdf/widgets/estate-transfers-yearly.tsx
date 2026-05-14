@@ -21,6 +21,9 @@
 //    behind a clickable Taxes & Expenses cell. The PDF surfaces every
 //    drill-down unconditionally, immediately below the parent year row.
 //
+// 3. Drill-down column label "State Estate / Inheritance Tax" is shortened
+//    to "State Estate Tax" so the narrower PDF cell holds the header.
+//
 // `yearRange` is intentionally NOT applied — the on-screen widget renders
 // every projected year, so we preserve that here. The prop is accepted for
 // interface uniformity (`_yearRange`).
