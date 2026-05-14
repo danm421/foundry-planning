@@ -158,7 +158,41 @@ describe("ScenarioChangesPdf", () => {
       />,
     );
     expect(tree).toContain("Group plan");
-    // Group unit uses groupName as title
-    expect(tree).toContain("Dual income boost");
+    // describeChangeUnit for a group emits "N changes: <target names>."
+    // The groupName is not part of the description string.
+    expect(tree).toContain("1 changes: Side hustle.");
+  });
+
+  it("renders 'Changed' edit descriptions without doubling the target name", () => {
+    const tree = renderToTree(
+      <ScenarioChangesPdf
+        config={undefined}
+        plans={[
+          {
+            id: "sc1",
+            label: "Update",
+            panelData: {
+              scenarioId: "sc1",
+              scenarioName: "Update",
+              label: "Update",
+              changes: [makeEditChange("c5", "incomes", "inc1")],
+              toggleGroups: [],
+              cascadeWarnings: [],
+              targetNames: { "incomes:inc1": "Salary" },
+            },
+          } as never,
+        ]}
+        mc={null}
+        yearRange={null}
+        span={5}
+        branding={branding}
+      />,
+    );
+    // describeChangeUnit emits "Changed amount on Salary: $40,000 → $50,000."
+    // The fix ensures we render the description verbatim — no "Salary — Changed amount on Salary:" prefix.
+    const matches = tree.match(/Salary/g) ?? [];
+    // Plan label is "Update" (not "Salary"), so all occurrences come from the change description.
+    // describeChangeUnit produces exactly ONE mention of "Salary".
+    expect(matches.length).toBe(1);
   });
 });

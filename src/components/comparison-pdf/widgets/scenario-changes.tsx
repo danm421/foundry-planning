@@ -151,12 +151,6 @@ export function ScenarioChangesPdf({ plans, span }: Props) {
               units.map((unit, i) => {
                 const op = unitOpType(unit);
                 const { sign, color } = badgeStyle(op);
-                const title =
-                  unit.kind === "group"
-                    ? unit.groupName
-                    : (panel.targetNames[
-                        `${unit.change.targetKind}:${unit.change.targetId}`
-                      ] ?? unit.change.targetKind);
                 const description = describeChangeUnit(unit, panel.targetNames);
                 return (
                   <View
@@ -164,11 +158,7 @@ export function ScenarioChangesPdf({ plans, span }: Props) {
                     style={s.changeRow}
                   >
                     <Text style={{ ...s.badge, color }}>{sign}</Text>
-                    <Text style={s.changeText}>
-                      {title !== description.replace(/^(Added|Removed|Edited): /, "").replace(/\.$/, "")
-                        ? `${title} — ${description}`
-                        : description}
-                    </Text>
+                    <Text style={s.changeText}>{description}</Text>
                   </View>
                 );
               })
