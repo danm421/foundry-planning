@@ -13,6 +13,7 @@ import { YearByYearPdf } from "./widgets/year-by-year";
 import { RmdSchedulePdf } from "./widgets/rmd-schedule";
 import { DecadeSummaryPdf } from "./widgets/decade-summary";
 import { RothLadderPdf } from "./widgets/roth-ladder";
+import { BalanceSheetPdf } from "./widgets/balance-sheet";
 
 export interface CellRenderCtx {
   plans: ComparisonPlan[];
@@ -137,6 +138,19 @@ export function CellRender({ cell, ctx }: CellRenderProps) {
   if (kind === "roth-ladder") {
     return (
       <RothLadderPdf
+        config={cell.widget.config}
+        plans={ctx.plans}
+        mc={ctx.mc}
+        yearRange={cell.widget.yearRange ?? null}
+        span={cell.span}
+        branding={ctx.branding}
+      />
+    );
+  }
+
+  if (kind === "balance-sheet") {
+    return (
+      <BalanceSheetPdf
         config={cell.widget.config}
         plans={ctx.plans}
         mc={ctx.mc}
