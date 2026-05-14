@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ClientData, ProjectionYear } from "@/engine";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/solver/types";
+import { buildSolverComparisonPlan } from "@/lib/solver/build-solver-comparison-plan";
+import { useSharedMcRun } from "@/app/(app)/clients/[id]/comparison/use-shared-mc-run";
 import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
 import { SolverCompareGrid } from "./solver-compare-grid";
 import { SolverSection } from "./solver-section";
@@ -12,6 +14,8 @@ import { SolverRowLifeExpectancy } from "./solver-row-life-expectancy";
 import { SolverRowSocialSecurity } from "./solver-row-social-security";
 import { SolverRowSavingsContributions } from "./solver-row-savings-contributions";
 import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
+import { SolverActionBar } from "./solver-action-bar";
+import { SolverPosGauge } from "./solver-pos-gauge";
 
 interface Props {
   clientId: string;
@@ -45,10 +49,87 @@ export function LiveSolverWorkspace({
   >("fresh");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const [mcRequested, setMcRequested] = useState(false);
+  const [mcVersion, setMcVersion] = useState(0);
+
   const workingTree = useMemo(
     () => applyMutations(initialSourceClientData, mutations),
     [initialSourceClientData, mutations],
   );
+
+  const mcPlans = useMemo(
+    () => [
+      buildSolverComparisonPlan({
+        id: `base:v${mcVersion}`,
+        label: "Base Facts",
+        tree: baseClientData,
+        years: baseProjection,
+        isBaseline: true,
+        index: 0,
+      }),
+      buildSolverComparisonPlan({
+        id: `working:v${mcVersion}`,
+        label: "Working",
+        tree: workingTree,
+        years: currentProjection,
+        isBaseline: false,
+        index: 1,
+      }),
+    ],
+    [baseClientData, baseProjection, workingTree, currentProjection, mcVersion],
+  );
+
+  const mcController = useSharedMcRun({
+    clientId,
+    plans: mcPlans,
+    enabled: mcRequested,
+  });
+
+  const lastSuccessfulMcVersion = useRef<number | null>(null);
+  useEffect(() => {
+    if (mcController.status === "ready") {
+      lastSuccessfulMcVersion.current = mcVersion;
+    }
+  }, [mcController.status, mcVersion]);
+
+  const mcRunning = mcController.status === "loading";
+  const mcReady = mcController.status === "ready";
+  const workingChangedSinceMc =
+    mcReady && lastSuccessfulMcVersion.current !== mcVersion;
+
+  const baseState: "idle" | "computing" | "ready" =
+    mcReady ? "ready" : mcRunning ? "computing" : "idle";
+
+  const workingState: "idle" | "computing" | "ready" | "stale" = mcReady
+    ? workingChangedSinceMc
+      ? "stale"
+      : "ready"
+    : mcRunning
+      ? "computing"
+      : "idle";
+
+  const baseSuccess =
+    mcReady
+      ? (mcController.result?.perPlan.find((p) => p.planId.startsWith("base:"))
+          ?.successRate ?? null)
+      : null;
+  const workingSuccess =
+    mcReady
+      ? (mcController.result?.perPlan.find((p) =>
+          p.planId.startsWith("working:"),
+        )?.successRate ?? null)
+      : null;
+
+  const handleGenerateMc = useCallback(() => {
+    setMcRequested(true);
+    setMcVersion((v) => v + 1);
+  }, []);
+
+  const handleReset = useCallback(() => {
+    setMutationMap(new Map());
+    setComputeStatus("fresh");
+    setCurrentProjection(initialSourceProjection);
+  }, [initialSourceProjection]);
 
   function pushMutation(m: SolverMutation) {
     setMutationMap((prev) => {
@@ -106,9 +187,7 @@ export function LiveSolverWorkspace({
             <div className="text-xs uppercase tracking-wide text-gray-500">
               Base Facts
             </div>
-            <div className="text-sm text-gray-400 mt-1">
-              Probability of Success: —
-            </div>
+            <SolverPosGauge state={baseState} successPct={baseSuccess} />
           </div>
         }
         rightHeader={
@@ -116,10 +195,7 @@ export function LiveSolverWorkspace({
             <div className="text-xs uppercase tracking-wide text-gray-500">
               Working state
             </div>
-            <div className="text-sm text-gray-400 mt-1">
-              Probability of Success:{" "}
-              {computeStatus === "computing" ? "…" : "—"}
-            </div>
+            <SolverPosGauge state={workingState} successPct={workingSuccess} />
           </div>
         }
       >
@@ -159,6 +235,14 @@ export function LiveSolverWorkspace({
           />
         </SolverSection>
       </SolverCompareGrid>
+
+      <SolverActionBar
+        hasMutations={mutations.length > 0}
+        mcRunning={mcRunning}
+        onReset={handleReset}
+        onGenerateMc={handleGenerateMc}
+        onSave={() => alert("Task 16 wires the Save dialog")}
+      />
     </div>
   );
 }
