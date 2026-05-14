@@ -160,6 +160,8 @@ const ALLOWLIST: Record<string, string> = {
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/scenarios/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
+  "src/app/api/clients/[id]/solver/solve/route.ts":
+    "SSE goal-seek — read-only on DB, no mutation; allowlisted for parity with other solver routes",
   "src/app/api/clients/[id]/snapshots/[snapId]/route.ts":
     "pre-Phase-3 — wire in Phase 3.5",
   "src/app/api/clients/[id]/snapshots/route.ts":
