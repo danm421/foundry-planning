@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ClientData } from "@/engine";
 import type { SolverMutation } from "@/lib/solver/types";
+import { useSolverSide } from "./solver-section";
 
 interface Props {
   baseExpenses: ClientData["expenses"];
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function SolverRowLivingExpenseScale({ baseExpenses, onChange }: Props) {
+  const side = useSolverSide();
   const baseTotal = baseExpenses
     .filter((e) => e.type === "living")
     .reduce((s, e) => s + e.annualAmount, 0);
@@ -22,35 +24,46 @@ export function SolverRowLivingExpenseScale({ baseExpenses, onChange }: Props) {
     onChange({ kind: "living-expense-scale", multiplier: next / 100 });
   }
 
-  return (
-    <div className="space-y-2">
-      <div className="text-sm font-medium">Living Expenses</div>
-      <div className="grid grid-cols-2 gap-4">
+  if (side === "base") {
+    return (
+      <div className="space-y-2.5">
+        <div className="text-[13px] font-medium text-ink">Living Expenses</div>
         <div>
-          <div className="text-xs text-gray-500">Annual (sum of living-type)</div>
-          <div className="text-sm tabular-nums">${baseTotal.toLocaleString()}</div>
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500" htmlFor="living-scale">
-            Scale (%)
-          </label>
-          <input
-            id="living-scale"
-            aria-label="Living expense scale"
-            type="number"
-            min={50}
-            max={150}
-            step={1}
-            value={pct}
-            onChange={(e) => {
-              const n = parseInt(e.target.value, 10);
-              if (!Number.isNaN(n) && n >= 50 && n <= 150) commit(n);
-            }}
-            className="border border-gray-300 rounded px-2 py-1 text-sm w-24 tabular-nums"
-          />
-          <div className="text-xs text-gray-400 mt-1">
-            Scaled annual: ${((baseTotal * pct) / 100).toLocaleString()}
+          <div className="text-[11px] text-ink-3">Annual (sum of living-type)</div>
+          <div className="mt-0.5 text-[15px] text-ink-2 tabular">
+            ${baseTotal.toLocaleString()}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2.5">
+      <div className="text-[13px] font-medium text-ink">Living Expenses</div>
+      <div>
+        <label className="block text-[11px] text-ink-3" htmlFor="living-scale">
+          Scale (%)
+        </label>
+        <input
+          id="living-scale"
+          aria-label="Living expense scale"
+          type="number"
+          min={50}
+          max={150}
+          step={1}
+          value={pct}
+          onChange={(e) => {
+            const n = parseInt(e.target.value, 10);
+            if (!Number.isNaN(n) && n >= 50 && n <= 150) commit(n);
+          }}
+          className="mt-1 h-9 w-24 rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink tabular border-l-2 border-l-accent/70 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+        />
+        <div className="mt-1.5 text-[11px] text-ink-4">
+          Scaled annual:{" "}
+          <span className="text-ink-3 tabular">
+            ${((baseTotal * pct) / 100).toLocaleString()}
+          </span>
         </div>
       </div>
     </div>

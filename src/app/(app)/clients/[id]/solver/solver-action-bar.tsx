@@ -16,13 +16,13 @@ export function SolverActionBar({
   onSave,
 }: Props) {
   return (
-    <div className="flex items-center justify-between border-t border-gray-200 pt-4">
+    <div className="flex items-center justify-between gap-3 border-t border-hair pt-4">
       <div className="flex gap-2">
         <button
           type="button"
           onClick={onReset}
           disabled={!hasMutations}
-          className="px-3 py-2 text-sm border border-gray-300 rounded disabled:opacity-50"
+          className="h-9 px-3 text-[13px] font-medium rounded-md border border-hair-2 text-ink-2 bg-card hover:bg-card-hover hover:text-ink hover:border-hair-2 disabled:opacity-40 disabled:hover:bg-card disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
         >
           Reset
         </button>
@@ -30,16 +30,26 @@ export function SolverActionBar({
           type="button"
           onClick={onGenerateMc}
           disabled={mcRunning}
-          className="px-3 py-2 text-sm border border-gray-300 rounded disabled:opacity-50"
+          className="h-9 px-3 text-[13px] font-medium rounded-md border border-hair-2 text-ink-2 bg-card hover:bg-card-hover hover:text-ink disabled:opacity-40 disabled:hover:bg-card disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 inline-flex items-center gap-2"
         >
-          {mcRunning ? "Generating…" : "Generate Monte Carlo"}
+          {mcRunning ? (
+            <>
+              <span
+                aria-hidden="true"
+                className="h-3 w-3 rounded-full border-2 border-ink-3 border-t-transparent animate-spin"
+              />
+              Generating…
+            </>
+          ) : (
+            "Generate Monte Carlo"
+          )}
         </button>
       </div>
       <button
         type="button"
         onClick={onSave}
         disabled={!hasMutations}
-        className="px-3 py-2 text-sm bg-blue-600 text-white rounded disabled:opacity-50"
+        className="h-9 px-4 text-[13px] font-semibold rounded-md bg-accent text-accent-on hover:bg-accent-ink disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
       >
         Save as scenario…
       </button>

@@ -13,15 +13,30 @@ export function SolverPosGauge({ state, successPct }: Props) {
   } else if (state === "error") display = "Error";
   else display = "—";
 
+  const pct = state === "ready" || state === "stale" ? successPct : null;
+  const valueTone =
+    pct == null
+      ? "text-ink-3"
+      : pct >= 0.85
+        ? "text-good"
+        : pct >= 0.7
+          ? "text-warn"
+          : "text-crit";
+
   const dimmed = state === "stale" || state === "idle";
   return (
-    <div className={dimmed ? "opacity-60" : ""}>
-      <div className="text-xs uppercase tracking-wide text-gray-500">
+    <div className={dimmed ? "opacity-70" : ""}>
+      <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">
         Probability of Success
       </div>
-      <div className="text-3xl font-semibold tabular-nums">{display}</div>
+      <div className={`mt-1 text-[28px] font-semibold leading-none tabular tracking-tight ${valueTone}`}>
+        {display}
+      </div>
       {state === "stale" ? (
-        <div className="text-xs text-amber-600 mt-1">Stale — re-generate</div>
+        <div className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-warn">
+          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-warn" />
+          Stale — re-generate
+        </div>
       ) : null}
     </div>
   );

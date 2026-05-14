@@ -10,10 +10,10 @@ interface Props {
 
 export function SolverCompareGrid({ leftHeader, rightHeader, children }: Props) {
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <div className="grid grid-cols-2 border-b border-gray-200">
-        <div className="p-4 border-r border-gray-200">{leftHeader}</div>
-        <div className="p-4">{rightHeader}</div>
+    <div className="rounded-lg border border-hair bg-card overflow-hidden">
+      <div className="grid grid-cols-2 bg-card-2/50 border-b border-hair">
+        <div className="px-5 py-4 border-r border-hair">{leftHeader}</div>
+        <div className="px-5 py-4">{rightHeader}</div>
       </div>
       <div>{children}</div>
     </div>

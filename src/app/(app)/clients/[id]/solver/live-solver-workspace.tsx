@@ -218,44 +218,97 @@ export function LiveSolverWorkspace({
   }, [mutations, clientId, initialSource, initialSourceProjection]);
 
   return (
-    <div className="p-4 space-y-4">
-      <PortfolioBarsChart current={currentProjection} baseline={baseProjection} />
-
-      {computeStatus === "computing" ? (
-        <div className="text-xs text-gray-400 -mt-2">Recalculating…</div>
-      ) : null}
+    <div className="space-y-5">
+      <div className="rounded-lg border border-hair bg-card p-4">
+        <div style={{ height: 300 }}>
+          <PortfolioBarsChart current={currentProjection} baseline={baseProjection} />
+        </div>
+        {computeStatus === "computing" ? (
+          <div
+            aria-live="polite"
+            className="mt-2 inline-flex items-center gap-2 text-[11px] text-ink-3"
+          >
+            <span
+              aria-hidden="true"
+              className="h-2 w-2 rounded-full bg-accent/70 animate-pulse"
+            />
+            Recalculating…
+          </div>
+        ) : null}
+      </div>
 
       {errorMessage ? (
-        <div className="border border-red-300 bg-red-50 text-red-700 text-sm rounded px-3 py-2">
-          Recompute failed: {errorMessage}
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-md border border-crit/40 bg-crit/10 px-3 py-2 text-[13px] text-crit"
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 16 16"
+            className="mt-0.5 h-4 w-4 shrink-0"
+            fill="currentColor"
+          >
+            <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm.75 9.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm-.75-7a.75.75 0 0 1 .75.75v4a.75.75 0 0 1-1.5 0v-4a.75.75 0 0 1 .75-.75Z" />
+          </svg>
+          <span>
+            <span className="font-medium">Recompute failed.</span>{" "}
+            <span className="text-crit/80">{errorMessage}</span>
+          </span>
         </div>
       ) : null}
 
       <SolverCompareGrid
         leftHeader={
-          <div>
-            <div className="text-xs uppercase tracking-wide text-gray-500">
-              Base Facts
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">
+                Base Facts
+              </div>
+              <div className="mt-3">
+                <SolverPosGauge state={baseState} successPct={baseSuccess} />
+              </div>
             </div>
-            <SolverPosGauge state={baseState} successPct={baseSuccess} />
           </div>
         }
         rightHeader={
-          <div>
-            <div className="flex items-center gap-2">
-              <select
-                aria-label="Right-column source"
-                value={initialSource}
-                onChange={(e) => handleSourceChange(e.target.value)}
-                className="border border-gray-300 rounded text-sm px-2 py-1"
-              >
-                <option value="base">Base Facts</option>
-                {availableScenarios.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">
+                Scenario
+              </div>
+              <div className="mt-1.5">
+                <div className="relative inline-flex">
+                  <select
+                    aria-label="Right-column source"
+                    value={initialSource}
+                    onChange={(e) => handleSourceChange(e.target.value)}
+                    className="appearance-none h-8 rounded-md border border-hair-2 bg-card-2 pl-2.5 pr-7 text-[13px] text-ink hover:border-accent/60 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+                  >
+                    <option value="base">Base Facts</option>
+                    {availableScenarios.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 12 12"
+                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-ink-3"
+                  >
+                    <path
+                      d="M3 4.5 6 7.5l3-3"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+              </div>
+              <div className="mt-2.5">
+                <SolverPosGauge state={workingState} successPct={workingSuccess} />
+              </div>
             </div>
-            <SolverPosGauge state={workingState} successPct={workingSuccess} />
           </div>
         }
       >
@@ -311,7 +364,9 @@ export function LiveSolverWorkspace({
         onSubmit={handleSaveSubmit}
       />
       {saveError ? (
-        <div className="text-sm text-red-600">Save failed: {saveError}</div>
+        <div role="alert" className="text-[13px] text-crit">
+          Save failed: {saveError}
+        </div>
       ) : null}
     </div>
   );

@@ -19,40 +19,44 @@ export function SaveAsScenarioDialog({ open, mutations, onClose, onSubmit }: Pro
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-paper/70 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-lg p-6 w-[480px] max-w-full"
+        className="w-[480px] max-w-[calc(100%-2rem)] rounded-lg border border-hair bg-card p-6 shadow-2xl shadow-black/60"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-semibold mb-2">Save solver state as scenario</h2>
+        <h2 className="mb-3 text-[16px] font-semibold text-ink">
+          Save solver state as scenario
+        </h2>
 
-        <label className="block text-sm mb-1" htmlFor="solver-save-name">
+        <label className="mb-1.5 block text-[12px] text-ink-3" htmlFor="solver-save-name">
           Name
         </label>
         <input
           id="solver-save-name"
-          className="border border-gray-300 rounded px-2 py-1 w-full text-sm"
+          className="h-9 w-full rounded-md border border-hair-2 bg-card-2 px-2.5 text-[14px] text-ink placeholder:text-ink-4 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. Retire at 67 with cuts"
         />
 
-        <div className="text-xs text-gray-500 mt-4 mb-1">
-          Includes {mutations.length} change{mutations.length === 1 ? "" : "s"}:
+        <div className="mt-5 mb-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-3">
+          Includes {mutations.length} change{mutations.length === 1 ? "" : "s"}
         </div>
-        <ul className="text-sm space-y-1 max-h-40 overflow-y-auto">
+        <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-hair bg-paper/60 px-3 py-2 text-[13px] text-ink-2">
           {mutations.map((m, i) => (
-            <li key={i}>• {describeMutation(m)}</li>
+            <li key={i} className="tabular">
+              <span className="text-ink-4">›</span> {describeMutation(m)}
+            </li>
           ))}
         </ul>
 
-        <div className="flex justify-end gap-2 mt-6">
+        <div className="mt-6 flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-2 text-sm border border-gray-300 rounded"
+            className="h-9 rounded-md border border-hair-2 bg-card px-3 text-[13px] font-medium text-ink-2 hover:bg-card-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
           >
             Cancel
           </button>
@@ -60,7 +64,7 @@ export function SaveAsScenarioDialog({ open, mutations, onClose, onSubmit }: Pro
             type="button"
             disabled={name.trim().length === 0}
             onClick={() => onSubmit({ name: name.trim() })}
-            className="px-3 py-2 text-sm bg-blue-600 text-white rounded disabled:opacity-50"
+            className="h-9 rounded-md bg-accent px-4 text-[13px] font-semibold text-accent-on hover:bg-accent-ink disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
           >
             Save scenario
           </button>
