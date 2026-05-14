@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import type { ClientData, ProjectionYear } from "@/engine";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationKey, type SolverMutation, type SolverMutationKey } from "@/lib/solver/types";
+import type { SolveLeverKey, SolveProgressEvent, SolveResultEvent } from "@/lib/solver/solve-types";
+import { buildLeverMutation } from "@/lib/solver/lever-search-config";
 import { buildSolverComparisonPlan } from "@/lib/solver/build-solver-comparison-plan";
+import { useSolverSolve } from "./use-solver-solve";
 import { useSharedMcRun } from "@/app/(app)/clients/[id]/comparison/use-shared-mc-run";
 import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
 import { SolverCompareGrid } from "./solver-compare-grid";
@@ -57,6 +60,46 @@ export function LiveSolverWorkspace({
 
   const [mcRequested, setMcRequested] = useState(false);
   const [mcVersion, setMcVersion] = useState(0);
+
+  type ActiveSolve = {
+    target: SolveLeverKey;
+    targetPoS: number;
+    iteration: number;
+    candidateValue: number | null;
+    achievedPoS: number | null;
+  };
+
+  const [activeSolve, setActiveSolve] = useState<ActiveSolve | null>(null);
+  const [solveError, setSolveError] = useState<string | null>(null);
+
+  const solveController = useSolverSolve({
+    clientId,
+    onProgress: (e: SolveProgressEvent) => {
+      setActiveSolve((prev) =>
+        prev
+          ? { ...prev, iteration: e.iteration, candidateValue: e.candidateValue, achievedPoS: e.achievedPoS }
+          : prev,
+      );
+    },
+    onResult: (e: SolveResultEvent) => {
+      setActiveSolve((prev) => {
+        if (!prev) return prev;
+        const mutation = buildLeverMutation(prev.target, e.solvedValue);
+        setMutationMap((mm) => {
+          const next = new Map(mm);
+          next.set(mutationKey(mutation), mutation);
+          return next;
+        });
+        setCurrentProjection(e.finalProjection);
+        setComputeStatus("fresh");
+        return null;
+      });
+    },
+    onError: (msg) => {
+      setActiveSolve(null);
+      setSolveError(msg);
+    },
+  });
 
   const workingTree = useMemo(
     () => applyMutations(initialSourceClientData, mutations),
@@ -201,8 +244,42 @@ export function LiveSolverWorkspace({
     setComputeStatus("stale");
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleSolveStart = useCallback(
+    (target: SolveLeverKey, targetPoS: number) => {
+      if (activeSolve) return;
+      setSolveError(null);
+      setActiveSolve({
+        target,
+        targetPoS,
+        iteration: 0,
+        candidateValue: null,
+        achievedPoS: null,
+      });
+      // Filter out any existing mutation for this lever; bisect iterates on it.
+      // mutationKey() ignores the value, so we pass an arbitrary placeholder (0)
+      // just to derive the key.
+      const targetKey = mutationKey(buildLeverMutation(target, 0));
+      const baselineMutations = mutations.filter((m) => mutationKey(m) !== targetKey);
+      void solveController.start({
+        source: initialSource,
+        mutations: baselineMutations,
+        target,
+        targetPoS,
+      });
+    },
+    [activeSolve, mutations, initialSource, solveController],
+  );
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleSolveCancel = useCallback(() => {
+    solveController.cancel();
+    setActiveSolve(null);
+  }, [solveController]);
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    if (activeSolve) return; // solve owns the projection while running
     if (mutations.length === 0) {
       setCurrentProjection(initialSourceProjection);
       setComputeStatus("fresh");
@@ -230,7 +307,7 @@ export function LiveSolverWorkspace({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [mutations, clientId, initialSource, initialSourceProjection]);
+  }, [mutations, clientId, initialSource, initialSourceProjection, activeSolve]);
 
   return (
     <div className="space-y-5">
@@ -381,10 +458,17 @@ export function LiveSolverWorkspace({
       <SolverActionBar
         hasMutations={mutations.length > 0}
         mcRunning={mcRunning}
+        solveActive={activeSolve !== null}
         onReset={handleReset}
         onGenerateMc={handleGenerateMc}
         onSave={() => setSaveOpen(true)}
       />
+
+      {solveError ? (
+        <div role="alert" className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
+          Solve failed: {solveError}
+        </div>
+      ) : null}
 
       <SaveAsScenarioDialog
         open={saveOpen}
