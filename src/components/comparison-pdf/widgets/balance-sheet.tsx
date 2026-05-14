@@ -13,10 +13,13 @@
 // owner-column matrix — one row per account, columns for each owner (client,
 // spouse, Joint/ROS, other family members, entities), with a Total column on
 // the right. We mirror the screen widget exactly here (same precedent as
-// task 4.5 reducing roth-ladder's columns to match available data). The
-// distribute() / buildColumns() / isHouseholdPrincipalSplit() helpers are
-// straight ports of the screen widget at
-// src/components/comparison/balance-sheet-comparison-section.tsx.
+// task 4.5 reducing roth-ladder's columns to match available data).
+//
+// The shared layout helpers (distribute / buildColumns / isHouseholdPrincipalSplit
+// / fmt + ColumnKey / ColumnSpec / MatrixRow / JOINT_COL) live in
+// @/lib/comparison/widgets/balance-sheet-shared and are reused by the screen
+// widget at src/components/comparison/balance-sheet-comparison-section.tsx
+// (matches the kpi-metric.ts precedent from Task 3.2).
 //
 // compact mode is engaged when span ≤ 3 (slightly smaller font + padding).
 
@@ -27,8 +30,15 @@ import type { McSharedResult } from "@/lib/comparison/widgets/types";
 import type { CellSpan, YearRange } from "@/lib/comparison/layout-schema";
 import type { BrandingResolved } from "@/lib/comparison-pdf/branding";
 import type { Account, EntitySummary, FamilyMember, Liability } from "@/engine/types";
-import type { AccountOwner } from "@/engine/ownership";
 import { seriesColor } from "@/lib/comparison/series-palette";
+import {
+  buildColumns,
+  distribute,
+  fmt,
+  type ColumnSpec,
+  type ColumnKey,
+  type MatrixRow,
+} from "@/lib/comparison/widgets/balance-sheet-shared";
 
 const SPAN_WIDTH: Record<CellSpan, string> = {
   1: "20%",
@@ -170,111 +180,6 @@ interface Props {
   branding: BrandingResolved;
 }
 
-type ColumnKey = string;
-const JOINT_COL: ColumnKey = "joint";
-
-interface ColumnSpec {
-  key: ColumnKey;
-  label: string;
-}
-
-interface MatrixRow {
-  id: string;
-  name: string;
-  value: number;
-  dist: Record<ColumnKey, number>;
-}
-
-const usd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
-
-function fmt(n: number): string {
-  if (!n) return "—";
-  return usd.format(Math.round(n));
-}
-
-function isHouseholdPrincipalSplit(
-  owners: AccountOwner[],
-  familyById: Map<string, FamilyMember>,
-): boolean {
-  if (owners.length !== 2) return false;
-  const roles = owners
-    .filter((o) => o.kind === "family_member")
-    .map((o) => (o.kind === "family_member" ? familyById.get(o.familyMemberId)?.role : undefined));
-  if (roles.length !== 2) return false;
-  return roles.includes("client") && roles.includes("spouse");
-}
-
-/** Distribute `value` across columns according to ownership. Single-owner
- *  accounts land entirely in one column; client+spouse splits collapse to the
- *  Joint/ROS column; any other multi-owner shape splits proportionally. */
-function distribute(
-  value: number,
-  owners: AccountOwner[] | undefined,
-  familyById: Map<string, FamilyMember>,
-): Record<ColumnKey, number> {
-  const out: Record<ColumnKey, number> = {};
-  const list = owners ?? [];
-  if (list.length === 0 || !value) return out;
-  if (list.length === 1 && (list[0].percent ?? 1) >= 0.999) {
-    const o = list[0];
-    const key = o.kind === "entity" ? `ent:${o.entityId}` : `fm:${o.familyMemberId}`;
-    out[key] = value;
-    return out;
-  }
-  if (isHouseholdPrincipalSplit(list, familyById)) {
-    out[JOINT_COL] = value;
-    return out;
-  }
-  for (const o of list) {
-    const key = o.kind === "entity" ? `ent:${o.entityId}` : `fm:${o.familyMemberId}`;
-    out[key] = (out[key] ?? 0) + value * (o.percent ?? 0);
-  }
-  return out;
-}
-
-/** Walk all distributions once to discover which columns to render, preserving
- *  a stable order: client → spouse → Joint/ROS → other family members →
- *  entities. Columns with zero contribution across every row are dropped. */
-function buildColumns(
-  dists: Array<Record<ColumnKey, number>>,
-  familyMembers: FamilyMember[],
-  entities: EntitySummary[],
-): ColumnSpec[] {
-  const used = new Set<ColumnKey>();
-  for (const dist of dists) {
-    for (const [k, v] of Object.entries(dist)) {
-      if (v) used.add(k);
-    }
-  }
-  const cols: ColumnSpec[] = [];
-  const byRole = (role: FamilyMember["role"]) => familyMembers.find((fm) => fm.role === role);
-  const client = byRole("client");
-  const spouse = byRole("spouse");
-  if (client && used.has(`fm:${client.id}`)) {
-    cols.push({ key: `fm:${client.id}`, label: client.firstName || "Client" });
-  }
-  if (spouse && used.has(`fm:${spouse.id}`)) {
-    cols.push({ key: `fm:${spouse.id}`, label: spouse.firstName || "Spouse" });
-  }
-  if (used.has(JOINT_COL)) cols.push({ key: JOINT_COL, label: "Joint/ROS" });
-  for (const fm of familyMembers) {
-    if (fm.role === "client" || fm.role === "spouse") continue;
-    if (used.has(`fm:${fm.id}`)) {
-      cols.push({ key: `fm:${fm.id}`, label: fm.firstName || fm.role });
-    }
-  }
-  for (const e of entities) {
-    if (used.has(`ent:${e.id}`)) {
-      cols.push({ key: `ent:${e.id}`, label: e.name ?? "Entity" });
-    }
-  }
-  return cols;
-}
-
 function OwnerMatrix({
   heading,
   rows,
@@ -303,55 +208,82 @@ function OwnerMatrix({
   const valueColWidth = valueColCount > 0 ? `${70 / valueColCount}%` : "0%";
   const nameColWidth = "30%";
 
-  const sectionHeadingStyle = compact
-    ? { ...s.sectionHeading, ...s.sectionHeadingCompact }
-    : s.sectionHeading;
-  const nameHeaderStyle = compact
-    ? { ...s.nameCellHeader, ...s.nameCellHeaderCompact }
-    : s.nameCellHeader;
-  const valueHeaderStyle = compact
-    ? { ...s.valueCellHeader, ...s.valueCellHeaderCompact }
-    : s.valueCellHeader;
-  const nameCellStyle = compact ? { ...s.nameCell, ...s.nameCellCompact } : s.nameCell;
-  const valueCellStyle = compact ? { ...s.valueCell, ...s.valueCellCompact } : s.valueCell;
-  const nameTotalStyle = compact
-    ? { ...s.nameCellTotal, ...s.nameCellTotalCompact }
-    : s.nameCellTotal;
-  const valueTotalStyle = compact
-    ? { ...s.valueCellTotal, ...s.valueCellTotalCompact }
-    : s.valueCellTotal;
-
   return (
     <View style={s.matrixWrap}>
-      <Text style={sectionHeadingStyle}>{heading}</Text>
+      <Text style={[s.sectionHeading, compact && s.sectionHeadingCompact]}>{heading}</Text>
       <View style={s.headerRow}>
-        <Text style={{ ...nameHeaderStyle, width: nameColWidth }}>{heading}</Text>
+        <Text
+          style={[
+            s.nameCellHeader,
+            compact && s.nameCellHeaderCompact,
+            { width: nameColWidth },
+          ]}
+        >
+          {heading}
+        </Text>
         {columns.map((c) => (
-          <Text key={c.key} style={{ ...valueHeaderStyle, width: valueColWidth }}>
+          <Text
+            key={c.key}
+            style={[
+              s.valueCellHeader,
+              compact && s.valueCellHeaderCompact,
+              { width: valueColWidth },
+            ]}
+          >
             {c.label}
           </Text>
         ))}
-        <Text style={{ ...valueHeaderStyle, width: valueColWidth }}>Total</Text>
+        <Text
+          style={[
+            s.valueCellHeader,
+            compact && s.valueCellHeaderCompact,
+            { width: valueColWidth },
+          ]}
+        >
+          Total
+        </Text>
       </View>
       {rows.map((r) => (
         <View key={r.id} style={s.bodyRow}>
-          <Text style={{ ...nameCellStyle, width: nameColWidth }}>{r.name}</Text>
+          <Text style={[s.nameCell, compact && s.nameCellCompact, { width: nameColWidth }]}>
+            {r.name}
+          </Text>
           {columns.map((c) => (
-            <Text key={c.key} style={{ ...valueCellStyle, width: valueColWidth }}>
+            <Text
+              key={c.key}
+              style={[s.valueCell, compact && s.valueCellCompact, { width: valueColWidth }]}
+            >
               {fmt(r.dist[c.key] ?? 0)}
             </Text>
           ))}
-          <Text style={{ ...valueCellStyle, width: valueColWidth }}>{fmt(r.value)}</Text>
+          <Text style={[s.valueCell, compact && s.valueCellCompact, { width: valueColWidth }]}>
+            {fmt(r.value)}
+          </Text>
         </View>
       ))}
       <View style={s.totalRow}>
-        <Text style={{ ...nameTotalStyle, width: nameColWidth }}>{totalsLabel}</Text>
+        <Text
+          style={[s.nameCellTotal, compact && s.nameCellTotalCompact, { width: nameColWidth }]}
+        >
+          {totalsLabel}
+        </Text>
         {columns.map((c) => (
-          <Text key={c.key} style={{ ...valueTotalStyle, width: valueColWidth }}>
+          <Text
+            key={c.key}
+            style={[
+              s.valueCellTotal,
+              compact && s.valueCellTotalCompact,
+              { width: valueColWidth },
+            ]}
+          >
             {fmt(colTotals[c.key] ?? 0)}
           </Text>
         ))}
-        <Text style={{ ...valueTotalStyle, width: valueColWidth }}>{fmt(grandTotal)}</Text>
+        <Text
+          style={[s.valueCellTotal, compact && s.valueCellTotalCompact, { width: valueColWidth }]}
+        >
+          {fmt(grandTotal)}
+        </Text>
       </View>
     </View>
   );
@@ -406,18 +338,11 @@ function PlanBlock({
   const netWorth = totalAssets - totalLiabs;
   const dotColor = seriesColor(index) ?? PDF_THEME.ink3;
 
-  const netLabelStyle = compact
-    ? { ...s.netWorthLabel, ...s.netWorthLabelCompact }
-    : s.netWorthLabel;
-  const netValueStyle = compact
-    ? { ...s.netWorthValue, ...s.netWorthValueCompact }
-    : s.netWorthValue;
-
   return (
     <View style={s.planBlock}>
       {multiPlan && (
         <View style={s.planHeader}>
-          <View style={{ ...s.dot, backgroundColor: dotColor }} />
+          <View style={[s.dot, { backgroundColor: dotColor }]} />
           <Text style={s.planLabel}>{plan.label}</Text>
         </View>
       )}
@@ -440,8 +365,8 @@ function PlanBlock({
         />
       )}
       <View style={s.netWorthBox}>
-        <Text style={netLabelStyle}>Net Worth</Text>
-        <Text style={netValueStyle}>{fmt(netWorth)}</Text>
+        <Text style={[s.netWorthLabel, compact && s.netWorthLabelCompact]}>Net Worth</Text>
+        <Text style={[s.netWorthValue, compact && s.netWorthValueCompact]}>{fmt(netWorth)}</Text>
       </View>
     </View>
   );
@@ -452,7 +377,7 @@ export function BalanceSheetPdf({ plans, span }: Props) {
   const multiPlan = plans.length > 1;
 
   return (
-    <View style={{ ...s.wrap, width: SPAN_WIDTH[span] }}>
+    <View style={[s.wrap, { width: SPAN_WIDTH[span] }]}>
       {plans.map((plan, idx) => (
         <PlanBlock
           key={plan.id}
