@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { deriveStepStatuses } from "@/lib/onboarding/step-status";
 import type { OnboardingState } from "@/lib/onboarding/types";
@@ -13,7 +13,7 @@ interface PageProps {
 }
 
 export default async function OnboardingResumePage({ params }: PageProps) {
-  const firmId = await getOrgId();
+  const firmId = await requireOrgId();
   const { id } = await params;
 
   const [row] = await db

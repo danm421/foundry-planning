@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
+import { requireActiveSubscription } from "@/lib/authz";
 import { recordAudit } from "@/lib/audit";
 import { isStepSlug, type OnboardingState } from "@/lib/onboarding/types";
 
@@ -22,6 +23,7 @@ export async function PATCH(
 ) {
   try {
     const firmId = await requireOrgId();
+    await requireActiveSubscription();
     const { id } = await params;
     const body = await request.json();
     const parsed = patchSchema.safeParse(body);

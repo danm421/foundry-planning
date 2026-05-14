@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { clients } from "@/db/schema";
-import { getOrgId } from "@/lib/db-helpers";
+import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { deriveStepStatuses } from "@/lib/onboarding/step-status";
 import { isStepSlug, type OnboardingState } from "@/lib/onboarding/types";
@@ -21,7 +21,7 @@ export default async function OnboardingStepPage({ params }: PageProps) {
   const { id, step } = await params;
   if (!isStepSlug(step)) notFound();
 
-  const firmId = await getOrgId();
+  const firmId = await requireOrgId();
   const [row] = await db
     .select({ id: clients.id, state: clients.onboardingState, completedAt: clients.onboardingCompletedAt })
     .from(clients)
