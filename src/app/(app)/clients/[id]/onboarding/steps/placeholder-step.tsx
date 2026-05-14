@@ -3,6 +3,7 @@ import type { StepSlug } from "@/lib/onboarding/types";
 import { STEPS } from "@/lib/onboarding/steps";
 
 interface PlaceholderStepProps {
+  clientId: string;
   slug: StepSlug;
   tabHref: string;
 }
