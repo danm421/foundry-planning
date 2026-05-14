@@ -36,6 +36,7 @@ export function LiveSolverWorkspace({
   initialSource,
   initialSourceClientData,
   initialSourceProjection,
+  availableScenarios,
 }: Props) {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
@@ -134,6 +135,17 @@ export function LiveSolverWorkspace({
     setCurrentProjection(initialSourceProjection);
   }, [initialSourceProjection]);
 
+  function handleSourceChange(next: string) {
+    if (mutations.length > 0) {
+      if (!confirm("Discard your pending edits and load this scenario?")) return;
+    }
+    const target =
+      next === "base"
+        ? `/clients/${clientId}/solver`
+        : `/clients/${clientId}/solver?scenario=${next}`;
+    router.push(target);
+  }
+
   const [saveOpen, setSaveOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -209,6 +221,10 @@ export function LiveSolverWorkspace({
     <div className="p-4 space-y-4">
       <PortfolioBarsChart current={currentProjection} baseline={baseProjection} />
 
+      {computeStatus === "computing" ? (
+        <div className="text-xs text-gray-400 -mt-2">Recalculating…</div>
+      ) : null}
+
       {errorMessage ? (
         <div className="border border-red-300 bg-red-50 text-red-700 text-sm rounded px-3 py-2">
           Recompute failed: {errorMessage}
@@ -226,8 +242,18 @@ export function LiveSolverWorkspace({
         }
         rightHeader={
           <div>
-            <div className="text-xs uppercase tracking-wide text-gray-500">
-              Working state
+            <div className="flex items-center gap-2">
+              <select
+                aria-label="Right-column source"
+                value={initialSource}
+                onChange={(e) => handleSourceChange(e.target.value)}
+                className="border border-gray-300 rounded text-sm px-2 py-1"
+              >
+                <option value="base">Base Facts</option>
+                {availableScenarios.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
             </div>
             <SolverPosGauge state={workingState} successPct={workingSuccess} />
           </div>

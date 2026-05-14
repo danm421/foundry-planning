@@ -64,7 +64,8 @@ const baseProps = {
 describe("<LiveSolverWorkspace />", () => {
   it("renders the Solver page with Base Facts column label", () => {
     render(<LiveSolverWorkspace {...baseProps} />);
-    expect(screen.getByText(/Base Facts/i)).toBeInTheDocument();
+    const baseFactsLabels = screen.getAllByText(/Base Facts/i);
+    expect(baseFactsLabels.length).toBeGreaterThan(0);
   });
 
   it("debounces input changes into a single POST", async () => {
