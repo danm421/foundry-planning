@@ -10,6 +10,7 @@ import { SolverSection } from "./solver-section";
 import { SolverRowRetirementAges } from "./solver-row-retirement-ages";
 import { SolverRowLifeExpectancy } from "./solver-row-life-expectancy";
 import { SolverRowSocialSecurity } from "./solver-row-social-security";
+import { SolverRowSavingsContributions } from "./solver-row-savings-contributions";
 
 interface Props {
   clientId: string;
@@ -29,6 +30,7 @@ export function LiveSolverWorkspace({
   initialSourceClientData,
   initialSourceProjection,
 }: Props) {
+  const currentYear = new Date().getFullYear();
   const [mutationMap, setMutationMap] = useState<Map<SolverMutationKey, SolverMutation>>(
     () => new Map(),
   );
@@ -136,6 +138,15 @@ export function LiveSolverWorkspace({
             workingIncomes={workingTree.incomes}
             baseClient={baseClientData.client}
             workingClient={workingTree.client}
+            onChange={pushMutation}
+          />
+        </SolverSection>
+
+        <SolverSection title="Income & Savings">
+          <SolverRowSavingsContributions
+            baseClientData={baseClientData}
+            workingClientData={workingTree}
+            currentYear={currentYear}
             onChange={pushMutation}
           />
         </SolverSection>
