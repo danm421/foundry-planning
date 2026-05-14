@@ -71,6 +71,8 @@ export function LiveSolverWorkspace({
 
   const [activeSolve, setActiveSolve] = useState<ActiveSolve | null>(null);
   const [solveError, setSolveError] = useState<string | null>(null);
+  const activeSolveRef = useRef<ActiveSolve | null>(null);
+  activeSolveRef.current = activeSolve;
 
   const solveController = useSolverSolve({
     clientId,
@@ -82,18 +84,20 @@ export function LiveSolverWorkspace({
       );
     },
     onResult: (e: SolveResultEvent) => {
-      setActiveSolve((prev) => {
-        if (!prev) return prev;
-        const mutation = buildLeverMutation(prev.target, e.solvedValue);
-        setMutationMap((mm) => {
-          const next = new Map(mm);
-          next.set(mutationKey(mutation), mutation);
-          return next;
-        });
-        setCurrentProjection(e.finalProjection);
-        setComputeStatus("fresh");
-        return null;
+      // Read activeSolve via the latest ref so we don't side-effect inside the
+      // setActiveSolve updater (React requires updater purity; double-invocation
+      // under StrictMode would otherwise call setMutationMap twice).
+      const prev = activeSolveRef.current;
+      if (!prev) return;
+      const mutation = buildLeverMutation(prev.target, e.solvedValue);
+      setMutationMap((mm) => {
+        const next = new Map(mm);
+        next.set(mutationKey(mutation), mutation);
+        return next;
       });
+      setCurrentProjection(e.finalProjection);
+      setComputeStatus("fresh");
+      setActiveSolve(null);
     },
     onError: (msg) => {
       setActiveSolve(null);
