@@ -14,6 +14,7 @@ import { SolverRowRetirementAges } from "./solver-row-retirement-ages";
 import { SolverRowLifeExpectancy } from "./solver-row-life-expectancy";
 import { SolverRowSocialSecurity } from "./solver-row-social-security";
 import { SolverRowSavingsContributions } from "./solver-row-savings-contributions";
+import { SolverRowIncomes } from "./solver-row-incomes";
 import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
 import { SolverActionBar } from "./solver-action-bar";
 import { SolverPosGauge } from "./solver-pos-gauge";
@@ -333,6 +334,12 @@ export function LiveSolverWorkspace({
         </SolverSection>
 
         <SolverSection title="Income & Savings">
+          <SolverRowIncomes
+            baseClientData={baseClientData}
+            workingClientData={workingTree}
+            currentYear={currentYear}
+            onChange={pushMutation}
+          />
           <SolverRowSavingsContributions
             baseClientData={baseClientData}
             workingClientData={workingTree}
@@ -344,6 +351,8 @@ export function LiveSolverWorkspace({
         <SolverSection title="Expenses">
           <SolverRowLivingExpenseScale
             baseExpenses={baseClientData.expenses}
+            workingExpenses={workingTree.expenses}
+            currentYear={currentYear}
             onChange={pushMutation}
           />
         </SolverSection>

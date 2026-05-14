@@ -10,9 +10,28 @@ export type SolverPerson = "client" | "spouse";
 export type SsBenefitMode = "pia_at_fra" | "manual_amount" | "no_benefit";
 export type SsClaimAgeMode = "fra" | "at_retirement" | "years";
 
+export type SavingsGrowthSource = "custom" | "inflation";
+
+export type IncomeTaxType =
+  | "earned_income"
+  | "ordinary_income"
+  | "dividends"
+  | "capital_gains"
+  | "qbi"
+  | "tax_exempt"
+  | "stcg";
+
 export type SolverMutation =
   | { kind: "retirement-age"; person: SolverPerson; age: number; month?: number }
   | { kind: "living-expense-scale"; multiplier: number }
+  | { kind: "expense-annual-amount"; expenseId: string; annualAmount: number }
+  | { kind: "income-annual-amount"; incomeId: string; annualAmount: number }
+  | { kind: "income-growth-rate"; incomeId: string; rate: number }
+  | { kind: "income-growth-source"; incomeId: string; source: SavingsGrowthSource }
+  | { kind: "income-tax-type"; incomeId: string; taxType: IncomeTaxType }
+  | { kind: "income-self-employment"; incomeId: string; value: boolean }
+  | { kind: "income-start-year"; incomeId: string; year: number }
+  | { kind: "income-end-year"; incomeId: string; year: number }
   | { kind: "ss-claim-age"; person: SolverPerson; age: number; months?: number }
   | { kind: "ss-claim-age-mode"; person: SolverPerson; mode: SsClaimAgeMode }
   | { kind: "ss-benefit-mode"; person: SolverPerson; mode: SsBenefitMode }
@@ -20,12 +39,35 @@ export type SolverMutation =
   | { kind: "ss-annual-amount"; person: SolverPerson; amount: number }
   | { kind: "ss-cola"; person: SolverPerson; rate: number }
   | { kind: "savings-contribution"; accountId: string; annualAmount: number }
+  | { kind: "savings-annual-percent"; accountId: string; percent: number | null }
+  | { kind: "savings-contribute-max"; accountId: string; value: boolean }
+  | { kind: "savings-growth-rate"; accountId: string; rate: number }
+  | { kind: "savings-growth-source"; accountId: string; source: SavingsGrowthSource }
+  | { kind: "savings-deductible"; accountId: string; value: boolean }
+  | { kind: "savings-apply-cap"; accountId: string; value: boolean }
+  | {
+      kind: "savings-employer-match-pct";
+      accountId: string;
+      pct: number;
+      cap: number | null;
+    }
+  | { kind: "savings-employer-match-amount"; accountId: string; amount: number }
+  | { kind: "savings-start-year"; accountId: string; year: number }
+  | { kind: "savings-end-year"; accountId: string; year: number }
   | { kind: "life-expectancy"; person: SolverPerson; age: number };
 
 /** Stable key for "last write per lever wins" upsert semantics. */
 export type SolverMutationKey =
   | `retirement-age:${SolverPerson}`
   | "living-expense-scale"
+  | `expense-annual-amount:${string}`
+  | `income-annual-amount:${string}`
+  | `income-growth-rate:${string}`
+  | `income-growth-source:${string}`
+  | `income-tax-type:${string}`
+  | `income-self-employment:${string}`
+  | `income-start-year:${string}`
+  | `income-end-year:${string}`
   | `ss-claim-age:${SolverPerson}`
   | `ss-claim-age-mode:${SolverPerson}`
   | `ss-benefit-mode:${SolverPerson}`
@@ -33,6 +75,16 @@ export type SolverMutationKey =
   | `ss-annual-amount:${SolverPerson}`
   | `ss-cola:${SolverPerson}`
   | `savings-contribution:${string}`
+  | `savings-annual-percent:${string}`
+  | `savings-contribute-max:${string}`
+  | `savings-growth-rate:${string}`
+  | `savings-growth-source:${string}`
+  | `savings-deductible:${string}`
+  | `savings-apply-cap:${string}`
+  | `savings-employer-match-pct:${string}`
+  | `savings-employer-match-amount:${string}`
+  | `savings-start-year:${string}`
+  | `savings-end-year:${string}`
   | `life-expectancy:${SolverPerson}`;
 
 export function mutationKey(m: SolverMutation): SolverMutationKey {
@@ -41,6 +93,22 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `retirement-age:${m.person}`;
     case "living-expense-scale":
       return "living-expense-scale";
+    case "expense-annual-amount":
+      return `expense-annual-amount:${m.expenseId}`;
+    case "income-annual-amount":
+      return `income-annual-amount:${m.incomeId}`;
+    case "income-growth-rate":
+      return `income-growth-rate:${m.incomeId}`;
+    case "income-growth-source":
+      return `income-growth-source:${m.incomeId}`;
+    case "income-tax-type":
+      return `income-tax-type:${m.incomeId}`;
+    case "income-self-employment":
+      return `income-self-employment:${m.incomeId}`;
+    case "income-start-year":
+      return `income-start-year:${m.incomeId}`;
+    case "income-end-year":
+      return `income-end-year:${m.incomeId}`;
     case "ss-claim-age":
       return `ss-claim-age:${m.person}`;
     case "ss-claim-age-mode":
@@ -55,6 +123,26 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `ss-cola:${m.person}`;
     case "savings-contribution":
       return `savings-contribution:${m.accountId}`;
+    case "savings-annual-percent":
+      return `savings-annual-percent:${m.accountId}`;
+    case "savings-contribute-max":
+      return `savings-contribute-max:${m.accountId}`;
+    case "savings-growth-rate":
+      return `savings-growth-rate:${m.accountId}`;
+    case "savings-growth-source":
+      return `savings-growth-source:${m.accountId}`;
+    case "savings-deductible":
+      return `savings-deductible:${m.accountId}`;
+    case "savings-apply-cap":
+      return `savings-apply-cap:${m.accountId}`;
+    case "savings-employer-match-pct":
+      return `savings-employer-match-pct:${m.accountId}`;
+    case "savings-employer-match-amount":
+      return `savings-employer-match-amount:${m.accountId}`;
+    case "savings-start-year":
+      return `savings-start-year:${m.accountId}`;
+    case "savings-end-year":
+      return `savings-end-year:${m.accountId}`;
     case "life-expectancy":
       return `life-expectancy:${m.person}`;
   }

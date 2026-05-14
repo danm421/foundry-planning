@@ -146,6 +146,83 @@ describe("applyMutations", () => {
     expect(insurance.annualAmount).toBe(12000);
   });
 
+  it("income-annual-amount updates only the matching income by id", () => {
+    const out = applyMutations(makeBase(), [
+      {
+        kind: "income-annual-amount",
+        incomeId: "income-salary-cooper",
+        annualAmount: 175000,
+      },
+    ]);
+    expect(
+      out.incomes.find((i) => i.id === "income-salary-cooper")!.annualAmount,
+    ).toBe(175000);
+    expect(
+      out.incomes.find((i) => i.id === "income-ss-cooper")!.annualAmount,
+    ).toBe(30000);
+  });
+
+  it("income per-field mutations set their respective fields", () => {
+    const out = applyMutations(makeBase(), [
+      {
+        kind: "income-tax-type",
+        incomeId: "income-salary-cooper",
+        taxType: "qbi",
+      },
+      {
+        kind: "income-growth-source",
+        incomeId: "income-salary-cooper",
+        source: "inflation",
+      },
+      {
+        kind: "income-growth-rate",
+        incomeId: "income-salary-cooper",
+        rate: 0.04,
+      },
+      {
+        kind: "income-self-employment",
+        incomeId: "income-salary-cooper",
+        value: true,
+      },
+      {
+        kind: "income-start-year",
+        incomeId: "income-salary-cooper",
+        year: 2027,
+      },
+      {
+        kind: "income-end-year",
+        incomeId: "income-salary-cooper",
+        year: 2035,
+      },
+    ]);
+    const inc = out.incomes.find((i) => i.id === "income-salary-cooper")!;
+    expect(inc.taxType).toBe("qbi");
+    expect(inc.growthSource).toBe("inflation");
+    expect(inc.growthRate).toBe(0.04);
+    expect(inc.isSelfEmployment).toBe(true);
+    expect(inc.startYear).toBe(2027);
+    expect(inc.endYear).toBe(2035);
+  });
+
+  it("expense-annual-amount updates only the matching expense by id", () => {
+    const out = applyMutations(makeBase(), [
+      {
+        kind: "expense-annual-amount",
+        expenseId: "expense-living-susan",
+        annualAmount: 75000,
+      },
+    ]);
+    expect(
+      out.expenses.find((e) => e.id === "expense-living-cooper")!.annualAmount,
+    ).toBe(120000);
+    expect(
+      out.expenses.find((e) => e.id === "expense-living-susan")!.annualAmount,
+    ).toBe(75000);
+    expect(out.expenses.find((e) => e.id === "expense-insurance")!.annualAmount).toBe(
+      12000,
+    );
+  });
+
   it("ss-claim-age targets the matching owner's social_security income", () => {
     const out = applyMutations(makeBase(), [
       { kind: "ss-claim-age", person: "client", age: 70 },
@@ -172,6 +249,135 @@ describe("applyMutations", () => {
     )!;
     expect(cooper.annualAmount).toBe(30000);
     expect(susan.annualAmount).toBe(7000);
+  });
+
+  it("savings-annual-percent sets annualPercent (or clears with null)", () => {
+    const stepped = applyMutations(makeBase(), [
+      {
+        kind: "savings-annual-percent",
+        accountId: "account-401k-cooper",
+        percent: 0.1,
+      },
+    ]);
+    expect(
+      stepped.savingsRules.find((r) => r.accountId === "account-401k-cooper")!
+        .annualPercent,
+    ).toBe(0.1);
+    const cleared = applyMutations(stepped, [
+      {
+        kind: "savings-annual-percent",
+        accountId: "account-401k-cooper",
+        percent: null,
+      },
+    ]);
+    expect(
+      cleared.savingsRules.find((r) => r.accountId === "account-401k-cooper")!
+        .annualPercent,
+    ).toBeNull();
+  });
+
+  it("savings-contribute-max toggles contributeMax", () => {
+    const out = applyMutations(makeBase(), [
+      {
+        kind: "savings-contribute-max",
+        accountId: "account-401k-cooper",
+        value: true,
+      },
+    ]);
+    expect(
+      out.savingsRules.find((r) => r.accountId === "account-401k-cooper")!
+        .contributeMax,
+    ).toBe(true);
+  });
+
+  it("savings-growth-rate and savings-growth-source set their respective fields", () => {
+    const out = applyMutations(makeBase(), [
+      {
+        kind: "savings-growth-rate",
+        accountId: "account-401k-cooper",
+        rate: 0.03,
+      },
+      {
+        kind: "savings-growth-source",
+        accountId: "account-401k-cooper",
+        source: "inflation",
+      },
+    ]);
+    const rule = out.savingsRules.find(
+      (r) => r.accountId === "account-401k-cooper",
+    )!;
+    expect(rule.growthRate).toBe(0.03);
+    expect(rule.growthSource).toBe("inflation");
+  });
+
+  it("savings-deductible and savings-apply-cap set the boolean flags", () => {
+    const out = applyMutations(makeBase(), [
+      {
+        kind: "savings-deductible",
+        accountId: "account-401k-cooper",
+        value: false,
+      },
+      {
+        kind: "savings-apply-cap",
+        accountId: "account-401k-cooper",
+        value: false,
+      },
+    ]);
+    const rule = out.savingsRules.find(
+      (r) => r.accountId === "account-401k-cooper",
+    )!;
+    expect(rule.isDeductible).toBe(false);
+    expect(rule.applyContributionLimit).toBe(false);
+  });
+
+  it("savings-employer-match-pct sets both pct and cap (cap nullable)", () => {
+    const out = applyMutations(makeBase(), [
+      {
+        kind: "savings-employer-match-pct",
+        accountId: "account-401k-cooper",
+        pct: 0.5,
+        cap: 0.06,
+      },
+    ]);
+    const rule = out.savingsRules.find(
+      (r) => r.accountId === "account-401k-cooper",
+    )!;
+    expect(rule.employerMatchPct).toBe(0.5);
+    expect(rule.employerMatchCap).toBe(0.06);
+  });
+
+  it("savings-employer-match-amount sets the flat amount", () => {
+    const out = applyMutations(makeBase(), [
+      {
+        kind: "savings-employer-match-amount",
+        accountId: "account-401k-cooper",
+        amount: 5000,
+      },
+    ]);
+    expect(
+      out.savingsRules.find((r) => r.accountId === "account-401k-cooper")!
+        .employerMatchAmount,
+    ).toBe(5000);
+  });
+
+  it("savings-start-year and savings-end-year update the timeline", () => {
+    const out = applyMutations(makeBase(), [
+      {
+        kind: "savings-start-year",
+        accountId: "account-401k-cooper",
+        year: 2027,
+      },
+      {
+        kind: "savings-end-year",
+        accountId: "account-401k-cooper",
+        year: 2035,
+      },
+    ]);
+    const rule = out.savingsRules.find(
+      (r) => r.accountId === "account-401k-cooper",
+    )!;
+    expect(rule.startYear).toBe(2027);
+    expect(rule.endYear).toBe(2035);
   });
 
   it("life-expectancy (client) updates clients.lifeExpectancy", () => {

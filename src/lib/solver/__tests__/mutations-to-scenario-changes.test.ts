@@ -137,6 +137,111 @@ describe("mutationsToScenarioChanges", () => {
     });
   });
 
+  it("multiple per-field income mutations coalesce into one income row", () => {
+    const source = makeSource();
+    // Add a salary income to the fixture for this test.
+    source.incomes.push({
+      id: "income-salary-cooper",
+      type: "salary",
+      name: "Cooper Salary",
+      annualAmount: 150000,
+      startYear: 2026,
+      endYear: 2030,
+      growthRate: 0.03,
+      owner: "client",
+    });
+    const drafts = mutationsToScenarioChanges(source, CLIENT_ID, [
+      {
+        kind: "income-annual-amount",
+        incomeId: "income-salary-cooper",
+        annualAmount: 175000,
+      },
+      {
+        kind: "income-tax-type",
+        incomeId: "income-salary-cooper",
+        taxType: "qbi",
+      },
+      {
+        kind: "income-self-employment",
+        incomeId: "income-salary-cooper",
+        value: true,
+      },
+      {
+        kind: "income-start-year",
+        incomeId: "income-salary-cooper",
+        year: 2027,
+      },
+    ]);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({
+      targetKind: "income",
+      targetId: "income-salary-cooper",
+    });
+    expect(drafts[0].payload).toEqual({
+      annualAmount: { from: 150000, to: 175000 },
+      taxType: { from: null, to: "qbi" },
+      isSelfEmployment: { from: false, to: true },
+      startYear: { from: 2026, to: 2027 },
+    });
+  });
+
+  it("income-annual-amount drops no-op when value matches source", () => {
+    const source = makeSource();
+    source.incomes.push({
+      id: "income-salary-cooper",
+      type: "salary",
+      name: "Cooper Salary",
+      annualAmount: 150000,
+      startYear: 2026,
+      endYear: 2030,
+      growthRate: 0.03,
+      owner: "client",
+    });
+    const drafts = mutationsToScenarioChanges(source, CLIENT_ID, [
+      {
+        kind: "income-annual-amount",
+        incomeId: "income-salary-cooper",
+        annualAmount: 150000,
+      },
+    ]);
+    expect(drafts).toHaveLength(0);
+  });
+
+  it("expense-annual-amount targets only the matching expense", () => {
+    const drafts = mutationsToScenarioChanges(
+      makeSource(),
+      CLIENT_ID,
+      [
+        {
+          kind: "expense-annual-amount",
+          expenseId: "expense-living-susan",
+          annualAmount: 75000,
+        },
+      ],
+    );
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({
+      targetKind: "expense",
+      targetId: "expense-living-susan",
+      payload: { annualAmount: { from: 80000, to: 75000 } },
+    });
+  });
+
+  it("expense-annual-amount drops no-op when value matches source", () => {
+    const drafts = mutationsToScenarioChanges(
+      makeSource(),
+      CLIENT_ID,
+      [
+        {
+          kind: "expense-annual-amount",
+          expenseId: "expense-living-cooper",
+          annualAmount: 120000,
+        },
+      ],
+    );
+    expect(drafts).toHaveLength(0);
+  });
+
   it("living-expense-scale fans out to one row per living-type expense, multiplied", () => {
     const drafts = mutationsToScenarioChanges(
       makeSource(),
@@ -188,6 +293,75 @@ describe("mutationsToScenarioChanges", () => {
       targetId: "savings-401k-cooper",
       payload: { annualAmount: { from: 23000, to: 30000 } },
     });
+  });
+
+  it("multiple per-field savings mutations coalesce into one savings_rule row", () => {
+    const drafts = mutationsToScenarioChanges(
+      makeSource(),
+      CLIENT_ID,
+      [
+        {
+          kind: "savings-contribution",
+          accountId: "account-401k",
+          annualAmount: 30000,
+        },
+        {
+          kind: "savings-annual-percent",
+          accountId: "account-401k",
+          percent: 0.1,
+        },
+        {
+          kind: "savings-growth-rate",
+          accountId: "account-401k",
+          rate: 0.04,
+        },
+        {
+          kind: "savings-employer-match-pct",
+          accountId: "account-401k",
+          pct: 0.5,
+          cap: 0.06,
+        },
+        {
+          kind: "savings-deductible",
+          accountId: "account-401k",
+          value: false,
+        },
+        {
+          kind: "savings-start-year",
+          accountId: "account-401k",
+          year: 2027,
+        },
+      ],
+    );
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({
+      targetKind: "savings_rule",
+      targetId: "savings-401k-cooper",
+    });
+    expect(drafts[0].payload).toEqual({
+      annualAmount: { from: 23000, to: 30000 },
+      annualPercent: { from: null, to: 0.1 },
+      growthRate: { from: null, to: 0.04 },
+      employerMatchPct: { from: null, to: 0.5 },
+      employerMatchCap: { from: null, to: 0.06 },
+      isDeductible: { from: true, to: false },
+      startYear: { from: 2026, to: 2027 },
+    });
+  });
+
+  it("drops savings mutations that match the source value (no-op)", () => {
+    const drafts = mutationsToScenarioChanges(
+      makeSource(),
+      CLIENT_ID,
+      [
+        {
+          kind: "savings-contribution",
+          accountId: "account-401k",
+          annualAmount: 23000,
+        },
+      ],
+    );
+    expect(drafts).toHaveLength(0);
   });
 
   it("assigns sequential orderIndex starting at 0", () => {

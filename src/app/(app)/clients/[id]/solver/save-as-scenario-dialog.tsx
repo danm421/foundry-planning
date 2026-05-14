@@ -82,11 +82,17 @@ function describeMutation(m: SolverMutation): string {
       }`;
     case "living-expense-scale":
       return `Living expenses scaled × ${m.multiplier.toFixed(2)}`;
+    case "expense-annual-amount":
+      return `Expense (${m.expenseId.slice(0, 8)}…) → $${m.annualAmount.toLocaleString()}`;
+    case "income-annual-amount":
+      return `Income (${m.incomeId.slice(0, 8)}…) → $${m.annualAmount.toLocaleString()}`;
     case "ss-claim-age":
       return `SS claim age (${m.person}) → ${m.age}`;
     case "savings-contribution":
       return `Savings contribution (${m.accountId.slice(0, 8)}…) → $${m.annualAmount.toLocaleString()}`;
     case "life-expectancy":
       return `Life expectancy (${m.person}) → ${m.age}`;
+    default:
+      return m.kind;
   }
 }

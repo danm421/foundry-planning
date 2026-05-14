@@ -27,6 +27,17 @@ export function mutationsToScenarioChanges(
     SolverPerson,
     { incomeId: string; fields: Record<string, { from: unknown; to: unknown }> }
   >();
+  // Coalesce per-rule savings edits into one savings_rule row per accountId
+  // for the same reason.
+  const savingsDiffs = new Map<
+    string,
+    { ruleId: string; fields: Record<string, { from: unknown; to: unknown }> }
+  >();
+  // Coalesce per-income (non-SS) edits into one income row per incomeId.
+  const incomeDiffs = new Map<
+    string,
+    { fields: Record<string, { from: unknown; to: unknown }> }
+  >();
   const nonClientDrafts: SolverScenarioChangeDraft[] = [];
 
   const ssRowFor = (person: SolverPerson) =>
@@ -44,6 +55,39 @@ export function mutationsToScenarioChanges(
     const entry = ssDiffs.get(person) ?? { incomeId: row.id, fields: {} };
     entry.fields[field] = { from, to };
     ssDiffs.set(person, entry);
+  };
+
+  const savingsRuleFor = (accountId: string) =>
+    source.savingsRules.find((r) => r.accountId === accountId);
+
+  const accumulateSavings = (
+    accountId: string,
+    field: string,
+    from: unknown,
+    to: unknown,
+  ): void => {
+    if (from === to) return;
+    const rule = savingsRuleFor(accountId);
+    if (!rule) return;
+    const entry = savingsDiffs.get(accountId) ?? { ruleId: rule.id, fields: {} };
+    entry.fields[field] = { from, to };
+    savingsDiffs.set(accountId, entry);
+  };
+
+  const incomeRowFor = (incomeId: string) =>
+    source.incomes.find((i) => i.id === incomeId);
+
+  const accumulateIncome = (
+    incomeId: string,
+    field: string,
+    from: unknown,
+    to: unknown,
+  ): void => {
+    if (from === to) return;
+    if (!incomeRowFor(incomeId)) return;
+    const entry = incomeDiffs.get(incomeId) ?? { fields: {} };
+    entry.fields[field] = { from, to };
+    incomeDiffs.set(incomeId, entry);
   };
 
   for (const m of mutations) {
@@ -105,6 +149,83 @@ export function mutationsToScenarioChanges(
         }
         break;
       }
+      case "expense-annual-amount": {
+        const expense = source.expenses.find((e) => e.id === m.expenseId);
+        if (expense && expense.annualAmount !== m.annualAmount) {
+          nonClientDrafts.push({
+            opType: "edit",
+            targetKind: "expense",
+            targetId: expense.id,
+            payload: {
+              annualAmount: { from: expense.annualAmount, to: m.annualAmount },
+            },
+            orderIndex: 0,
+          });
+        }
+        break;
+      }
+      case "income-annual-amount": {
+        const inc = incomeRowFor(m.incomeId);
+        if (!inc) break;
+        accumulateIncome(
+          m.incomeId,
+          "annualAmount",
+          inc.annualAmount,
+          m.annualAmount,
+        );
+        break;
+      }
+      case "income-growth-rate": {
+        const inc = incomeRowFor(m.incomeId);
+        if (!inc) break;
+        accumulateIncome(m.incomeId, "growthRate", inc.growthRate, m.rate);
+        break;
+      }
+      case "income-growth-source": {
+        const inc = incomeRowFor(m.incomeId);
+        if (!inc) break;
+        accumulateIncome(
+          m.incomeId,
+          "growthSource",
+          inc.growthSource ?? null,
+          m.source,
+        );
+        break;
+      }
+      case "income-tax-type": {
+        const inc = incomeRowFor(m.incomeId);
+        if (!inc) break;
+        accumulateIncome(
+          m.incomeId,
+          "taxType",
+          inc.taxType ?? null,
+          m.taxType,
+        );
+        break;
+      }
+      case "income-self-employment": {
+        const inc = incomeRowFor(m.incomeId);
+        if (!inc) break;
+        accumulateIncome(
+          m.incomeId,
+          "isSelfEmployment",
+          inc.isSelfEmployment ?? false,
+          m.value,
+        );
+        break;
+      }
+      case "income-start-year": {
+        const inc = incomeRowFor(m.incomeId);
+        if (!inc) break;
+        accumulateIncome(m.incomeId, "startYear", inc.startYear, m.year);
+        break;
+      }
+      case "income-end-year": {
+        const inc = incomeRowFor(m.incomeId);
+        if (!inc) break;
+        accumulateIncome(m.incomeId, "endYear", inc.endYear, m.year);
+        break;
+      }
       case "ss-claim-age": {
         const row = ssRowFor(m.person);
         if (!row) break;
@@ -155,18 +276,110 @@ export function mutationsToScenarioChanges(
         break;
       }
       case "savings-contribution": {
-        const rule = source.savingsRules.find((r) => r.accountId === m.accountId);
-        if (rule && rule.annualAmount !== m.annualAmount) {
-          nonClientDrafts.push({
-            opType: "edit",
-            targetKind: "savings_rule",
-            targetId: rule.id,
-            payload: {
-              annualAmount: { from: rule.annualAmount, to: m.annualAmount },
-            },
-            orderIndex: 0,
-          });
-        }
+        const rule = savingsRuleFor(m.accountId);
+        if (!rule) break;
+        accumulateSavings(m.accountId, "annualAmount", rule.annualAmount, m.annualAmount);
+        break;
+      }
+      case "savings-annual-percent": {
+        const rule = savingsRuleFor(m.accountId);
+        if (!rule) break;
+        accumulateSavings(
+          m.accountId,
+          "annualPercent",
+          rule.annualPercent ?? null,
+          m.percent,
+        );
+        break;
+      }
+      case "savings-contribute-max": {
+        const rule = savingsRuleFor(m.accountId);
+        if (!rule) break;
+        accumulateSavings(
+          m.accountId,
+          "contributeMax",
+          rule.contributeMax ?? false,
+          m.value,
+        );
+        break;
+      }
+      case "savings-growth-rate": {
+        const rule = savingsRuleFor(m.accountId);
+        if (!rule) break;
+        accumulateSavings(
+          m.accountId,
+          "growthRate",
+          rule.growthRate ?? null,
+          m.rate,
+        );
+        break;
+      }
+      case "savings-growth-source": {
+        const rule = savingsRuleFor(m.accountId);
+        if (!rule) break;
+        accumulateSavings(
+          m.accountId,
+          "growthSource",
+          rule.growthSource ?? null,
+          m.source,
+        );
+        break;
+      }
+      case "savings-deductible": {
+        const rule = savingsRuleFor(m.accountId);
+        if (!rule) break;
+        accumulateSavings(m.accountId, "isDeductible", rule.isDeductible, m.value);
+        break;
+      }
+      case "savings-apply-cap": {
+        const rule = savingsRuleFor(m.accountId);
+        if (!rule) break;
+        accumulateSavings(
+          m.accountId,
+          "applyContributionLimit",
+          rule.applyContributionLimit ?? true,
+          m.value,
+        );
+        break;
+      }
+      case "savings-employer-match-pct": {
+        const rule = savingsRuleFor(m.accountId);
+        if (!rule) break;
+        accumulateSavings(
+          m.accountId,
+          "employerMatchPct",
+          rule.employerMatchPct ?? null,
+          m.pct,
+        );
+        accumulateSavings(
+          m.accountId,
+          "employerMatchCap",
+          rule.employerMatchCap ?? null,
+          m.cap,
+        );
+        break;
+      }
+      case "savings-employer-match-amount": {
+        const rule = savingsRuleFor(m.accountId);
+        if (!rule) break;
+        accumulateSavings(
+          m.accountId,
+          "employerMatchAmount",
+          rule.employerMatchAmount ?? null,
+          m.amount,
+        );
+        break;
+      }
+      case "savings-start-year": {
+        const rule = savingsRuleFor(m.accountId);
+        if (!rule) break;
+        accumulateSavings(m.accountId, "startYear", rule.startYear, m.year);
+        break;
+      }
+      case "savings-end-year": {
+        const rule = savingsRuleFor(m.accountId);
+        if (!rule) break;
+        accumulateSavings(m.accountId, "endYear", rule.endYear, m.year);
         break;
       }
     }
@@ -188,6 +401,26 @@ export function mutationsToScenarioChanges(
       opType: "edit",
       targetKind: "income",
       targetId: entry.incomeId,
+      payload: entry.fields,
+      orderIndex: 0,
+    });
+  }
+  for (const entry of savingsDiffs.values()) {
+    if (Object.keys(entry.fields).length === 0) continue;
+    drafts.push({
+      opType: "edit",
+      targetKind: "savings_rule",
+      targetId: entry.ruleId,
+      payload: entry.fields,
+      orderIndex: 0,
+    });
+  }
+  for (const [incomeId, entry] of incomeDiffs.entries()) {
+    if (Object.keys(entry.fields).length === 0) continue;
+    drafts.push({
+      opType: "edit",
+      targetKind: "income",
+      targetId: incomeId,
       payload: entry.fields,
       orderIndex: 0,
     });

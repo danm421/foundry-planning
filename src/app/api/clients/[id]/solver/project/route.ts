@@ -9,6 +9,7 @@ import { z } from "zod";
 import { runProjection } from "@/engine";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import type { SolverMutation, SolverProjectResponse } from "@/lib/solver/types";
+import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
@@ -16,38 +17,9 @@ import { loadEffectiveTree } from "@/lib/scenario/loader";
 
 export const dynamic = "force-dynamic";
 
-const PERSON = z.enum(["client", "spouse"]);
-const MUTATION = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("retirement-age"),
-    person: PERSON,
-    age: z.number().int().min(40).max(85),
-    month: z.number().int().min(1).max(12).optional(),
-  }),
-  z.object({
-    kind: z.literal("living-expense-scale"),
-    multiplier: z.number().min(0.1).max(3),
-  }),
-  z.object({
-    kind: z.literal("ss-claim-age"),
-    person: PERSON,
-    age: z.number().int().min(62).max(70),
-  }),
-  z.object({
-    kind: z.literal("savings-contribution"),
-    accountId: z.string().uuid(),
-    annualAmount: z.number().min(0).max(10_000_000),
-  }),
-  z.object({
-    kind: z.literal("life-expectancy"),
-    person: PERSON,
-    age: z.number().int().min(60).max(120),
-  }),
-]);
-
 const BODY = z.object({
   source: z.union([z.literal("base"), z.string().uuid()]),
-  mutations: z.array(MUTATION),
+  mutations: z.array(SOLVER_MUTATION_SCHEMA),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };

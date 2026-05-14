@@ -11,6 +11,7 @@ import { scenarios, scenarioChanges } from "@/db/schema";
 import { applyMutations } from "@/lib/solver/apply-mutations";
 import { mutationsToScenarioChanges } from "@/lib/solver/mutations-to-scenario-changes";
 import type { SolverMutation, SolverSaveResponse } from "@/lib/solver/types";
+import { SOLVER_MUTATION_SCHEMA } from "@/lib/solver/mutation-schema";
 import { authErrorResponse } from "@/lib/authz";
 import { requireOrgId } from "@/lib/db-helpers";
 import { findClientInFirm } from "@/lib/db-scoping";
@@ -19,38 +20,9 @@ import { recordAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
-const PERSON = z.enum(["client", "spouse"]);
-const MUTATION = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("retirement-age"),
-    person: PERSON,
-    age: z.number().int().min(40).max(85),
-    month: z.number().int().min(1).max(12).optional(),
-  }),
-  z.object({
-    kind: z.literal("living-expense-scale"),
-    multiplier: z.number().min(0.1).max(3),
-  }),
-  z.object({
-    kind: z.literal("ss-claim-age"),
-    person: PERSON,
-    age: z.number().int().min(62).max(70),
-  }),
-  z.object({
-    kind: z.literal("savings-contribution"),
-    accountId: z.string().uuid(),
-    annualAmount: z.number().min(0).max(10_000_000),
-  }),
-  z.object({
-    kind: z.literal("life-expectancy"),
-    person: PERSON,
-    age: z.number().int().min(60).max(120),
-  }),
-]);
-
 const BODY = z.object({
   source: z.union([z.literal("base"), z.string().uuid()]),
-  mutations: z.array(MUTATION).min(1),
+  mutations: z.array(SOLVER_MUTATION_SCHEMA).min(1),
   name: z
     .string()
     .min(1)
