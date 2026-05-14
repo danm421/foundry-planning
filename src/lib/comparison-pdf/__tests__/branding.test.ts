@@ -3,19 +3,15 @@ import { PDF_THEME } from "@/components/pdf/theme";
 
 const mocks = vi.hoisted(() => ({
   getBranding: vi.fn(),
-  getFirmDisplayName: vi.fn(),
 }));
 
 vi.mock("@/lib/branding/db", () => ({ getBranding: mocks.getBranding }));
-vi.mock("../firm-name", () => ({ getFirmDisplayName: mocks.getFirmDisplayName }));
 
 const originalFetch = globalThis.fetch;
 
 describe("resolveBranding", () => {
   beforeEach(() => {
     mocks.getBranding.mockReset();
-    mocks.getFirmDisplayName.mockReset();
-    mocks.getFirmDisplayName.mockResolvedValue("Acme Wealth");
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;
@@ -27,6 +23,7 @@ describe("resolveBranding", () => {
       logoUrl: "https://cdn.example/logo.png",
       primaryColor: "#0066cc",
       faviconUrl: null,
+      displayName: "Acme Wealth",
     });
     const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0]);
     globalThis.fetch = vi.fn().mockResolvedValue({
@@ -48,6 +45,7 @@ describe("resolveBranding", () => {
       logoUrl: null,
       primaryColor: "not-a-color",
       faviconUrl: null,
+      displayName: "Acme Wealth",
     });
     const { resolveBranding } = await import("../branding");
     const res = await resolveBranding("firm-1");
@@ -60,6 +58,7 @@ describe("resolveBranding", () => {
       logoUrl: "https://cdn.example/logo.png",
       primaryColor: "#0066cc",
       faviconUrl: null,
+      displayName: "Acme Wealth",
     });
     globalThis.fetch = vi.fn().mockRejectedValue(new Error("boom")) as unknown as typeof fetch;
     const { resolveBranding } = await import("../branding");
@@ -73,6 +72,7 @@ describe("resolveBranding", () => {
       logoUrl: "https://cdn.example/logo.png",
       primaryColor: "#0066cc",
       faviconUrl: null,
+      displayName: "Acme Wealth",
     });
     const huge = new Uint8Array(1_100_000);
     globalThis.fetch = vi.fn().mockResolvedValue({
@@ -90,7 +90,27 @@ describe("resolveBranding", () => {
     const { resolveBranding } = await import("../branding");
     const res = await resolveBranding("firm-1");
     expect(res.primaryColor).toBe(PDF_THEME.accent);
-    expect(res.firmName).toBe("Acme Wealth");
+    expect(res.firmName).toBe("Foundry Planning");
     expect(res.logoDataUrl).toBeNull();
+  });
+
+  it("rejects logos with unsupported MIME types (webp)", async () => {
+    mocks.getBranding.mockResolvedValue({
+      logoUrl: "https://cdn.example/logo.webp",
+      primaryColor: "#0066cc",
+      faviconUrl: null,
+      displayName: "Acme Wealth",
+    });
+    const webp = new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0, 87, 69, 66, 80]);
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ "content-type": "image/webp" }),
+      arrayBuffer: async () => webp.buffer,
+    }) as unknown as typeof fetch;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { resolveBranding } = await import("../branding");
+    const res = await resolveBranding("firm-1");
+    expect(res.logoDataUrl).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("image/webp"));
   });
 });

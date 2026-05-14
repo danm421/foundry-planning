@@ -6,12 +6,13 @@ export type BrandingRow = {
   logoUrl: string | null;
   faviconUrl: string | null;
   primaryColor: string | null;
+  displayName: string | null;
 };
 
 export async function getBranding(firmId: string): Promise<BrandingRow | null> {
   const row = await db.query.firms.findFirst({
     where: eq(firms.firmId, firmId),
-    columns: { logoUrl: true, faviconUrl: true, primaryColor: true },
+    columns: { logoUrl: true, faviconUrl: true, primaryColor: true, displayName: true },
   });
   return row ?? null;
 }
