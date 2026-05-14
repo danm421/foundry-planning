@@ -3,15 +3,30 @@
 import { useState } from "react";
 import type { Account, ClientData, SavingsRule } from "@/engine";
 import type { SolverMutation } from "@/lib/solver/types";
+import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { activeSavingsRules } from "@/lib/solver/active-savings-rules";
 import { useSolverSide } from "./solver-section";
 import { SolverSavingsEditDialog } from "./solver-savings-edit-dialog";
+import { SolverSolveIcon } from "./solver-solve-icon";
+import { SolverSolvePopover } from "./solver-solve-popover";
+import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
+
+type ActiveSolve = {
+  target: SolveLeverKey;
+  targetPoS: number;
+  iteration: number;
+  candidateValue: number | null;
+  achievedPoS: number | null;
+};
 
 interface Props {
   baseClientData: ClientData;
   workingClientData: ClientData;
   currentYear: number;
   onChange(m: SolverMutation): void;
+  activeSolve: ActiveSolve | null;
+  onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
+  onSolveCancel: () => void;
 }
 
 export function SolverRowSavingsContributions({
@@ -19,6 +34,9 @@ export function SolverRowSavingsContributions({
   workingClientData,
   currentYear,
   onChange,
+  activeSolve,
+  onSolveStart,
+  onSolveCancel,
 }: Props) {
   const side = useSolverSide();
   const baseActive = activeSavingsRules(baseClientData.savingsRules, currentYear);
@@ -50,6 +68,9 @@ export function SolverRowSavingsContributions({
               workingRule={workingRule}
               workingAccount={workingAccount}
               resolvedInflationRate={resolvedInflationRate}
+              activeSolve={activeSolve}
+              onSolveStart={onSolveStart}
+              onSolveCancel={onSolveCancel}
               onChange={onChange}
             />
           );
@@ -145,15 +166,22 @@ function Editable({
   workingRule,
   workingAccount,
   resolvedInflationRate,
+  activeSolve,
+  onSolveStart,
+  onSolveCancel,
   onChange,
 }: {
   label: string;
   workingRule: SavingsRule;
   workingAccount: Account | undefined;
   resolvedInflationRate: number;
+  activeSolve: ActiveSolve | null;
+  onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
+  onSolveCancel: () => void;
   onChange(m: SolverMutation): void;
 }) {
   const [open, setOpen] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
   const inputId = `s-${workingRule.id}`;
   const isDollarMode =
     !workingRule.contributeMax &&
@@ -163,6 +191,30 @@ function Editable({
     : workingRule.annualPercent != null && workingRule.annualPercent > 0
       ? `${formatPct(workingRule.annualPercent)} of salary`
       : "";
+
+  const target: SolveLeverKey = { kind: "savings-contribution", accountId: workingRule.accountId };
+  const isSolvingHere =
+    activeSolve?.target.kind === "savings-contribution" &&
+    (activeSolve.target as { kind: "savings-contribution"; accountId: string }).accountId ===
+      workingRule.accountId;
+  const otherSolveActive = activeSolve !== null && !isSolvingHere;
+
+  if (isDollarMode && isSolvingHere) {
+    return (
+      <div>
+        <div className="text-[11px] text-ink-3 truncate mb-1">{label}</div>
+        <SolverSolveProgressStrip
+          title={`Solving ${label} for ${Math.round(activeSolve.targetPoS * 100)}% PoS`}
+          iteration={activeSolve.iteration}
+          maxIterations={8}
+          candidateValue={activeSolve.candidateValue}
+          achievedPoS={activeSolve.achievedPoS}
+          valueFormatter={(v) => `$${Math.round(v).toLocaleString()}`}
+          onCancel={onSolveCancel}
+        />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -205,6 +257,28 @@ function Editable({
             <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474L4.42 15.14a.75.75 0 0 1-.36.198l-3.25.75a.75.75 0 0 1-.902-.901l.75-3.25a.75.75 0 0 1 .198-.36L11.013 1.427Z" />
           </svg>
         </button>
+        {isDollarMode ? (
+          <div className="relative">
+            <SolverSolveIcon
+              label={`Solve ${label}`}
+              disabled={otherSolveActive}
+              onClick={() => setPopoverOpen(true)}
+            />
+            {popoverOpen ? (
+              <SolverSolvePopover
+                title={`Solve ${label}`}
+                rangeLabel="$0–$100k"
+                defaultTargetPct={85}
+                open={popoverOpen}
+                onClose={() => setPopoverOpen(false)}
+                onSubmit={(targetPoS) => {
+                  setPopoverOpen(false);
+                  onSolveStart(target, targetPoS);
+                }}
+              />
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <DetailLine rule={workingRule} currentYear={new Date().getFullYear()} />
       {open && workingAccount ? (

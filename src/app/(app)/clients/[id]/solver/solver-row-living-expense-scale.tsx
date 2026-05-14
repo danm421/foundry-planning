@@ -3,13 +3,28 @@
 import { useState } from "react";
 import type { ClientData, Expense } from "@/engine";
 import type { SolverMutation } from "@/lib/solver/types";
+import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { useSolverSide } from "./solver-section";
+import { SolverSolveIcon } from "./solver-solve-icon";
+import { SolverSolvePopover } from "./solver-solve-popover";
+import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
+
+type ActiveSolve = {
+  target: SolveLeverKey;
+  targetPoS: number;
+  iteration: number;
+  candidateValue: number | null;
+  achievedPoS: number | null;
+};
 
 interface Props {
   baseExpenses: ClientData["expenses"];
   workingExpenses: ClientData["expenses"];
   currentYear: number;
   onChange(m: SolverMutation): void;
+  activeSolve: ActiveSolve | null;
+  onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
+  onSolveCancel: () => void;
 }
 
 export function SolverRowLivingExpenseScale({
@@ -17,40 +32,84 @@ export function SolverRowLivingExpenseScale({
   workingExpenses,
   currentYear,
   onChange,
+  activeSolve,
+  onSolveStart,
+  onSolveCancel,
 }: Props) {
   const side = useSolverSide();
+  const [popoverOpen, setPopoverOpen] = useState(false);
   const baseLiving = baseExpenses.filter((e) => e.type === "living");
   if (baseLiving.length === 0) return null;
 
+  const isSolvingHere = activeSolve?.target.kind === "living-expense-scale";
+  const otherSolveActive = activeSolve !== null && !isSolvingHere;
+  const target: SolveLeverKey = { kind: "living-expense-scale" };
+
   return (
     <div className="space-y-2.5 col-span-2">
-      <div className="text-[13px] font-medium text-ink">Living Expenses</div>
-      <div className="grid grid-cols-2 gap-x-5 gap-y-3">
-        {baseLiving.map((baseExpense) => {
-          const label = labelFor(baseExpense, currentYear);
-          if (side === "base") {
-            return (
-              <ReadOnly key={baseExpense.id} label={label} expense={baseExpense} />
-            );
-          }
-          const workingExpense =
-            workingExpenses.find((e) => e.id === baseExpense.id) ?? baseExpense;
-          return (
-            <Editable
-              key={baseExpense.id}
-              label={label}
-              expense={workingExpense}
-              onCommit={(n) =>
-                onChange({
-                  kind: "expense-annual-amount",
-                  expenseId: baseExpense.id,
-                  annualAmount: n,
-                })
-              }
+      <div className="flex items-center gap-2">
+        <div className="text-[13px] font-medium text-ink">Living Expenses</div>
+        {side === "working" ? (
+          <div className="relative">
+            <SolverSolveIcon
+              label="Solve Living Expense Scale"
+              disabled={otherSolveActive}
+              onClick={() => setPopoverOpen(true)}
             />
-          );
-        })}
+            {popoverOpen ? (
+              <SolverSolvePopover
+                title="Solve Living Expense Scale"
+                rangeLabel="50–150%"
+                defaultTargetPct={85}
+                open={popoverOpen}
+                onClose={() => setPopoverOpen(false)}
+                onSubmit={(targetPoS) => {
+                  setPopoverOpen(false);
+                  onSolveStart(target, targetPoS);
+                }}
+              />
+            ) : null}
+          </div>
+        ) : null}
       </div>
+      {side === "working" && isSolvingHere ? (
+        <SolverSolveProgressStrip
+          title={`Solving Living Expense Scale for ${Math.round(activeSolve.targetPoS * 100)}% PoS`}
+          iteration={activeSolve.iteration}
+          maxIterations={8}
+          candidateValue={activeSolve.candidateValue}
+          achievedPoS={activeSolve.achievedPoS}
+          valueFormatter={(v) => `${Math.round(v * 100)}%`}
+          onCancel={onSolveCancel}
+        />
+      ) : (
+        <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+          {baseLiving.map((baseExpense) => {
+            const label = labelFor(baseExpense, currentYear);
+            if (side === "base") {
+              return (
+                <ReadOnly key={baseExpense.id} label={label} expense={baseExpense} />
+              );
+            }
+            const workingExpense =
+              workingExpenses.find((e) => e.id === baseExpense.id) ?? baseExpense;
+            return (
+              <Editable
+                key={baseExpense.id}
+                label={label}
+                expense={workingExpense}
+                onCommit={(n) =>
+                  onChange({
+                    kind: "expense-annual-amount",
+                    expenseId: baseExpense.id,
+                    annualAmount: n,
+                  })
+                }
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

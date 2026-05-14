@@ -244,7 +244,6 @@ export function LiveSolverWorkspace({
     setComputeStatus("stale");
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleSolveStart = useCallback(
     (target: SolveLeverKey, targetPoS: number) => {
       if (activeSolve) return;
@@ -271,7 +270,6 @@ export function LiveSolverWorkspace({
     [activeSolve, mutations, initialSource, solveController],
   );
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleSolveCancel = useCallback(() => {
     solveController.cancel();
     setActiveSolve(null);
@@ -421,6 +419,9 @@ export function LiveSolverWorkspace({
             baseClient={baseClientData.client}
             workingClient={workingTree.client}
             onChange={pushMutation}
+            activeSolve={activeSolve}
+            onSolveStart={handleSolveStart}
+            onSolveCancel={handleSolveCancel}
           />
           <SolverRowLifeExpectancy
             baseClient={baseClientData.client}
@@ -433,6 +434,9 @@ export function LiveSolverWorkspace({
             baseClient={baseClientData.client}
             workingClient={workingTree.client}
             onChange={pushMutation}
+            activeSolve={activeSolve}
+            onSolveStart={handleSolveStart}
+            onSolveCancel={handleSolveCancel}
           />
         </SolverSection>
 
@@ -448,6 +452,9 @@ export function LiveSolverWorkspace({
             workingClientData={workingTree}
             currentYear={currentYear}
             onChange={pushMutation}
+            activeSolve={activeSolve}
+            onSolveStart={handleSolveStart}
+            onSolveCancel={handleSolveCancel}
           />
         </SolverSection>
 
@@ -457,6 +464,9 @@ export function LiveSolverWorkspace({
             workingExpenses={workingTree.expenses}
             currentYear={currentYear}
             onChange={pushMutation}
+            activeSolve={activeSolve}
+            onSolveStart={handleSolveStart}
+            onSolveCancel={handleSolveCancel}
           />
         </SolverSection>
       </SolverCompareGrid>

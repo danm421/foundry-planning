@@ -3,8 +3,20 @@
 import { useState } from "react";
 import type { ClientData, Income } from "@/engine";
 import type { SolverMutation, SolverPerson } from "@/lib/solver/types";
+import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { useSolverSide } from "./solver-section";
 import { SolverSsEditDialog } from "./solver-ss-edit-dialog";
+import { SolverSolveIcon } from "./solver-solve-icon";
+import { SolverSolvePopover } from "./solver-solve-popover";
+import { SolverSolveProgressStrip } from "./solver-solve-progress-strip";
+
+type ActiveSolve = {
+  target: SolveLeverKey;
+  targetPoS: number;
+  iteration: number;
+  candidateValue: number | null;
+  achievedPoS: number | null;
+};
 
 interface Props {
   baseIncomes: ClientData["incomes"];
@@ -12,6 +24,9 @@ interface Props {
   baseClient: ClientData["client"];
   workingClient: ClientData["client"];
   onChange(m: SolverMutation): void;
+  activeSolve: ActiveSolve | null;
+  onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
+  onSolveCancel: () => void;
 }
 
 export function SolverRowSocialSecurity({
@@ -20,6 +35,9 @@ export function SolverRowSocialSecurity({
   baseClient,
   workingClient,
   onChange,
+  activeSolve,
+  onSolveStart,
+  onSolveCancel,
 }: Props) {
   const side = useSolverSide();
 
@@ -48,6 +66,9 @@ export function SolverRowSocialSecurity({
               row={workingClientSs ?? baseClientSs}
               client={workingClient}
               person="client"
+              activeSolve={activeSolve}
+              onSolveStart={onSolveStart}
+              onSolveCancel={onSolveCancel}
               onChange={onChange}
             />
           )
@@ -66,6 +87,9 @@ export function SolverRowSocialSecurity({
               row={workingSpouseSs ?? baseSpouseSs}
               client={workingClient}
               person="spouse"
+              activeSolve={activeSolve}
+              onSolveStart={onSolveStart}
+              onSolveCancel={onSolveCancel}
               onChange={onChange}
             />
           )
@@ -105,36 +129,90 @@ function EditableSummary({
   row,
   client,
   person,
+  activeSolve,
+  onSolveStart,
+  onSolveCancel,
   onChange,
 }: {
   label: string;
   row: Income;
   client: ClientData["client"];
   person: SolverPerson;
+  activeSolve: ActiveSolve | null;
+  onSolveStart: (target: SolveLeverKey, targetPoS: number) => void;
+  onSolveCancel: () => void;
   onChange(m: SolverMutation): void;
 }) {
   const [open, setOpen] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const target: SolveLeverKey = { kind: "ss-claim-age", person };
+  const isSolvingHere =
+    activeSolve?.target.kind === "ss-claim-age" &&
+    (activeSolve.target as { kind: "ss-claim-age"; person: SolverPerson }).person === person;
+  const otherSolveActive = activeSolve !== null && !isSolvingHere;
+
+  if (isSolvingHere) {
+    return (
+      <div>
+        <div className="text-[11px] text-ink-3">{label}</div>
+        <div className="mt-0.5">
+          <SolverSolveProgressStrip
+            title={`Solving ${label} Claim Age for ${Math.round(activeSolve.targetPoS * 100)}% PoS`}
+            iteration={activeSolve.iteration}
+            maxIterations={8}
+            candidateValue={activeSolve.candidateValue}
+            achievedPoS={activeSolve.achievedPoS}
+            valueFormatter={(v) => `${v}`}
+            onCancel={onSolveCancel}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="text-[11px] text-ink-3">{label}</div>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mt-0.5 group flex w-full items-start justify-between gap-2 rounded-md border border-hair-2 bg-card-2 px-2.5 py-1.5 text-left text-[14px] text-ink hover:border-accent/60 hover:bg-card-hover focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 border-l-2 border-l-accent/70"
-        aria-label={`Edit ${label}`}
-      >
-        <span className="flex-1 leading-snug text-ink-2">
-          {renderSummary(row, client, person)}
-        </span>
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 16 16"
-          className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-3 group-hover:text-ink-2"
-          fill="currentColor"
+      <div className="mt-0.5 flex items-start gap-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="group flex flex-1 items-start justify-between gap-2 rounded-md border border-hair-2 bg-card-2 px-2.5 py-1.5 text-left text-[14px] text-ink hover:border-accent/60 hover:bg-card-hover focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 border-l-2 border-l-accent/70"
+          aria-label={`Edit ${label}`}
         >
-          <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474L4.42 15.14a.75.75 0 0 1-.36.198l-3.25.75a.75.75 0 0 1-.902-.901l.75-3.25a.75.75 0 0 1 .198-.36L11.013 1.427Z" />
-        </svg>
-      </button>
+          <span className="flex-1 leading-snug text-ink-2">
+            {renderSummary(row, client, person)}
+          </span>
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 16 16"
+            className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-3 group-hover:text-ink-2"
+            fill="currentColor"
+          >
+            <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474L4.42 15.14a.75.75 0 0 1-.36.198l-3.25.75a.75.75 0 0 1-.902-.901l.75-3.25a.75.75 0 0 1 .198-.36L11.013 1.427Z" />
+          </svg>
+        </button>
+        <div className="relative shrink-0">
+          <SolverSolveIcon
+            label={`Solve ${label} Claim Age`}
+            disabled={otherSolveActive}
+            onClick={() => setPopoverOpen(true)}
+          />
+          {popoverOpen ? (
+            <SolverSolvePopover
+              title={`Solve ${label} Claim Age`}
+              rangeLabel="62–70"
+              defaultTargetPct={85}
+              open={popoverOpen}
+              onClose={() => setPopoverOpen(false)}
+              onSubmit={(targetPoS) => {
+                setPopoverOpen(false);
+                onSolveStart(target, targetPoS);
+              }}
+            />
+          ) : null}
+        </div>
+      </div>
       {open ? (
         <SolverSsEditDialog
           open={open}
