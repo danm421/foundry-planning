@@ -127,6 +127,12 @@ export default function ClientsTable({ rows }: ClientsTableProps) {
               {editMode ? "Done" : "Edit"}
             </button>
           )}
+          <Link
+            href="/clients/new"
+            className="rounded-md border border-accent px-4 py-2 text-sm font-medium text-accent-ink hover:bg-accent/15"
+          >
+            Guided Setup
+          </Link>
           <AddClientDialog />
         </div>
       </div>

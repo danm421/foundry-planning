@@ -133,6 +133,16 @@ export default function ClientDataSidebar({ clientId }: ClientDataSidebarProps) 
     <nav className="flex flex-col gap-1">
       {TABS.map(renderLink)}
       <div className="mt-2 border-t border-gray-800 pt-3">{renderLink(IMPORT_TAB)}</div>
+      <Link
+        href={withScenario(`/clients/${clientId}/onboarding`)}
+        className="mt-3 flex items-center gap-3 rounded-md border border-dashed border-gray-700 px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800"
+      >
+        <svg className="h-[18px] w-[18px] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 5h16M4 12h16M4 19h10" />
+          <circle cx="20" cy="19" r="2" />
+        </svg>
+        Guided Walkthrough
+      </Link>
     </nav>
   );
 }
