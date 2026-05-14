@@ -279,10 +279,8 @@ export function LiveSolverWorkspace({
               <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-3">
                 Base Facts
               </div>
-              <div className="mt-3">
+              <div className="mt-3 flex items-start gap-6">
                 <SolverPosGauge state={baseState} successPct={baseSuccess} />
-              </div>
-              <div className="mt-4">
                 <SolverEndingAssetsKpi value={baseEndingAssets} />
               </div>
             </div>
@@ -323,10 +321,8 @@ export function LiveSolverWorkspace({
                   </svg>
                 </div>
               </div>
-              <div className="mt-2.5">
+              <div className="mt-2.5 flex items-start gap-6">
                 <SolverPosGauge state={workingState} successPct={workingSuccess} />
-              </div>
-              <div className="mt-4">
                 <SolverEndingAssetsKpi
                   value={workingEndingAssets}
                   delta={endingAssetsDelta}
