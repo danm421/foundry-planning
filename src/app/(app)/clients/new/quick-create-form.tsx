@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { inputClassName, fieldLabelClassName } from "@/components/forms/input-styles";
+import { ArrowRightIcon, AlertCircleIcon } from "@/components/icons";
 
 export default function QuickCreateForm() {
   const router = useRouter();
@@ -41,27 +43,54 @@ export default function QuickCreateForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div>
-        <label className={fieldLabelClassName} htmlFor="firstName">First name</label>
-        <input id="firstName" name="firstName" required className={inputClassName} />
+    <form onSubmit={onSubmit} className="space-y-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label className={fieldLabelClassName} htmlFor="firstName">
+            First name
+          </label>
+          <input id="firstName" name="firstName" required autoComplete="given-name" className={inputClassName} />
+        </div>
+        <div>
+          <label className={fieldLabelClassName} htmlFor="lastName">
+            Last name
+          </label>
+          <input id="lastName" name="lastName" required autoComplete="family-name" className={inputClassName} />
+        </div>
       </div>
       <div>
-        <label className={fieldLabelClassName} htmlFor="lastName">Last name</label>
-        <input id="lastName" name="lastName" required className={inputClassName} />
-      </div>
-      <div>
-        <label className={fieldLabelClassName} htmlFor="dateOfBirth">Date of birth</label>
+        <label className={fieldLabelClassName} htmlFor="dateOfBirth">
+          Date of birth
+        </label>
         <input id="dateOfBirth" name="dateOfBirth" type="date" required className={inputClassName} />
+        <p className="mt-1.5 text-[12px] text-ink-4">
+          Drives age, retirement, and Social Security calculations.
+        </p>
       </div>
-      {error && <p className="text-sm text-red-400">{error}</p>}
-      <button
-        type="submit"
-        disabled={submitting}
-        className="w-full rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-60"
-      >
-        {submitting ? "Creating…" : "Start guided setup →"}
-      </button>
+
+      {error && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-[var(--radius-sm)] border border-crit/30 bg-crit/10 px-3 py-2 text-[13px] text-crit"
+        >
+          <AlertCircleIcon width={16} height={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <Link href="/clients" className="text-[13px] text-ink-3 transition-colors hover:text-ink-2">
+          Cancel
+        </Link>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-sm)] bg-accent px-4 text-[13px] font-semibold text-accent-on shadow-[0_1px_0_rgba(0,0,0,0.25)] transition-colors hover:bg-accent-deep disabled:opacity-60"
+        >
+          {submitting ? "Creating…" : "Start guided setup"}
+          <ArrowRightIcon width={14} height={14} aria-hidden="true" />
+        </button>
+      </div>
     </form>
   );
 }

@@ -24,12 +24,5 @@ export default function HouseholdStep({ clientId, tree }: HouseholdStepProps) {
     spouseLifeExpectancy: c.spouseLifeExpectancy ?? null,
   };
 
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-gray-400">
-        Confirm the household basics. Spouse fields appear once you select a joint filing status.
-      </p>
-      <AddClientForm mode="edit" initial={initial} />
-    </div>
-  );
+  return <AddClientForm mode="edit" initial={initial} />;
 }
