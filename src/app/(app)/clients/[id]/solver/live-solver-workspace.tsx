@@ -11,6 +11,7 @@ import { SolverRowRetirementAges } from "./solver-row-retirement-ages";
 import { SolverRowLifeExpectancy } from "./solver-row-life-expectancy";
 import { SolverRowSocialSecurity } from "./solver-row-social-security";
 import { SolverRowSavingsContributions } from "./solver-row-savings-contributions";
+import { SolverRowLivingExpenseScale } from "./solver-row-living-expense-scale";
 
 interface Props {
   clientId: string;
@@ -147,6 +148,13 @@ export function LiveSolverWorkspace({
             baseClientData={baseClientData}
             workingClientData={workingTree}
             currentYear={currentYear}
+            onChange={pushMutation}
+          />
+        </SolverSection>
+
+        <SolverSection title="Expenses">
+          <SolverRowLivingExpenseScale
+            baseExpenses={baseClientData.expenses}
             onChange={pushMutation}
           />
         </SolverSection>
