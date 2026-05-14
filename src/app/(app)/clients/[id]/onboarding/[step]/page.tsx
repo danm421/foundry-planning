@@ -10,6 +10,9 @@ import { STEPS } from "@/lib/onboarding/steps";
 import OnboardingShell from "../onboarding-shell";
 import HouseholdStep from "../steps/household-step";
 import FamilyStep from "../steps/family-step";
+import AccountsStep from "../steps/accounts-step";
+import LiabilitiesStep from "../steps/liabilities-step";
+import CashFlowStep from "../steps/cash-flow-step";
 import ReviewStep from "../steps/review-step";
 import PlaceholderStep from "../steps/placeholder-step";
 
@@ -38,6 +41,12 @@ export default async function OnboardingStepPage({ params }: PageProps) {
     body = <HouseholdStep clientId={id} tree={effectiveTree} />;
   } else if (step === "family") {
     body = <FamilyStep clientId={id} tree={effectiveTree} />;
+  } else if (step === "accounts") {
+    body = <AccountsStep clientId={id} firmId={firmId} />;
+  } else if (step === "liabilities") {
+    body = <LiabilitiesStep clientId={id} firmId={firmId} />;
+  } else if (step === "cash-flow") {
+    body = <CashFlowStep clientId={id} firmId={firmId} />;
   } else if (step === "review") {
     body = (
       <ReviewStep clientId={id} statuses={statuses} alreadyFinished={row.completedAt !== null} />

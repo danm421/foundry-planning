@@ -76,6 +76,11 @@ interface BalanceSheetViewProps {
   categoryDefaultSources?: Record<string, { source: string; portfolioId?: string; portfolioName?: string; blendedReturn?: number }>;
   milestones?: ClientMilestones;
   resolvedInflationRate?: number;
+  /** "wizard" hides the KPI strip + Out-of-Estate panel and renders only the
+   * column indicated by `section`. Default "page" preserves the existing
+   * tabbed-view behavior verbatim. */
+  embed?: "page" | "wizard";
+  section?: "accounts" | "liabilities";
 }
 
 const CATEGORY_LABELS: Record<AccountCategory, string> = {
@@ -269,7 +274,12 @@ export default function BalanceSheetView({
   categoryDefaultSources,
   milestones,
   resolvedInflationRate,
+  embed = "page",
+  section,
 }: BalanceSheetViewProps) {
+  const isWizard = embed === "wizard";
+  const showAssetsCol = !isWizard || section === "accounts";
+  const showLiabilitiesCol = !isWizard || section === "liabilities";
   const router = useRouter();
   const writer = useScenarioWriter(clientId);
   const withScenario = useScenarioPreservingHref();
@@ -420,21 +430,24 @@ export default function BalanceSheetView({
   return (
     <div className="space-y-6">
       {/* KPI row */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi label="Assets (in estate)" value={fmt(totalInEstate)} accent="text-gray-100" />
-        <Kpi label="Liabilities" value={`(${fmt(totalLiabilities)})`} accent="text-red-400" />
-        <Kpi label="Net Worth" value={fmt(netWorth)} accent={netWorth >= 0 ? "text-green-500" : "text-red-500"} />
-        <Kpi
-          label="Out of estate"
-          value={fmt(totalOutOfEstate)}
-          accent="text-amber-300"
-          subtitle={outOfEstate.length ? `${outOfEstate.length} asset${outOfEstate.length > 1 ? "s" : ""}` : "—"}
-        />
-      </div>
+      {!isWizard && (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <Kpi label="Assets (in estate)" value={fmt(totalInEstate)} accent="text-gray-100" />
+          <Kpi label="Liabilities" value={`(${fmt(totalLiabilities)})`} accent="text-red-400" />
+          <Kpi label="Net Worth" value={fmt(netWorth)} accent={netWorth >= 0 ? "text-green-500" : "text-red-500"} />
+          <Kpi
+            label="Out of estate"
+            value={fmt(totalOutOfEstate)}
+            accent="text-amber-300"
+            subtitle={outOfEstate.length ? `${outOfEstate.length} asset${outOfEstate.length > 1 ? "s" : ""}` : "—"}
+          />
+        </div>
+      )}
 
-      {/* Two columns */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      {/* Two columns (single column in wizard mode) */}
+      <div className={isWizard ? "grid grid-cols-1 gap-6" : "grid grid-cols-1 gap-6 lg:grid-cols-2"}>
         {/* Assets column */}
+        {showAssetsCol && (
         <Panel
           title="Assets"
           totalLabel={`Total ${fmt(totalInEstate)}`}
@@ -492,8 +505,10 @@ export default function BalanceSheetView({
             })
           )}
         </Panel>
+        )}
 
         {/* Liabilities column */}
+        {showLiabilitiesCol && (
         <Panel
           title="Liabilities"
           totalLabel={`Total ${fmt(totalLiabilities)}`}
@@ -535,10 +550,11 @@ export default function BalanceSheetView({
             </div>
           )}
         </Panel>
+        )}
       </div>
 
       {/* Out of Estate */}
-      {(outOfEstate.length > 0 || outOfEstateBusinessEntityRows.length > 0) && (
+      {!isWizard && (outOfEstate.length > 0 || outOfEstateBusinessEntityRows.length > 0) && (
         <div className="rounded-lg border border-amber-900/40 bg-amber-950/10 p-4">
           <div className="mb-3 flex items-baseline justify-between">
             <div>

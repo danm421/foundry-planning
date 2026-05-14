@@ -62,8 +62,7 @@ export const STEPS: readonly StepDef[] = [
     description: "Investment, retirement, and bank accounts on the balance sheet.",
     icon: "accounts",
     skippable: false,
-    placeholderInPhase1: true,
-    tabHref: (id) => `/clients/${id}/client-data/balance-sheet`,
+    placeholderInPhase1: false,
   },
   {
     slug: "liabilities",
@@ -71,8 +70,7 @@ export const STEPS: readonly StepDef[] = [
     description: "Mortgages, loans, and other debts.",
     icon: "liabilities",
     skippable: true,
-    placeholderInPhase1: true,
-    tabHref: (id) => `/clients/${id}/client-data/balance-sheet`,
+    placeholderInPhase1: false,
   },
   {
     slug: "cash-flow",
@@ -80,8 +78,7 @@ export const STEPS: readonly StepDef[] = [
     description: "Recurring income and expense streams that drive the projection.",
     icon: "cash-flow",
     skippable: false,
-    placeholderInPhase1: true,
-    tabHref: (id) => `/clients/${id}/client-data/income-expenses`,
+    placeholderInPhase1: false,
   },
   {
     slug: "insurance",

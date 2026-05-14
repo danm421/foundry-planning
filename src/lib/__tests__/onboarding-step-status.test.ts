@@ -116,6 +116,22 @@ describe("deriveStepStatuses", () => {
     expect(deriveStepStatuses(tree, {}).find((s) => s.slug === "accounts")!.kind).toBe("complete");
   });
 
+  it("marks Liabilities untouched on an empty tree", () => {
+    const statuses = deriveStepStatuses(emptyTree(), {});
+    expect(statuses.find((s) => s.slug === "liabilities")!.kind).toBe("untouched");
+  });
+
+  it("marks Liabilities complete when at least one liability exists", () => {
+    const tree = emptyTree();
+    tree.liabilities = [{ id: "l1" } as ClientData["liabilities"][number]];
+    expect(deriveStepStatuses(tree, {}).find((s) => s.slug === "liabilities")!.kind).toBe("complete");
+  });
+
+  it("marks Liabilities skipped when state includes the slug", () => {
+    const statuses = deriveStepStatuses(emptyTree(), { skippedSteps: ["liabilities"] });
+    expect(statuses.find((s) => s.slug === "liabilities")!.kind).toBe("skipped");
+  });
+
   it("marks Cash Flow complete only when at least one income AND one expense exist", () => {
     const tree = emptyTree();
     tree.incomes = [{ id: "i1" } as ClientData["incomes"][number]];

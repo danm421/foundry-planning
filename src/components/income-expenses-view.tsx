@@ -154,6 +154,8 @@ interface IncomeExpensesViewProps {
    * fall through. Phase 2 polish: wire this up from the consuming page.
    */
   onOpenEntity?: (entityId: string, tab?: "details" | "flows" | "assets" | "transfers" | "notes") => void;
+  /** "wizard" hides the page-level KPI strip; everything else renders as today. */
+  embed?: "page" | "wizard";
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1257,7 +1259,9 @@ export default function IncomeExpensesView({
   ssClientInfo,
   ssPlanSettings,
   onOpenEntity,
+  embed = "page",
 }: IncomeExpensesViewProps) {
+  const isWizard = embed === "wizard";
   const writer = useScenarioWriter(clientId);
   const [incomeList, setIncomeList] = useState<Income[]>(initialIncomes);
   const [expenseList, setExpenseList] = useState<Expense[]>(initialExpenses);
@@ -1350,26 +1354,28 @@ export default function IncomeExpensesView({
 
   return (
     <div className="space-y-6">
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi label="Income" value={fmt(householdIncome)} accent="text-gray-100" />
-        <Kpi label="Expenses" value={fmt(householdExpense)} accent="text-gray-100" />
-        <Kpi
-          label="Net Cash Flow"
-          value={(netCashFlow >= 0 ? "+" : "") + fmt(netCashFlow)}
-          accent={netCashFlow >= 0 ? "text-green-500" : "text-red-400"}
-        />
-        <Kpi
-          label="Out of estate"
-          value={fmt(outOfEstateIncome - outOfEstateExpense)}
-          accent="text-amber-300"
-          subtitle={
-            outOfEstateIncome || outOfEstateExpense
-              ? `${fmt(outOfEstateIncome)} in / ${fmt(outOfEstateExpense)} out`
-              : "—"
-          }
-        />
-      </div>
+      {/* KPI strip — hidden in wizard mode; the wizard shell shows its own progress */}
+      {!isWizard && (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <Kpi label="Income" value={fmt(householdIncome)} accent="text-gray-100" />
+          <Kpi label="Expenses" value={fmt(householdExpense)} accent="text-gray-100" />
+          <Kpi
+            label="Net Cash Flow"
+            value={(netCashFlow >= 0 ? "+" : "") + fmt(netCashFlow)}
+            accent={netCashFlow >= 0 ? "text-green-500" : "text-red-400"}
+          />
+          <Kpi
+            label="Out of estate"
+            value={fmt(outOfEstateIncome - outOfEstateExpense)}
+            accent="text-amber-300"
+            subtitle={
+              outOfEstateIncome || outOfEstateExpense
+                ? `${fmt(outOfEstateIncome)} in / ${fmt(outOfEstateExpense)} out`
+                : "—"
+            }
+          />
+        </div>
+      )}
 
       {/* Income + Expenses two-column */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
