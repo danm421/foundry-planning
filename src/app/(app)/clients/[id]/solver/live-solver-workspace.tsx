@@ -9,6 +9,7 @@ import { SolverCompareGrid } from "./solver-compare-grid";
 import { SolverSection } from "./solver-section";
 import { SolverRowRetirementAges } from "./solver-row-retirement-ages";
 import { SolverRowLifeExpectancy } from "./solver-row-life-expectancy";
+import { SolverRowSocialSecurity } from "./solver-row-social-security";
 
 interface Props {
   clientId: string;
@@ -126,6 +127,13 @@ export function LiveSolverWorkspace({
             onChange={pushMutation}
           />
           <SolverRowLifeExpectancy
+            baseClient={baseClientData.client}
+            workingClient={workingTree.client}
+            onChange={pushMutation}
+          />
+          <SolverRowSocialSecurity
+            baseIncomes={baseClientData.incomes}
+            workingIncomes={workingTree.incomes}
             baseClient={baseClientData.client}
             workingClient={workingTree.client}
             onChange={pushMutation}
