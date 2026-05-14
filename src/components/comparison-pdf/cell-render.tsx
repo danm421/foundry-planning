@@ -17,6 +17,7 @@ import { BalanceSheetPdf } from "./widgets/balance-sheet";
 import { ExpenseDetailPdf } from "./widgets/expense-detail";
 import { GiftTaxPdf } from "./widgets/gift-tax";
 import { EstateEndBeneficiariesPdf } from "./widgets/estate-end-beneficiaries";
+import { EstateTransfersYearlyPdf } from "./widgets/estate-transfers-yearly";
 
 export interface CellRenderCtx {
   plans: ComparisonPlan[];
@@ -193,6 +194,19 @@ export function CellRender({ cell, ctx }: CellRenderProps) {
   if (kind === "estate-end-beneficiaries") {
     return (
       <EstateEndBeneficiariesPdf
+        config={cell.widget.config}
+        plans={ctx.plans}
+        mc={ctx.mc}
+        yearRange={cell.widget.yearRange ?? null}
+        span={cell.span}
+        branding={ctx.branding}
+      />
+    );
+  }
+
+  if (kind === "estate-transfers-yearly") {
+    return (
+      <EstateTransfersYearlyPdf
         config={cell.widget.config}
         plans={ctx.plans}
         mc={ctx.mc}
