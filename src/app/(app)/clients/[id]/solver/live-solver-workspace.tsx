@@ -349,6 +349,12 @@ export function LiveSolverWorkspace({
         </div>
       ) : null}
 
+      {solveError ? (
+        <div role="alert" className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
+          Solve failed: {solveError}
+        </div>
+      ) : null}
+
       <SolverCompareGrid
         leftHeader={
           <div className="flex items-start justify-between gap-3">
@@ -463,12 +469,6 @@ export function LiveSolverWorkspace({
         onGenerateMc={handleGenerateMc}
         onSave={() => setSaveOpen(true)}
       />
-
-      {solveError ? (
-        <div role="alert" className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[13px] text-warn">
-          Solve failed: {solveError}
-        </div>
-      ) : null}
 
       <SaveAsScenarioDialog
         open={saveOpen}
