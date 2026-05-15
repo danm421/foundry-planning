@@ -13,10 +13,6 @@ vi.mock("../wizard-import-drawer", () => ({
   ),
 }));
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
-}));
-
 describe("WizardImportLauncher", () => {
   const baseProps = {
     clientId: "c1",
