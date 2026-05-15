@@ -64,10 +64,15 @@ function hasWillProvision(accountId: string, wills: Will[]): boolean {
     if (will.residuaryRecipients && will.residuaryRecipients.length > 0) {
       return true;
     }
-    // (a) Specific bequest naming this account.
+    // (a) Asset bequest: all_assets covers every account; specific must match.
     for (const bequest of will.bequests) {
-      if (bequest.kind === "asset" && bequest.assetMode === "specific" && bequest.accountId === accountId) {
-        return true;
+      if (bequest.kind === "asset") {
+        if (bequest.assetMode === "all_assets") {
+          return true;
+        }
+        if (bequest.assetMode === "specific" && bequest.accountId === accountId) {
+          return true;
+        }
       }
     }
   }
@@ -173,24 +178,34 @@ export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
     // Check for 100% single-entity ownership.
     const soloEntityId = controllingEntity(account);
     if (soloEntityId !== null) {
-      const group = entityGroups.get(soloEntityId);
-      if (group) {
-        const linkedLiabilities = buildLinkedLiabilities(data, accountId, "entity", soloEntityId);
-        const liabilityTotal = linkedLiabilities.reduce((s, l) => s + l.balance, 0);
-        const netValue = account.value - liabilityTotal;
-        group.assets.push({
-          accountId,
-          name: account.name,
-          accountType: account.category,
-          value: account.value,
-          percent: 1,
-          isSplit: false,
-          linkedLiabilities,
-          netValue,
-          hasBeneficiaries,
-          hasConflict,
-        });
+      let group = entityGroups.get(soloEntityId);
+      if (!group) {
+        // Entity id not found in data.entities — emit an orphan group so the
+        // account value is not silently dropped from grandTotal.
+        group = {
+          key: `entity:${soloEntityId}`,
+          kind: "business",
+          label: "Unknown entity",
+          assets: [],
+          subtotal: 0,
+        };
+        entityGroups.set(soloEntityId, group);
       }
+      const linkedLiabilities = buildLinkedLiabilities(data, accountId, "entity", soloEntityId);
+      const liabilityTotal = linkedLiabilities.reduce((s, l) => s + l.balance, 0);
+      const netValue = account.value - liabilityTotal;
+      group.assets.push({
+        accountId,
+        name: account.name,
+        accountType: account.category,
+        value: account.value,
+        percent: 1,
+        isSplit: false,
+        linkedLiabilities,
+        netValue,
+        hasBeneficiaries,
+        hasConflict,
+      });
       continue;
     }
 

@@ -527,4 +527,77 @@ describe("buildOwnershipColumn", () => {
     const row = out.groups.flatMap((g) => g.assets).find((a) => a.accountId === "acc-nobene");
     expect(row?.hasBeneficiaries).toBe(false);
   });
+
+  it("does NOT flag an account as conflict when an all_assets bequest exists (no residuary, no beneficiaries)", () => {
+    const cd = data({
+      accounts: [
+        {
+          id: "acc-allassets",
+          name: "All Assets Covered",
+          category: "taxable",
+          subType: "brokerage",
+          value: 60_000,
+          basis: 50_000,
+          growthRate: 0.06,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+          beneficiaries: [],
+        },
+      ],
+      wills: [
+        {
+          id: "will-allassets",
+          grantor: "client",
+          bequests: [
+            {
+              id: "beq-all",
+              name: "Everything",
+              kind: "asset",
+              assetMode: "all_assets",
+              accountId: null,
+              liabilityId: null,
+              percentage: 100,
+              condition: "always",
+              sortOrder: 0,
+              recipients: [{ recipientKind: "family_member", recipientId: "fm-spouse", percentage: 100, sortOrder: 0 }],
+            },
+          ],
+          residuaryRecipients: [],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+
+    const out = buildOwnershipColumn(cd);
+    const row = out.groups.flatMap((g) => g.assets).find((a) => a.accountId === "acc-allassets");
+    expect(row?.hasConflict).toBe(false);
+  });
+
+  it("includes orphan-entity-owned account in a fallback group and grandTotal", () => {
+    const cd = data({
+      entities: [],
+      accounts: [
+        {
+          id: "acc-orphan-entity",
+          name: "Orphan Entity Account",
+          category: "taxable",
+          subType: "brokerage",
+          value: 120_000,
+          basis: 90_000,
+          growthRate: 0.06,
+          rmdEnabled: false,
+          owners: [{ kind: "entity", entityId: "ent-missing", percent: 1 }],
+          beneficiaries: [],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+
+    const out = buildOwnershipColumn(cd);
+    const orphanGroup = out.groups.find((g) => g.key === "entity:ent-missing");
+    expect(orphanGroup).toBeDefined();
+    expect(orphanGroup!.kind).toBe("business");
+    const row = orphanGroup!.assets.find((a) => a.accountId === "acc-orphan-entity");
+    expect(row).toBeDefined();
+    expect(row!.value).toBe(120_000);
+    expect(out.grandTotal).toBe(120_000);
+  });
 });
