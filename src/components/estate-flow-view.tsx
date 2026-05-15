@@ -300,6 +300,19 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     [],
   );
 
+  // Resync the gift sandbox to the server baseline whenever `initialGifts`
+  // changes identity. `initialGifts` is a server-component prop: it is
+  // referentially stable between renders and only changes on `router.refresh()`
+  // (after a save) or a scenario navigation — exactly the moments the sandbox
+  // SHOULD adopt the new baseline. Local edits never change the prop identity,
+  // so a mid-edit sandbox is never clobbered. Without this, gifts added in this
+  // session keep their client-generated UUIDs after a save while the refreshed
+  // `initialGifts` carries the server-assigned ids — `diffGifts` would then see
+  // every saved gift as a phantom `add` forever, re-POSTing duplicates.
+  useEffect(() => {
+    setWorkingGifts(props.initialGifts);
+  }, [props.initialGifts]);
+
   // Warn on browser close / tab close / hard navigation when there are unsaved edits.
   useEffect(() => {
     if (!isDirty) return;
@@ -361,7 +374,15 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       // Runs on ANY scenario (including base): gift routes are not overlay
       // calls. cash/asset gift rows are client-global; series resolve the
       // base-case scenario server-side.
+      //
+      // `giftAttempted` flips once any gift request has gone out. On a
+      // partial failure we still want to refresh so the gifts that DID
+      // persist reload into `initialGifts` (with server ids) and drop out of
+      // `giftChanges` — otherwise a re-save would re-POST them as phantom
+      // `add`s (their client UUIDs are still absent from `initialGifts`).
+      let giftAttempted = false;
       for (const change of giftChanges) {
+        giftAttempted = true;
         const res = await persistGiftChange(props.clientId, change);
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
@@ -369,6 +390,9 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             typeof body?.error === "string" ? body.error : `HTTP ${res.status}`;
           const prefix = saved > 0 ? `${saved} of ${total} change(s) saved. ` : "";
           setSaveError(`${prefix}Save failed: ${apiMsg}`);
+          // Refresh so already-persisted gifts reload as the new baseline,
+          // then surface the error. The error stays set across the refresh.
+          router.refresh();
           return;
         }
         saved++;
@@ -377,7 +401,9 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       // writer.submit refreshes after each overlay edit, but the gift routes
       // do not — an explicit refresh reloads initialGifts/initialClientData
       // from the page loader and clears the dirty badge.
-      if (giftChanges.length > 0) router.refresh();
+      if (giftAttempted) router.refresh();
+    } catch {
+      setSaveError("Network error while saving — please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -463,16 +489,23 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         const res = await persistGiftChange(props.clientId, change);
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          const msg =
+          const apiMsg =
             typeof body?.error === "string"
               ? body.error
               : `Gift save failed (HTTP ${res.status})`;
-          setSaveError(msg);
+          // The new scenario already exists with its overlay changes written.
+          // Tell the advisor so they know where to retry — the scenario is
+          // sound and is intentionally left in place (no rollback).
+          setSaveError(
+            `Scenario "${newName}" was created and its changes saved, but a gift failed to save: ${apiMsg}. Open that scenario to retry the gift.`,
+          );
           return;
         }
       }
 
       router.push(`${pathname}?scenario=${encodeURIComponent(newScenarioId)}`);
+    } catch {
+      setSaveError("Network error while saving — please try again.");
     } finally {
       setIsSaving(false);
     }
