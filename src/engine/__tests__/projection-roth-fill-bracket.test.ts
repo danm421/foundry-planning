@@ -260,3 +260,113 @@ describe("Roth fill_up_bracket — projection accuracy", () => {
     }
   });
 });
+
+// ─── Task 4: Roth slice of 401(k) savings contribution lands in rothValueEoY ──
+
+function rothSavingsScenario(): ClientData {
+  return {
+    client: {
+      firstName: "Alex",
+      lastName: "Test",
+      dateOfBirth: "1980-01-01",
+      filingStatus: "single",
+      retirementAge: 65,
+      planEndAge: 90,
+    },
+    accounts: [
+      {
+        id: "acct-checking",
+        name: "Checking",
+        category: "cash",
+        subType: "checking",
+        value: 200_000,
+        basis: 200_000,
+        growthRate: 0,
+        rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 }],
+      },
+      {
+        id: "acct-401k",
+        name: "401k",
+        category: "retirement",
+        subType: "401k",
+        value: 100_000,
+        rothValue: 0,
+        basis: 0,
+        growthRate: 0,
+        rmdEnabled: false,
+        owners: [{ kind: "family_member", familyMemberId: CLIENT_FM_ID, percent: 1 }],
+      },
+    ],
+    incomes: [
+      {
+        id: "inc-salary",
+        name: "Salary",
+        type: "salary",
+        owner: "client",
+        annualAmount: 100_000,
+        growthRate: 0,
+        startYear: 2026,
+        endYear: 2044,
+      },
+    ],
+    expenses: [],
+    liabilities: [],
+    savingsRules: [
+      {
+        id: "rule-401k",
+        accountId: "acct-401k",
+        annualAmount: 12_000,
+        rothPercent: 0.25,
+        isDeductible: true,
+        applyContributionLimit: false,
+        startYear: 2026,
+        endYear: 2044,
+      },
+    ],
+    withdrawalStrategy: [],
+    planSettings: {
+      flatFederalRate: 0,
+      flatStateRate: 0,
+      inflationRate: 0,
+      planStartYear: 2026,
+      planEndYear: 2044,
+      taxEngineMode: "flat",
+      taxInflationRate: 0,
+      estateAdminExpenses: 0,
+      flatStateEstateRate: 0,
+    },
+    entities: [],
+    deductions: [],
+    transfers: [],
+    assetTransactions: [],
+    gifts: [],
+    giftEvents: [],
+    wills: [],
+    rothConversions: [],
+    familyMembers: [
+      {
+        id: CLIENT_FM_ID,
+        firstName: "Alex",
+        lastName: "Test",
+        relationship: "other",
+        role: "client",
+        dateOfBirth: "1980-01-01",
+      } as FamilyMember,
+    ],
+    externalBeneficiaries: [],
+    taxYearRows: [TAX_YEAR_2026],
+  } as ClientData;
+}
+
+describe("Roth savings contribution credits rothValue", () => {
+  it("credits the Roth slice of a 401(k) savings contribution into rothValueEoY", () => {
+    const years = runProjection(rothSavingsScenario());
+    const firstYear = years.find((y) => y.year === 2026);
+    expect(firstYear, "year 2026 should exist").toBeDefined();
+    const k401 = firstYear!.accountLedgers["acct-401k"];
+    expect(k401, "401k ledger should exist").toBeDefined();
+    // 25% of 12,000 = 3,000 Roth-designated — no growth (rate=0), so exactly 3,000
+    expect(k401.rothValueEoY).toBeCloseTo(3000, 0);
+  });
+});

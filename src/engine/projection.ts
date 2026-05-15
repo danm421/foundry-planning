@@ -2605,6 +2605,16 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
       label: "Savings contributions",
     });
 
+    // Roth-designated slice of employee 401(k)/403(b) contributions feeds the
+    // account's Roth basis so it is tax-free on later withdrawal / conversion.
+    // Gated on subtype — rothPercent is only meaningful for deferral accounts.
+    for (const [acctId, rothAmount] of Object.entries(savings.rothByAccount)) {
+      if (rothAmount === 0) continue;
+      const acct = data.accounts.find((a) => a.id === acctId);
+      if (acct?.subType !== "401k" && acct?.subType !== "403b") continue;
+      rothValueMap[acctId] = (rothValueMap[acctId] ?? 0) + rothAmount;
+    }
+
     // Employer match — direct credit to the destination account, free cash from the
     // employer. Does not touch household checking. Unlike employee contributions,
     // the match must be computed against *only* the account owner's salary — a
