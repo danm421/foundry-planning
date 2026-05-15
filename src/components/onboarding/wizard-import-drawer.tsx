@@ -194,6 +194,15 @@ export default function WizardImportDrawer({
     onClose();
   }, [router, onClose]);
 
+  // Close on Escape — `role="dialog"` implies modal semantics.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   const hasDataForStep =
     stage === "review" && imp?.payload
       ? stepHasImportData(imp.payload, step)
@@ -209,6 +218,7 @@ export default function WizardImportDrawer({
       />
       <aside
         role="dialog"
+        aria-modal="true"
         aria-label={`Import ${STEP_IMPORT_LABEL[step]} from a document`}
         className="relative flex h-full w-full max-w-xl flex-col overflow-y-auto border-l border-hair bg-card shadow-xl"
       >
