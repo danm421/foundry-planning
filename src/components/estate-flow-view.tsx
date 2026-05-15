@@ -24,7 +24,7 @@ import {
   applyGiftsToClientData,
   type EstateFlowGift,
 } from "@/lib/estate/estate-flow-gifts";
-import { diffGifts } from "@/lib/estate/estate-flow-gift-diff";
+import { diffGifts, type GiftChange } from "@/lib/estate/estate-flow-gift-diff";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { ClientData } from "@/engine/types";
 
@@ -83,6 +83,105 @@ function DeathOrderToggle({ value, onChange, ownerNames }: DeathOrderToggleProps
         {spouseLabel} dies first
       </button>
     </div>
+  );
+}
+
+// ── Gift persistence ─────────────────────────────────────────────────────────
+
+/**
+ * Map a single GiftChange onto the existing gift API routes and issue the
+ * request. Mirrors the body shapes in the DROP form's save-handlers.ts.
+ *
+ * - cash-once / asset-once → /gifts and /gifts/:id
+ * - series                → /gifts/series and /gifts/series/:id
+ *
+ * The client-generated `id` is never sent on POST — the route assigns one.
+ * On PATCH, the immutable `accountId` is omitted (the gift routes reject it).
+ * `eventKind` is omitted entirely: the POST route rejects any non-"outright"
+ * value, and the PATCH route ignores the field — sandbox gifts are outright.
+ */
+async function persistGiftChange(
+  clientId: string,
+  change: GiftChange,
+): Promise<Response> {
+  const { op, gift } = change;
+  const recipientFields = {
+    recipientEntityId:
+      gift.recipient.kind === "entity" ? gift.recipient.id : null,
+    recipientFamilyMemberId:
+      gift.recipient.kind === "family_member" ? gift.recipient.id : null,
+    recipientExternalBeneficiaryId:
+      gift.recipient.kind === "external_beneficiary" ? gift.recipient.id : null,
+  };
+
+  // ── series ────────────────────────────────────────────────────────────────
+  if (gift.kind === "series") {
+    if (op === "remove") {
+      return fetch(`/api/clients/${clientId}/gifts/series/${gift.id}`, {
+        method: "DELETE",
+      });
+    }
+    const body = {
+      grantor: gift.grantor,
+      recipientEntityId: gift.recipient.id,
+      startYear: gift.startYear,
+      startYearRef: null,
+      endYear: gift.endYear,
+      endYearRef: null,
+      annualAmount: gift.annualAmount,
+      inflationAdjust: gift.inflationAdjust,
+      useCrummeyPowers: gift.crummey,
+      notes: null,
+    };
+    return fetch(
+      op === "add"
+        ? `/api/clients/${clientId}/gifts/series`
+        : `/api/clients/${clientId}/gifts/series/${gift.id}`,
+      {
+        method: op === "add" ? "POST" : "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+  }
+
+  // ── cash-once / asset-once ────────────────────────────────────────────────
+  if (op === "remove") {
+    return fetch(`/api/clients/${clientId}/gifts/${gift.id}`, {
+      method: "DELETE",
+    });
+  }
+
+  // Common one-time fields. accountId is included only on POST (it is immutable
+  // and rejected by the PATCH schema).
+  const oneTimeBody: Record<string, unknown> = {
+    year: gift.year,
+    yearRef: null,
+    grantor: gift.grantor,
+    ...recipientFields,
+    notes: null,
+  };
+  if (gift.kind === "cash-once") {
+    oneTimeBody.amount = gift.amount;
+    oneTimeBody.useCrummeyPowers = gift.crummey;
+    if (op === "add") oneTimeBody.accountId = null;
+  } else {
+    // asset-once: percent transfer of a source account. Asset gifts have no
+    // Crummey concept — the DROP form sends useCrummeyPowers: false.
+    oneTimeBody.percent = gift.percent;
+    oneTimeBody.useCrummeyPowers = false;
+    if (op === "add") oneTimeBody.accountId = gift.accountId;
+  }
+
+  return fetch(
+    op === "add"
+      ? `/api/clients/${clientId}/gifts`
+      : `/api/clients/${clientId}/gifts/${gift.id}`,
+    {
+      method: op === "add" ? "POST" : "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(oneTimeBody),
+    },
   );
 }
 
@@ -230,36 +329,62 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
 
   const { submit } = writer;
   const handleSaveToScenario = useCallback(async () => {
-    if (!isNamedScenario || pendingChanges.length === 0) return;
+    if (pendingChanges.length === 0 && giftChanges.length === 0) return;
     setIsSaving(true);
     setSaveError(null);
     try {
+      // Total spans both channels so the "{n} of {total}" prefix is accurate.
+      const total = pendingChanges.length + giftChanges.length;
       let saved = 0;
-      for (const change of pendingChanges) {
-        // baseFallback is a dummy — writer routes to the changes API in scenario mode.
-        const res = await submit(change.edit, { url: "", method: "PATCH" });
+
+      // ── Overlay channel ─────────────────────────────────────────────────
+      // Scenario-overlay edits only exist on a named scenario; the base case
+      // has no changes table. The gift channel below is unaffected by this
+      // gate — gift routes write the `gifts`/`gift_series` tables directly.
+      if (isNamedScenario) {
+        for (const change of pendingChanges) {
+          // baseFallback is a dummy — writer routes to the changes API in scenario mode.
+          const res = await submit(change.edit, { url: "", method: "PATCH" });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            const apiMsg =
+              typeof body?.error === "string" ? body.error : `HTTP ${res.status}`;
+            const prefix = saved > 0 ? `${saved} of ${total} change(s) saved. ` : "";
+            setSaveError(`${prefix}Save failed: ${apiMsg}`);
+            return;
+          }
+          saved++;
+        }
+      }
+
+      // ── Gift channel ────────────────────────────────────────────────────
+      // Runs on ANY scenario (including base): gift routes are not overlay
+      // calls. cash/asset gift rows are client-global; series resolve the
+      // base-case scenario server-side.
+      for (const change of giftChanges) {
+        const res = await persistGiftChange(props.clientId, change);
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           const apiMsg =
             typeof body?.error === "string" ? body.error : `HTTP ${res.status}`;
-          const prefix =
-            saved > 0
-              ? `${saved} of ${pendingChanges.length} change(s) saved. `
-              : "";
+          const prefix = saved > 0 ? `${saved} of ${total} change(s) saved. ` : "";
           setSaveError(`${prefix}Save failed: ${apiMsg}`);
           return;
         }
         saved++;
       }
-      // router.refresh() is called by writer.submit on every successful submit,
-      // which reloads initialClientData and clears the dirty badge.
+
+      // writer.submit refreshes after each overlay edit, but the gift routes
+      // do not — an explicit refresh reloads initialGifts/initialClientData
+      // from the page loader and clears the dirty badge.
+      if (giftChanges.length > 0) router.refresh();
     } finally {
       setIsSaving(false);
     }
-  }, [isNamedScenario, pendingChanges, submit]);
+  }, [isNamedScenario, pendingChanges, giftChanges, submit, props.clientId, router]);
 
   const handleSaveAsNew = useCallback(async () => {
-    if (pendingChanges.length === 0) return;
+    if (pendingChanges.length === 0 && giftChanges.length === 0) return;
     setIsSaving(true);
     setSaveError(null);
     try {
@@ -327,11 +452,31 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         }
       }
 
+      // ── Gift channel ────────────────────────────────────────────────────
+      // Gift rows are client-global (cash/asset) or resolve the base-case
+      // scenario server-side (series) — they persist the same regardless of
+      // the fork. Run after the overlay writes succeed. A gift failure here
+      // leaves the (valid) new scenario in place: the scenario itself is
+      // sound, and the partially-persisted gifts cannot be cleanly rolled
+      // back, so the error is surfaced without deleting the scenario.
+      for (const change of giftChanges) {
+        const res = await persistGiftChange(props.clientId, change);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          const msg =
+            typeof body?.error === "string"
+              ? body.error
+              : `Gift save failed (HTTP ${res.status})`;
+          setSaveError(msg);
+          return;
+        }
+      }
+
       router.push(`${pathname}?scenario=${encodeURIComponent(newScenarioId)}`);
     } finally {
       setIsSaving(false);
     }
-  }, [pendingChanges, props.clientId, props.scenarioId, isNamedScenario, router, pathname]);
+  }, [pendingChanges, giftChanges, props.clientId, props.scenarioId, isNamedScenario, router, pathname]);
 
   const ownerDialogAccount = ownerDialogId
     ? working.accounts.find((a) => a.id === ownerDialogId)
@@ -465,7 +610,16 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             </div>
             {/* Action buttons */}
             <div className="flex shrink-0 items-center gap-2">
-              {isNamedScenario && (
+              {/*
+                "Save to this scenario" persists overlay edits (named scenario
+                only) AND gift changes (any scenario — gift routes write the
+                gifts tables directly). It is shown whenever there is something
+                the handler can persist here: a named scenario, or gift
+                changes on the base case. Without the gift clause an advisor
+                with gift-only changes on the base case would have no way to
+                save them short of forking a new scenario.
+              */}
+              {(isNamedScenario || giftChanges.length > 0) && (
                 <button
                   type="button"
                   disabled={isSaving}
