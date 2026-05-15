@@ -87,7 +87,6 @@ export default function EstateFlowChangeOwnerDialog({
 
   const clientName = `${clientData.client.firstName} ${clientData.client.lastName ?? ""}`.trim();
   const spouseName = clientData.client.spouseName ?? null;
-  const isMarried = !!spouseName;
 
   // Find the client and spouse family-member ids (may be legacy synthetic ids
   // or real UUIDs from the `familyMembers` array).
@@ -128,7 +127,7 @@ export default function EstateFlowChangeOwnerDialog({
       },
     ];
 
-    if (isMarried && spouseName) {
+    if (spouseName) {
       list.push({
         id: "spouse",
         label: spouseName,
@@ -179,7 +178,6 @@ export default function EstateFlowChangeOwnerDialog({
   }, [
     clientName,
     spouseName,
-    isMarried,
     clientFmId,
     spouseFmId,
     revocableTrusts,

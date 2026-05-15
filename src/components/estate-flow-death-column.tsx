@@ -5,8 +5,8 @@ import type { ProjectionResult } from "@/engine/projection";
 import {
   type DeathSectionData,
   type RecipientGroup,
-  type ConflictEntry,
 } from "@/lib/estate/transfer-report";
+import { EstateTransferConflictsCallout } from "@/components/estate-transfer-conflicts-callout";
 
 // ── Currency formatter (matches estate-transfer-recipient-card.tsx) ───────────
 
@@ -16,42 +16,6 @@ const fmt = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 0,
   maximumFractionDigits: 0,
 });
-
-// ── Conflicts callout (mirrors EstateTransferConflictsCallout) ────────────────
-
-function DeathColumnConflictsCallout({ conflicts }: { conflicts: ConflictEntry[] }) {
-  if (conflicts.length === 0) return null;
-  return (
-    <section className="rounded-lg border border-amber-900/40 bg-amber-950/20 px-4 py-3">
-      <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-200">
-        Conflicts &amp; Overrides
-      </h3>
-      <p className="mb-2.5 text-[10px] text-amber-200/80">
-        These assets have configuration that disagrees with how they transfer.
-      </p>
-      <ul className="space-y-1.5">
-        {conflicts.map((c) => (
-          <li
-            key={c.id}
-            className="rounded border border-amber-900/30 bg-amber-950/10 px-2.5 py-1.5 text-xs text-amber-100/90"
-          >
-            <div className="font-medium text-amber-100">{c.accountLabel}</div>
-            <div className="mt-0.5 text-[10px] text-amber-200/70">
-              Routes to <strong>{c.governingRecipient}</strong> via {c.governingMechanism}.
-            </div>
-            <ul className="mt-1 space-y-0.5">
-              {c.overriddenBy.map((o, i) => (
-                <li key={i} className="text-[10px] text-amber-200/90">
-                  ▸ {o.note}
-                </li>
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
 
 // ── Death warnings callout ────────────────────────────────────────────────────
 
@@ -291,7 +255,7 @@ export function EstateFlowDeathColumn({
         <DeathWarningsCallout warnings={deathWarnings} />
       )}
       {section.conflicts.length > 0 && (
-        <DeathColumnConflictsCallout conflicts={section.conflicts} />
+        <EstateTransferConflictsCallout conflicts={section.conflicts} />
       )}
 
       {/* Recipient groups */}

@@ -93,15 +93,14 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const writer = useScenarioWriter(props.clientId);
 
   // A named scenario is active when scenarioId is set and is not the base case.
-  const isNamedScenario = props.scenarioId !== "base" && props.scenarioId != null;
+  const isNamedScenario = props.scenarioId !== "base";
 
   // `ordering` is NOT passed to runProjectionWithEvents — the projection always
   // computes both first-death and second-death sections from the data.
   // `ordering` is a display-time selector consumed by the death-column
-  // components (Tasks 6-7) to decide which death feeds which column: when
-  // "primaryFirst", column 1 shows the client's death and column 2 shows the
-  // spouse's death; "spouseFirst" swaps them. The projection result is
-  // identical either way.
+  // components to decide which death feeds which column: when "primaryFirst",
+  // column 1 shows the client's death and column 2 shows the spouse's death;
+  // "spouseFirst" swaps them. The projection result is identical either way.
   const projection = useMemo(
     () => runProjectionWithEvents(working),
     [working],
@@ -157,7 +156,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     [isDirty, router, pathname],
   );
 
-  // Save to current named scenario — loop pending changes through the writer.
   const { submit } = writer;
   const handleSaveToScenario = useCallback(async () => {
     if (!isNamedScenario || pendingChanges.length === 0) return;
@@ -188,7 +186,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     }
   }, [isNamedScenario, pendingChanges, submit]);
 
-  // Save as a new scenario — create scenario then POST each change directly.
   const handleSaveAsNew = useCallback(async () => {
     if (pendingChanges.length === 0) return;
     setIsSaving(true);
@@ -201,7 +198,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       });
       const newName = `Estate Flow — ${today}`;
 
-      // Create the new scenario (cloned from current scenario or base).
       const createRes = await fetch(`/api/clients/${props.clientId}/scenarios`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -222,7 +218,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       const { scenario } = await createRes.json();
       const newScenarioId: string = scenario.id;
 
-      // POST each change directly to the new scenario's changes route.
       for (const change of pendingChanges) {
         const { edit } = change;
         const body: Record<string, unknown> = {
@@ -250,12 +245,15 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         }
       }
 
-      // Navigate to the new scenario — server reload clears the dirty badge.
       router.push(`${pathname}?scenario=${encodeURIComponent(newScenarioId)}`);
     } finally {
       setIsSaving(false);
     }
   }, [pendingChanges, props.clientId, props.scenarioId, isNamedScenario, router, pathname]);
+
+  const ownerDialogAccount = ownerDialogId
+    ? working.accounts.find((a) => a.id === ownerDialogId)
+    : undefined;
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -272,7 +270,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
           )}
           {props.scenarios && props.snapshots && (
             <div className="w-48">
-              {/* ScenarioPickerDropdown wired to ?scenario= */}
               <ScenarioPickerDropdown
                 value={props.scenarioId}
                 onChange={handleScenarioChange}
@@ -318,7 +315,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         )}
       </div>
 
-      {/* Save bar — Task 10 */}
       {isDirty && (
         <div
           role="region"
@@ -369,25 +365,18 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         </div>
       )}
 
-      {/* Change-owner dialog — Task 8 */}
-      {(() => {
-        if (!ownerDialogId) return null;
-        const account = working.accounts.find((a) => a.id === ownerDialogId);
-        if (!account) return null;
-        return (
-          <EstateFlowChangeOwnerDialog
-            account={account}
-            clientData={working}
-            onApply={(owners) => {
-              applyEdit((d) => changeOwner(d, ownerDialogId, owners));
-              setOwnerDialogId(null);
-            }}
-            onClose={() => setOwnerDialogId(null)}
-          />
-        );
-      })()}
+      {ownerDialogAccount && (
+        <EstateFlowChangeOwnerDialog
+          account={ownerDialogAccount}
+          clientData={working}
+          onApply={(owners) => {
+            applyEdit((d) => changeOwner(d, ownerDialogId!, owners));
+            setOwnerDialogId(null);
+          }}
+          onClose={() => setOwnerDialogId(null)}
+        />
+      )}
 
-      {/* Change-distribution dialog — Task 9 */}
       {distributionDialogId && working.accounts.some((a) => a.id === distributionDialogId) && (
         <EstateFlowChangeDistributionDialog
           accountId={distributionDialogId}

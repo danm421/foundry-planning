@@ -357,21 +357,15 @@ function EstateFlowChangeDistributionDialogInner({
 
   // ── Beneficiary tab state ─────────────────────────────────────────────────
 
-  const initialBeneficiaryRows = useMemo(
+  const [beneficiaryRows, setBeneficiaryRows] = useState<BeneficiaryRow[]>(
     () => refsToRows(account.beneficiaries ?? []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
   );
-  const [beneficiaryRows, setBeneficiaryRows] = useState<BeneficiaryRow[]>(initialBeneficiaryRows);
 
   // ── Will tab state ────────────────────────────────────────────────────────
 
   // Recipients on the specific bequest for this account.
-  const initialWillRows = useMemo(
-    () => willRecipientsToRows(bequestForAccount?.recipients ?? []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const initialWillRows = useMemo(() => willRecipientsToRows(bequestForAccount?.recipients ?? []), []);
   const [willRecipientRows, setWillRecipientRows] = useState<WillRecipientRow[]>(initialWillRows);
 
   const [willCondition, setWillCondition] = useState<WillBequest["condition"]>(
@@ -380,6 +374,8 @@ function EstateFlowChangeDistributionDialogInner({
 
   // ── Validation ────────────────────────────────────────────────────────────
 
+  const primaryRows = beneficiaryRows.filter((r) => r.tier === "primary");
+  const contingentRows = beneficiaryRows.filter((r) => r.tier === "contingent");
   const primaryOk = tierSumOk(beneficiaryRows, "primary");
   const contingentOk = tierSumOk(beneficiaryRows, "contingent");
   const beneficiaryValid = primaryOk && contingentOk;
@@ -561,10 +557,12 @@ function EstateFlowChangeDistributionDialogInner({
 
   // ── Render helpers ────────────────────────────────────────────────────────
 
-  function renderBeneficiaryTier(tier: "primary" | "contingent") {
-    const tierRows = beneficiaryRows.filter((r) => r.tier === tier);
+  function renderBeneficiaryTier(
+    tier: "primary" | "contingent",
+    tierRows: BeneficiaryRow[],
+    sumOk: boolean,
+  ) {
     const sum = tierRows.reduce((s, r) => s + r.percentage, 0);
-    const sumOk = tierRows.length === 0 || Math.abs(sum - 100) < 0.5;
     const sumId = `${tier}-sum-msg`;
 
     return (
@@ -592,7 +590,7 @@ function EstateFlowChangeDistributionDialogInner({
                 <option value="">— select beneficiary —</option>
                 <optgroup label="Household">
                   <option value="hh:client">{clientName} (client)</option>
-                  {isMarried && spouseName && (
+                  {spouseName && (
                     <option value="hh:spouse">{spouseName} (spouse)</option>
                   )}
                 </optgroup>
@@ -661,8 +659,6 @@ function EstateFlowChangeDistributionDialogInner({
 
   function renderWillTab() {
     const noWillAvailable = !willForAccount && !defaultWillForNewBequest;
-    const sum = willRecipientRows.reduce((s, r) => s + r.percentage, 0);
-    const sumOk = willRecipientRows.length === 0 || Math.abs(sum - 100) < 0.5;
     const willId = "will-sum-msg";
 
     if (noWillAvailable) {
@@ -733,10 +729,10 @@ function EstateFlowChangeDistributionDialogInner({
             <span className={fieldLabelClassName + " mb-0"}>Recipients</span>
             <span
               id={willId}
-              className={`text-[11px] ${sumOk ? "text-ink-3" : "text-crit"}`}
+              className={`text-[11px] ${willSumOk ? "text-ink-3" : "text-crit"}`}
             >
               {willRecipientRows.length > 0
-                ? `${sum.toFixed(0)}%${!sumOk ? " — must equal 100%" : ""}`
+                ? `${willSum.toFixed(0)}%${!willSumOk ? " — must equal 100%" : ""}`
                 : "No recipients yet"}
             </span>
           </div>
@@ -750,7 +746,7 @@ function EstateFlowChangeDistributionDialogInner({
                   className={rowSelectClassName + " flex-1 min-w-0"}
                 >
                   <option value="">— select recipient —</option>
-                  {isMarried && spouseName && (
+                  {spouseName && (
                     <optgroup label="Household">
                       <option value="spouse">{spouseName} (spouse)</option>
                     </optgroup>
@@ -790,7 +786,7 @@ function EstateFlowChangeDistributionDialogInner({
                   step={1}
                   aria-label="Will recipient percent"
                   aria-describedby={willId}
-                  aria-invalid={!sumOk}
+                  aria-invalid={!willSumOk}
                   value={row.percentage}
                   onChange={(e) => { const v = parseFloat(e.target.value); changeWillPct(row.key, Number.isNaN(v) ? row.percentage : v); }}
                   className={rowFieldBase + " w-20 text-right"}
@@ -930,9 +926,9 @@ function EstateFlowChangeDistributionDialogInner({
               Set primary and contingent beneficiaries. Each tier&apos;s percentages must sum
               to 100%.
             </p>
-            {renderBeneficiaryTier("primary")}
+            {renderBeneficiaryTier("primary", primaryRows, primaryOk)}
             <div className="mt-4 border-t border-hair pt-4">
-              {renderBeneficiaryTier("contingent")}
+              {renderBeneficiaryTier("contingent", contingentRows, contingentOk)}
             </div>
           </div>
         )}

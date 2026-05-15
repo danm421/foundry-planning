@@ -56,8 +56,7 @@ function entityKind(entity: EntitySummary): "trust" | "business" {
  *   (b) has a non-empty residuary clause.
  *
  * Note: we check all wills, not just the owner's will, because jointly held
- * accounts may be covered by either grantor's will. A later task will use the
- * engine's deathWarnings for the death-event columns.
+ * accounts may be covered by either grantor's will.
  */
 function hasWillProvision(accountId: string, wills: Will[]): boolean {
   for (const will of wills) {
@@ -130,7 +129,6 @@ export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
   const wills = data.wills ?? [];
   const entities = data.entities ?? [];
 
-  // Resolve client/spouse family member ids from the familyMembers array.
   const familyMembers = data.familyMembers ?? [];
   const clientFm = familyMembers.find((fm) => fm.role === "client");
   const spouseFm = familyMembers.find((fm) => fm.role === "spouse");
@@ -141,7 +139,6 @@ export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
   const clientLabel = clientFm?.firstName ?? data.client.firstName ?? "Client";
   const spouseLabel = spouseFm?.firstName ?? data.client.spouseName ?? "Spouse";
 
-  // Build entity group map (keyed by entity id).
   const entityGroups = new Map<string, OwnershipGroup>();
   for (const entity of entities) {
     entityGroups.set(entity.id, {
@@ -153,7 +150,6 @@ export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
     });
   }
 
-  // Placeholder groups for client/spouse (only emitted if they have assets).
   const clientGroup: OwnershipGroup = {
     key: "client",
     kind: "client",
@@ -169,14 +165,12 @@ export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
     subtotal: 0,
   };
 
-  // Process each account.
   for (const account of data.accounts) {
     const accountId = account.id;
     const hasBeneficiaries = (account.beneficiaries ?? []).length > 0;
     const willProvision = hasWillProvision(accountId, wills);
     const hasConflict = !hasBeneficiaries && !willProvision;
 
-    // Check for 100% single-entity ownership.
     const soloEntityId = controllingEntity(account);
     if (soloEntityId !== null) {
       let group = entityGroups.get(soloEntityId);
@@ -212,7 +206,6 @@ export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
       continue;
     }
 
-    // Check for 100% single family-member ownership.
     const soloFmId = controllingFamilyMember(account);
     if (soloFmId !== null) {
       const isClient = soloFmId === clientFmId;
@@ -276,7 +269,6 @@ export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
     }
   }
 
-  // Compute subtotals and collect non-empty groups.
   const allGroups: OwnershipGroup[] = [clientGroup, spouseGroup, ...entityGroups.values()];
   const nonEmptyGroups = allGroups
     .map((g) => ({

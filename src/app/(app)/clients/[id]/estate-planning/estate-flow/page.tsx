@@ -18,7 +18,11 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
   const sp = await searchParams;
 
   const [client] = await db
-    .select()
+    .select({
+      filingStatus: clients.filingStatus,
+      firstName: clients.firstName,
+      spouseName: clients.spouseName,
+    })
     .from(clients)
     .where(and(eq(clients.id, id), eq(clients.firmId, firmId)));
   if (!client) notFound();

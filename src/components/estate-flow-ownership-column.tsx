@@ -182,11 +182,9 @@ export function EstateFlowOwnershipColumn({
   return (
     <div className="flex flex-col gap-3">
       {/* Column heading */}
-      <div className="flex items-baseline justify-between gap-3 px-1">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-          Ownership
-        </h2>
-      </div>
+      <h2 className="px-1 text-xs font-semibold uppercase tracking-wider text-gray-400">
+        Ownership
+      </h2>
 
       {/* Group cards */}
       <div className="space-y-3">
