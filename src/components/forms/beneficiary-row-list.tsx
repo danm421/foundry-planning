@@ -24,6 +24,8 @@ export interface BeneficiaryRow {
     | { kind: "entity"; entityId: string }
     | { kind: "empty" };
   percentage: number;
+  // 'in_trust' | 'outright' — only set/used for the remainder tier.
+  distributionForm?: "in_trust" | "outright";
 }
 
 interface BeneficiaryRowListProps {
@@ -103,6 +105,7 @@ export default function BeneficiaryRowList({
       id: `tmp-${Math.random().toString(36).slice(2)}`,
       source: { kind: "empty" },
       percentage: 0,
+      ...(tier === "remainder" ? { distributionForm: "outright" as const } : {}),
     };
     // First-add convenience: if list was empty, default the row to 100% so the
     // user doesn't have to type it. Subsequent adds redistribute over unlocked.
@@ -123,6 +126,7 @@ export default function BeneficiaryRowList({
       id: `tmp-${Math.random().toString(36).slice(2)}`,
       source: { kind: "family", familyMemberId: child.id },
       percentage: pcts[i],
+      ...(tier === "remainder" ? { distributionForm: "outright" as const } : {}),
     }));
     setLockedKeys(new Set());
     onChange(newRows);
@@ -183,6 +187,19 @@ export default function BeneficiaryRowList({
               aria-label={`Percent ${idx + 1}`}
             />
             <span className="text-xs text-ink-3">%</span>
+            {tier === "remainder" && (
+              <select
+                value={r.distributionForm ?? "outright"}
+                onChange={(e) =>
+                  update(idx, { distributionForm: e.target.value as "in_trust" | "outright" })
+                }
+                className={rowSelectClassName + " w-28"}
+                aria-label={`Distribution form ${idx + 1}`}
+              >
+                <option value="outright">Outright</option>
+                <option value="in_trust">In trust</option>
+              </select>
+            )}
             <button
               type="button"
               onClick={() => remove(idx)}
