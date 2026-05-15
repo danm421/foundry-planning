@@ -2610,7 +2610,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
     // Gated on subtype — rothPercent is only meaningful for deferral accounts.
     for (const [acctId, rothAmount] of Object.entries(savings.rothByAccount)) {
       if (rothAmount === 0) continue;
-      const acct = data.accounts.find((a) => a.id === acctId);
+      const acct = accountById.get(acctId);
       if (acct?.subType !== "401k" && acct?.subType !== "403b") continue;
       rothValueMap[acctId] = (rothValueMap[acctId] ?? 0) + rothAmount;
     }
