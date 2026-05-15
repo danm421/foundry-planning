@@ -3,9 +3,12 @@
 import { useState, useMemo } from "react";
 import DialogShell from "@/components/dialog-shell";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
+import { EstateFlowGiftFields } from "@/components/estate-flow-gift-fields";
 import type { Account, ClientData } from "@/engine/types";
 import type { AccountOwner } from "@/engine/ownership";
 import { LEGACY_FM_CLIENT, LEGACY_FM_SPOUSE } from "@/engine/ownership";
+import type { GiftLedgerYear } from "@/engine/gift-ledger";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,6 +16,12 @@ interface Props {
   account: Account;
   clientData: ClientData;
   onApply: (owners: Account["owners"]) => void;
+  /** Called when a gift destination is chosen and the gift form is applied. */
+  onApplyGift: (draft: EstateFlowGift) => void;
+  /** Gift exemption ledger from the live projection — for the gift-fields warning. */
+  ledger: GiftLedgerYear[];
+  /** Plan tax-inflation rate, threaded to the gift-fields warning preview. */
+  taxInflationRate: number;
   onClose: () => void;
 }
 
@@ -21,14 +30,17 @@ type DestinationId =
   | "client"
   | "spouse"
   | "joint"
-  | `trust:${string}`    // entityId of a revocable trust
-  | `child:${string}`;   // familyMemberId of a child (gifts — Phase 2)
+  | `trust:${string}`      // entityId of a revocable or irrevocable trust
+  | `child:${string}`      // familyMemberId of a child (gift)
+  | `external:${string}`;  // externalBeneficiary id (gift)
 
 interface Destination {
   id: DestinationId;
   label: string;
   disabled: boolean;
   disabledHint?: string;
+  /** True for destinations that require a gift (irrevocable trust, child, external beneficiary). */
+  isGift?: boolean;
   // joint destinations carry two member ids; singles carry one
   memberIds?: string[];   // family_member ids for the split UI
   entityId?: string;      // entity id for trust destinations
@@ -81,6 +93,9 @@ export default function EstateFlowChangeOwnerDialog({
   account,
   clientData,
   onApply,
+  onApplyGift,
+  ledger,
+  taxInflationRate,
   onClose,
 }: Props) {
   // ── Derive available destinations ─────────────────────────────────────────
@@ -100,10 +115,16 @@ export default function EstateFlowChangeOwnerDialog({
     return fm?.id ?? LEGACY_FM_SPOUSE;
   }, [clientData.familyMembers]);
 
-  // Children — greyed out (gifts, Phase 2)
+  // Children — gift destinations.
   const childMembers = useMemo(
     () => (clientData.familyMembers ?? []).filter((m) => m.role === "child"),
     [clientData.familyMembers],
+  );
+
+  // External beneficiaries — gift destinations.
+  const externalBeneficiaries = useMemo(
+    () => clientData.externalBeneficiaries ?? [],
+    [clientData.externalBeneficiaries],
   );
 
   // Trusts — split into revocable (selectable) vs irrevocable (greyed)
@@ -152,25 +173,35 @@ export default function EstateFlowChangeOwnerDialog({
       });
     }
 
-    // Irrevocable trusts — greyed, Phase 2
+    // Irrevocable trusts — gift destinations.
     for (const t of irrevocableTrusts) {
       list.push({
         id: `trust:${t.id}` as DestinationId,
         label: t.name ?? t.id,
-        disabled: true,
-        disabledHint: "Requires gifting — Phase 2",
+        disabled: false,
+        isGift: true,
         entityId: t.id,
       });
     }
 
-    // Children — greyed, Phase 2
+    // Children — gift destinations.
     for (const child of childMembers) {
       list.push({
         id: `child:${child.id}` as DestinationId,
         label: `${child.firstName} ${child.lastName ?? ""}`.trim(),
-        disabled: true,
-        disabledHint: "Requires gifting — Phase 2",
+        disabled: false,
+        isGift: true,
         memberIds: [child.id],
+      });
+    }
+
+    // External beneficiaries — gift destinations.
+    for (const eb of externalBeneficiaries) {
+      list.push({
+        id: `external:${eb.id}` as DestinationId,
+        label: eb.name,
+        disabled: false,
+        isGift: true,
       });
     }
 
@@ -183,6 +214,7 @@ export default function EstateFlowChangeOwnerDialog({
     revocableTrusts,
     irrevocableTrusts,
     childMembers,
+    externalBeneficiaries,
   ]);
 
   // ── Infer initial selected destination from current owners ────────────────
@@ -232,9 +264,17 @@ export default function EstateFlowChangeOwnerDialog({
     },
   );
 
+  // Latest gift draft from the gift-fields form (null until valid). Only
+  // meaningful while a gift destination is selected.
+  const [giftDraft, setGiftDraft] = useState<EstateFlowGift | null>(null);
+
   // ── Derived: the chosen destination object ────────────────────────────────
 
   const selectedDest = destinations.find((d) => d.id === selectedDestId);
+
+  // A gift destination (irrevocable trust, child, external beneficiary) shows
+  // the gift-fields form in place of the joint-split section.
+  const isGiftDest = selectedDest?.isGift === true;
 
   // Is the current selection a split (multiple members)?
   const isJoint = selectedDestId === "joint";
@@ -263,7 +303,8 @@ export default function EstateFlowChangeOwnerDialog({
   // ── Apply handler ─────────────────────────────────────────────────────────
 
   function handleApply() {
-    if (!selectedDest || selectedDest.disabled) return;
+    // Gift destinations are applied via handleAddGift, not this retitle path.
+    if (!selectedDest || selectedDest.disabled || selectedDest.isGift) return;
     if (isJoint && !percentSumValid) return;
 
     let owners: AccountOwner[];
@@ -292,8 +333,17 @@ export default function EstateFlowChangeOwnerDialog({
 
   // ── Ensure joint split percents are initialised when switching to joint ───
 
+  function handleAddGift() {
+    if (!giftDraft) return;
+    onApplyGift(giftDraft);
+  }
+
   function handleDestChange(id: DestinationId) {
     setSelectedDestId(id);
+    // Stale gift draft from a previous gift destination must not carry over —
+    // the gift-fields form remounts per destination (keyed on id) and re-fires
+    // onChange, but clear eagerly so a non-gift selection has no draft.
+    setGiftDraft(null);
     // When switching to joint, seed 50/50 if not already set
     if (id === "joint") {
       setSplitPercents((prev) => {
@@ -321,7 +371,22 @@ export default function EstateFlowChangeOwnerDialog({
   const canApply =
     !!selectedDest &&
     !selectedDest.disabled &&
+    !selectedDest.isGift &&
     (!isJoint || percentSumValid);
+
+  // Primary action switches by destination type: gift destinations add a gift,
+  // everything else retitles ownership.
+  const primaryAction = isGiftDest
+    ? {
+        label: "Add gift",
+        onClick: handleAddGift,
+        disabled: giftDraft == null,
+      }
+    : {
+        label: "Apply",
+        onClick: handleApply,
+        disabled: !canApply,
+      };
 
   return (
     <DialogShell
@@ -331,11 +396,7 @@ export default function EstateFlowChangeOwnerDialog({
       }}
       title="Change Ownership"
       size="sm"
-      primaryAction={{
-        label: "Apply",
-        onClick: handleApply,
-        disabled: !canApply,
-      }}
+      primaryAction={primaryAction}
     >
       {/* Asset summary */}
       <div className="mb-5 rounded border border-hair bg-card-2 px-4 py-3">
@@ -390,6 +451,28 @@ export default function EstateFlowChangeOwnerDialog({
           })}
         </div>
       </div>
+
+      {/* Gift destination — gift-fields form replaces the joint-split section.
+          Keyed on the destination id so switching between gift destinations
+          remounts the form and re-seeds its state (honours the remount
+          contract documented on EstateFlowGiftFields). */}
+      {isGiftDest && (
+        <div className="mt-4">
+          <EstateFlowGiftFields
+            key={selectedDestId}
+            clientData={clientData}
+            sourceAccount={{
+              id: account.id,
+              name: account.name,
+              value: account.value,
+            }}
+            editing={null}
+            onChange={setGiftDraft}
+            ledger={ledger}
+            taxInflationRate={taxInflationRate}
+          />
+        </div>
+      )}
 
       {/* Joint split percent inputs */}
       {isJoint && selectedDest?.memberIds && selectedDest.memberIds.length === 2 && (

@@ -16,7 +16,7 @@ import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
 import EstateFlowChangeDistributionDialog from "@/components/estate-flow-change-distribution-dialog";
 import { changeOwner, changeBeneficiaries, changeWillBequests } from "@/lib/estate/estate-flow-edits";
-import { applyGiftsToClientData, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import { addGift, applyGiftsToClientData, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
 import { diffGifts } from "@/lib/estate/estate-flow-gift-diff";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { ClientData } from "@/engine/types";
@@ -84,9 +84,7 @@ function DeathOrderToggle({ value, onChange, ownerNames }: DeathOrderToggleProps
 export default function EstateFlowView(props: EstateFlowViewProps) {
   const original = props.initialClientData;
   const [working, setWorking] = useState<ClientData>(original);
-  // Gift sandbox. `setWorkingGifts` is wired up by later tasks (gift UI in
-  // Task 8/9); intentionally unused here.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // Gift sandbox. New gifts are added via the change-owner dialog.
   const [workingGifts, setWorkingGifts] = useState<EstateFlowGift[]>(
     props.initialGifts,
   );
@@ -458,8 +456,18 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         <EstateFlowChangeOwnerDialog
           account={ownerDialogAccount}
           clientData={working}
+          ledger={projection.giftLedger}
+          taxInflationRate={
+            working.planSettings.taxInflationRate ??
+            working.planSettings.inflationRate ??
+            0
+          }
           onApply={(owners) => {
             applyEdit((d) => changeOwner(d, ownerDialogId!, owners));
+            setOwnerDialogId(null);
+          }}
+          onApplyGift={(draft) => {
+            setWorkingGifts((cur) => addGift(cur, draft));
             setOwnerDialogId(null);
           }}
           onClose={() => setOwnerDialogId(null)}
