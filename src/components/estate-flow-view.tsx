@@ -16,6 +16,8 @@ import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
 import EstateFlowChangeDistributionDialog from "@/components/estate-flow-change-distribution-dialog";
 import { changeOwner, changeBeneficiaries, changeWillBequests } from "@/lib/estate/estate-flow-edits";
+import { applyGiftsToClientData, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import { diffGifts } from "@/lib/estate/estate-flow-gift-diff";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { ClientData } from "@/engine/types";
 
@@ -25,6 +27,8 @@ export interface EstateFlowViewProps {
   isMarried: boolean;
   ownerNames: { clientName: string; spouseName: string | null };
   initialClientData: ClientData;
+  initialGifts: EstateFlowGift[];
+  cpi: number;
   scenarios?: ScenarioOption[];
   snapshots?: SnapshotOption[];
 }
@@ -80,6 +84,10 @@ function DeathOrderToggle({ value, onChange, ownerNames }: DeathOrderToggleProps
 export default function EstateFlowView(props: EstateFlowViewProps) {
   const original = props.initialClientData;
   const [working, setWorking] = useState<ClientData>(original);
+  // Gift sandbox. `setWorkingGifts` is wired up by later tasks (gift UI in
+  // Task 8/9); intentionally unused here.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [workingGifts, setWorkingGifts] = useState<EstateFlowGift[]>(props.initialGifts);
   const [ordering, setOrdering] =
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
   const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
@@ -101,10 +109,19 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   // components to decide which death feeds which column: when "primaryFirst",
   // column 1 shows the client's death and column 2 shows the spouse's death;
   // "spouseFirst" swaps them. The projection result is identical either way.
-  const projection = useMemo(
-    () => runProjectionWithEvents(working),
-    [working],
+  // Materialise gift drafts into the engine input so the projection and report
+  // reflect existing (and, in later tasks, sandbox-edited) gifts. The loader
+  // strips gifts/giftEvents from initialClientData; they flow back in here.
+  const engineData = useMemo(
+    () => applyGiftsToClientData(working, workingGifts, props.cpi),
+    [working, workingGifts, props.cpi],
   );
+  const projection = useMemo(
+    () => runProjectionWithEvents(engineData),
+    [engineData],
+  );
+  // `ownership` keeps building from the raw `working` copy — projected-snapshot
+  // support arrives in a later task.
   const ownership = useMemo(() => buildOwnershipColumn(working), [working]);
   const reportData = useMemo(
     () =>
@@ -112,16 +129,20 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
         projection,
         asOf: { kind: "split" },
         ordering,
-        clientData: working,
+        clientData: engineData,
         ownerNames: props.ownerNames,
       }),
-    [projection, ordering, working, props.ownerNames],
+    [projection, ordering, engineData, props.ownerNames],
   );
   const pendingChanges = useMemo(
     () => diffWorkingCopy(original, working),
     [original, working],
   );
-  const isDirty = pendingChanges.length > 0;
+  const giftChanges = useMemo(
+    () => diffGifts(props.initialGifts, workingGifts),
+    [props.initialGifts, workingGifts],
+  );
+  const isDirty = pendingChanges.length > 0 || giftChanges.length > 0;
 
   // One mutation entry point: every dialog calls this with an edit fn.
   const applyEdit = useCallback(
@@ -345,11 +366,16 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             {/* Change list */}
             <div className="min-w-0">
               <p className="mb-1.5 text-xs font-semibold text-amber-300">
-                Unsaved changes ({pendingChanges.length})
+                Unsaved changes ({pendingChanges.length + giftChanges.length})
               </p>
               <ul className="space-y-0.5">
                 {pendingChanges.map((c, i) => (
-                  <li key={i} className="text-xs text-amber-200/80">
+                  <li key={`overlay-${i}`} className="text-xs text-amber-200/80">
+                    &bull; {c.description}
+                  </li>
+                ))}
+                {giftChanges.map((c, i) => (
+                  <li key={`gift-${i}`} className="text-xs text-amber-200/80">
                     &bull; {c.description}
                   </li>
                 ))}
