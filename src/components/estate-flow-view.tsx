@@ -16,6 +16,7 @@ import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
 import EstateFlowChangeDistributionDialog from "@/components/estate-flow-change-distribution-dialog";
 import { changeOwner, changeBeneficiaries, changeWillBequests } from "@/lib/estate/estate-flow-edits";
+import { baseWritesForChange } from "@/lib/estate/estate-flow-base-writes";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { ClientData } from "@/engine/types";
 
@@ -157,34 +158,77 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   );
 
   const { submit } = writer;
-  const handleSaveToScenario = useCallback(async () => {
-    if (!isNamedScenario || pendingChanges.length === 0) return;
+  const handleSaveInPlace = useCallback(async () => {
+    if (pendingChanges.length === 0) return;
+
+    // ── Named scenario: store edits as overlay rows via the unified route. ──
+    if (isNamedScenario) {
+      setIsSaving(true);
+      setSaveError(null);
+      try {
+        let saved = 0;
+        for (const change of pendingChanges) {
+          // baseFallback is a dummy — writer routes to the changes API in scenario mode.
+          const res = await submit(change.edit, { url: "", method: "PATCH" });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            const apiMsg =
+              typeof body?.error === "string" ? body.error : `HTTP ${res.status}`;
+            const prefix =
+              saved > 0
+                ? `${saved} of ${pendingChanges.length} change(s) saved. `
+                : "";
+            setSaveError(`${prefix}Save failed: ${apiMsg}`);
+            return;
+          }
+          saved++;
+        }
+        // router.refresh() is called by writer.submit on every successful submit,
+        // which reloads initialClientData and clears the dirty badge.
+      } finally {
+        setIsSaving(false);
+      }
+      return;
+    }
+
+    // ── Base case: write directly to the client's real account/will data. ──
+    const confirmed = window.confirm(
+      "This will update the client's actual account ownership, beneficiary, " +
+        "and will data. Continue?",
+    );
+    if (!confirmed) return;
+
     setIsSaving(true);
     setSaveError(null);
     try {
-      let saved = 0;
-      for (const change of pendingChanges) {
-        // baseFallback is a dummy — writer routes to the changes API in scenario mode.
-        const res = await submit(change.edit, { url: "", method: "PATCH" });
+      const writes = pendingChanges.flatMap((c) =>
+        baseWritesForChange(c, props.clientId),
+      );
+      let done = 0;
+      for (const w of writes) {
+        const res = await fetch(w.url, {
+          method: w.method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(w.body),
+        });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           const apiMsg =
             typeof body?.error === "string" ? body.error : `HTTP ${res.status}`;
           const prefix =
-            saved > 0
-              ? `${saved} of ${pendingChanges.length} change(s) saved. `
-              : "";
+            done > 0 ? `${done} of ${writes.length} write(s) saved. ` : "";
           setSaveError(`${prefix}Save failed: ${apiMsg}`);
           return;
         }
-        saved++;
+        done++;
       }
-      // router.refresh() is called by writer.submit on every successful submit,
-      // which reloads initialClientData and clears the dirty badge.
+      // Reload initialClientData so `original` catches up to `working` and the
+      // dirty badge clears — same mechanism the scenario path relies on.
+      router.refresh();
     } finally {
       setIsSaving(false);
     }
-  }, [isNamedScenario, pendingChanges, submit]);
+  }, [pendingChanges, isNamedScenario, submit, props.clientId, router]);
 
   const handleSaveAsNew = useCallback(async () => {
     if (pendingChanges.length === 0) return;
@@ -362,16 +406,18 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             </div>
             {/* Action buttons */}
             <div className="flex shrink-0 items-center gap-2">
-              {isNamedScenario && (
-                <button
-                  type="button"
-                  disabled={isSaving}
-                  onClick={handleSaveToScenario}
-                  className="rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-[#0b0c0f] transition-colors hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isSaving ? "Saving…" : "Save to this scenario"}
-                </button>
-              )}
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={handleSaveInPlace}
+                className="rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-[#0b0c0f] transition-colors hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSaving
+                  ? "Saving…"
+                  : isNamedScenario
+                    ? "Save to this scenario"
+                    : "Save to base plan"}
+              </button>
               <button
                 type="button"
                 disabled={isSaving}
