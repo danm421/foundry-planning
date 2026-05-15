@@ -42,6 +42,7 @@ const TABS: ReadonlyArray<{
       { label: "Planning", path: "" },
       { label: "Estate Tax", path: "/estate-tax" },
       { label: "Estate Transfer", path: "/estate-transfer" },
+      { label: "Estate Flow", path: "/estate-flow" },
       { label: "Liquidity", path: "/liquidity" },
       { label: "Gift Tax", path: "/gift-tax" },
     ],
