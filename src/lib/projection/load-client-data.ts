@@ -654,6 +654,7 @@ export const loadClientDataWithContext = cache(
           accountId: s.accountId,
           annualAmount: s.annualAmount,
           annualPercent: s.annualPercent,
+          rothPercent: s.rothPercent,
           isDeductible: s.isDeductible,
           applyContributionLimit: s.applyContributionLimit,
           contributeMax: s.contributeMax,

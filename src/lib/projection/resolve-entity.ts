@@ -305,6 +305,7 @@ type RawSavingsRule = {
   accountId: string;
   annualAmount: string | number;
   annualPercent: string | number | null;
+  rothPercent?: string | number | null;
   isDeductible: boolean;
   applyContributionLimit: boolean;
   contributeMax: boolean;
@@ -331,6 +332,7 @@ export function resolveSavingsRuleFromRaw(
     accountId: raw.accountId,
     annualAmount: n(raw.annualAmount),
     annualPercent: raw.annualPercent != null ? n(raw.annualPercent) : null,
+    rothPercent: raw.rothPercent != null ? n(raw.rothPercent) : null,
     isDeductible: raw.isDeductible,
     applyContributionLimit: raw.applyContributionLimit,
     contributeMax: raw.contributeMax,
