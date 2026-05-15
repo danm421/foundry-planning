@@ -199,7 +199,7 @@ describe("deriveStepStatuses", () => {
 
   it("marks Assumptions complete when at least one withdrawal strategy row exists", () => {
     const tree = emptyTree();
-    tree.withdrawalStrategy = [{ id: "ws1" } as ClientData["withdrawalStrategy"][number]];
+    tree.withdrawalStrategy = [{ id: "ws1" } as unknown as ClientData["withdrawalStrategy"][number]];
     const status = deriveStepStatuses(tree, {}).find((s) => s.slug === "assumptions")!;
     expect(status.kind).toBe("complete");
     expect(status.gaps).toEqual([]);
