@@ -1,5 +1,6 @@
 import type { ClientData, EntitySummary, Will } from "@/engine/types";
 import {
+  type AccountOwner,
   controllingFamilyMember,
   controllingEntity,
   ownedByFamilyMember,
@@ -184,6 +185,8 @@ export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
         // account value is not silently dropped from grandTotal.
         group = {
           key: `entity:${soloEntityId}`,
+          // Entity type is unknown here; default to "business". The rendering layer
+          // should treat this as a data-quality fallback, not a deterministic label.
           kind: "business",
           label: "Unknown entity",
           assets: [],
@@ -238,11 +241,13 @@ export function buildOwnershipColumn(data: ClientData): OwnershipColumnData {
 
     // Mixed ownership — emit fractional rows for each family-member owner.
     // This handles the split (e.g. 60/40 client/spouse) case.
-    const ownerRows = account.owners.filter((o) => o.kind === "family_member");
+    const ownerRows = account.owners.filter(
+      (o): o is Extract<AccountOwner, { kind: "family_member" }> => o.kind === "family_member",
+    );
     const hasMultipleFmOwners = ownerRows.length > 1;
 
     for (const ownerRow of ownerRows) {
-      const fmId = (ownerRow as { familyMemberId: string }).familyMemberId;
+      const fmId = ownerRow.familyMemberId;
       const percent = ownerRow.percent;
       if (percent <= 0) continue;
 
