@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+
 interface EstateFlowYearScrubberProps {
   minYear: number;
   maxYear: number;
@@ -17,13 +19,20 @@ export function EstateFlowYearScrubber({
   value,
   onChange,
 }: EstateFlowYearScrubberProps) {
+  const id = useId();
   const isToday = value <= minYear;
 
   return (
     <div className="flex items-center gap-3">
-      <span className="text-xs font-medium text-[#7a7975]">As of</span>
+      <label
+        htmlFor={id}
+        className="text-xs font-medium text-[#7a7975]"
+      >
+        As of
+      </label>
 
       <input
+        id={id}
         type="range"
         min={minYear}
         max={maxYear}

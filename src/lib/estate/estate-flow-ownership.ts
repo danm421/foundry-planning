@@ -49,7 +49,12 @@ export interface OwnershipColumnData {
 export interface OwnershipColumnOptions {
   /** Live projection — required to read year-N account values. */
   projection?: ProjectionResult;
-  /** When set, values come from the projection's year-N state; default = today. */
+  /**
+   * When set, values come from the projection's year-N state; default = today.
+   * Should always be passed together with `projection`; passing `asOfYear`
+   * without `projection` yields stale base values while still dropping ~0
+   * rows / attaching markers.
+   */
   asOfYear?: number;
   /** Working gift drafts — used to attach future-gift markers. */
   gifts?: EstateFlowGift[];
@@ -168,15 +173,12 @@ export function buildOwnershipColumn(
     if (options.asOfYear === undefined) return [];
     return (options.gifts ?? [])
       .filter(
-        (g) =>
+        (g): g is Extract<EstateFlowGift, { kind: "asset-once" }> =>
           g.kind === "asset-once" &&
           g.accountId === accountId &&
           g.year > options.asOfYear!,
       )
-      .map((g) => {
-        const ag = g as Extract<EstateFlowGift, { kind: "asset-once" }>;
-        return { giftId: ag.id, year: ag.year, percent: ag.percent };
-      });
+      .map((g) => ({ giftId: g.id, year: g.year, percent: g.percent }));
   };
 
   const familyMembers = data.familyMembers ?? [];
