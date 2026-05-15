@@ -1053,7 +1053,7 @@ function toBasicAccountOptions(
 
 // ── Designation helpers ───────────────────────────────────────────────────────
 
-function designationsToRows(d: Designation[], tier: "income" | "remainder"): BeneficiaryRow[] {
+export function designationsToRows(d: Designation[], tier: "income" | "remainder"): BeneficiaryRow[] {
   return d
     .filter((x) => x.tier === tier)
     .map((x) => ({
@@ -1074,7 +1074,7 @@ function designationToSource(d: Designation): BeneficiaryRow["source"] {
   return { kind: "empty" };
 }
 
-function rowsToDesignationPayload(rows: BeneficiaryRow[], tier: "income" | "remainder") {
+export function rowsToDesignationPayload(rows: BeneficiaryRow[], tier: "income" | "remainder") {
   return rows
     .filter((r) => r.source.kind !== "empty")
     .map((r, idx) => {
