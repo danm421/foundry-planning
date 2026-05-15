@@ -58,6 +58,13 @@ export default function SavingsRulesList({
     return null;
   };
 
+  const formatRothTag = (rule: SavingsRuleRow): string | null => {
+    const roth = rule.rothPercent != null ? Number(rule.rothPercent) : 0;
+    if (roth <= 0) return null;
+    if (roth >= 1) return "Roth";
+    return "Roth + Pre-tax";
+  };
+
   return (
     <div className="flex flex-col gap-2">
       {rules.length === 0 ? (
@@ -78,6 +85,11 @@ export default function SavingsRulesList({
                 <div className="text-xs text-gray-400">
                   {rule.startYear}–{rule.endYear}
                   {matchSummary && <span> · {matchSummary}</span>}
+                  {formatRothTag(rule) && (
+                    <span className="ml-2 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-ink">
+                      {formatRothTag(rule)}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
