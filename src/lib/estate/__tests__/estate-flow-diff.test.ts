@@ -32,13 +32,6 @@ const BASE_ACCOUNT = {
   beneficiaries: [],
 };
 
-const BASE_ENTITY = {
-  id: "e1",
-  name: "Living Trust",
-  owners: [{ familyMemberId: "fm-client", percent: 1 }],
-  beneficiaries: [],
-};
-
 const BASE_WILL = {
   id: "w1",
   grantor: "client",
