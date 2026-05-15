@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef } from "react";
 import DialogShell from "@/components/dialog-shell";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
+import { redistributeTier, splitEvenly } from "@/components/forms/auto-split-percentages";
 import type {
   Account,
   BeneficiaryRef,
@@ -184,6 +185,22 @@ function tierSumOk(rows: BeneficiaryRow[], tier: "primary" | "contingent"): bool
   return Math.abs(sum - 100) < 0.5;
 }
 
+// ── Auto-split adapters ───────────────────────────────────────────────────────
+// Bind the shared per-tier redistribute helper to this dialog's row shape.
+
+const getRowKey = (r: BeneficiaryRow): string => r.key;
+const setRowPct = (r: BeneficiaryRow, percentage: number): BeneficiaryRow => ({
+  ...r,
+  percentage,
+});
+
+const applyToTier = (
+  all: BeneficiaryRow[],
+  tier: "primary" | "contingent",
+  locked: ReadonlySet<string>,
+): BeneficiaryRow[] =>
+  redistributeTier(all, tier, locked, getRowKey, (r) => r.tier, setRowPct);
+
 // ── Recipient select value helpers ────────────────────────────────────────────
 
 function benefRowToSelectValue(row: BeneficiaryRow): string {
@@ -303,6 +320,12 @@ function EstateFlowChangeDistributionDialogInner({
     [clientData.familyMembers],
   );
 
+  // Children only — drives the "Split among children" shortcut.
+  const childMembers = useMemo(
+    () => (clientData.familyMembers ?? []).filter((m) => m.relationship === "child"),
+    [clientData.familyMembers],
+  );
+
   const externalBeneficiaries = clientData.externalBeneficiaries ?? [];
 
   const entities = useMemo(
@@ -360,6 +383,12 @@ function EstateFlowChangeDistributionDialogInner({
   const [beneficiaryRows, setBeneficiaryRows] = useState<BeneficiaryRow[]>(
     () => refsToRows(account.beneficiaries ?? []),
   );
+
+  // Rows the advisor has manually edited this session — their percentages are
+  // pinned; unlocked rows split the remainder evenly. Keys are unique across
+  // tiers, so one set covers both primary and contingent. Rows loaded from
+  // props start unlocked so the first add still triggers an even split.
+  const [lockedKeys, setLockedKeys] = useState<ReadonlySet<string>>(() => new Set());
 
   // ── Will tab state ────────────────────────────────────────────────────────
 
@@ -444,22 +473,32 @@ function EstateFlowChangeDistributionDialogInner({
   // ── Beneficiary row helpers ───────────────────────────────────────────────
 
   function addBeneficiaryRow(tier: "primary" | "contingent") {
-    setBeneficiaryRows((prev) => [
-      ...prev,
-      {
-        key: newKey(),
-        tier,
-        percentage: 0,
-        recipientKind: "householdRole",
-        recipientId: null,
-        householdRole: isMarried ? "spouse" : "client",
-        sortOrder: prev.length,
-      },
-    ]);
+    const newRow: BeneficiaryRow = {
+      key: newKey(),
+      tier,
+      percentage: 0,
+      recipientKind: "householdRole",
+      recipientId: null,
+      householdRole: isMarried ? "spouse" : "client",
+      sortOrder: beneficiaryRows.length,
+    };
+    // First add into an empty tier defaults to 100%; later adds redistribute.
+    if (!beneficiaryRows.some((r) => r.tier === tier)) {
+      setBeneficiaryRows([...beneficiaryRows, { ...newRow, percentage: splitEvenly(1)[0] }]);
+      return;
+    }
+    setBeneficiaryRows(applyToTier([...beneficiaryRows, newRow], tier, lockedKeys));
   }
 
   function removeBeneficiaryRow(key: string) {
-    setBeneficiaryRows((prev) => prev.filter((r) => r.key !== key));
+    const removed = beneficiaryRows.find((r) => r.key === key);
+    const nextLocked = new Set(lockedKeys);
+    nextLocked.delete(key);
+    setLockedKeys(nextLocked);
+    const remaining = beneficiaryRows.filter((r) => r.key !== key);
+    setBeneficiaryRows(
+      removed ? applyToTier(remaining, removed.tier, nextLocked) : remaining,
+    );
   }
 
   function updateBeneficiaryRow(key: string, patch: Partial<BeneficiaryRow>) {
@@ -469,10 +508,34 @@ function EstateFlowChangeDistributionDialogInner({
   }
 
   function changeBeneficiaryPct(key: string, raw: number) {
-    const clamped = clampPct(raw);
-    setBeneficiaryRows((prev) =>
-      prev.map((r) => (r.key === key ? { ...r, percentage: clamped } : r)),
+    const row = beneficiaryRows.find((r) => r.key === key);
+    if (!row) return;
+    // Editing a percentage pins that row; the tier's other unlocked rows rebalance.
+    const nextLocked = new Set(lockedKeys);
+    nextLocked.add(key);
+    setLockedKeys(nextLocked);
+    const updated = beneficiaryRows.map((r) =>
+      r.key === key ? { ...r, percentage: clampPct(raw) } : r,
     );
+    setBeneficiaryRows(applyToTier(updated, row.tier, nextLocked));
+  }
+
+  /** Replace a tier's rows with one evenly-split row per child. */
+  function splitAmongChildren(tier: "primary" | "contingent") {
+    if (childMembers.length === 0) return;
+    const pcts = splitEvenly(childMembers.length);
+    const childRows: BeneficiaryRow[] = childMembers.map((child, i) => ({
+      key: newKey(),
+      tier,
+      percentage: pcts[i],
+      recipientKind: "family_member",
+      recipientId: child.id,
+      sortOrder: i,
+    }));
+    setBeneficiaryRows([
+      ...beneficiaryRows.filter((r) => r.tier !== tier),
+      ...childRows,
+    ]);
   }
 
   function applyBeneficiarySelectValue(key: string, value: string) {
@@ -646,13 +709,27 @@ function EstateFlowChangeDistributionDialogInner({
             </li>
           ))}
         </ul>
-        <button
-          type="button"
-          onClick={() => addBeneficiaryRow(tier)}
-          className="mt-2 text-[12px] text-accent hover:text-accent-ink"
-        >
-          + Add {tier}
-        </button>
+        <div className="mt-2 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => addBeneficiaryRow(tier)}
+            className="text-[12px] text-accent hover:text-accent-ink"
+          >
+            + Add {tier}
+          </button>
+          {childMembers.length > 0 && (
+            <button
+              type="button"
+              onClick={() => splitAmongChildren(tier)}
+              className="text-[12px] text-ink-3 hover:text-ink"
+              title={`Replace ${tier} with ${childMembers.length} child${
+                childMembers.length === 1 ? "" : "ren"
+              }, split evenly`}
+            >
+              Split among children
+            </button>
+          )}
+        </div>
       </div>
     );
   }

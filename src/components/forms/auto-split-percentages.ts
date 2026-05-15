@@ -59,3 +59,24 @@ function getCurrentPct(r: { percentage?: number }): number {
   const p = r.percentage;
   return typeof p === "number" && Number.isFinite(p) ? p : 0;
 }
+
+/** Run `redistribute` over a single tier's rows inside a list that mixes tiers
+ *  (e.g. primary + contingent beneficiary designations). Rows in other tiers
+ *  are returned untouched, since each tier sums to 100% independently. */
+export function redistributeTier<T, Tier>(
+  rows: T[],
+  tier: Tier,
+  lockedKeys: ReadonlySet<string>,
+  getKey: (r: T) => string,
+  getTier: (r: T) => Tier,
+  setPercentage: (r: T, percentage: number) => T,
+): T[] {
+  const balanced = redistribute(
+    rows.filter((r) => getTier(r) === tier),
+    lockedKeys,
+    getKey,
+    setPercentage,
+  );
+  const byKey = new Map(balanced.map((r) => [getKey(r), r]));
+  return rows.map((r) => byKey.get(getKey(r)) ?? r);
+}

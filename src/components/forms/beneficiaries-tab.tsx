@@ -7,7 +7,7 @@ import type {
   ExternalBeneficiary,
   Tier,
 } from "../family-view";
-import { redistribute, splitEvenly } from "./auto-split-percentages";
+import { redistributeTier, splitEvenly } from "./auto-split-percentages";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { BeneficiaryRef } from "@/engine/types";
 
@@ -65,12 +65,8 @@ function AccountBeneficiaryEditor({
   const setRowPct = (r: Designation, percentage: number): Designation => ({ ...r, percentage });
   const getRowKey = (r: Designation): string => r.id;
 
-  function applyToTier(allRows: Designation[], tier: Tier, locked: ReadonlySet<string>): Designation[] {
-    const tierRows = allRows.filter((r) => r.tier === tier);
-    const balanced = redistribute(tierRows, locked, getRowKey, setRowPct);
-    const balancedById = new Map(balanced.map((r) => [r.id, r]));
-    return allRows.map((r) => balancedById.get(r.id) ?? r);
-  }
+  const applyToTier = (allRows: Designation[], tier: Tier, locked: ReadonlySet<string>): Designation[] =>
+    redistributeTier(allRows, tier, locked, getRowKey, (r) => r.tier, setRowPct);
 
   async function save() {
     setSaving(true);

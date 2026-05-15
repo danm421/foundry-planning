@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { splitEvenly, redistribute } from "../auto-split-percentages";
+import { splitEvenly, redistribute, redistributeTier } from "../auto-split-percentages";
 
 describe("splitEvenly", () => {
   it("returns [100] for one slot", () => {
@@ -84,5 +84,43 @@ describe("redistribute", () => {
     ];
     const out = redistribute(rows, new Set(["a", "b"]), getKey, setPct);
     expect(out[2].percentage).toBe(0);
+  });
+});
+
+describe("redistributeTier", () => {
+  type Row = { id: string; tier: "primary" | "contingent"; percentage: number };
+  const setPct = (r: Row, p: number): Row => ({ ...r, percentage: p });
+  const getKey = (r: Row) => r.id;
+  const getTier = (r: Row) => r.tier;
+
+  it("rebalances only the target tier, leaving the other tier untouched", () => {
+    const rows: Row[] = [
+      { id: "p1", tier: "primary", percentage: 0 },
+      { id: "p2", tier: "primary", percentage: 0 },
+      { id: "c1", tier: "contingent", percentage: 70 },
+    ];
+    const out = redistributeTier(rows, "primary", new Set(), getKey, getTier, setPct);
+    expect(out.map((r) => r.percentage)).toEqual([50, 50, 70]);
+  });
+
+  it("preserves row order across both tiers", () => {
+    const rows: Row[] = [
+      { id: "c1", tier: "contingent", percentage: 0 },
+      { id: "p1", tier: "primary", percentage: 0 },
+      { id: "c2", tier: "contingent", percentage: 0 },
+    ];
+    const out = redistributeTier(rows, "contingent", new Set(), getKey, getTier, setPct);
+    expect(out.map((r) => r.id)).toEqual(["c1", "p1", "c2"]);
+    expect(out.map((r) => r.percentage)).toEqual([50, 0, 50]);
+  });
+
+  it("honors locked keys within the tier", () => {
+    const rows: Row[] = [
+      { id: "p1", tier: "primary", percentage: 40 },
+      { id: "p2", tier: "primary", percentage: 0 },
+      { id: "p3", tier: "primary", percentage: 0 },
+    ];
+    const out = redistributeTier(rows, "primary", new Set(["p1"]), getKey, getTier, setPct);
+    expect(out.map((r) => r.percentage)).toEqual([40, 30, 30]);
   });
 });
