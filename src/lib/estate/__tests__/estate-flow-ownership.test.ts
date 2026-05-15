@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { buildOwnershipColumn } from "../estate-flow-ownership";
 import type { ClientData } from "@/engine/types";
+import type { ProjectionResult } from "@/engine/projection";
+import type { EstateFlowGift } from "../estate-flow-gifts";
 
 /** Minimal ClientData stub — real fields used by the builder, everything else cast away. */
 function data(overrides: Partial<ClientData>): ClientData {
@@ -599,5 +601,140 @@ describe("buildOwnershipColumn", () => {
     expect(row).toBeDefined();
     expect(row!.value).toBe(120_000);
     expect(out.grandTotal).toBe(120_000);
+  });
+});
+
+function projectionWith(
+  accountId: string,
+  year: number,
+  endingValue: number,
+): ProjectionResult {
+  return {
+    years: [{ year, accountLedgers: { [accountId]: { endingValue } } }],
+  } as unknown as ProjectionResult;
+}
+
+describe("buildOwnershipColumn — projected snapshot", () => {
+  it("uses the projection's year-N ending value when asOfYear is given", () => {
+    const cd = data({
+      accounts: [
+        {
+          id: "acc-1",
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: 100_000,
+          basis: 80_000,
+          growthRate: 0.06,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+          beneficiaries: [],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+    const out = buildOwnershipColumn(cd, {
+      projection: projectionWith("acc-1", 2035, 142_000),
+      asOfYear: 2035,
+    });
+    const row = out.groups.flatMap((g) => g.assets).find((a) => a.accountId === "acc-1");
+    expect(row?.value).toBe(142_000);
+  });
+
+  it("drops an account whose projected value is ~0 at asOfYear", () => {
+    const cd = data({
+      accounts: [
+        {
+          id: "acc-1",
+          name: "Gifted away",
+          category: "taxable",
+          subType: "brokerage",
+          value: 100_000,
+          basis: 80_000,
+          growthRate: 0.06,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+          beneficiaries: [],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+    const out = buildOwnershipColumn(cd, {
+      projection: projectionWith("acc-1", 2035, 0),
+      asOfYear: 2035,
+    });
+    expect(out.groups.flatMap((g) => g.assets)).toHaveLength(0);
+  });
+
+  it("attaches a future-gift marker for an asset-once gift dated after asOfYear", () => {
+    const cd = data({
+      accounts: [
+        {
+          id: "acc-1",
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: 100_000,
+          basis: 80_000,
+          growthRate: 0.06,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+          beneficiaries: [],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+    const gifts: EstateFlowGift[] = [
+      {
+        kind: "asset-once",
+        id: "g1",
+        year: 2040,
+        accountId: "acc-1",
+        percent: 0.5,
+        grantor: "client",
+        recipient: { kind: "entity", id: "trust-1" },
+      },
+    ];
+    const out = buildOwnershipColumn(cd, {
+      projection: projectionWith("acc-1", 2035, 100_000),
+      asOfYear: 2035,
+      gifts,
+    });
+    const row = out.groups.flatMap((g) => g.assets).find((a) => a.accountId === "acc-1");
+    expect(row?.futureGifts).toEqual([{ giftId: "g1", year: 2040, percent: 0.5 }]);
+  });
+
+  it("omits a marker for a gift dated on or before asOfYear", () => {
+    const cd = data({
+      accounts: [
+        {
+          id: "acc-1",
+          name: "Brokerage",
+          category: "taxable",
+          subType: "brokerage",
+          value: 100_000,
+          basis: 80_000,
+          growthRate: 0.06,
+          rmdEnabled: false,
+          owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+          beneficiaries: [],
+        },
+      ],
+    } as unknown as Partial<ClientData>);
+    const gifts: EstateFlowGift[] = [
+      {
+        kind: "asset-once",
+        id: "g1",
+        year: 2030,
+        accountId: "acc-1",
+        percent: 0.5,
+        grantor: "client",
+        recipient: { kind: "entity", id: "trust-1" },
+      },
+    ];
+    const out = buildOwnershipColumn(cd, {
+      projection: projectionWith("acc-1", 2035, 100_000),
+      asOfYear: 2035,
+      gifts,
+    });
+    const row = out.groups.flatMap((g) => g.assets).find((a) => a.accountId === "acc-1");
+    expect(row?.futureGifts ?? []).toEqual([]);
   });
 });
