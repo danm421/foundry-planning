@@ -530,6 +530,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       {/* Edit / delete an existing gift, opened from a column-1 marker. */}
       {editingGiftId && editingGift && (
         <EstateFlowAddGiftDialog
+          key={editingGiftId}
           clientData={working}
           ledger={projection.giftLedger}
           taxInflationRate={taxInflationRate}
