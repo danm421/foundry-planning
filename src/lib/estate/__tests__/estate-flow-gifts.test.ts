@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   type EstateFlowGift,
+  type GiftRow,
   addGift,
   updateGift,
   removeGift,
   applyGiftsToClientData,
+  giftRowToDraft,
 } from "../estate-flow-gifts";
 import type { ClientData } from "@/engine/types";
 
@@ -93,6 +95,161 @@ describe("applyGiftsToClientData", () => {
     const out = applyGiftsToClientData(baseData(), [assetGift, cashGift], 0.025);
     const years = out.giftEvents.map((e) => e.year);
     expect(years).toEqual([...years].sort((a, b) => a - b));
+  });
+});
+
+// ── Helper to build a minimal GiftRow ────────────────────────────────────────
+function cashRow(overrides: Partial<GiftRow> = {}): GiftRow {
+  return {
+    id: "gr1",
+    year: 2030,
+    amount: "50000",
+    grantor: "client",
+    recipientEntityId: "trust-1",
+    recipientFamilyMemberId: null,
+    recipientExternalBeneficiaryId: null,
+    accountId: null,
+    liabilityId: null,
+    percent: null,
+    useCrummeyPowers: false,
+    eventKind: "outright",
+    ...overrides,
+  };
+}
+
+function assetRow(overrides: Partial<GiftRow> = {}): GiftRow {
+  return {
+    id: "gr2",
+    year: 2031,
+    amount: null,
+    grantor: "spouse",
+    recipientEntityId: "trust-1",
+    recipientFamilyMemberId: null,
+    recipientExternalBeneficiaryId: null,
+    accountId: "acc-1",
+    liabilityId: null,
+    percent: "0.4",
+    useCrummeyPowers: false,
+    eventKind: "outright",
+    ...overrides,
+  };
+}
+
+// ── Bug A: useCrummeyPowers ───────────────────────────────────────────────────
+describe("giftRowToDraft — Bug A: useCrummeyPowers", () => {
+  it("carries useCrummeyPowers: true into crummey on a cash row", () => {
+    const draft = giftRowToDraft(cashRow({ useCrummeyPowers: true }));
+    expect(draft).not.toBeNull();
+    expect(draft?.kind).toBe("cash-once");
+    if (draft?.kind === "cash-once") {
+      expect(draft.crummey).toBe(true);
+    }
+  });
+
+  it("carries useCrummeyPowers: false into crummey: false on a cash row", () => {
+    const draft = giftRowToDraft(cashRow({ useCrummeyPowers: false }));
+    expect(draft?.kind === "cash-once" && draft.crummey).toBe(false);
+  });
+});
+
+// ── Bug B: eventKind ──────────────────────────────────────────────────────────
+describe("giftRowToDraft — Bug B: eventKind", () => {
+  it("carries a non-outright eventKind on a cash row", () => {
+    const draft = giftRowToDraft(cashRow({ eventKind: "clut_remainder_interest" }));
+    expect(draft?.kind).toBe("cash-once");
+    if (draft?.kind === "cash-once") {
+      expect(draft.eventKind).toBe("clut_remainder_interest");
+    }
+  });
+
+  it("carries a non-outright eventKind on an asset row", () => {
+    const draft = giftRowToDraft(assetRow({ eventKind: "clut_remainder_interest" }));
+    expect(draft?.kind).toBe("asset-once");
+    if (draft?.kind === "asset-once") {
+      expect(draft.eventKind).toBe("clut_remainder_interest");
+    }
+  });
+
+  it("carries eventKind: outright on a cash row (default value)", () => {
+    const draft = giftRowToDraft(cashRow({ eventKind: "outright" }));
+    if (draft?.kind === "cash-once") {
+      expect(draft.eventKind).toBe("outright");
+    }
+  });
+});
+
+// ── Bug C: amountOverride ─────────────────────────────────────────────────────
+describe("giftRowToDraft — Bug C: amountOverride", () => {
+  it("carries a non-null amount into amountOverride on an asset row", () => {
+    const draft = giftRowToDraft(assetRow({ amount: "250000" }));
+    expect(draft?.kind).toBe("asset-once");
+    if (draft?.kind === "asset-once") {
+      expect(draft.amountOverride).toBe(250000);
+    }
+  });
+
+  it("sets amountOverride to undefined when asset row amount is null", () => {
+    const draft = giftRowToDraft(assetRow({ amount: null }));
+    expect(draft?.kind).toBe("asset-once");
+    if (draft?.kind === "asset-once") {
+      expect(draft.amountOverride).toBeUndefined();
+    }
+  });
+});
+
+// ── Round-trip tests (applyGiftsToClientData) ─────────────────────────────────
+describe("applyGiftsToClientData — round-trip correctness", () => {
+  it("cash-once: eventKind clut_remainder_interest and crummey: true survive round-trip", () => {
+    const gift: EstateFlowGift = {
+      kind: "cash-once",
+      id: "g-clut",
+      year: 2030,
+      amount: 100000,
+      grantor: "client",
+      recipient: { kind: "entity", id: "trust-clut" },
+      crummey: true,
+      eventKind: "clut_remainder_interest",
+    };
+    const out = applyGiftsToClientData(baseData(), [gift], 0.025);
+
+    // GiftEvent cash: should carry eventKind and useCrummeyPowers
+    const cashEvents = out.giftEvents.filter((e) => e.kind === "cash");
+    expect(cashEvents).toHaveLength(1);
+    expect(cashEvents[0]).toMatchObject({
+      kind: "cash",
+      useCrummeyPowers: true,
+      eventKind: "clut_remainder_interest",
+    });
+
+    // gifts[]: loader's mappedGifts omits eventKind — we match that behaviour
+    expect(out.gifts).toHaveLength(1);
+    expect(out.gifts?.[0]).toMatchObject({
+      id: "g-clut",
+      useCrummeyPowers: true,
+    });
+    // eventKind is intentionally absent from Gift[] (matches loader's mappedGifts)
+    expect("eventKind" in (out.gifts?.[0] ?? {})).toBe(false);
+  });
+
+  it("asset-once: amountOverride survives round-trip", () => {
+    const gift: EstateFlowGift = {
+      kind: "asset-once",
+      id: "g-asset",
+      year: 2031,
+      accountId: "acc-1",
+      percent: 0.5,
+      grantor: "client",
+      recipient: { kind: "entity", id: "trust-1" },
+      amountOverride: 500000,
+      eventKind: "outright",
+    };
+    const out = applyGiftsToClientData(baseData(), [gift], 0.025);
+
+    const assetEvents = out.giftEvents.filter((e) => e.kind === "asset");
+    expect(assetEvents).toHaveLength(1);
+    if (assetEvents[0].kind === "asset") {
+      expect(assetEvents[0].amountOverride).toBe(500000);
+    }
   });
 });
 

@@ -1,4 +1,4 @@
-import type { ClientData, Gift, GiftEvent } from "@/engine/types";
+import type { ClientData, Gift, GiftEvent, GiftEventKind } from "@/engine/types";
 import { fanOutGiftSeries } from "@/engine/series-fanout";
 
 // ── Public model ─────────────────────────────────────────────────────────────
@@ -19,6 +19,8 @@ export type EstateFlowGift =
       grantor: GiftGrantor;
       recipient: GiftRecipientRef;
       crummey: boolean;
+      /** Non-outright gift kind. Always populated by mappers (DB default is "outright"). */
+      eventKind?: GiftEventKind;
     }
   | {
       kind: "asset-once";
@@ -28,6 +30,10 @@ export type EstateFlowGift =
       percent: number;
       grantor: GiftGrantor;
       recipient: GiftRecipientRef;
+      /** Advisor-supplied manual valuation override (mirrors DB `amount` on asset rows). */
+      amountOverride?: number;
+      /** Non-outright gift kind. Always populated by mappers (DB default is "outright"). */
+      eventKind?: GiftEventKind;
     }
   | {
       kind: "series";
@@ -55,6 +61,8 @@ export interface GiftRow {
   accountId: string | null;
   liabilityId: string | null;
   percent: string | null;
+  useCrummeyPowers: boolean;
+  eventKind: GiftEventKind;
 }
 
 /** Shape of a `gift_series` table row as returned by a plain `select()`. */
@@ -96,6 +104,10 @@ export function giftRowToDraft(row: GiftRow): EstateFlowGift | null {
       percent: Number(row.percent ?? 0),
       grantor: row.grantor,
       recipient: recipientFromRow(row),
+      // Bug C fix: carry advisor-supplied amount override from the DB row.
+      amountOverride: row.amount != null ? Number(row.amount) : undefined,
+      // Bug B fix: carry eventKind (DB default is "outright"; always present).
+      eventKind: row.eventKind,
     };
   }
   return {
@@ -105,7 +117,10 @@ export function giftRowToDraft(row: GiftRow): EstateFlowGift | null {
     amount: Number(row.amount ?? 0),
     grantor: row.grantor,
     recipient: recipientFromRow(row),
-    crummey: false,
+    // Bug A fix: carry useCrummeyPowers from the DB row (was hardcoded false).
+    crummey: row.useCrummeyPowers,
+    // Bug B fix: carry eventKind (DB default is "outright"; always present).
+    eventKind: row.eventKind,
   };
 }
 
@@ -160,6 +175,9 @@ export function applyGiftsToClientData(
 
   for (const g of gifts) {
     if (g.kind === "cash-once") {
+      // Bug B note: loader's mappedGifts omits eventKind from Gift[] entries
+      // (the field is optional on Gift and the loader never sets it there).
+      // We match that exact behaviour — eventKind is NOT propagated to Gift[].
       cashGifts.push({
         id: g.id,
         year: g.year,
@@ -172,12 +190,12 @@ export function applyGiftsToClientData(
         recipientExternalBeneficiaryId:
           g.recipient.kind === "external_beneficiary" ? g.recipient.id : undefined,
         useCrummeyPowers: g.crummey,
-        eventKind: "outright",
       });
       // GiftEvent cash kind requires recipientEntityId: string (non-optional in
       // the discriminated union). For family_member / external_beneficiary
       // recipients we pass an empty string — matching the loader's `!` assertion
       // pattern which assumes cash gifts always target an entity in practice.
+      // Bug B fix: use g.eventKind ?? "outright" to mirror loader's cashFromGifts.
       giftEvents.push({
         kind: "cash",
         year: g.year,
@@ -186,9 +204,11 @@ export function applyGiftsToClientData(
         recipientEntityId:
           g.recipient.kind === "entity" ? g.recipient.id : "",
         useCrummeyPowers: g.crummey,
-        eventKind: "outright",
+        eventKind: g.eventKind ?? "outright",
       });
     } else if (g.kind === "asset-once") {
+      // Bug B fix: use g.eventKind ?? "outright" to mirror loader's assetFromGifts.
+      // Bug C fix: pass amountOverride to mirror loader's assetFromGifts.
       giftEvents.push({
         kind: "asset",
         year: g.year,
@@ -196,7 +216,8 @@ export function applyGiftsToClientData(
         percent: g.percent,
         grantor: g.grantor as "client" | "spouse",
         recipientEntityId: g.recipient.id,
-        eventKind: "outright",
+        amountOverride: g.amountOverride,
+        eventKind: g.eventKind ?? "outright",
       });
     } else {
       // series
