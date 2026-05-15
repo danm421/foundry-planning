@@ -17,6 +17,7 @@ import {
 import {
   supportsPercentContribution,
   supportsMaxContribution,
+  supportsRothSplit,
   type ContributionMode,
   inferContributionMode,
 } from "@/components/forms/contribution-amount-fields";
@@ -47,6 +48,7 @@ export function SolverSavingsEditDialog({
   const showEmployerMatch = supportsEmployerMatch(account.category, account.subType);
   const showDeductibleToggle = supportsDeductibility(account.category, account.subType);
   const showApplyCapToggle = supportsContributionCap(account.category, account.subType);
+  const showRothSplit = supportsRothSplit(account.category, account.subType);
 
   const initialContribMode: ContributionMode = inferContributionMode(
     workingRule.annualPercent != null ? String(workingRule.annualPercent) : null,
@@ -104,6 +106,16 @@ export function SolverSavingsEditDialog({
   );
   const [applyCap, setApplyCap] = useState<boolean>(
     workingRule.applyContributionLimit ?? true,
+  );
+
+  const initialRoth = workingRule.rothPercent ?? 0;
+  const initialRothMode: "pretax" | "roth" | "split" =
+    initialRoth <= 0 ? "pretax" : initialRoth >= 1 ? "roth" : "split";
+  const [rothMode, setRothMode] = useState<"pretax" | "roth" | "split">(
+    initialRothMode,
+  );
+  const [rothSplitPct, setRothSplitPct] = useState<string>(
+    String(Math.round(initialRoth * 100)),
   );
 
   const [startYear, setStartYear] = useState<number>(workingRule.startYear);
@@ -230,6 +242,24 @@ export function SolverSavingsEditDialog({
       applyCap !== (workingRule.applyContributionLimit ?? true)
     ) {
       out.push({ kind: "savings-apply-cap", accountId, value: applyCap });
+    }
+
+    // Roth designation -------------------------------------------------
+    if (showRothSplit) {
+      let nextRoth: number;
+      if (rothMode === "pretax") {
+        nextRoth = 0;
+      } else if (rothMode === "roth") {
+        nextRoth = 1;
+      } else {
+        const pct = parseFloat(rothSplitPct);
+        nextRoth = Number.isNaN(pct)
+          ? 0
+          : Math.round(Math.min(100, Math.max(0, pct))) / 100;
+      }
+      if (nextRoth !== (workingRule.rothPercent ?? 0)) {
+        out.push({ kind: "savings-roth-percent", accountId, rothPercent: nextRoth });
+      }
     }
 
     // Timeline ---------------------------------------------------------
@@ -471,6 +501,53 @@ export function SolverSavingsEditDialog({
                 </span>
               </span>
             </label>
+          )}
+        </fieldset>
+      )}
+
+      {/* Roth treatment */}
+      {showRothSplit && (
+        <fieldset className="mb-4">
+          <legend className="text-[12px] font-medium text-ink-2 mb-2">
+            Roth treatment
+          </legend>
+          <div className="flex gap-1 text-xs mb-3">
+            <ModeButton
+              active={rothMode === "pretax"}
+              onClick={() => setRothMode("pretax")}
+            >
+              Pre-tax
+            </ModeButton>
+            <ModeButton
+              active={rothMode === "roth"}
+              onClick={() => setRothMode("roth")}
+            >
+              Roth
+            </ModeButton>
+            <ModeButton
+              active={rothMode === "split"}
+              onClick={() => setRothMode("split")}
+            >
+              Split
+            </ModeButton>
+          </div>
+          {rothMode === "split" && (
+            <div>
+              <label className={fieldLabelClassName}>Roth share (%)</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={rothSplitPct}
+                onChange={(e) => setRothSplitPct(e.target.value)}
+                placeholder="e.g. 40"
+                className={inputBaseClassName + " w-32"}
+              />
+              <p className="text-[12px] text-ink-3 mt-1">
+                Share of the contribution designated Roth; the rest is pre-tax.
+              </p>
+            </div>
           )}
         </fieldset>
       )}

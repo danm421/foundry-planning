@@ -295,6 +295,22 @@ describe("mutationsToScenarioChanges", () => {
     });
   });
 
+  it("savings-roth-percent produces a savings_rule edit row", () => {
+    const drafts = mutationsToScenarioChanges(makeSource(), CLIENT_ID, [
+      {
+        kind: "savings-roth-percent",
+        accountId: "account-401k",
+        rothPercent: 0.5,
+      },
+    ]);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({
+      targetKind: "savings_rule",
+      targetId: "savings-401k-cooper",
+      payload: { rothPercent: { from: null, to: 0.5 } },
+    });
+  });
+
   it("multiple per-field savings mutations coalesce into one savings_rule row", () => {
     const drafts = mutationsToScenarioChanges(
       makeSource(),

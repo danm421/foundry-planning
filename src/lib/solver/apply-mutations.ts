@@ -148,6 +148,12 @@ export function applyMutations(
         );
         break;
       }
+      case "savings-roth-percent": {
+        result.savingsRules = result.savingsRules.map((r) =>
+          r.accountId === m.accountId ? { ...r, rothPercent: m.rothPercent } : r,
+        );
+        break;
+      }
       case "savings-contribute-max": {
         result.savingsRules = result.savingsRules.map((r) =>
           r.accountId === m.accountId ? { ...r, contributeMax: m.value } : r,

@@ -72,6 +72,7 @@ const SAMPLES: SolverMutation[] = [
     accountId: "00000000-0000-4000-8000-000000000003",
     percent: null,
   },
+  { kind: "savings-roth-percent", accountId: "00000000-0000-4000-8000-000000000003", rothPercent: 0.4 },
   {
     kind: "savings-contribute-max",
     accountId: "00000000-0000-4000-8000-000000000003",
@@ -148,13 +149,23 @@ describe("SOLVER_MUTATION_SCHEMA", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects savings-roth-percent outside 0..1", () => {
+    expect(
+      SOLVER_MUTATION_SCHEMA.safeParse({
+        kind: "savings-roth-percent",
+        accountId: "00000000-0000-4000-8000-000000000003",
+        rothPercent: 1.5,
+      }).success,
+    ).toBe(false);
+  });
+
   it("covers every SolverMutation kind present in the samples list", () => {
     // Defensive: if SolverMutation gains a kind and a sample is forgotten,
     // mutationKey() will surface "never" on the new kind via the exhaustive
     // switch in types.ts, and TypeScript compile will fail.
     const kinds = new Set(SAMPLES.map((m) => m.kind));
     // 1 (retirement-age) + 1 (life-expectancy) + 6 SS + 2 expenses + 7 incomes +
-    // 11 savings = 28 unique kinds.
-    expect(kinds.size).toBeGreaterThanOrEqual(28);
+    // 12 savings = 29 unique kinds.
+    expect(kinds.size).toBeGreaterThanOrEqual(29);
   });
 });
