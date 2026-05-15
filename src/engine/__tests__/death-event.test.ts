@@ -408,6 +408,52 @@ describe("splitAccount", () => {
       ], undefined),
     ).toThrow(/share fraction must be > 0/);
   });
+
+  it("carries forward beneficiaries onto the resulting account when the share requests it", () => {
+    const acct: Account = {
+      id: "acct-cf", name: "Carry Forward Acct",
+      category: "taxable", subType: "brokerage",
+      value: 100000, basis: 50000,
+      growthRate: 0.05, rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+    };
+    const carried: BeneficiaryRef[] = [
+      { id: "cf-1", tier: "primary", percentage: 100, entityIdRef: "ent-trust", sortOrder: 0 },
+    ];
+    const result = splitAccount(
+      acct,
+      [{
+        fraction: 1,
+        ownerMutation: { owners: [{ kind: "family_member", familyMemberId: "fm-spouse", percent: 1 }] },
+        carryForwardBeneficiaries: carried,
+        ledgerMeta: { via: "beneficiary_designation", recipientKind: "spouse", recipientId: "fm-spouse", recipientLabel: "Spouse" },
+      }],
+      undefined,
+    );
+    expect(result.resultingAccounts).toHaveLength(1);
+    expect(result.resultingAccounts[0].beneficiaries).toEqual(carried);
+  });
+
+  it("clears beneficiaries on the resulting account when no carry-forward is requested", () => {
+    const acct: Account = {
+      id: "acct-nocf", name: "No Carry Forward",
+      category: "taxable", subType: "brokerage",
+      value: 100000, basis: 50000,
+      growthRate: 0.05, rmdEnabled: false,
+      beneficiaries: [{ id: "b-old", tier: "primary", percentage: 100, familyMemberId: "fm-client", sortOrder: 0 }],
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+    };
+    const result = splitAccount(
+      acct,
+      [{
+        fraction: 1,
+        ownerMutation: { owners: [{ kind: "family_member", familyMemberId: "fm-spouse", percent: 1 }] },
+        ledgerMeta: { via: "titling", recipientKind: "spouse", recipientId: "fm-spouse", recipientLabel: "Spouse" },
+      }],
+      undefined,
+    );
+    expect(result.resultingAccounts[0].beneficiaries).toBeUndefined();
+  });
 });
 
 import { applyTitling } from "../death-event";
@@ -531,27 +577,6 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
     const result = applyBeneficiaryDesignations(ira, 1, [], [], [], undefined);
     expect(result.consumed).toBe(false);
     expect(result.fractionClaimed).toBe(0);
-  });
-
-  it("skips contingent tier in v1", () => {
-    const iraBothTiers: Account = {
-      ...ira,
-      beneficiaries: [
-        { id: "ben-1", tier: "primary", percentage: 50, familyMemberId: "child-a", sortOrder: 0 },
-        { id: "ben-2", tier: "contingent", percentage: 100, familyMemberId: "child-b", sortOrder: 0 },
-      ],
-    };
-    const result = applyBeneficiaryDesignations(
-      iraBothTiers, 1,
-      [
-        { id: "child-a", role: "child" as const, relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
-        { id: "child-b", role: "child" as const, relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
-      ],
-      [], [], undefined,
-    );
-    expect(result.ledgerEntries).toHaveLength(1);
-    expect(result.ledgerEntries[0].recipientId).toBe("child-a");
-    expect(result.fractionClaimed).toBeCloseTo(0.5, 9);
   });
 
   it("routes a household-role spouse designation to the spouse", () => {
@@ -693,6 +718,207 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
     );
     expect(result.fractionClaimed).toBe(0);
     expect(result.resultingAccounts).toHaveLength(0);
+  });
+
+  it("routes the lapsed primary fraction to the contingent tier", () => {
+    // Primary names the decedent (lapses); contingent names child-b. The whole
+    // account must route to child-b via the contingent designation.
+    const iraSelfPlusContingent: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 100, householdRole: "client", sortOrder: 0 },
+        { id: "ben-2", tier: "contingent", percentage: 100, familyMemberId: "child-b", sortOrder: 0 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraSelfPlusContingent, 1,
+      [
+        { id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other", firstName: "John", lastName: null, dateOfBirth: null },
+        { id: "child-b", role: "child" as const, relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
+      ],
+      [], [], undefined,
+      /* deceasedFmId */ LEGACY_FM_CLIENT,
+    );
+    expect(result.consumed).toBe(true);
+    expect(result.fractionClaimed).toBeCloseTo(1, 9);
+    expect(result.ledgerEntries).toHaveLength(1);
+    expect(result.ledgerEntries[0]).toMatchObject({
+      via: "beneficiary_designation",
+      recipientId: "child-b",
+    });
+  });
+
+  it("splits a partial lapse between surviving primaries and the contingent tier", () => {
+    // Primary: 50% decedent (lapses), 50% child-a (lives). Contingent: child-b.
+    // child-a keeps 50%; the lapsed 50% flows to child-b.
+    const iraPartialLapse: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 50, householdRole: "client", sortOrder: 0 },
+        { id: "ben-2", tier: "primary", percentage: 50, familyMemberId: "child-a", sortOrder: 1 },
+        { id: "ben-3", tier: "contingent", percentage: 100, familyMemberId: "child-b", sortOrder: 0 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraPartialLapse, 1,
+      [
+        { id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other", firstName: "John", lastName: null, dateOfBirth: null },
+        { id: "child-a", role: "child" as const, relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+        { id: "child-b", role: "child" as const, relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
+      ],
+      [], [], undefined,
+      /* deceasedFmId */ LEGACY_FM_CLIENT,
+    );
+    expect(result.consumed).toBe(true);
+    expect(result.fractionClaimed).toBeCloseTo(1, 9);
+    expect(result.ledgerEntries).toHaveLength(2);
+    const byRecipient = Object.fromEntries(
+      result.ledgerEntries.map((e) => [e.recipientId, e.amount]),
+    );
+    expect(byRecipient["child-a"]).toBeCloseTo(250000, 2);
+    expect(byRecipient["child-b"]).toBeCloseTo(250000, 2);
+  });
+
+  it("splits the lapsed fraction proportionally across multiple contingents", () => {
+    // Primary 100% names the decedent → fully lapses. The contingent tier has
+    // two beneficiaries at 60% / 40%; the whole account routes to them in that
+    // ratio (account value 500000 → 300000 / 200000).
+    const iraMultiContingent: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 100, householdRole: "client", sortOrder: 0 },
+        { id: "ben-2", tier: "contingent", percentage: 60, familyMemberId: "child-a", sortOrder: 0 },
+        { id: "ben-3", tier: "contingent", percentage: 40, familyMemberId: "child-b", sortOrder: 1 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraMultiContingent, 1,
+      [
+        { id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other", firstName: "John", lastName: null, dateOfBirth: null },
+        { id: "child-a", role: "child" as const, relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+        { id: "child-b", role: "child" as const, relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
+      ],
+      [], [], undefined,
+      /* deceasedFmId */ LEGACY_FM_CLIENT,
+    );
+    expect(result.consumed).toBe(true);
+    expect(result.fractionClaimed).toBeCloseTo(1, 9);
+    expect(result.ledgerEntries).toHaveLength(2);
+    const byRecipient = Object.fromEntries(
+      result.ledgerEntries.map((e) => [e.recipientId, e.amount]),
+    );
+    expect(byRecipient["child-a"]).toBeCloseTo(300000, 2);
+    expect(byRecipient["child-b"]).toBeCloseTo(200000, 2);
+  });
+
+  it("carries the contingent tier forward onto a surviving-spouse primary share", () => {
+    // Primary = spouse (lives); contingent = a trust. The spouse inherits, and
+    // the resulting account must carry the contingent tier forward, promoted
+    // to the primary tier, so it governs the spouse's later death.
+    const iraSpousePlusTrust: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-pri", tier: "primary", percentage: 100, householdRole: "spouse", sortOrder: 0 },
+        { id: "ben-con", tier: "contingent", percentage: 100, entityIdRef: "ent-trust", sortOrder: 0 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraSpousePlusTrust, 1,
+      [{ id: "fm-spouse", role: "spouse" as const, relationship: "spouse", firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-01-01" }],
+      [], [], undefined,
+      /* deceasedFmId */ null,
+      /* survivorFmId */ "fm-spouse",
+    );
+    expect(result.fractionClaimed).toBeCloseTo(1, 9);
+    expect(result.resultingAccounts).toHaveLength(1);
+    expect(result.resultingAccounts[0].beneficiaries).toEqual([
+      { id: "ben-con", tier: "primary", percentage: 100, entityIdRef: "ent-trust", sortOrder: 0 },
+    ]);
+  });
+
+  it("lapses a contingent that also names a dead principal, leaving residual to cascade", () => {
+    // Primary and contingent both name the decedent. Both lapse; nothing is
+    // claimed and the fraction cascades to will/fallback.
+    const iraBothLapse: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 100, householdRole: "client", sortOrder: 0 },
+        { id: "ben-2", tier: "contingent", percentage: 100, householdRole: "client", sortOrder: 0 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraBothLapse, 1,
+      [{ id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other", firstName: "John", lastName: null, dateOfBirth: null }],
+      [], [], undefined,
+      /* deceasedFmId */ LEGACY_FM_CLIENT,
+    );
+    expect(result.fractionClaimed).toBe(0);
+    expect(result.consumed).toBe(false);
+    expect(result.resultingAccounts).toHaveLength(0);
+    expect(result.ledgerEntries).toHaveLength(0);
+  });
+
+  it("claims only the live contingent's sub-fraction when a co-contingent lapses", () => {
+    // Primary 100% names the decedent → fully lapses. Contingent tier is split
+    // child-a 50% / decedent 50%. child-a claims its 50% sub-fraction; the
+    // decedent's 50% lapses too, so fractionClaimed is 0.5 and the residual
+    // cascades to the will/fallback steps (consumed = false).
+    const iraPartialContingentLapse: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 100, householdRole: "client", sortOrder: 0 },
+        { id: "ben-2", tier: "contingent", percentage: 50, familyMemberId: "child-a", sortOrder: 0 },
+        { id: "ben-3", tier: "contingent", percentage: 50, householdRole: "client", sortOrder: 1 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraPartialContingentLapse, 1,
+      [
+        { id: LEGACY_FM_CLIENT, role: "client" as const, relationship: "other", firstName: "John", lastName: null, dateOfBirth: null },
+        { id: "child-a", role: "child" as const, relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+      ],
+      [], [], undefined,
+      /* deceasedFmId */ LEGACY_FM_CLIENT,
+    );
+    expect(result.consumed).toBe(false);
+    expect(result.fractionClaimed).toBeCloseTo(0.5, 9);
+    expect(result.ledgerEntries).toHaveLength(1);
+    expect(result.ledgerEntries[0]).toMatchObject({
+      via: "beneficiary_designation",
+      recipientId: "child-a",
+      amount: 250000,
+    });
+  });
+
+  it("lapses a primary naming the predeceased principal and routes to the contingent", () => {
+    // Final-death scenario: account owned by the spouse names the client as
+    // primary. The client predeceased — passed as predeceasedFmId — so the
+    // primary lapses and the contingent (child-a) inherits.
+    const iraNamingPredeceased: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 100, familyMemberId: "fm-client", sortOrder: 0 },
+        { id: "ben-2", tier: "contingent", percentage: 100, familyMemberId: "child-a", sortOrder: 0 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraNamingPredeceased, 1,
+      [
+        { id: "fm-client", role: "client" as const, relationship: "other", firstName: "John", lastName: null, dateOfBirth: null },
+        { id: "child-a", role: "child" as const, relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
+      ],
+      [], [], undefined,
+      /* deceasedFmId */ "fm-spouse",
+      /* survivorFmId */ null,
+      /* predeceasedFmId */ "fm-client",
+    );
+    expect(result.consumed).toBe(true);
+    expect(result.fractionClaimed).toBeCloseTo(1, 9);
+    expect(result.ledgerEntries).toHaveLength(1);
+    expect(result.ledgerEntries[0]).toMatchObject({
+      via: "beneficiary_designation",
+      recipientId: "child-a",
+    });
   });
 });
 
@@ -1516,6 +1742,31 @@ describe("applyFirstDeath orchestrator", () => {
     expect(inheritedCc).toBeDefined();
     expect(inheritedCc!.balance).toBeCloseTo(10_000, 2);
   });
+
+  it("carries the contingent tier forward onto an account inherited by the surviving spouse", () => {
+    // client-cash is solely client-owned. Primary beneficiary = spouse,
+    // contingent = a trust. After first death the cash routes to the spouse
+    // via beneficiary_designation; the resulting account must carry the
+    // contingent tier forward, promoted to primary, so it governs the
+    // spouse's later death.
+    const cashWithBens: Account = {
+      ...baseAccounts[2], // client-cash
+      beneficiaries: [
+        { id: "cf-pri", tier: "primary", percentage: 100, householdRole: "spouse", sortOrder: 0 },
+        { id: "cf-con", tier: "contingent", percentage: 100, entityIdRef: "ent-trust", sortOrder: 0 },
+      ],
+    };
+    const cfInput: DeathEventInput = {
+      ...input,
+      accounts: [baseAccounts[0], baseAccounts[1], cashWithBens],
+    };
+    const result = applyFirstDeath(cfInput);
+    const cash = result.accounts.find((a) => a.id === "client-cash")!;
+    expect(controllingFamilyMember(cash)).toBe("fm-spouse");
+    expect(cash.beneficiaries).toEqual([
+      { id: "cf-con", tier: "primary", percentage: 100, entityIdRef: "ent-trust", sortOrder: 0 },
+    ]);
+  });
 });
 
 describe("distributeUnlinkedLiabilities", () => {
@@ -2080,5 +2331,60 @@ describe("applyFinalDeath orchestrator", () => {
     expect(post!.isGrantor).toBe(false);
     expect(post!.grantor).toBeUndefined();
     expect(result.warnings).toContain("idgt_grantor_flipped: idgt-final");
+  });
+
+  it("lapses a primary naming the predeceased spouse and routes to the contingent", () => {
+    // Jane (spouse) dies last. Her IRA names John (client, dead at first
+    // death) as primary beneficiary, child-a as contingent. The primary must
+    // lapse — John is the predeceased principal — so the IRA routes to child-a
+    // via the contingent designation, not to the dead John.
+    const fams: FamilyMember[] = [
+      { id: "fm-client", role: "client" as const, relationship: "other", firstName: "John", lastName: "Smith", dateOfBirth: "1970-01-01" },
+      { id: "fm-spouse", role: "spouse" as const, relationship: "other", firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-06-15" },
+      { id: "child-a", role: "child" as const, relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" },
+    ];
+    const janeIra: Account = {
+      id: "jane-ira", name: "Jane IRA",
+      category: "retirement", subType: "traditional_ira",
+      value: 600000, basis: 0,
+      growthRate: 0.07, rmdEnabled: true,
+      beneficiaries: [
+        { id: "ji-pri", tier: "primary", percentage: 100, familyMemberId: "fm-client", sortOrder: 0 },
+        { id: "ji-con", tier: "contingent", percentage: 100, familyMemberId: "child-a", sortOrder: 0 },
+      ],
+      owners: [{ kind: "family_member", familyMemberId: "fm-spouse", percent: 1 }],
+    };
+    const finalInput: DeathEventInput = {
+      year: 2070,
+      deceased: "spouse",
+      survivor: "client",
+      will: null,
+      accounts: [janeIra],
+      accountBalances: { "jane-ira": 600000 },
+      basisMap: { "jane-ira": 0 },
+      incomes: [],
+      liabilities: [],
+      familyMembers: fams,
+      externalBeneficiaries: [],
+      entities: [],
+      planSettings: {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0.025,
+        planStartYear: 2026,
+        planEndYear: 2090,
+        estateAdminExpenses: 0,
+        flatStateEstateRate: 0,
+      },
+      gifts: [],
+      annualExclusionsByYear: {},
+      dsueReceived: 0,
+      priorTaxableGifts: { client: 0, spouse: 0 },
+    };
+    const result = applyFinalDeath(finalInput);
+    const iraTransfer = result.transfers.find((t) => t.sourceAccountId === "jane-ira")!;
+    expect(iraTransfer).toBeDefined();
+    expect(iraTransfer.via).toBe("beneficiary_designation");
+    expect(iraTransfer.recipientId).toBe("child-a");
   });
 });

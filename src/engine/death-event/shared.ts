@@ -106,6 +106,12 @@ export type SplitShare = {
   removed?: boolean;
   /** When !removed, the ownership to assign to the resulting account. */
   ownerMutation?: OwnerMutation;
+  /** Beneficiary designations to set on the resulting account. When omitted,
+   *  the resulting account's designations are cleared — the new owner's own
+   *  designations govern. Used for death-event carry-forward: the contingent
+   *  tier carried onto a surviving spouse's account so it governs that
+   *  spouse's later death. */
+  carryForwardBeneficiaries?: BeneficiaryRef[];
   ledgerMeta: {
     via: DeathTransfer["via"];
     recipientKind: DeathTransfer["recipientKind"];
@@ -225,12 +231,19 @@ export function splitAccount(
       continue;
     }
 
+    // The resulting account's beneficiary designations are normally cleared —
+    // the new owner's own designations govern. Exception: a death-event step
+    // may carry designations forward via `share.carryForwardBeneficiaries`
+    // (the contingent tier promoted onto a surviving spouse's account so it
+    // governs that spouse's later death). Undefined when not requested →
+    // identical to the prior always-clear behavior.
+    const carriedBeneficiaries = share.carryForwardBeneficiaries;
     let newAccount: Account;
     if (inPlace) {
       // Mutate original: keep id, name, value, basis unchanged.
       newAccount = {
         ...source,
-        beneficiaries: undefined, // new owner's designations replace deceased's (if any)
+        beneficiaries: carriedBeneficiaries,
       };
     } else {
       newAccount = {
@@ -239,7 +252,7 @@ export function splitAccount(
         name: `${source.name} — to ${share.ledgerMeta.recipientLabel}`,
         value: amount,
         basis: basisShare,
-        beneficiaries: undefined,
+        beneficiaries: carriedBeneficiaries,
       };
     }
 
@@ -399,9 +412,23 @@ export function applyTitling(
   };
 }
 
-/** Step 2: Primary beneficiary designations on the account. Returns
- *  fractionClaimed ≤ undisposedFraction. When designations sum to full
- *  coverage of the undisposed remainder, consumed=true. */
+/** Step 2: account beneficiary designations.
+ *
+ *  The PRIMARY tier routes the undisposed fraction to its beneficiaries. A
+ *  primary that names a household principal known to be dead — the decedent
+ *  (`deceasedFmId`), or the principal who predeceased a final-death event
+ *  (`predeceasedFmId`) — "lapses": its fraction is reassigned to the
+ *  CONTINGENT tier, split by the contingent beneficiaries' percentages. A
+ *  contingent that itself names a dead principal lapses too; its sub-fraction
+ *  stays undisposed and cascades to the will / fallback steps (no recursion).
+ *
+ *  Carry-forward: when a LIVE primary routes the asset to the surviving spouse
+ *  (`survivorFmId`, supplied at first death only), the contingent tier is
+ *  carried forward — promoted to the primary tier — onto the resulting
+ *  spouse-owned account, so it governs the asset at the spouse's later death.
+ *
+ *  Returns fractionClaimed ≤ undisposedFraction; consumed when the live tiers
+ *  fully cover the undisposed remainder. */
 export function applyBeneficiaryDesignations(
   source: Account,
   undisposedFraction: number,
@@ -410,9 +437,16 @@ export function applyBeneficiaryDesignations(
   entities: EntitySummary[],
   linkedLiability: Liability | undefined,
   /** FM id of the decedent. Designations naming this person lapse — you can't
-   *  inherit your own asset — so their share cascades to the will/fallback
-   *  steps. Defaults to null (no lapse check) for direct-unit-test callers. */
+   *  inherit your own asset. Defaults to null (no lapse check). */
   deceasedFmId: string | null = null,
+  /** FM id of the surviving spouse — supplied at first death only. When a live
+   *  primary routes the asset to this person, the contingent tier is carried
+   *  forward onto the resulting account. Null at final death. */
+  survivorFmId: string | null = null,
+  /** FM id of a household principal who predeceased this death event — i.e.
+   *  the first-death decedent, supplied at final death. Designations naming
+   *  this person also lapse. Null at first death. */
+  predeceasedFmId: string | null = null,
 ): StepResult {
   const noDesignations: StepResult = {
     consumed: false,
@@ -422,29 +456,70 @@ export function applyBeneficiaryDesignations(
     fractionClaimed: 0,
   };
 
-  // A designation that names the decedent themselves (directly via
-  // familyMemberId, or via a household-role that resolves to them) cannot
-  // take effect. Drop those primaries so their fraction stays undisposed and
-  // cascades to the will / fallback steps.
-  const primaries = (source.beneficiaries ?? []).filter((b) => {
-    if (b.tier !== "primary") return false;
-    if (deceasedFmId == null) return true;
-    if (b.familyMemberId) return b.familyMemberId !== deceasedFmId;
+  const allBeneficiaries = source.beneficiaries ?? [];
+  const primaryTier = allBeneficiaries.filter((b) => b.tier === "primary");
+  const contingentTier = allBeneficiaries.filter((b) => b.tier === "contingent");
+  if (primaryTier.length === 0) {
+    return noDesignations;
+  }
+
+  // A designation lapses when it names a household principal known to be dead:
+  // the decedent, or (at final death) the principal who predeceased this event.
+  const deadPrincipalIds = new Set(
+    [deceasedFmId, predeceasedFmId].filter((id): id is string => id != null),
+  );
+  const namesDeadPrincipal = (b: BeneficiaryRef): boolean => {
+    if (deadPrincipalIds.size === 0) return false;
+    if (b.familyMemberId) return deadPrincipalIds.has(b.familyMemberId);
     if (b.householdRole) {
       const roleFm = familyMembers.find((f) => f.role === b.householdRole);
-      return roleFm?.id !== deceasedFmId;
+      return roleFm != null && deadPrincipalIds.has(roleFm.id);
     }
-    return true;
-  });
-  if (primaries.length === 0) {
+    return false;
+  };
+
+  // Carry-forward payload: the contingent tier promoted to the primary tier.
+  // Populated only at first death (survivorFmId != null) and only when a
+  // contingent tier exists; attached per-share to surviving-spouse recipients.
+  const carryForward: BeneficiaryRef[] | undefined =
+    survivorFmId != null && contingentTier.length > 0
+      ? contingentTier.map((b) => ({ ...b, tier: "primary" as const }))
+      : undefined;
+
+  // Fraction of the primary tier (as a percentage, 0–100) that lapses because
+  // its beneficiary is a dead principal — this reassigns to the contingent tier.
+  const lapsedPrimaryPct = primaryTier
+    .filter((b) => namesDeadPrincipal(b))
+    .reduce((s, b) => s + b.percentage, 0);
+
+  // Recipients of this account: live primaries at their own percentage, plus
+  // contingent beneficiaries scaled by the lapsed primary fraction. `fromPrimary`
+  // tracks which tier a recipient came from — only live primaries carry forward.
+  type TaggedRecipient = { ref: BeneficiaryRef; weight: number; fromPrimary: boolean };
+  const recipients: TaggedRecipient[] = [];
+  for (const b of primaryTier) {
+    if (namesDeadPrincipal(b)) continue;
+    recipients.push({ ref: b, weight: b.percentage / 100, fromPrimary: true });
+  }
+  if (lapsedPrimaryPct > 0) {
+    for (const b of contingentTier) {
+      if (namesDeadPrincipal(b)) continue; // contingent lapse → cascades to will/fallback
+      recipients.push({
+        ref: b,
+        weight: (lapsedPrimaryPct / 100) * (b.percentage / 100),
+        fromPrimary: false,
+      });
+    }
+  }
+  if (recipients.length === 0) {
     return noDesignations;
   }
 
   const famMap = new Map(familyMembers.map((f) => [f.id, f]));
   const extMap = new Map(externals.map((e) => [e.id, e]));
 
-  const shares: SplitShare[] = primaries.map((b) => {
-    const fraction = undisposedFraction * (b.percentage / 100);
+  const shares: SplitShare[] = recipients.map(({ ref: b, weight, fromPrimary }) => {
+    const fraction = undisposedFraction * weight;
     let ownerMutation: OwnerMutation | undefined;
     let recipientKind: DeathTransfer["recipientKind"];
     let recipientId: string | null;
@@ -489,10 +564,18 @@ export function applyBeneficiaryDesignations(
       recipientLabel = "Unknown beneficiary";
     }
 
+    // Carry-forward: a live primary inherited by the surviving spouse carries
+    // the contingent tier forward so it governs the spouse's later death.
+    const carryForwardBeneficiaries =
+      fromPrimary && !removed && recipientId != null && recipientId === survivorFmId
+        ? carryForward
+        : undefined;
+
     return {
       fraction,
       removed: removed || undefined,
       ownerMutation,
+      carryForwardBeneficiaries,
       ledgerMeta: {
         via: "beneficiary_designation",
         recipientKind,
@@ -503,6 +586,9 @@ export function applyBeneficiaryDesignations(
   });
 
   const totalClaimed = shares.reduce((s, sh) => s + sh.fraction, 0);
+  if (totalClaimed < 1e-9) {
+    return noDesignations;
+  }
 
   // Scale source to the totalClaimed portion so splitAccount (which requires
   // shares summing to 1) works correctly. Normalize shares to sum to 1.
