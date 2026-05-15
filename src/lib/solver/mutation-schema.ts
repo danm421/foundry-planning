@@ -135,6 +135,11 @@ export const SOLVER_MUTATION_SCHEMA = z.discriminatedUnion("kind", [
     percent: z.number().min(0).max(1).nullable(),
   }),
   z.object({
+    kind: z.literal("savings-roth-percent"),
+    accountId: z.string().uuid(),
+    rothPercent: z.number().min(0).max(1),
+  }),
+  z.object({
     kind: z.literal("savings-contribute-max"),
     accountId: z.string().uuid(),
     value: z.boolean(),

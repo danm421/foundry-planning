@@ -5,7 +5,9 @@ import type { Account, ClientData, SavingsRule } from "@/engine";
 import type { SolverMutation } from "@/lib/solver/types";
 import type { SolveLeverKey } from "@/lib/solver/solve-types";
 import { activeSavingsRules } from "@/lib/solver/active-savings-rules";
+import { supportsRothSplit } from "@/components/forms/contribution-amount-fields";
 import { useSolverSide } from "./solver-section";
+import { RothSplitControl } from "./solver-roth-split-control";
 import { SolverSavingsEditDialog } from "./solver-savings-edit-dialog";
 import { SolverSolveIcon } from "./solver-solve-icon";
 import { SolverSolvePopover } from "./solver-solve-popover";
@@ -124,11 +126,19 @@ function windowLabel(rule: SavingsRule, currentYear: number): string | null {
   return `thru ${rule.endYear}`;
 }
 
+function rothTag(rule: SavingsRule): string | null {
+  const roth = rule.rothPercent ?? 0;
+  if (roth <= 0) return null;
+  if (roth >= 1) return "Roth";
+  return "Roth + Pre-tax";
+}
+
 function ruleDetailParts(rule: SavingsRule, currentYear: number): string[] {
   return [
     employerMatchLabel(rule),
     growthLabel(rule),
     windowLabel(rule, currentYear),
+    rothTag(rule),
     !rule.isDeductible ? "after-tax" : null,
     rule.applyContributionLimit === false ? "uncapped" : null,
   ].filter((s): s is string => s != null);
@@ -281,6 +291,18 @@ function Editable({
         ) : null}
       </div>
       <DetailLine rule={workingRule} currentYear={new Date().getFullYear()} />
+      {workingAccount && supportsRothSplit(workingAccount.category, workingAccount.subType) ? (
+        <RothSplitControl
+          rothPercent={workingRule.rothPercent ?? null}
+          onChange={(rothPercent) =>
+            onChange({
+              kind: "savings-roth-percent",
+              accountId: workingRule.accountId,
+              rothPercent,
+            })
+          }
+        />
+      ) : null}
       {open && workingAccount ? (
         <SolverSavingsEditDialog
           open={open}

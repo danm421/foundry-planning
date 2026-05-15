@@ -276,6 +276,32 @@ describe("applyMutations", () => {
     ).toBeNull();
   });
 
+  it("savings-roth-percent sets rothPercent on the matching rule", () => {
+    const stepped = applyMutations(makeBase(), [
+      {
+        kind: "savings-roth-percent",
+        accountId: "account-401k-cooper",
+        rothPercent: 1,
+      },
+    ]);
+    expect(
+      stepped.savingsRules.find((r) => r.accountId === "account-401k-cooper")!
+        .rothPercent,
+    ).toBe(1);
+
+    const split = applyMutations(stepped, [
+      {
+        kind: "savings-roth-percent",
+        accountId: "account-401k-cooper",
+        rothPercent: 0.4,
+      },
+    ]);
+    expect(
+      split.savingsRules.find((r) => r.accountId === "account-401k-cooper")!
+        .rothPercent,
+    ).toBe(0.4);
+  });
+
   it("savings-contribute-max toggles contributeMax", () => {
     const out = applyMutations(makeBase(), [
       {
