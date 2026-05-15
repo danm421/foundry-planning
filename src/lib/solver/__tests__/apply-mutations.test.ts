@@ -422,3 +422,167 @@ describe("applyMutations", () => {
     expect(out.client.lifeExpectancy).toBe(100);
   });
 });
+
+// ── Re-resolution of milestone-anchored year refs ───────────────────────────
+//
+// When a mutation moves a household milestone (e.g., retirement age, plan end
+// age), every income/expense/savings rule/withdrawal/transfer/roth conversion
+// whose start- or end-year is anchored to that milestone should have its
+// concrete `startYear`/`endYear` reshifted. The engine itself treats
+// `startYearRef`/`endYearRef` as view-only metadata and only reads the
+// resolved numbers, so without this pass dependent rows silently keep their
+// pre-mutation windows and the projection diverges from what the UI promises.
+
+function makeRefsBase(): ClientData {
+  return {
+    client: {
+      firstName: "Cooper",
+      lastName: "Smith",
+      dateOfBirth: "1965-03-15", // birth year 1965
+      retirementAge: 65, // → client_retirement = 2030
+      retirementMonth: 1,
+      planEndAge: 95, // → client_end = 2060
+      lifeExpectancy: 95,
+      spouseName: "Susan",
+      spouseDob: "1967-05-20", // birth year 1967
+      spouseRetirementAge: 63, // → spouse_retirement = 2030
+      spouseRetirementMonth: 1,
+      spouseLifeExpectancy: 93,
+      filingStatus: "married_joint",
+    },
+    accounts: [],
+    incomes: [
+      {
+        id: "income-salary-cooper",
+        type: "salary",
+        name: "Cooper Salary",
+        annualAmount: 150000,
+        startYear: 2026,
+        endYear: 2029, // last year before retirement (transition end = year - 1)
+        growthRate: 0.03,
+        owner: "client",
+        startYearRef: "plan_start",
+        endYearRef: "client_retirement",
+      },
+      {
+        id: "income-deferred-cooper",
+        type: "deferred",
+        name: "Pension",
+        annualAmount: 40000,
+        startYear: 2030, // first year of retirement
+        endYear: 2060,
+        growthRate: 0.0,
+        owner: "client",
+        startYearRef: "client_retirement",
+        endYearRef: "client_end",
+      },
+      {
+        id: "income-other-untied",
+        type: "other",
+        name: "Royalties",
+        annualAmount: 5000,
+        startYear: 2026,
+        endYear: 2065,
+        growthRate: 0.0,
+        owner: "client",
+        // No refs — should not be touched by re-resolution.
+      },
+    ],
+    expenses: [
+      {
+        id: "expense-living-cooper",
+        type: "living",
+        name: "Living (pre-retirement)",
+        annualAmount: 120000,
+        startYear: 2026,
+        endYear: 2029,
+        growthRate: 0.025,
+        startYearRef: "plan_start",
+        endYearRef: "client_retirement",
+      },
+    ],
+    liabilities: [],
+    savingsRules: [
+      {
+        id: "savings-401k-cooper",
+        accountId: "account-401k-cooper",
+        annualAmount: 23000,
+        startYear: 2026,
+        endYear: 2029,
+        isDeductible: true,
+        startYearRef: "plan_start",
+        endYearRef: "client_retirement",
+      },
+    ],
+    withdrawalStrategy: [],
+    planSettings: {
+      planStartYear: 2026,
+      planEndYear: 2065,
+    } as ClientData["planSettings"],
+  };
+}
+
+describe("applyMutations — milestone-ref re-resolution", () => {
+  it("retirement-age (client) reshifts end-at-retirement income endYear", () => {
+    const out = applyMutations(makeRefsBase(), [
+      { kind: "retirement-age", person: "client", age: 70 },
+    ]);
+    const salary = out.incomes.find((i) => i.id === "income-salary-cooper")!;
+    // birth 1965 + age 70 = 2035; end-position on transition ref = year - 1
+    expect(salary.endYear).toBe(2034);
+    // startYearRef is "plan_start" — unchanged
+    expect(salary.startYear).toBe(2026);
+  });
+
+  it("retirement-age (client) reshifts start-at-retirement income startYear", () => {
+    const out = applyMutations(makeRefsBase(), [
+      { kind: "retirement-age", person: "client", age: 70 },
+    ]);
+    const pension = out.incomes.find((i) => i.id === "income-deferred-cooper")!;
+    // start-position on transition ref = milestone year (2035)
+    expect(pension.startYear).toBe(2035);
+    // endYearRef = "client_end" is also a transition ref (end-position →
+    // year - 1). Unchanged because planEndAge wasn't mutated: 1965 + 95 - 1.
+    expect(pension.endYear).toBe(2059);
+  });
+
+  it("retirement-age (client) reshifts retirement-anchored expense and savings rule", () => {
+    const out = applyMutations(makeRefsBase(), [
+      { kind: "retirement-age", person: "client", age: 70 },
+    ]);
+    const expense = out.expenses.find((e) => e.id === "expense-living-cooper")!;
+    expect(expense.endYear).toBe(2034);
+    const savings = out.savingsRules.find((s) => s.id === "savings-401k-cooper")!;
+    expect(savings.endYear).toBe(2034);
+  });
+
+  it("rows without refs are left untouched", () => {
+    const out = applyMutations(makeRefsBase(), [
+      { kind: "retirement-age", person: "client", age: 70 },
+    ]);
+    const untied = out.incomes.find((i) => i.id === "income-other-untied")!;
+    expect(untied.startYear).toBe(2026);
+    expect(untied.endYear).toBe(2065);
+  });
+
+  it("preserves the original startYearRef/endYearRef strings", () => {
+    const out = applyMutations(makeRefsBase(), [
+      { kind: "retirement-age", person: "client", age: 70 },
+    ]);
+    const salary = out.incomes.find((i) => i.id === "income-salary-cooper")!;
+    expect(salary.startYearRef).toBe("plan_start");
+    expect(salary.endYearRef).toBe("client_retirement");
+  });
+
+  it("non-anchor mutations don't reshift anything", () => {
+    const base = makeRefsBase();
+    const out = applyMutations(base, [
+      { kind: "living-expense-scale", multiplier: 1.1 },
+    ]);
+    // Re-resolution still runs but produces identical years (same anchors).
+    const salary = out.incomes.find((i) => i.id === "income-salary-cooper")!;
+    expect(salary.endYear).toBe(2029);
+    const expense = out.expenses.find((e) => e.id === "expense-living-cooper")!;
+    expect(expense.endYear).toBe(2029);
+  });
+});

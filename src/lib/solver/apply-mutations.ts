@@ -8,6 +8,7 @@
 // deduplicated list (see mutationKey() in ./types).
 
 import type { ClientData } from "@/engine/types";
+import { resolveRefYears } from "@/lib/year-refs";
 import type { SolverMutation } from "./types";
 
 export function applyMutations(
@@ -221,5 +222,9 @@ export function applyMutations(
       }
     }
   }
-  return result;
+  // Reshift every milestone-anchored startYear/endYear so a retirement-age
+  // (or any other anchor-moving) mutation flows through to dependent
+  // incomes/expenses/savings rules/transfers/roth conversions. Without this,
+  // the engine reads stale year windows baked in at load time.
+  return resolveRefYears(result);
 }
