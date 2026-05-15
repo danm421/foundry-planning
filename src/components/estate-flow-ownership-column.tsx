@@ -3,6 +3,8 @@ import type {
   OwnershipGroup,
   OwnershipAssetRow,
 } from "@/lib/estate/estate-flow-ownership";
+import type { EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import { EstateFlowYearScrubber } from "@/components/estate-flow-year-scrubber";
 
 // ── Currency formatter (matches estate-transfer-recipient-card.tsx) ───────────
 
@@ -36,15 +38,33 @@ function AccountTypeChip({ type }: { type: string }) {
   );
 }
 
+// ── Recipient label fallback ──────────────────────────────────────────────────
+
+const RECIPIENT_KIND_FALLBACK: Record<EstateFlowGift["recipient"]["kind"], string> = {
+  entity: "trust",
+  family_member: "family member",
+  external_beneficiary: "beneficiary",
+};
+
 // ── Asset row ─────────────────────────────────────────────────────────────────
 
 interface AssetRowProps {
   asset: OwnershipAssetRow;
   onAssetClick: (accountId: string) => void;
+  gifts: EstateFlowGift[];
+  recipientLabelById: Map<string, string>;
+  onGiftClick: (giftId: string) => void;
 }
 
-function AssetRow({ asset, onAssetClick }: AssetRowProps) {
+function AssetRow({
+  asset,
+  onAssetClick,
+  gifts,
+  recipientLabelById,
+  onGiftClick,
+}: AssetRowProps) {
   const hasLinkedLiabilities = asset.linkedLiabilities.length > 0;
+  const futureGifts = asset.futureGifts ?? [];
 
   return (
     <li>
@@ -117,6 +137,31 @@ function AssetRow({ asset, onAssetClick }: AssetRowProps) {
           </div>
         )}
       </button>
+
+      {/* Future-gift markers — rendered outside the asset <button> (no nested
+          buttons) so each marker can be its own clickable affordance. */}
+      {futureGifts.length > 0 && (
+        <div className="mt-0.5 space-y-0.5 pl-2">
+          {futureGifts.map((g) => {
+            const gift = gifts.find((x) => x.id === g.giftId);
+            const recipientLabel = gift
+              ? recipientLabelById.get(gift.recipient.id) ??
+                RECIPIENT_KIND_FALLBACK[gift.recipient.kind]
+              : "beneficiary";
+            return (
+              <button
+                key={g.giftId}
+                type="button"
+                onClick={() => onGiftClick(g.giftId)}
+                className="block w-full truncate rounded px-1 py-0.5 text-left text-[11px] text-amber-400/90 transition-colors hover:bg-amber-950/30 hover:text-amber-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
+              >
+                → Gift {Math.round(g.percent * 100)}% to {recipientLabel} ·{" "}
+                {g.year}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </li>
   );
 }
@@ -126,9 +171,18 @@ function AssetRow({ asset, onAssetClick }: AssetRowProps) {
 interface GroupCardProps {
   group: OwnershipGroup;
   onAssetClick: (accountId: string) => void;
+  gifts: EstateFlowGift[];
+  recipientLabelById: Map<string, string>;
+  onGiftClick: (giftId: string) => void;
 }
 
-function GroupCard({ group, onAssetClick }: GroupCardProps) {
+function GroupCard({
+  group,
+  onAssetClick,
+  gifts,
+  recipientLabelById,
+  onGiftClick,
+}: GroupCardProps) {
   const kindLabel = KIND_LABEL[group.kind];
 
   return (
@@ -153,6 +207,9 @@ function GroupCard({ group, onAssetClick }: GroupCardProps) {
             key={`${asset.accountId}-${group.key}`}
             asset={asset}
             onAssetClick={onAssetClick}
+            gifts={gifts}
+            recipientLabelById={recipientLabelById}
+            onGiftClick={onGiftClick}
           />
         ))}
       </ul>
@@ -165,43 +222,84 @@ function GroupCard({ group, onAssetClick }: GroupCardProps) {
 interface EstateFlowOwnershipColumnProps {
   data: OwnershipColumnData;
   onAssetClick: (accountId: string) => void;
+  /** Plan's first year — treated as "today". */
+  minYear: number;
+  /** Plan's last projected year. */
+  maxYear: number;
+  /** Currently selected as-of year. */
+  asOfYear: number;
+  onYearChange: (year: number) => void;
+  /** Working gift drafts — used to resolve future-gift marker labels. */
+  gifts: EstateFlowGift[];
+  /** Human label for each gift recipient, keyed by recipient id. */
+  recipientLabelById: Map<string, string>;
+  onGiftClick: (giftId: string) => void;
 }
 
 export function EstateFlowOwnershipColumn({
   data,
   onAssetClick,
+  minYear,
+  maxYear,
+  asOfYear,
+  onYearChange,
+  gifts,
+  recipientLabelById,
+  onGiftClick,
 }: EstateFlowOwnershipColumnProps) {
-  if (data.groups.length === 0) {
-    return (
-      <div className="flex items-center justify-center rounded border border-gray-800/60 p-6 text-sm text-gray-500">
-        No assets
-      </div>
-    );
-  }
+  const isProjected = asOfYear > minYear;
 
   return (
     <div className="flex flex-col gap-3">
       {/* Column heading */}
-      <h2 className="px-1 text-xs font-semibold uppercase tracking-wider text-gray-400">
-        Ownership
-      </h2>
-
-      {/* Group cards */}
-      <div className="space-y-3">
-        {data.groups.map((group) => (
-          <GroupCard key={group.key} group={group} onAssetClick={onAssetClick} />
-        ))}
+      <div className="flex flex-col gap-1.5 px-1">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+          Ownership
+        </h2>
+        <EstateFlowYearScrubber
+          minYear={minYear}
+          maxYear={maxYear}
+          value={asOfYear}
+          onChange={onYearChange}
+        />
+        {isProjected && (
+          <span className="text-[10px] uppercase tracking-wider text-gray-400">
+            Projected values · {asOfYear}
+          </span>
+        )}
       </div>
 
-      {/* Grand total footer */}
-      <div className="flex items-baseline justify-between gap-3 rounded border border-gray-800/40 bg-gray-900/30 px-3 py-2">
-        <span className="text-xs font-medium uppercase tracking-wider text-gray-400">
-          Total
-        </span>
-        <span className="text-sm font-semibold tabular-nums text-gray-50">
-          {fmt.format(data.grandTotal)}
-        </span>
-      </div>
+      {data.groups.length === 0 ? (
+        <div className="flex items-center justify-center rounded border border-gray-800/60 p-6 text-sm text-gray-500">
+          No assets
+        </div>
+      ) : (
+        <>
+          {/* Group cards */}
+          <div className="space-y-3">
+            {data.groups.map((group) => (
+              <GroupCard
+                key={group.key}
+                group={group}
+                onAssetClick={onAssetClick}
+                gifts={gifts}
+                recipientLabelById={recipientLabelById}
+                onGiftClick={onGiftClick}
+              />
+            ))}
+          </div>
+
+          {/* Grand total footer */}
+          <div className="flex items-baseline justify-between gap-3 rounded border border-gray-800/40 bg-gray-900/30 px-3 py-2">
+            <span className="text-xs font-medium uppercase tracking-wider text-gray-400">
+              Total
+            </span>
+            <span className="text-sm font-semibold tabular-nums text-gray-50">
+              {fmt.format(data.grandTotal)}
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

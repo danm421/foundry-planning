@@ -87,7 +87,9 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   // Gift sandbox. `setWorkingGifts` is wired up by later tasks (gift UI in
   // Task 8/9); intentionally unused here.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [workingGifts, setWorkingGifts] = useState<EstateFlowGift[]>(props.initialGifts);
+  const [workingGifts, setWorkingGifts] = useState<EstateFlowGift[]>(
+    props.initialGifts,
+  );
   const [ordering, setOrdering] =
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
   const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
@@ -120,9 +122,40 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     () => runProjectionWithEvents(engineData),
     [engineData],
   );
-  // `ownership` keeps building from the raw `working` copy — projected-snapshot
-  // support arrives in a later task.
-  const ownership = useMemo(() => buildOwnershipColumn(working), [working]);
+
+  // Plan year bounds, derived from the projection. `planStartYear` is "today".
+  // Guard against an empty `years` array — fall back to the current calendar year.
+  const planStartYear = projection.years[0]?.year ?? new Date().getFullYear();
+  const planEndYear =
+    projection.years[projection.years.length - 1]?.year ?? planStartYear;
+
+  // As-of year for column 1. Initialises to the plan's first year ("today").
+  const [asOfYear, setAsOfYear] = useState<number>(planStartYear);
+
+  const ownership = useMemo(
+    () => buildOwnershipColumn(working, { projection, asOfYear, gifts: workingGifts }),
+    [working, projection, asOfYear, workingGifts],
+  );
+
+  // Human label for each gift recipient, keyed by recipient id. Built from the
+  // working copy's family members / entities / external beneficiaries so the
+  // ownership column can resolve future-gift markers.
+  const recipientLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const fm of working.familyMembers ?? []) {
+      map.set(
+        fm.id,
+        [fm.firstName, fm.lastName].filter(Boolean).join(" ") || fm.firstName,
+      );
+    }
+    for (const entity of working.entities ?? []) {
+      if (entity.name) map.set(entity.id, entity.name);
+    }
+    for (const ext of working.externalBeneficiaries ?? []) {
+      map.set(ext.id, ext.name);
+    }
+    return map;
+  }, [working]);
   const reportData = useMemo(
     () =>
       buildEstateTransferReportData({
@@ -320,6 +353,16 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
           <EstateFlowOwnershipColumn
             data={ownership}
             onAssetClick={setOwnerDialogId}
+            minYear={planStartYear}
+            maxYear={planEndYear}
+            asOfYear={asOfYear}
+            onYearChange={setAsOfYear}
+            gifts={workingGifts}
+            recipientLabelById={recipientLabelById}
+            onGiftClick={(giftId) => {
+              // TODO(Task 9): open gift edit dialog
+              console.debug("gift marker clicked", giftId);
+            }}
           />
         </div>
         {/* Death columns — ordering toggle swaps which section feeds column 2 vs 3 */}
