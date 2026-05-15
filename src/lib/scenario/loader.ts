@@ -18,8 +18,10 @@ import {
 import type {
   CascadeWarning,
   ScenarioChange,
+  ToggleGroup,
   ToggleState,
 } from "@/engine/scenario/types";
+import { resolveRefYears } from "@/lib/year-refs";
 import { loadScenarioChanges, loadScenarioToggleGroups } from "./changes";
 
 /**
@@ -54,6 +56,34 @@ export function resolveAddPayload(
 export interface LoadEffectiveTreeResult {
   effectiveTree: ClientData;
   warnings: CascadeWarning[];
+}
+
+/**
+ * Applies scenario changes, then reshifts every milestone-anchored
+ * `startYear`/`endYear` via `resolveRefYears`.
+ *
+ * A scenario change can move a household milestone — retirement age, plan end
+ * age, date of birth. The engine reads only the concrete `startYear`/`endYear`
+ * on each income/expense/savings row, treating `*YearRef` as view metadata,
+ * so a milestone move must be propagated to every dependent year window
+ * before projection. The live solver already does this in `applyMutations`;
+ * the persisted-scenario reload path has to do the same — otherwise a saved
+ * "retire at 67" scenario reloads with stale age-65 windows and projects
+ * identically to base.
+ */
+export function applyScenarioChangesWithRefs(
+  treeForChanges: ClientData,
+  changes: ScenarioChange[],
+  toggleState: ToggleState,
+  groups: ToggleGroup[],
+): LoadEffectiveTreeResult {
+  const { effectiveTree, warnings } = applyScenarioChanges(
+    treeForChanges,
+    changes,
+    toggleState,
+    groups,
+  );
+  return { effectiveTree: resolveRefYears(effectiveTree), warnings };
 }
 
 export const loadEffectiveTree = cache(
@@ -151,7 +181,12 @@ export const loadEffectiveTree = cache(
 
     const resolvedChanges = changes.map((c) => resolveAddPayload(c, resolutionContext));
 
-    return applyScenarioChanges(treeForChanges, resolvedChanges, toggleState, groups);
+    return applyScenarioChangesWithRefs(
+      treeForChanges,
+      resolvedChanges,
+      toggleState,
+      groups,
+    );
   },
 );
 

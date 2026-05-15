@@ -10,7 +10,10 @@ import { buildLeverMutation } from "@/lib/solver/lever-search-config";
 import { buildSolverComparisonPlan } from "@/lib/solver/build-solver-comparison-plan";
 import { useSolverSolve } from "./use-solver-solve";
 import { useSharedMcRun } from "@/app/(app)/clients/[id]/comparison/use-shared-mc-run";
-import { PortfolioBarsChart } from "@/components/charts/portfolio-bars-chart";
+import {
+  PortfolioBarsChart,
+  liquidPortfolioTotal,
+} from "@/components/charts/portfolio-bars-chart";
 import { SolverCompareGrid } from "./solver-compare-grid";
 import { SolverSection } from "./solver-section";
 import { SolverRowRetirementAges } from "./solver-row-retirement-ages";
@@ -161,13 +164,16 @@ export function LiveSolverWorkspace({
       ? "computing"
       : "idle";
 
+  // Liquid portfolio (taxable + cash + retirement + life insurance), matching
+  // the bar chart and cash-flow report. `portfolioAssets.total` also rolls in
+  // real estate and business assets, which the KPI must not show.
   const baseEndingAssets =
     baseProjection.length > 0
-      ? baseProjection[baseProjection.length - 1].portfolioAssets.total
+      ? liquidPortfolioTotal(baseProjection[baseProjection.length - 1])
       : null;
   const workingEndingAssets =
     currentProjection.length > 0
-      ? currentProjection[currentProjection.length - 1].portfolioAssets.total
+      ? liquidPortfolioTotal(currentProjection[currentProjection.length - 1])
       : null;
   const endingAssetsDelta =
     baseEndingAssets != null && workingEndingAssets != null

@@ -15,6 +15,11 @@ vi.mock("@/components/charts/portfolio-bars-chart", () => ({
       {current.at(-1)?.portfolioAssets.total ?? "none"}
     </div>
   ),
+  // The real helper sums the liquid sub-totals; these fixtures only carry
+  // `total`, so stub it to read that. The workspace tests exercise wiring,
+  // not the liquid-vs-total arithmetic (covered by the chart's own tests).
+  liquidPortfolioTotal: (y: { portfolioAssets: { total: number } }) =>
+    y.portfolioAssets.total,
 }));
 
 const fetchMock = vi.fn();
