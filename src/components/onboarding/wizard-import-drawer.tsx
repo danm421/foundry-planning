@@ -158,8 +158,7 @@ export default function WizardImportDrawer({
             `Extraction failed (${extractRes.status})`,
         );
       }
-      // Extract route returns { ok, succeeded, failed, status }.
-      // When every file fails, status === "draft" — surface a clear message.
+      // The extract route reports status "draft" when every file failed.
       const extractBody = (await extractRes.json()) as { status?: string };
       if (extractBody.status === "draft") {
         throw new Error(
@@ -251,6 +250,7 @@ export default function WizardImportDrawer({
             <div className="space-y-4">
               <UploadZoneGate
                 clientId={clientId}
+                importId={imp?.importId ?? null}
                 ensureImport={ensureImport}
                 onUploaded={() =>
                   setImp((cur) =>
@@ -332,22 +332,23 @@ export default function WizardImportDrawer({
 }
 
 /**
- * UploadZone needs an importId, but the wizard draft is created lazily on
- * first upload. This gate creates the draft on the first drop, then renders
- * the real UploadZone bound to it.
+ * UploadZone needs an importId, but the wizard draft is created lazily.
+ * Until the parent has a draft (`importId` null) this renders a start button
+ * that creates one; once it exists it renders the real UploadZone.
  */
 function UploadZoneGate({
   clientId,
+  importId,
   ensureImport,
   onUploaded,
   onError,
 }: {
   clientId: string;
+  importId: string | null;
   ensureImport: () => Promise<string>;
   onUploaded: () => void;
   onError: (msg: string) => void;
 }) {
-  const [importId, setImportId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   if (!importId) {
@@ -358,7 +359,7 @@ function UploadZoneGate({
         onClick={async () => {
           setCreating(true);
           try {
-            setImportId(await ensureImport());
+            await ensureImport();
           } catch (err) {
             onError((err as Error).message);
           } finally {

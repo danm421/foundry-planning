@@ -152,9 +152,11 @@ export default function WizardImportReview({
     }
   }, [clientId]);
 
+  // Canonical rows only feed the accounts match-picker and the wills
+  // recipient/asset dropdowns — the other steps never read them.
   useEffect(() => {
-    fetchCanonical();
-  }, [fetchCanonical]);
+    if (step === "accounts" || step === "estate") fetchCanonical();
+  }, [step, fetchCanonical]);
 
   const recipientOptions: RecipientOption[] = useMemo(() => {
     const opts: RecipientOption[] = [{ kind: "spouse", id: null, label: "Spouse" }];

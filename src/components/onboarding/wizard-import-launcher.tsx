@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { ImportEligibleStep } from "@/lib/onboarding/import-sections";
 import WizardImportDrawer from "./wizard-import-drawer";
 
@@ -18,6 +18,8 @@ export default function WizardImportLauncher({
   activeImportId,
 }: WizardImportLauncherProps) {
   const [open, setOpen] = useState(false);
+  // Stable identity — the drawer keys an effect off onClose.
+  const handleClose = useCallback(() => setOpen(false), []);
 
   return (
     <>
@@ -36,7 +38,7 @@ export default function WizardImportLauncher({
           step={step}
           baseScenarioId={baseScenarioId}
           activeImportId={activeImportId}
-          onClose={() => setOpen(false)}
+          onClose={handleClose}
         />
       ) : null}
     </>
