@@ -127,7 +127,7 @@ function runFirstDeathPrecedenceChain(input: DeathEventInput): FirstDeathChainRe
     if (undisposed > 1e-9) {
       const step2 = applyBeneficiaryDesignations(
         effectiveAcct, undisposed,
-        familyMembers, externalBeneficiaries, linkedLiability,
+        familyMembers, externalBeneficiaries, entities, linkedLiability,
       );
       if (step2.fractionClaimed > 0) {
         stepAccts.push(...step2.resultingAccounts);

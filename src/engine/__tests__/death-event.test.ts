@@ -490,6 +490,7 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
         { id: "child-b", role: "child" as const, relationship: "child", firstName: "Bob", lastName: "Smith", dateOfBirth: "2002-01-01" },
       ],
       /* externals */ [],
+      /* entities */ [],
       undefined,
     );
 
@@ -516,7 +517,7 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
     const result = applyBeneficiaryDesignations(
       iraWithBens, 1,
       [{ id: "child-a", role: "child" as const, relationship: "child", firstName: "Alice", lastName: null, dateOfBirth: null }],
-      [], undefined,
+      [], [], undefined,
     );
 
     expect(result.consumed).toBe(false);
@@ -527,7 +528,7 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
   });
 
   it("no-op when no beneficiaries are set (solo-owned non-retirement)", () => {
-    const result = applyBeneficiaryDesignations(ira, 1, [], [], undefined);
+    const result = applyBeneficiaryDesignations(ira, 1, [], [], [], undefined);
     expect(result.consumed).toBe(false);
     expect(result.fractionClaimed).toBe(0);
   });
@@ -546,11 +547,51 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
         { id: "child-a", role: "child" as const, relationship: "child", firstName: "A", lastName: null, dateOfBirth: null },
         { id: "child-b", role: "child" as const, relationship: "child", firstName: "B", lastName: null, dateOfBirth: null },
       ],
-      [], undefined,
+      [], [], undefined,
     );
     expect(result.ledgerEntries).toHaveLength(1);
     expect(result.ledgerEntries[0].recipientId).toBe("child-a");
     expect(result.fractionClaimed).toBeCloseTo(0.5, 9);
+  });
+
+  it("routes a household-role spouse designation to the spouse", () => {
+    const iraWithBens: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 100, householdRole: "spouse", sortOrder: 0 },
+      ],
+    };
+    const result = applyBeneficiaryDesignations(
+      iraWithBens, 1,
+      [{ id: "fm-spouse", role: "spouse" as const, relationship: "spouse", firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-01-01" }],
+      [], [], undefined,
+    );
+    expect(result.fractionClaimed).toBeCloseTo(1, 9);
+    expect(result.ledgerEntries[0]).toMatchObject({
+      via: "beneficiary_designation",
+      recipientKind: "spouse",
+      recipientId: "fm-spouse",
+    });
+  });
+
+  it("routes a trust-entity designation to the entity", () => {
+    const iraWithBens: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 100, entityIdRef: "ent-trust", sortOrder: 0 },
+      ],
+    };
+    // Only `id` and `name` are read by this code path.
+    const entities = [
+      { id: "ent-trust", name: "Family Trust" },
+    ] as unknown as import("../types").EntitySummary[];
+    const result = applyBeneficiaryDesignations(iraWithBens, 1, [], [], entities, undefined);
+    expect(result.fractionClaimed).toBeCloseTo(1, 9);
+    expect(result.ledgerEntries[0]).toMatchObject({
+      via: "beneficiary_designation",
+      recipientKind: "entity",
+      recipientId: "ent-trust",
+    });
   });
 });
 
