@@ -13,6 +13,8 @@ import {
 import { EstateFlowOwnershipColumn } from "@/components/estate-flow-ownership-column";
 import { EstateFlowDeathColumn } from "@/components/estate-flow-death-column";
 import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
+import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
+import { changeOwner } from "@/lib/estate/estate-flow-edits";
 import type { ClientData } from "@/engine/types";
 
 export interface EstateFlowViewProps {
@@ -78,7 +80,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const [working, setWorking] = useState<ClientData>(original);
   const [ordering, setOrdering] =
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
-  // TODO: Task 8 — open change-owner dialog
   const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
   // TODO: Task 9 — open change-distribution dialog
   const [distributionDialogId, setDistributionDialogId] = useState<string | null>(null);
@@ -121,10 +122,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     [],
   );
 
-  // Silence unused-variable lint until Tasks 8–9 wire these up.
-  void applyEdit;
-  // ownerDialogId consumed by Task 8 dialog — suppress lint until then.
-  void ownerDialogId;
   // distributionDialogId consumed by Task 9 dialog — suppress lint until then.
   void distributionDialogId;
 
@@ -205,6 +202,24 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       </div>
 
       {/* Save bar — Task 10 */}
+
+      {/* Change-owner dialog — Task 8 */}
+      {(() => {
+        if (!ownerDialogId) return null;
+        const account = working.accounts.find((a) => a.id === ownerDialogId);
+        if (!account) return null;
+        return (
+          <EstateFlowChangeOwnerDialog
+            account={account}
+            clientData={working}
+            onApply={(owners) => {
+              applyEdit((d) => changeOwner(d, ownerDialogId, owners));
+              setOwnerDialogId(null);
+            }}
+            onClose={() => setOwnerDialogId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
