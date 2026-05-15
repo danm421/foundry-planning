@@ -234,6 +234,8 @@ interface EstateFlowOwnershipColumnProps {
   /** Human label for each gift recipient, keyed by recipient id. */
   recipientLabelById: Map<string, string>;
   onGiftClick: (giftId: string) => void;
+  /** Opens the standalone "Add a gift" dialog. */
+  onAddGift: () => void;
 }
 
 export function EstateFlowOwnershipColumn({
@@ -246,6 +248,7 @@ export function EstateFlowOwnershipColumn({
   gifts,
   recipientLabelById,
   onGiftClick,
+  onAddGift,
 }: EstateFlowOwnershipColumnProps) {
   const isProjected = asOfYear > minYear;
 
@@ -253,9 +256,18 @@ export function EstateFlowOwnershipColumn({
     <div className="flex flex-col gap-3">
       {/* Column heading */}
       <div className="flex flex-col gap-1.5 px-1">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-          Ownership
-        </h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+            Ownership
+          </h2>
+          <button
+            type="button"
+            onClick={onAddGift}
+            className="rounded border border-amber-700/60 px-2 py-0.5 text-[11px] font-medium text-amber-300 transition-colors hover:border-amber-500 hover:text-amber-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500"
+          >
+            + Add a gift
+          </button>
+        </div>
         <EstateFlowYearScrubber
           minYear={minYear}
           maxYear={maxYear}

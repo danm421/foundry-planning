@@ -15,8 +15,15 @@ import { EstateFlowDeathColumn } from "@/components/estate-flow-death-column";
 import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
 import EstateFlowChangeDistributionDialog from "@/components/estate-flow-change-distribution-dialog";
+import EstateFlowAddGiftDialog from "@/components/estate-flow-add-gift-dialog";
 import { changeOwner, changeBeneficiaries, changeWillBequests } from "@/lib/estate/estate-flow-edits";
-import { addGift, applyGiftsToClientData, type EstateFlowGift } from "@/lib/estate/estate-flow-gifts";
+import {
+  addGift,
+  updateGift,
+  removeGift,
+  applyGiftsToClientData,
+  type EstateFlowGift,
+} from "@/lib/estate/estate-flow-gifts";
 import { diffGifts } from "@/lib/estate/estate-flow-gift-diff";
 import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { ClientData } from "@/engine/types";
@@ -92,6 +99,10 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
   const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
   const [distributionDialogId, setDistributionDialogId] = useState<string | null>(null);
+  // Standalone "Add a gift" dialog (no source account).
+  const [addGiftOpen, setAddGiftOpen] = useState(false);
+  // Gift currently being edited via a column-1 future-gift marker.
+  const [editingGiftId, setEditingGiftId] = useState<string | null>(null);
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -317,6 +328,18 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     ? working.accounts.find((a) => a.id === ownerDialogId)
     : undefined;
 
+  // Plan tax-inflation rate, threaded to the gift-fields warning preview.
+  const taxInflationRate =
+    working.planSettings.taxInflationRate ??
+    working.planSettings.inflationRate ??
+    0;
+
+  // The gift targeted by an open edit dialog. Undefined when the gift was
+  // removed out from under the dialog — guarded at render time below.
+  const editingGift = editingGiftId
+    ? workingGifts.find((g) => g.id === editingGiftId)
+    : undefined;
+
   return (
     <div className="flex flex-col gap-4 p-4">
       {/* Control bar */}
@@ -357,10 +380,8 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             onYearChange={setAsOfYear}
             gifts={workingGifts}
             recipientLabelById={recipientLabelById}
-            onGiftClick={(giftId) => {
-              // TODO(Task 9): open gift edit dialog
-              console.debug("gift marker clicked", giftId);
-            }}
+            onGiftClick={(giftId) => setEditingGiftId(giftId)}
+            onAddGift={() => setAddGiftOpen(true)}
           />
         </div>
         {/* Death columns — ordering toggle swaps which section feeds column 2 vs 3 */}
@@ -487,6 +508,41 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             setDistributionDialogId(null);
           }}
           onClose={() => setDistributionDialogId(null)}
+        />
+      )}
+
+      {/* Standalone "Add a gift" dialog — sourceAccount is always null here. */}
+      {addGiftOpen && (
+        <EstateFlowAddGiftDialog
+          clientData={working}
+          ledger={projection.giftLedger}
+          taxInflationRate={taxInflationRate}
+          editing={null}
+          onApply={(draft) => {
+            setWorkingGifts((cur) => addGift(cur, draft));
+            setAddGiftOpen(false);
+          }}
+          onDelete={() => {}}
+          onClose={() => setAddGiftOpen(false)}
+        />
+      )}
+
+      {/* Edit / delete an existing gift, opened from a column-1 marker. */}
+      {editingGiftId && editingGift && (
+        <EstateFlowAddGiftDialog
+          clientData={working}
+          ledger={projection.giftLedger}
+          taxInflationRate={taxInflationRate}
+          editing={editingGift}
+          onApply={(draft) => {
+            setWorkingGifts((cur) => updateGift(cur, draft));
+            setEditingGiftId(null);
+          }}
+          onDelete={() => {
+            setWorkingGifts((cur) => removeGift(cur, editingGiftId));
+            setEditingGiftId(null);
+          }}
+          onClose={() => setEditingGiftId(null)}
         />
       )}
     </div>
