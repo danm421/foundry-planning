@@ -1,5 +1,4 @@
 import { ownersForYear } from "@/engine/ownership";
-import type { ProjectionResult } from "@/engine";
 import type {
   Account,
   ClientData,
@@ -14,7 +13,9 @@ import { inEstateWeight, outOfEstateWeight } from "./in-estate-weights";
 import { isPolicyInForce } from "./insurance-in-force";
 
 export interface YearlyLiquidityReportInput {
-  projection: ProjectionResult;
+  /** Only `.years` is read — accepts a full ProjectionResult or a bare
+   *  `{ years }` (the Live Solver passes `runProjection` output directly). */
+  projection: { years: ProjectionYear[] };
   clientData: ClientData;
   ownerNames: { clientName: string; spouseName: string | null };
   ownerDobs: { clientDob: string | null; spouseDob: string | null };
