@@ -1,5 +1,5 @@
 // src/engine/scenario/cascadeResolution.ts
-import type { ClientData } from "@/engine/types";
+import type { ClientData, BeneficiaryRef } from "@/engine/types";
 import type { CascadeWarning, TargetKind } from "./types";
 
 export interface RemovedRef {
@@ -170,6 +170,44 @@ export function resolveCascades(
         // else: bequest dropped entirely (no recipients left). Already warned above.
       }
       will.bequests = remainingBequests;
+    }
+  }
+
+  // entity removal — drop BeneficiaryRefs whose entityIdRef points at the
+  // removed entity, on both accounts and entities. Mirrors the family_member
+  // → BeneficiaryRef cascade above.
+  if (removedEntityIds.size > 0) {
+    const dropEntityBens = (
+      bens: BeneficiaryRef[] | undefined,
+      ownerLabel: string,
+    ): BeneficiaryRef[] | undefined => {
+      if (!bens || bens.length === 0) return bens;
+      const remaining: BeneficiaryRef[] = [];
+      for (const bene of bens) {
+        if (bene.entityIdRef && removedEntityIds.has(bene.entityIdRef)) {
+          warnings.push({
+            kind: "beneficiary_reassigned",
+            message: `Beneficiary ${bene.id} dropped (falls back to estate) — entity ${bene.entityIdRef} was removed`,
+            causedByChangeId: removedEntityToCause.get(bene.entityIdRef)!,
+            affectedEntityId: bene.id,
+            affectedEntityLabel: `Beneficiary on ${ownerLabel}`,
+          });
+        } else {
+          remaining.push(bene);
+        }
+      }
+      return remaining;
+    };
+
+    if (tree.accounts) {
+      for (const acct of tree.accounts) {
+        acct.beneficiaries = dropEntityBens(acct.beneficiaries, `account ${acct.id}`);
+      }
+    }
+    if (tree.entities) {
+      for (const ent of tree.entities) {
+        ent.beneficiaries = dropEntityBens(ent.beneficiaries, `trust ${ent.id}`);
+      }
     }
   }
 

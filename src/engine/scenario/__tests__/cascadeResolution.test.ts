@@ -172,6 +172,26 @@ describe("resolveCascades — entity → WillBequestRecipient", () => {
   });
 });
 
+describe("resolveCascades — entity → BeneficiaryRef", () => {
+  it("drops an account BeneficiaryRef whose entityIdRef was removed", () => {
+    const t: ClientData = tree({
+      accounts: [
+        {
+          id: "a1",
+          beneficiaries: [
+            { id: "b1", tier: "primary", percentage: 100, entityIdRef: "ent-removed", sortOrder: 0 } as BeneficiaryRef,
+          ],
+        } as unknown as Account,
+      ],
+    });
+    const removed = [{ kind: "entity" as TargetKind, id: "ent-removed", causedByChangeId: "ch1" }];
+    const warnings = resolveCascades(t, removed);
+
+    expect(t.accounts[0].beneficiaries).toEqual([]);
+    expect(warnings.some((w) => w.kind === "beneficiary_reassigned")).toBe(true);
+  });
+});
+
 describe("resolveCascades — accounts → rothConversions", () => {
   it("drops a conversion that targets a removed destination account", () => {
     const t: ClientData = tree({
