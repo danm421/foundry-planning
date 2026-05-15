@@ -115,7 +115,7 @@ export function SolverSavingsEditDialog({
     initialRothMode,
   );
   const [rothSplitPct, setRothSplitPct] = useState<string>(
-    String(Math.round(initialRoth * 100)),
+    String(Math.round(initialRoth * 10000) / 100),
   );
 
   const [startYear, setStartYear] = useState<number>(workingRule.startYear);
