@@ -593,6 +593,45 @@ describe("applyBeneficiaryDesignations (Step 2)", () => {
       recipientId: "ent-trust",
     });
   });
+
+  it("ejects share when householdRole matches no family member (no dead-owner orphan)", () => {
+    // Regression: before the fix, when roleFm is undefined, ownerMutation stayed
+    // undefined but removed was never set to true. splitAccount then produced a
+    // resulting account still carrying the deceased's original owners[] — an asset
+    // left on a dead person.
+    const iraWithBens: Account = {
+      ...ira,
+      beneficiaries: [
+        { id: "ben-1", tier: "primary", percentage: 100, householdRole: "spouse", sortOrder: 0 },
+      ],
+    };
+
+    // Pass an empty familyMembers array so no matching FM is found for role="spouse".
+    const result = applyBeneficiaryDesignations(
+      iraWithBens, 1,
+      /* familyMembers */ [],
+      /* externals */ [],
+      /* entities */ [],
+      undefined,
+    );
+
+    // The share is fully claimed (consumed = true, fractionClaimed ≈ 1).
+    expect(result.consumed).toBe(true);
+    expect(result.fractionClaimed).toBeCloseTo(1, 9);
+
+    // The ledger entry is emitted (via=beneficiary_designation, kind=spouse, id=null).
+    expect(result.ledgerEntries).toHaveLength(1);
+    expect(result.ledgerEntries[0]).toMatchObject({
+      via: "beneficiary_designation",
+      recipientKind: "spouse",
+      recipientId: null,
+    });
+
+    // The share is REMOVED — no resulting account left on the deceased owner.
+    // resultingAccountId null confirms splitAccount treated this as a removed share.
+    expect(result.ledgerEntries[0].resultingAccountId).toBeNull();
+    expect(result.resultingAccounts).toHaveLength(0);
+  });
 });
 
 describe("applyWillSpecificBequests (Step 3a)", () => {

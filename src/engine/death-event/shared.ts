@@ -450,9 +450,11 @@ export function applyBeneficiaryDesignations(
       recipientLabel = ext?.name ?? "External beneficiary";
     } else if (b.householdRole) {
       const roleFm = familyMembers.find((f) => f.role === b.householdRole);
-      ownerMutation = roleFm
-        ? { owners: [{ kind: "family_member", familyMemberId: roleFm.id, percent: 1 }] }
-        : undefined;
+      if (roleFm) {
+        ownerMutation = { owners: [{ kind: "family_member", familyMemberId: roleFm.id, percent: 1 }] };
+      } else {
+        removed = true;
+      }
       recipientKind = b.householdRole === "spouse" ? "spouse" : "family_member";
       recipientId = roleFm?.id ?? null;
       recipientLabel = b.householdRole === "spouse" ? "Spouse" : "Client";
