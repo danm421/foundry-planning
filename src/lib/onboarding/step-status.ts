@@ -159,9 +159,17 @@ function estateStatus(tree: ClientData): StepStatus {
   };
 }
 
-function assumptionsStatus(_tree: ClientData): StepStatus { // eslint-disable-line @typescript-eslint/no-unused-vars
-  // Plan settings rows always exist (created on client creation). Phase 1
-  // treats Assumptions as "untouched until skipped or revisited" — there's no
-  // strong "default vs override" signal we can read cheaply here.
+function assumptionsStatus(tree: ClientData): StepStatus {
+  // Plan settings rows always exist at client creation, so there's no cheap
+  // "default vs override" signal for the rate/threshold fields without
+  // plumbing firm defaults into this module. The strongest cheap signal that
+  // the advisor has touched Assumptions is a custom withdrawal strategy —
+  // `withdrawalStrategy` is empty for new clients and populated when the
+  // advisor configures one. The fallback completion path remains skipping
+  // the step.
+  const ws = tree.withdrawalStrategy ?? [];
+  if (ws.length > 0) {
+    return { slug: "assumptions", kind: "complete", gaps: [] };
+  }
   return { slug: "assumptions", kind: "untouched", gaps: ["Using firm defaults"] };
 }

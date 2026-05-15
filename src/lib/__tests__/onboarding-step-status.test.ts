@@ -132,6 +132,84 @@ describe("deriveStepStatuses", () => {
     expect(statuses.find((s) => s.slug === "liabilities")!.kind).toBe("skipped");
   });
 
+  // ── Entities ─────────────────────────────────────────────────────────────
+  it("marks Entities untouched on an empty tree", () => {
+    expect(deriveStepStatuses(emptyTree(), {}).find((s) => s.slug === "entities")!.kind).toBe("untouched");
+  });
+
+  it("marks Entities complete when at least one entity exists", () => {
+    const tree = emptyTree();
+    (tree as unknown as { entities: unknown[] }).entities = [{ id: "ent1" }];
+    expect(deriveStepStatuses(tree, {}).find((s) => s.slug === "entities")!.kind).toBe("complete");
+  });
+
+  it("marks Entities skipped when state includes the slug", () => {
+    const statuses = deriveStepStatuses(emptyTree(), { skippedSteps: ["entities"] });
+    expect(statuses.find((s) => s.slug === "entities")!.kind).toBe("skipped");
+  });
+
+  // ── Insurance ────────────────────────────────────────────────────────────
+  it("marks Insurance untouched on an empty tree", () => {
+    expect(deriveStepStatuses(emptyTree(), {}).find((s) => s.slug === "insurance")!.kind).toBe("untouched");
+  });
+
+  it("marks Insurance complete when at least one life_insurance account exists", () => {
+    const tree = emptyTree();
+    tree.accounts = [
+      { id: "a1", category: "life_insurance" } as ClientData["accounts"][number],
+    ];
+    expect(deriveStepStatuses(tree, {}).find((s) => s.slug === "insurance")!.kind).toBe("complete");
+  });
+
+  it("marks Insurance untouched when only non-life_insurance accounts exist", () => {
+    const tree = emptyTree();
+    tree.accounts = [
+      { id: "a1", category: "taxable" } as ClientData["accounts"][number],
+    ];
+    expect(deriveStepStatuses(tree, {}).find((s) => s.slug === "insurance")!.kind).toBe("untouched");
+  });
+
+  it("marks Insurance skipped when state includes the slug", () => {
+    const statuses = deriveStepStatuses(emptyTree(), { skippedSteps: ["insurance"] });
+    expect(statuses.find((s) => s.slug === "insurance")!.kind).toBe("skipped");
+  });
+
+  // ── Estate ───────────────────────────────────────────────────────────────
+  it("marks Estate untouched on an empty tree", () => {
+    expect(deriveStepStatuses(emptyTree(), {}).find((s) => s.slug === "estate")!.kind).toBe("untouched");
+  });
+
+  it("marks Estate complete when at least one will exists", () => {
+    const tree = emptyTree();
+    (tree as unknown as { wills: unknown[] }).wills = [{ id: "w1" }];
+    expect(deriveStepStatuses(tree, {}).find((s) => s.slug === "estate")!.kind).toBe("complete");
+  });
+
+  it("marks Estate skipped when state includes the slug", () => {
+    const statuses = deriveStepStatuses(emptyTree(), { skippedSteps: ["estate"] });
+    expect(statuses.find((s) => s.slug === "estate")!.kind).toBe("skipped");
+  });
+
+  // ── Assumptions ──────────────────────────────────────────────────────────
+  it("marks Assumptions untouched on an empty tree (no withdrawal strategy)", () => {
+    const status = deriveStepStatuses(emptyTree(), {}).find((s) => s.slug === "assumptions")!;
+    expect(status.kind).toBe("untouched");
+    expect(status.gaps).toEqual(["Using firm defaults"]);
+  });
+
+  it("marks Assumptions complete when at least one withdrawal strategy row exists", () => {
+    const tree = emptyTree();
+    tree.withdrawalStrategy = [{ id: "ws1" } as ClientData["withdrawalStrategy"][number]];
+    const status = deriveStepStatuses(tree, {}).find((s) => s.slug === "assumptions")!;
+    expect(status.kind).toBe("complete");
+    expect(status.gaps).toEqual([]);
+  });
+
+  it("marks Assumptions skipped when state includes the slug", () => {
+    const statuses = deriveStepStatuses(emptyTree(), { skippedSteps: ["assumptions"] });
+    expect(statuses.find((s) => s.slug === "assumptions")!.kind).toBe("skipped");
+  });
+
   it("marks Cash Flow complete only when at least one income AND one expense exist", () => {
     const tree = emptyTree();
     tree.incomes = [{ id: "i1" } as ClientData["incomes"][number]];
