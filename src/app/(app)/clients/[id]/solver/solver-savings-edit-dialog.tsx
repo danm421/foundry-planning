@@ -115,7 +115,7 @@ export function SolverSavingsEditDialog({
     initialRothMode,
   );
   const [rothSplitPct, setRothSplitPct] = useState<string>(
-    String(Math.round(initialRoth * 10000) / 100),
+    String(Math.round(initialRoth * 100)),
   );
 
   const [startYear, setStartYear] = useState<number>(workingRule.startYear);
@@ -255,7 +255,7 @@ export function SolverSavingsEditDialog({
         const pct = parseFloat(rothSplitPct);
         nextRoth = Number.isNaN(pct)
           ? 0
-          : Math.min(100, Math.max(0, pct)) / 100;
+          : Math.round(Math.min(100, Math.max(0, pct))) / 100;
       }
       if (nextRoth !== (workingRule.rothPercent ?? 0)) {
         out.push({ kind: "savings-roth-percent", accountId, rothPercent: nextRoth });

@@ -19,7 +19,7 @@ function pctToFraction(raw: string): number {
   const n = parseFloat(raw);
   if (Number.isNaN(n)) return 0;
   const clamped = Math.min(100, Math.max(0, n));
-  // Round to 4 decimal places to avoid floating-point drift (e.g. 1 - 0.9 ≠ 0.1 exactly).
+  // Round the clamped percent to the nearest whole percent before dividing by 100.
   return Math.round(clamped) / 100;
 }
 
