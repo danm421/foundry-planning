@@ -10,6 +10,7 @@ import {
   type ScenarioOption,
   type SnapshotOption,
 } from "@/components/scenario/scenario-picker-dropdown";
+import { EstateFlowOwnershipColumn } from "@/components/estate-flow-ownership-column";
 import type { ClientData } from "@/engine/types";
 
 export interface EstateFlowViewProps {
@@ -75,6 +76,8 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const [working, setWorking] = useState<ClientData>(original);
   const [ordering, setOrdering] =
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
+  // TODO: Task 8 — open change-owner dialog
+  const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
 
   const router = useRouter();
   const pathname = usePathname();
@@ -103,8 +106,10 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     [],
   );
 
-  // Silence unused-variable lint until Tasks 6–9 wire these up.
+  // Silence unused-variable lint until Tasks 7–9 wire these up.
   void applyEdit;
+  // ownerDialogId consumed by Task 8 dialog — suppress lint until then.
+  void ownerDialogId;
 
   const handleScenarioChange = useCallback(
     (next: string) => {
@@ -149,11 +154,12 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
 
       {/* Three-column layout */}
       <div className="grid grid-cols-3 gap-4">
-        {/* Ownership column — Task 6 */}
-        <div className="rounded border p-3 text-sm text-muted-foreground">
-          Ownership column — Task 6
-          {/* grandTotal wired to avoid unused-variable lint */}
-          <span className="sr-only">{ownership.grandTotal}</span>
+        {/* Ownership column */}
+        <div className="rounded border border-gray-800/60 p-3">
+          <EstateFlowOwnershipColumn
+            data={ownership}
+            onAssetClick={setOwnerDialogId}
+          />
         </div>
         {/* Death column 1 — Task 7 */}
         <div className="rounded border p-3 text-sm text-muted-foreground">
