@@ -10,13 +10,20 @@ function cd(
   accounts: unknown[] = [],
   entities: unknown[] = [],
   wills: unknown[] = [],
+  familyMembers: unknown[] = [],
 ): ClientData {
   return {
     accounts,
     entities,
     wills,
+    familyMembers,
   } as unknown as ClientData;
 }
+
+const BASE_FAMILY_MEMBERS = [
+  { id: "fm-client", role: "client", firstName: "Pat", lastName: "Smith" },
+  { id: "fm-spouse", role: "spouse", firstName: "Jordan", lastName: "Smith" },
+];
 
 const BASE_ACCOUNT = {
   id: "a1",
@@ -62,6 +69,13 @@ describe("diffWorkingCopy", () => {
     const original = cd([{ ...BASE_ACCOUNT, owners: [...owners] }]);
     const working = cd([{ ...BASE_ACCOUNT, owners: [...owners] }]);
     expect(diffWorkingCopy(original, working)).toEqual([]);
+  });
+
+  it("returns no changes when objects have the same keys/values in different insertion order", () => {
+    // Key-order independence: { a:1, b:2 } must equal { b:2, a:1 }
+    const orig = cd([{ id: "a1", name: "IRA", owners: [{ percent: 1, familyMemberId: "fm-client", kind: "family_member" }], beneficiaries: [] }]);
+    const work = cd([{ id: "a1", name: "IRA", owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }], beneficiaries: [] }]);
+    expect(diffWorkingCopy(orig, work)).toEqual([]);
   });
 
   // ── Account edits ────────────────────────────────────────────────────────
@@ -148,6 +162,8 @@ describe("diffWorkingCopy", () => {
     expect(changes[0].edit).toMatchObject({ op: "edit", targetKind: "will", targetId: "w1" });
     expect(changes[0].edit.desiredFields).toHaveProperty("bequests");
     expect(changes[0].edit.desiredFields).toHaveProperty("residuaryRecipients");
+    // Fix 3: the unchanged residuaryRecipients value is faithfully carried
+    expect(changes[0].edit.desiredFields.residuaryRecipients).toEqual([]);
   });
 
   it("emits one will edit when residuaryRecipients change", () => {
@@ -163,6 +179,35 @@ describe("diffWorkingCopy", () => {
     const original = cd([], [], [{ ...BASE_WILL }]);
     const working = cd([], [], [{ ...BASE_WILL }]);
     expect(diffWorkingCopy(original, working)).toEqual([]);
+  });
+
+  it("resolves will grantor to the family member's first name, not the raw role token", () => {
+    const bequest = { id: "bq1", name: "House", kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null, percentage: 100, condition: "always", sortOrder: 0, recipients: [] };
+    const original = cd([], [], [{ id: "w1", grantor: "client", bequests: [], residuaryRecipients: [] }], BASE_FAMILY_MEMBERS);
+    const working = cd([], [], [{ id: "w1", grantor: "client", bequests: [bequest], residuaryRecipients: [] }], BASE_FAMILY_MEMBERS);
+    const changes = diffWorkingCopy(original, working);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].description).toContain("Pat");
+    expect(changes[0].description).not.toContain("client");
+  });
+
+  it("resolves spouse will grantor to the spouse's first name", () => {
+    const bequest = { id: "bq1", name: "Car", kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null, percentage: 100, condition: "always", sortOrder: 0, recipients: [] };
+    const original = cd([], [], [{ id: "w2", grantor: "spouse", bequests: [], residuaryRecipients: [] }], BASE_FAMILY_MEMBERS);
+    const working = cd([], [], [{ id: "w2", grantor: "spouse", bequests: [bequest], residuaryRecipients: [] }], BASE_FAMILY_MEMBERS);
+    const changes = diffWorkingCopy(original, working);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].description).toContain("Jordan");
+    expect(changes[0].description).not.toContain("spouse");
+  });
+
+  it("falls back to 'Client'/'Spouse' when no matching family member exists", () => {
+    const bequest = { id: "bq1", name: "House", kind: "asset", assetMode: "all_assets", accountId: null, liabilityId: null, percentage: 100, condition: "always", sortOrder: 0, recipients: [] };
+    const original = cd([], [], [{ id: "w1", grantor: "client", bequests: [], residuaryRecipients: [] }]);
+    const working = cd([], [], [{ id: "w1", grantor: "client", bequests: [bequest], residuaryRecipients: [] }]);
+    const changes = diffWorkingCopy(original, working);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].description).toContain("Client");
   });
 
   // ── Ordering ─────────────────────────────────────────────────────────────

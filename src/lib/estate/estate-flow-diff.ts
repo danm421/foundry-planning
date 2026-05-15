@@ -9,7 +9,12 @@ export interface EstateFlowChange {
   /** Human-readable summary for the unsaved-changes list. */
   description: string;
   /** The overlay edit to submit. Always op: "edit". */
-  edit: ScenarioEdit & { op: "edit"; targetId: string; desiredFields: Record<string, unknown> };
+  edit: ScenarioEdit & {
+    op: "edit";
+    targetKind: "account" | "entity" | "will";
+    targetId: string;
+    desiredFields: Record<string, unknown>;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -17,13 +22,34 @@ export interface EstateFlowChange {
 // ---------------------------------------------------------------------------
 
 /**
- * Structural equality check using JSON serialisation.
- * Arrays here are plain JSON-serialisable fat fields (owners, beneficiaries,
- * bequests, residuaryRecipients) so this is both correct and cheap.
- * Treats `undefined` and `null` as equivalent (both serialise to `null`).
+ * Recursive structural deep-equality for plain-object / array / primitive
+ * values (the domain of `ClientData` fat-fields such as `owners`,
+ * `beneficiaries`, `bequests`, and `residuaryRecipients`).
+ *
+ * Contract:
+ * - `undefined` and `null` are treated as equivalent.
+ * - Object key order is ignored (checks every key in both objects).
+ * - Array element order is significant (owners/beneficiaries order matters).
+ * - No external dependencies; no JSON serialisation.
  */
 function eq(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const av = a ?? null;
+  const bv = b ?? null;
+  if (av === bv) return true;
+  if (av === null || bv === null) return false;
+  if (Array.isArray(av) && Array.isArray(bv)) {
+    if (av.length !== bv.length) return false;
+    return av.every((item, i) => eq(item, bv[i]));
+  }
+  if (typeof av === "object" && typeof bv === "object") {
+    const ak = Object.keys(av as object);
+    const bk = Object.keys(bv as object);
+    if (ak.length !== bk.length) return false;
+    return ak.every((k) =>
+      eq((av as Record<string, unknown>)[k], (bv as Record<string, unknown>)[k]),
+    );
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +120,12 @@ export function diffWorkingCopy(
   // bequests and residuaryRecipients are always emitted together in desiredFields
   // (they are tightly coupled in the will editor and the overlay writer).
 
+  const members = working.familyMembers ?? [];
+  const clientName =
+    members.find((m) => m.role === "client")?.firstName ?? "Client";
+  const spouseName =
+    members.find((m) => m.role === "spouse")?.firstName ?? "Spouse";
+
   const origWill = new Map((original.wills ?? []).map((w) => [w.id, w]));
   for (const w of working.wills ?? []) {
     const o = origWill.get(w.id);
@@ -103,8 +135,13 @@ export function diffWorkingCopy(
       continue;
     }
 
+    const grantorName =
+      w.grantor === "client" ? clientName
+      : w.grantor === "spouse" ? spouseName
+      : (w.grantor ?? "?");
+
     changes.push({
-      description: `Will (${w.grantor ?? "?"}) — distribution`,
+      description: `Will (${grantorName}) — distribution`,
       edit: {
         op: "edit",
         targetKind: "will",
