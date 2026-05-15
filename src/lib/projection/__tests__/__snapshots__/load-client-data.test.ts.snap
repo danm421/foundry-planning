@@ -190,6 +190,7 @@ exports[`loadClientData > returns a fully populated ClientData for a valid clien
       "growthSource": "custom",
       "id": "00000000-0000-0000-0000-000000000070",
       "isDeductible": true,
+      "rothPercent": null,
       "scheduleOverrides": undefined,
       "startYear": 2026,
       "startYearRef": null,

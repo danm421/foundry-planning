@@ -1,12 +1,13 @@
 /**
- * Golden fixture regression tests — PR1 Task 7 (audit F5).
+ * Golden fixture regression tests — PR1 Task 7 (audit F5) + Task 12 (G4).
  *
- * These tests lock the baseline output of three canonical scenarios so that
+ * These tests lock the baseline output of four canonical scenarios so that
  * PR2's architecture change (iterative re-tax) produces a clear, auditable diff.
  *
  * G1 — Pre-retirement, no deficit:        numbers should be UNCHANGED by PR2.
  * G2 — Early retiree, taxable+Roth basis: numbers will MOVE in PR2 (tax added).
  * G3 — Late retiree, Trad IRA + RMDs:     numbers will shift slightly in PR2.
+ * G4 — Split 401(k), Roth/pre-tax:        locked here; exercises rothPercent end-to-end.
  *
  * runProjection returns ProjectionYear[] directly (not { years: ... }).
  */
@@ -20,6 +21,8 @@ import {
   g2ExpectedYears,
   g3ClientData,
   g3ExpectedYears,
+  g4ClientData,
+  g4ExpectedYears,
   type GoldenExpectedYear,
 } from "./golden-fixtures-data";
 
@@ -36,6 +39,22 @@ function assertGoldenYears(
     expect(yr!.taxDetail?.earnedIncome ?? 0, `${scenario} ${e.year} taxDetail.earnedIncome`).toBeCloseTo(e.taxDetailEarned, 2);
     expect(yr!.taxDetail?.ordinaryIncome ?? 0, `${scenario} ${e.year} taxDetail.ordinaryIncome`).toBeCloseTo(e.taxDetailOrdinary, 2);
     expect(yr!.taxDetail?.capitalGains ?? 0, `${scenario} ${e.year} taxDetail.capitalGains`).toBeCloseTo(e.taxDetailCapGains, 2);
+
+    // G4-only: Roth basis on the 401(k) and above-the-line deduction.
+    if (e.rothValueEoY401k !== undefined) {
+      const ledger = yr!.accountLedgers["acct-g4-401k"];
+      expect(ledger, `${scenario} ${e.year} acct-g4-401k ledger`).toBeDefined();
+      expect(
+        ledger!.rothValueEoY,
+        `${scenario} ${e.year} rothValueEoY (expect 30% of contribution)`,
+      ).toBeCloseTo(e.rothValueEoY401k, 2);
+    }
+    if (e.aboveLineRetirementContributions !== undefined) {
+      expect(
+        yr!.deductionBreakdown?.aboveLine.retirementContributions,
+        `${scenario} ${e.year} aboveLine.retirementContributions (expect 70% of contribution)`,
+      ).toBeCloseTo(e.aboveLineRetirementContributions, 2);
+    }
   }
 }
 
@@ -54,5 +73,11 @@ describe("golden fixture G2 — early retiree, taxable + Roth basis deficit", ()
 describe("golden fixture G3 — late retiree, Trad IRA deficit + RMDs", () => {
   it("matches captured baseline year-by-year", () => {
     assertGoldenYears("G3", runProjection(g3ClientData), g3ExpectedYears);
+  });
+});
+
+describe("golden fixture G4 — split 401(k) savings rule, Roth/pre-tax", () => {
+  it("matches captured baseline year-by-year: Roth basis = 30% of contribution, deduction = 70%", () => {
+    assertGoldenYears("G4", runProjection(g4ClientData), g4ExpectedYears);
   });
 });

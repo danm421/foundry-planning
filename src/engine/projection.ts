@@ -1940,6 +1940,7 @@ export function runProjection(data: ClientData, options?: ProjectionOptions): Pr
             annualAmount: r.annualAmount,
             annualPercent: r.annualPercent ?? null,
             isDeductible: r.isDeductible,
+            rothPercent: r.rothPercent ?? null,
             startYear: r.startYear,
             endYear: r.endYear,
           })),
