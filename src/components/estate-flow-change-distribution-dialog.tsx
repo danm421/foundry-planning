@@ -320,10 +320,13 @@ function EstateFlowChangeDistributionDialogInner({
     [clientData.familyMembers],
   );
 
-  // Children only — drives the "Split among children" shortcut.
+  // Children only — drives the "Split among children" shortcut. Filter from
+  // `familyMembers` (already role-excludes the household principals) so the
+  // client/spouse can't slip in: their `relationship` is often "child" because
+  // the DB column defaults to "child" and not every creation path overrides it.
   const childMembers = useMemo(
-    () => (clientData.familyMembers ?? []).filter((m) => m.relationship === "child"),
-    [clientData.familyMembers],
+    () => familyMembers.filter((m) => m.relationship === "child"),
+    [familyMembers],
   );
 
   const externalBeneficiaries = clientData.externalBeneficiaries ?? [];
