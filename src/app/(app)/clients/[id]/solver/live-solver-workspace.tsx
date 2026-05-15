@@ -10,10 +10,8 @@ import { buildLeverMutation } from "@/lib/solver/lever-search-config";
 import { buildSolverComparisonPlan } from "@/lib/solver/build-solver-comparison-plan";
 import { useSolverSolve } from "./use-solver-solve";
 import { useSharedMcRun } from "@/app/(app)/clients/[id]/comparison/use-shared-mc-run";
-import {
-  PortfolioBarsChart,
-  liquidPortfolioTotal,
-} from "@/components/charts/portfolio-bars-chart";
+import { liquidPortfolioTotal } from "@/components/charts/portfolio-bars-chart";
+import { SolverChartPanel } from "./solver-chart-panel";
 import { SolverCompareGrid } from "./solver-compare-grid";
 import { SolverSection } from "./solver-section";
 import { SolverRowRetirementAges } from "./solver-row-retirement-ages";
@@ -323,23 +321,12 @@ export function LiveSolverWorkspace({
 
   return (
     <div className="space-y-5">
-      <div className="rounded-lg border border-hair bg-card p-4">
-        <div style={{ height: 300 }}>
-          <PortfolioBarsChart current={currentProjection} baseline={baseProjection} />
-        </div>
-        {computeStatus === "computing" ? (
-          <div
-            aria-live="polite"
-            className="mt-2 inline-flex items-center gap-2 text-[11px] text-ink-3"
-          >
-            <span
-              aria-hidden="true"
-              className="h-2 w-2 rounded-full bg-accent/70 animate-pulse"
-            />
-            Recalculating…
-          </div>
-        ) : null}
-      </div>
+      <SolverChartPanel
+        currentProjection={currentProjection}
+        baseProjection={baseProjection}
+        workingTree={workingTree}
+        computeStatus={computeStatus}
+      />
 
       {errorMessage ? (
         <div
