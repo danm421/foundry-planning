@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fieldLabelClassName,
   inputClassName,
@@ -23,7 +23,15 @@ export interface EstateFlowGiftFieldsProps {
   clientData: ClientData;
   /** When launched from a column-1 asset, the source account; null for a standalone gift. */
   sourceAccount: { id: string; name: string; value: number } | null;
-  /** Editing an existing gift — its kind is then locked (decision 3). */
+  /**
+   * Editing an existing gift — its kind is then locked (decision 3).
+   *
+   * REMOUNT CONTRACT: this prop is read only by `useState` lazy initialisers,
+   * so swapping it on a mounted instance would leave stale field values. The
+   * parent MUST mount this component with a `key` that changes per gift —
+   * e.g. `key={editing?.id ?? "new"}` — so the form remounts and re-seeds its
+   * state whenever the edited gift changes.
+   */
   editing: EstateFlowGift | null;
   /** Called on every valid change with the assembled draft, or null when invalid. */
   onChange: (draft: EstateFlowGift | null) => void;
@@ -61,6 +69,10 @@ const recipientKey = (r: GiftRecipientRef) => `${r.kind}:${r.id}`;
 function segButtonClassName(active: boolean, disabled: boolean): string {
   const base =
     "flex-1 rounded-[var(--radius-sm)] px-3 py-1.5 text-[13px] font-medium transition-colors";
+  // A disabled-but-active button (a locked kind while editing) keeps an accent
+  // tint so the advisor can still see which kind the locked gift is.
+  if (disabled && active)
+    return `${base} cursor-not-allowed bg-accent/10 text-accent/70 ring-1 ring-accent/25`;
   if (disabled) return `${base} cursor-not-allowed text-ink-4`;
   if (active)
     return `${base} bg-accent/15 text-accent ring-1 ring-accent/40`;
@@ -69,6 +81,15 @@ function segButtonClassName(active: boolean, disabled: boolean): string {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
+/**
+ * Gift add/edit form. State is seeded once from `editing`/`sourceAccount` via
+ * `useState` lazy initialisers and is NOT synced back from props afterwards.
+ *
+ * REMOUNT CONTRACT: the parent MUST give this component a `key` that changes
+ * per gift — e.g. `key={editing?.id ?? "new"}` — so the form remounts (and
+ * re-seeds its state) whenever the edited gift changes. Tasks 8 and 9 rely on
+ * this; do not add prop→state sync effects instead.
+ */
 export function EstateFlowGiftFields({
   clientData,
   sourceAccount,
@@ -119,12 +140,20 @@ export function EstateFlowGiftFields({
     }
 
     return opts;
-  }, [clientData]);
+  }, [
+    clientData.familyMembers,
+    clientData.entities,
+    clientData.externalBeneficiaries,
+  ]);
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [recipientValue, setRecipientValue] = useState<string>(() =>
     editing ? recipientKey(editing.recipient) : "",
   );
+
+  // Stable id for a NEW gift — generated once, kept across renders so the
+  // draft identity does not churn. When editing, `editing.id` is used instead.
+  const newGiftId = useState(() => crypto.randomUUID())[0];
 
   const editingKind: DraftKind | null = editing ? editing.kind : null;
 
@@ -170,6 +199,8 @@ export function EstateFlowGiftFields({
   const [grantor, setGrantor] = useState<GiftGrantor>(
     () => editing?.grantor ?? "client",
   );
+  // Reads editing.crummey only for non-asset-once kinds — asset-once gifts have
+  // no crummey field, so they seed to false.
   const [crummey, setCrummey] = useState<boolean>(() =>
     editing && editing.kind !== "asset-once" ? editing.crummey : false,
   );
@@ -199,7 +230,7 @@ export function EstateFlowGiftFields({
   // touch keep their original position.
   const draft = useMemo<EstateFlowGift | null>(() => {
     if (!selectedRecipient) return null;
-    const id = editing?.id ?? crypto.randomUUID();
+    const id = editing?.id ?? newGiftId;
     const recipient = selectedRecipient.ref;
 
     if (effectiveRecurring) {
@@ -264,6 +295,7 @@ export function EstateFlowGiftFields({
   }, [
     selectedRecipient,
     editing,
+    newGiftId,
     effectiveRecurring,
     effectiveInKind,
     sourceAccount,
@@ -281,9 +313,24 @@ export function EstateFlowGiftFields({
     planMaxYear,
   ]);
 
-  // Fire onChange on every render where the draft identity changes.
-  const lastSentRef = useStableJson(draft);
-  if (lastSentRef.changed) onChange(draft);
+  // Fire onChange from an effect whenever the draft *content* changes.
+  // `draftJson` is a stable serialisation used as the effect key, so a new
+  // object identity for an unchanged draft does not re-fire. The latest
+  // `onChange` is held in a ref so a fresh `onChange` identity from the parent
+  // does not re-fire the effect either. The effect runs after the first
+  // commit, which satisfies "fire on mount" with the initial draft (or null).
+  const draftJson = useMemo(
+    () => (draft ? JSON.stringify(draft) : null),
+    [draft],
+  );
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
+  useEffect(() => {
+    onChangeRef.current(draft);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- draft intentionally omitted; draftJson is its stable key
+  }, [draftJson]);
 
   // ── Exemption warning preview ──────────────────────────────────────────────
   const breaches = useMemo<GiftWarningBreach[]>(() => {
@@ -329,7 +376,14 @@ export function EstateFlowGiftFields({
       }
     }
     return out;
-  }, [draft, ledger, taxInflationRate, sourceAccount, clientData]);
+    // Narrowed: only sourceAccount?.value and clientData.familyMembers are read.
+  }, [
+    draft,
+    ledger,
+    taxInflationRate,
+    sourceAccount?.value,
+    clientData.familyMembers,
+  ]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -438,14 +492,9 @@ export function EstateFlowGiftFields({
               min={planMinYear}
               max={planMaxYear}
               value={Number.isFinite(year) ? year : ""}
-              onChange={(e) =>
-                setYear(
-                  Math.max(
-                    planMinYear,
-                    Math.min(planMaxYear, Number(e.target.value)),
-                  ),
-                )
-              }
+              // Out-of-window years are caught by draft validation, consistent
+              // with gift-start-year / gift-end-year — no onChange clamp.
+              onChange={(e) => setYear(Number(e.target.value))}
             />
           </div>
 
@@ -611,20 +660,4 @@ export function EstateFlowGiftFields({
       <GiftWarningAlert mode="inline" breaches={breaches} />
     </div>
   );
-}
-
-// ── onChange firing helper ───────────────────────────────────────────────────
-
-/** Tracks the last JSON-serialised draft so onChange fires once per real
- *  change rather than on every render — including a guaranteed fire on the
- *  first render so the parent receives the initial draft (or null). Kept out
- *  of the component body to keep the render path readable. */
-function useStableJson(draft: EstateFlowGift | null): { changed: boolean } {
-  const [last, setLast] = useState<string | null | undefined>(undefined);
-  const current = draft ? JSON.stringify(draft) : null;
-  if (current !== last) {
-    setLast(current);
-    return { changed: true };
-  }
-  return { changed: false };
 }
