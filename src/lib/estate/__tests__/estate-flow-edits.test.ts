@@ -67,6 +67,22 @@ describe("changeBeneficiaries", () => {
     ]);
     expect(input.accounts[0].beneficiaries).toEqual([]);
   });
+
+  it("returns data unchanged when the account id is unknown", () => {
+    const input = baseData();
+    const next = changeBeneficiaries(input, "account", "acc-missing", []);
+    expect(next.accounts[0]).toBe(input.accounts[0]);
+  });
+
+  it("returns data unchanged when the entity id is unknown", () => {
+    const data = {
+      accounts: [],
+      entities: [{ id: "ent-1", name: "Family Trust", beneficiaries: [] }],
+      wills: [],
+    } as unknown as ClientData;
+    const next = changeBeneficiaries(data, "entity", "ent-missing", []);
+    expect(next.entities?.[0]).toBe(data.entities?.[0]);
+  });
 });
 
 describe("changeWillBequests", () => {
@@ -125,6 +141,22 @@ describe("changeWillBequests", () => {
       [{ recipientKind: "family_member", recipientId: "fm-kid", percentage: 100, sortOrder: 0 }],
     );
     expect(data.wills?.[0].bequests).toHaveLength(0);
+  });
+
+  it("clears the residuary clause when residuaryRecipients is []", () => {
+    const data = {
+      accounts: [],
+      entities: [],
+      wills: [{ id: "will-1", grantor: "client", bequests: [], residuaryRecipients: [{ recipientKind: "family_member", recipientId: "fm-kid", percentage: 100, sortOrder: 0 }] }],
+    } as unknown as ClientData;
+    const next = changeWillBequests(
+      data,
+      "will-1",
+      [{ id: "bq-1", name: "House", kind: "asset", assetMode: "specific", accountId: "acc-1", liabilityId: null, percentage: 100, condition: "always", sortOrder: 0, recipients: [] }],
+      [],
+    );
+    expect(next.wills?.[0].residuaryRecipients).toEqual([]);
+    expect(next.wills?.[0].bequests).toHaveLength(1);
   });
 
   it("returns data unchanged when the will id is unknown", () => {

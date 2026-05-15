@@ -1,4 +1,4 @@
-import type { ClientData, Account, BeneficiaryRef, Will } from "@/engine/types";
+import type { ClientData, Account, BeneficiaryRef, Will, WillResiduaryRecipient } from "@/engine/types";
 
 type AccountOwners = Account["owners"];
 
@@ -42,12 +42,15 @@ export function changeBeneficiaries(
   return changed ? { ...data, entities } : data;
 }
 
-/** Replace bequests + residuary recipients on one will. Pure. */
+/**
+ * Replace bequests + residuary recipients on one will. Pure.
+ * Pass an empty array to clear the residuary clause.
+ */
 export function changeWillBequests(
   data: ClientData,
   willId: string,
   bequests: Will["bequests"],
-  residuaryRecipients: Will["residuaryRecipients"],
+  residuaryRecipients: WillResiduaryRecipient[],
 ): ClientData {
   let changed = false;
   const wills = (data.wills ?? []).map((w) => {
