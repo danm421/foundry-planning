@@ -248,7 +248,9 @@ export default function SavingsRuleDialog({
       annualPercent: outAnnualPercent,
       contributeMax: contribMode === "max",
       rothPercent: outRothPercent,
-      isDeductible: showDeductibleCheckbox && !showRothSplit ? isDeductible : true,
+      isDeductible: showRothSplit
+        ? (editing?.isDeductible ?? true)
+        : (showDeductibleCheckbox ? isDeductible : true),
       applyContributionLimit: showContributionCapCheckbox ? applyContributionLimit : true,
       startYear: String(startYear),
       endYear: String(endYear),
