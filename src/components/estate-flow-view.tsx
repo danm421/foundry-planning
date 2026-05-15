@@ -240,6 +240,16 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             typeof resBody?.error === "string"
               ? resBody.error
               : `Change save failed (HTTP ${res.status})`;
+          // Attempt to clean up the orphaned (partial) scenario before surfacing
+          // the error. A failed cleanup should not mask the original error.
+          try {
+            await fetch(
+              `/api/clients/${props.clientId}/scenarios/${newScenarioId}`,
+              { method: "DELETE" },
+            );
+          } catch {
+            // Cleanup failure is intentionally swallowed.
+          }
           setSaveError(msg);
           return;
         }
@@ -291,28 +301,38 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             onAssetClick={setOwnerDialogId}
           />
         </div>
-        {/* Death column 1 — first death */}
-        <div className="rounded border border-gray-800/60 p-3">
-          <EstateFlowDeathColumn
-            section={reportData.firstDeath}
-            deathOrder={1}
-            projection={projection}
-            onAssetClick={setDistributionDialogId}
-          />
-        </div>
-        {/* Death column 2 — second death, married only */}
-        {props.isMarried ? (
-          <div className="rounded border border-gray-800/60 p-3">
-            <EstateFlowDeathColumn
-              section={reportData.secondDeath}
-              deathOrder={2}
-              projection={projection}
-              onAssetClick={setDistributionDialogId}
-            />
-          </div>
-        ) : (
-          <div className="rounded border border-gray-800/60 p-3" aria-hidden="true" />
-        )}
+        {/* Death columns — ordering toggle swaps which section feeds column 2 vs 3 */}
+        {(() => {
+          const [col2Section, col3Section] =
+            ordering === "spouseFirst"
+              ? [reportData.secondDeath, reportData.firstDeath]
+              : [reportData.firstDeath, reportData.secondDeath];
+          return (
+            <>
+              <div className="rounded border border-gray-800/60 p-3">
+                <EstateFlowDeathColumn
+                  section={col2Section}
+                  deathOrder={1}
+                  projection={projection}
+                  onAssetClick={setDistributionDialogId}
+                />
+              </div>
+              {/* Death column 3 — second death, married only */}
+              {props.isMarried ? (
+                <div className="rounded border border-gray-800/60 p-3">
+                  <EstateFlowDeathColumn
+                    section={col3Section}
+                    deathOrder={2}
+                    projection={projection}
+                    onAssetClick={setDistributionDialogId}
+                  />
+                </div>
+              ) : (
+                <div className="rounded border border-gray-800/60 p-3" aria-hidden="true" />
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {isDirty && (
