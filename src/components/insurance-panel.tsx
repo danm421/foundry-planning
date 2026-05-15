@@ -66,6 +66,7 @@ export interface InsurancePanelProps {
   externalBeneficiaries: InsurancePanelExternal[];
   modelPortfolios: InsurancePanelModelPortfolio[];
   resolvedInflationRate: number;
+  embed?: "page" | "wizard";
 }
 
 const POLICY_TYPE_GROUPS = [
@@ -141,8 +142,10 @@ export default function InsurancePanel(props: InsurancePanelProps) {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-100">Insurance</h1>
+      <header className={props.embed === "wizard" ? "flex items-center justify-end" : "flex items-center justify-between"}>
+        {props.embed !== "wizard" && (
+          <h1 className="text-2xl font-semibold text-gray-100">Insurance</h1>
+        )}
         <button
           type="button"
           className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep"

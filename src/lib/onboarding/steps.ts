@@ -85,8 +85,7 @@ export const STEPS: readonly StepDef[] = [
     description: "Life, disability, and long-term-care coverage.",
     icon: "insurance",
     skippable: true,
-    placeholderInPhase1: true,
-    tabHref: (id) => `/clients/${id}/client-data/insurance`,
+    placeholderInPhase1: false,
   },
   {
     slug: "estate",

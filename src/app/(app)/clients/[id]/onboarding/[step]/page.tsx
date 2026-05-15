@@ -14,6 +14,7 @@ import EntitiesStep from "../steps/entities-step";
 import AccountsStep from "../steps/accounts-step";
 import LiabilitiesStep from "../steps/liabilities-step";
 import CashFlowStep from "../steps/cash-flow-step";
+import InsuranceStep from "../steps/insurance-step";
 import ReviewStep from "../steps/review-step";
 import PlaceholderStep from "../steps/placeholder-step";
 
@@ -50,6 +51,8 @@ export default async function OnboardingStepPage({ params }: PageProps) {
     body = <LiabilitiesStep clientId={id} firmId={firmId} />;
   } else if (step === "cash-flow") {
     body = <CashFlowStep clientId={id} firmId={firmId} />;
+  } else if (step === "insurance") {
+    body = <InsuranceStep clientId={id} firmId={firmId} />;
   } else if (step === "review") {
     body = (
       <ReviewStep clientId={id} statuses={statuses} alreadyFinished={row.completedAt !== null} />
