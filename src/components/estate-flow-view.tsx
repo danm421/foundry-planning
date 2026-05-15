@@ -35,9 +35,14 @@ function DeathOrderToggle({ value, onChange, ownerNames }: DeathOrderToggleProps
   const spouseLabel = ownerNames.spouseName ?? "Spouse";
 
   return (
-    <div className="flex items-center gap-1 rounded border border-[#1f2024] p-0.5">
+    <div
+      role="group"
+      aria-label="Death order"
+      className="flex items-center gap-1 rounded border border-[#1f2024] p-0.5"
+    >
       <button
         type="button"
+        aria-pressed={value === "primaryFirst"}
         onClick={() => onChange("primaryFirst")}
         className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
           value === "primaryFirst"
@@ -49,6 +54,7 @@ function DeathOrderToggle({ value, onChange, ownerNames }: DeathOrderToggleProps
       </button>
       <button
         type="button"
+        aria-pressed={value === "spouseFirst"}
         onClick={() => onChange("spouseFirst")}
         className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
           value === "spouseFirst"
@@ -73,6 +79,13 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // `ordering` is NOT passed to runProjectionWithEvents — the projection always
+  // computes both first-death and second-death sections from the data.
+  // `ordering` is a display-time selector consumed by the death-column
+  // components (Tasks 6-7) to decide which death feeds which column: when
+  // "primaryFirst", column 1 shows the client's death and column 2 shows the
+  // spouse's death; "spouseFirst" swaps them. The projection result is
+  // identical either way.
   const projection = useMemo(
     () => runProjectionWithEvents(working),
     [working],
@@ -93,10 +106,13 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   // Silence unused-variable lint until Tasks 6–9 wire these up.
   void applyEdit;
 
-  function handleScenarioChange(next: string) {
-    // TODO: Task 9 unsaved-changes guard
-    router.push(`${pathname}?scenario=${encodeURIComponent(next)}`);
-  }
+  const handleScenarioChange = useCallback(
+    (next: string) => {
+      // TODO: Task 9 unsaved-changes guard
+      router.push(`${pathname}?scenario=${encodeURIComponent(next)}`);
+    },
+    [router, pathname],
+  );
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -124,7 +140,7 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             </div>
           )}
           {isDirty && (
-            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+            <span className="rounded bg-amber-900/40 px-2 py-0.5 text-xs text-amber-200">
               Modified — unsaved
             </span>
           )}
