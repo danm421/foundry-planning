@@ -3,17 +3,25 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { LiveSolverWorkspace } from "../live-solver-workspace";
 
+const routerPush = vi.fn();
+const routerRefresh = vi.fn();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: routerPush, refresh: routerRefresh }),
 }));
 
 vi.mock("@/components/charts/portfolio-bars-chart", () => ({
-  PortfolioBarsChart: () => null,
+  PortfolioBarsChart: ({ current }: { current: Array<{ portfolioAssets: { total: number } }> }) => (
+    <div data-testid="chart-current-total">
+      {current.at(-1)?.portfolioAssets.total ?? "none"}
+    </div>
+  ),
 }));
 
 const fetchMock = vi.fn();
 beforeEach(() => {
   fetchMock.mockReset();
+  routerPush.mockReset();
+  routerRefresh.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -153,5 +161,66 @@ describe("LiveSolverWorkspace — solve lifecycle", () => {
     // property — use spinbutton role to distinguish the input from the solve icon.
     const inputAfter = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i }) as HTMLInputElement;
     expect(inputAfter.value).toBe("67");
+  });
+});
+
+describe("LiveSolverWorkspace — save scenario", () => {
+  it("refreshes the router after a successful save so the scenario chip row updates", async () => {
+    fetchMock.mockImplementation((url: unknown) => {
+      if (typeof url === "string" && url.includes("/save-scenario")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ scenarioId: "new-scenario-id" }),
+        });
+      }
+      // debounced /project recompute
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          projection: [{ year: 2026, portfolioAssets: { total: 900_000 } }],
+        }),
+      });
+    });
+
+    render(<LiveSolverWorkspace {...baseProps} />);
+
+    // A mutation is required before the "Save as scenario…" button enables.
+    const cooper = screen.getByRole("spinbutton", { name: /Cooper's Retirement Age/i });
+    fireEvent.change(cooper, { target: { value: "67" } });
+
+    const openSave = screen.getByRole("button", { name: /Save as scenario/i });
+    await waitFor(() => expect(openSave).not.toBeDisabled());
+    fireEvent.click(openSave);
+
+    const nameInput = await screen.findByLabelText("Name");
+    fireEvent.change(nameInput, { target: { value: "Retire at 67" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Save scenario$/ }));
+
+    await waitFor(() => expect(routerRefresh).toHaveBeenCalledTimes(1));
+    expect(routerPush).toHaveBeenCalledWith(
+      "/clients/client-id/comparison?scenario=new-scenario-id",
+    );
+  });
+});
+
+describe("LiveSolverWorkspace — right-column source change", () => {
+  it("renders the new source's projection when the workspace is remounted by source key", () => {
+    // page.tsx keys the workspace on `source`; switching the right-column
+    // scenario remounts it so currentProjection re-initializes from the new
+    // initialSourceProjection instead of keeping the previous source's data.
+    const { rerender } = render(<LiveSolverWorkspace key="base" {...baseProps} />);
+    expect(screen.getByTestId("chart-current-total")).toHaveTextContent("1000000");
+
+    rerender(
+      <LiveSolverWorkspace
+        key="scenario-x"
+        {...baseProps}
+        initialSource="scenario-x"
+        initialSourceProjection={
+          [{ year: 2026, portfolioAssets: { total: 2_500_000 } }] as never
+        }
+      />,
+    );
+    expect(screen.getByTestId("chart-current-total")).toHaveTextContent("2500000");
   });
 });

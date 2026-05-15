@@ -232,6 +232,10 @@ export function LiveSolverWorkspace({
       const data = (await res.json()) as { scenarioId: string };
       setSaveOpen(false);
       router.push(`/clients/${clientId}/comparison?scenario=${data.scenarioId}`);
+      // Re-fetch server components so the new scenario appears in the
+      // ScenarioChipRow (rendered by the shared [id] layout, which a plain
+      // push does not re-run). Mirrors create-scenario-dialog.tsx.
+      router.refresh();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
     } finally {
