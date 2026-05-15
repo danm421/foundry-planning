@@ -408,6 +408,52 @@ describe("splitAccount", () => {
       ], undefined),
     ).toThrow(/share fraction must be > 0/);
   });
+
+  it("carries forward beneficiaries onto the resulting account when the share requests it", () => {
+    const acct: Account = {
+      id: "acct-cf", name: "Carry Forward Acct",
+      category: "taxable", subType: "brokerage",
+      value: 100000, basis: 50000,
+      growthRate: 0.05, rmdEnabled: false,
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+    };
+    const carried: BeneficiaryRef[] = [
+      { id: "cf-1", tier: "primary", percentage: 100, entityIdRef: "ent-trust", sortOrder: 0 },
+    ];
+    const result = splitAccount(
+      acct,
+      [{
+        fraction: 1,
+        ownerMutation: { owners: [{ kind: "family_member", familyMemberId: "fm-spouse", percent: 1 }] },
+        carryForwardBeneficiaries: carried,
+        ledgerMeta: { via: "beneficiary_designation", recipientKind: "spouse", recipientId: "fm-spouse", recipientLabel: "Spouse" },
+      }],
+      undefined,
+    );
+    expect(result.resultingAccounts).toHaveLength(1);
+    expect(result.resultingAccounts[0].beneficiaries).toEqual(carried);
+  });
+
+  it("clears beneficiaries on the resulting account when no carry-forward is requested", () => {
+    const acct: Account = {
+      id: "acct-nocf", name: "No Carry Forward",
+      category: "taxable", subType: "brokerage",
+      value: 100000, basis: 50000,
+      growthRate: 0.05, rmdEnabled: false,
+      beneficiaries: [{ id: "b-old", tier: "primary", percentage: 100, familyMemberId: "fm-client", sortOrder: 0 }],
+      owners: [{ kind: "family_member", familyMemberId: "fm-client", percent: 1 }],
+    };
+    const result = splitAccount(
+      acct,
+      [{
+        fraction: 1,
+        ownerMutation: { owners: [{ kind: "family_member", familyMemberId: "fm-spouse", percent: 1 }] },
+        ledgerMeta: { via: "titling", recipientKind: "spouse", recipientId: "fm-spouse", recipientLabel: "Spouse" },
+      }],
+      undefined,
+    );
+    expect(result.resultingAccounts[0].beneficiaries).toBeUndefined();
+  });
 });
 
 import { applyTitling } from "../death-event";

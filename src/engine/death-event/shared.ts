@@ -106,6 +106,12 @@ export type SplitShare = {
   removed?: boolean;
   /** When !removed, the ownership to assign to the resulting account. */
   ownerMutation?: OwnerMutation;
+  /** Beneficiary designations to set on the resulting account. When omitted,
+   *  the resulting account's designations are cleared — the new owner's own
+   *  designations govern. Used for death-event carry-forward: the contingent
+   *  tier carried onto a surviving spouse's account so it governs that
+   *  spouse's later death. */
+  carryForwardBeneficiaries?: BeneficiaryRef[];
   ledgerMeta: {
     via: DeathTransfer["via"];
     recipientKind: DeathTransfer["recipientKind"];
@@ -225,12 +231,19 @@ export function splitAccount(
       continue;
     }
 
+    // The resulting account's beneficiary designations are normally cleared —
+    // the new owner's own designations govern. Exception: a death-event step
+    // may carry designations forward via `share.carryForwardBeneficiaries`
+    // (the contingent tier promoted onto a surviving spouse's account so it
+    // governs that spouse's later death). Undefined when not requested →
+    // identical to the prior always-clear behavior.
+    const carriedBeneficiaries = share.carryForwardBeneficiaries;
     let newAccount: Account;
     if (inPlace) {
       // Mutate original: keep id, name, value, basis unchanged.
       newAccount = {
         ...source,
-        beneficiaries: undefined, // new owner's designations replace deceased's (if any)
+        beneficiaries: carriedBeneficiaries,
       };
     } else {
       newAccount = {
@@ -239,7 +252,7 @@ export function splitAccount(
         name: `${source.name} — to ${share.ledgerMeta.recipientLabel}`,
         value: amount,
         basis: basisShare,
-        beneficiaries: undefined,
+        beneficiaries: carriedBeneficiaries,
       };
     }
 
