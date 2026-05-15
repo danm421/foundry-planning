@@ -104,6 +104,11 @@ interface WillsPanelProps {
   externalBeneficiaries: WillsPanelExternal[];
   entities: WillsPanelEntity[];
   initialWills: WillsPanelWill[];
+  /** Reserved seam for wizard-mode trimming. No structural change today since
+   *  WillsPanel has no top-level h1 — the per-grantor h2's are appropriate
+   *  inside the wizard. Kept so the step component stays uniform with
+   *  Insurance/Assumptions. */
+  embed?: "page" | "wizard";
 }
 
 const CONDITION_LABEL: Record<WillCondition, string> = {

@@ -93,8 +93,7 @@ export const STEPS: readonly StepDef[] = [
     description: "Wills, trusts, and the wishes that drive the estate spine.",
     icon: "estate",
     skippable: true,
-    placeholderInPhase1: true,
-    tabHref: (id) => `/clients/${id}/client-data/wills`,
+    placeholderInPhase1: false,
   },
   {
     slug: "assumptions",
