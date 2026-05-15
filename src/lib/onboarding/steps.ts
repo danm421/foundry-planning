@@ -53,8 +53,7 @@ export const STEPS: readonly StepDef[] = [
     description: "Trusts, LLCs, and other entities tied to the household.",
     icon: "entities",
     skippable: true,
-    placeholderInPhase1: true,
-    tabHref: (id) => `/clients/${id}/client-data/family`,
+    placeholderInPhase1: false,
   },
   {
     slug: "accounts",
