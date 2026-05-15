@@ -26,6 +26,15 @@ export function supportsPercentContribution(category: string | undefined, subTyp
   return PERCENT_CONTRIB_SUB_TYPES.has(subType ?? "");
 }
 
+/** Account subtypes that support a Roth / pre-tax contribution split. */
+export const ROTH_SPLIT_SUB_TYPES = new Set(["401k", "403b"]);
+
+/** True if the contribution input should offer a Roth / pre-tax split. */
+export function supportsRothSplit(category: string | undefined, subType: string | undefined): boolean {
+  if (category !== "retirement") return false;
+  return ROTH_SPLIT_SUB_TYPES.has(subType ?? "");
+}
+
 /** True if the "Max (IRS limit)" mode is applicable to this account. */
 export const supportsMaxContribution = supportsContributionCap;
 
@@ -49,6 +58,10 @@ interface Props {
   initialPercent?: string | null;
   idPrefix?: string;
   required?: boolean;
+  /** When true, amount/percent modes render separate Pre-tax and Roth inputs. */
+  rothSplit?: boolean;
+  /** Stored Roth fraction (0..1) of the contribution, as a decimal string. */
+  initialRothPercent?: string | null;
 }
 
 /**
@@ -69,7 +82,20 @@ export default function ContributionAmountFields({
   initialPercent,
   idPrefix = "sr",
   required = false,
+  rothSplit,
+  initialRothPercent,
 }: Props) {
+  const rothRatio = initialRothPercent != null && initialRothPercent !== ""
+    ? Number(initialRothPercent)
+    : 0;
+  const initAmt = Number(initialAmount ?? 0);
+  const initPct = initialPercent ? pctFromDecimal(initialPercent, 0) : 0;
+  const splitInitials = {
+    pretaxAmount: initAmt * (1 - rothRatio),
+    rothAmount: initAmt * rothRatio,
+    pretaxPercent: initPct * (1 - rothRatio),
+    rothPercent: initPct * rothRatio,
+  };
   const modeOptions: ContributionMode[] = [
     "amount",
     ...(showModeToggle ? (["percent"] as ContributionMode[]) : []),
@@ -109,7 +135,28 @@ export default function ContributionAmountFields({
           </div>
         )}
       </div>
-      {mode === "amount" && (
+      {mode === "amount" && (rothSplit ? (
+        <div className="mt-1 grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-gray-400" htmlFor={`${idPrefix}-pretax-amount`}>Pre-tax ($)</label>
+            <CurrencyInput
+              id={`${idPrefix}-pretax-amount`}
+              name="pretaxAmount"
+              defaultValue={splitInitials.pretaxAmount}
+              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400" htmlFor={`${idPrefix}-roth-amount`}>Roth ($)</label>
+            <CurrencyInput
+              id={`${idPrefix}-roth-amount`}
+              name="rothAmount"
+              defaultValue={splitInitials.rothAmount}
+              className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </div>
+        </div>
+      ) : (
         <CurrencyInput
           id={`${idPrefix}-amount`}
           name="annualAmount"
@@ -117,8 +164,36 @@ export default function ContributionAmountFields({
           defaultValue={initialAmount ?? 0}
           className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 py-2 pr-3 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         />
-      )}
-      {mode === "percent" && (
+      ))}
+      {mode === "percent" && (rothSplit ? (
+        <>
+          <div className="mt-1 grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-400" htmlFor={`${idPrefix}-pretax-percent`}>Pre-tax (% of salary)</label>
+              <PercentInput
+                id={`${idPrefix}-pretax-percent`}
+                name="pretaxPercent"
+                placeholder="e.g., 4"
+                defaultValue={splitInitials.pretaxPercent || ""}
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400" htmlFor={`${idPrefix}-roth-percent`}>Roth (% of salary)</label>
+              <PercentInput
+                id={`${idPrefix}-roth-percent`}
+                name="rothPercentInput"
+                placeholder="e.g., 3"
+                defaultValue={splitInitials.rothPercent || ""}
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </div>
+          </div>
+          <p className="mt-1 text-xs text-gray-400">
+            Each resolves against the account owner&rsquo;s salary. No salary that year &rarr; no contribution.
+          </p>
+        </>
+      ) : (
         <>
           <PercentInput
             id={`${idPrefix}-amount`}
@@ -132,13 +207,27 @@ export default function ContributionAmountFields({
             Resolves against the account owner&rsquo;s salary each year. No salary that year → no contribution.
           </p>
         </>
-      )}
+      ))}
       {mode === "max" && (
-        <div className="mt-1 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-accent-ink">
-          Contributes the IRS limit each year for the account owner&rsquo;s age
-          (base + age-50 catch-up + SECURE 2.0 60-63 super catch-up when
-          applicable).
-        </div>
+        <>
+          <div className="mt-1 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-accent-ink">
+            Contributes the IRS limit each year for the account owner&rsquo;s age
+            (base + age-50 catch-up + SECURE 2.0 60-63 super catch-up when
+            applicable).
+          </div>
+          {rothSplit && (
+            <div className="mt-2">
+              <label className="block text-xs text-gray-400" htmlFor={`${idPrefix}-roth-share`}>Roth share of max contribution (%)</label>
+              <PercentInput
+                id={`${idPrefix}-roth-share`}
+                name="rothShareOfMax"
+                placeholder="0"
+                defaultValue={rothRatio ? rothRatio * 100 : ""}
+                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+            </div>
+          )}
+        </>
       )}
     </div>
   );
