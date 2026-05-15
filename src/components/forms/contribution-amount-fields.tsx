@@ -69,6 +69,11 @@ interface Props {
  *   - "Dollar amount"  — single currency input (name="annualAmount").
  *   - "% of salary"    — single percent input  (name="annualPercent").
  *
+ * When `rothSplit` is true the field names emitted change:
+ *   - amount mode  → pretaxAmount + rothAmount
+ *   - percent mode → pretaxPercent + rothPercentInput
+ *   - max mode     → rothShareOfMax
+ *
  * Used by both SavingsRuleDialog and the add-account create-mode Savings form.
  * Parent reads both fields from FormData (only the one for the current mode
  * will have a value) and decides which to persist based on `mode`.
@@ -102,6 +107,10 @@ export default function ContributionAmountFields({
     ...(showMaxToggle ? (["max"] as ContributionMode[]) : []),
   ];
   const showAnyToggle = modeOptions.length > 1;
+  const primaryInputId = rothSplit
+    ? (mode === "amount" ? `${idPrefix}-pretax-amount` : mode === "percent" ? `${idPrefix}-pretax-percent` : undefined)
+    : `${idPrefix}-amount`;
+
   const label =
     mode === "percent"
       ? "Contribution (% of salary)"
@@ -112,7 +121,7 @@ export default function ContributionAmountFields({
   return (
     <div>
       <div className="flex items-center justify-between">
-        <label className="block text-sm font-medium text-gray-300" htmlFor={`${idPrefix}-amount`}>
+        <label className="block text-sm font-medium text-gray-300" {...(primaryInputId ? { htmlFor: primaryInputId } : {})}>
           {label}
           {required && mode !== "max" && <span className="text-red-500"> *</span>}
         </label>
