@@ -135,6 +135,7 @@ export async function loadFamilyViewStepData(
     externalBeneficiaryId: d.externalBeneficiaryId,
     entityIdRef: d.entityIdRef ?? null,
     householdRole: (d.householdRole as "client" | "spouse" | null) ?? null,
+    distributionForm: d.distributionForm ?? null,
     percentage: parseFloat(d.percentage),
     sortOrder: d.sortOrder,
   }));

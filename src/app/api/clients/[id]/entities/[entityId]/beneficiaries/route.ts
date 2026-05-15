@@ -145,6 +145,7 @@ export async function PUT(
             externalBeneficiaryId: d.externalBeneficiaryId ?? null,
             entityIdRef: d.entityIdRef ?? null,
             householdRole: d.householdRole ?? null,
+            distributionForm: d.distributionForm ?? null,
             percentage: String(d.percentage),
             sortOrder: d.sortOrder ?? idx,
           })),

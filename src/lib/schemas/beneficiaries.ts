@@ -29,6 +29,7 @@ export const beneficiaryDesignationSchema = z
     entityIdRef: z.string().uuid().nullable().optional(),
     householdRole: z.enum(["client", "spouse"]).nullable().optional(),
     sortOrder: z.number().int().nonnegative().optional().default(0),
+    distributionForm: z.enum(["in_trust", "outright"]).optional(),
   })
   .refine(
     (d) => {
@@ -40,7 +41,12 @@ export const beneficiaryDesignationSchema = z
       message:
         "Exactly one of familyMemberId, externalBeneficiaryId, entityIdRef, or householdRole must be set.",
     },
-  );
+  )
+  .transform((d) => ({
+    ...d,
+    distributionForm:
+      d.tier === "remainder" ? (d.distributionForm ?? "outright") : undefined,
+  }));
 
 export const beneficiarySetSchema = z
   .array(beneficiaryDesignationSchema)

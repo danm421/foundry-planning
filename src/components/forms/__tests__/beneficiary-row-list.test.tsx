@@ -152,4 +152,87 @@ describe("BeneficiaryRowList", () => {
     );
     expect(screen.getByText(/Other Trust/i)).toBeInTheDocument();
   });
+
+  it("renders a distribution-form select for remainder rows", () => {
+    const rows: BeneficiaryRow[] = [
+      { id: "r1", source: { kind: "household", role: "client" }, percentage: 100, distributionForm: "outright" },
+    ];
+    render(
+      <BeneficiaryRowList
+        tier="remainder"
+        allowEntities={true}
+        rows={rows}
+        onChange={vi.fn()}
+        members={members}
+        externals={externals}
+        entities={entities}
+        household={householdProps}
+      />
+    );
+    expect(screen.getByRole("combobox", { name: /distribution form 1/i })).toBeTruthy();
+  });
+
+  it("does not render a distribution-form select for income rows", () => {
+    const rows: BeneficiaryRow[] = [
+      { id: "r1", source: { kind: "household", role: "client" }, percentage: 100 },
+    ];
+    render(
+      <BeneficiaryRowList
+        tier="income"
+        allowEntities={false}
+        rows={rows}
+        onChange={vi.fn()}
+        members={members}
+        externals={externals}
+        entities={[]}
+        household={householdProps}
+      />
+    );
+    expect(screen.queryByRole("combobox", { name: /distribution form/i })).toBeNull();
+  });
+
+  it("seeds new remainder rows with distributionForm 'outright'", () => {
+    const onChange = vi.fn();
+    render(
+      <BeneficiaryRowList
+        tier="remainder"
+        allowEntities={true}
+        rows={[]}
+        onChange={onChange}
+        members={members}
+        externals={externals}
+        entities={entities}
+        household={householdProps}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /add beneficiary/i }));
+    expect(onChange).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ distributionForm: "outright" }),
+    ]));
+  });
+
+  it("emits a changed distributionForm when the select changes", () => {
+    const onChange = vi.fn();
+    const rows: BeneficiaryRow[] = [
+      { id: "r1", source: { kind: "household", role: "client" }, percentage: 100, distributionForm: "outright" },
+    ];
+    render(
+      <BeneficiaryRowList
+        tier="remainder"
+        allowEntities={true}
+        rows={rows}
+        onChange={onChange}
+        members={members}
+        externals={externals}
+        entities={entities}
+        household={householdProps}
+      />
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: /distribution form 1/i }), {
+      target: { value: "in_trust" },
+    });
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ distributionForm: "in_trust" }),
+    ]);
+  });
 });

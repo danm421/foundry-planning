@@ -46,6 +46,48 @@ describe("beneficiaryDesignationSchema", () => {
     });
     expect(r.success).toBe(false);
   });
+
+  it("defaults remainder distributionForm to 'outright' when omitted", () => {
+    const r = beneficiaryDesignationSchema.safeParse({
+      tier: "remainder",
+      percentage: 100,
+      familyMemberId: "11111111-1111-1111-1111-111111111111",
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.distributionForm).toBe("outright");
+  });
+
+  it("keeps an explicit remainder distributionForm of 'in_trust'", () => {
+    const r = beneficiaryDesignationSchema.safeParse({
+      tier: "remainder",
+      percentage: 100,
+      familyMemberId: "11111111-1111-1111-1111-111111111111",
+      distributionForm: "in_trust",
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.distributionForm).toBe("in_trust");
+  });
+
+  it("strips distributionForm from non-remainder tiers", () => {
+    const r = beneficiaryDesignationSchema.safeParse({
+      tier: "income",
+      percentage: 100,
+      familyMemberId: "11111111-1111-1111-1111-111111111111",
+      distributionForm: "in_trust",
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.distributionForm).toBeUndefined();
+  });
+
+  it("rejects an invalid distributionForm value", () => {
+    const r = beneficiaryDesignationSchema.safeParse({
+      tier: "remainder",
+      percentage: 100,
+      familyMemberId: "11111111-1111-1111-1111-111111111111",
+      distributionForm: "partial",
+    });
+    expect(r.success).toBe(false);
+  });
 });
 
 describe("beneficiarySetSchema", () => {

@@ -15,7 +15,9 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import AddTrustForm from "../add-trust-form";
+import { designationsToRows, rowsToDesignationPayload } from "../add-trust-form";
 import type { Entity } from "../../family-view";
+import type { Designation } from "../../family-view";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -470,5 +472,93 @@ describe("<AddTrustForm> CLUT funding picks", () => {
     expect(
       calls.some((c) => c.method === "DELETE" && c.url.endsWith("/gifts/g2")),
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// designationsToRows / rowsToDesignationPayload round-trip (regression: distributionForm)
+// ---------------------------------------------------------------------------
+
+/** Minimal helper to build a Designation with the fields we care about. */
+function makeDesignation(overrides: Partial<Designation> & { id: string; tier: "income" | "remainder" }): Designation {
+  return {
+    targetKind: "trust",
+    accountId: null,
+    entityId: "trust-x",
+    familyMemberId: null,
+    externalBeneficiaryId: null,
+    entityIdRef: null,
+    householdRole: null,
+    percentage: 100,
+    sortOrder: 0,
+    distributionForm: null,
+    ...overrides,
+  };
+}
+
+describe("designationsToRows + rowsToDesignationPayload round-trip", () => {
+  it("preserves distributionForm=in_trust through a full round-trip for remainder tier", () => {
+    const designations: Designation[] = [
+      makeDesignation({ id: "d1", tier: "remainder", familyMemberId: "fm-1", distributionForm: "in_trust" }),
+    ];
+
+    const rows = designationsToRows(designations, "remainder");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].distributionForm).toBe("in_trust");
+
+    const payload = rowsToDesignationPayload(rows, "remainder");
+    expect(payload).toHaveLength(1);
+    expect(payload[0]).toMatchObject({ tier: "remainder", distributionForm: "in_trust" });
+  });
+
+  it("round-trips distributionForm=outright for remainder tier", () => {
+    const designations: Designation[] = [
+      makeDesignation({ id: "d2", tier: "remainder", familyMemberId: "fm-2", distributionForm: "outright" }),
+    ];
+
+    const rows = designationsToRows(designations, "remainder");
+    expect(rows[0].distributionForm).toBe("outright");
+
+    const payload = rowsToDesignationPayload(rows, "remainder");
+    expect(payload[0]).toMatchObject({ tier: "remainder", distributionForm: "outright" });
+  });
+
+  it("defaults null/absent distributionForm to outright for remainder tier", () => {
+    const designations: Designation[] = [
+      makeDesignation({ id: "d3", tier: "remainder", familyMemberId: "fm-3", distributionForm: null }),
+    ];
+
+    const rows = designationsToRows(designations, "remainder");
+    // null should fall back to "outright" (the intended default)
+    expect(rows[0].distributionForm).toBe("outright");
+
+    const payload = rowsToDesignationPayload(rows, "remainder");
+    expect(payload[0]).toMatchObject({ tier: "remainder", distributionForm: "outright" });
+  });
+
+  it("does NOT include distributionForm for income tier", () => {
+    const designations: Designation[] = [
+      makeDesignation({ id: "d4", tier: "income", familyMemberId: "fm-4", distributionForm: "in_trust" }),
+    ];
+
+    const rows = designationsToRows(designations, "income");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].distributionForm).toBeUndefined();
+
+    const payload = rowsToDesignationPayload(rows, "income");
+    expect(payload).toHaveLength(1);
+    expect("distributionForm" in payload[0]).toBe(false);
+  });
+
+  it("filters to the correct tier — income designation is not returned for remainder", () => {
+    const designations: Designation[] = [
+      makeDesignation({ id: "d5", tier: "income", familyMemberId: "fm-5", distributionForm: "in_trust" }),
+      makeDesignation({ id: "d6", tier: "remainder", familyMemberId: "fm-6", distributionForm: "in_trust" }),
+    ];
+
+    const remainderRows = designationsToRows(designations, "remainder");
+    expect(remainderRows).toHaveLength(1);
+    expect(remainderRows[0].id).toBe("d6");
+    expect(remainderRows[0].distributionForm).toBe("in_trust");
   });
 });

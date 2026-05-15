@@ -1053,13 +1053,16 @@ function toBasicAccountOptions(
 
 // ── Designation helpers ───────────────────────────────────────────────────────
 
-function designationsToRows(d: Designation[], tier: "income" | "remainder"): BeneficiaryRow[] {
+export function designationsToRows(d: Designation[], tier: "income" | "remainder"): BeneficiaryRow[] {
   return d
     .filter((x) => x.tier === tier)
     .map((x) => ({
       id: x.id,
       source: designationToSource(x),
       percentage: x.percentage,
+      ...(tier === "remainder"
+        ? { distributionForm: (x.distributionForm ?? "outright") as "in_trust" | "outright" }
+        : {}),
     }));
 }
 
@@ -1071,11 +1074,18 @@ function designationToSource(d: Designation): BeneficiaryRow["source"] {
   return { kind: "empty" };
 }
 
-function rowsToDesignationPayload(rows: BeneficiaryRow[], tier: "income" | "remainder") {
+export function rowsToDesignationPayload(rows: BeneficiaryRow[], tier: "income" | "remainder") {
   return rows
     .filter((r) => r.source.kind !== "empty")
     .map((r, idx) => {
-      const base = { tier, percentage: r.percentage, sortOrder: idx };
+      const base = {
+        tier,
+        percentage: r.percentage,
+        sortOrder: idx,
+        ...(tier === "remainder"
+          ? { distributionForm: r.distributionForm ?? "outright" }
+          : {}),
+      };
       switch (r.source.kind) {
         case "household": return { ...base, householdRole: r.source.role };
         case "family": return { ...base, familyMemberId: r.source.familyMemberId };

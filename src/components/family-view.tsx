@@ -125,6 +125,7 @@ export type Designation = {
   householdRole: "client" | "spouse" | null;
   percentage: number;
   sortOrder: number;
+  distributionForm?: "in_trust" | "outright" | null;
 };
 
 export interface PrimaryInfo {
