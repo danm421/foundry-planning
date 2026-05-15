@@ -16,6 +16,7 @@ import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
 import EstateFlowChangeDistributionDialog from "@/components/estate-flow-change-distribution-dialog";
 import { changeOwner, changeBeneficiaries, changeWillBequests } from "@/lib/estate/estate-flow-edits";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
 import type { ClientData } from "@/engine/types";
 
 export interface EstateFlowViewProps {
@@ -84,8 +85,15 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
   const [distributionDialogId, setDistributionDialogId] = useState<string | null>(null);
 
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
   const router = useRouter();
   const pathname = usePathname();
+  const writer = useScenarioWriter(props.clientId);
+
+  // A named scenario is active when scenarioId is set and is not the base case.
+  const isNamedScenario = props.scenarioId !== "base" && props.scenarioId != null;
 
   // `ordering` is NOT passed to runProjectionWithEvents — the projection always
   // computes both first-death and second-death sections from the data.
@@ -149,6 +157,101 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     [isDirty, router, pathname],
   );
 
+  // Save to current named scenario — loop pending changes through the writer.
+  const handleSaveToScenario = useCallback(async () => {
+    if (!isNamedScenario || pendingChanges.length === 0) return;
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      for (const change of pendingChanges) {
+        // baseFallback is a dummy — writer routes to the changes API in scenario mode.
+        const res = await writer.submit(change.edit, { url: "", method: "PATCH" });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          const msg =
+            typeof body?.error === "string"
+              ? body.error
+              : `Save failed (HTTP ${res.status})`;
+          setSaveError(msg);
+          return;
+        }
+      }
+      // router.refresh() is called by writer.submit on the last success,
+      // which reloads initialClientData and clears the dirty badge.
+    } finally {
+      setIsSaving(false);
+    }
+  }, [isNamedScenario, pendingChanges, writer]);
+
+  // Save as a new scenario — create scenario then POST each change directly.
+  const handleSaveAsNew = useCallback(async () => {
+    if (pendingChanges.length === 0) return;
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      const today = new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+      const newName = `Estate Flow — ${today}`;
+
+      // Create the new scenario (cloned from current scenario or base).
+      const createRes = await fetch(`/api/clients/${props.clientId}/scenarios`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newName,
+          copyFrom: isNamedScenario ? props.scenarioId : "base",
+        }),
+      });
+      if (!createRes.ok) {
+        const body = await createRes.json().catch(() => ({}));
+        const msg =
+          typeof body?.error === "string"
+            ? body.error
+            : `Failed to create scenario (HTTP ${createRes.status})`;
+        setSaveError(msg);
+        return;
+      }
+      const { scenario } = await createRes.json();
+      const newScenarioId: string = scenario.id;
+
+      // POST each change directly to the new scenario's changes route.
+      for (const change of pendingChanges) {
+        const { edit } = change;
+        const body: Record<string, unknown> = {
+          op: edit.op,
+          targetKind: edit.targetKind,
+          targetId: edit.targetId,
+          desiredFields: edit.desiredFields,
+        };
+        const res = await fetch(
+          `/api/clients/${props.clientId}/scenarios/${newScenarioId}/changes`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+        );
+        if (!res.ok) {
+          const resBody = await res.json().catch(() => ({}));
+          const msg =
+            typeof resBody?.error === "string"
+              ? resBody.error
+              : `Change save failed (HTTP ${res.status})`;
+          setSaveError(msg);
+          return;
+        }
+      }
+
+      // Navigate to the new scenario — server reload clears the dirty badge.
+      router.push(`${pathname}?scenario=${encodeURIComponent(newScenarioId)}`);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [pendingChanges, props.clientId, props.scenarioId, isNamedScenario, router, pathname]);
+
   return (
     <div className="flex flex-col gap-4 p-4">
       {/* Control bar */}
@@ -174,11 +277,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
               />
             </div>
           )}
-          {isDirty && (
-            <span className="rounded bg-amber-900/40 px-2 py-0.5 text-xs text-amber-200">
-              Modified — unsaved
-            </span>
-          )}
         </div>
       </div>
 
@@ -199,8 +297,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             projection={projection}
             onAssetClick={setDistributionDialogId}
           />
-          {/* pendingChanges wired here to avoid unused-variable lint */}
-          <span className="sr-only">{pendingChanges.length} changes</span>
         </div>
         {/* Death column 2 — second death, married only */}
         {props.isMarried ? (
@@ -218,6 +314,55 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       </div>
 
       {/* Save bar — Task 10 */}
+      {isDirty && (
+        <div
+          role="region"
+          aria-label="Unsaved changes"
+          className="sticky bottom-0 z-20 rounded border border-amber-700/60 bg-[#1a1509] px-4 py-3 shadow-lg"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            {/* Change list */}
+            <div className="min-w-0">
+              <p className="mb-1.5 text-xs font-semibold text-amber-300">
+                Unsaved changes ({pendingChanges.length})
+              </p>
+              <ul className="space-y-0.5">
+                {pendingChanges.map((c, i) => (
+                  <li key={i} className="text-xs text-amber-200/80">
+                    &bull; {c.description}
+                  </li>
+                ))}
+              </ul>
+              {saveError && (
+                <p role="alert" className="mt-2 text-xs font-medium text-red-400">
+                  {saveError}
+                </p>
+              )}
+            </div>
+            {/* Action buttons */}
+            <div className="flex shrink-0 items-center gap-2">
+              {isNamedScenario && (
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={handleSaveToScenario}
+                  className="rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-[#0b0c0f] transition-colors hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSaving ? "Saving…" : "Save to this scenario"}
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={handleSaveAsNew}
+                className="rounded border border-amber-600 px-3 py-1.5 text-xs font-semibold text-amber-300 transition-colors hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSaving ? "Saving…" : "Save as new scenario"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Change-owner dialog — Task 8 */}
       {(() => {

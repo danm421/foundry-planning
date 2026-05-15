@@ -1,10 +1,11 @@
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, scenarios as scenariosTable, scenarioSnapshots } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import EstateFlowView from "@/components/estate-flow-view";
+import type { SnapshotOption } from "@/components/scenario/scenario-picker-dropdown";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -23,7 +24,26 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
   if (!client) notFound();
 
   const scenarioId = sp.scenario ?? "base";
-  const { effectiveTree } = await loadEffectiveTree(id, firmId, scenarioId, {}).catch(() => notFound());
+
+  const [{ effectiveTree }, scenarioRows, snapshotRows] = await Promise.all([
+    loadEffectiveTree(id, firmId, scenarioId, {}).catch(() => notFound()),
+    db
+      .select({
+        id: scenariosTable.id,
+        name: scenariosTable.name,
+        isBaseCase: scenariosTable.isBaseCase,
+      })
+      .from(scenariosTable)
+      .where(eq(scenariosTable.clientId, id)),
+    db
+      .select({
+        id: scenarioSnapshots.id,
+        name: scenarioSnapshots.name,
+        sourceKind: scenarioSnapshots.sourceKind,
+      })
+      .from(scenarioSnapshots)
+      .where(eq(scenarioSnapshots.clientId, id)),
+  ]);
 
   const isMarried =
     client.filingStatus === "married_joint" ||
@@ -39,6 +59,8 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
         spouseName: client.spouseName ?? null,
       }}
       initialClientData={effectiveTree}
+      scenarios={scenarioRows}
+      snapshots={snapshotRows as SnapshotOption[]}
     />
   );
 }
