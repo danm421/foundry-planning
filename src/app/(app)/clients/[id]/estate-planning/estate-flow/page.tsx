@@ -13,7 +13,6 @@ import {
   giftRowToDraft,
   giftSeriesRowToDraft,
   type EstateFlowGift,
-  type GiftSeriesDbRow,
 } from "@/lib/estate/estate-flow-gifts";
 import EstateFlowView from "@/components/estate-flow-view";
 
@@ -86,11 +85,14 @@ export default async function EstateFlowPage({ params, searchParams }: PageProps
     ...giftRows
       .map(giftRowToDraft)
       .filter((g): g is EstateFlowGift => g !== null),
-    // gift_series.grantor uses the shared owner enum ("client" | "spouse" |
-    // "joint"); GiftSeriesDbRow narrows it to "client" | "spouse". A series
-    // grantor is never "joint" in practice — load-client-data.ts performs the
-    // same narrowing cast when feeding fanOutGiftSeries.
-    ...giftSeriesRows.map((r) => giftSeriesRowToDraft(r as GiftSeriesDbRow)),
+    // gift_series.grantor uses the wider owner enum ("client" | "spouse" |
+    // "joint") in the DB schema, but recurring gift series are constrained to
+    // "client" | "spouse" by giftSeriesSchema / saveGiftRecurring — "joint" is
+    // never stored. GiftSeriesDbRow.grantor reflects the narrower type, so cast
+    // only that field rather than the whole row.
+    ...giftSeriesRows.map((r) =>
+      giftSeriesRowToDraft({ ...r, grantor: r.grantor as "client" | "spouse" }),
+    ),
   ];
 
   // Strip the loader's baked-in gifts — the view re-materialises from
