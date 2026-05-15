@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import DialogShell from "@/components/dialog-shell";
 import { fieldLabelClassName } from "@/components/forms/input-styles";
 import type {
@@ -9,6 +9,7 @@ import type {
   ClientData,
   Will,
   WillBequest,
+  WillBequestRecipient,
   WillResiduaryRecipient,
 } from "@/engine/types";
 
@@ -161,7 +162,7 @@ function willRecipientsToRows(
   }));
 }
 
-function rowsToWillRecipients(rows: WillRecipientRow[]): WillResiduaryRecipient[] {
+function rowsToWillRecipients(rows: WillRecipientRow[]): WillBequestRecipient[] {
   return rows.map((r, i) => ({
     recipientKind: r.recipientKind,
     recipientId: r.recipientId,
@@ -255,6 +256,12 @@ function EstateFlowChangeDistributionDialogInner({
   onClose,
 }: InnerProps) {
   const isRetirement = isRetirementAccount(account);
+
+  // Refs for keyboard-navigation focus management on the tablist.
+  const tabBtnRefs = useRef<Record<RouteTab, HTMLButtonElement | null>>({
+    beneficiary: null,
+    will: null,
+  });
 
   // ── Derive current route ──────────────────────────────────────────────────
 
@@ -474,7 +481,12 @@ function EstateFlowChangeDistributionDialogInner({
 
   function applyBeneficiarySelectValue(key: string, value: string) {
     const patch: Partial<BeneficiaryRow> = {};
-    if (value.startsWith("hh:")) {
+    if (value === "") {
+      // Blank option: clear recipient.
+      patch.recipientKind = "householdRole";
+      patch.recipientId = null;
+      patch.householdRole = undefined;
+    } else if (value.startsWith("hh:")) {
       const role = value.slice(3) as "client" | "spouse";
       patch.recipientKind = "householdRole";
       patch.householdRole = role;
@@ -516,7 +528,11 @@ function EstateFlowChangeDistributionDialogInner({
 
   function applyWillSelectValue(key: string, value: string) {
     const patch: Partial<WillRecipientRow> = {};
-    if (value === "spouse") {
+    if (value === "") {
+      // Blank option: clear recipient.
+      patch.recipientKind = "family_member";
+      patch.recipientId = null;
+    } else if (value === "spouse") {
       patch.recipientKind = "spouse";
       patch.recipientId = null;
     } else if (value.startsWith("fm:")) {
@@ -617,7 +633,7 @@ function EstateFlowChangeDistributionDialogInner({
                 aria-describedby={sumId}
                 aria-invalid={!sumOk}
                 value={row.percentage}
-                onChange={(e) => changeBeneficiaryPct(row.key, parseFloat(e.target.value) || 0)}
+                onChange={(e) => { const v = parseFloat(e.target.value); changeBeneficiaryPct(row.key, Number.isNaN(v) ? row.percentage : v); }}
                 className={rowFieldBase + " w-20 text-right"}
               />
               <span className="text-[12px] text-ink-3">%</span>
@@ -776,7 +792,7 @@ function EstateFlowChangeDistributionDialogInner({
                   aria-describedby={willId}
                   aria-invalid={!sumOk}
                   value={row.percentage}
-                  onChange={(e) => changeWillPct(row.key, parseFloat(e.target.value) || 0)}
+                  onChange={(e) => { const v = parseFloat(e.target.value); changeWillPct(row.key, Number.isNaN(v) ? row.percentage : v); }}
                   className={rowFieldBase + " w-20 text-right"}
                 />
                 <span className="text-[12px] text-ink-3">%</span>
@@ -836,10 +852,38 @@ function EstateFlowChangeDistributionDialogInner({
 
       {/* Route tabs */}
       <div>
-        <div className="flex gap-1 mb-4" role="tablist" aria-label="Distribution method">
+        <div
+          className="flex gap-1 mb-4"
+          role="tablist"
+          aria-label="Distribution method"
+          onKeyDown={(e) => {
+            const tabs: Array<RouteTab> = isRetirement ? ["beneficiary"] : ["beneficiary", "will"];
+            const currentIndex = tabs.indexOf(activeTab);
+            if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+              e.preventDefault();
+              const delta = e.key === "ArrowRight" ? 1 : -1;
+              const nextIndex = (currentIndex + delta + tabs.length) % tabs.length;
+              const nextTab = tabs[nextIndex];
+              setActiveTab(nextTab);
+              tabBtnRefs.current[nextTab]?.focus();
+            } else if (e.key === "Home") {
+              e.preventDefault();
+              setActiveTab(tabs[0]);
+              tabBtnRefs.current[tabs[0]]?.focus();
+            } else if (e.key === "End") {
+              e.preventDefault();
+              const last = tabs[tabs.length - 1];
+              setActiveTab(last);
+              tabBtnRefs.current[last]?.focus();
+            }
+          }}
+        >
           <button
+            ref={(el) => { tabBtnRefs.current["beneficiary"] = el; }}
             role="tab"
             type="button"
+            id="eflow-tab-beneficiary"
+            aria-controls="eflow-panel-beneficiary"
             aria-selected={activeTab === "beneficiary"}
             onClick={() => setActiveTab("beneficiary")}
             className={`rounded border px-3 py-1.5 text-[13px] font-medium transition-colors ${
@@ -851,8 +895,11 @@ function EstateFlowChangeDistributionDialogInner({
             Beneficiary Designation
           </button>
           <button
+            ref={(el) => { tabBtnRefs.current["will"] = el; }}
             role="tab"
             type="button"
+            id="eflow-tab-will"
+            aria-controls="eflow-panel-will"
             aria-selected={activeTab === "will"}
             disabled={isRetirement}
             title={
@@ -878,7 +925,7 @@ function EstateFlowChangeDistributionDialogInner({
 
         {/* Tab content */}
         {activeTab === "beneficiary" && (
-          <div role="tabpanel">
+          <div role="tabpanel" id="eflow-panel-beneficiary" aria-labelledby="eflow-tab-beneficiary">
             <p className="text-[12px] text-ink-3 mb-1">
               Set primary and contingent beneficiaries. Each tier&apos;s percentages must sum
               to 100%.
@@ -891,7 +938,7 @@ function EstateFlowChangeDistributionDialogInner({
         )}
 
         {activeTab === "will" && (
-          <div role="tabpanel">
+          <div role="tabpanel" id="eflow-panel-will" aria-labelledby="eflow-tab-will">
             {renderWillTab()}
           </div>
         )}
