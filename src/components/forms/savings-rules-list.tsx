@@ -73,6 +73,7 @@ export default function SavingsRulesList({
         <div className="divide-y divide-gray-800 rounded-md border border-gray-800">
           {rules.map((rule) => {
             const matchSummary = formatMatch(rule);
+            const rothTag = formatRothTag(rule);
             return (
             <div key={rule.id} className="flex items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
@@ -85,9 +86,9 @@ export default function SavingsRulesList({
                 <div className="text-xs text-gray-400">
                   {rule.startYear}–{rule.endYear}
                   {matchSummary && <span> · {matchSummary}</span>}
-                  {formatRothTag(rule) && (
+                  {rothTag && (
                     <span className="ml-2 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-ink">
-                      {formatRothTag(rule)}
+                      {rothTag}
                     </span>
                   )}
                 </div>
