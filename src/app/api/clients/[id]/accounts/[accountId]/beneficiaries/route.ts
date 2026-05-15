@@ -4,6 +4,7 @@ import {
   clients,
   accounts,
   beneficiaryDesignations,
+  entities,
   familyMembers,
   externalBeneficiaries,
 } from "@/db/schema";
@@ -118,6 +119,24 @@ export async function PUT(
       }
     }
 
+    const entIds = parsed.data
+      .map((d) => d.entityIdRef)
+      .filter((x): x is string => !!x);
+    if (entIds.length > 0) {
+      const found = await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(
+          and(eq(entities.clientId, id), inArray(entities.id, entIds)),
+        );
+      if (found.length !== new Set(entIds).size) {
+        return NextResponse.json(
+          { error: "One or more trust entities not found for this client" },
+          { status: 400 },
+        );
+      }
+    }
+
     const inserted = await db.transaction(async (tx) => {
       await tx
         .delete(beneficiaryDesignations)
@@ -140,6 +159,7 @@ export async function PUT(
             tier: d.tier,
             familyMemberId: d.familyMemberId ?? null,
             externalBeneficiaryId: d.externalBeneficiaryId ?? null,
+            entityIdRef: d.entityIdRef ?? null,
             householdRole: d.householdRole ?? null,
             percentage: String(d.percentage),
             sortOrder: d.sortOrder ?? idx,

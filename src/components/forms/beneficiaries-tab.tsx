@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import type {
   Designation,
   FamilyMember,
@@ -9,6 +8,8 @@ import type {
   Tier,
 } from "../family-view";
 import { redistribute, splitEvenly } from "./auto-split-percentages";
+import { useScenarioWriter } from "@/hooks/use-scenario-writer";
+import type { BeneficiaryRef } from "@/engine/types";
 
 interface BeneficiariesTabProps {
   clientId: string;
@@ -21,6 +22,7 @@ function AccountBeneficiaryEditor({
   accountId,
   members,
   externals,
+  entities,
   initial,
   onSaved,
 }: {
@@ -28,10 +30,11 @@ function AccountBeneficiaryEditor({
   accountId: string;
   members: FamilyMember[];
   externals: ExternalBeneficiary[];
+  entities: Array<{ id: string; name: string }>;
   initial: Designation[];
   onSaved: (rows: Designation[]) => void;
 }) {
-  const router = useRouter();
+  const writer = useScenarioWriter(clientId);
   const [rows, setRows] = useState<Designation[]>(initial);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -62,31 +65,56 @@ function AccountBeneficiaryEditor({
     setSaving(true);
     setSaveError(null);
     try {
-      const body = rows.map((r) => ({
+      const baseBody = rows.map((r) => ({
         tier: r.tier,
         percentage: r.percentage,
         familyMemberId: r.familyMemberId ?? undefined,
         externalBeneficiaryId: r.externalBeneficiaryId ?? undefined,
+        entityIdRef: r.entityIdRef ?? undefined,
+        householdRole: r.householdRole ?? undefined,
         sortOrder: r.sortOrder,
       }));
-      const res = await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      // Scenario-overlay shape: a full BeneficiaryRef[] fat-field on the account.
+      // Row ids are stable uuids assigned at creation time — no remapping needed.
+      const refs: BeneficiaryRef[] = rows
+        .filter((r) => r.tier === "primary" || r.tier === "contingent")
+        .map((r) => ({
+          id: r.id,
+          tier: r.tier as "primary" | "contingent",
+          percentage: r.percentage,
+          familyMemberId: r.familyMemberId ?? undefined,
+          externalBeneficiaryId: r.externalBeneficiaryId ?? undefined,
+          entityIdRef: r.entityIdRef ?? undefined,
+          householdRole: r.householdRole ?? undefined,
+          sortOrder: r.sortOrder,
+        }));
+      const res = await writer.submit(
+        {
+          op: "edit",
+          targetKind: "account",
+          targetId: accountId,
+          desiredFields: { beneficiaries: refs },
+        },
+        { url, method: "PUT", body: baseBody },
+      );
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error((j as { error?: string }).error ?? `HTTP ${res.status}`);
       }
-      const saved = (await res.json()) as Designation[];
-      const normalized = saved.map((d) => ({
-        ...d,
-        percentage:
-          typeof d.percentage === "string" ? parseFloat(d.percentage) : d.percentage,
-      }));
-      setRows(normalized);
-      onSaved(normalized);
-      router.refresh();
+      // Base mode returns the saved rows; scenario mode returns the change row.
+      // Only re-sync local state from a base-mode response (an array).
+      // Scenario mode intentionally skips setRows/onSaved — the response is a
+      // scenario_change row, not designations; useScenarioWriter triggers router.refresh().
+      const saved = await res.json().catch(() => null);
+      if (Array.isArray(saved)) {
+        const normalized = (saved as Designation[]).map((d) => ({
+          ...d,
+          percentage:
+            typeof d.percentage === "string" ? parseFloat(d.percentage) : d.percentage,
+        }));
+        setRows(normalized);
+        onSaved(normalized);
+      }
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -97,7 +125,7 @@ function AccountBeneficiaryEditor({
   function addRow(tier: Tier) {
     setRows((r) => {
       const newRow: Designation = {
-        id: `tmp-${Math.random()}`,
+        id: crypto.randomUUID(),
         targetKind: "account",
         accountId,
         entityId: null,
@@ -157,7 +185,7 @@ function AccountBeneficiaryEditor({
     if (children.length === 0) return;
     const pcts = splitEvenly(children.length);
     const childRows: Designation[] = children.map((child, i) => ({
-      id: `tmp-${Math.random()}`,
+      id: crypto.randomUUID(),
       targetKind: "account",
       accountId,
       entityId: null,
@@ -202,17 +230,20 @@ function AccountBeneficiaryEditor({
                     ? `fm:${r.familyMemberId}`
                     : r.externalBeneficiaryId
                       ? `ext:${r.externalBeneficiaryId}`
-                      : ""
+                      : r.entityIdRef
+                        ? `ent:${r.entityIdRef}`
+                        : r.householdRole
+                          ? `hh:${r.householdRole}`
+                          : ""
                 }
                 onChange={(e) => {
                   const v = e.target.value;
-                  if (v.startsWith("fm:")) {
-                    updateRow(r.id, { familyMemberId: v.slice(3), externalBeneficiaryId: null });
-                  } else if (v.startsWith("ext:")) {
-                    updateRow(r.id, { externalBeneficiaryId: v.slice(4), familyMemberId: null });
-                  } else {
-                    updateRow(r.id, { familyMemberId: null, externalBeneficiaryId: null });
-                  }
+                  const clear = { familyMemberId: null, externalBeneficiaryId: null, entityIdRef: null, householdRole: null };
+                  if (v.startsWith("fm:")) updateRow(r.id, { ...clear, familyMemberId: v.slice(3) });
+                  else if (v.startsWith("ext:")) updateRow(r.id, { ...clear, externalBeneficiaryId: v.slice(4) });
+                  else if (v.startsWith("ent:")) updateRow(r.id, { ...clear, entityIdRef: v.slice(4) });
+                  else if (v.startsWith("hh:")) updateRow(r.id, { ...clear, householdRole: v.slice(3) as "client" | "spouse" });
+                  else updateRow(r.id, clear);
                 }}
                 className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-sm text-gray-100 focus:border-accent focus:outline-none"
               >
@@ -228,6 +259,17 @@ function AccountBeneficiaryEditor({
                   {externals.map((x) => (
                     <option key={x.id} value={`ext:${x.id}`}>
                       {x.name} ({x.kind})
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Household">
+                  <option value="hh:client">Client</option>
+                  <option value="hh:spouse">Spouse</option>
+                </optgroup>
+                <optgroup label="Trusts">
+                  {entities.map((ent) => (
+                    <option key={ent.id} value={`ent:${ent.id}`}>
+                      {ent.name}
                     </option>
                   ))}
                 </optgroup>
@@ -297,6 +339,7 @@ export default function BeneficiariesTab({ clientId, accountId, active }: Benefi
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [externals, setExternals] = useState<ExternalBeneficiary[]>([]);
+  const [entities, setEntities] = useState<Array<{ id: string; name: string }>>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -305,21 +348,24 @@ export default function BeneficiariesTab({ clientId, accountId, active }: Benefi
     let cancelled = false;
     async function load() {
       try {
-        const [dRes, mRes, eRes] = await Promise.all([
+        const [dRes, mRes, eRes, entRes] = await Promise.all([
           fetch(`/api/clients/${clientId}/accounts/${accountId}/beneficiaries`),
           fetch(`/api/clients/${clientId}/family-members`),
           fetch(`/api/clients/${clientId}/external-beneficiaries`),
+          fetch(`/api/clients/${clientId}/entities`),
         ]);
-        if (!dRes.ok || !mRes.ok || !eRes.ok) throw new Error("Failed to load beneficiary data");
-        const [d, m, e] = (await Promise.all([dRes.json(), mRes.json(), eRes.json()])) as [
+        if (!dRes.ok || !mRes.ok || !eRes.ok || !entRes.ok) throw new Error("Failed to load beneficiary data");
+        const [d, m, e, ent] = (await Promise.all([dRes.json(), mRes.json(), eRes.json(), entRes.json()])) as [
           Designation[],
           FamilyMember[],
           ExternalBeneficiary[],
+          Array<{ id: string; name: string }>,
         ];
         if (cancelled) return;
         setDesignations(d);
         setMembers(m);
         setExternals(e);
+        setEntities(ent);
         setLoaded(true);
       } catch (err) {
         if (cancelled) return;
@@ -341,6 +387,7 @@ export default function BeneficiariesTab({ clientId, accountId, active }: Benefi
       accountId={accountId}
       members={members}
       externals={externals}
+      entities={entities}
       initial={designations}
       onSaved={(rows) => setDesignations(rows)}
     />

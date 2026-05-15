@@ -498,6 +498,10 @@ export interface BeneficiaryRef {
   percentage: number;
   familyMemberId?: string;
   externalBeneficiaryId?: string;
+  /** Beneficiary is a trust entity (references `entities[].id`). */
+  entityIdRef?: string;
+  /** Beneficiary is a household principal. */
+  householdRole?: "client" | "spouse";
   sortOrder: number;
 }
 

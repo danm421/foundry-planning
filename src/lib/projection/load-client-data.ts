@@ -401,6 +401,8 @@ export const loadClientDataWithContext = cache(
         percentage: parseFloat(d.percentage),
         familyMemberId: d.familyMemberId ?? undefined,
         externalBeneficiaryId: d.externalBeneficiaryId ?? undefined,
+        entityIdRef: d.entityIdRef ?? undefined,
+        householdRole: (d.householdRole as "client" | "spouse" | null) ?? undefined,
         sortOrder: d.sortOrder,
       };
       if (d.targetKind === "account" && d.accountId) {

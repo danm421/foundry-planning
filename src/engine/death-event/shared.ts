@@ -407,6 +407,7 @@ export function applyBeneficiaryDesignations(
   undisposedFraction: number,
   familyMembers: FamilyMember[],
   externals: ExternalBeneficiarySummary[],
+  entities: EntitySummary[],
   linkedLiability: Liability | undefined,
 ): StepResult {
   const primaries = (source.beneficiaries ?? []).filter(
@@ -447,6 +448,22 @@ export function applyBeneficiaryDesignations(
       recipientId = b.externalBeneficiaryId;
       const ext = extMap.get(b.externalBeneficiaryId);
       recipientLabel = ext?.name ?? "External beneficiary";
+    } else if (b.householdRole) {
+      const roleFm = familyMembers.find((f) => f.role === b.householdRole);
+      if (roleFm) {
+        ownerMutation = { owners: [{ kind: "family_member", familyMemberId: roleFm.id, percent: 1 }] };
+      } else {
+        removed = true;
+      }
+      recipientKind = b.householdRole === "spouse" ? "spouse" : "family_member";
+      recipientId = roleFm?.id ?? null;
+      recipientLabel = b.householdRole === "spouse" ? "Spouse" : "Client";
+    } else if (b.entityIdRef) {
+      ownerMutation = { owners: [{ kind: "entity", entityId: b.entityIdRef, percent: 1 }] };
+      recipientKind = "entity";
+      recipientId = b.entityIdRef;
+      const ent = entities.find((e) => e.id === b.entityIdRef);
+      recipientLabel = ent?.name ?? "Trust";
     } else {
       // Defensive — shouldn't happen if API validation is intact.
       removed = true;
