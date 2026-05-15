@@ -11,6 +11,7 @@ import {
   type SnapshotOption,
 } from "@/components/scenario/scenario-picker-dropdown";
 import { EstateFlowOwnershipColumn } from "@/components/estate-flow-ownership-column";
+import { EstateFlowDeathColumn } from "@/components/estate-flow-death-column";
 import type { ClientData } from "@/engine/types";
 
 export interface EstateFlowViewProps {
@@ -78,6 +79,8 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
   // TODO: Task 8 — open change-owner dialog
   const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
+  // TODO: Task 9 — open change-distribution dialog
+  const [distributionDialogId, setDistributionDialogId] = useState<string | null>(null);
 
   const router = useRouter();
   const pathname = usePathname();
@@ -106,10 +109,12 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     [],
   );
 
-  // Silence unused-variable lint until Tasks 7–9 wire these up.
+  // Silence unused-variable lint until Tasks 8–9 wire these up.
   void applyEdit;
   // ownerDialogId consumed by Task 8 dialog — suppress lint until then.
   void ownerDialogId;
+  // distributionDialogId consumed by Task 9 dialog — suppress lint until then.
+  void distributionDialogId;
 
   const handleScenarioChange = useCallback(
     (next: string) => {
@@ -161,24 +166,33 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
             onAssetClick={setOwnerDialogId}
           />
         </div>
-        {/* Death column 1 — Task 7 */}
-        <div className="rounded border p-3 text-sm text-muted-foreground">
-          1st death column — Task 7
-          {/* projection wired to avoid unused-variable lint */}
-          <span className="sr-only">{projection.years.length} years</span>
+        {/* Death column 1 — first death */}
+        <div className="rounded border border-gray-800/60 p-3">
+          <EstateFlowDeathColumn
+            deathOrder={1}
+            projection={projection}
+            clientData={working}
+            ordering={ordering}
+            ownerNames={props.ownerNames}
+            onAssetClick={setDistributionDialogId}
+          />
+          {/* pendingChanges wired here to avoid unused-variable lint */}
+          <span className="sr-only">{pendingChanges.length} changes</span>
         </div>
-        {/* Death column 2 — Task 7, married only */}
-        {props.isMarried && (
-          <div className="rounded border p-3 text-sm text-muted-foreground">
-            2nd death column — Task 7
-            {/* pendingChanges wired to avoid unused-variable lint */}
-            <span className="sr-only">{pendingChanges.length} changes</span>
+        {/* Death column 2 — second death, married only */}
+        {props.isMarried ? (
+          <div className="rounded border border-gray-800/60 p-3">
+            <EstateFlowDeathColumn
+              deathOrder={2}
+              projection={projection}
+              clientData={working}
+              ordering={ordering}
+              ownerNames={props.ownerNames}
+              onAssetClick={setDistributionDialogId}
+            />
           </div>
-        )}
-        {!props.isMarried && (
-          <div className="rounded border p-3 text-sm text-muted-foreground">
-            {/* placeholder to keep grid balanced for single clients */}
-          </div>
+        ) : (
+          <div className="rounded border border-gray-800/60 p-3" />
         )}
       </div>
 
