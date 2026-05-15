@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { runProjectionWithEvents } from "@/engine/projection";
 import { diffWorkingCopy } from "@/lib/estate/estate-flow-diff";
@@ -14,7 +14,8 @@ import { EstateFlowOwnershipColumn } from "@/components/estate-flow-ownership-co
 import { EstateFlowDeathColumn } from "@/components/estate-flow-death-column";
 import { buildEstateTransferReportData } from "@/lib/estate/transfer-report";
 import EstateFlowChangeOwnerDialog from "@/components/estate-flow-change-owner-dialog";
-import { changeOwner } from "@/lib/estate/estate-flow-edits";
+import EstateFlowChangeDistributionDialog from "@/components/estate-flow-change-distribution-dialog";
+import { changeOwner, changeBeneficiaries, changeWillBequests } from "@/lib/estate/estate-flow-edits";
 import type { ClientData } from "@/engine/types";
 
 export interface EstateFlowViewProps {
@@ -81,7 +82,6 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
   const [ordering, setOrdering] =
     useState<"primaryFirst" | "spouseFirst">("primaryFirst");
   const [ownerDialogId, setOwnerDialogId] = useState<string | null>(null);
-  // TODO: Task 9 — open change-distribution dialog
   const [distributionDialogId, setDistributionDialogId] = useState<string | null>(null);
 
   const router = useRouter();
@@ -122,15 +122,31 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
     [],
   );
 
-  // distributionDialogId consumed by Task 9 dialog — suppress lint until then.
-  void distributionDialogId;
+  // Warn on browser close / tab close / hard navigation when there are unsaved edits.
+  useEffect(() => {
+    if (!isDirty) return;
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      // Legacy browsers require returnValue to be set.
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
 
   const handleScenarioChange = useCallback(
     (next: string) => {
-      // TODO: Task 9 unsaved-changes guard
+      // Unsaved-changes guard: if the sandbox has edits, confirm before navigating
+      // away (the scenario switch discards the working copy).
+      if (isDirty) {
+        const confirmed = window.confirm(
+          "You have unsaved changes. Switching scenarios will discard them. Continue?",
+        );
+        if (!confirmed) return;
+      }
       router.push(`${pathname}?scenario=${encodeURIComponent(next)}`);
     },
-    [router, pathname],
+    [isDirty, router, pathname],
   );
 
   return (
@@ -220,6 +236,23 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
           />
         );
       })()}
+
+      {/* Change-distribution dialog — Task 9 */}
+      {distributionDialogId && working.accounts.some((a) => a.id === distributionDialogId) && (
+        <EstateFlowChangeDistributionDialog
+          accountId={distributionDialogId}
+          clientData={working}
+          onApplyBeneficiaries={(refs) => {
+            applyEdit((d) => changeBeneficiaries(d, "account", distributionDialogId, refs));
+            setDistributionDialogId(null);
+          }}
+          onApplyWill={(willId, bequests, residuary) => {
+            applyEdit((d) => changeWillBequests(d, willId, bequests, residuary));
+            setDistributionDialogId(null);
+          }}
+          onClose={() => setDistributionDialogId(null)}
+        />
+      )}
     </div>
   );
 }
