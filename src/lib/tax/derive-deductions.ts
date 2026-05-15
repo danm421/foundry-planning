@@ -121,6 +121,8 @@ export function deriveAboveLineFromSavings(
           ? salary * rule.annualPercent
           : rule.annualAmount;
     }
+    // When overridden, `amount` is the total (possibly capped) contribution —
+    // the Roth split still applies to it to isolate the pre-tax portion.
     total += amount * (1 - (rule.rothPercent ?? 0));
   }
   return { aboveLine: total, itemized: 0, saltPool: 0 };
