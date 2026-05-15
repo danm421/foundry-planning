@@ -40,6 +40,7 @@ export type SolverMutation =
   | { kind: "ss-cola"; person: SolverPerson; rate: number }
   | { kind: "savings-contribution"; accountId: string; annualAmount: number }
   | { kind: "savings-annual-percent"; accountId: string; percent: number | null }
+  | { kind: "savings-roth-percent"; accountId: string; rothPercent: number }
   | { kind: "savings-contribute-max"; accountId: string; value: boolean }
   | { kind: "savings-growth-rate"; accountId: string; rate: number }
   | { kind: "savings-growth-source"; accountId: string; source: SavingsGrowthSource }
@@ -76,6 +77,7 @@ export type SolverMutationKey =
   | `ss-cola:${SolverPerson}`
   | `savings-contribution:${string}`
   | `savings-annual-percent:${string}`
+  | `savings-roth-percent:${string}`
   | `savings-contribute-max:${string}`
   | `savings-growth-rate:${string}`
   | `savings-growth-source:${string}`
@@ -125,6 +127,8 @@ export function mutationKey(m: SolverMutation): SolverMutationKey {
       return `savings-contribution:${m.accountId}`;
     case "savings-annual-percent":
       return `savings-annual-percent:${m.accountId}`;
+    case "savings-roth-percent":
+      return `savings-roth-percent:${m.accountId}`;
     case "savings-contribute-max":
       return `savings-contribute-max:${m.accountId}`;
     case "savings-growth-rate":
