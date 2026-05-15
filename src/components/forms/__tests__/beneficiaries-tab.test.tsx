@@ -7,12 +7,6 @@ vi.mock("@/hooks/use-scenario-writer", () => ({
   useScenarioWriter: () => ({ submit: submitMock, scenarioActive: true }),
 }));
 
-// BeneficiariesTab's editor uses useRouter from next/navigation — mock it for jsdom.
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
-  usePathname: () => "/",
-}));
 
 import BeneficiariesTab from "@/components/forms/beneficiaries-tab";
 

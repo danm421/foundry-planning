@@ -75,11 +75,11 @@ function AccountBeneficiaryEditor({
         sortOrder: r.sortOrder,
       }));
       // Scenario-overlay shape: a full BeneficiaryRef[] fat-field on the account.
-      // Rows added this session have temporary ids — give them stable uuids.
+      // Row ids are stable uuids assigned at creation time — no remapping needed.
       const refs: BeneficiaryRef[] = rows
         .filter((r) => r.tier === "primary" || r.tier === "contingent")
         .map((r) => ({
-          id: r.id.startsWith("tmp-") ? crypto.randomUUID() : r.id,
+          id: r.id,
           tier: r.tier as "primary" | "contingent",
           percentage: r.percentage,
           familyMemberId: r.familyMemberId ?? undefined,
@@ -103,6 +103,8 @@ function AccountBeneficiaryEditor({
       }
       // Base mode returns the saved rows; scenario mode returns the change row.
       // Only re-sync local state from a base-mode response (an array).
+      // Scenario mode intentionally skips setRows/onSaved — the response is a
+      // scenario_change row, not designations; useScenarioWriter triggers router.refresh().
       const saved = await res.json().catch(() => null);
       if (Array.isArray(saved)) {
         const normalized = (saved as Designation[]).map((d) => ({
@@ -123,7 +125,7 @@ function AccountBeneficiaryEditor({
   function addRow(tier: Tier) {
     setRows((r) => {
       const newRow: Designation = {
-        id: `tmp-${Math.random()}`,
+        id: crypto.randomUUID(),
         targetKind: "account",
         accountId,
         entityId: null,
@@ -183,7 +185,7 @@ function AccountBeneficiaryEditor({
     if (children.length === 0) return;
     const pcts = splitEvenly(children.length);
     const childRows: Designation[] = children.map((child, i) => ({
-      id: `tmp-${Math.random()}`,
+      id: crypto.randomUUID(),
       targetKind: "account",
       accountId,
       entityId: null,
