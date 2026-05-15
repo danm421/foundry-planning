@@ -1710,6 +1710,31 @@ describe("applyFirstDeath orchestrator", () => {
     expect(inheritedCc).toBeDefined();
     expect(inheritedCc!.balance).toBeCloseTo(10_000, 2);
   });
+
+  it("carries the contingent tier forward onto an account inherited by the surviving spouse", () => {
+    // client-cash is solely client-owned. Primary beneficiary = spouse,
+    // contingent = a trust. After first death the cash routes to the spouse
+    // via beneficiary_designation; the resulting account must carry the
+    // contingent tier forward, promoted to primary, so it governs the
+    // spouse's later death.
+    const cashWithBens: Account = {
+      ...baseAccounts[2], // client-cash
+      beneficiaries: [
+        { id: "cf-pri", tier: "primary", percentage: 100, householdRole: "spouse", sortOrder: 0 },
+        { id: "cf-con", tier: "contingent", percentage: 100, entityIdRef: "ent-trust", sortOrder: 0 },
+      ],
+    };
+    const cfInput: DeathEventInput = {
+      ...input,
+      accounts: [baseAccounts[0], baseAccounts[1], cashWithBens],
+    };
+    const result = applyFirstDeath(cfInput);
+    const cash = result.accounts.find((a) => a.id === "client-cash")!;
+    expect(controllingFamilyMember(cash)).toBe("fm-spouse");
+    expect(cash.beneficiaries).toEqual([
+      { id: "cf-con", tier: "primary", percentage: 100, entityIdRef: "ent-trust", sortOrder: 0 },
+    ]);
+  });
 });
 
 describe("distributeUnlinkedLiabilities", () => {
