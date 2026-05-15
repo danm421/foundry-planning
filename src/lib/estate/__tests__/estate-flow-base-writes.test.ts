@@ -51,9 +51,18 @@ describe("baseWritesForChange", () => {
       change("account", "acc-1", { owners: OWNERS, beneficiaries: BENEFICIARIES }),
       CLIENT,
     );
-    expect(writes).toHaveLength(2);
-    expect(writes[0].url).toBe("/api/clients/client-1/accounts/acc-1");
-    expect(writes[1].url).toBe("/api/clients/client-1/accounts/acc-1/beneficiaries");
+    expect(writes).toEqual([
+      {
+        url: "/api/clients/client-1/accounts/acc-1",
+        method: "PUT",
+        body: { owners: OWNERS },
+      },
+      {
+        url: "/api/clients/client-1/accounts/acc-1/beneficiaries",
+        method: "PUT",
+        body: BENEFICIARIES,
+      },
+    ]);
   });
 
   it("maps an entity owners change to the entity PUT", () => {

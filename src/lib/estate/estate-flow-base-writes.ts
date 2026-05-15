@@ -70,14 +70,16 @@ export function baseWritesForChange(
       break;
     }
     case "will": {
-      writes.push({
-        url: `${base}/wills/${targetId}`,
-        method: "PATCH",
-        body: {
-          bequests: desiredFields.bequests,
-          residuaryRecipients: desiredFields.residuaryRecipients,
-        },
-      });
+      if ("bequests" in desiredFields || "residuaryRecipients" in desiredFields) {
+        writes.push({
+          url: `${base}/wills/${targetId}`,
+          method: "PATCH",
+          body: {
+            bequests: desiredFields.bequests,
+            residuaryRecipients: desiredFields.residuaryRecipients,
+          },
+        });
+      }
       break;
     }
   }
