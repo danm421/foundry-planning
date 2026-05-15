@@ -21,7 +21,8 @@ type DestinationId =
   | "client"
   | "spouse"
   | "joint"
-  | `trust:${string}`;    // entityId of a revocable trust
+  | `trust:${string}`    // entityId of a revocable trust
+  | `child:${string}`;   // familyMemberId of a child (gifts — Phase 2)
 
 interface Destination {
   id: DestinationId;
@@ -166,7 +167,7 @@ export default function EstateFlowChangeOwnerDialog({
     // Children — greyed, Phase 2
     for (const child of childMembers) {
       list.push({
-        id: `trust:${child.id}` as DestinationId, // use member id as dest key
+        id: `child:${child.id}` as DestinationId,
         label: `${child.firstName} ${child.lastName ?? ""}`.trim(),
         disabled: true,
         disabledHint: "Requires gifting — Phase 2",
@@ -407,21 +408,32 @@ export default function EstateFlowChangeOwnerDialog({
               } else {
                 label = fm ? `${fm.firstName} ${fm.lastName ?? ""}`.trim() : memberId;
               }
+              const inputId = `split-${memberId}`;
               return (
                 <div key={memberId} className="flex items-center gap-3">
-                  <span className="w-32 shrink-0 text-[13px] text-ink-2">{label}</span>
+                  <label
+                    htmlFor={inputId}
+                    className="w-32 shrink-0 text-[13px] text-ink-2"
+                  >
+                    {label}
+                  </label>
                   <input
+                    id={inputId}
                     type="number"
                     min={0}
                     max={100}
                     step={1}
                     value={splitPercents[memberId] ?? 50}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const raw = Number(e.target.value);
+                      const clamped = Math.max(0, Math.min(100, Number.isNaN(raw) ? 0 : raw));
                       setSplitPercents((prev) => ({
                         ...prev,
-                        [memberId]: Number(e.target.value),
-                      }))
-                    }
+                        [memberId]: clamped,
+                      }));
+                    }}
+                    aria-describedby="split-total-msg"
+                    aria-invalid={!percentSumValid}
                     className="h-9 w-20 rounded-[var(--radius-sm)] bg-card-2 border border-hair px-3 text-[14px] text-ink outline-none hover:border-hair-2 focus:border-accent focus:ring-2 focus:ring-accent/25"
                   />
                   <span className="text-[13px] text-ink-3">%</span>
@@ -431,6 +443,7 @@ export default function EstateFlowChangeOwnerDialog({
           </div>
           {/* Percent sum validation feedback */}
           <p
+            id="split-total-msg"
             className={`mt-2 text-[12px] ${
               percentSumValid ? "text-ink-3" : "text-crit"
             }`}
