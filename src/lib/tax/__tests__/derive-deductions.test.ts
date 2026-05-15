@@ -200,6 +200,39 @@ describe("deriveAboveLineFromSavings", () => {
     const result = deriveAboveLineFromSavings(2026, [rule], [ACCT_401K], isGrantorAlways);
     expect(result.aboveLine).toBe(23500);
   });
+
+  it("deducts only the pre-tax portion of a split 401(k) rule", () => {
+    const rule: SavingsRuleForDeduction = {
+      id: "sav-split",
+      accountId: "acct-401k",
+      annualAmount: 10000,
+      isDeductible: true,
+      rothPercent: 0.4,
+      startYear: 2026,
+      endYear: 2035,
+    };
+    const result = deriveAboveLineFromSavings(
+      2026, [rule], [ACCT_401K], isGrantorAlways,
+    );
+    // 60% pre-tax of 10,000
+    expect(result.aboveLine).toBeCloseTo(6000, 6);
+  });
+
+  it("a fully-Roth 401(k) rule produces no deduction", () => {
+    const rule: SavingsRuleForDeduction = {
+      id: "sav-roth",
+      accountId: "acct-401k",
+      annualAmount: 10000,
+      isDeductible: true,
+      rothPercent: 1,
+      startYear: 2026,
+      endYear: 2035,
+    };
+    const result = deriveAboveLineFromSavings(
+      2026, [rule], [ACCT_401K], isGrantorAlways,
+    );
+    expect(result.aboveLine).toBe(0);
+  });
 });
 
 // ── sumItemizedFromEntries (v2 enum) ────────────────────────────────────────
