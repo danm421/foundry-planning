@@ -24,10 +24,6 @@ export interface StepDef {
   icon: StepIconKey;
   /** Whether the advisor can mark this step Skipped and still Finish onboarding. */
   skippable: boolean;
-  /** When true, Phase 1 renders a deep-link placeholder instead of an editable form. */
-  placeholderInPhase1: boolean;
-  /** Deep link to the existing tabbed client-data surface for placeholder steps. */
-  tabHref?: (clientId: string) => string;
 }
 
 export const STEPS: readonly StepDef[] = [
@@ -37,7 +33,6 @@ export const STEPS: readonly StepDef[] = [
     description: "Names, dates of birth, retirement targets, and filing status.",
     icon: "household",
     skippable: false,
-    placeholderInPhase1: false,
   },
   {
     slug: "family",
@@ -45,7 +40,6 @@ export const STEPS: readonly StepDef[] = [
     description: "Children, dependents, and any beneficiaries the plan should know about.",
     icon: "family",
     skippable: true,
-    placeholderInPhase1: false,
   },
   {
     slug: "entities",
@@ -53,7 +47,6 @@ export const STEPS: readonly StepDef[] = [
     description: "Trusts, LLCs, and other entities tied to the household.",
     icon: "entities",
     skippable: true,
-    placeholderInPhase1: false,
   },
   {
     slug: "accounts",
@@ -61,7 +54,6 @@ export const STEPS: readonly StepDef[] = [
     description: "Investment, retirement, and bank accounts on the balance sheet.",
     icon: "accounts",
     skippable: false,
-    placeholderInPhase1: false,
   },
   {
     slug: "liabilities",
@@ -69,7 +61,6 @@ export const STEPS: readonly StepDef[] = [
     description: "Mortgages, loans, and other debts.",
     icon: "liabilities",
     skippable: true,
-    placeholderInPhase1: false,
   },
   {
     slug: "cash-flow",
@@ -77,7 +68,6 @@ export const STEPS: readonly StepDef[] = [
     description: "Recurring income and expense streams that drive the projection.",
     icon: "cash-flow",
     skippable: false,
-    placeholderInPhase1: false,
   },
   {
     slug: "insurance",
@@ -85,7 +75,6 @@ export const STEPS: readonly StepDef[] = [
     description: "Life, disability, and long-term-care coverage.",
     icon: "insurance",
     skippable: true,
-    placeholderInPhase1: false,
   },
   {
     slug: "estate",
@@ -93,7 +82,6 @@ export const STEPS: readonly StepDef[] = [
     description: "Wills, trusts, and the wishes that drive the estate spine.",
     icon: "estate",
     skippable: true,
-    placeholderInPhase1: false,
   },
   {
     slug: "assumptions",
@@ -101,7 +89,6 @@ export const STEPS: readonly StepDef[] = [
     description: "Inflation, growth rates, and tax assumptions for this plan.",
     icon: "assumptions",
     skippable: true,
-    placeholderInPhase1: false,
   },
   {
     slug: "review",
@@ -109,7 +96,6 @@ export const STEPS: readonly StepDef[] = [
     description: "Confirm the basics and finish onboarding.",
     icon: "review",
     skippable: false,
-    placeholderInPhase1: false,
   },
 ];
 

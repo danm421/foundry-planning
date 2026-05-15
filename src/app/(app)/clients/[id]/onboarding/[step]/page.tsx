@@ -6,7 +6,6 @@ import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { deriveStepStatuses } from "@/lib/onboarding/step-status";
 import { isStepSlug, type OnboardingState } from "@/lib/onboarding/types";
-import { STEPS } from "@/lib/onboarding/steps";
 import OnboardingShell from "../onboarding-shell";
 import HouseholdStep from "../steps/household-step";
 import FamilyStep from "../steps/family-step";
@@ -18,7 +17,6 @@ import InsuranceStep from "../steps/insurance-step";
 import EstateStep from "../steps/estate-step";
 import AssumptionsStep from "../steps/assumptions-step";
 import ReviewStep from "../steps/review-step";
-import PlaceholderStep from "../steps/placeholder-step";
 
 interface PageProps {
   params: Promise<{ id: string; step: string }>;
@@ -38,7 +36,6 @@ export default async function OnboardingStepPage({ params }: PageProps) {
   const { effectiveTree } = await loadEffectiveTree(id, firmId, "base", {});
   const state = (row.state as OnboardingState | null) ?? {};
   const statuses = deriveStepStatuses(effectiveTree, state);
-  const def = STEPS.find((s) => s.slug === step)!;
 
   let body: React.ReactNode;
   if (step === "household") {
@@ -63,10 +60,12 @@ export default async function OnboardingStepPage({ params }: PageProps) {
     body = (
       <ReviewStep clientId={id} statuses={statuses} alreadyFinished={row.completedAt !== null} />
     );
-  } else if (def.placeholderInPhase1) {
-    body = <PlaceholderStep clientId={id} slug={step} tabHref={def.tabHref?.(id) ?? `/clients/${id}`} />;
   } else {
-    body = <PlaceholderStep clientId={id} slug={step} tabHref={`/clients/${id}`} />;
+    body = (
+      <div className="rounded-[var(--radius-sm)] border border-dashed border-hair-2 bg-card-2/40 px-5 py-6 text-[13px] text-ink-3">
+        Unknown step.
+      </div>
+    );
   }
 
   return (
