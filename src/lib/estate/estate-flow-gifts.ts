@@ -178,6 +178,9 @@ export function applyGiftsToClientData(
       // Bug B note: loader's mappedGifts omits eventKind from Gift[] entries
       // (the field is optional on Gift and the loader never sets it there).
       // We match that exact behaviour — eventKind is NOT propagated to Gift[].
+      // Invariant: cash gifts always carry a non-null amount (DB convention:
+      // cash→amount, asset→percent). A null amount would coerce to 0 here via
+      // giftRowToDraft, but that path is unreachable in practice.
       cashGifts.push({
         id: g.id,
         year: g.year,
@@ -196,6 +199,9 @@ export function applyGiftsToClientData(
       // recipients we pass an empty string — matching the loader's `!` assertion
       // pattern which assumes cash gifts always target an entity in practice.
       // Bug B fix: use g.eventKind ?? "outright" to mirror loader's cashFromGifts.
+      // The cast drops "joint" from the union. This mirrors load-client-data.ts
+      // which performs the identical cast. How the engine handles a "joint" value
+      // in a client/spouse field is a pre-existing engine concern, out of scope here.
       giftEvents.push({
         kind: "cash",
         year: g.year,
@@ -209,6 +215,9 @@ export function applyGiftsToClientData(
     } else if (g.kind === "asset-once") {
       // Bug B fix: use g.eventKind ?? "outright" to mirror loader's assetFromGifts.
       // Bug C fix: pass amountOverride to mirror loader's assetFromGifts.
+      // The cast drops "joint" from the union — identical to load-client-data.ts.
+      // How the engine handles a "joint" value in a client/spouse field is a
+      // pre-existing engine concern, out of scope for this module.
       giftEvents.push({
         kind: "asset",
         year: g.year,

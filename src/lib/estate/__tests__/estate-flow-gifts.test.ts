@@ -2,11 +2,13 @@ import { describe, it, expect } from "vitest";
 import {
   type EstateFlowGift,
   type GiftRow,
+  type GiftSeriesDbRow,
   addGift,
   updateGift,
   removeGift,
   applyGiftsToClientData,
   giftRowToDraft,
+  giftSeriesRowToDraft,
 } from "../estate-flow-gifts";
 import type { ClientData } from "@/engine/types";
 
@@ -17,7 +19,7 @@ function baseData(): ClientData {
     wills: [],
     gifts: [],
     giftEvents: [],
-  } as unknown as ClientData;
+  } as unknown as ClientData; // minimal ClientData stub — only gifts/giftEvents are exercised
 }
 
 const cashGift: EstateFlowGift = {
@@ -194,6 +196,58 @@ describe("giftRowToDraft — Bug C: amountOverride", () => {
     if (draft?.kind === "asset-once") {
       expect(draft.amountOverride).toBeUndefined();
     }
+  });
+});
+
+// ── giftSeriesRowToDraft ──────────────────────────────────────────────────────
+function seriesRow(overrides: Partial<GiftSeriesDbRow> = {}): GiftSeriesDbRow {
+  return {
+    id: "sr1",
+    grantor: "client",
+    recipientEntityId: "trust-series",
+    startYear: 2030,
+    endYear: 2034,
+    annualAmount: "18000",
+    inflationAdjust: false,
+    useCrummeyPowers: true,
+    ...overrides,
+  };
+}
+
+describe("giftSeriesRowToDraft", () => {
+  it("coerces Postgres numeric string annualAmount to a number", () => {
+    const draft = giftSeriesRowToDraft(seriesRow({ annualAmount: "18000" }));
+    expect(draft.kind).toBe("series");
+    if (draft.kind === "series") {
+      expect(draft.annualAmount).toBe(18000);
+      expect(typeof draft.annualAmount).toBe("number");
+    }
+  });
+
+  it("preserves inflationAdjust, useCrummeyPowers (mapped to crummey), startYear, endYear", () => {
+    const draft = giftSeriesRowToDraft(
+      seriesRow({ inflationAdjust: true, useCrummeyPowers: true, startYear: 2028, endYear: 2033 }),
+    );
+    expect(draft.kind).toBe("series");
+    if (draft.kind === "series") {
+      expect(draft.inflationAdjust).toBe(true);
+      expect(draft.crummey).toBe(true);
+      expect(draft.startYear).toBe(2028);
+      expect(draft.endYear).toBe(2033);
+    }
+  });
+
+  it("produces recipient: { kind: 'entity', id: recipientEntityId }", () => {
+    const draft = giftSeriesRowToDraft(seriesRow({ recipientEntityId: "trust-abc" }));
+    expect(draft.kind).toBe("series");
+    if (draft.kind === "series") {
+      expect(draft.recipient).toEqual({ kind: "entity", id: "trust-abc" });
+    }
+  });
+
+  it("produces kind: 'series'", () => {
+    const draft = giftSeriesRowToDraft(seriesRow());
+    expect(draft.kind).toBe("series");
   });
 });
 
