@@ -69,7 +69,7 @@ function makeRule(
   amount: number,
   startYear = 2026,
   endYear = 2076,
-  opts: { isDeductible?: boolean; annualPercent?: number | null } = {}
+  opts: { isDeductible?: boolean; annualPercent?: number | null; rothPercent?: number | null } = {}
 ): SavingsRuleForDeduction {
   return {
     id: `rule-${++ruleSeq}`,
@@ -77,6 +77,7 @@ function makeRule(
     annualAmount: amount,
     annualPercent: opts.annualPercent ?? null,
     isDeductible: opts.isDeductible ?? true,
+    rothPercent: opts.rothPercent ?? null,
     startYear,
     endYear,
   };
@@ -199,6 +200,23 @@ describe("deriveAboveLineFromSavings", () => {
     const rule = makeRule("acct-401k", 23500);
     const result = deriveAboveLineFromSavings(2026, [rule], [ACCT_401K], isGrantorAlways);
     expect(result.aboveLine).toBe(23500);
+  });
+
+  it("deducts only the pre-tax portion of a split 401(k) rule", () => {
+    const rule = makeRule("acct-401k", 10000, 2026, 2035, { rothPercent: 0.4 });
+    const result = deriveAboveLineFromSavings(
+      2026, [rule], [ACCT_401K], isGrantorAlways,
+    );
+    // 60% pre-tax of 10,000
+    expect(result.aboveLine).toBe(6000);
+  });
+
+  it("a fully-Roth 401(k) rule produces no deduction", () => {
+    const rule = makeRule("acct-401k", 10000, 2026, 2035, { rothPercent: 1 });
+    const result = deriveAboveLineFromSavings(
+      2026, [rule], [ACCT_401K], isGrantorAlways,
+    );
+    expect(result.aboveLine).toBe(0);
   });
 });
 

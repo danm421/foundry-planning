@@ -69,6 +69,9 @@ export interface SavingsRuleForDeduction {
   /** Per-rule deductibility flag. The derive function gates on this AND on
    *  subtype eligibility AND on retirement category. */
   isDeductible: boolean;
+  /** Roth-designated fraction (0..1) of the contribution. The deduction
+   *  counts only the pre-tax remainder. Absent → fully pre-tax. */
+  rothPercent?: number | null;
   startYear: number;
   endYear: number;
 }
@@ -118,7 +121,9 @@ export function deriveAboveLineFromSavings(
           ? salary * rule.annualPercent
           : rule.annualAmount;
     }
-    total += amount;
+    // When overridden, `amount` is the total (possibly capped) contribution —
+    // the Roth split still applies to it to isolate the pre-tax portion.
+    total += amount * (1 - (rule.rothPercent ?? 0));
   }
   return { aboveLine: total, itemized: 0, saltPool: 0 };
 }

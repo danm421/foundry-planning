@@ -123,6 +123,7 @@ export interface SavingsRuleView {
   accountId: string;
   annualAmount: string;
   annualPercent?: string | null;
+  rothPercent?: string | null;
   isDeductible?: boolean;
   applyContributionLimit?: boolean;
   contributeMax?: boolean;
@@ -143,6 +144,7 @@ export function savingsRuleEngineToView(rule: EngineSavingsRule): SavingsRuleVie
     accountId: rule.accountId,
     annualAmount: String(rule.annualAmount),
     annualPercent: rule.annualPercent != null ? String(rule.annualPercent) : null,
+    rothPercent: rule.rothPercent != null ? String(rule.rothPercent) : null,
     isDeductible: rule.isDeductible,
     applyContributionLimit: rule.applyContributionLimit,
     contributeMax: rule.contributeMax,

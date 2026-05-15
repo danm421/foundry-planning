@@ -1278,6 +1278,10 @@ export const savingsRules = pgTable("savings_rules", {
   // When non-null, the engine resolves this rule's contribution as
   // ownerSalary * annualPercent per year. When null, annualAmount is used.
   annualPercent: decimal("annual_percent", { precision: 6, scale: 4 }),
+  // Fraction (0..1) of the rule's resolved contribution designated Roth.
+  // 401(k)/403(b) only — null/0 means a fully pre-tax contribution. The
+  // engine routes contribution × rothPercent into the account's Roth basis.
+  rothPercent: decimal("roth_percent", { precision: 8, scale: 6 }),
   // Whether this contribution counts as an above-the-line deduction.
   // Engine gates deduction on subtype eligibility AND this flag.
   isDeductible: boolean("is_deductible").notNull().default(true),

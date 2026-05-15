@@ -34,6 +34,7 @@ export async function PUT(
       accountId,
       annualAmount,
       annualPercent,
+      rothPercent,
       isDeductible,
       applyContributionLimit,
       contributeMax,
@@ -52,6 +53,9 @@ export async function PUT(
         ...(accountId !== undefined && { accountId }),
         ...(annualAmount !== undefined && { annualAmount }),
         ...(annualPercent !== undefined && { annualPercent: annualPercent ?? null }),
+        ...(rothPercent !== undefined && {
+          rothPercent: rothPercent != null ? String(rothPercent) : null,
+        }),
         ...(isDeductible !== undefined && { isDeductible }),
         ...(applyContributionLimit !== undefined && { applyContributionLimit }),
         ...(contributeMax !== undefined && { contributeMax }),

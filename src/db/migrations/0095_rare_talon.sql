@@ -1,0 +1,1 @@
+ALTER TABLE "savings_rules" ADD COLUMN "roth_percent" numeric(8, 6);

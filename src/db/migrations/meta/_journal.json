@@ -666,6 +666,13 @@
       "when": 1778797450856,
       "tag": "0094_onboarding_state",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1778854360848,
+      "tag": "0095_rare_talon",
+      "breakpoints": true
     }
   ]
 }
