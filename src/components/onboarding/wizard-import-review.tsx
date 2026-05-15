@@ -275,7 +275,10 @@ export default function WizardImportReview({
   return (
     <div className="space-y-4">
       {commitError ? (
-        <div className="rounded border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
+        <div
+          role="alert"
+          className="rounded border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad"
+        >
           {commitError}
         </div>
       ) : null}
@@ -361,6 +364,7 @@ export default function WizardImportReview({
           type="button"
           onClick={handleCommit}
           disabled={committing}
+          aria-busy={committing}
           className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-on hover:bg-accent-deep disabled:opacity-50"
         >
           {committing
