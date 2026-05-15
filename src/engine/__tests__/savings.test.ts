@@ -66,6 +66,42 @@ describe("applySavingsRules", () => {
     const result = applySavingsRules([percentRule], 2026, 0, baseClient, undefined, salaryByRuleId);
     expect(result.total).toBe(0);
   });
+
+  it("splits the contribution into rothByAccount by rothPercent", () => {
+    const splitRule: SavingsRule = {
+      id: "sav-split",
+      accountId: "acct-401k",
+      annualAmount: 10000,
+      isDeductible: true,
+      rothPercent: 0.4,
+      startYear: 2026,
+      endYear: 2035,
+    };
+    const result = applySavingsRules([splitRule], 2026, 150000, baseClient);
+    expect(result.byAccount["acct-401k"]).toBe(10000);
+    expect(result.rothByAccount["acct-401k"]).toBeCloseTo(4000, 6);
+  });
+
+  it("rothByAccount is empty when no rule has rothPercent", () => {
+    const result = applySavingsRules(sampleSavingsRules, 2026, 150000, baseClient);
+    expect(result.rothByAccount["acct-401k"] ?? 0).toBe(0);
+  });
+
+  it("rothByAccount tracks the capped contribution, not the requested amount", () => {
+    const splitRule: SavingsRule = {
+      id: "sav-split-capped",
+      accountId: "acct-401k",
+      annualAmount: 10000,
+      isDeductible: true,
+      rothPercent: 0.5,
+      startYear: 2026,
+      endYear: 2035,
+    };
+    // legacy surplus cap of 4000 clamps the 10000 contribution
+    const result = applySavingsRules([splitRule], 2026, 150000, baseClient, 4000);
+    expect(result.byAccount["acct-401k"]).toBe(4000);
+    expect(result.rothByAccount["acct-401k"]).toBeCloseTo(2000, 6);
+  });
 });
 
 describe("resolveContributionAmount", () => {

@@ -3,6 +3,9 @@ import { itemProrationGate } from "./retirement-proration";
 
 interface SavingsResult {
   byAccount: Record<string, number>;
+  /** Roth-designated slice of each account's employee contribution, derived
+   *  from rule.rothPercent. Mirrors byAccount's keying. */
+  rothByAccount: Record<string, number>;
   total: number;
   employerTotal: number;
 }
@@ -63,6 +66,7 @@ export function applySavingsRules(
   overriddenAmountByRuleId?: Record<string, number>
 ): SavingsResult {
   const byAccount: Record<string, number> = {};
+  const rothByAccount: Record<string, number> = {};
   let total = 0;
   let employerTotal = 0;
   const legacyCap = availableSurplus;
@@ -89,6 +93,11 @@ export function applySavingsRules(
     total += contribution;
     if (legacyCap != null) remaining -= contribution;
 
+    const rothPortion = contribution * (rule.rothPercent ?? 0);
+    if (rothPortion > 0) {
+      rothByAccount[rule.accountId] = (rothByAccount[rule.accountId] ?? 0) + rothPortion;
+    }
+
     // Employer match is not funded from household cash — it's a gift from the employer
     // deposited directly into the account. For the running total here we use the full
     // salary base; the projection engine recomputes per-rule matches using the
@@ -103,5 +112,5 @@ export function applySavingsRules(
     }
   }
 
-  return { byAccount, total, employerTotal };
+  return { byAccount, rothByAccount, total, employerTotal };
 }
