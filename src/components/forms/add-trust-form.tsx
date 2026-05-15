@@ -1060,6 +1060,9 @@ function designationsToRows(d: Designation[], tier: "income" | "remainder"): Ben
       id: x.id,
       source: designationToSource(x),
       percentage: x.percentage,
+      ...(tier === "remainder"
+        ? { distributionForm: (x.distributionForm ?? "outright") as "in_trust" | "outright" }
+        : {}),
     }));
 }
 
@@ -1075,7 +1078,14 @@ function rowsToDesignationPayload(rows: BeneficiaryRow[], tier: "income" | "rema
   return rows
     .filter((r) => r.source.kind !== "empty")
     .map((r, idx) => {
-      const base = { tier, percentage: r.percentage, sortOrder: idx };
+      const base = {
+        tier,
+        percentage: r.percentage,
+        sortOrder: idx,
+        ...(tier === "remainder"
+          ? { distributionForm: r.distributionForm ?? "outright" }
+          : {}),
+      };
       switch (r.source.kind) {
         case "household": return { ...base, householdRole: r.source.role };
         case "family": return { ...base, familyMemberId: r.source.familyMemberId };
