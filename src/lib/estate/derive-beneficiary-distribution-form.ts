@@ -10,9 +10,12 @@
  * each share classified by that beneficiary's `distributionForm` flag.
  *
  * Look-through is one level only — a remainder beneficiary that is itself a
- * trust (`entityIdRef`) has its share dropped. A trust with no remainder
- * beneficiaries leaves its funding unattributed (off-chart). See the spec's
- * "Known simplifications" section.
+ * trust (`entityIdRef`) has its share dropped. A remainder beneficiary
+ * identified solely by `householdRole` (client/spouse) likewise has its share
+ * dropped — consistent with direct spouse receipts being excluded (the widget
+ * charts inheriting beneficiaries, not the surviving household principals). A
+ * trust with no remainder beneficiaries leaves its funding unattributed
+ * (off-chart). See the spec's "Known simplifications" section.
  */
 import type { ClientData, RemainderBeneficiaryRef } from "@/engine/types";
 import type { RecipientTotal } from "./transfer-report";
@@ -86,7 +89,7 @@ export function deriveBeneficiaryDistributionForm(
       continue;
     }
 
-    // spouse / charity / system_default — excluded.
+    // spouse / system_default — excluded.
   }
 
   return Array.from(byKey.values())

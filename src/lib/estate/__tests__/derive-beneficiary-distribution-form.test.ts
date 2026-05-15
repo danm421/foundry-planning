@@ -129,17 +129,9 @@ describe("deriveBeneficiaryDistributionForm", () => {
     ]);
   });
 
-  it("excludes spouse and charity recipients", () => {
+  it("excludes spouse recipients", () => {
     const result = deriveBeneficiaryDistributionForm(
-      [
-        rt({ key: "spouse|s1", recipientKind: "spouse", recipientLabel: "Spouse", total: 9000 }),
-        rt({
-          key: "charity|c1",
-          recipientKind: "charity" as RecipientTotal["recipientKind"],
-          recipientLabel: "Red Cross",
-          total: 2000,
-        }),
-      ],
+      [rt({ key: "spouse|s1", recipientKind: "spouse", recipientLabel: "Spouse", total: 9000 })],
       tree({}),
     );
     expect(result).toEqual([]);
@@ -149,6 +141,42 @@ describe("deriveBeneficiaryDistributionForm", () => {
     const result = deriveBeneficiaryDistributionForm(
       [rt({ key: "entity|trust1", recipientKind: "entity", recipientLabel: "T", total: 1000 })],
       tree({ entities: [{ id: "trust1", name: "T" }] } as unknown as Partial<ClientData>),
+    );
+    expect(result).toEqual([]);
+  });
+
+  it("drops a remainder bene that is itself a trust (entityIdRef, no person)", () => {
+    const result = deriveBeneficiaryDistributionForm(
+      [rt({ key: "entity|trust1", recipientKind: "entity", recipientLabel: "T", total: 1000 })],
+      tree({
+        entities: [
+          {
+            id: "trust1",
+            name: "T",
+            remainderBeneficiaries: [
+              { entityIdRef: "trust2", percentage: 100, distributionForm: "outright" },
+            ],
+          },
+        ],
+      } as unknown as Partial<ClientData>),
+    );
+    expect(result).toEqual([]);
+  });
+
+  it("drops a remainder bene identified solely by householdRole", () => {
+    const result = deriveBeneficiaryDistributionForm(
+      [rt({ key: "entity|trust1", recipientKind: "entity", recipientLabel: "T", total: 1000 })],
+      tree({
+        entities: [
+          {
+            id: "trust1",
+            name: "T",
+            remainderBeneficiaries: [
+              { householdRole: "client", percentage: 100, distributionForm: "outright" },
+            ],
+          },
+        ],
+      } as unknown as Partial<ClientData>),
     );
     expect(result).toEqual([]);
   });
