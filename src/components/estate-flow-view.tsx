@@ -183,8 +183,9 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
           }
           saved++;
         }
-        // router.refresh() is called by writer.submit on every successful submit,
-        // which reloads initialClientData and clears the dirty badge.
+        // Scenario mode only: writer.submit calls router.refresh() on every
+        // successful submit, which reloads initialClientData and clears the
+        // dirty badge. The base-case branch below refreshes explicitly instead.
       } finally {
         setIsSaving(false);
       }
@@ -204,6 +205,9 @@ export default function EstateFlowView(props: EstateFlowViewProps) {
       const writes = pendingChanges.flatMap((c) =>
         baseWritesForChange(c, props.clientId),
       );
+      // Defensive: if no change produced a write, don't refresh / clear the
+      // dirty badge — that would look like a successful save of nothing.
+      if (writes.length === 0) return;
       let done = 0;
       for (const w of writes) {
         const res = await fetch(w.url, {
