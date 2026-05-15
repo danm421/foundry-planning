@@ -19,6 +19,7 @@ import ContributionAmountFields, {
   type ContributionMode,
   supportsPercentContribution,
   supportsMaxContribution,
+  supportsRothSplit,
   inferContributionMode,
 } from "./contribution-amount-fields";
 import DeductibleContributionCheckbox, {
@@ -57,6 +58,7 @@ export interface SavingsRuleRow {
   employerMatchAmount: string | null;
   startYearRef?: string | null;
   endYearRef?: string | null;
+  rothPercent?: string | null;
 }
 
 export interface ClientInfoForDialog {
@@ -169,6 +171,10 @@ export default function SavingsRuleDialog({
     selectedAccount?.category,
     selectedAccount?.subType
   );
+  const showRothSplit = supportsRothSplit(
+    selectedAccount?.category,
+    selectedAccount?.subType
+  );
 
   const initialMatchMode: MatchMode = inferMatchMode(
     editing?.employerMatchAmount,
@@ -203,15 +209,53 @@ export default function SavingsRuleDialog({
     const matchAmount = data.get("employerMatchAmount") as string;
     const annualAmountInput = data.get("annualAmount") as string;
     const annualPercentInput = data.get("annualPercent") as string;
-    return {
-      accountId: data.get("accountId") as string,
-      annualAmount: contribMode === "amount" ? annualAmountInput : (editing?.annualAmount ?? "0"),
-      annualPercent:
+
+    const pretaxAmount = Number(data.get("pretaxAmount") ?? 0);
+    const rothAmount = Number(data.get("rothAmount") ?? 0);
+    const pretaxPercentInput = Number(data.get("pretaxPercent") ?? 0);
+    const rothPercentInput = Number(data.get("rothPercentInput") ?? 0);
+    const rothShareOfMax = Number(data.get("rothShareOfMax") ?? 0);
+
+    let outAnnualAmount: string;
+    let outAnnualPercent: string | null;
+    let outRothPercent: string | null;
+
+    if (showRothSplit && !hasSchedule && contribMode === "amount") {
+      const total = pretaxAmount + rothAmount;
+      outAnnualAmount = String(total);
+      outAnnualPercent = null;
+      outRothPercent = total > 0 ? String(rothAmount / total) : "0";
+    } else if (showRothSplit && !hasSchedule && contribMode === "percent") {
+      const total = pretaxPercentInput + rothPercentInput;
+      outAnnualAmount = editing?.annualAmount ?? "0";
+      outAnnualPercent = total > 0 ? String(total / 100) : null;
+      outRothPercent = total > 0 ? String(rothPercentInput / total) : "0";
+    } else if (showRothSplit) {
+      // max mode, or any scheduled rule: total comes from elsewhere,
+      // rothShareOfMax sets the split directly.
+      outAnnualAmount = contribMode === "amount" ? annualAmountInput : (editing?.annualAmount ?? "0");
+      outAnnualPercent =
         contribMode === "percent" && annualPercentInput
           ? String(Number(annualPercentInput) / 100)
-          : null,
+          : null;
+      outRothPercent = String(rothShareOfMax / 100);
+    } else {
+      // non-401(k)/403(b): unchanged single-contribution behavior
+      outAnnualAmount = contribMode === "amount" ? annualAmountInput : (editing?.annualAmount ?? "0");
+      outAnnualPercent =
+        contribMode === "percent" && annualPercentInput
+          ? String(Number(annualPercentInput) / 100)
+          : null;
+      outRothPercent = null;
+    }
+
+    return {
+      accountId: data.get("accountId") as string,
+      annualAmount: outAnnualAmount,
+      annualPercent: outAnnualPercent,
       contributeMax: contribMode === "max",
-      isDeductible: showDeductibleCheckbox ? isDeductible : true,
+      rothPercent: outRothPercent,
+      isDeductible: showDeductibleCheckbox && !showRothSplit ? isDeductible : true,
       applyContributionLimit: showContributionCapCheckbox ? applyContributionLimit : true,
       startYear: String(startYear),
       endYear: String(endYear),
@@ -417,6 +461,20 @@ export default function SavingsRuleDialog({
               <>
                 <input type="hidden" name="annualAmount" value={String(editing?.annualAmount ?? "0")} />
                 <input type="hidden" name="annualPercent" value={String(editing?.annualPercent ?? "")} />
+                {showRothSplit && (
+                  <div className="col-span-2">
+                    <label className="block text-xs text-gray-400" htmlFor="sr-sched-roth-share">Roth share of contribution (%)</label>
+                    <input
+                      id="sr-sched-roth-share"
+                      name="rothShareOfMax"
+                      type="number"
+                      min={0}
+                      max={100}
+                      defaultValue={editing?.rothPercent ? Number(editing.rothPercent) * 100 : ""}
+                      className={inputClassName}
+                    />
+                  </div>
+                )}
                 <div className="col-span-2 flex items-center justify-between rounded-md border border-accent/40 bg-accent/10 px-3 py-2.5">
                   <div>
                     <p className="text-sm font-medium text-accent">Using custom schedule</p>
@@ -443,6 +501,8 @@ export default function SavingsRuleDialog({
                     initialPercent={editing?.annualPercent ?? null}
                     idPrefix="sr"
                     required
+                    rothSplit={showRothSplit}
+                    initialRothPercent={editing?.rothPercent ?? null}
                   />
                 </div>
                 <div className="col-span-2">
@@ -458,7 +518,7 @@ export default function SavingsRuleDialog({
                 </div>
               </>
             )}
-            {showDeductibleCheckbox && (
+            {showDeductibleCheckbox && !showRothSplit && (
               <div className="col-span-2">
                 <DeductibleContributionCheckbox
                   checked={isDeductible}
