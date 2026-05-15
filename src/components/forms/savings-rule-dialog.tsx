@@ -500,17 +500,21 @@ export default function SavingsRuleDialog({
                     initialRothPercent={editing?.rothPercent ?? null}
                   />
                 </div>
-                <div className="col-span-2">
-                  <label className={fieldLabelClassName}>Growth Rate</label>
-                  <div className="mt-1">
-                    <GrowthSourceRadio
-                      value={growthSource}
-                      customRate={growthRateDisplay}
-                      resolvedInflationRate={resolvedInflationRate}
-                      onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
-                    />
+                {/* Growth has no effect in percent-of-salary mode — the
+                    contribution is recomputed from each year's salary. */}
+                {contribMode !== "percent" && (
+                  <div className="col-span-2">
+                    <label className={fieldLabelClassName}>Growth Rate</label>
+                    <div className="mt-1">
+                      <GrowthSourceRadio
+                        value={growthSource}
+                        customRate={growthRateDisplay}
+                        resolvedInflationRate={resolvedInflationRate}
+                        onChange={(next) => { setGrowthSource(next.value); setGrowthRateDisplay(next.customRate); }}
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
               </>
             )}
             {showDeductibleCheckbox && !showRothSplit && (
