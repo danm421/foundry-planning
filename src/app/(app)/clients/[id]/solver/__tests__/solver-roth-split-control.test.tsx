@@ -56,4 +56,23 @@ describe("RothSplitControl", () => {
     await userEvent.type(pretaxInput, "90");
     expect(onChange).toHaveBeenLastCalledWith(0.1);
   });
+
+  it("clearing a split input does not call onChange (prevents mid-edit collapse)", async () => {
+    const onChange = vi.fn();
+    render(<RothSplitControl rothPercent={0.4} onChange={onChange} />);
+    const rothInput = screen.getByLabelText("Roth %");
+    // Select-all + delete — leaves the field empty without typing a digit
+    await userEvent.clear(rothInput);
+    // onChange must NOT have been called at all (the empty-string state should be buffered)
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("typing an explicit '0' in the Roth split input still emits onChange(0) (collapse is intentional)", async () => {
+    const onChange = vi.fn();
+    render(<RothSplitControl rothPercent={0.4} onChange={onChange} />);
+    const rothInput = screen.getByLabelText("Roth %");
+    await userEvent.clear(rothInput);
+    await userEvent.type(rothInput, "0");
+    expect(onChange).toHaveBeenLastCalledWith(0);
+  });
 });

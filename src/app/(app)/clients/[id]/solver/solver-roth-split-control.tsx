@@ -9,7 +9,12 @@ interface Props {
   onChange: (rothPercent: number) => void;
 }
 
-/** Clamp a percent (0..100) and convert to a 0..1 fraction, rounded to 4 decimal places. */
+/**
+ * Parse a percent string (0..100), clamp it, and convert to a 0..1 fraction.
+ * The percent is rounded to the nearest integer before dividing, so the result
+ * has at most 2 decimal places (e.g. "33" → 0.33, "7" → 0.07).
+ * Returns 0 for non-numeric input.
+ */
 function pctToFraction(raw: string): number {
   const n = parseFloat(raw);
   if (Number.isNaN(n)) return 0;
@@ -123,8 +128,13 @@ function SplitInput({
         aria-label={label}
         value={draft}
         onChange={(e) => {
-          setDraft(e.target.value);
-          onChange(e.target.value);
+          const raw = e.target.value;
+          setDraft(raw);
+          // Don't emit while the field is empty — the user is mid-edit (e.g.
+          // select-all + delete before retyping). An empty string would parse
+          // to 0, collapsing the split view and unmounting this input.
+          if (raw === "") return;
+          onChange(raw);
         }}
         className="h-7 w-14 rounded-md border border-hair-2 bg-card-2 px-1.5 text-[12px] text-ink tabular focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
       />
