@@ -7,6 +7,10 @@ import {
   type RecipientGroup,
 } from "@/lib/estate/transfer-report";
 import { EstateTransferConflictsCallout } from "@/components/estate-transfer-conflicts-callout";
+import {
+  summarizeDeathWarnings,
+  type DeathWarningNote,
+} from "@/lib/estate/death-warning-summary";
 
 // ── Currency formatter (matches estate-transfer-recipient-card.tsx) ───────────
 
@@ -17,19 +21,30 @@ const fmt = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-// ── Death warnings callout ────────────────────────────────────────────────────
+// ── Estate planning notes callout ─────────────────────────────────────────────
+// Advisor-facing translation of the engine's raw death-event warning codes
+// (see lib/estate/death-warning-summary.ts).
 
-function DeathWarningsCallout({ warnings }: { warnings: string[] }) {
-  if (warnings.length === 0) return null;
+function DeathWarningsCallout({ notes }: { notes: DeathWarningNote[] }) {
+  if (notes.length === 0) return null;
   return (
     <section className="rounded-lg border border-yellow-900/40 bg-yellow-950/20 px-4 py-3">
       <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-yellow-200">
-        Engine Warnings
+        Estate Planning Notes
       </h3>
-      <ul className="space-y-0.5">
-        {warnings.map((w, i) => (
-          <li key={i} className="text-[10px] text-yellow-200/80">
-            ▸ {w}
+      <ul className="space-y-1">
+        {notes.map((note) => (
+          <li key={note.key} className="text-[10px] text-yellow-200/80">
+            ▸ {note.message}
+            {note.items.length > 0 && (
+              <ul className="mt-0.5 ml-3 space-y-0.5">
+                {note.items.map((item, i) => (
+                  <li key={i} className="text-yellow-200/60">
+                    • {item}
+                  </li>
+                ))}
+              </ul>
+            )}
           </li>
         ))}
       </ul>
@@ -206,11 +221,24 @@ export function EstateFlowDeathColumn({
   projection,
   onAssetClick,
 }: EstateFlowDeathColumnProps) {
-  // Resolve death warnings from the projection year matching this section.
-  const deathWarnings: string[] = useMemo(() => {
+  // Resolve death warnings from the projection year matching this section,
+  // then translate the raw engine codes into advisor-facing notes. Asset names
+  // come from the section's own transfer rows (post-death account labels).
+  const notes: DeathWarningNote[] = useMemo(() => {
     if (!section) return [];
     const yearRow = projection.years.find((y) => y.year === section.year);
-    return yearRow?.deathWarnings ?? [];
+    const rawWarnings = yearRow?.deathWarnings ?? [];
+    if (rawWarnings.length === 0) return [];
+
+    const nameById = new Map<string, string>();
+    for (const group of section.recipients) {
+      for (const mech of group.byMechanism) {
+        for (const a of mech.assets) {
+          if (a.sourceAccountId) nameById.set(a.sourceAccountId, a.label);
+        }
+      }
+    }
+    return summarizeDeathWarnings(rawWarnings, nameById);
   }, [section, projection.years]);
 
   // ── No data ───────────────────────────────────────────────────────────────
@@ -250,10 +278,8 @@ export function EstateFlowDeathColumn({
         </div>
       </div>
 
-      {/* Warnings at top of column */}
-      {deathWarnings.length > 0 && (
-        <DeathWarningsCallout warnings={deathWarnings} />
-      )}
+      {/* Estate planning notes at top of column */}
+      {notes.length > 0 && <DeathWarningsCallout notes={notes} />}
       {section.conflicts.length > 0 && (
         <EstateTransferConflictsCallout conflicts={section.conflicts} />
       )}
