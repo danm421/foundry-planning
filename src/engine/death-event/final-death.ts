@@ -56,6 +56,11 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
 
   // Resolve household principal FM ids for ownership comparisons.
   const deceasedFmId = familyMembers.find((fm) => fm.role === deceased)?.id ?? null;
+  // At final death the other principal predeceased this event. Designations
+  // naming that person lapse — alongside those naming the decedent.
+  const predeceasedRole = deceased === "client" ? "spouse" : "client";
+  const predeceasedFmId =
+    familyMembers.find((fm) => fm.role === predeceasedRole)?.id ?? null;
 
   // Defensive: no joint accounts can exist at 4c. Entity/family-member-owned
   // (ownerFamilyMemberId heir-distribution) accounts are exempt.
@@ -117,7 +122,7 @@ function runFinalDeathPrecedenceChain(input: DeathEventInput): FinalDeathChainRe
     const step2 = applyBeneficiaryDesignations(
       effectiveAcct, undisposed,
       familyMembers, externalBeneficiaries, entities, linkedLiability,
-      deceasedFmId,
+      deceasedFmId, /* survivorFmId */ null, predeceasedFmId,
     );
     if (step2.fractionClaimed > 0) {
       stepAccts.push(...step2.resultingAccounts);

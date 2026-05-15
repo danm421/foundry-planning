@@ -2300,4 +2300,59 @@ describe("applyFinalDeath orchestrator", () => {
     expect(post!.grantor).toBeUndefined();
     expect(result.warnings).toContain("idgt_grantor_flipped: idgt-final");
   });
+
+  it("lapses a primary naming the predeceased spouse and routes to the contingent", () => {
+    // Jane (spouse) dies last. Her IRA names John (client, dead at first
+    // death) as primary beneficiary, child-a as contingent. The primary must
+    // lapse — John is the predeceased principal — so the IRA routes to child-a
+    // via the contingent designation, not to the dead John.
+    const fams: FamilyMember[] = [
+      { id: "fm-client", role: "client" as const, relationship: "other", firstName: "John", lastName: "Smith", dateOfBirth: "1970-01-01" },
+      { id: "fm-spouse", role: "spouse" as const, relationship: "other", firstName: "Jane", lastName: "Smith", dateOfBirth: "1972-06-15" },
+      { id: "child-a", role: "child" as const, relationship: "child", firstName: "Alice", lastName: "Smith", dateOfBirth: "2000-01-01" },
+    ];
+    const janeIra: Account = {
+      id: "jane-ira", name: "Jane IRA",
+      category: "retirement", subType: "traditional_ira",
+      value: 600000, basis: 0,
+      growthRate: 0.07, rmdEnabled: true,
+      beneficiaries: [
+        { id: "ji-pri", tier: "primary", percentage: 100, familyMemberId: "fm-client", sortOrder: 0 },
+        { id: "ji-con", tier: "contingent", percentage: 100, familyMemberId: "child-a", sortOrder: 0 },
+      ],
+      owners: [{ kind: "family_member", familyMemberId: "fm-spouse", percent: 1 }],
+    };
+    const finalInput: DeathEventInput = {
+      year: 2070,
+      deceased: "spouse",
+      survivor: "client",
+      will: null,
+      accounts: [janeIra],
+      accountBalances: { "jane-ira": 600000 },
+      basisMap: { "jane-ira": 0 },
+      incomes: [],
+      liabilities: [],
+      familyMembers: fams,
+      externalBeneficiaries: [],
+      entities: [],
+      planSettings: {
+        flatFederalRate: 0,
+        flatStateRate: 0,
+        inflationRate: 0.025,
+        planStartYear: 2026,
+        planEndYear: 2090,
+        estateAdminExpenses: 0,
+        flatStateEstateRate: 0,
+      },
+      gifts: [],
+      annualExclusionsByYear: {},
+      dsueReceived: 0,
+      priorTaxableGifts: { client: 0, spouse: 0 },
+    };
+    const result = applyFinalDeath(finalInput);
+    const iraTransfer = result.transfers.find((t) => t.sourceAccountId === "jane-ira")!;
+    expect(iraTransfer).toBeDefined();
+    expect(iraTransfer.via).toBe("beneficiary_designation");
+    expect(iraTransfer.recipientId).toBe("child-a");
+  });
 });
