@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { clients } from "@/db/schema";
+import { clients, scenarios } from "@/db/schema";
 import { requireOrgId } from "@/lib/db-helpers";
 import { loadEffectiveTree } from "@/lib/scenario/loader";
 import { deriveStepStatuses } from "@/lib/onboarding/step-status";
 import { isStepSlug, type OnboardingState } from "@/lib/onboarding/types";
+import { isImportEligibleStep, type ImportEligibleStep } from "@/lib/onboarding/import-sections";
 import OnboardingShell from "../onboarding-shell";
+import WizardImportLauncher from "@/components/onboarding/wizard-import-launcher";
 import HouseholdStep from "../steps/household-step";
 import FamilyStep from "../steps/family-step";
 import EntitiesStep from "../steps/entities-step";
@@ -36,6 +38,17 @@ export default async function OnboardingStepPage({ params }: PageProps) {
   const { effectiveTree } = await loadEffectiveTree(id, firmId, "base", {});
   const state = (row.state as OnboardingState | null) ?? {};
   const statuses = deriveStepStatuses(effectiveTree, state);
+
+  const importEligible = isImportEligibleStep(step);
+  let baseScenarioId: string | null = null;
+  if (importEligible) {
+    const [base] = await db
+      .select({ id: scenarios.id })
+      .from(scenarios)
+      .where(and(eq(scenarios.clientId, id), eq(scenarios.isBaseCase, true)));
+    baseScenarioId = base?.id ?? null;
+  }
+  const activeImportId = state.activeImportId ?? null;
 
   let body: React.ReactNode;
   if (step === "household") {
@@ -70,6 +83,14 @@ export default async function OnboardingStepPage({ params }: PageProps) {
 
   return (
     <OnboardingShell clientId={id} activeStep={step} statuses={statuses}>
+      {importEligible && baseScenarioId ? (
+        <WizardImportLauncher
+          clientId={id}
+          step={step as ImportEligibleStep}
+          baseScenarioId={baseScenarioId}
+          activeImportId={activeImportId}
+        />
+      ) : null}
       {body}
     </OnboardingShell>
   );
