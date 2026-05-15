@@ -15,7 +15,7 @@ import {
   type DeathEventInput,
   type DeathEventResult,
 } from "./shared";
-import { controllingEntity, isFullyEntityOwned, isFullyHouseholdOwned, ownedByHousehold, controllingFamilyMember } from "../ownership";
+import { controllingEntity, isFullyEntityOwned, ownedByHousehold, controllingFamilyMember } from "../ownership";
 import {
   buildEstateTaxResult,
   computeDeductions,
