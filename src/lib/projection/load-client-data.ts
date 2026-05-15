@@ -737,6 +737,45 @@ export const loadClientDataWithContext = cache(
       incomeByEntity.set(row.entityId, list);
     }
 
+    // ── Remainder-tier beneficiary designations grouped by entity ───────────
+    const remainderBeneficiaryRows = entityRows.length > 0
+      ? await db
+          .select({
+            entityId: beneficiaryDesignations.entityId,
+            familyMemberId: beneficiaryDesignations.familyMemberId,
+            externalBeneficiaryId: beneficiaryDesignations.externalBeneficiaryId,
+            entityIdRef: beneficiaryDesignations.entityIdRef,
+            householdRole: beneficiaryDesignations.householdRole,
+            percentage: beneficiaryDesignations.percentage,
+            distributionForm: beneficiaryDesignations.distributionForm,
+          })
+          .from(beneficiaryDesignations)
+          .where(
+            and(
+              eq(beneficiaryDesignations.tier, "remainder"),
+              inArray(beneficiaryDesignations.entityId, entityRows.map((e) => e.id)),
+            ),
+          )
+      : [];
+
+    type RemainderBeneficiary = NonNullable<
+      import("@/engine/types").EntitySummary["remainderBeneficiaries"]
+    >[number];
+    const remainderByEntity = new Map<string, RemainderBeneficiary[]>();
+    for (const row of remainderBeneficiaryRows) {
+      if (!row.entityId) continue;
+      const list = remainderByEntity.get(row.entityId) ?? [];
+      list.push({
+        familyMemberId: row.familyMemberId ?? undefined,
+        externalBeneficiaryId: row.externalBeneficiaryId ?? undefined,
+        entityIdRef: row.entityIdRef ?? undefined,
+        householdRole: (row.householdRole as "client" | "spouse" | null) ?? undefined,
+        percentage: Number(row.percentage),
+        distributionForm: row.distributionForm === "in_trust" ? "in_trust" : "outright",
+      });
+      remainderByEntity.set(row.entityId, list);
+    }
+
     // ── exemptionConsumed derived from gifts to each entity ──────────────────
     const exemptionByEntity = new Map<string, number>();
     for (const g of giftRows) {
@@ -816,6 +855,7 @@ export const loadClientDataWithContext = cache(
       valueGrowthRate:
         e.valueGrowthRate != null ? parseFloat(e.valueGrowthRate) : undefined,
       incomeBeneficiaries: incomeByEntity.get(e.id) ?? [],
+      remainderBeneficiaries: remainderByEntity.get(e.id) ?? [],
       trustEnds: e.trustEnds ?? null,
       value: e.value != null ? parseFloat(e.value) : undefined,
       basis: e.basis != null ? parseFloat(e.basis) : undefined,

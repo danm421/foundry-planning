@@ -76,6 +76,7 @@ export const WIDGET_KINDS_V4 = [
   "cash-flow-gap",
   "estate-transfers-yearly",
   "estate-end-beneficiaries",
+  "estate-distribution-form",
   "gift-tax",
   "success-gauge",
   "asset-allocation",

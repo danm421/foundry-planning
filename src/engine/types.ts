@@ -419,6 +419,9 @@ export interface EntitySummary {
     householdRole?: "client" | "spouse";
     percentage: number;
   }>;
+  /** Trust remainder-tier beneficiaries. Data-only — populated by the loader
+   *  for reporting; no projection rule reads it. */
+  remainderBeneficiaries?: RemainderBeneficiaryRef[];
   trustEnds?: "client_death" | "spouse_death" | "survivorship" | null;
   /** Business-entity flat valuation (LLC / S-Corp / C-Corp / partnership /
    *  other). Surfaces on the balance sheet and counts toward the in-estate
@@ -503,6 +506,22 @@ export interface BeneficiaryRef {
   /** Beneficiary is a household principal. */
   householdRole?: "client" | "spouse";
   sortOrder: number;
+}
+
+/** Trust remainder-tier beneficiary. Data-only — no engine rule reads this;
+ *  surfaced purely for estate reporting (distribution-form widget). The engine
+ *  loader populates it separately from `beneficiaries` (which carries only
+ *  primary/contingent tiers). */
+export interface RemainderBeneficiaryRef {
+  familyMemberId?: string;
+  externalBeneficiaryId?: string;
+  /** Remainder beneficiary is itself a trust entity (references `entities[].id`). */
+  entityIdRef?: string;
+  householdRole?: "client" | "spouse";
+  percentage: number;
+  /** How this beneficiary receives their remainder share. Defaults to
+   *  "outright" at the schema layer. */
+  distributionForm: "in_trust" | "outright";
 }
 
 export interface LifeInsuranceCashValueScheduleRow {
