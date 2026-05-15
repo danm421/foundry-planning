@@ -101,8 +101,7 @@ export const STEPS: readonly StepDef[] = [
     description: "Inflation, growth rates, and tax assumptions for this plan.",
     icon: "assumptions",
     skippable: true,
-    placeholderInPhase1: true,
-    tabHref: (id) => `/clients/${id}/client-data/assumptions`,
+    placeholderInPhase1: false,
   },
   {
     slug: "review",
