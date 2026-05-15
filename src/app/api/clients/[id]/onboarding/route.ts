@@ -12,6 +12,7 @@ const patchSchema = z
   .object({
     skippedSteps: z.array(z.string()).optional(),
     lastStepVisited: z.string().optional(),
+    activeImportId: z.string().uuid().nullable().optional(),
   })
   .strict();
 
@@ -49,6 +50,13 @@ export async function PATCH(
     if (parsed.data.lastStepVisited && isStepSlug(parsed.data.lastStepVisited)) {
       next.lastStepVisited = parsed.data.lastStepVisited;
     }
+    if (parsed.data.activeImportId !== undefined) {
+      if (parsed.data.activeImportId === null) {
+        delete next.activeImportId;
+      } else {
+        next.activeImportId = parsed.data.activeImportId;
+      }
+    }
 
     await db
       .update(clients)
@@ -63,6 +71,7 @@ export async function PATCH(
       metadata: {
         skippedSteps: next.skippedSteps ?? [],
         lastStepVisited: next.lastStepVisited ?? null,
+        activeImportId: next.activeImportId ?? null,
       },
     });
 

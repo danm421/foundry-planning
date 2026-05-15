@@ -29,6 +29,13 @@ export interface StepStatus {
 export interface OnboardingState {
   skippedSteps?: StepSlug[];
   lastStepVisited?: StepSlug;
+  /**
+   * The shared `client_imports` draft for this wizard session (Phase 4).
+   * Set lazily when the advisor uploads the first document from any
+   * step's import drawer; cleared when that draft is committed/discarded
+   * or no longer resolvable.
+   */
+  activeImportId?: string;
 }
 
 export function isStepSlug(value: string): value is StepSlug {
