@@ -67,7 +67,7 @@ export default function ReviewStep({ clientId, statuses, alreadyFinished }: Revi
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? `Finish failed (${res.status})`);
       }
-      router.push(`/clients/${clientId}`);
+      router.push(`/clients/${clientId}/solver`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Finish failed");
       setSubmitting(false);

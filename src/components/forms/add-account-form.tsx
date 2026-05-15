@@ -1185,20 +1185,24 @@ export default function AddAccountForm({
                 </div>
               )}
 
-              <div className="col-span-2">
-                <label className={fieldLabelClassName}>Growth</label>
-                <div className="mt-1">
-                  <GrowthSourceRadio
-                    value={savingsGrowthSource}
-                    customRate={savingsGrowthRateDisplay}
-                    resolvedInflationRate={resolvedInflationRate}
-                    onChange={(next) => {
-                      setSavingsGrowthSource(next.value);
-                      setSavingsGrowthRateDisplay(next.customRate);
-                    }}
-                  />
+              {/* Growth has no effect in percent-of-salary mode — the
+                  contribution is recomputed from each year's salary. */}
+              {contribMode !== "percent" && (
+                <div className="col-span-2">
+                  <label className={fieldLabelClassName}>Growth</label>
+                  <div className="mt-1">
+                    <GrowthSourceRadio
+                      value={savingsGrowthSource}
+                      customRate={savingsGrowthRateDisplay}
+                      resolvedInflationRate={resolvedInflationRate}
+                      onChange={(next) => {
+                        setSavingsGrowthSource(next.value);
+                        setSavingsGrowthRateDisplay(next.customRate);
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {showDeductibleCheckbox && (
